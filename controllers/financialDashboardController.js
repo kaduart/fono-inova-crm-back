@@ -122,8 +122,15 @@ export const getDashboard = async (req, res) => {
         convenio: producaoConvenio
       },
       caixa: caixaTotal,
+      caixaDetalhe: {
+        particular: camadas.garantido?.valorParticular || 0,
+        convenio: camadas.garantido?.valorConvenio || 0,
+        quantidadePagamentos: camadas.garantido?.quantidade || 0
+      },
       aReceber: {
         total: aReceberTotal,
+        mesAtual: aReceberTotal,
+        historico: aReceberHistoricoTotal,
         convenio: aReceberConvenio,
         particular: aReceberParticular
       },

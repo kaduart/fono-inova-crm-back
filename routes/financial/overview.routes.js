@@ -52,10 +52,13 @@ router.get('/overview', async (req, res) => {
         const rangeStart = new Date(startStr);
         const rangeEnd = new Date(endStr);
 
-        // MATCH: Date direto no paymentDate
+        // MATCH: Busca por financialDate (V2) ou paymentDate (legado)
         const matchStage = {
             status: { $ne: 'canceled' },
-            paymentDate: { $gte: rangeStart, $lte: rangeEnd }
+            $or: [
+                { financialDate: { $gte: rangeStart, $lte: rangeEnd } },
+                { paymentDate: { $gte: rangeStart, $lte: rangeEnd } }
+            ]
         };
         if (clinicId) matchStage.clinicId = clinicId;
 

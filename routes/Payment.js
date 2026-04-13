@@ -427,12 +427,11 @@ router.get('/', async (req, res) => {
 });
 
 
+// 🔥 PATCH /:id - VERSÃO OTIMIZADA (SEM TRANSACTION, SEM RETRY LOOP)
 router.patch('/:id', auth, async (req, res) => {
+    const startTime = Date.now();
     const { id } = req.params;
     const { amount, paymentMethod, status, serviceType, specialty, advanceServices = [] } = req.body;
-    const MAX_RETRIES = 8;
-    let retryCount = 0;
-    let result;
     
     console.log(`[Payment PATCH] Requisição para atualizar pagamento ${id}:`, req.body);
     
@@ -444,318 +443,168 @@ router.patch('/:id', auth, async (req, res) => {
             code: 'INVALID_PAYMENT_ID'
         });
     }
-
-    const executeCriticalOperation = async (entity, filter, update, session) => {
-        try {
-            return await entity.updateMany(filter, update, { session });
-        } catch (error) {
-            if (error.code === 112 || error.codeName === 'WriteConflict') {
-                console.warn('Conflito detectado em operação crítica. Tentando abordagem alternativa...');
-                if (filter._id) {
-                    return await entity.updateMany(filter, update, { session });
-                } else {
-                    const docs = await entity.find(filter).session(session);
-                    for (const doc of docs) {
-                        await entity.updateOne({ _id: doc._id }, update, { session });
-                    }
-                    return { modifiedCount: docs.length };
-                }
-            }
-            throw error;
-        }
-    };
-
-    const safePopulatePayment = async (paymentId) => {
-        try {
-            return await Payment.findById(paymentId)
-                .populate('patient doctor session')
-                .populate('advanceSessions.session')
-                .populate('advanceSessions.appointment');
-        } catch (error) {
-            console.error('Erro na população:', error);
-            return await Payment.findById(paymentId).populate('patient doctor session');
-        }
-    };
-
-    while (retryCount < MAX_RETRIES) {
-        const mongoSession = await mongoose.startSession();
-        let transactionCommitted = false;
-
-        try {
-            await mongoSession.startTransaction();
-
-            console.log(`🔄 Tentativa ${retryCount + 1} de ${MAX_RETRIES} para atualizar pagamento ${id}`);
-
-            const currentDate = new Date();
-
-            // 1. Buscar pagamento existente
-            let payment = await Payment.findById(id)
-                .session(mongoSession)
-                .select()
-                .lean();
-
-            if (!payment) {
-                await mongoSession.abortTransaction();
-                return res.status(404).json({
-                    success: false,
-                    error: 'Pagamento não encontrado'
-                });
-            }
-
-            console.log('📋 Pagamento encontrado:', payment._id);
-
-            // 2. 🔥 ATUALIZAÇÃO DO PAGAMENTO PRINCIPAL
-            const updateData = {
-                ...(amount !== undefined && { amount }),
-                ...(paymentMethod !== undefined && { paymentMethod }),
-                ...(status !== undefined && { status }),
-                ...(serviceType !== undefined && { serviceType }),      // ✅ Atualiza serviceType
-                ...(specialty !== undefined && { specialty }),          // ✅ Atualiza specialty
-                updatedAt: currentDate
-            };
-
-            await Payment.updateOne({ _id: id }, { $set: updateData }, { session: mongoSession });
-            console.log('✅ Pagamento principal atualizado');
-
-            // 3. 🔥 LÓGICA ORIGINAL PARA O PAGAMENTO PRINCIPAL (MANTIDA)
-            // 3.1. Atualizar sessões de pacotes
-            if (payment.package) {
-                console.log('📦 Atualizando sessões do pacote:', payment.package);
-                await executeCriticalOperation(
-                    Session,
-                    { package: payment.package },
-                    {
-                        $set: {
-                            isPaid: status === 'paid',
-                            status: status === 'paid' ? 'completed' : 'pending',
-                            updatedAt: currentDate
-                        }
-                    },
-                    mongoSession
-                );
-                await updatePackageStatus(payment.package, mongoSession);
-            }
-
-            // 3.2. Atualizar sessão individual
-            if (payment.session) {
-                console.log('💼 Atualizando sessão individual:', payment.session);
-                await Session.findByIdAndUpdate(
-                    payment.session,
-                    {
-                        $set: {
-                            isPaid: status === 'paid',
-                            status: status === 'paid' ? 'completed' : 'pending',
-                            updatedAt: currentDate
-                        }
-                    },
-                    { session: mongoSession }
-                );
-            }
-
-            // 3.3. Atualizar status em agendamentos vinculados
-            const appointmentIds = [
-                payment.appointment,
-                ...(payment.advanceSessions?.map(a => a.appointment) || [])
-            ].filter(id => id);
-
-            if (appointmentIds.length > 0) {
-                console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
-                await executeCriticalOperation(
-                    Appointment,
-                    { _id: { $in: appointmentIds } },
-                    {
-                        $set: {
-                            paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                            operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
-                            updatedAt: currentDate
-                        }
-                    },
-                    mongoSession
-                );
-            }
-
-            // 4. 🔥 LÓGICA advanceServices: CRIAR NOVOS PAGAMENTOS SEPARADOS
-            if (advanceServices.length > 0) {
-                console.log('🔥 Criando novos pagamentos para advanceServices:', advanceServices.length);
-
-                for (const [index, sessionData] of advanceServices.entries()) {
-                    console.log(`💰 Criando pagamento ${index + 1}/${advanceServices.length}`);
-
-                    // 🔥 CRIAR NOVO PAGAMENTO INDEPENDENTE
-                    const newPayment = new Payment({
-                        patient: payment.patient,
-                        doctor: payment.doctor,
-                        serviceType: sessionData.serviceType || 'individual_session',
-                        amount: sessionData.amount, // Valor do advanceService
-                        paymentMethod: paymentMethod || payment.paymentMethod,
-                        status: status, // Mesmo status do principal
-                        specialty: sessionData.sessionType,
-                        sessionType: normalizeSessionType(sessionData.sessionType),
-                        isAdvance: true,
-                        serviceDate: sessionData.date,
-                        paymentDate: moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD"),
-                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
-                        updatedAt: currentDate,
-                        notes: `Pagamento adiantado - ${sessionData.date} ${sessionData.time}`
-                    });
-                    await newPayment.save({ session: mongoSession });
-                    console.log('✅ Novo pagamento criado:', newPayment._id);
-
-                    // 🔥 CRIAR APPOINTMENT para o novo pagamento
-                    const newAppointment = new Appointment({
-                        date: sessionData.date,
-                        time: sessionData.time,
-                        patient: payment.patient,
-                        doctor: payment.doctor,
-                        specialty: sessionData.sessionType,
-                        serviceType: sessionData.serviceType || 'individual_session',
-                        operationalStatus: 'scheduled',
-                        clinicalStatus: 'pending',
-                        paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                        paymentMethod: paymentMethod || payment.paymentMethod,
-                        sessionValue: sessionData.amount,
-                        payment: newPayment._id, // Vincula ao NOVO pagamento
-                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
-                        updatedAt: currentDate,
-                    });
-                    await newAppointment.save({ session: mongoSession });
-                    console.log('✅ Novo appointment criado:', newAppointment._id);
-
-                    // 🔥 CRIAR SESSION para o novo pagamento
-                    const newSession = new Session({
-                        date: sessionData.date,
-                        time: sessionData.time,
-                        sessionType: sessionData.sessionType,
-                        sessionValue: sessionData.amount,
-                        patient: payment.patient,
-                        doctor: payment.doctor,
-                        paymentMethod: paymentMethod || payment.paymentMethod,
-                        isAdvance: true,
-                        payment: newPayment._id,
-                        status: 'scheduled',
-                        isPaid: status === 'paid',
-                        paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                        visualFlag: status === 'paid' ? 'ok' : 'pending',
-                        appointmentId: newAppointment._id,
-                        paymentDate: status === 'paid' ? moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD") : undefined,
-                        createdAt: currentDate,
-                        updatedAt: currentDate,
-                    });
-                    await newSession.save({ session: mongoSession });
-                    console.log('✅ Nova session criada:', newSession._id);
-
-                    // Vincular appointment com session
-                    await Appointment.updateOne(
-                        { _id: newAppointment._id },
-                        { $set: { session: newSession._id } },
-                        { session: mongoSession }
-                    );
-
-                    // Vincular pagamento com appointment e session
-                    await Payment.updateOne(
-                        { _id: newPayment._id },
-                        {
-                            $set: {
-                                appointment: newAppointment._id,
-                                session: newSession._id
-                            }
-                        },
-                        { session: mongoSession }
-                    );
-
-                    console.log(`✅ AdvanceService ${index + 1} completo - Pagamento: ${newPayment._id}`);
-                }
-                console.log('🎉 Todos os advanceServices processados');
-            }
-
-            // COMMIT DA TRANSAÇÃO
-            await mongoSession.commitTransaction();
-            transactionCommitted = true;
-            console.log('🎉 Transação commitada com sucesso');
-
-            // Invalida cache do daily-closing para a data do pagamento atualizado
-            const updatedPayment = await Payment.findById(id).lean();
-            if (updatedPayment) {
-                await invalidateCacheForPayment(updatedPayment);
-                // Se criou novos pagamentos (advanceServices), invalida também
-                if (advanceServices.length > 0) {
-                    const today = moment.tz(TIMEZONE).format('YYYY-MM-DD');
-                    await invalidateDailyClosingCache(today, clinicId || 'default');
-                }
-            }
-
-            // 5. POPULAÇÃO DO PAGAMENTO PRINCIPAL
-            try {
-                result = await safePopulatePayment(id);
-
-                return res.json({
-                    success: true,
-                    data: result,
-                    message: advanceServices.length > 0
-                        ? `Pagamento atualizado e ${advanceServices.length} sessões futuras criadas`
-                        : 'Pagamento atualizado com sucesso'
-                });
-
-            } catch (populateError) {
-                console.error('❌ Erro na população:', populateError);
-
-                result = await Payment.findById(id).populate('patient doctor session');
-
-                return res.json({
-                    success: true,
-                    data: result,
-                    warning: 'Dados carregados parcialmente',
-                    message: 'Pagamento atualizado com sucesso'
-                });
-            }
-
-        } catch (error) {
-            console.error('❌ Erro durante a transação:', error);
-
-            const isWriteConflict = error.code === 112 ||
-                error.codeName === 'WriteConflict' ||
-                (error.errorLabels && error.errorLabels.includes('TransientTransactionError'));
-
-            if (mongoSession.inTransaction() && !transactionCommitted) {
-                try {
-                    await mongoSession.abortTransaction();
-                    console.log('🔄 Rollback executado');
-                } catch (abortError) {
-                    console.error('❌ Erro ao fazer rollback:', abortError);
-                }
-            }
-
-            if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
-                retryCount++;
-                const delay = Math.min(150 * Math.pow(4, retryCount), 5000);
-                console.warn(`🔄 Conflito detectado. Tentativa ${retryCount + 1}/${MAX_RETRIES} em ${delay}ms`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-
-            if (error.name === 'ValidationError') {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Erro de validação',
-                    errors: error.errors
-                });
-            }
-
-            return res.status(500).json({
+    
+    try {
+        const currentDate = new Date();
+        
+        // 1. Buscar pagamento existente (sem session)
+        const payment = await Payment.findById(id).lean();
+        
+        if (!payment) {
+            return res.status(404).json({
                 success: false,
-                message: 'Erro interno ao atualizar pagamento',
-                error: error.message
+                error: 'Pagamento não encontrado'
             });
-
-        } finally {
-            await mongoSession.endSession();
         }
+        
+        // 🔥 IDEMPOTÊNCIA: Se não tem mudanças, retorna o que já existe
+        const hasChanges = amount !== undefined || 
+                          paymentMethod !== undefined || 
+                          status !== undefined ||
+                          serviceType !== undefined ||
+                          specialty !== undefined ||
+                          advanceServices.length > 0;
+        
+        if (!hasChanges) {
+            const populated = await Payment.findById(id).populate('patient doctor session');
+            return res.json({
+                success: true,
+                data: populated,
+                message: 'Nenhuma alteração necessária'
+            });
+        }
+        
+        console.log('📋 Pagamento encontrado:', payment._id);
+        
+        // 2. 🔥 ATUALIZAÇÃO DO PAGAMENTO PRINCIPAL (sem transaction)
+        const updateData = {
+            ...(amount !== undefined && { amount }),
+            ...(paymentMethod !== undefined && { paymentMethod }),
+            ...(status !== undefined && { status }),
+            ...(serviceType !== undefined && { serviceType }),
+            ...(specialty !== undefined && { specialty }),
+            updatedAt: currentDate
+        };
+        
+        await Payment.updateOne({ _id: id }, { $set: updateData });
+        console.log('✅ Pagamento principal atualizado');
+        
+        // 3. 🔥 ATUALIZAÇÕES EM PARALELO (essenciais)
+        const essentialUpdates = [];
+        
+        if (payment.package && status !== undefined) {
+            essentialUpdates.push(
+                Session.updateMany(
+                    { package: payment.package },
+                    { $set: { isPaid: status === 'paid', status: status === 'paid' ? 'completed' : 'pending', updatedAt: currentDate } }
+                )
+            );
+        }
+        
+        if (payment.session && status !== undefined) {
+            essentialUpdates.push(
+                Session.updateOne(
+                    { _id: payment.session },
+                    { $set: { isPaid: status === 'paid', status: status === 'paid' ? 'completed' : 'pending', updatedAt: currentDate } }
+                )
+            );
+        }
+        
+        const appointmentIds = [payment.appointment, ...(payment.advanceSessions?.map(a => a.appointment) || [])].filter(id => id);
+        if (appointmentIds.length > 0 && status !== undefined) {
+            essentialUpdates.push(
+                Appointment.updateMany(
+                    { _id: { $in: appointmentIds } },
+                    { $set: { paymentStatus: status === 'paid' ? 'paid' : 'pending', operationalStatus: status === 'paid' ? 'confirmed' : 'pending', updatedAt: currentDate } }
+                )
+            );
+        }
+        
+        if (essentialUpdates.length > 0) {
+            await Promise.all(essentialUpdates);
+            console.log(`✅ ${essentialUpdates.length} updates essenciais completados`);
+        }
+        
+        // 4. 🔥 RESPOSTA RÁPIDA
+        const result = await Payment.findById(id).populate('patient doctor session');
+        console.log(`[Payment PATCH] ⚡ Completo em ${Date.now() - startTime}ms`);
+        
+        res.json({
+            success: true,
+            data: result,
+            message: advanceServices.length > 0
+                ? `Pagamento atualizado. ${advanceServices.length} sessões futuras serão criadas em background`
+                : 'Pagamento atualizado com sucesso'
+        });
+        
+        // 🔥 BACKGROUND: Package status, advanceServices, cache
+        setImmediate(async () => {
+            try {
+                if (payment.package) {
+                    await updatePackageStatus(payment.package, null).catch(err => console.error('[Payment BG] ⚠️ Package:', err.message));
+                }
+                
+                if (advanceServices.length > 0) {
+                    for (const sessionData of advanceServices) {
+                        try {
+                            const newPayment = await Payment.create({
+                                patient: payment.patient, doctor: payment.doctor,
+                                serviceType: sessionData.serviceType || 'individual_session',
+                                amount: sessionData.amount, paymentMethod: paymentMethod || payment.paymentMethod,
+                                status, specialty: sessionData.sessionType,
+                                sessionType: normalizeSessionType(sessionData.sessionType),
+                                isAdvance: true, serviceDate: sessionData.date,
+                                paymentDate: moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD"),
+                                createdAt: currentDate, updatedAt: currentDate,
+                                notes: `Pagamento adiantado - ${sessionData.date} ${sessionData.time}`
+                            });
+                            
+                            const newAppointment = await Appointment.create({
+                                date: sessionData.date, time: sessionData.time,
+                                patient: payment.patient, doctor: payment.doctor,
+                                specialty: sessionData.sessionType, serviceType: sessionData.serviceType || 'individual_session',
+                                operationalStatus: 'scheduled', clinicalStatus: 'pending',
+                                paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                                paymentMethod: paymentMethod || payment.paymentMethod,
+                                sessionValue: sessionData.amount, payment: newPayment._id,
+                                createdAt: currentDate, updatedAt: currentDate,
+                            });
+                            
+                            const newSession = await Session.create({
+                                date: sessionData.date, time: sessionData.time,
+                                sessionType: sessionData.sessionType, sessionValue: sessionData.amount,
+                                patient: payment.patient, doctor: payment.doctor,
+                                paymentMethod: paymentMethod || payment.paymentMethod,
+                                isAdvance: true, payment: newPayment._id, status: 'scheduled',
+                                isPaid: status === 'paid', paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                                visualFlag: status === 'paid' ? 'ok' : 'pending',
+                                appointmentId: newAppointment._id,
+                                paymentDate: status === 'paid' ? moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD") : undefined,
+                                createdAt: currentDate, updatedAt: currentDate,
+                            });
+                            
+                            await Appointment.updateOne({ _id: newAppointment._id }, { $set: { session: newSession._id } });
+                            await Payment.updateOne({ _id: newPayment._id }, { $set: { appointment: newAppointment._id, session: newSession._id } });
+                        } catch (advErr) {
+                            console.error('[Payment BG] ❌ AdvanceService erro:', advErr.message);
+                        }
+                    }
+                    await invalidateDailyClosingCache(moment.tz(TIMEZONE).format('YYYY-MM-DD'), 'default').catch(() => {});
+                }
+                
+                await invalidateCacheForPayment(payment).catch(() => {});
+            } catch (bgErr) {
+                console.error('[Payment BG] ❌ Erro:', bgErr.message);
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Erro ao atualizar pagamento:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ success: false, message: 'Erro de validação', errors: error.errors });
+        }
+        return res.status(500).json({ success: false, message: 'Erro interno ao atualizar pagamento', error: error.message });
     }
-
-    return res.status(500).json({
-        success: false,
-        message: 'Falha após múltiplas tentativas'
-    });
 });
 
 // Novo endpoint simples para marcar como pago

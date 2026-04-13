@@ -22,7 +22,7 @@ const packageSchema = new mongoose.Schema({
         if (this.type === 'convenio') {
           return value >= 0;
         }
-        // Para pacotes therapy, exige >= 0.01
+        // Para pacotes therapy e liminar, exige >= 0.01 (liminar precisa do valor para calcular crédito!)
         return value >= 0.01;
       },
       message: 'Valor da sessão deve ser maior que zero para pacotes particulares'
@@ -166,6 +166,23 @@ const packageSchema = new mongoose.Schema({
     enum: ['sessions', 'duration', null],
     default: null,
     description: 'Modo de cálculo: por número de sessões ou duração em meses'
+  },
+  
+  // 🎯 MODELO DO PACOTE (V2) - determina comportamento financeiro
+  model: {
+    type: String,
+    enum: ['prepaid', 'per_session', 'convenio', 'liminar', null],
+    default: null,
+    description: 'Modelo do pacote: prepaid (pago antecipado), per_session (pagar por sessão), convenio (plano de saúde), liminar (judicial)'
+  },
+  
+  // 🔑 IDEMPOTÊNCIA - proteção contra duplicação (V2)
+  idempotencyKey: {
+    type: String,
+    index: true,
+    unique: true,
+    sparse: true, // só único quando preenchido
+    description: 'Chave única para evitar criação duplicada (ex: whatsapp_12345)'
   }
 
 });

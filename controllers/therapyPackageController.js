@@ -374,7 +374,7 @@ export const packageOperations = {
                                 paymentStatus: 'package_paid',
                                 paymentOrigin: 'package_prepaid',
                                 sessionConsumed: true,
-                                visualFlag: 'paid'
+                                visualFlag: 'ok'
                             }
                         },
                         { session: mongoSession }
@@ -1225,6 +1225,15 @@ export const packageOperations = {
                     // Caso 1: Sessão foi COMPLETADA (estava pending/scheduled)
                     if (previousStatus !== 'completed' && status === 'completed') {
 
+                        // 🚨 GUARDA: Só permite completar se tiver appointment vinculado
+                        // Isso evita sessões órfãs no fluxo de complete
+                        if (!sessionDoc.appointmentId) {
+                            throw new Error(
+                                "Não é possível completar sessão sem appointment vinculado. " +
+                                "Dados inconsistentes - contate o suporte."
+                            );
+                        }
+
                         // Incrementa sessionsDone
                         const updatedPackage = await Package.findByIdAndUpdate(
                             pkgId,
@@ -1614,15 +1623,23 @@ export const packageOperations = {
 
     delete: {
         package: async (req, res) => {
-            const session = await mongoose.startSession();
-            try {
-                await session.startTransaction();
+            const packageId = req.params.id;
+            const correlationId = `pkg_del_v1_${Date.now()}`;
+            
+            // 🛡️ Hardening: Retry logic para write conflicts
+            let retries = 0;
+            const maxRetries = 3;
+            let lastError;
+            
+            while (retries < maxRetries) {
+                const session = await mongoose.startSession();
+                
+                try {
+                    await session.startTransaction();
 
-                const packageId = req.params.id;
-
-                // 1. Buscar o pacote para obter referências
-                const packageDoc = await Package.findById(packageId)
-                    .session(session);
+                    // 1. Buscar o pacote para obter referências
+                    const packageDoc = await Package.findById(packageId)
+                        .session(session);
 
                 if (!packageDoc) {
                     return res.status(404).json({ error: 'Pacote não encontrado' });
@@ -1687,11 +1704,27 @@ export const packageOperations = {
                 }).session(session);
 
                 await session.commitTransaction();
-                res.status(204).send();
+                await session.endSession();
+                
+                console.log(`[${correlationId}] Package deleted successfully${retries > 0 ? ` (retry ${retries})` : ''}`);
+                return res.status(204).send();
 
             } catch (error) {
                 await session.abortTransaction();
-                console.error('Erro ao deletar pacote:', error);
+                await session.endSession();
+                
+                // 🛡️ Hardening: Retry em write conflicts
+                if ((error.message?.includes('Write conflict') || 
+                     error.message?.includes('transaction')) && retries < maxRetries - 1) {
+                    retries++;
+                    const delay = Math.pow(2, retries) * 100;
+                    console.warn(`[${correlationId}] Write conflict, retrying... (${retries}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    lastError = error;
+                    continue; // Retry
+                }
+                
+                console.error(`[${correlationId}] Erro ao deletar pacote:`, error);
 
                 if (error.name === 'ValidationError') {
                     const errors = Object.keys(error.errors).reduce((acc, key) => {
@@ -1705,13 +1738,32 @@ export const packageOperations = {
                     });
                 }
 
-                res.status(500).json({
+                // Erro de write conflict após retries
+                if (error.message?.includes('Write conflict')) {
+                    return res.status(409).json({
+                        error: 'Conflito de escrita detectado',
+                        message: 'Por favor, tente novamente em alguns segundos.',
+                        retryable: true,
+                        correlationId
+                    });
+                }
+
+                return res.status(500).json({
                     error: 'Erro interno',
-                    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+                    details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+                    correlationId
                 });
-            } finally {
-                await session.endSession();
             }
+            } // Fecha while loop
+            
+            // Se chegou aqui, esgotou retries
+            console.error(`[${correlationId}] Max retries exceeded`);
+            return res.status(500).json({
+                error: 'Erro interno',
+                message: 'Operação falhou após várias tentativas. Por favor, tente novamente.',
+                retryable: true,
+                correlationId
+            });
         },
         session: async (req, res) => {
             const session = await mongoose.startSession();

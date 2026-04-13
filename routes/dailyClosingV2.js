@@ -52,7 +52,10 @@ router.get('/daily-closing-v2', async (req, res) => {
     // 2️⃣ BUSCAR PAYMENTS DO DIA
     // ============================================
     const payments = await Payment.find({
-      paymentDate: { $gte: start, $lte: end },
+      $or: [
+        { financialDate: { $gte: start, $lte: end } },
+        { paymentDate: { $gte: start, $lte: end } }
+      ],
       status: 'paid'
     }).populate('patient', 'fullName')
       .lean();

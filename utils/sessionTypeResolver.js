@@ -9,9 +9,10 @@
  */
 
 // Mapeamento obrigatório: serviceType → specialty
+// evaluation NÃO é specialty - é serviceType. Mapeamos para fonoaudiologia (default) ou psicologia
 export const SERVICE_TO_SPECIALTY = {
     'individual_session': 'fonoaudiologia',
-    'evaluation': 'psicologia',
+    'evaluation': 'fonoaudiologia',  // Avaliação → fonoaudiologia (default da clínica)
     'neuropsych_evaluation': 'psicologia',
     'return': 'fonoaudiologia',
     'package_session': 'fonoaudiologia',
@@ -19,7 +20,8 @@ export const SERVICE_TO_SPECIALTY = {
     'alignment': 'fonoaudiologia',
     'meet': 'fonoaudiologia',
     'tongue_tie_test': 'fonoaudiologia',
-    'avaliacao': 'psicologia',
+    'tongue_tie_evaluation': 'fonoaudiologia',  // Teste da linguinha → fonoaudiologia
+    'avaliacao': 'fonoaudiologia',  // Mapeia pt → fonoaudiologia
     'sessao': 'fonoaudiologia'
 };
 
@@ -30,14 +32,20 @@ export const SERVICE_TO_SPECIALTY = {
  * @param {Object} doctor - Objeto doctor (opcional) com specialty
  * @returns {String} - Especialidade clínica válida (fonoaudiologia, psicologia)
  */
+// Valores válidos de specialty (especialidades clínicas)
+const VALID_SPECIALTIES = [
+    'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
+    'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia'
+];
+
 export function resolveSessionType(appointment, doctor = null) {
     // 1. Prioridade 1: specialty do appointment (se for válida)
-    if (appointment.specialty && ['fonoaudiologia', 'psicologia'].includes(appointment.specialty)) {
+    if (appointment.specialty && VALID_SPECIALTIES.includes(appointment.specialty)) {
         return appointment.specialty;
     }
     
     // 2. Prioridade 2: specialty do doctor
-    if (doctor?.specialty && ['fonoaudiologia', 'psicologia'].includes(doctor.specialty)) {
+    if (doctor?.specialty && VALID_SPECIALTIES.includes(doctor.specialty)) {
         return doctor.specialty;
     }
     
@@ -47,7 +55,7 @@ export function resolveSessionType(appointment, doctor = null) {
     }
     
     // 4. Prioridade 4: se sessionType já for uma specialty válida, usa ela
-    if (appointment.sessionType && ['fonoaudiologia', 'psicologia'].includes(appointment.sessionType)) {
+    if (appointment.sessionType && VALID_SPECIALTIES.includes(appointment.sessionType)) {
         return appointment.sessionType;
     }
     
@@ -65,7 +73,7 @@ export function resolveSessionType(appointment, doctor = null) {
  */
 export function normalizeSessionType(value, fallback = 'fonoaudiologia') {
     // Se já é válido, retorna
-    if (value && ['fonoaudiologia', 'psicologia'].includes(value)) {
+    if (value && VALID_SPECIALTIES.includes(value)) {
         return value;
     }
     

@@ -12,11 +12,15 @@
 import Appointment from '../../../models/Appointment.js';
 import { appendEvent } from '../../../infrastructure/events/eventStoreService.js';
 import { createContextLogger } from '../../../utils/logger.js';
+import { buildDayRange, buildDateTime } from '../../../utils/datetime.js';
 import crypto from 'crypto';
 
 async function checkDoubleBooking({ doctorId, patientId, date, time, excludeId = null }) {
+  // 🚨 FIX: Usar helper padronizado para range de busca (timezone-safe)
+  // date pode ser string "YYYY-MM-DD" ou Date
+  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
   const baseQuery = {
-    date,
+    date: buildDayRange(dateStr),
     time,
     operationalStatus: { $nin: ['cancelled', 'canceled', 'rejected'] },
   };
@@ -82,13 +86,17 @@ export async function scheduleAppointment(data, context = {}) {
   
   log.info({ correlationId, patientId, doctorId, date }, 'Criando agendamento');
 
-  await checkDoubleBooking({ doctorId, patientId, date, time });
+  // 🚨 FIX: Converter data para Date com timezone BRT antes de salvar
+  const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+  const dateTime = buildDateTime(dateStr, time);
+  
+  await checkDoubleBooking({ doctorId, patientId, date: dateStr, time });
 
   // 1. Cria appointment
   const appointment = await Appointment.create({
     patient: patientId,
     doctor: doctorId,
-    date,
+    date: dateTime,  // 🚨 FIX: Date com timezone BRT
     time,
     specialty,
     serviceType,

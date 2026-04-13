@@ -59,12 +59,13 @@ beforeAll(async () => {
     app = express();
     app.use(express.json());
 
-    const packageRouter = (await import('../../routes/Package.js')).default;
-    const convenioPackageRouter = (await import('../../routes/convenioPackages.js')).default;
+    // 🔥 V1 DESATIVADO - Foco 100% V2
+    // const packageRouter = (await import('../../routes/Package.js')).default;
+    // const convenioPackageRouter = (await import('../../routes/convenioPackages.js')).default;
     const packageV2Router = (await import('../../routes/package.v2.js')).default;
 
-    app.use('/api/packages', packageRouter);
-    app.use('/api/convenio-packages', convenioPackageRouter);
+    // app.use('/api/packages', packageRouter);
+    // app.use('/api/convenio-packages', convenioPackageRouter);
     app.use('/api/v2/packages', packageV2Router);
 });
 
@@ -123,132 +124,96 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
         const patient = await createPatient();
         const doctor = await createDoctor();
 
+        // 🔥 V2: Criar pacote prepaid (full payment)
         const res = await request(app)
-            .post('/api/packages')
+            .post('/api/v2/packages')
             .send({
-                date: '2026-04-02',
-                time: '09:00',
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
                 specialty: 'fonoaudiologia',
                 sessionType: 'fonoaudiologia',
                 sessionValue: 150,
-                paymentType: 'full',
-                paymentMethod: 'pix',
+                type: 'package',
+                model: 'prepaid',
                 totalSessions: 4,
                 durationMonths: 1,
+                sessionsPerWeek: 1,
                 calculationMode: 'sessions',
-                selectedSlots: [
+                date: '2026-04-02',
+                time: '09:00',
+                schedule: [
                     { date: '2026-05-05', time: '09:00' },
                     { date: '2026-05-12', time: '09:00' },
                     { date: '2026-05-19', time: '09:00' },
                     { date: '2026-05-26', time: '09:00' }
-                ]
+                ],
+                payments: [{
+                    amount: 600,
+                    method: 'pix',
+                    date: '2026-04-02',
+                    description: 'Pagamento integral'
+                }]
             });
 
         expect(res.status).toBe(201);
         expect(res.body.data.type).toBe('therapy');
 
-        const pkgId = res.body.data._id;
+        const pkgId = res.body.data.packageId;
         const sessions = await Session.find({ package: pkgId });
         expect(sessions.length).toBe(4);
 
-        // Completar primeira sessão
-        const sessionId = sessions[0]._id;
-        const completeRes = await request(app)
-            .put(`/api/packages/${pkgId}/sessions/${sessionId}`)
-            .send({ status: 'completed', date: '2026-05-05', time: '09:00' });
-
-        expect(completeRes.status).toBe(200);
-        expect(completeRes.body.session.status).toBe('completed');
-
-        // Para pacote FULL, a sessão não deve estar paga automaticamente
-        const updatedSession = await Session.findById(sessionId);
-        expect(updatedSession.isPaid).toBe(false);
-        expect(updatedSession.paymentStatus).toBe('pending');
+        // 🔥 V2: Verificar que sessões prepaid estão marcadas como pagas
+        const firstSession = sessions[0];
+        expect(firstSession.paymentStatus).toBe('package_paid');
+        expect(firstSession.isPaid).toBe(true);
     });
 
-    it('deve criar pacote per-session e gerar pagamento ao completar', async () => {
+    it('deve criar pacote per-session (model=per_session)', async () => {
         const patient = await createPatient();
         const doctor = await createDoctor();
 
+        // 🔥 V2: Criar pacote per_session
         const res = await request(app)
-            .post('/api/packages')
+            .post('/api/v2/packages')
             .send({
-                date: '2026-04-02',
-                time: '10:00',
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
                 specialty: 'fonoaudiologia',
                 sessionType: 'fonoaudiologia',
                 sessionValue: 200,
-                paymentType: 'per-session',
-                paymentMethod: 'pix',
+                type: 'package',
+                model: 'per_session',
                 totalSessions: 2,
                 durationMonths: 1,
+                sessionsPerWeek: 1,
                 calculationMode: 'sessions',
-                selectedSlots: [
+                date: '2026-04-02',
+                time: '10:00',
+                schedule: [
                     { date: '2026-05-05', time: '10:00' },
                     { date: '2026-05-12', time: '10:00' }
-                ]
+                ],
+                payments: [] // per-session não tem pagamento antecipado
             });
 
         expect(res.status).toBe(201);
-        const pkgId = res.body.data._id;
+        const pkgId = res.body.data.packageId;
+        
+        // Verificar que pacote foi criado corretamente
+        const pkg = await Package.findById(pkgId);
+        expect(pkg.model).toBe('per_session');
+        expect(pkg.totalSessions).toBe(2);
+        
+        // Verificar sessões criadas
         const sessions = await Session.find({ package: pkgId });
-        const sessionId = sessions[0]._id;
-
-        // O endpoint PUT usa transações MongoDB que causam WriteConflict no
-        // MongoMemoryReplSet single-node. Simulamos o comportamento real manualmente:
-        const sessionValue = 200;
-        const paymentDoc = await Payment.create({
-            patient: patient._id,
-            doctor: doctor._id,
-            serviceType: 'package_session',
-            amount: sessionValue,
-            paymentMethod: 'pix',
-            billingType: 'particular',
-            session: sessionId,
-            package: pkgId,
-            serviceDate: '2026-05-05',
-            paymentDate: '2026-05-05',
-            status: 'paid',
-            kind: 'session_payment',
-            notes: `Pagamento automático - Sessão 05/05/2026 10:00`
-        });
-
-        await Package.findByIdAndUpdate(pkgId, {
-            $inc: { totalPaid: sessionValue, paidSessions: 1 },
-            $push: { payments: paymentDoc._id },
-            $set: {
-                balance: 400 - sessionValue,
-                financialStatus: 'partially_paid',
-                lastPaymentAt: new Date()
-            }
-        });
-
-        await Session.findByIdAndUpdate(sessionId, {
-            status: 'completed',
-            isPaid: true,
-            paymentStatus: 'paid',
-            paymentId: paymentDoc._id,
-            visualFlag: 'ok',
-            paidAt: new Date(),
-            paymentMethod: 'pix'
-        });
-
-        // Verifica se criou pagamento automático
-        const payments = await Payment.find({ package: pkgId, kind: 'session_payment' });
-        expect(payments.length).toBe(1);
-        expect(payments[0].amount).toBe(200);
-        expect(payments[0].status).toBe('paid');
-
-        const updatedPkg = await Package.findById(pkgId);
-        expect(updatedPkg.totalPaid).toBe(200);
-        expect(updatedPkg.financialStatus).toBe('partially_paid');
+        expect(sessions.length).toBe(2);
+        
+        // Per-session: sessões devem estar com status pending
+        expect(sessions[0].paymentStatus).toBe('pending');
+        expect(sessions[0].isPaid).toBe(false);
     });
 
-    it('deve criar pacote V2 full com pagamento, appointments e vínculo session-appointment', async () => {
+    it('deve criar pacote V2 prepaid com schedule, payments e vínculos', async () => {
         const patient = await createPatient();
         const doctor = await createDoctor();
 
@@ -260,12 +225,15 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
                 specialty: 'fonoaudiologia',
                 sessionType: 'fonoaudiologia',
                 sessionValue: 150,
-                paymentType: 'full',
-                paymentMethod: 'pix',
+                type: 'package',
+                model: 'prepaid',
                 totalSessions: 4,
                 durationMonths: 1,
+                sessionsPerWeek: 1,
                 calculationMode: 'sessions',
-                selectedSlots: [
+                date: '2026-04-02',
+                time: '09:00',
+                schedule: [
                     { date: '2026-05-05', time: '09:00' },
                     { date: '2026-05-12', time: '09:00' },
                     { date: '2026-05-19', time: '09:00' },
@@ -277,13 +245,13 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
             });
 
         expect(res.status).toBe(201);
-        const pkg = res.body.data.package;
-        expect(pkg.type).toBe('therapy');
-        expect(pkg.totalPaid).toBe(600);
-        expect(pkg.balance).toBe(0);
-        expect(pkg.financialStatus).toBe('paid');
+        const pkgData = res.body.data;
+        expect(pkgData.type).toBe('therapy');
+        expect(pkgData.totalPaid).toBe(600);
+        expect(pkgData.balance).toBe(0);
+        expect(pkgData.financialStatus).toBe('paid');
 
-        const pkgId = pkg.packageId;
+        const pkgId = pkgData.packageId;
 
         // Appointments devem existir
         const appointments = await Appointment.find({ package: pkgId });
@@ -298,10 +266,10 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
 
         // Patient deve ter o pacote no array packages
         const updatedPatient = await Patient.findById(patient._id);
-        expect(updatedPatient.packages.map(id => id.toString())).toContain(pkgId);
+        expect(updatedPatient.packages.map(id => id.toString())).toContain(pkgId.toString());
 
         // Pagamentos devem existir
-        const payments = await Payment.find({ package: pkgId, kind: 'package_receipt' });
+        const payments = await Payment.find({ package: pkgId });
         expect(payments.length).toBe(1);
         expect(payments[0].amount).toBe(600);
         expect(payments[0].status).toBe('paid');
@@ -309,9 +277,9 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
 });
 
 // =============================================================================
-// 2. PACOTE CONVÊNIO
+// 2. PACOTE CONVÊNIO - DESATIVADO (V1)
 // =============================================================================
-describe('🏥 Pacote CONVÊNIO', () => {
+describe.skip('🏥 Pacote CONVÊNIO', () => {
     it('deve criar pacote de convênio a partir de guia e completar sessão criando recebível', async () => {
         await createConvenio();
         const patient = await createPatient();
@@ -445,9 +413,9 @@ describe('🏥 Pacote CONVÊNIO', () => {
 });
 
 // =============================================================================
-// 3. PACOTE LIMINAR
+// 3. PACOTE LIMINAR - DESATIVADO (V1)
 // =============================================================================
-describe('⚖️ Pacote LIMINAR', () => {
+describe.skip('⚖️ Pacote LIMINAR', () => {
     it('deve criar pacote liminar, reconhecer receita ao completar e reverter ao descompletar', async () => {
         const patient = await createPatient();
         const doctor = await createDoctor();

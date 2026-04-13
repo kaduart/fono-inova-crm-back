@@ -414,10 +414,38 @@ export const getConvenioPackages = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    // 🔥 FORMATA SESSIONS INCLUINDO APPOINTMENT ID
+    // Elimina necessidade do workaround "2.1 - Get Appointment by Session"
+    // ⚠️ appointmentId pode ser null em sessões órfãs (não deveria acontecer, mas blindamos)
+    const formattedPackages = packages.map(pkg => {
+      const pkgObj = { ...pkg }; // shallow copy para evitar side-effects
+      pkgObj.sessions = pkg.sessions?.map(session => {
+        // Extrai appointmentId de várias fontes possíveis
+        let apptId = null;
+        if (session.appointmentId) {
+          apptId = typeof session.appointmentId === 'object' 
+            ? session.appointmentId.toString?.() 
+            : session.appointmentId;
+        } else if (session.appointment?._id) {
+          // Fallback: se populate veio como objeto aninhado
+          apptId = session.appointment._id.toString?.();
+        }
+        
+        return {
+          ...session,
+          appointmentId: apptId,
+          // 🚨 Flag para frontend saber se pode completar
+          canComplete: !!apptId && session.status !== 'completed' && session.status !== 'canceled'
+        };
+      }) || [];
+      
+      return pkgObj;
+    });
+
     res.json({
       success: true,
       count: packages.length,
-      packages
+      packages: formattedPackages
     });
 
   } catch (error) {
@@ -452,9 +480,36 @@ export const getConvenioPackageById = async (req, res) => {
       });
     }
 
+    // 🔥 FORMATA SESSIONS INCLUINDO APPOINTMENT ID
+    // Elimina necessidade do workaround "2.1 - Get Appointment by Session"
+    // ⚠️ Blindagem: shallow copy + fallback de múltiplas fontes
+    const pkgObj = { ...pkg }; // evita side-effects se alguém remover .lean() no futuro
+    
+    if (pkgObj.sessions && pkgObj.sessions.length > 0) {
+      pkgObj.sessions = pkgObj.sessions.map(session => {
+        // Extrai appointmentId de várias fontes possíveis
+        let apptId = null;
+        if (session.appointmentId) {
+          apptId = typeof session.appointmentId === 'object' 
+            ? session.appointmentId.toString?.() 
+            : session.appointmentId;
+        } else if (session.appointment?._id) {
+          // Fallback: se populate veio como objeto aninhado
+          apptId = session.appointment._id.toString?.();
+        }
+        
+        return {
+          ...session,
+          appointmentId: apptId,
+          // 🚨 Flag para frontend saber se pode completar
+          canComplete: !!apptId && session.status !== 'completed' && session.status !== 'canceled'
+        };
+      });
+    }
+
     res.json({
       success: true,
-      package: pkg
+      package: pkgObj
     });
 
   } catch (error) {

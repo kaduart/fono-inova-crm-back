@@ -13,11 +13,14 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   const { email, password, role } = req.body;
+  const t0 = Date.now();
+  const timing = { role: role || 'unknown' };
 
   try {
     let user;
+    const t1 = Date.now();
+    
     if (role === 'doctor') {
-      // Busca o médico e popula a especialidade
       user = await Doctor.findOne({ email })
         .select('+password')
         .populate('specialty', 'name');
@@ -26,16 +29,24 @@ router.post('/', async (req, res) => {
     } else {
       user = await User.findOne({ email, role }).select('+password');
     }
+    
+    timing.dbQuery = Date.now() - t1;
 
     if (!user) {
+      console.log(`[LOGIN_TIMING] ${email} | NOT_FOUND | total=${Date.now() - t0}ms | db=${timing.dbQuery}ms`);
       return res.status(400).send({ error: 'Invalid email or role' });
     }
 
+    const t2 = Date.now();
     const isMatch = await bcrypt.compare(password.trim(), user.password);
+    timing.bcrypt = Date.now() - t2;
+
     if (!isMatch) {
+      console.log(`[LOGIN_TIMING] ${email} | WRONG_PASSWORD | total=${Date.now() - t0}ms | db=${timing.dbQuery}ms | bcrypt=${timing.bcrypt}ms`);
       return res.status(400).send({ error: 'Senha inválida' });
     }
 
+    const t3 = Date.now();
     // Prepara os dados do usuário
     const userData = {
       id: user._id.toString(),
@@ -58,6 +69,11 @@ router.post('/', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
+    
+    timing.jwt = Date.now() - t3;
+    timing.total = Date.now() - t0;
+
+    console.log(`[LOGIN_TIMING] ${email} | SUCCESS | total=${timing.total}ms | db=${timing.dbQuery}ms | bcrypt=${timing.bcrypt}ms | jwt=${timing.jwt}ms | role=${timing.role}`);
 
     res.send({ token, user: userData });
 

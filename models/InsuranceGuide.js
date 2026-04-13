@@ -1,5 +1,6 @@
 // models/InsuranceGuide.js
 import mongoose from 'mongoose';
+import { resolvePatientId } from '../utils/identityResolver.js';
 
 /**
  * 🏥 InsuranceGuide Model
@@ -28,7 +29,8 @@ const insuranceGuideSchema = new mongoose.Schema({
   },
 
   patientId: {
-    type: String,  // 🆕 PADRONIZADO: sempre STRING (não ObjectId)
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Patient',
     required: [true, 'Paciente é obrigatório'],
     index: true
   },
@@ -98,7 +100,7 @@ const insuranceGuideSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: {
-      values: ['active', 'exhausted', 'expired', 'cancelled'],
+      values: ['active', 'exhausted', 'expired', 'cancelled', 'linked'],
       message: 'Status "{VALUE}" não é válido'
     },
     default: 'active',
@@ -225,8 +227,12 @@ insuranceGuideSchema.pre('save', function (next) {
  * );
  */
 insuranceGuideSchema.statics.findValid = async function (patientId, specialty, date = new Date()) {
+  // 🔑 V2 Fix: Resolver identity (aceita view._id ou patientId real)
+  const resolvedId = await resolvePatientId(patientId, { throwIfNotFound: false }) || patientId;
+  const patientIdQuery = new mongoose.Types.ObjectId(resolvedId);
+    
   return await this.findOne({
-    patientId: patientId,  // 🆕 PADRONIZADO: STRING
+    patientId: patientIdQuery,
     specialty: specialty.toLowerCase().trim(),
     status: 'active',
     expiresAt: { $gte: date },
@@ -257,8 +263,12 @@ insuranceGuideSchema.statics.findValid = async function (patientId, specialty, d
  * // }
  */
 insuranceGuideSchema.statics.getBalance = async function (patientId, specialty = null) {
+  // 🔑 V2 Fix: Resolver identity (aceita view._id ou patientId real)
+  const resolvedId = await resolvePatientId(patientId, { throwIfNotFound: false }) || patientId;
+  const patientIdQuery = new mongoose.Types.ObjectId(resolvedId);
+    
   const query = {
-    patientId: patientId,  // 🆕 PADRONIZADO: STRING
+    patientId: patientIdQuery,
     status: 'active',
     expiresAt: { $gte: new Date() } // Apenas não-vencidas
   };

@@ -22,9 +22,37 @@ import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
-import { appointmentCompleteService } from '../services/appointmentCompleteService.js';
+// 🔒 LOCK V2: Não usar appointmentCompleteService (legado)
+import { completeSessionEventDrivenV2 } from '../services/completeSessionEventService.v2.js';
+import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import { completeSessionDtoMapper } from '../middleware/dtoMiddleware.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
+
+// ======================================================================
+// 🔥 CACHE RÁPIDO PARA LISTAGEM (30 segundos)
+// ======================================================================
+const listCache = new Map();
+const CACHE_TTL = 30000;
+
+function getCacheKey(query) {
+  return JSON.stringify(query);
+}
+
+function getCached(key) {
+  const item = listCache.get(key);
+  if (!item) return null;
+  if (Date.now() - item.timestamp > CACHE_TTL) {
+    listCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function setCached(key, data) {
+  listCache.set(key, { data, timestamp: Date.now() });
+}
 
 // ======================================================================
 // HELPER: Cria data no timezone correto (Brasília)
@@ -52,13 +80,10 @@ const router = express.Router();
 
 /**
  * 🎯 POST /api/v2/appointments - Criar agendamento (Async)
+ * 🔥 SEM TRANSACTION - Event Store garante consistência
  */
 router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (req, res) => {
-  const mongoSession = await mongoose.startSession();
-  
   try {
-    await mongoSession.startTransaction();
-
     const {
       patientId,
       doctorId,
@@ -71,19 +96,16 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       insuranceGuideId = null,
       paymentMethod = 'dinheiro',
       amount = 0,
-      paymentAmount = null, // Frontend envia paymentAmount
+      paymentAmount = null,
       notes = '',
-      // ROI / origem
       leadId = null,
       source = null,
       preAgendamentoId = null,
-      // Convênio extra
       insuranceProvider = null,
       insuranceValue = null,
       authorizationCode = null,
     } = req.body;
     
-    // 🔄 MAPEAMENTO: paymentAmount (frontend) → amount (backend)
     const finalAmount = paymentAmount !== null ? parseFloat(paymentAmount) : (amount || 0);
     
     console.log(`[POST /v2/appointments] 💰 Valor recebido:`, {
@@ -92,66 +114,57 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       finalAmount
     });
 
-    // Validações com mensagens claras
+    // ========== VALIDAÇÕES SÍNCRONAS ==========
     if (!patientId) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.VALIDATION.PATIENT_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'patientId' }
       );
     }
 
     if (!doctorId) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.VALIDATION.DOCTOR_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'doctorId' }
       );
     }
 
     if (!date) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.VALIDATION.DATE_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'date' }
       );
     }
 
     if (!time) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.VALIDATION.TIME_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'time' }
       );
     }
 
-    // 🛡️ VALIDAÇÃO CONVÊNIO: Guia obrigatória e válida
+    // ========== VALIDAÇÃO CONVÊNIO ==========
     const billingType = req.body.billingType || (insuranceGuideId ? 'convenio' : 'particular');
     
     if (billingType === 'convenio' || insuranceGuideId) {
       if (!insuranceGuideId) {
-        await mongoSession.abortTransaction();
         throw createBusinessError('Guia de convênio é obrigatória para agendamentos de convênio', 400, ErrorCodes.MISSING_REQUIRED_FIELD,
           { field: 'insuranceGuideId' }
         );
       }
       
-      // Verifica se guia existe e está ativa
       const InsuranceGuide = (await import('../models/InsuranceGuide.js')).default;
-      const guide = await InsuranceGuide.findById(insuranceGuideId).session(mongoSession);
+      const guide = await InsuranceGuide.findById(insuranceGuideId);
       
       if (!guide) {
-        await mongoSession.abortTransaction();
         throw createBusinessError('Guia de convênio não encontrada', 404, ErrorCodes.NOT_FOUND,
           { field: 'insuranceGuideId', value: insuranceGuideId }
         );
       }
       
       if (guide.status === 'canceled' || guide.status === 'expired') {
-        await mongoSession.abortTransaction();
         throw createBusinessError(`Guia de convênio está ${guide.status === 'canceled' ? 'cancelada' : 'expirada'}`, 400, ErrorCodes.BUSINESS_RULE_VIOLATION,
           { field: 'insuranceGuideId', status: guide.status }
         );
       }
       
       if (guide.usedSessions >= guide.totalSessions) {
-        await mongoSession.abortTransaction();
         throw createBusinessError('Guia de convênio esgotada (sem sessões disponíveis)', 422, ErrorCodes.INSUFFICIENT_CREDIT,
           { 
             field: 'insuranceGuideId', 
@@ -161,9 +174,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
         );
       }
       
-      // Verifica se paciente da guia bate com o do agendamento
       if (guide.patient?.toString() !== patientId?.toString()) {
-        await mongoSession.abortTransaction();
         throw createBusinessError('Guia de convênio não pertence a este paciente', 400, ErrorCodes.BUSINESS_RULE_VIOLATION,
           { field: 'insuranceGuideId' }
         );
@@ -172,10 +183,37 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       console.log(`[Create] ✅ Guia ${insuranceGuideId} validada: ${guide.usedSessions}/${guide.totalSessions} sessões`);
     }
 
-    // 🔧 Parse da data no timezone correto (evita bug de UTC)
+    // ========== CRIAÇÃO SÍNCRONA ==========
     const parsedDate = parseDateInTimezone(date, time);
+    const idempotencyKey = `${patientId}_${doctorId}_${date}_${time}`;
     
-    // 1. Cria Appointment com status de processamento
+    // Check idempotência (mesmo paciente, mesmo horário = duplicado)
+    const existingAppointment = await Appointment.findOne({
+      patient: patientId,
+      doctor: doctorId,
+      date: parsedDate,
+      time,
+      operationalStatus: { $nin: ['canceled'] }
+    });
+    
+    if (existingAppointment) {
+      console.log(`[Create V2] ⚠️ DUPLICADO DETECTADO: ${existingAppointment._id}`, {
+        patientId,
+        doctorId,
+        date,
+        time,
+        packageId,
+        source: req.body.source || 'unknown'
+      });
+      return res.status(409).json(
+        formatError('Agendamento duplicado para este paciente/horário', 409, 'DUPLICATE_APPOINTMENT', {
+          existingAppointmentId: existingAppointment._id.toString(),
+          message: 'Use PATCH /:id/complete ou PATCH /:id/cancel para atualizar'
+        })
+      );
+    }
+    
+    // Cria Appointment direto como "scheduled"
     const appointment = new Appointment({
       patient: patientId,
       doctor: doctorId,
@@ -187,15 +225,14 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       package: packageId,
       insuranceGuide: insuranceGuideId,
 
-      operationalStatus: 'processing_create',
+      operationalStatus: 'scheduled',
       clinicalStatus: 'pending',
       paymentStatus: 'pending',
 
-      sessionValue: finalAmount,  // Model usa sessionValue (padrão do projeto)
+      sessionValue: finalAmount,
       paymentMethod: req.body.paymentMethod || 'dinheiro',
       billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
 
-      // Convênio extras
       ...(insuranceProvider && { insuranceProvider }),
       ...(insuranceValue != null && { insuranceValue }),
       ...(authorizationCode && { authorizationCode }),
@@ -203,7 +240,6 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       notes,
       createdBy: req.user?._id,
 
-      // Metadata ROI
       metadata: {
         origin: {
           source: source || 'crm',
@@ -214,77 +250,24 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
       history: [{
         action: 'create_requested',
-        newStatus: 'processing_create',
+        newStatus: 'scheduled',
         changedBy: req.user?._id,
         timestamp: new Date(),
         context: 'Criação via 4.0'
       }]
     });
-
-    // 🔥 GARANTE STATUS SÍNCRONO: Appointment já nasce pronto (não depende de worker)
-    appointment.operationalStatus = 'scheduled';
     
-    await appointment.save({ session: mongoSession });
-
-    const idempotencyKey = `${appointment._id}_create`;
-
-    await mongoSession.commitTransaction();
+    await appointment.save();
     
-    console.log(`[POST /v2/appointments] ✅ Transaction commitada`);
-    console.log(`   Appointment ID: ${appointment._id}`);
+    console.log(`[POST /v2/appointments] ✅ Appointment criado: ${appointment._id}`);
     console.log(`   Status: ${appointment.operationalStatus} (SÍNCRONO)`);
 
-    // 4. Publica evento (async, só para logs/analytics — NÃO bloqueia)
-    console.log(`[POST /v2/appointments] 📤 Publicando evento (async)...`);
-    
-    publishEvent(
-      EventTypes.APPOINTMENT_CREATED,  // Evento de "já criado", não "criar"
-      {
-        appointmentId: appointment._id.toString(),
-        patientId: patientId?.toString(),
-        doctorId: doctorId?.toString(),
-        date,
-        time,
-        specialty,
-        serviceType,
-        sessionType: normalizeSessionType(sessionType || specialty),
-        packageId: packageId?.toString() || null,
-        insuranceGuideId: insuranceGuideId?.toString() || null,
-        amount: finalAmount,
-        paymentMethod,
-        billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
-        notes,
-        leadId: leadId?.toString() || null,
-        source: source || 'crm',
-        preAgendamentoId: preAgendamentoId?.toString() || null,
-        userId: req.user?._id?.toString()
-      },
-      {
-        correlationId: appointment._id.toString(),
-        idempotencyKey
-      }
-    ).catch(err => console.error(`[POST] Evento async falhou (não crítico):`, err.message));
-    
-    console.log(`[POST /v2/appointments] ✅ Evento publicado (async)`);
-    
-    // 🔥 UPDATE INCREMENTAL: Atualiza dashboard sem rebuild
-    setImmediate(async () => {
-      try {
-        await dashboardCache.incrementOverview({
-          'patients.total': 0,  // Não muda (paciente já existia)
-          // Se quiser incrementar algo específico, adicione aqui
-        });
-      } catch (err) {
-        // Silencioso
-      }
-    });
-
-    // 5. Retorna 201 COM O APPOINTMENT PRONTO (não 202 processing)
+    // ========== RESPOSTA RÁPIDA ==========
     res.status(201).json(
       formatSuccess(
         {
           appointmentId: appointment._id.toString(),
-          status: 'scheduled',  // 🔥 JÁ ESTÁ PRONTO!
+          status: 'scheduled',
           operationalStatus: 'scheduled',
           clinicalStatus: 'pending',
           correlationId: appointment._id.toString()
@@ -292,127 +275,178 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
         {
           message: 'Agendamento criado com sucesso',
           processing: 'async',
-          estimatedTime: '1-3s',
-          checkStatus: `GET /api/v2/appointments/${appointment._id}/status`
+          estimatedTime: '1-3s'
         }
       )
     );
 
+    // ========== BACKGROUND (NÃO BLOQUEIA) ==========
+    setImmediate(async () => {
+      try {
+        console.log(`[Create BG] 🔄 Iniciando processamento background...`);
+        
+        // Publica evento
+        await publishEvent(
+          EventTypes.APPOINTMENT_CREATED,
+          {
+            appointmentId: appointment._id.toString(),
+            patientId: patientId?.toString(),
+            doctorId: doctorId?.toString(),
+            date,
+            time,
+            specialty,
+            serviceType,
+            sessionType: normalizeSessionType(sessionType || specialty),
+            packageId: packageId?.toString() || null,
+            insuranceGuideId: insuranceGuideId?.toString() || null,
+            amount: finalAmount,
+            paymentMethod,
+            billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
+            notes,
+            leadId: leadId?.toString() || null,
+            source: source || 'crm',
+            preAgendamentoId: preAgendamentoId?.toString() || null,
+            userId: req.user?._id?.toString()
+          },
+          {
+            correlationId: appointment._id.toString(),
+            idempotencyKey
+          }
+        );
+        
+        console.log(`[Create BG] ✅ Evento publicado`);
+        
+        // Update dashboard
+        await dashboardCache.incrementOverview({
+          'patients.total': 0,
+        });
+        
+        console.log(`[Create BG] ✅ Background finalizado`);
+      } catch (bgErr) {
+        console.error(`[Create BG] ⚠️ Erro em background (não crítico):`, bgErr.message);
+      }
+    });
+
   } catch (error) {
-    if (mongoSession.transaction.state !== 'TRANSACTION_ABORTED' && 
-        mongoSession.transaction.state !== 'TRANSACTION_COMMITTED') {
-      await mongoSession.abortTransaction();
-    }
+    console.error(`[POST /v2/appointments] ❌ Erro:`, error.message);
     throw error;
-  } finally {
-    mongoSession.endSession();
   }
 }));
 
 /**
  * 🎯 PATCH /api/v2/appointments/:id/cancel - Cancelar (Async)
+ * 🔥 SEM TRANSACTION - Event Store garante consistência
  */
 router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
-  const mongoSession = await mongoose.startSession();
-
   try {
-    await mongoSession.startTransaction();
-
     const { id } = req.params;
     const { reason, confirmedAbsence = false } = req.body;
 
     if (!reason) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.VALIDATION.REASON_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'reason' }
       );
     }
 
-    const appointment = await Appointment.findById(id).session(mongoSession);
+    const appointment = await Appointment.findById(id);
 
     if (!appointment) {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
       );
     }
 
     // Guards com mensagens claras
     if (appointment.operationalStatus === 'processing_cancel') {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_CANCEL, 409, ErrorCodes.ALREADY_PROCESSING,
         { status: 'processing_cancel' }
       );
     }
 
     if (appointment.operationalStatus === 'canceled') {
-      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.ALREADY_CANCELED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
-    if (appointment.clinicalStatus === 'completed') {
-      await mongoSession.abortTransaction();
+    // 🎯 CRM: operationalStatus é a fonte da verdade
+    if (appointment.operationalStatus === 'completed') {
       throw createBusinessError(Messages.BUSINESS.CANNOT_CANCEL_COMPLETED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
-    // Marca como processando
-    appointment.operationalStatus = 'processing_cancel';
+    // 🎯 V2 SÍNCRONO: Cancela imediatamente
+    appointment.operationalStatus = 'canceled';
+    appointment.status = 'canceled';
+    appointment.canceledAt = new Date();
+    appointment.cancellationReason = reason;
     appointment.history.push({
-      action: 'cancel_requested',
-      newStatus: 'processing_cancel',
+      action: 'canceled',
+      newStatus: 'canceled',
       changedBy: req.user?._id,
       timestamp: new Date(),
       context: `Motivo: ${reason}`
     });
 
-    await appointment.save({ session: mongoSession });
+    await appointment.save();
+
+    // 🔄 REBUILD SÍNCRONO da view (se houver pacote)
+    let viewRebuilt = false;
+    if (appointment.package) {
+      try {
+        const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
+        await buildPackageView(appointment.package.toString(), { correlationId: id });
+        console.log(`[cancel] 🔄 View do pacote ${appointment.package} reconstruída (síncrono)`);
+        viewRebuilt = true;
+      } catch (viewErr) {
+        console.warn(`[cancel] ⚠️ Erro ao reconstruir view (não crítico):`, viewErr.message);
+      }
+    }
 
     const idempotencyKey = `${id}_cancel`;
 
-    await mongoSession.commitTransaction();
-
-    // Publica evento
-    const eventResult = await publishEvent(
-      EventTypes.APPOINTMENT_CANCEL_REQUESTED,
-      {
-        appointmentId: id,
-        patientId: appointment.patient?.toString(),
-        packageId: appointment.package?.toString(),
-        reason,
-        confirmedAbsence,
-        userId: req.user?._id?.toString()
-      },
-      {
-        correlationId: id,
-        idempotencyKey
+    // 🔥 Publica evento em background (garantia eventual + notificações)
+    setImmediate(async () => {
+      try {
+        await publishEvent(
+          EventTypes.APPOINTMENT_CANCEL_REQUESTED,
+          {
+            appointmentId: id,
+            patientId: appointment.patient?.toString(),
+            packageId: appointment.package?.toString(),
+            reason,
+            confirmedAbsence,
+            userId: req.user?._id?.toString()
+          },
+          {
+            correlationId: id,
+            idempotencyKey
+          }
+        );
+      } catch (err) {
+        console.error(`[cancel] ⚠️ Erro ao publicar evento (não crítico):`, err.message);
       }
-    );
+    });
 
-    res.status(202).json(
+    res.status(200).json(
       formatSuccess(
         {
           appointmentId: id,
-          status: 'processing_cancel',
-          correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey
+          status: 'canceled',
+          operationalStatus: 'canceled',
+          correlationId: id,
+          idempotencyKey,
+          viewRebuilt
         },
         {
-          message: Messages.PROCESSING.CANCEL,
-          processing: 'async',
-          checkStatus: `GET /api/v2/appointments/${id}/status`
+          message: 'Agendamento cancelado com sucesso',
+          processing: 'sync',
+          note: 'Cancelamento síncrono - já refletido no dashboard'
         }
       )
     );
 
   } catch (error) {
-    if (mongoSession.transaction.state !== 'TRANSACTION_ABORTED' && 
-        mongoSession.transaction.state !== 'TRANSACTION_COMMITTED') {
-      await mongoSession.abortTransaction();
-    }
+    console.error(`[cancel] ❌ Erro:`, error.message);
     throw error;
-  } finally {
-    mongoSession.endSession();
   }
 }));
 
@@ -442,22 +476,21 @@ async function hasActiveJobInQueue(appointmentId) {
  */
 router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
+  const { notes = '', evolution = '', addToBalance, balanceAmount, balanceDescription } = req.body;
 
-  // 🔥 OTIMIZAÇÃO: Sem transaction explícita - Event Store garante consistência
-  // O withTransaction estava causando locks de 1+ minuto no MongoDB
-  const result = await appointmentCompleteService.complete(
-    id,
-    {
-      addToBalance,
-      balanceAmount,
-      balanceDescription,
-      userId: req.user?._id?.toString()
-    },
-    null // sem session = sem transaction lock
-  );
+  // 🚀 LOCK V2 MODE - Sempre usa V2, sem dualidade
+  console.log(`[complete] 🔒 LOCK V2 - Completando ${id}`, { body: req.body });
+  
+  const result = await completeSessionV2(id, {
+    notes,
+    evolution,
+    userId: req.user?._id?.toString(),
+    addToBalance,
+    balanceAmount,
+    balanceDescription
+  });
 
-  console.log(`[complete] ✅ Appointment ${id} completado via serviço`);
+  console.log(`[complete] ✅ Appointment ${id} completado (V2)`);
 
   try {
     // ========================================
@@ -488,30 +521,21 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
     }
 
     // ========================================
-    // RETORNAR SUCESSO IMEDIATO
+    // RETORNAR SUCESSO COM DTO PADRONIZADO V2
     // ========================================
-    const isPrepaid = result.packageConsumed;
+    const responseDto = completeSessionDtoMapper({
+      appointmentId: id,
+      sessionId: result.sessionId,
+      packageId: result.packageId,
+      paymentStatus: updatedAppointment.paymentStatus || 'unpaid',
+      balanceAmount: updatedAppointment.balanceAmount || 0,
+      sessionValue: result.sessionValue || updatedAppointment.sessionValue || 0,
+      isPaid: updatedAppointment.paymentStatus === 'paid',
+      correlationId: result.correlationId,
+      idempotent: result.idempotent || false
+    });
     
-    res.status(200).json(
-      formatSuccess(
-        {
-          appointmentId: id,
-          operationalStatus: updatedAppointment.operationalStatus,
-          clinicalStatus: updatedAppointment.clinicalStatus,
-          paymentStatus: updatedAppointment.paymentStatus,
-          visualFlag: updatedAppointment.visualFlag,
-          sessionId: result.sessionId,
-          packageConsumed: result.packageConsumed,
-          isPrepaid,
-          completedAt: new Date()
-        },
-        {
-          message: isPrepaid 
-            ? 'Sessão de pacote completada com sucesso'
-            : (addToBalance ? 'Sessão fiada registrada' : 'Sessão completada com sucesso')
-        }
-      )
-    );
+    res.status(200).json(responseDto);
 
   } catch (error) {
     console.error(`[complete] ❌ Erro:`, error.message);
@@ -532,6 +556,7 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 
 router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
+  const startTime = Date.now();
   const { 
     startDate, 
     endDate, 
@@ -540,34 +565,43 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     status,
     page = 1,
     limit = 100,
-    light = 'false'  // 🆕 NOVO: Modo light para calendário (menos dados)
+    light = 'false',
+    noCount = 'false',
+    noCache = 'false'
   } = req.query;
   
-  // DEBUG: console.log(`[GET /v2/appointments] Listando agendamentos`, { startDate, endDate, status, light, patientId, doctorId });
+  // 🔥 CACHE: Verifica se tem no cache (só se light=true e não pediu noCache)
+  const cacheKey = light === 'true' && noCache !== 'true' ? getCacheKey(req.query) : null;
+  if (cacheKey) {
+    const cached = getCached(cacheKey);
+    if (cached) {
+      console.log(`[GET /v2/appointments] ⚡ CACHE HIT: ${Date.now() - startTime}ms`);
+      return res.json(formatSuccess(cached));
+    }
+  }
   
   // Build filter
   const filter = {};
   
   if (startDate && endDate) {
-    // Suporta BSON Date (migrados) e string (legados) simultaneamente
     filter.$or = [
       { date: { $gte: new Date(startDate + 'T00:00:00-03:00'), $lte: new Date(endDate + 'T23:59:59-03:00') } },
       { date: { $gte: startDate, $lte: endDate + 'T23:59:59' } }
     ];
   }
   
-  // 🆕 Se patientId for fornecido, verifica se é um ID de view ou ID real
+  // 🔥 OTIMIZAÇÃO: Só busca PatientsView se o ID parece ser de view (24 chars hex)
   if (patientId) {
-    const PatientsView = mongoose.model('PatientsView');
-    const patientView = await PatientsView.findById(patientId).lean();
-    
-    if (patientView) {
-      // É um ID de view, usa o patientId real
-      // DEBUG: console.log(`[GET /v2/appointments] PatientId é de view, usando patientId real: ${patientView.patientId}`);
-      filter.patient = new mongoose.Types.ObjectId(patientView.patientId);
-    } else {
-      // É um ID real de paciente
+    if (patientId.length === 24 && /^[a-f0-9]{24}$/i.test(patientId)) {
+      // Provavelmente é ObjectId válido, usa direto
       filter.patient = new mongoose.Types.ObjectId(patientId);
+    } else {
+      // Pode ser view ID, tenta converter
+      try {
+        filter.patient = new mongoose.Types.ObjectId(patientId);
+      } catch {
+        filter.patient = patientId;
+      }
     }
   }
   
@@ -575,69 +609,62 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   
   // Status filter
   if (status) {
-    if (status === 'completed') {
-      filter.operationalStatus = 'completed';
-    } else if (status === 'canceled') {
-      filter.operationalStatus = 'canceled';
-    } else if (status === 'confirmed') {
-      filter.operationalStatus = 'confirmed';
-    } else if (status === 'scheduled') {
-      filter.operationalStatus = 'scheduled';
-    } else if (status === 'pre_agendado') {
-      filter.operationalStatus = 'pre_agendado';
+    const statusMap = {
+      'completed': 'completed',
+      'canceled': 'canceled', 
+      'confirmed': 'confirmed',
+      'scheduled': 'scheduled',
+      'pre_agendado': 'pre_agendado'
+    };
+    if (statusMap[status]) {
+      filter.operationalStatus = statusMap[status];
     }
-  } else {
-    // 🆕 Se não especificar status, inclui pre_agendados na listagem
-    filter.operationalStatus = { $in: ['pre_agendado', 'scheduled', 'confirmed', 'completed'] };
   }
+  // Se não tem status, não filtra por operationalStatus (mais rápido)
   
   const skip = (parseInt(page) - 1) * parseInt(limit);
+  const limitNum = parseInt(limit);
   
-  // 🆕 Build query base
-  // DEBUG: console.log(`[GET /v2/appointments] Filtro final:`, JSON.stringify(filter));
-  
-  let query = Appointment.find(filter);
-  
-  // 🆕 Se light=true, retorna apenas campos essenciais para o calendário
-  if (light === 'true') {
-    query = query
-      .select('date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package')
-      .populate('patient', 'fullName')
-      .populate('doctor', 'fullName specialty')
-      .populate('package', 'type sessionValue financialStatus');
-  } else {
-    // Modo completo (padrão) - Otimizado para reduzir memória
-    query = query
-      .populate('patient', 'fullName dateOfBirth phone email')
-      .populate('doctor', 'fullName specialty email phoneNumber crm')
-      .populate('payment', 'status amount paymentMethod')
-      // REMOVIDO: advancedSessions populate pesado
-      // REMOVIDO: history.changedBy pode ser enorme
-      .populate('package', 'sessionType durationMonths sessionsPerWeek totalSessions sessionsDone')
-      .populate('session', 'date status isPaid confirmedAbsence paymentStatus sessionValue');
-  }
-  
-  let appointments = await query
+  // 🔥 OTIMIZAÇÃO: Query base - SEM POPULATES (mais rápido)
+  let queryBuilder = Appointment.find(filter)
+    .select(light === 'true' 
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package notes createdAt'
+    )
     .sort({ date: 1, time: 1 })
     .skip(skip)
-    .limit(parseInt(limit))
+    .limit(limitNum)
     .lean();
   
-  // 🆕 Formatação igual à V1
-  appointments = appointments.map(appt => {
-    // Formatar sessões adiantadas
-    if (appt.advancedSessions) {
-      appt.advancedSessions = appt.advancedSessions.map(session => ({
-        ...session,
-        formattedDate: session.date && isValidDateString(session.date)
-          ? new Date(session.date).toLocaleDateString('pt-BR')
-          : 'Data não disponível',
-        formattedTime: session.time || '--:--',
-      }));
-    }
-
+  // 🎯 SEMPRE popula nomes (essencial para o frontend identificar agendamentos)
+  queryBuilder = queryBuilder
+    .populate('patient', 'fullName')
+    .populate('doctor', 'fullName specialty');
+  
+  // 🔥 OTIMIZAÇÃO: Roda query e count em PARALELO
+  const queries = [queryBuilder];
+  
+  // Só faz count se não pediu para skip
+  if (noCount !== 'true') {
+    queries.push(Appointment.countDocuments(filter));
+  }
+  
+  const [appointments, total] = await Promise.all(queries);
+  
+  // Formatação rápida
+  const formattedAppointments = appointments.map(appt => {
+    // 🎯 Garantir que patient e doctor estão populados corretamente
+    const patientPopulated = appt.patient && typeof appt.patient === 'object' ? appt.patient : null;
+    const doctorPopulated = appt.doctor && typeof appt.doctor === 'object' ? appt.doctor : null;
+    
     return {
       ...appt,
+      patientName: patientPopulated?.fullName || null,
+      doctorName: doctorPopulated?.fullName || null,
+      patientId: patientPopulated?._id?.toString() || appt.patient?.toString() || appt.patient,
+      doctorId: doctorPopulated?._id?.toString() || appt.doctor?.toString() || appt.doctor,
+      // 🎯 Adicionar balance se existir (para pacotes)
+      balance: appt.balance || 0,
       paymentStatus: appt.package
         ? (appt.paymentStatus || 'package_paid')
         : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
@@ -645,19 +672,24 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     };
   });
   
-  const total = await Appointment.countDocuments(filter);
-  
-  // DEBUG: console.log(`[GET /v2/appointments] Encontrados: ${appointments.length} de ${total}`);
-  
-  res.json(formatSuccess({
-    appointments,
+  const responseData = {
+    appointments: formattedAppointments,
     pagination: {
       page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / parseInt(limit))
+      limit: limitNum,
+      total: total || formattedAppointments.length,
+      pages: total ? Math.ceil(total / limitNum) : 1
     }
-  }));
+  };
+  
+  // 🔥 CACHE: Salva no cache se aplicável
+  if (cacheKey && startTime - Date.now() < 1000) { // Só cache se foi rápido
+    setCached(cacheKey, responseData);
+  }
+  
+  console.log(`[GET /v2/appointments] ⚡ ${Date.now() - startTime}ms | ${formattedAppointments.length} items`);
+  
+  res.json(formatSuccess(responseData));
 }));
 
 /**
@@ -728,6 +760,7 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
   // 🚨 IMPORTANTE: 
   // - Não pode estar em processamento
   // - Não pode ter sido liberado por erro (lockReleased) - nesse caso o usuário precisa tentar de novo
+  // 🎯 CRM: operationalStatus é a fonte da verdade para controle
   const isResolved =
     !isProcessing && 
     !wasLockReleased && (
@@ -735,8 +768,7 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
       effectiveOperationalStatus === 'confirmed' ||
       effectiveOperationalStatus === 'paid' ||
       effectiveOperationalStatus === 'missed' ||
-      effectiveOperationalStatus === 'completed' ||
-      appointment.clinicalStatus === 'completed'
+      effectiveOperationalStatus === 'completed'
     );
 
   const statusMessages = {
@@ -761,17 +793,18 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
         statusMessage: statusMessages[effectiveOperationalStatus] || effectiveOperationalStatus,
         isProcessing,
         isResolved,   // ← front usa isso para saber que pode parar o polling
-        isCompleted: appointment.clinicalStatus === 'completed' || effectiveOperationalStatus === 'completed',
+        // 🎯 CRM: operationalStatus é a fonte da verdade
+        isCompleted: effectiveOperationalStatus === 'completed',
         isCanceled: effectiveOperationalStatus === 'canceled',
         wasLockReleased,  // ← indica se o lock foi liberado por erro (usuário precisa tentar de novo)
         wasLockReleasedAutomatically,  // ← específico: liberado automaticamente porque não tinha job na fila
         canCancel: 
           effectiveOperationalStatus !== 'canceled' &&
-          appointment.clinicalStatus !== 'completed' &&
+          effectiveOperationalStatus !== 'completed' &&
           !isProcessing,
         canComplete:
           effectiveOperationalStatus !== 'canceled' &&
-          appointment.clinicalStatus !== 'completed' &&
+          effectiveOperationalStatus !== 'completed' &&
           !isProcessing,
         canceledReason: appointment.canceledReason,
         correlationId: appointment.correlationId,
@@ -1026,6 +1059,13 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       updatedAt: new Date()
     };
     
+    // 🎯 CAPTURAR DADOS PARA SIDE EFFECTS (antes de alterar)
+    // Importante: capturar o estado ANTES da atualização
+    const previousDoctorId = appointment.doctor?.toString();
+    const newDoctorId = req.body.doctorId;
+    const patientIdForSideEffect = appointment.patient;
+    const shouldUpdatePatient = !!(newDoctorId && previousDoctorId !== newDoctorId);
+    
     // 3. Atualizar appointment
     Object.assign(appointment, updateData);
     await appointment.validate();
@@ -1123,42 +1163,80 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       await appointment.save({ session: mongoSession });
     }
     
-    // Atualizar Pacote se for sessão de pacote
-    if (appointment.package && appointment.serviceType === 'package_session') {
-      const packageUpdate = Package.findByIdAndUpdate(
-        appointment.package,
-        {
-          $set: {
-            doctor: updateData.doctor || appointment.doctor,
-            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
-            updatedAt: new Date()
-          }
-        },
-        { session: mongoSession, new: true }
-      );
-      updatePromises.push(packageUpdate);
-    }
+    // 🚀 FASE 2 EXTRAÇÃO: Package movido para side effects async
+    // Antes: Atualização síncrona na transaction
+    // Agora: Processado por appointment-integration worker
     
-    // Atualizar Paciente se o médico foi alterado
-    if (req.body.doctorId && appointment.doctor.toString() !== req.body.doctorId) {
-      const patientUpdate = Patient.findByIdAndUpdate(
-        appointment.patient,
-        {
-          $set: {
-            doctor: req.body.doctorId,
-            updatedAt: new Date()
-          }
-        },
-        { session: mongoSession, new: true }
-      );
-      updatePromises.push(patientUpdate);
-    }
+    // 🚀 FASE 1 EXTRAÇÃO: Patient movido para side effects async
+    // Antes: Atualização síncrona na transaction
+    // Agora: Processado por appointment-integration worker
+    // Motivo: Baixo risco, não afeta dados financeiros críticos
+    // Validação: Verificar logs do worker para confirmar atualização
     
     await Promise.all(updatePromises);
     await mongoSession.commitTransaction();
     transactionCommitted = true;  // ✅ Marca como commitado
     
-    // Publicar evento de atualização
+    // 🚀 EVENT ENRICHED: Inclui dados para side effects async
+    // FASE 1: Enriquecer evento (preparação para extração)
+    // FASE 2: Mover side effects para worker (próximo passo)
+    
+    const sideEffectsPayload = {
+      // Payment update data
+      payment: {
+        shouldUpdate: !appointment.package && !!appointment.payment,
+        paymentId: appointment.payment,
+        isNewPayment: !appointment.package && (updateData.billingType || updateData.paymentAmount > 0) && !appointment.payment,
+        updateData: {
+          doctor: updateData.doctor || appointment.doctor,
+          amount: updateData.paymentAmount || updateData.amount,
+          paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
+          serviceDate: updateData.date || appointment.date,
+          serviceType: updateData.sessionType || appointment.serviceType,
+          billingType: updateData.billingType || appointment.billingType,
+          insuranceProvider: updateData.insuranceProvider,
+          insuranceValue: updateData.insuranceValue,
+          authorizationCode: updateData.authorizationCode
+        }
+      },
+      // Package update data (EXTRAÍDO - FASE 2)
+      // Processado async por appointment-integration worker
+      package: {
+        shouldUpdate: !!(appointment.package && appointment.serviceType === 'package_session'),
+        packageId: appointment.package,
+        updateData: {
+          doctor: updateData.doctor || appointment.doctor,
+          sessionValue: updateData.paymentAmount || appointment.paymentAmount
+        },
+        _extracted: true,  // 🚀 Marcador FASE 2
+        _extractionPhase: 'FASE_2_PACKAGE'
+      },
+      // Patient update data (EXTRAÍDO - FASE 1)
+      // Processado async por appointment-integration worker
+      // Usa variáveis capturadas ANTES da atualização do appointment
+      patient: {
+        shouldUpdate: shouldUpdatePatient,
+        patientId: patientIdForSideEffect,
+        newDoctorId: newDoctorId,
+        _extracted: true,  // 🚀 Marcador de extração
+        _extractionPhase: 'FASE_1_PATIENT',
+        _previousDoctorId: previousDoctorId  // Debug
+      }
+    };
+    
+    // 🚀 LOG PARA DEBUG
+    console.log(`[PUT Appointment V2] Publicando APPOINTMENT_UPDATED:`, {
+      appointmentId: updatedAppointment._id.toString(),
+      shouldUpdatePatient: shouldUpdatePatient,
+      patientId: patientIdForSideEffect?.toString(),
+      newDoctorId: newDoctorId,
+      sideEffects: {
+        patient: sideEffectsPayload.patient.shouldUpdate,
+        package: sideEffectsPayload.package.shouldUpdate,
+        payment: sideEffectsPayload.payment.shouldUpdate
+      }
+    });
+    
     await publishEvent(EventTypes.APPOINTMENT_UPDATED, {
       appointmentId: updatedAppointment._id,
       patientId: updatedAppointment.patient,
@@ -1169,7 +1247,13 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       previousTime: appointment.time,
       newTime: updateData.time,
       updatedBy: req.user._id,
-      timestamp: new Date()
+      timestamp: new Date(),
+      // 🎯 SIDE EFFECTS DATA (para processamento async)
+      sideEffects: sideEffectsPayload,
+      _meta: {
+        version: '2.1-event-enriched',
+        extractedAt: new Date().toISOString()
+      }
     });
     
     res.json(formatSuccess({
