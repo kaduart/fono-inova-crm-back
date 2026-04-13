@@ -60,7 +60,7 @@ router.get('/debug/:id', flexibleAuth, requireAdmin, async (req, res) => {
     // 2. Busca dados crus do domínio
     const [patient, appointments, payments, packages, balance] = await Promise.all([
       Patient.findById(id).lean(),
-      Appointment.find({ patient: id, appointmentId: { $exists: false } }).lean(),
+      Appointment.find({ patient: id, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).lean(),
       Payment.find({ patient: id }).lean(),
       Package.find({ patient: id }).lean(),
       PatientBalance.findOne({ patient: id }).lean()

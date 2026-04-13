@@ -34,6 +34,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         // ======================================================
         const appointmentMatch = {
             date: { $gte: start, $lte: end },
+            operationalStatus: { $ne: 'pre_agendado' },
             appointmentId: { $exists: false }
         };
         if (doctorId) appointmentMatch.doctor = doctorId;

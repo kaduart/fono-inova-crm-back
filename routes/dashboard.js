@@ -326,7 +326,7 @@ async function getUpcomingAppointments() {
 
     const appointments = await Appointment.find({
         date: { $gte: today, $lte: nextWeek },
-        operationalStatus: { $nin: ['canceled', 'completed'] },
+        operationalStatus: { $nin: ['canceled', 'completed', 'pre_agendado'] },
         appointmentId: { $exists: false }
     })
         .select('date time reason operationalStatus patient doctor')

@@ -89,7 +89,7 @@ router.get('/', auth, async (req, res) => {
         const aReceberAgg = await Appointment.aggregate([
             {
                 $match: {
-                    operationalStatus: { $nin: ['canceled'] },
+                    operationalStatus: { $nin: ['canceled', 'pre_agendado'] },
                     appointmentId: { $exists: false },
                     date: { $lte: isCurrentMonth ? today.format('YYYY-MM-DD') : endOfMonth.format('YYYY-MM-DD') },
                     $or: [

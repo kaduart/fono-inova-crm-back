@@ -727,8 +727,9 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       filter.operationalStatus = statusMap[status];
     }
   }
-  // Se não tem status, exclui pré-agendamentos (convertidos ou pendentes)
+  // Se não tem status, exclui pré-agendamentos pendentes e convertidos
   if (!status) {
+    filter.operationalStatus = { $ne: 'pre_agendado' };
     filter.appointmentId = { $exists: false };
   }
   
