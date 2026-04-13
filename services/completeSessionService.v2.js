@@ -106,7 +106,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         packagePaymentType: packageData?.paymentType
     });
     
-    const sessionValue = appointment.sessionValue || packageData?.sessionValue || 0;
+    const sessionValue = options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0;
     
     // 🚨 VALIDAÇÃO: liminar exige sessionValue > 0 (consome crédito)
     if (billingType === 'liminar' && (!sessionValue || sessionValue <= 0)) {
@@ -226,6 +226,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         const appointmentUpdate = {
             $set: {
                 operationalStatus: 'completed',  // 🎯 CRM: fonte da verdade
+                clinicalStatus: 'completed',
                 completedAt: new Date(),
                 updatedAt: new Date(),
                 completionNotes: notes,
@@ -321,10 +322,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 ...packageData,
                 sessionsDone: packageUpdateResult.sessionsDone
             };
-            const sessionForLedger = sessionDoc || {
-                _id: sessionId,
-                patient: appointment.patient?._id,
-                appointment: appointmentId,
+            const sessionForLedger = {
+                _id: sessionDoc?._id || sessionId,
+                patient: sessionDoc?.patient || appointment.patient?._id,
+                appointment: sessionDoc?.appointmentId || appointmentId,
                 correlationId
             };
             await recordPackageSessionConsumed(

@@ -346,7 +346,7 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             await mongoSession.abortTransaction();
             return res.status(500).json({ success: false, error: 'Falha ao criar agendamento: appointmentId não retornado' });
         }
-        pre.operationalStatus = 'scheduled';
+        pre.operationalStatus = 'converted';
         pre.doctor = null; // libera o slot para o appointment real
         pre.appointmentId = hybridResult.appointmentId;
         pre.importedAt = new Date();
