@@ -2645,7 +2645,7 @@ router.get('/stats', auth, async (req, res) => {
         };
 
         const stats = await Appointment.aggregate([
-            { $match: { doctor, operationalStatus: { $nin: ['pre_agendado', 'converted'] } } },
+            { $match: { doctor, appointmentId: { $exists: false } } },
             {
                 $facet: {
                     today: [
