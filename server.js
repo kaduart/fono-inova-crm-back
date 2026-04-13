@@ -110,6 +110,7 @@ import metaAdsRoutes from './routes/meta-ads.js';
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
 import preAgendamentoV2Routes from './routes/preAgendamento.v2.js';
+import preAgendamentoEngineRoutes from './routes/preAgendamento.engine.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
@@ -320,7 +321,7 @@ const corsOptions = {
   origin: true, // ← Permite TODAS as origens (temporário!)
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id", "x-client-request-id"],
 };
 
 app.use(
@@ -410,8 +411,15 @@ app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Eve
 app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2
 app.use('/api/planning', planningRoutes);
-app.use('/api/pre-agendamento', preAgendamentoRoutes);
-app.use('/api/v2/pre-agendamento', preAgendamentoRoutes);  // 🔄 ALIAS: V2 aponta para V1
+// 🚨 LEGACY ROUTE ALERT — monitoramento de transição V1→V2
+function legacyRouteAlert(req, res, next) {
+  console.warn('[LEGACY ROUTE HIT]', req.method, req.originalUrl, '| User-Agent:', req.get('user-agent')?.substring(0, 50));
+  next();
+}
+
+app.use('/api/pre-agendamento', legacyRouteAlert, preAgendamentoRoutes);
+app.use('/api/v2/pre-agendamento', legacyRouteAlert, preAgendamentoRoutes);  // LEGADO: mantido para compatibilidade
+app.use('/api/v2/pre-appointments', preAgendamentoEngineRoutes);  // 🚀 V2 REAL: engine transacional + hybrid service
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', etagMiddleware({ ttl: 120 }), dashboardRoutes);
 app.use('/api/sales', salesRoutes);

@@ -222,7 +222,7 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
     const patientId = req.params.id;
     
     // Busca agendamentos do paciente
-    const appointments = await Appointment.find({ patient: patientId })
+    const appointments = await Appointment.find({ patient: patientId, appointmentId: { $exists: false } })
       .populate('doctor', 'fullName specialty')
       .sort({ date: -1 });
     
@@ -322,7 +322,7 @@ router.get('/:patientId/debug-debito', auth, async (req, res) => {
     // 2. Verificar appointments completed sem pagamento
     const appointments = await Appointment.find({
       patient: patientId,
-      status: 'completed',
+      operationalStatus: 'completed',
       $or: [
         { isPaid: false },
         { paymentStatus: { $in: ['pending', 'unpaid'] } }

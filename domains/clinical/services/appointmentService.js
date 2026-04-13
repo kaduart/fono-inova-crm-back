@@ -465,7 +465,8 @@ export async function findNextAppointment(patientId, context = {}) {
   const appointment = await Appointment.findOne({
     patient: patientId,
     date: { $gte: today },
-    operationalStatus: { $nin: ['cancelled', 'completed'] }
+    operationalStatus: { $nin: ['cancelled', 'completed'] },
+    appointmentId: { $exists: false }
   })
     .populate('doctor', 'name')
     .sort({ date: 1, time: 1 })

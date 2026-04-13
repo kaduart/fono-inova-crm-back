@@ -55,3 +55,6 @@ whatsapp-session/
 *.ldb
 *-wal
 *-shm
+node_modules
+node_modules
+node_modules

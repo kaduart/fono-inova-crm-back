@@ -89,7 +89,8 @@ router.get('/', auth, async (req, res) => {
         const aReceberAgg = await Appointment.aggregate([
             {
                 $match: {
-                    status: { $nin: ['canceled', 'cancelled'] },
+                    operationalStatus: { $nin: ['canceled'] },
+                    appointmentId: { $exists: false },
                     date: { $lte: isCurrentMonth ? today.format('YYYY-MM-DD') : endOfMonth.format('YYYY-MM-DD') },
                     $or: [
                         { paymentStatus: 'pending' },
@@ -114,9 +115,9 @@ router.get('/', auth, async (req, res) => {
             const futureAgg = await Appointment.aggregate([
                 {
                     $match: {
-                        status: { $nin: ['canceled', 'cancelled'] },
-                        date: { $gt: today.format('YYYY-MM-DD'), $lte: endOfMonth.format('YYYY-MM-DD') },
-                        operationalStatus: 'confirmed'
+                        operationalStatus: 'confirmed',
+                        appointmentId: { $exists: false },
+                        date: { $gt: today.format('YYYY-MM-DD'), $lte: endOfMonth.format('YYYY-MM-DD') }
                     }
                 },
                 {

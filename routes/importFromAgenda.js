@@ -19,6 +19,12 @@ import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
 
 const router = express.Router();
 
+// 🚨 LEGACY ROUTE ALERT — monitoramento de transição V1→V2
+router.use('/agenda-externa', (req, res, next) => {
+  console.warn('[LEGACY ROUTE HIT]', req.method, req.originalUrl, '| User-Agent:', req.get('user-agent')?.substring(0, 50));
+  next();
+});
+
 const API_BASE = process.env.API_BASE || "http://localhost:5000";
 
 
@@ -1213,7 +1219,8 @@ router.get("/import-from-agenda/appointments-amanda", agendaAuth, async (req, re
 
     const filter = {
       'metadata.origin.source': 'amandaAI',
-      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada'] }
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada'] },
+      appointmentId: { $exists: false }
     };
 
     if (date) {
@@ -1456,7 +1463,8 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
     const appointments = await Appointment.find({
       date: { $in: dates },
       doctor: { $in: doctorIds },
-      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed'] }
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed'] },
+      appointmentId: { $exists: false }
     }).select('doctor date time').lean();
 
     // 4. Indexar agendamentos por doutor e data para acesso rápido
@@ -1665,7 +1673,8 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
     // 1. Buscar appointments para esse paciente na data
     const appointments = await Appointment.find({
       patientName: { $regex: patientName, $options: 'i' },
-      date: date
+      date: date,
+      appointmentId: { $exists: false }
     }).session(session);
 
     // 2. Buscar pre_agendados duplicados para o mesmo paciente na mesma data

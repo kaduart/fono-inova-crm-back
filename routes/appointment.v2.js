@@ -20,6 +20,7 @@ import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
+import Doctor from '../models/Doctor.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
 // 🔒 LOCK V2: Não usar appointmentCompleteService (legado)
@@ -29,6 +30,7 @@ import { completeSessionDtoMapper } from '../middleware/dtoMiddleware.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
+import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 
 // ======================================================================
 // 🔥 CACHE RÁPIDO PARA LISTAGEM (30 segundos)
@@ -555,6 +557,111 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
  */
 router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 
+/**
+ * 🗓️ GET /api/v2/appointments/weekly-availability
+ * Disponibilidade semanal por especialidade — substitui /api/agenda-externa/disponibilidade
+ */
+router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) => {
+  try {
+    const { startDate, specialty, days = 7 } = req.query;
+
+    if (!startDate || !specialty) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate e specialty são obrigatórios'
+      });
+    }
+
+    const daysCount = Math.min(parseInt(days) || 7, 14);
+
+    const doctors = await Doctor.find({
+      specialty: specialty.toLowerCase(),
+      active: true
+    }).lean();
+
+    if (!doctors.length) {
+      return res.status(404).json({
+        success: false,
+        error: `Nenhum profissional encontrado para: ${specialty}`
+      });
+    }
+
+    const DAYS_PT = {
+      sunday: 'Dom', monday: 'Seg', tuesday: 'Ter', wednesday: 'Qua',
+      thursday: 'Qui', friday: 'Sex', saturday: 'Sáb'
+    };
+    const DAYS_EN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+    const weekDays = [];
+    const start = new Date(`${startDate}T12:00:00-03:00`);
+
+    for (let i = 0; i < daysCount; i++) {
+      const currentDate = new Date(start);
+      currentDate.setDate(start.getDate() + i);
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = DAYS_EN[currentDate.getDay()];
+      weekDays.push({ date: dateStr, dayOfWeek, dayLabel: DAYS_PT[dayOfWeek] });
+    }
+
+    const dates = weekDays.map(d => d.date);
+    const doctorIds = doctors.map(d => d._id);
+
+    const appointments = await Appointment.find({
+      date: { $in: dates },
+      doctor: { $in: doctorIds },
+      operationalStatus: { $nin: [...CANCELED_STATUSES, 'no_show', 'missed', ...PRE_APPOINTMENT_STATUSES] },
+      appointmentId: { $exists: false }
+    }).select('doctor date time').lean();
+
+    const availability = weekDays.map(({ date, dayOfWeek, dayLabel }) => {
+      const dayAppointments = appointments.filter(a => {
+        const d = new Date(a.date).toISOString().split('T')[0];
+        return d === date;
+      });
+
+      const professionals = doctors.map(doc => {
+        const docAppointments = dayAppointments.filter(a => String(a.doctor) === String(doc._id));
+        const occupiedSlots = docAppointments.map(a => a.time).filter(Boolean);
+
+        // slots padrão: 08:00 às 18:00 de 40 em 40 min
+        const slots = [];
+        for (let h = 8; h < 18; h++) {
+          for (let m = 0; m < 60; m += 40) {
+            const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            slots.push({
+              time,
+              available: !occupiedSlots.includes(time),
+              professional: doc.fullName,
+              professionalId: doc._id
+            });
+          }
+        }
+
+        return {
+          professionalId: doc._id,
+          professionalName: doc.fullName,
+          specialty: doc.specialty,
+          slots
+        };
+      });
+
+      return { date, dayOfWeek, dayLabel, professionals };
+    });
+
+    return res.json({
+      success: true,
+      count: availability.length,
+      availability
+    });
+  } catch (error) {
+    console.error('[AppointmentV2] Erro weekly-availability:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}));
+
 router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const startTime = Date.now();
   const { 
@@ -620,7 +727,10 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       filter.operationalStatus = statusMap[status];
     }
   }
-  // Se não tem status, não filtra por operationalStatus (mais rápido)
+  // Se não tem status, exclui pré-agendamentos (convertidos ou pendentes)
+  if (!status) {
+    filter.appointmentId = { $exists: false };
+  }
   
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const limitNum = parseInt(limit);
@@ -628,8 +738,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🔥 OTIMIZAÇÃO: Query base - SEM POPULATES (mais rápido)
   let queryBuilder = Appointment.find(filter)
     .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package notes createdAt'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package patientInfo professionalName metadata'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package notes createdAt patientInfo professionalName metadata'
     )
     .sort({ date: 1, time: 1 })
     .skip(skip)
@@ -659,8 +769,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     
     return {
       ...appt,
-      patientName: patientPopulated?.fullName || null,
-      doctorName: doctorPopulated?.fullName || null,
+      patientName: patientPopulated?.fullName || appt.patientInfo?.fullName || null,
+      doctorName: doctorPopulated?.fullName || appt.professionalName || null,
       patientId: patientPopulated?._id?.toString() || appt.patient?.toString() || appt.patient,
       doctorId: doctorPopulated?._id?.toString() || appt.doctor?.toString() || appt.doctor,
       // 🎯 Adicionar balance se existir (para pacotes)
@@ -668,7 +778,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       paymentStatus: appt.package
         ? (appt.paymentStatus || 'package_paid')
         : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
-      source: appt.package ? 'package' : 'individual'
+      source: appt.package ? 'package' : (appt.metadata?.origin?.source || 'individual')
     };
   });
   
@@ -1138,8 +1248,13 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         );
         updatePromises.push(paymentUpdate);
       }
-    } else if (!appointment.package && (updateData.billingType || updateData.paymentAmount > 0)) {
-      // Criar novo pagamento
+    } else if (!appointment.package && !appointment.payment && (updateData.paymentAmount > 0 || updateData.billingType === 'convenio')) {
+      // 🛡️ HARDENING: Só cria Payment no PUT se NÃO existir anterior E houver valor real ou convenio
+      console.warn(`[PUT /appointments/${id}] ⚠️ Criando novo payment via fluxo de edição. Idealmente payment só deveria ser criado no complete.`, {
+        appointmentId: appointment._id,
+        amount: updateData.paymentAmount,
+        billingType: updateData.billingType
+      });
       const newPayment = new Payment({
         patient: appointment.patient,
         doctor: updateData.doctor || appointment.doctor,
@@ -1153,7 +1268,9 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
         authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
         status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
-        kind: 'manual',
+        paymentDate: new Date(),
+        paidAt: updateData.billingType === 'convenio' ? undefined : new Date(),
+        kind: 'session_payment',
         notes: `Pagamento registrado via edição V2 - ${new Date().toLocaleString('pt-BR')}`
       });
       
