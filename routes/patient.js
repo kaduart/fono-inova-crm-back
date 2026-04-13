@@ -222,7 +222,7 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
     const patientId = req.params.id;
     
     // Busca agendamentos do paciente
-    const appointments = await Appointment.find({ patient: patientId, appointmentId: { $exists: false } })
+    const appointments = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } })
       .populate('doctor', 'fullName specialty')
       .sort({ date: -1 });
     

@@ -928,7 +928,8 @@ router.get('/', flexibleAuth, async (req, res) => {
                 filter.operationalStatus = { $in: ['canceled', 'missed'] };
             }
         } else {
-            // 🛡️ Por padrão, exclui pré-agendamentos convertidos da listagem de appointments reais
+            // 🛡️ Por padrão, exclui pré-agendamentos pendentes e convertidos
+            filter.operationalStatus = { $ne: 'pre_agendado' };
             filter.appointmentId = { $exists: false };
         }
         if (specialty && specialty !== 'all') filter.specialty = specialty;
@@ -1008,7 +1009,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         let finalResults = calendarEvents;
         if (shouldExcludePreAgendamentos) {
-            finalResults = calendarEvents.filter(e => !e.appointmentId);
+            finalResults = calendarEvents.filter(e => e.operationalStatus !== 'pre_agendado' && !e.appointmentId);
         }
 
         finalResults.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -1083,6 +1084,7 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
         const appointments = await Appointment.find({
             doctor: req.user._id,
             specialty,
+            operationalStatus: { $ne: 'pre_agendado' },
             appointmentId: { $exists: false }
         }).populate('patient', 'fullName');
 
@@ -1422,7 +1424,7 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 router.get('/history/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
-        const history = await Appointment.find({ patient: patientId, appointmentId: { $exists: false } }).sort({ date: -1 });
+        const history = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).sort({ date: -1 });
         res.json(history);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -2428,7 +2430,7 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
     }
     
     try {
-        const appointments = await Appointment.find({ patient, appointmentId: { $exists: false } }).populate([
+        const appointments = await Appointment.find({ patient, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).populate([
             { path: 'doctor', select: 'fullName crm' },
             { path: 'patient', select: 'fullName phone' },
             { path: 'payment' },
@@ -2541,7 +2543,8 @@ router.get('/count-by-status', auth, async (req, res) => {
             }
         ]);
 
-        // 🛡️ Exclui pré-agendamentos convertidos da contagem de appointments reais
+        // 🛡️ Exclui pré-agendamentos pendentes e convertidos da contagem
+        filter.operationalStatus = { $ne: 'pre_agendado' };
         filter.appointmentId = { $exists: false };
 
         // Formatar resultado
@@ -2645,7 +2648,7 @@ router.get('/stats', auth, async (req, res) => {
         };
 
         const stats = await Appointment.aggregate([
-            { $match: { doctor, appointmentId: { $exists: false } } },
+            { $match: { doctor, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } } },
             {
                 $facet: {
                     today: [

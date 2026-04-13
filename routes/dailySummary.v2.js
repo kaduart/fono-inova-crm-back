@@ -91,6 +91,7 @@ router.get('/', async (req, res) => {
                     $match: {
                         date: { $gte: startOfDay, $lte: endOfDay },
                         isDeleted: { $ne: true },
+                        operationalStatus: { $ne: 'pre_agendado' },
                         appointmentId: { $exists: false }
                     }
                 },
