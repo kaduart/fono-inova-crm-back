@@ -6,6 +6,7 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 
 dotenv.config();

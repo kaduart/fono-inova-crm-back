@@ -15,6 +15,7 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import '../models/index.js';
 import { startAllWorkers, startWorkersByGroup, VALID_GROUPS } from './index.js';
 
 dotenv.config();
