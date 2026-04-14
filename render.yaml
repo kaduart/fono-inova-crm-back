@@ -19,6 +19,8 @@ services:
         value: "false"
       - key: PORT
         value: "5000"
+      - key: MONGODB_URI
+        sync: false
     autoDeploy: true
 
   # =========================
@@ -37,6 +39,10 @@ services:
         value: "true"
       - key: WORKER_GROUP
         value: "all"
+      - key: MONGODB_URI
+        sync: false
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-back.onrender.com"
     autoDeploy: true
 
   # =========================
