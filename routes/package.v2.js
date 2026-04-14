@@ -22,6 +22,8 @@ import Payment from '../models/Payment.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
+import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
+import PatientBalance from '../models/PatientBalance.js';
 import healthRoutes from './package.v2.health.js';
 
 // 🆕 NOVO: Controller síncrono para criação com agenda
@@ -468,6 +470,123 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     ));
   }
 });
+
+// ============================================
+// POST /api/v2/packages/suggest-slots
+// Sugere slots de agenda respeitando débitos como âncora
+// ============================================
+
+router.post('/suggest-slots', flexibleAuth, asyncHandler(async (req, res) => {
+  const correlationId = `pkg_suggest_${Date.now()}`;
+  try {
+    const { patientId, specialty, totalSessions = 4, sessionsPerWeek = 1, time = '18:00', selectedDebtIds = [] } = req.body;
+    
+    if (!patientId || !specialty) {
+      return res.status(400).json(formatError('patientId e specialty são obrigatórios', 400));
+    }
+
+    // 1. Buscar débitos pendentes do balance
+    const balance = await PatientBalance.findOne({ patient: patientId }).lean();
+    const debits = (balance?.transactions || [])
+      .filter(t => t.type === 'debit' && !t.settledByPackageId && !t.isPaid && t.specialty === specialty)
+      .sort((a, b) => new Date(a.transactionDate) - new Date(b.transactionDate));
+
+    // Se selectedDebtIds veio, filtra apenas os selecionados
+    const selectedDebits = selectedDebtIds.length > 0
+      ? debits.filter(d => selectedDebtIds.includes(d._id.toString()))
+      : debits;
+
+    const slots = [];
+    let anchorDate = null;
+    const yearNow = new Date().getFullYear();
+    const holidays = getHolidaysWithNames(yearNow);
+    const holidayDates = new Set(holidays.map(h => h.date));
+
+    function addDaysSkippingHolidays(dateStr, days) {
+      const d = new Date(dateStr + 'T12:00:00');
+      d.setDate(d.getDate() + days);
+      let newStr = d.toISOString().split('T')[0];
+      // Se cair em feriado, pula para próxima semana (mesmo dia)
+      while (holidayDates.has(newStr)) {
+        d.setDate(d.getDate() + 7);
+        newStr = d.toISOString().split('T')[0];
+      }
+      return newStr;
+    }
+
+    // 2. Se há débitos selecionados, eles viram os primeiros slots
+    if (selectedDebits.length > 0) {
+      // Buscar appointments para pegar horário real
+      const appointmentIds = selectedDebits.map(d => d.appointmentId).filter(Boolean);
+      const appointments = appointmentIds.length > 0
+        ? await Appointment.find({ _id: { $in: appointmentIds } }).select('date time').lean()
+        : [];
+      const apptMap = new Map(appointments.map(a => [a._id.toString(), a]));
+
+      for (const debit of selectedDebits) {
+        const appt = apptMap.get(debit.appointmentId?.toString());
+        const slotDate = appt?.date
+          ? new Date(appt.date).toISOString().split('T')[0]
+          : new Date(debit.transactionDate).toISOString().split('T')[0];
+        const slotTime = appt?.time || time;
+        slots.push({ date: slotDate, time: slotTime, source: 'debt', debtId: debit._id.toString() });
+      }
+
+      // Último débito define âncora para futuras
+      const lastDebt = slots[slots.length - 1];
+      anchorDate = lastDebt.date;
+    }
+
+    // 3. Gera slots futuros que faltam
+    const needed = Math.max(0, totalSessions - slots.length);
+    if (needed > 0) {
+      const baseDate = anchorDate || new Date().toISOString().split('T')[0];
+      let current = baseDate;
+      for (let i = 0; i < needed; i++) {
+        current = addDaysSkippingHolidays(current, 7);
+        slots.push({ date: current, time, source: 'generated' });
+      }
+    }
+
+    // Remove duplicatas (mesma data+hora)
+    const deduped = [];
+    const seen = new Set();
+    for (const s of slots) {
+      const key = `${s.date}|${s.time}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(s);
+      }
+    }
+
+    // Garante totalSessions (pode aumentar se remoções por dup)
+    while (deduped.length < totalSessions && deduped.length > 0) {
+      const last = deduped[deduped.length - 1];
+      const nextDate = addDaysSkippingHolidays(last.date, 7);
+      const key = `${nextDate}|${last.time}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push({ date: nextDate, time: last.time, source: 'generated' });
+      } else {
+        // evita loop infinito se feriado gerar colisão
+        break;
+      }
+    }
+
+    res.json(formatSuccess({
+      slots: deduped.slice(0, totalSessions),
+      debtCount: selectedDebits.length,
+      generatedCount: Math.max(0, deduped.length - selectedDebits.length),
+      anchorDate
+    }, {
+      message: 'Slots sugeridos com sucesso',
+      correlationId
+    }));
+  } catch (error) {
+    logger.error(`[${correlationId}] Error suggesting slots`, { error: error.message });
+    res.status(500).json(formatError('Erro ao sugerir slots', 500, { correlationId }));
+  }
+}));
 
 // Health check
 router.use('/health', healthRoutes);

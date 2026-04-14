@@ -234,7 +234,8 @@ packagesViewSchema.methods.refreshSnapshot = async function() {
 
 // Auto-atualiza sessionsRemaining antes de salvar
 packagesViewSchema.pre('save', function(next) {
-  this.sessionsRemaining = this.totalSessions - this.sessionsUsed - this.sessionsCanceled;
+  // 🐛 FIX: usar sessionsDone (source of truth do Package) em vez de sessionsUsed
+  this.sessionsRemaining = this.totalSessions - (this.sessionsDone || 0) - (this.sessionsCanceled || 0);
   if (this.sessionsRemaining < 0) this.sessionsRemaining = 0;
   next();
 });
