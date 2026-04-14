@@ -83,6 +83,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import financialDashboardRoutes from './routes/financial/dashboard.routes.js';
+import financialAuditRoutes from './routes/financial/audit.routes.js';
 import financialSSERoutes from './routes/financial/sse.routes.js';
 import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
@@ -107,6 +108,7 @@ import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
 import { scheduleDailyScoring } from './crons/dailyScoring.js';
+import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.cron.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -400,6 +402,7 @@ app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
+app.use('/api/v2/financial/audit', financialAuditRoutes);  // 🔍 Auditoria V1 vs V2
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2
@@ -650,6 +653,7 @@ server.listen(PORT, '0.0.0.0', () => {
     startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
     const { initEventReaperCron } = await import("./crons/eventReaper.cron.js");
     startCron('eventReaper', () => initEventReaperCron());
+    startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
 
     // Crons opcionais desligados (modo memória otimizada)
     // startCron('learning', () => startLearningCron());
@@ -661,7 +665,7 @@ server.listen(PORT, '0.0.0.0', () => {
     // startCron('leadRecovery', () => initLeadRecoveryCron());
     // const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
     // startScheduledPublisher();
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper)");
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit)");
 
     // Registrar Webhook PIX no Sicoob
     try {

@@ -225,6 +225,10 @@ export const EventTypes = {
     TOTALS_RECALCULATED: 'TOTALS_RECALCULATED',
     DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED',
 
+    // 📋 Pré-agendamento V2
+    PREAGENDAMENTO_CREATED: 'PREAGENDAMENTO_CREATED',
+    PREAGENDAMENTO_IMPORTED: 'PREAGENDAMENTO_IMPORTED',
+
     // 🔗 Integration Layer — eventos traduzidos entre domínios
     APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
     SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
@@ -450,7 +454,20 @@ export async function publishEvent(eventType, payload, options = {}) {
     log.info('publish_start', 'Publicando evento', { eventType });
     
     // 🛡️ VALIDAÇÃO DEFENSIVA DE PAYLOAD
-    validatePayload(eventType, payload);
+const tempAggregateId = payload?.appointmentId 
+    || payload?.patientId 
+    || payload?.paymentId;
+
+const size = JSON.stringify(payload).length;
+
+if (size > 5000) {
+    console.warn('🚨 PAYLOAD GIGANTE:', {
+        eventType,
+        size,
+        aggregateId: tempAggregateId,
+        keys: Object.keys(payload)
+    });
+}
 
     const queueNames = eventToQueueMap[eventType];
     
@@ -597,6 +614,29 @@ export async function publishEvent(eventType, payload, options = {}) {
         } catch (addError) {
             log.error('event_queue_failed', 'Erro ao adicionar job', { queue: qName, error: addError.message });
             throw addError;
+        }
+    }
+
+    // 🆕 V2: atualiza snapshot financeiro de forma não-bloqueante para eventos relevantes
+    const snapshotEventTypes = [
+        EventTypes.PAYMENT_PROCESS_REQUESTED,
+        EventTypes.PAYMENT_COMPLETED,
+        EventTypes.PAYMENT_PARTIAL,
+        EventTypes.PAYMENT_FAILED,
+        EventTypes.PAYMENT_CANCELLED,
+        EventTypes.SESSION_COMPLETED,
+        EventTypes.APPOINTMENT_CONFIRMED,
+        EventTypes.APPOINTMENT_SCHEDULED,
+        EventTypes.APPOINTMENT_CANCELED,
+    ];
+    if (snapshotEventTypes.includes(eventType)) {
+        try {
+            const { processFinancialEvent } = await import('../../workers/financialSnapshotWorker.js');
+            processFinancialEvent(eventType, payload).catch(err =>
+                log.error('snapshot_hook_failed', err.message, { eventId, eventType })
+            );
+        } catch (importErr) {
+            log.warn('snapshot_import_failed', importErr.message, { eventId, eventType });
         }
     }
     
@@ -750,3 +790,5 @@ export async function closeQueues() {
         console.log(`[EventPublisher] Fila ${name} fechada`);
     }
 }
+
+

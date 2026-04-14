@@ -18,12 +18,70 @@ import NodeCache from 'node-cache';
 import { auth, authorize } from '../../middleware/auth.js';
 import financialMetricsService from '../../services/financialMetrics.service.js';
 import historicalRatesService from '../../services/historicalRates.service.js';
+import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
+import { reduceFullStats } from '../../services/financialSnapshot.service.js';
+
+// 🆕 V2: feature flag para usar snapshot no dashboard
+const USE_SNAPSHOT_DASHBOARD = process.env.FF_DASHBOARD_SNAPSHOT !== 'false';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
 
 // Cache: TTL 5 minutos, verificação a cada 2 minutos
 const dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 120 });
+
+/**
+ * 🆕 V2: Busca overview a partir de FinancialDailySnapshot
+ * Retorna os mesmos campos críticos do dashboard em milissegundos
+ */
+async function getSnapshotOverview(periodo, clinicId = 'default') {
+  const snapshots = await FinancialDailySnapshot.find({
+    date: { $gte: periodo.inicio, $lte: periodo.fim },
+    ...(clinicId && { clinicId })
+  }).lean();
+
+  const reduced = reduceFullStats(snapshots);
+
+  return {
+    production: {
+      total: reduced.productionTotal,
+      byPaymentMethod: {
+        particular: { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.particular?.total || 0), 0), count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.particular?.count || 0), 0) },
+        convenio:   { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.convenio?.total || 0), 0),   count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.convenio?.count || 0), 0) },
+        pix:        { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.pix?.total || 0), 0),        count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.pix?.count || 0), 0) },
+        credit_card:{ total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.credit_card?.total || 0), 0), count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.credit_card?.count || 0), 0) },
+      }
+    },
+    cash: {
+      total: reduced.cashTotal,
+      bySource: {
+        payments: {
+          total: reduced.cashTotal,
+          byType: {
+            particular: snapshots.reduce((s, d) => s + (d.cash?.particular || 0), 0),
+            convenio: snapshots.reduce((s, d) => s + (d.cash?.convenioAvulso || 0) + (d.cash?.convenioPacote || 0), 0),
+          }
+        }
+      }
+    },
+    receivable: {
+      total: 0, // snapshot V2 ainda não popula receivable detalhado
+      convenio: { total: 0 },
+      particular: { doMes: { total: 0 } }
+    },
+    convenioDetail: {
+      atendido: { total: reduced.convenioAtendido, count: 0 },
+      faturado: { total: reduced.convenioFaturado, count: 0 },
+      recebido: { total: reduced.convenioRecebido, count: 0 },
+      aReceber: { total: 0, count: 0 },
+      status: {
+        faturadoVsAtendido: reduced.convenioFaturado - reduced.convenioAtendido,
+        recebidoVsFaturado: reduced.convenioRecebido - reduced.convenioFaturado,
+        glosaPotencial: null
+      }
+    }
+  };
+}
 
 /**
  * Calcula o período baseado no tipo de visualização
@@ -135,10 +193,29 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const { default: Payment } = await import('../../models/Payment.js');
 
     // ========================================
-    // 1+2. PRODUÇÃO, CAIXA e A RECEBER — via financialMetricsService (source of truth)
+    // 1+2. PRODUÇÃO, CAIXA e A RECEBER — via snapshot V2 (com fallback)
     // ========================================
     const period = { startDate: new Date(inicioPeriodo), endDate: new Date(fimPeriodo) };
-    const overview = await financialMetricsService.getOverview(period);
+
+    let overview;
+    if (USE_SNAPSHOT_DASHBOARD) {
+      try {
+        overview = await getSnapshotOverview(periodo, 'default');
+        // 🛡️ Validação: se snapshot retornou zeros mas é período histórico, fallback para V1
+        const hasSnapshotData = overview.production.total > 0 || overview.cash.total > 0;
+        if (!hasSnapshotData && ehPeriodoPassado) {
+          console.warn('[Dashboard] Snapshot vazio para período passado — fallback V1', { periodo });
+          overview = await financialMetricsService.getOverview(period);
+        } else {
+          console.log('[Dashboard] Usando snapshot V2', { production: overview.production.total, cash: overview.cash.total });
+        }
+      } catch (snapshotErr) {
+        console.error('[Dashboard] Erro no snapshot — fallback V1', snapshotErr.message);
+        overview = await financialMetricsService.getOverview(period);
+      }
+    } else {
+      overview = await financialMetricsService.getOverview(period);
+    }
 
     const producaoTotal = overview.production.total;
     const producaoConvenio = overview.production.byPaymentMethod?.convenio?.total || 0;
@@ -277,7 +354,11 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const sessoesDoMes = await Session.find({
       status: 'completed',
       date: { $gte: inicioPeriodo, $lte: fimPeriodo }
-    }).populate('package', 'insuranceGrossAmount type').populate('doctor', 'fullName specialty').lean();
+    })
+    .select('date time sessionValue package doctor patient patientName sessionType paymentMethod status')
+    .populate('package', 'insuranceGrossAmount type')
+    .populate('doctor', 'fullName specialty')
+    .lean();
 
     const valorSessao = (s) => s.sessionValue || s.package?.insuranceGrossAmount || 0;
 
@@ -300,20 +381,32 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       type: { $ne: 'convenio' },
       financialStatus: { $in: ['paid', 'partially_paid'] },
       status: { $in: ['active', 'in-progress'] }
-    }).populate('patient', 'fullName');
+    }).populate('patient', 'fullName').select('_id patient totalPaid paidSessions sessionValue');
+
+    // Otimização: aggregate único para evitar N+1
+    const pacoteIds = pacotesCredito.map(p => p._id);
+    const sessoesPorPacote = pacoteIds.length > 0
+      ? await Session.aggregate([
+          { $match: { package: { $in: pacoteIds }, status: { $nin: ['canceled'] } } },
+          {
+            $group: {
+              _id: '$package',
+              total: { $sum: 1 },
+              feitas: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+              agendadas: { $sum: { $cond: [{ $in: ['$status', ['scheduled', 'confirmed']] }, 1, 0] } }
+            }
+          }
+        ])
+      : [];
+    const sessoesMap = new Map(sessoesPorPacote.map(s => [s._id.toString(), s]));
 
     let creditoPacotesValor = 0;
     const creditoPacotesDetalhes = [];
 
     for (const pkg of pacotesCredito) {
-      const sessoesPkg = await Session.find({
-        package: pkg._id,
-        status: { $nin: ['canceled'] }
-      });
-
-      const sessoesValidas = sessoesPkg.filter(s => ['scheduled', 'confirmed', 'completed'].includes(s.status));
-      const sessoesFeitas = sessoesValidas.filter(s => s.status === 'completed').length;
-      const sessoesAgendadas = sessoesValidas.filter(s => ['scheduled', 'confirmed'].includes(s.status)).length;
+      const stats = sessoesMap.get(pkg._id.toString());
+      const sessoesFeitas = stats?.feitas || 0;
+      const sessoesAgendadas = stats?.agendadas || 0;
 
       const sessoesPagas = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
       const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
@@ -361,13 +454,13 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       operationalStatus: { $in: ['confirmed', 'scheduled'] },
       clinicalStatus: { $nin: ['completed', 'cancelled'] }
-    });
+    }).select('date time sessionValue package patient operationalStatus clinicalStatus').lean();
 
     const pendentesTodos = await Appointment.find({
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
       clinicalStatus: { $ne: 'completed' }
-    });
+    }).select('date time sessionValue package patient operationalStatus clinicalStatus').lean();
 
     // Total (todos os tipos) — usado no Provisionamento
     const agendadosValor = agendadosTodos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);

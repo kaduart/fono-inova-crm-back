@@ -1,267 +1,603 @@
-curl 'https://fono-inova-crm-back.onrender.com/api/health/full' \
+
+vamos tratar outro caso em paralelo  criamosa agendameotno hoje 14/04 criou certinho la nos dias em questao.pórte m ta ostrando tb na lista de hjhe 14/04 rsers agednaemotn e ano e preciso precisa mostrea sono dia que e a consulta... 
+
+curl 'https://fono-inova-crm-back.onrender.com/api/v2/appointments?startDate=2026-04-14&endDate=2026-04-14&limit=500&page=1' \
   -H 'accept: application/json, text/plain, */*' \
   -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NjE4MjMzNiwiZXhwIjoxNzc2MTg1OTM2fQ.BEHm8iQRn5mavV1L40Dk4DVcy-Qfn3ZOdFs7zqv_qhI' \
-  -H 'if-none-match: W/"2c9-kyhGjR9TQlakoKb60uNs3LF6uP8"' \
-  -H 'origin: https://app.clinicafonoinova.com.br' \
+  -H 'authorization: Bearer agenda_export_token_fono_inova_2025_secure_abc123' \
+  -H 'if-none-match: W/"30df-9f4RCR8HQSL3bgalgJcvL9pkZ7Y"' \
+  -H 'origin: https://agenda.clinicafonoinova.com.br' \
   -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/' \
+  -H 'referer: https://agenda.clinicafonoinova.com.br/' \
   -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
   -H 'sec-ch-ua-mobile: ?1' \
   -H 'sec-ch-ua-platform: "Android"' \
   -H 'sec-fetch-dest: empty' \
   -H 'sec-fetch-mode: cors' \
   -H 'sec-fetch-site: cross-site' \
-  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36' \
-  -H 'x-correlation-id: front_1776183285845_aywk5u0yn' 
-
-
+  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36'
 
 {
-    "status": "degraded",
-    "node": {
-        "version": "v22.16.0",
-        "uptimeSeconds": 3029,
-        "pid": 70
-    },
-    "memory": {
-        "heapUsedMB": 234,
-        "heapTotalMB": 269,
-        "heapPercent": "87%",
-        "rssMB": 396,
-        "externalMB": 22,
-        "status": "critical"
-    },
-    "queues": {
-        "complete-orchestrator": {
-            "waiting": 0,
-            "active": 0,
-            "completed": 0,
-            "failed": 0,
-            "delayed": 0
-        },
-        "cancel-orchestrator": {
-            "waiting": 0,
-            "active": 0,
-            "completed": 0,
-            "failed": 0,
-            "delayed": 0
-        },
-        "appointment-processing": {
-            "waiting": 0,
-            "active": 0,
-            "completed": 0,
-            "failed": 0,
-            "delayed": 0
-        }
-    },
-    "packageV2": {
-        "status": "ok",
-        "summary": {
-            "totalRequests": 1,
-            "avgResponseTime": 4573,
-            "avgTransactionTime": 2011,
-            "successRate": 100,
-            "grade": "SLOW"
-        },
-        "vsLegacy": {
-            "improvement": "-916.2%",
-            "faster": false
-        }
-    },
-    "env": "production",
-    "timestamp": "2026-04-14T16:14:47.660Z"
-}
-
-
-
-
-curl 'https://app.clinicafonoinova.com.br/api/observability/metrics' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -b '_ga=GA1.1.492217437.1771707695; _fbp=fb.2.1771707694797.116162772507165458; _gcl_au=1.1.1588406996.1771707695.1521012598.1775698525.1775698525; _ga_N59X7PNQZZ=GS2.1.s1775698525$o22$g1$t1775699240$j60$l0$h0' \
-  -H 'if-none-match: W/"1d2-v1lAwfhum7WjREUrr5MOZoWysWk"' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/admin?tab=Observability' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36'
-  {
     "success": true,
     "data": {
-        "timestamp": "2026-04-14T16:16:00.164Z",
-        "overview": {
-            "totalEvents": 2626,
-            "lastHour": 2,
-            "lastDay": 804,
-            "errorsLastHour": 0,
-            "deadLetters": 4
-        },
-        "byStatus": {
-            "processed": 94,
-            "pending": 2489,
-            "dead_letter": 4,
-            "failed": 35,
-            "processing": 4
-        },
-        "byDomain": {
-            "lead": 327,
-            "system": 1100,
-            "appointment": 349,
-            "notification": 35,
-            "package": 68,
-            "followup": 50,
-            "payment": 123,
-            "expense": 3,
-            "session": 188,
-            "balance": 6,
-            "patient": 377
-        },
-        "processingTime": {
-            "avgTime": 0,
-            "maxTime": 0,
-            "minTime": 0
+        "appointments": [
+            {
+                "_id": "69cbc29c6873402d92efc7fa",
+                "patient": {
+                    "_id": "69cbc29b6873402d92efc7f5",
+                    "fullName": "Eloá Sena Silva Mendes"
+                },
+                "patientInfo": {
+                    "fullName": "Eloá Sena Silva Mendes",
+                    "phone": "6291983827",
+                    "email": "",
+                    "birthDate": "2020-10-24",
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "professionalName": "Mayra Magda Mendes Oliveira",
+                "date": "2026-04-14T16:20:00.000Z",
+                "time": "13:20",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "paymentStatus": "pending",
+                "notes": "Avaliação",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "agenda_externa"
+                    }
+                },
+                "createdAt": "2026-03-31T12:48:28.318Z",
+                "patientName": "Eloá Sena Silva Mendes",
+                "doctorName": "Mayra Magda Mendes Oliveira",
+                "patientId": "69cbc29b6873402d92efc7f5",
+                "doctorId": "6981db7af55849815f98b00a",
+                "balance": 0,
+                "source": "agenda_externa"
+            },
+            {
+                "_id": "69c674ed1d84ac5eb1c3befe",
+                "patient": {
+                    "_id": "69457c15a132f0049cbc81df",
+                    "fullName": "Daniel Rodrigues dos Santos de Oliveira"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T17:00:00.000Z",
+                "time": "14:00",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "serviceType": "package_session",
+                "sessionValue": 180,
+                "paymentMethod": "cash",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c674eb1d84ac5eb1c3bef0",
+                "paymentStatus": "paid",
+                "notes": "",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-27T12:15:41.075Z",
+                "patientName": "Daniel Rodrigues dos Santos de Oliveira",
+                "doctorName": "Mayra Magda Mendes Oliveira",
+                "patientId": "69457c15a132f0049cbc81df",
+                "doctorId": "6981db7af55849815f98b00a",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69b9a624785a76ad646fdb13",
+                "patient": {
+                    "_id": "69b995d73fbcf7682605c8ca",
+                    "fullName": "Rebecca Garcia da Silva"
+                },
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T17:40:00.000Z",
+                "time": "14:40",
+                "notes": "",
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "duration": 40,
+                "specialty": "fonoaudiologia",
+                "paymentStatus": "paid",
+                "package": "69b9a623785a76ad646fdb08",
+                "serviceType": "package_session",
+                "sessionValue": 180,
+                "paymentMethod": "cash",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-17T19:06:12.223Z",
+                "patientName": "Rebecca Garcia da Silva",
+                "doctorName": "Mayra Magda Mendes Oliveira",
+                "patientId": "69b995d73fbcf7682605c8ca",
+                "doctorId": "6981db7af55849815f98b00a",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69d8e6a2c0bcde93ed6e831a",
+                "patient": {
+                    "_id": "69d8e6a1c0bcde93ed6e8315",
+                    "fullName": "Kauã Oliveira Coutinho"
+                },
+                "patientInfo": {
+                    "fullName": "Kauã Oliveira Coutinho",
+                    "phone": "62991240091",
+                    "email": "",
+                    "birthDate": "2019-10-08",
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "684072213830f473da1b0b0b",
+                    "fullName": "Lorrany Siqueira Marques",
+                    "specialty": "fonoaudiologia"
+                },
+                "professionalName": "Lorrany Siqueira Marques",
+                "date": "2026-04-14T18:20:00.000Z",
+                "time": "15:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "serviceType": "evaluation",
+                "sessionValue": 200,
+                "paymentMethod": "cash",
+                "billingType": "particular",
+                "insuranceProvider": "",
+                "insuranceValue": 0,
+                "authorizationCode": "",
+                "paymentStatus": "paid",
+                "notes": "Avaliação",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "agenda_externa"
+                    }
+                },
+                "createdAt": "2026-04-10T12:01:38.076Z",
+                "patientName": "Kauã Oliveira Coutinho",
+                "doctorName": "Lorrany Siqueira Marques",
+                "patientId": "69d8e6a1c0bcde93ed6e8315",
+                "doctorId": "684072213830f473da1b0b0b",
+                "balance": 0,
+                "source": "agenda_externa"
+            },
+            {
+                "_id": "69d8e52fc0bcde93ed6e8234",
+                "patient": {
+                    "_id": "69d8e52ec0bcde93ed6e822f",
+                    "fullName": "Laura Maria Martins Carvalho"
+                },
+                "patientInfo": {
+                    "fullName": "Laura Maria Martins Carvalho",
+                    "phone": "6292801306",
+                    "email": "",
+                    "birthDate": "2024-05-31",
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "professionalName": "Mayra Magda Mendes Oliveira",
+                "date": "2026-04-14T19:00:00.000Z",
+                "time": "16:00",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "serviceType": "evaluation",
+                "sessionValue": 200,
+                "paymentMethod": "cash",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "paymentStatus": "paid",
+                "notes": "Avaliação",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "agenda_externa"
+                    }
+                },
+                "createdAt": "2026-04-10T11:55:27.630Z",
+                "patientName": "Laura Maria Martins Carvalho",
+                "doctorName": "Mayra Magda Mendes Oliveira",
+                "patientId": "69d8e52ec0bcde93ed6e822f",
+                "doctorId": "6981db7af55849815f98b00a",
+                "balance": 0,
+                "source": "agenda_externa"
+            },
+            {
+                "_id": "69c14529c19d35b8454a27ff",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "685c2affaec14c71635863b7",
+                    "fullName": "Tatiana Celuta Peres",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-14T19:20:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c14528c19d35b8454a27e8",
+                "paymentStatus": "pending",
+                "notes": "",
+                "specialty": "psicologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-23T13:50:33.550Z",
+                "patientName": "Enthony Kauan Mesias Oliveira",
+                "doctorName": "Tatiana Celuta Peres",
+                "patientId": "69bbf5d42d22a57a538ed310",
+                "doctorId": "685c2affaec14c71635863b7",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69cd1764856a4f39ce254cb8",
+                "patient": {
+                    "_id": "69bd4aabfbee9c0a2cf12d34",
+                    "fullName": "Luiza Bueno Lima"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68a8cf172132ca79b074d387",
+                    "fullName": "Suzane de Morais Soares",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-14T19:20:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69cd1763856a4f39ce254cae",
+                "paymentStatus": "pending",
+                "notes": "",
+                "specialty": "psicologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-04-01T13:02:28.196Z",
+                "patientName": "Luiza Bueno Lima",
+                "doctorName": "Suzane de Morais Soares",
+                "patientId": "69bd4aabfbee9c0a2cf12d34",
+                "doctorId": "68a8cf172132ca79b074d387",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c2e73a5c4ad17fefccbe37",
+                "patient": {
+                    "_id": "69bc07b81339067aa69b2a74",
+                    "fullName": "Bento Cabral Cândido"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T19:20:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "serviceType": "package_session",
+                "sessionValue": 150,
+                "paymentMethod": "cash",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c2e7395c4ad17fefccbe21",
+                "paymentStatus": "paid",
+                "notes": "",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-24T19:34:18.706Z",
+                "patientName": "Bento Cabral Cândido",
+                "doctorName": "Mikaelly da Silva Sousa",
+                "patientId": "69bc07b81339067aa69b2a74",
+                "doctorId": "68bedf1104ec4875aaea8188",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c15026c19d35b8454a2eb2",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T20:00:00.000Z",
+                "time": "17:00",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c15025c19d35b8454a2e8b",
+                "paymentStatus": "pending",
+                "notes": "",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-23T14:37:27.048Z",
+                "patientName": "Enthony Kauan Mesias Oliveira",
+                "doctorName": "Mikaelly da Silva Sousa",
+                "patientId": "69bbf5d42d22a57a538ed310",
+                "doctorId": "68bedf1104ec4875aaea8188",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c2eb4a5c4ad17fefccc51e",
+                "patient": {
+                    "_id": "69c16866c19d35b8454a35fb",
+                    "fullName": "Joaquim Rocha Simão"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T20:00:00.000Z",
+                "time": "17:00",
+                "duration": 40,
+                "operationalStatus": "scheduled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "convenio",
+                "insuranceProvider": "unimed-anapolis",
+                "insuranceValue": 80,
+                "authorizationCode": null,
+                "package": "69c2eb495c4ad17fefccc505",
+                "paymentStatus": "pending_receipt",
+                "notes": "",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-24T19:51:38.417Z",
+                "patientName": "Joaquim Rocha Simão",
+                "doctorName": "Mikaelly da Silva Sousa",
+                "patientId": "69c16866c19d35b8454a35fb",
+                "doctorId": "68bedf1104ec4875aaea8188",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c1456fc19d35b8454a28a9",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68a8cf172132ca79b074d387",
+                    "fullName": "Suzane de Morais Soares",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-14T20:40:00.000Z",
+                "time": "17:40",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c1456ec19d35b8454a2882",
+                "paymentStatus": "pending",
+                "notes": "",
+                "specialty": "psicologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-23T13:51:43.947Z",
+                "patientName": "Enthony Kauan Mesias Oliveira",
+                "doctorName": "Suzane de Morais Soares",
+                "patientId": "69bbf5d42d22a57a538ed310",
+                "doctorId": "68a8cf172132ca79b074d387",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c2ebf15c4ad17fefccc601",
+                "patient": {
+                    "_id": "69c16797c19d35b8454a354d",
+                    "fullName": "Benjamim Rocha Simão"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-14T20:40:00.000Z",
+                "time": "17:40",
+                "duration": 40,
+                "operationalStatus": "scheduled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "convenio",
+                "insuranceProvider": "unimed-anapolis",
+                "insuranceValue": 80,
+                "authorizationCode": null,
+                "package": "69c2ebf15c4ad17fefccc5e8",
+                "paymentStatus": "pending_receipt",
+                "notes": "",
+                "specialty": "fonoaudiologia",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-24T19:54:25.720Z",
+                "patientName": "Benjamim Rocha Simão",
+                "doctorName": "Mikaelly da Silva Sousa",
+                "patientId": "69c16797c19d35b8454a354d",
+                "doctorId": "68bedf1104ec4875aaea8188",
+                "balance": 0,
+                "source": "package"
+            },
+            {
+                "_id": "69c145a0c19d35b8454a2920",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "patientInfo": {
+                    "ageUnit": "anos"
+                },
+                "doctor": {
+                    "_id": "698f09aa39d78a9c5746dc28",
+                    "fullName": "Thayna Miranda",
+                    "specialty": "terapia_ocupacional"
+                },
+                "date": "2026-04-14T21:20:00.000Z",
+                "time": "18:20",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "pending",
+                "serviceType": "evaluation",
+                "sessionValue": 0,
+                "paymentMethod": "pix",
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "insuranceValue": 0,
+                "authorizationCode": null,
+                "package": "69c1459fc19d35b8454a28f9",
+                "paymentStatus": "pending",
+                "notes": "",
+                "specialty": "terapia_ocupacional",
+                "metadata": {
+                    "origin": {
+                        "source": "outro"
+                    }
+                },
+                "createdAt": "2026-03-23T13:52:32.349Z",
+                "patientName": "Enthony Kauan Mesias Oliveira",
+                "doctorName": "Thayna Miranda",
+                "patientId": "69bbf5d42d22a57a538ed310",
+                "doctorId": "698f09aa39d78a9c5746dc28",
+                "balance": 0,
+                "source": "package"
+            }
+        ],
+        "pagination": {
+            "page": 1,
+            "limit": 500,
+            "total": 13,
+            "pages": 1
         }
+    },
+    "meta": {
+        "timestamp": "2026-04-14T20:25:45.734Z"
     }
 }
-
-
-
-
-curl 'https://app.clinicafonoinova.com.br/api/observability/domains' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -b '_ga=GA1.1.492217437.1771707695; _fbp=fb.2.1771707694797.116162772507165458; _gcl_au=1.1.1588406996.1771707695.1521012598.1775698525.1775698525; _ga_N59X7PNQZZ=GS2.1.s1775698525$o22$g1$t1775699240$j60$l0$h0' \
-  -H 'if-none-match: W/"37d-y7yOZOiJUiqVeihn51bsn7UVic8"' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/admin?tab=Observability' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36'
-  {
-    "success": true,
-    "data": [
-        {
-            "domain": "appointment",
-            "counts": {
-                "total": 349,
-                "processed": 39,
-                "failed": 35,
-                "processing": 3
-            },
-            "successRate": "11.2",
-            "avgProcessingTime": 10043.71794871795,
-            "recentEvents": []
-        },
-        {
-            "domain": "patient",
-            "counts": {
-                "total": 377,
-                "processed": 0,
-                "failed": 0,
-                "processing": 0
-            },
-            "successRate": "0.0",
-            "avgProcessingTime": 0,
-            "recentEvents": [
-                {
-                    "eventType": "PATIENT_VIEW_REBUILD_REQUESTED",
-                    "status": "pending",
-                    "timestamp": "2026-04-14T15:27:39.614Z"
-                }
-            ]
-        },
-        {
-            "domain": "session",
-            "counts": {
-                "total": 188,
-                "processed": 0,
-                "failed": 0,
-                "processing": 0
-            },
-            "successRate": "0.0",
-            "avgProcessingTime": 0,
-            "recentEvents": []
-        },
-        {
-            "domain": "insurance_batch",
-            "counts": {
-                "total": 0,
-                "processed": 0,
-                "failed": 0,
-                "processing": 0
-            },
-            "successRate": 0,
-            "avgProcessingTime": 0,
-            "recentEvents": []
-        },
-        {
-            "domain": "payment",
-            "counts": {
-                "total": 123,
-                "processed": 37,
-                "failed": 0,
-                "processing": 1
-            },
-            "successRate": "30.1",
-            "avgProcessingTime": 22262.027027027027,
-            "recentEvents": []
-        }
-    ]
-}
-
-curl 'https://app.clinicafonoinova.com.br/api/observability/alerts' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -b '_ga=GA1.1.492217437.1771707695; _fbp=fb.2.1771707694797.116162772507165458; _gcl_au=1.1.1588406996.1771707695.1521012598.1775698525.1775698525; _ga_N59X7PNQZZ=GS2.1.s1775698525$o22$g1$t1775699240$j60$l0$h0' \
-  -H 'if-none-match: W/"b2-ieuRiIjw51l1NvGv2P8ZB2zaUxA"' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/admin?tab=Observability' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36'
-  {
-    "success": true,
-    "data": [
-        {
-            "level": "error",
-            "type": "dead_letters",
-            "message": "4 eventos em dead letter",
-            "count": 4
-        }
-    ],
-    "summary": {
-        "total": 1,
-        "errors": 1,
-        "warnings": 0,
-        "status": "critical"
-    }
-}
-
-curl 'https://app.clinicafonoinova.com.br/api/observability/recent?minutes=5&limit=50' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -b '_ga=GA1.1.492217437.1771707695; _fbp=fb.2.1771707694797.116162772507165458; _gcl_au=1.1.1588406996.1771707695.1521012598.1775698525.1775698525; _ga_N59X7PNQZZ=GS2.1.s1775698525$o22$g1$t1775699240$j60$l0$h0' \
-  -H 'if-none-match: W/"24-AJZ8G18oW/SouOo5+DJE9SNYXUY"' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/admin?tab=Observability' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36'
-  {"success":true,"data":[],"count":0}

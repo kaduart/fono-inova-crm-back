@@ -131,7 +131,8 @@ class FinancialMetricsService {
     ];
 
     // 1️⃣ CONVÊNIO ATENDIDO (Produção) - Sessões realizadas de convênio
-    const atendidoAgg = await Session.aggregate([
+    // 🚀 Otimização: $facet colapsa 3 aggregates em 1 (mesmo match + lookups)
+    const atendidoFacet = await Session.aggregate([
       {
         $match: {
           status: 'completed',
@@ -141,52 +142,25 @@ class FinancialMetricsService {
       },
       ...lookupStages,
       {
-        $group: {
-          _id: null,
-          total: { $sum: valorReal },
-          count: { $sum: 1 }
+        $facet: {
+          atendidoTotal: [
+            { $group: { _id: null, total: { $sum: valorReal }, count: { $sum: 1 } } }
+          ],
+          atendidoAvulso: [
+            { $match: { $or: [{ package: { $exists: false } }, { package: null }] } },
+            { $group: { _id: null, total: { $sum: valorReal }, count: { $sum: 1 } } }
+          ],
+          atendidoPacote: [
+            { $match: { package: { $exists: true, $ne: null } } },
+            { $group: { _id: null, total: { $sum: valorReal }, count: { $sum: 1 } } }
+          ]
         }
       }
     ]);
 
-    // Separar avulso vs pacote
-    const atendidoAvulso = await Session.aggregate([
-      {
-        $match: {
-          status: 'completed',
-          paymentMethod: 'convenio',
-          $or: [{ package: { $exists: false } }, { package: null }], // Sem pacote = avulso
-          date: { $gte: start, $lte: end }
-        }
-      },
-      ...lookupStages,
-      {
-        $group: {
-          _id: null,
-          total: { $sum: valorReal },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const atendidoPacote = await Session.aggregate([
-      {
-        $match: {
-          status: 'completed',
-          paymentMethod: 'convenio',
-          package: { $exists: true, $ne: null }, // Com pacote
-          date: { $gte: start, $lte: end }
-        }
-      },
-      ...lookupStages,
-      {
-        $group: {
-          _id: null,
-          total: { $sum: valorReal },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const atendidoAgg = atendidoFacet[0]?.atendidoTotal || [];
+    const atendidoAvulso = atendidoFacet[0]?.atendidoAvulso || [];
+    const atendidoPacote = atendidoFacet[0]?.atendidoPacote || [];
 
     // 2️⃣ CONVÊNIO FATURADO (Guias enviadas)
     const faturadoAgg = await Payment.aggregate([
@@ -242,7 +216,8 @@ class FinancialMetricsService {
     ]);
 
     // Sessões de pacote pagas (que não geram Payment)
-    const recebidoPacote = await Session.aggregate([
+    // 🚀 Otimização: $facet colapsa total + porMesRef em 1 aggregate
+    const recebidoSessionFacet = await Session.aggregate([
       {
         $match: {
           isPaid: true,
@@ -256,16 +231,28 @@ class FinancialMetricsService {
       },
       ...lookupStages,
       {
-        $group: {
-          _id: null,
-          total: { $sum: valorReal },
-          count: { $sum: 1 }
+        $facet: {
+          total: [
+            { $group: { _id: null, total: { $sum: valorReal }, count: { $sum: 1 } } }
+          ],
+          porMesRef: [
+            {
+              $project: {
+                valor: valorReal,
+                mesRef: { $concat: [{ $substr: ['$date', 0, 4] }, '-', { $substr: ['$date', 5, 2] }] }
+              }
+            },
+            { $group: { _id: '$mesRef', total: { $sum: '$valor' }, count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+          ]
         }
       }
     ]);
 
-    // 🆕 DETALHAMENTO POR MÊS DE REFERÊNCIA
-    // Recebimentos do período agrupados por mês da sessão atendida
+    const recebidoPacote = recebidoSessionFacet[0]?.total || [];
+    const recebidoPacotePorMesRef = recebidoSessionFacet[0]?.porMesRef || [];
+
+    // 🆕 DETALHAMENTO POR MÊS DE REFERÊNCIA (Payment avulso)
     const recebidoPorMesRef = await Payment.aggregate([
       {
         $match: {
@@ -304,42 +291,6 @@ class FinancialMetricsService {
         $group: {
           _id: '$mesRef',
           total: { $sum: '$receivedAmount' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
-
-    // Sessões de pacote pagas agrupadas por mês de referência
-    const recebidoPacotePorMesRef = await Session.aggregate([
-      {
-        $match: {
-          isPaid: true,
-          paidAt: { $gte: start, $lte: end },
-          paymentMethod: 'convenio',
-          $or: [
-            { paymentId: { $exists: false } },
-            { paymentId: null }
-          ]
-        }
-      },
-      ...lookupStages,
-      {
-        $project: {
-          valor: valorReal,
-          mesRef: { 
-            $concat: [
-              { $substr: ['$date', 0, 4] },
-              '-',
-              { $substr: ['$date', 5, 2] }
-            ]
-          }
-        }
-      },
-      {
-        $group: {
-          _id: '$mesRef',
-          total: { $sum: '$valor' },
           count: { $sum: 1 }
         }
       },

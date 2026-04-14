@@ -61,7 +61,7 @@ async function markIdempotency(requestId) {
 // ======================================================
 router.get('/', flexibleAuth, async (req, res) => {
     try {
-        const { limit = 50, status, phone, from, to, doctorId } = req.query;
+        const { limit = 50, status, phone, from, to, doctorId, specialty } = req.query;
 
         const query = { operationalStatus: 'pre_agendado' };
 
@@ -71,10 +71,14 @@ router.get('/', flexibleAuth, async (req, res) => {
         if (phone) {
             query['patientInfo.phone'] = { $regex: phone.replace(/\D/g, ''), $options: 'i' };
         }
-        if (from || to) {
-            query.date = {};
-            if (from) query.date.$gte = new Date(from + 'T00:00:00.000Z');
-            if (to) query.date.$lte = new Date(to + 'T23:59:59.999Z');
+        // Filtra por data da consulta (fuso BRT) — sem filtro usa hoje como padrão
+        const dateFrom = from || new Date().toISOString().split('T')[0];
+        query.date = {};
+        query.date.$gte = new Date(dateFrom + 'T00:00:00-03:00');
+        if (to) query.date.$lte = new Date(to + 'T23:59:59-03:00');
+
+        if (specialty && specialty !== 'todas') {
+            query.specialty = specialty.toLowerCase();
         }
         if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
             query.doctor = doctorId;
@@ -176,7 +180,7 @@ router.post('/', flexibleAuth, async (req, res) => {
                 birthDate: patientInfo.birthDate || null,
                 email: patientInfo.email || null
             },
-            date: new Date(effectiveDate),
+            date: new Date(`${effectiveDate}T00:00:00-03:00`),
             time: effectiveTime,
             specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
             notes,
@@ -319,11 +323,16 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Não foi possível criar/encontrar o paciente' });
         }
 
+        // Resolve data: body tem prioridade, fallback para o pre-agendamento
+        const resolvedDateStr = date || (pre.date instanceof Date
+            ? pre.date.toISOString().split('T')[0]
+            : String(pre.date || '').split('T')[0]);
+
         // Chama o CRM Core V2 (HYBRID SERVICE)
         const hybridResult = await appointmentHybridService.create({
             patientId,
             doctorId: resolvedDoctorId,
-            date: new Date(date + 'T12:00:00'),
+            date: new Date(resolvedDateStr + 'T12:00:00-03:00'),
             time,
             specialty: pre.specialty || 'fonoaudiologia',
             serviceType: 'evaluation', // Agenda externa sempre começa como avaliação

@@ -142,7 +142,15 @@ export async function getEventFlow(correlationId) {
         processingTime: event.processedAt
             ? new Date(event.processedAt) - new Date(event.createdAt)
             : null,
-        errorInfo: event.errorInfo,
+        attempts: event.attempts || 0,
+        maxAttempts: event.maxAttempts || 5,
+        errorInfo: event.error || event.errorInfo
+            ? {
+                  errorMessage: event.error?.message || event.errorInfo?.errorMessage,
+                  stack: event.error?.stack || event.errorInfo?.stack,
+                  code: event.error?.code || event.errorInfo?.code
+              }
+            : null,
         metadata: event.metadata
     }));
 
