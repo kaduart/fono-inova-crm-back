@@ -114,16 +114,22 @@ async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
  * Determina datas de início e fim do pacote
  */
 function calculateDates(sessions, pkg) {
-  if (sessions.length === 0) {
+  // 🛡️ Filtra apenas sessões com datas válidas
+  const validSessions = sessions.filter(s => {
+    if (!s.date || s.date === 'undefined' || s.date === 'Invalid Date') return false;
+    return !isNaN(new Date(s.date).getTime());
+  });
+
+  if (validSessions.length === 0) {
     return {
-      startDate: pkg.date,
+      startDate: pkg.date && !isNaN(new Date(pkg.date).getTime()) ? new Date(pkg.date) : null,
       endDate: null
     };
   }
   
-  const sortedSessions = [...sessions].sort((a, b) => {
-    const dateA = new Date(a.date + 'T' + a.time);
-    const dateB = new Date(b.date + 'T' + b.time);
+  const sortedSessions = [...validSessions].sort((a, b) => {
+    const dateA = new Date(a.date + 'T' + (a.time || '00:00'));
+    const dateB = new Date(b.date + 'T' + (b.time || '00:00'));
     return dateA - dateB;
   });
   
