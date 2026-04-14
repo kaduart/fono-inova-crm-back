@@ -1,55 +1,51 @@
 #!/usr/bin/env node
 /**
- * 🚀 Inicia servidor + verifica workers
- * Uso: node start-with-workers.js
+ * 🚀 Inicia servidor + workers localmente
+ * Uso: npm run dev:check
  */
 import { spawn } from 'child_process';
-import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+console.log('🚀 Iniciando servidor + workers localmente...\n');
 
-console.log('🚀 Iniciando servidor com verificação de workers...\n');
-
-// Inicia o servidor
+// 1. Inicia o servidor (ENABLE_WORKERS=false para não duplicar)
 const server = spawn('node', ['server.js'], {
     stdio: 'inherit',
-    shell: true
+    shell: true,
+    env: { ...process.env, ENABLE_WORKERS: 'false' }
 });
 
-// Aguarda 5 segundos e verifica se o worker está rodando
-setTimeout(async () => {
-    const redis = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false
-    });
-    
-    try {
-        const workers = await redis.hgetall('bull:complete-orchestrator:workers');
-        
-        if (Object.keys(workers).length === 0) {
-            console.log('\n⚠️  ==========================================');
-            console.log('⚠️  ALERTA: Worker de complete NÃO está rodando!');
-            console.log('⚠️  ==========================================');
-            console.log('\n👉 O complete de agendamentos NÃO vai funcionar!');
-            console.log('\n🔧 Soluções:');
-            console.log('   1. Reinicie o servidor: npm run dev');
-            console.log('   2. Ou rode o worker separado: node workers/startWorkers.js');
-            console.log('\n');
-        } else {
-            console.log('\n✅ ==========================================');
-            console.log('✅ Worker de complete está rodando!');
-            console.log('✅ ==========================================\n');
-        }
-    } catch (err) {
-        console.error('\n❌ Erro ao verificar worker:', err.message);
-    } finally {
-        await redis.quit();
-    }
-}, 5000);
+// 2. Inicia os workers em processo separado
+const workers = spawn('node', ['workers/startWorkers.js'], {
+    stdio: 'inherit',
+    shell: true,
+    env: { ...process.env, ENABLE_WORKERS: 'true', WORKER_GROUP: 'all' }
+});
+
+function killAll(code = 0) {
+    server.kill();
+    workers.kill();
+    process.exit(code);
+}
 
 server.on('close', (code) => {
-    process.exit(code);
+    console.log('\n🛑 Servidor encerrou. Parando workers...');
+    killAll(code);
+});
+
+workers.on('close', (code) => {
+    console.log('\n🛑 Workers encerraram. Parando servidor...');
+    killAll(code);
+});
+
+process.on('SIGINT', () => {
+    console.log('\n🛑 SIGINT recebido. Encerrando tudo...');
+    killAll(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 SIGTERM recebido. Encerrando tudo...');
+    killAll(0);
 });
