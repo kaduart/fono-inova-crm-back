@@ -5,6 +5,9 @@
       "Bash(node -e ':*)",
       "Bash(curl -s http://localhost:5000/api/health)",
       "Bash(mongosh \"mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/test\" --eval \"db.admins.findOne\\({},{_id:1,email:1}\\)\" --quiet)"
+    ],
+    "additionalDirectories": [
+      "/home/user/projetos/crm/front/src/components"
     ]
   }
 }
