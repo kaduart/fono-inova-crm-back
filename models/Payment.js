@@ -36,7 +36,7 @@ const paymentSchema = new mongoose.Schema({
     },
     billingType: {
         type: String,
-        enum: ['particular', 'convenio', 'insurance', null],
+        enum: ['particular', 'convenio', 'insurance', 'liminar', null],
         default: 'particular'
     },
     notes: { type: String, default: null },

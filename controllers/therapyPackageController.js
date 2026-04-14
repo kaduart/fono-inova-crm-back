@@ -16,6 +16,7 @@ import Leads from '../models/Leads.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 
 /**
  * 🛡️ Valida se schedule começa antes do débito mais antigo
@@ -913,6 +914,14 @@ export const packageOperations = {
                 });
             } catch (eventError) {
                 console.error('⚠️ Falha ao publicar PACKAGE_CREATED (não-crítico):', eventError.message);
+            }
+
+            // 🔄 REBUILD SÍNCRONO da view (frontend V2 precisa ver imediatamente)
+            try {
+                await buildPackageView(reloadedPackage._id.toString(), { correlationId: `legacy_${reloadedPackage._id}_${Date.now()}` });
+                console.log(`[TherapyPackageController] View reconstruída para ${reloadedPackage._id}`);
+            } catch (viewError) {
+                console.error('⚠️ Falha ao reconstruir PackagesView (não-crítico):', viewError.message);
             }
 
             res.status(201).json({

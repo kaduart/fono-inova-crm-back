@@ -283,9 +283,11 @@ async function run() {
 
     const result = await completeSessionV2(appt7._id.toString(), { correlationId: appt7.correlationId });
     const pkgAfter = await Package.findById(pkg7._id);
+    const payment7 = await Payment.findOne({ appointment: appt7._id });
+    const ledger7 = await FinancialLedger.findOne({ correlationId: appt7.correlationId, type: 'payment_received' });
     await new Promise(r => setTimeout(r, 200)); report('7. Pacote liminar com credito',
-      result.success && pkgAfter.liminarCreditBalance === 500 && pkgAfter.sessionsDone === 1,
-      `credit=${pkgAfter?.liminarCreditBalance}, sessionsDone=${pkgAfter?.sessionsDone}`
+      result.success && pkgAfter.liminarCreditBalance === 500 && pkgAfter.sessionsDone === 1 && !!payment7 && !!ledger7,
+      `credit=${pkgAfter?.liminarCreditBalance}, sessionsDone=${pkgAfter?.sessionsDone}, payment=${!!payment7}, ledger=${!!ledger7}`
     );
   } catch (e) {
     await new Promise(r => setTimeout(r, 200)); report('7. Pacote liminar com credito', false, e.message);
@@ -417,6 +419,44 @@ async function run() {
       e.message.includes('PACKAGE_LIMIT_REACHED'),
       e.message
     );
+  }
+
+  // ============================================================
+  // 12. PACOTE THERAPY JÁ QUITADO — não deve criar payment duplicado
+  // ============================================================
+  try { await new Promise(r => setTimeout(r, 300));
+    const pkg12 = await Package.create({
+      patient: patient._id, doctor: doctor._id,
+      specialty: 'fonoaudiologia',
+      type: 'therapy', paymentType: 'per-session',
+      totalSessions: 5, sessionValue: 200, totalValue: 1000,
+      totalPaid: 1000,  // Já quitado totalmente
+      sessionsDone: 2,  // Já foram feitas 2 sessões
+      durationMonths: 1, sessionsPerWeek: 1,
+      sessionType: 'fonoaudiologia', specialty: 'fonoaudiologia',
+      date: new Date()
+    });
+    const appt12 = await Appointment.create({
+      patient: patient._id, doctor: doctor._id,
+      specialty: 'fonoaudiologia', package: pkg12._id,
+      date: new Date(), startTime: '20:00',
+      sessionValue: 200, billingType: 'particular', specialty: 'fonoaudiologia',
+      operationalStatus: 'scheduled', clinicalStatus: 'scheduled',
+      correlationId: `test_complete_12_${Date.now()}`
+    });
+    const session12 = await Session.create({ patient: patient._id, doctor: doctor._id,
+      specialty: 'fonoaudiologia', appointment: appt12._id, package: pkg12._id, status: 'scheduled', sessionType: 'fonoaudiologia', correlationId: appt12.correlationId });
+    appt12.session = session12._id; await appt12.save();
+
+    const result = await completeSessionV2(appt12._id.toString(), { correlationId: appt12.correlationId });
+    const pkgAfter = await Package.findById(pkg12._id);
+    const payment = await Payment.findOne({ appointment: appt12._id });
+    await new Promise(r => setTimeout(r, 200)); report('12. Pacote therapy ja quitado — nao cria payment',
+      result.success && pkgAfter.sessionsDone === 3 && !payment,
+      `sessionsDone=${pkgAfter?.sessionsDone}, paymentCreated=${!!payment}`
+    );
+  } catch (e) {
+    await new Promise(r => setTimeout(r, 200)); report('12. Pacote therapy ja quitado', false, e.message);
   }
 
   // ===== RESUMO =====

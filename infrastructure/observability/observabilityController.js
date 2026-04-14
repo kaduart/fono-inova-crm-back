@@ -10,8 +10,16 @@ import {
     getEventFlow,
     getRecentEvents,
     getAlerts,
-    getDomainHealth
+    getDomainHealth,
+    getSystemHealth
 } from './eventMonitor.js';
+
+import {
+    listDeadLetters,
+    getDeadLetterById,
+    retryDeadLetter,
+    retryBatchDeadLetters
+} from './deadLetterService.js';
 
 /**
  * GET /api/observability/metrics
@@ -235,6 +243,148 @@ export async function getHealthHandler(req, res) {
             success: false,
             status: 'unhealthy',
             error: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/observability/system-health
+ * Dashboard consolidado de saúde do sistema (mini Datadog)
+ */
+export async function getSystemHealthHandler(req, res) {
+    try {
+        const health = await getSystemHealth();
+        res.json({
+            success: true,
+            data: health
+        });
+    } catch (error) {
+        console.error('[Observability] Erro ao buscar system health:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar system health',
+            message: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/observability/dead-letters
+ * Lista eventos em dead letter com paginação e filtros
+ */
+export async function getDeadLettersHandler(req, res) {
+    try {
+        const { page, limit, aggregateType, eventType, sort, order } = req.query;
+
+        const result = await listDeadLetters({
+            page: page ? Number(page) : 1,
+            limit: limit ? Number(limit) : 20,
+            aggregateType: aggregateType || null,
+            eventType: eventType || null,
+            sort: sort || 'createdAt',
+            order: order || 'desc'
+        });
+
+        res.json({
+            success: true,
+            data: result.items,
+            pagination: result.pagination
+        });
+    } catch (error) {
+        console.error('[Observability] Erro ao buscar dead letters:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar dead letters',
+            message: error.message
+        });
+    }
+}
+
+/**
+ * GET /api/observability/dead-letters/:eventId
+ * Detalhes completos de um evento em dead letter
+ */
+export async function getDeadLetterDetailsHandler(req, res) {
+    try {
+        const { eventId } = req.params;
+
+        const event = await getDeadLetterById(eventId);
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                error: 'Dead letter não encontrado',
+                message: `Nenhum evento em dead letter encontrado para eventId: ${eventId}`
+            });
+        }
+
+        res.json({
+            success: true,
+            data: event
+        });
+    } catch (error) {
+        console.error('[Observability] Erro ao buscar detalhes do dead letter:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar detalhes do dead letter',
+            message: error.message
+        });
+    }
+}
+
+/**
+ * POST /api/observability/dead-letters/:eventId/retry
+ * Retry individual de um evento em dead letter
+ */
+export async function retryDeadLetterHandler(req, res) {
+    try {
+        const { eventId } = req.params;
+        const { dryRun = false } = req.body || {};
+
+        const result = await retryDeadLetter(eventId, { dryRun: !!dryRun });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('[Observability] Erro ao fazer retry de dead letter:', error);
+        const statusCode = error.code === 'EVENT_NOT_FOUND' || error.code === 'NO_QUEUE_MAPPED' ? 404 : 500;
+        res.status(statusCode).json({
+            success: false,
+            error: 'Erro ao fazer retry do dead letter',
+            code: error.code || 'UNKNOWN',
+            message: error.message
+        });
+    }
+}
+
+/**
+ * POST /api/observability/dead-letters/retry-batch
+ * Retry em lote de eventos em dead letter
+ */
+export async function retryBatchDeadLettersHandler(req, res) {
+    try {
+        const { eventIds, aggregateType, eventType, limit, dryRun = false } = req.body || {};
+
+        const result = await retryBatchDeadLetters({
+            eventIds: Array.isArray(eventIds) ? eventIds : [],
+            aggregateType: aggregateType || null,
+            eventType: eventType || null,
+            limit: limit ? Number(limit) : 50,
+            dryRun: !!dryRun
+        });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('[Observability] Erro ao fazer retry em lote:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao fazer retry em lote',
+            message: error.message
         });
     }
 }

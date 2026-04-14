@@ -2,6 +2,7 @@
 import { Queue } from 'bullmq';
 import { redisConnection } from '../queue/queueConfig.js';
 import { appendEvent, eventExists } from './eventStoreService.js';
+import { classifyError, NonRetryableError } from './errorClassifier.js';
 import { createContextLogger } from '../../utils/logger.js';
 import EventStore from '../../models/EventStore.js';
 
@@ -246,7 +247,7 @@ export const EventTypes = {
 /**
  * Mapeamento de eventos para filas
  */
-const eventToQueueMap = {
+export const eventToQueueMap = {
     // Intenções → Workers de orquestração
     [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'appointment-processing',
     [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
@@ -448,6 +449,9 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     log.info('publish_start', 'Publicando evento', { eventType });
     
+    // 🛡️ VALIDAÇÃO DEFENSIVA DE PAYLOAD
+    validatePayload(eventType, payload);
+
     const queueNames = eventToQueueMap[eventType];
     
     // queueNames omitido do log para reduzir alocação
@@ -469,7 +473,8 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     // 🛡️ DEBOUNCE: ignora eventos do mesmo aggregate em curto prazo (evita tempestade de rebuilds)
     if (shouldDebounce(finalAggregateId, eventType)) {
-        log.info('debounced', 'Evento debounced (publicado recentemente)', { eventType, aggregateId: finalAggregateId });
+        console.warn(`[EVENT_DEBOUNCED] ${eventType} aggregate=${finalAggregateId} — evento legítimo pode ter sido perdido`);
+        log.warn('debounced', 'Evento debounced (publicado recentemente)', { eventType, aggregateId: finalAggregateId });
         return {
             eventId: 'debounced',
             eventType,
@@ -699,6 +704,41 @@ export async function publishEvents(events) {
     }
     
     return results;
+}
+
+/**
+ * Validação defensiva de payload ANTES de persistir no Event Store
+ * Evita criar eventos com IDs nulos/undefined que vão direto pra DLQ
+ */
+function validatePayload(eventType, payload) {
+    if (!payload || typeof payload !== 'object') {
+        throw new NonRetryableError('INVALID_PAYLOAD: payload deve ser um objeto', 'INVALID_PAYLOAD');
+    }
+
+    // Validações por domínio
+    if (eventType.includes('APPOINTMENT')) {
+        if (!payload.appointmentId && !payload.entityId) {
+            throw new NonRetryableError('APPOINTMENT_ID_MISSING', 'INVALID_PAYLOAD');
+        }
+    }
+
+    if (eventType.includes('PATIENT') && eventType.includes('REQUESTED')) {
+        if (!payload.patientId && !payload.patient) {
+            throw new NonRetryableError('PATIENT_ID_MISSING', 'INVALID_PAYLOAD');
+        }
+    }
+
+    if (eventType.includes('PAYMENT') && eventType.includes('REQUESTED')) {
+        if (!payload.appointmentId && !payload.paymentId) {
+            throw new NonRetryableError('PAYMENT_REFERENCE_MISSING', 'INVALID_PAYLOAD');
+        }
+    }
+
+    if (eventType.includes('SESSION') && eventType.includes('REQUESTED')) {
+        if (!payload.sessionId && !payload.appointmentId) {
+            throw new NonRetryableError('SESSION_REFERENCE_MISSING', 'INVALID_PAYLOAD');
+        }
+    }
 }
 
 /**
