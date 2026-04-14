@@ -111,6 +111,7 @@ export const EventTypes = {
     
     // 💰 Balance V2 - Eventos
     BALANCE_DEBIT_REQUESTED: 'BALANCE_DEBIT_REQUESTED',
+    BALANCE_CREDIT_REQUESTED: 'BALANCE_CREDIT_REQUESTED',
     BALANCE_UPDATE_REQUESTED: 'BALANCE_UPDATE_REQUESTED',
     BALANCE_DELETE_REQUESTED: 'BALANCE_DELETE_REQUESTED',
     
@@ -256,6 +257,7 @@ const eventToQueueMap = {
     [EventTypes.PAYMENT_UPDATE_REQUESTED]: 'payment-processing',
     [EventTypes.BALANCE_UPDATE_REQUESTED]: 'balance-update',
     [EventTypes.BALANCE_DEBIT_REQUESTED]: 'balance-update',
+    [EventTypes.BALANCE_CREDIT_REQUESTED]: 'balance-update',
     [EventTypes.BALANCE_DELETE_REQUESTED]: 'balance-update',
     [EventTypes.DAILY_CLOSING_REQUESTED]: 'daily-closing',
     [EventTypes.TOTALS_RECALCULATE_REQUESTED]: 'totals-calculation',

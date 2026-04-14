@@ -431,7 +431,7 @@ router.get('/', async (req, res) => {
 router.patch('/:id', auth, async (req, res) => {
     const startTime = Date.now();
     const { id } = req.params;
-    const { amount, paymentMethod, status, serviceType, specialty, advanceServices = [] } = req.body;
+    const { amount, paymentMethod, status, serviceType, specialty, paymentDate, advanceServices = [] } = req.body;
     
     console.log(`[Payment PATCH] Requisição para atualizar pagamento ${id}:`, req.body);
     
@@ -463,6 +463,7 @@ router.patch('/:id', auth, async (req, res) => {
                           status !== undefined ||
                           serviceType !== undefined ||
                           specialty !== undefined ||
+                          paymentDate !== undefined ||
                           advanceServices.length > 0;
         
         if (!hasChanges) {
@@ -483,8 +484,14 @@ router.patch('/:id', auth, async (req, res) => {
             ...(status !== undefined && { status }),
             ...(serviceType !== undefined && { serviceType }),
             ...(specialty !== undefined && { specialty }),
+            ...(paymentDate !== undefined && { paymentDate }),
             updatedAt: currentDate
         };
+
+        // 🎯 Se alterou a data de pagamento e o payment está pago, sincroniza financialDate (fonte da verdade do caixa)
+        if (paymentDate !== undefined && payment.status && ['paid', 'completed', 'confirmed'].includes(payment.status)) {
+            updateData.financialDate = new Date(paymentDate + 'T12:00:00-03:00');
+        }
         
         await Payment.updateOne({ _id: id }, { $set: updateData });
         console.log('✅ Pagamento principal atualizado');
