@@ -18,7 +18,7 @@ import { recordDecision } from './decisionMetricsService.js';
  * @param {number}  params.latencyMs
  * @param {string}  [params.currentState]
  */
-export function logDecision({ leadId, text, flags, decision, latencyMs, currentState }) {
+export function logDecision({ leadId, text, flags, decision, latencyMs, currentState, orchestrator, hasError, error }) {
   const activeFlags = flags ? Object.entries(flags)
     .filter(([, v]) => v === true)
     .map(([k]) => k) : [];
@@ -37,6 +37,9 @@ export function logDecision({ leadId, text, flags, decision, latencyMs, currentS
     activeFlags,
     inputSnippet: typeof text === 'string' ? text.substring(0, 80) : null,
     latencyMs:   latencyMs ?? null,
+    orchestrator: orchestrator || null,
+    hasError:    !!hasError,
+    error:       error || null,
   });
 
   // Alimenta o agregador em memória (sem await — síncrono)
@@ -46,6 +49,9 @@ export function logDecision({ leadId, text, flags, decision, latencyMs, currentS
     confidence,
     activeFlags,
     latencyMs:  latencyMs ?? null,
+    orchestrator: orchestrator || null,
+    hasError:   !!hasError,
+    error:      error || null,
   });
 }
 

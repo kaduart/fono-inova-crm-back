@@ -143,6 +143,12 @@ async function handleSessionCompleted(payload, deps, correlationId) {
     });
   }
 
+  // 🆕 V2: atualiza snapshot financeiro
+  try {
+    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.js');
+    processFinancialEvent('SESSION_COMPLETED', payload).catch(() => {});
+  } catch {}
+
   return {
     status: 'success',
     action: 'session_completed_processed',
@@ -200,6 +206,12 @@ async function handleSessionCancelled(payload, deps, correlationId) {
         })
       : Promise.resolve()
   ]);
+
+  // 🆕 V2: compensa snapshot financeiro
+  try {
+    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.js');
+    processFinancialEvent('SESSION_CANCELLED', payload).catch(() => {});
+  } catch {}
 
   return {
     status: 'success',
