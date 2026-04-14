@@ -58,3 +58,4 @@ whatsapp-session/
 node_modules
 node_modules
 node_modules
+ENV_VARS_FOR_WORKER.md
