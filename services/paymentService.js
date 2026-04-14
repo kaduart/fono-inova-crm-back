@@ -45,7 +45,7 @@ class PaymentService {
         // 🛡️ VALIDAÇÕES RIGOROSAS (fail fast)
         if (!patientId) throw new Error('[PaymentService] patientId obrigatório');
         if (!amount || amount <= 0) throw new Error('[PaymentService] amount deve ser > 0');
-        if (!['particular', 'convenio', 'insurance'].includes(billingType)) {
+        if (!['particular', 'convenio', 'insurance', 'liminar'].includes(billingType)) {
             throw new Error(`[PaymentService] billingType inválido: ${billingType}`);
         }
         

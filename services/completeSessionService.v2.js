@@ -264,11 +264,31 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             });
         }
 
-        // 💰 CRIAR OU ATUALIZAR PAYMENT se foi pago no ato (particular sem addToBalance)
+        // 💰 CRIAR OU ATUALIZAR PAYMENT se foi pago no ato (particular sem addToBalance ou liminar)
         let paymentCreated = null;
         if (billingType === 'particular' && !addToBalance && sessionValue > 0) {
-            const now = new Date();
-            if (appointment.payment) {
+            let deveCriarPayment = true;
+
+            // 🛡️ BLINDAGEM PACOTE: se é pacote per-session e já está quitado, não criar payment
+            if (packageId) {
+                const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
+                if (pkgAtual) {
+                    const sessionsDone = pkgAtual.sessionsDone || 0;
+                    const totalPaid = pkgAtual.totalPaid || 0;
+                    const dividaTotal = sessionsDone * sessionValue;
+
+                    if (totalPaid >= dividaTotal) {
+                        deveCriarPayment = false;
+                        console.log(`[CompleteSessionV2] Package ${packageId} já quitado (${totalPaid} >= ${dividaTotal}). Não criando payment para sessão.`);
+                    }
+                }
+            }
+
+            if (!deveCriarPayment) {
+                // Nada a fazer — caixa do pacote já entrou no dia da compra
+            } else {
+                const now = new Date();
+                if (appointment.payment) {
                 // 🔄 Reutiliza payment existente (evita duplicidade)
                 const existingPaymentId = appointment.payment._id || appointment.payment;
                 paymentCreated = await Payment.findByIdAndUpdate(
@@ -308,7 +328,30 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 paymentCreated = paymentDoc;
                 appointmentUpdate.$set.payment = paymentCreated._id;
                 console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
+                }
             }
+        } else if (billingType === 'liminar' && sessionValue > 0) {
+            // ⚖️ LIMINAR: revenue recognition no dia da execução da sessão
+            const now = new Date();
+            const [paymentDoc] = await Payment.create([{
+                patient: appointment.patient?._id,
+                amount: sessionValue,
+                status: 'paid',
+                type: 'service',
+                serviceType: 'session',
+                paymentMethod: 'liminar_credit',
+                paymentDate: now,
+                paidAt: now,
+                financialDate: now, // 🎯 ESSENCIAL pro caixa
+                description: `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                appointment: appointmentId,
+                createdBy: userId,
+                kind: 'session_payment',
+                billingType: 'liminar'
+            }], { session: mongoSession });
+            paymentCreated = paymentDoc;
+            appointmentUpdate.$set.payment = paymentCreated._id;
+            console.log(`[CompleteSessionV2] 💰 Payment liminar criado: ${paymentCreated._id}`);
         }
 
         await Appointment.updateOne(
@@ -338,15 +381,15 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             console.log(`[CompleteSessionV2] 🏦 Ledger: package_consumed registrado`);
         }
 
-        if (billingType === 'particular' && sessionValue > 0) {
+        if ((billingType === 'particular' || billingType === 'liminar') && sessionValue > 0) {
             if (paymentCreated) {
                 await recordPaymentReceived(
                     paymentCreated,
                     { userId, correlationId },
                     mongoSession
                 );
-                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado`);
-            } else if (addToBalance) {
+                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado (${billingType})`);
+            } else if (billingType === 'particular' && addToBalance) {
                 await FinancialLedger.credit({
                     type: 'payment_pending',
                     amount: sessionValue,
@@ -376,7 +419,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         let viewRebuilt = false;
         if (packageId) {
             try {
-                const { buildPackageView } = await import('../../domains/billing/services/PackageProjectionService.js');
+                const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
                 await buildPackageView(packageId, { correlationId });
                 console.log(`[CompleteSessionV2] 🔄 View do pacote ${packageId} reconstruída`);
                 viewRebuilt = true;

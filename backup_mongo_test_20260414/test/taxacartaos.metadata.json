@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"bandeira":{"$numberInt":"1"},"ativo":{"$numberInt":"1"}},"name":"bandeira_1_ativo_1","background":true}],"uuid":"fa7e6b3d85d94cfe9bf42ddcdbe60d24","collectionName":"taxacartaos","type":"collection"}
