@@ -4,6 +4,7 @@ import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { assertPayloadField, throwIfNotFoundRetryable } from '../infrastructure/events/errorClassifier.js';
 
 /**
  * Appointment Worker
@@ -35,6 +36,17 @@ export function startAppointmentWorker() {
         
         console.log(`[AppointmentWorker] Processando ${eventType}: ${eventId}`);
 
+        // ✅ Eventos que este worker processa
+        const validEventTypes = [
+            'APPOINTMENT_CREATED',
+            'APPOINTMENT_REQUESTED'
+        ];
+
+        if (!validEventTypes.includes(eventType)) {
+            console.log(`[AppointmentWorker] Ignorando evento não suportado: ${eventType}`);
+            return { status: 'ignored', reason: 'EVENT_TYPE_NOT_HANDLED', eventType };
+        }
+
         // 1. IDEMPOTÊNCIA
         if (processedEvents.has(eventId)) {
             console.log(`[AppointmentWorker] Evento já processado: ${eventId}`);
@@ -42,11 +54,14 @@ export function startAppointmentWorker() {
         }
 
         try {
+            // 🛡️ VALIDAÇÃO DEFENSIVA DO PAYLOAD
+            assertPayloadField(payload?.appointmentId, 'appointmentId', 'APPOINTMENT');
+
             // 2. Busca agendamento
             const appointment = await Appointment.findById(payload.appointmentId);
             
             if (!appointment) {
-                throw new Error(`APPOINTMENT_NOT_FOUND: ${payload.appointmentId}`);
+                throwIfNotFoundRetryable('APPOINTMENT', payload.appointmentId, job.attemptsMade, 3);
             }
 
             // 3. STATE GUARD: Só processa se estiver pending ou processing_create (4.0)

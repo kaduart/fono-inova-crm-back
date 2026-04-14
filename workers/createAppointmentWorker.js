@@ -7,6 +7,7 @@ import Package from '../models/Package.js';
 import { createPackageSession, findAndConsumeReusableCredit } from '../domain/package/consumePackageSession.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { eventExists, processWithGuarantees, appendEvent } from '../infrastructure/events/eventStoreService.js';
+import { assertPayloadField, throwIfNotFoundRetryable } from '../infrastructure/events/errorClassifier.js';
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
 import mongoose from 'mongoose';
@@ -38,7 +39,6 @@ export function startCreateAppointmentWorker() {
         // ✅ Eventos que este worker processa
         const validEventTypes = [
             'APPOINTMENT_CREATE_REQUESTED',   // Novo evento 4.0
-            'APPOINTMENT_CREATED',            // Compatibilidade
             'PACKAGE_APPOINTMENT_REQUESTED',  // Pacote
             'APPOINTMENT_REQUESTED'           // Legado
         ];
@@ -77,6 +77,9 @@ export function startCreateAppointmentWorker() {
             userId
         } = payload;
 
+        // 🛡️ VALIDAÇÃO DEFENSIVA DO PAYLOAD
+        assertPayloadField(appointmentId, 'appointmentId', 'APPOINTMENT');
+
         // 📝 Cria evento no Event Store se não existir
         let eventStoreEvent = existingEvent;
         if (!eventStoreEvent) {
@@ -111,8 +114,8 @@ export function startCreateAppointmentWorker() {
                         .session(mongoSession);
 
                     if (!appointment) {
-                        log.error('appointment_not_found', 'Appointment não encontrado', { appointmentId });
-                        throw new Error('APPOINTMENT_NOT_FOUND');
+                        log.warn('appointment_not_ready', 'Appointment ainda não visível, tentando retry', { appointmentId, attempt: job.attemptsMade + 1 });
+                        throwIfNotFoundRetryable('APPOINTMENT', appointmentId, job.attemptsMade, 3);
                     }
                     
                     log.info('appointment_found', 'Appointment encontrado', { 

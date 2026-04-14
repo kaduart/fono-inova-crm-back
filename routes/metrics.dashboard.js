@@ -420,19 +420,21 @@ async function checkSLOs() {
 // Dashboard de decisões do AmandaOrchestrator
 // ============================================
 
-router.get('/decision', (req, res) => {
+router.get('/decision', async (req, res) => {
   try {
     const windowMinutes = req.query.window ? parseInt(req.query.window, 10) : undefined;
     const last          = req.query.last   ? parseInt(req.query.last, 10)   : undefined;
 
-    const snapshot = getSnapshot({ windowMinutes, last });
+    const snapshot = await getSnapshot({ windowMinutes, last });
 
     res.json({
       success: true,
       data: snapshot,
       meta: {
         generatedAt: new Date().toISOString(),
-        note: 'In-memory buffer — resets on server restart'
+        note: snapshot.source === 'mongodb'
+          ? 'Dados persistidos no MongoDB (sobrevive a restarts)'
+          : 'Buffer em memória — sem dados persistidos ainda'
       }
     });
   } catch (error) {

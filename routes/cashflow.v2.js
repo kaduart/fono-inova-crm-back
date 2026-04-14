@@ -4,6 +4,7 @@ import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
+import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
 
 const router = express.Router();
@@ -145,13 +146,14 @@ router.get('/', auth, async (req, res) => {
         });
 
         // 2) Exclui payments cujo appointment foi deletado ou cancelado
+        //    e blindagem contra duplicidade de pacote já quitado
         const paymentAppointmentIds = validPayments
             .map(p => p.appointment?.toString())
             .filter(Boolean);
         if (paymentAppointmentIds.length > 0) {
             const paymentAppointments = await Appointment.find({
                 _id: { $in: paymentAppointmentIds }
-            }).select('_id isDeleted operationalStatus').lean();
+            }).select('_id isDeleted operationalStatus serviceType package').lean();
             const existingAppointmentsMap = new Map(
                 paymentAppointments.map(a => [a._id.toString(), a])
             );
@@ -166,6 +168,37 @@ router.get('/', auth, async (req, res) => {
                 if (['canceled', 'cancelled', 'cancelado'].includes(appt.operationalStatus)) return false;
                 return true;
             });
+
+            // 🛡️ BLINDAGEM PACOTE: exclui payments de sessões de pacote já quitado
+            const packageIdsFromAppointments = Array.from(new Set(
+                paymentAppointments
+                    .filter(a => a.package && a.serviceType === 'package_session')
+                    .map(a => a.package.toString())
+            ));
+            if (packageIdsFromAppointments.length > 0) {
+                const packages = await Package.find({
+                    _id: { $in: packageIdsFromAppointments }
+                }).select('_id sessionsDone totalPaid sessionValue').lean();
+                const packageMap = new Map(packages.map(p => [p._id.toString(), p]));
+
+                validPayments = validPayments.filter(p => {
+                    const apptId = p.appointment?.toString();
+                    const appt = existingAppointmentsMap.get(apptId);
+                    if (!appt || appt.serviceType !== 'package_session' || !appt.package) return true;
+
+                    const pkg = packageMap.get(appt.package.toString());
+                    if (!pkg) return true;
+
+                    const dividaTotal = (pkg.sessionsDone || 0) * (pkg.sessionValue || 0);
+                    const totalPaid = pkg.totalPaid || 0;
+
+                    if (totalPaid >= dividaTotal) {
+                        console.log(`[CashflowV2] Excluindo payment ${p._id} do caixa: pacote já cobre sessões (${totalPaid} >= ${dividaTotal})`);
+                        return false;
+                    }
+                    return true;
+                });
+            }
         }
 
         const transacoesCaixa = validPayments.map(p => {

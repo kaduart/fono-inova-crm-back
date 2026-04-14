@@ -4,6 +4,7 @@
 import EventStore from '../../models/EventStore.js';
 import { createContextLogger } from '../../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
+import { classifyError } from './errorClassifier.js';
 
 const log = createContextLogger(null, 'event_store');
 
@@ -403,6 +404,19 @@ export async function processWithGuarantees(event, processor, workerName) {
     return { success: true, result };
 
   } catch (error) {
+    const classification = classifyError(error);
+
+    if (!classification.retryable) {
+      // Erro permanente: vai direto para dead letter sem retry
+      await markEventDeadLetter(eventId, error);
+      log.warn('event_permanent_failure', 'Erro permanente detectado, movido para dead letter', {
+        eventId,
+        error: error.message,
+        code: error.code
+      });
+      throw error;
+    }
+
     // Incrementa tentativas
     await EventStore.updateOne(
       { eventId },

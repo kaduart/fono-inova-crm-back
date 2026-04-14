@@ -645,7 +645,13 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     }
 
-    // 👉 CRONS DESLIGADOS (modo memória otimizada)
+    // 👉 CRONS CRÍTICOS HABILITADOS
+    const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
+    startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
+    const { initEventReaperCron } = await import("./crons/eventReaper.cron.js");
+    startCron('eventReaper', () => initEventReaperCron());
+
+    // Crons opcionais desligados (modo memória otimizada)
     // startCron('learning', () => startLearningCron());
     // const { startRegressionCron } = await import("./crons/regressionCron.js");
     // startCron('regression', () => startRegressionCron());
@@ -653,11 +659,9 @@ server.listen(PORT, '0.0.0.0', () => {
     // startCron('metaAds', () => startMetaAdsCron());
     // const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
     // startCron('leadRecovery', () => initLeadRecoveryCron());
-    // const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
-    // startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
     // const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
     // startScheduledPublisher();
-    console.log("⏸️ Crons DESLIGADOS (modo memória otimizada)");
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper)");
 
     // Registrar Webhook PIX no Sicoob
     try {

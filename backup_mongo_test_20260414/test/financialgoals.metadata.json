@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"clinicId":{"$numberInt":"1"},"year":{"$numberInt":"1"},"month":{"$numberInt":"1"}},"name":"clinicId_1_year_1_month_1","background":true,"unique":true}],"uuid":"53b6fd4281ef4c9d800f42211fb3f6ca","collectionName":"financialgoals","type":"collection"}
