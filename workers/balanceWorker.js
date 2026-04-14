@@ -39,6 +39,9 @@ export function startBalanceWorker() {
                 case 'BALANCE_DEBIT_REQUESTED':
                     result = await handleDebit(payload, eventId);
                     break;
+                case 'BALANCE_CREDIT_REQUESTED':
+                    result = await handleCredit(payload, eventId);
+                    break;
                 default:
                     result = await handleLegacy(payload, eventId);
             }
@@ -108,6 +111,41 @@ async function handleDebit(payload, eventId) {
     );
     
     console.log(`[BalanceWorker] Débito: patient=${patientId}, amount=${amount}`);
+
+    await patientProjectionQueue.add('rebuild', {
+        eventType: 'BALANCE_UPDATED',
+        payload: { patientId },
+        correlationId: eventId
+    });
+
+    return { status: 'success', eventId, patientId, amount };
+}
+
+async function handleCredit(payload, eventId) {
+    const { patientId, amount, description, requestedBy } = payload;
+
+    await PatientBalance.updateOne(
+        { patient: patientId },
+        {
+            $inc: {
+                currentBalance: -Math.abs(amount),
+                totalCredited: Math.abs(amount)
+            },
+            $push: {
+                transactions: {
+                    type: 'credit',
+                    amount: Math.abs(amount),
+                    description,
+                    registeredBy: requestedBy,
+                    transactionDate: new Date()
+                }
+            },
+            $set: { lastTransactionAt: new Date() }
+        },
+        { upsert: true }
+    );
+
+    console.log(`[BalanceWorker] Crédito: patient=${patientId}, amount=${amount}`);
 
     await patientProjectionQueue.add('rebuild', {
         eventType: 'BALANCE_UPDATED',

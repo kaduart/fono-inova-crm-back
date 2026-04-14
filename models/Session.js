@@ -81,7 +81,7 @@ const sessionSchema = new mongoose.Schema({
     notes: { type: String },
     paymentStatus: {
         type: String,
-        enum: ['paid', 'partial', 'pending', 'pending_receipt', 'recognized', 'package_paid', 'pending_balance'],
+        enum: ['paid', 'partial', 'pending', 'unpaid', 'pending_receipt', 'recognized', 'package_paid', 'pending_balance'],
         default: 'pending',
         description: 'Situação financeira específica desta sessão'
     },
@@ -184,7 +184,7 @@ const sessionSchema = new mongoose.Schema({
     // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
     paymentOrigin: {
         type: String,
-        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual', 'updated', 'existing'],
+        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'liminar_credit', 'individual', 'updated', 'existing'],
         default: null,
         index: true,
         description: 'Origem do pagamento para rastreabilidade financeira completa'

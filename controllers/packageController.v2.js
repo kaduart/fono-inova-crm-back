@@ -403,6 +403,18 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
+  if (model === 'prepaid' && Array.isArray(req.body.payments)) {
+    const invalidPayment = req.body.payments.find(p => !p.amount || typeof p.amount !== 'number' || p.amount <= 0);
+    if (invalidPayment) {
+      await mongoSession.endSession();
+      return res.status(400).json({
+        success: false,
+        errorCode: 'INVALID_PAYMENT_AMOUNT',
+        message: 'Cada pagamento em payments[] deve ter amount (número > 0)'
+      });
+    }
+  }
+
   // Validações específicas por tipo
   if ((type === 'insurance' || type === 'convenio') && !req.body.insuranceGuideId) {
     await mongoSession.endSession();
@@ -675,6 +687,17 @@ export const createPackageV2 = async (req, res) => {
         await Package.findByIdAndUpdate(pkg._id, {
           $set: { payments: createdPayments.map(p => p._id) }
         });
+        
+        // 🏦 REGISTRAR NO LEDGER FINANCEIRO
+        try {
+          const { recordPackagePurchase } = await import('../services/financialLedgerService.js');
+          for (const payment of createdPayments) {
+            await recordPackagePurchase(pkg, payment, { correlationId });
+          }
+          logger.info('[PackageV2] Ledger registrado para payments do pacote');
+        } catch (ledgerError) {
+          logger.error('[PackageV2] Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+        }
       } catch (paymentError) {
         paymentFailed = true;
         logger.error('[PackageV2][CRITICAL] Payment creation failed after package created', {
