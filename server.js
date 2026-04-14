@@ -40,15 +40,6 @@ import { startLearningCron } from "./crons/learningCron.js";
 import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
 import { startCron } from './config/cronManager.js';
 
-// ======================================================
-// 🧩 BullMQ e Painel Bull Board
-// ======================================================
-import { createBullBoard } from "@bull-board/api";
-import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
-import { ExpressAdapter } from "@bull-board/express";
-import * as BullMQ from "bullmq";
-const { Queue, QueueEvents } = BullMQ;
-
 import "./models/index.js";
 import jwt from "jsonwebtoken";
 import { auth } from "./middleware/auth.js";
@@ -57,6 +48,7 @@ import { auth } from "./middleware/auth.js";
 // ======================================================
 import adminRoutes from "./routes/admin.js";
 import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOVO: Admin Dashboard V2
+import adminSystemRoutes, { serverAdapter as bullBoardAdapter } from './routes/adminSystem.js';  // 🖥️ Monitor de filas + Bull Board
 import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
 // 🚫 INATIVADO: appointmentRoutes V1 removido (usando apenas V2)
@@ -361,6 +353,7 @@ app.use("/api/signup", signupRoutes);
 app.use("/api/login", loginRoutes);
 app.use("/api/admin", etagMiddleware({ ttl: 300 }), adminRoutes);
 app.use("/api/v2/admin/dashboard", adminDashboardV2Routes);  // 🚀 NOVO: Admin Dashboard V2
+app.use("/api/admin", adminSystemRoutes);  // 🖥️ Bull Board + system-monitor
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
@@ -600,21 +593,25 @@ server.listen(PORT, '0.0.0.0', () => {
       // await import("./workers/video.worker.js");
       // await import("./workers/post.worker.js");
       
-      const { startAllWorkers } = await import("./workers/index.js");
-      await startAllWorkers();
-      console.log("🎯 Workers 4.0 iniciados");
+      if (process.env.ENABLE_WORKERS === "true") {
+        const { startAllWorkers } = await import("./workers/index.js");
+        await startAllWorkers();
+        console.log("🎯 Workers 4.0 iniciados");
+        console.log("✅ Workers ATIVADOS no Web Service");
+      } else {
+        console.log("⏭️ Workers desabilitados (ENABLE_WORKERS !== true). Use o serviço de Worker separado.");
+      }
       
-      // 🎯 Inicia projections (event-driven)
-      const { default: FinancialProjectionHandler } = await import("./projections/financialProjection.js");
-      FinancialProjectionHandler.start();
-      console.log("💰 Financial Projection iniciada");
-      
-      // const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
-      // initGmbRetryWorker();
-      
-      // await import("./jobs/followup.analytics.cron.js");
-      // await import("./crons/responseTracking.cron.js");
-      console.log("✅ Workers ATIVADOS");
+      // 🎯 Inicia projections independentemente (útil para dev:api:full)
+      if (process.env.ENABLE_WORKERS === "true" || process.env.ENABLE_PROJECTIONS === "true") {
+        try {
+          const { default: FinancialProjectionHandler } = await import("./projections/financialProjection.js");
+          FinancialProjectionHandler.start();
+          console.log("💰 Financial Projection iniciada");
+        } catch (projErr) {
+          console.warn("⚠️ Financial Projection não iniciada:", projErr.message);
+        }
+      }
     } catch (workerErr) {
       console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
     }
@@ -697,10 +694,9 @@ server.listen(PORT, '0.0.0.0', () => {
 })();
 
 // ======================================================
-// 🎛️ Painel Bull Board (BullMQ v5)
+// 🎛️ Eventos globais das filas (logs apenas em falha)
 // ======================================================
 try {
-  // 🔹 Eventos globais das filas (logs apenas em falha)
   followupEvents.on("failed", ({ jobId, failedReason }) =>
     console.error(`💥 Followup Job ${jobId} falhou: ${failedReason}`)
   );
@@ -708,20 +704,15 @@ try {
   videoGenerationEvents.on("failed", ({ jobId, failedReason }) =>
     console.error(`🎬 Video Job ${jobId} falhou: ${failedReason}`)
   );
+} catch (err) {
+  console.error("⚠️ Falha ao inicializar eventos de fila:", err.message);
+}
 
-  // 🔹 Painel Bull Board
-  const serverAdapter = new ExpressAdapter();
-  serverAdapter.setBasePath("/admin/queues");
-
-  createBullBoard({
-    queues: [
-      new BullMQAdapter(followupQueue),
-      new BullMQAdapter(videoGenerationQueue)  // 🎬 Adicionar fila de vídeos
-    ],
-    serverAdapter,
-  });
-
-  app.use("/admin/queues", serverAdapter.getRouter());
+// ======================================================
+// 🖥️ Bull Board (todas as filas)
+// ======================================================
+try {
+  app.use("/admin/queues", auth, bullBoardAdapter.getRouter());
   console.log("🖥️ Bull Board disponível em: /admin/queues");
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message);

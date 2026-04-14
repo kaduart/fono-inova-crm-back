@@ -21,6 +21,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import PatientsView from '../models/PatientsView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import PatientBalance from '../models/PatientBalance.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
@@ -551,6 +552,28 @@ export const createPackageV2 = async (req, res) => {
           errorCode: 'SCHEDULE_COUNT_MISMATCH',
           message: `Agenda tem ${schedule.length} sessões, mas deve ter exatamente ${totalSessions}`
         });
+      }
+
+      // 🛡️ VALIDAR CONSISTÊNCIA COM DÉBITOS: schedule não pode começar antes do débito mais antigo
+      const debtIds = req.body.selectedDebts || req.body.pendingSessionIds || [];
+      if (debtIds.length > 0) {
+        const balance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession).lean();
+        const debitDates = (balance?.transactions || [])
+          .filter(t => debtIds.includes(t._id?.toString()) && t.type === 'debit')
+          .map(t => new Date(t.transactionDate).toISOString().split('T')[0]);
+        
+        if (debitDates.length > 0) {
+          const oldestDebtDate = debitDates.sort()[0];
+          const earliestScheduleDate = schedule.map(s => s.date).sort()[0];
+          if (earliestScheduleDate < oldestDebtDate) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              errorCode: 'SCHEDULE_BEFORE_DEBT',
+              message: `A primeira sessão sugerida (${earliestScheduleDate}) é anterior ao débito mais antigo (${oldestDebtDate}). Ajuste a data de início.`
+            });
+          }
+        }
       }
       
       // 🔄 AJUSTAR FERIADOS (pula para próxima semana em vez de bloquear)

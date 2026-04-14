@@ -171,6 +171,7 @@ export async function buildPackageView(packageId, options = {}) {
       
       ...sessionMetrics,
       sessionsDone: Math.max(pkg.sessionsDone || 0, sessionMetrics.sessionsUsed), // usa o counter do Package (atualizado na transação)
+      sessionsRemaining: Math.max(0, (pkg.totalSessions || sessionMetrics.totalSessions) - Math.max(pkg.sessionsDone || 0, sessionMetrics.sessionsUsed) - sessionMetrics.sessionsCanceled),
 
       sessionValue: pkg.sessionValue,
       totalValue: pkg.totalValue,

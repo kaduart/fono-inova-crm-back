@@ -18,6 +18,24 @@ import PatientBalance from '../models/PatientBalance.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 /**
+ * 🛡️ Valida se schedule começa antes do débito mais antigo
+ */
+async function validateScheduleAgainstDebts(patientId, selectedDebts, selectedSlots) {
+    if (!selectedDebts || selectedDebts.length === 0) return null;
+    const balance = await PatientBalance.findOne({ patient: patientId }).lean();
+    const debitDates = (balance?.transactions || [])
+        .filter(t => selectedDebts.includes(t._id?.toString()) && t.type === 'debit')
+        .map(t => new Date(t.transactionDate).toISOString().split('T')[0]);
+    if (debitDates.length === 0) return null;
+    const oldestDebtDate = debitDates.sort()[0];
+    const earliestSlotDate = selectedSlots.map(s => s.date).sort()[0];
+    if (earliestSlotDate < oldestDebtDate) {
+        return `A primeira sessão sugerida (${earliestSlotDate}) é anterior ao débito mais antigo (${oldestDebtDate}). Ajuste a data de início.`;
+    }
+    return null;
+}
+
+/**
  * 🏥 Cria recebível de convênio quando sessão é completada
  * @param {Object} session - Sessão completada
  * @param {Object} pkg - Pacote da sessão
@@ -192,6 +210,12 @@ export const packageOperations = {
             }
             if (!selectedSlots.length) {
                 throw new Error('Nenhum horário selecionado (selectedSlots está vazio)');
+            }
+
+            // 🛡️ Validação de consistência com débitos
+            const debtValidationError = await validateScheduleAgainstDebts(patientId, selectedDebts, selectedSlots);
+            if (debtValidationError) {
+                throw new Error(debtValidationError);
             }
 
             // ⚖️ Log para pacotes liminar (campos opcionais)

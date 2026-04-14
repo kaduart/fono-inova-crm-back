@@ -31,7 +31,7 @@ function shouldDebounce(aggregateId, eventType) {
 }
 
 // Filas disponíveis
-const queues = {
+export const queues = {
     'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
     'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
     'balance-update': new Queue('balance-update', { connection: redisConnection }),

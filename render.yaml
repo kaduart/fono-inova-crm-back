@@ -1,0 +1,89 @@
+# 🚀 Render Blueprint - CRM Fono Inova
+# Arquitetura: API separada de Workers (evita Redis overload)
+# Deploy: conecte este repo no Render via Blueprint
+
+services:
+  # =========================
+  # 🖥️ WEB API SERVICE
+  # =========================
+  - type: web
+    name: fono-inova-crm-back
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "false"
+      - key: PORT
+        value: "5000"
+    autoDeploy: true
+
+  # =========================
+  # ⚙️ WORKER SERVICE (todos os workers)
+  # =========================
+  - type: worker
+    name: crm-worker
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node workers/startWorkers.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "true"
+      - key: WORKER_GROUP
+        value: "all"
+    autoDeploy: true
+
+  # =========================
+  # 🔥 WORKERS ESCALÁVEIS (descomente quando quiser escalar)
+  # =========================
+  # - type: worker
+  #   name: crm-worker-scheduling
+  #   runtime: node
+  #   plan: starter
+  #   buildCommand: npm install
+  #   startCommand: node workers/entrypoints/scheduling-worker.js
+  #   envVars:
+  #     - key: NODE_ENV
+  #       value: production
+  #     - key: ENABLE_WORKERS
+  #       value: "true"
+  #     - key: WORKER_GROUP
+  #       value: "scheduling"
+  #   autoDeploy: true
+  #
+  # - type: worker
+  #   name: crm-worker-billing
+  #   runtime: node
+  #   plan: starter
+  #   buildCommand: npm install
+  #   startCommand: node workers/entrypoints/billing-worker.js
+  #   envVars:
+  #     - key: NODE_ENV
+  #       value: production
+  #     - key: ENABLE_WORKERS
+  #       value: "true"
+  #     - key: WORKER_GROUP
+  #       value: "billing"
+  #   autoDeploy: true
+  #
+  # - type: worker
+  #   name: crm-worker-whatsapp
+  #   runtime: node
+  #   plan: starter
+  #   buildCommand: npm install
+  #   startCommand: node workers/entrypoints/whatsapp-worker.js
+  #   envVars:
+  #     - key: NODE_ENV
+  #       value: production
+  #     - key: ENABLE_WORKERS
+  #       value: "true"
+  #     - key: WORKER_GROUP
+  #       value: "whatsapp"
+  #   autoDeploy: true
