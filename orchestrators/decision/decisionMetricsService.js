@@ -89,6 +89,9 @@ async function _queryMongo({ last, windowMinutes }) {
     confidence:d.confidence,
     flags:     d.flags,
     latencyMs: d.latencyMs,
+    orchestrator: d.orchestrator,
+    hasError:  d.hasError,
+    error:     d.error,
   }));
 }
 
@@ -112,6 +115,7 @@ function _aggregate(entries) {
     return {
       total: 0, actions: {}, domains: {}, topFlags: [],
       latency: null, latencyByAction: {}, alerts: [],
+      errors: { count: 0, pct: 0 },
       bufferSize: buffer.length, source: 'empty',
     };
   }
@@ -150,6 +154,10 @@ function _aggregate(entries) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([flag, count]) => ({ flag, count, pct: pct(count, total) }));
+
+  // Erros
+  const errorCount = entries.filter(e => e.hasError).length;
+  const errors = { count: errorCount, pct: pct(errorCount, total) };
 
   // Latência global
   const latencies = entries.map(e => e.latencyMs).filter(v => v != null);
@@ -193,7 +201,7 @@ function _aggregate(entries) {
   return {
     total,
     actions, domains, topFlags,
-    latency, latencyByAction, alerts,
+    latency, latencyByAction, alerts, errors,
     bufferSize: buffer.length,
     source: 'mongodb',
   };

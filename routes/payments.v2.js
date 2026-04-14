@@ -12,9 +12,13 @@ import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
 import PaymentsView from '../models/PaymentsView.js';
 import { rebuildPaymentsProjection } from '../projections/paymentsProjection.js';
+import { getSnapshotsForRange, getSnapshotsForMonth, reducePaymentStats } from '../services/financialSnapshot.service.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
+
+// 🆕 V2: feature flag para usar snapshot (permite rollback rápido)
+const USE_SNAPSHOT = process.env.FF_PAYMENTS_SNAPSHOT !== 'false';
 
 /**
  * GET /api/v2/payments
@@ -92,6 +96,19 @@ router.get('/', auth, async (req, res) => {
         const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 50));
         const skip = (pageNum - 1) * limitNum;
         
+        // Resolve range de datas para snapshot
+        let snapshotStart, snapshotEnd;
+        if (filter.paymentMonth) {
+            snapshotStart = `${filter.paymentMonth}-01`;
+            snapshotEnd = moment(snapshotStart).endOf('month').format('YYYY-MM-DD');
+        } else if (filter.paymentDate?.$gte && filter.paymentDate?.$lte) {
+            snapshotStart = filter.paymentDate.$gte;
+            snapshotEnd = filter.paymentDate.$lte;
+        } else {
+            snapshotStart = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+            snapshotEnd = snapshotStart;
+        }
+
         // Execute query com performance tracking
         const [payments, total] = await Promise.all([
             PaymentsView.find(filter)
@@ -135,36 +152,50 @@ router.get('/', auth, async (req, res) => {
             package: p.packageId ? { _id: p.packageId } : null
         }));
         
-        // 🔥 STATS V2: produced (amount) vs received (receivedAmount)
-        const totals = await PaymentsView.aggregate([
-            { $match: filter },
-            {
-                $group: {
-                    _id: null,
-                    produced: { $sum: '$amount' },
-                    received: { $sum: '$receivedAmount' },
-                    count: { $sum: 1 },
-                    countPaid: {
-                        $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] }
-                    },
-                    countPartial: {
-                        $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] }
-                    },
-                    countPending: {
-                        $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+        // 🚀 V2 PURO: stats via snapshot (zero aggregate)
+        let stats;
+        if (USE_SNAPSHOT) {
+            const snapshots = await getSnapshotsForRange(snapshotStart, snapshotEnd, clinicId);
+            stats = reducePaymentStats(snapshots);
+
+            // 🛡️ Validação silenciosa: compara com V1 se houver dados divergentes
+            if (stats.count === 0 && total > 0) {
+                console.warn('[PaymentsV2] Snapshot vazio mas PaymentsView tem dados — fallback para aggregate V1', {
+                    clinicId, snapshotStart, snapshotEnd, total
+                });
+                const totalsV1 = await PaymentsView.aggregate([
+                    { $match: filter },
+                    {
+                        $group: {
+                            _id: null,
+                            produced: { $sum: '$amount' },
+                            received: { $sum: '$receivedAmount' },
+                            count: { $sum: 1 },
+                            countPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                            countPartial: { $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] } },
+                            countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }
+                        }
+                    }
+                ]);
+                stats = totalsV1[0] || { produced:0, received:0, count:0, countPaid:0, countPartial:0, countPending:0 };
+            }
+        } else {
+            const totals = await PaymentsView.aggregate([
+                { $match: filter },
+                {
+                    $group: {
+                        _id: null,
+                        produced: { $sum: '$amount' },
+                        received: { $sum: '$receivedAmount' },
+                        count: { $sum: 1 },
+                        countPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                        countPartial: { $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] } },
+                        countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }
                     }
                 }
-            }
-        ]);
-        
-        const stats = totals[0] || {
-            produced: 0,
-            received: 0,
-            count: 0,
-            countPaid: 0,
-            countPartial: 0,
-            countPending: 0
-        };
+            ]);
+            stats = totals[0] || { produced:0, received:0, count:0, countPaid:0, countPartial:0, countPending:0 };
+        }
         
         const pending = stats.produced - stats.received;
         
@@ -284,51 +315,66 @@ router.get('/stats/summary', auth, async (req, res) => {
     try {
         const { month = moment().tz(TIMEZONE).format('YYYY-MM'), clinicId = 'default' } = req.query;
         
-        const stats = await PaymentsView.aggregate([
-            {
-                $match: {
-                    clinicId,
-                    paymentMonth: month,
-                    isDeleted: false
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    totalCount: { $sum: 1 },
-                    totalAmount: { $sum: '$amount' },
-                    byCategory: {
-                        $push: {
-                            k: '$category',
-                            v: '$amount'
-                        }
-                    },
-                    byMethod: {
-                        $push: {
-                            k: '$method',
-                            v: '$amount'
-                        }
-                    },
-                    byStatus: {
-                        $push: {
-                            k: '$status',
-                            v: '$amount'
+        let data;
+        if (USE_SNAPSHOT) {
+            const snapshots = await getSnapshotsForMonth(month, clinicId);
+            const reduced = reducePaymentStats(snapshots);
+            
+            data = {
+                totalCount: reduced.count,
+                totalAmount: reduced.produced,
+                byCategory: Object.entries(reduced.byCategory).map(([k, v]) => ({ k, v })),
+                byMethod: Object.entries(reduced.byMethod).map(([k, v]) => ({ k, v })),
+                byStatus: [
+                    { k: 'paid', v: reduced.countPaid },
+                    { k: 'partial', v: reduced.countPartial },
+                    { k: 'pending', v: reduced.countPending }
+                ]
+            };
+            
+            // 🛡️ Fallback silencioso se snapshot vazio
+            if (reduced.count === 0) {
+                const v1 = await PaymentsView.aggregate([
+                    { $match: { clinicId, paymentMonth: month, isDeleted: false } },
+                    {
+                        $group: {
+                            _id: null,
+                            totalCount: { $sum: 1 },
+                            totalAmount: { $sum: '$amount' },
+                            byCategory: { $push: { k: '$category', v: '$amount' } },
+                            byMethod:   { $push: { k: '$method',   v: '$amount' } },
+                            byStatus:   { $push: { k: '$status',   v: '$amount' } }
                         }
                     }
+                ]);
+                const v1Data = v1[0];
+                if (v1Data) {
+                    console.warn('[PaymentsV2] Snapshot vazio em stats/summary — fallback V1 ativado', { month, clinicId });
+                    data = v1Data;
                 }
             }
-        ]);
+        } else {
+            const stats = await PaymentsView.aggregate([
+                { $match: { clinicId, paymentMonth: month, isDeleted: false } },
+                {
+                    $group: {
+                        _id: null,
+                        totalCount: { $sum: 1 },
+                        totalAmount: { $sum: '$amount' },
+                        byCategory: { $push: { k: '$category', v: '$amount' } },
+                        byMethod:   { $push: { k: '$method',   v: '$amount' } },
+                        byStatus:   { $push: { k: '$status',   v: '$amount' } }
+                    }
+                }
+            ]);
+            data = stats[0] || { totalCount: 0, totalAmount: 0, byCategory: [], byMethod: [], byStatus: [] };
+        }
         
         res.json({
             success: true,
             month,
-            data: stats[0] || {
-                totalCount: 0,
-                totalAmount: 0,
-                byCategory: [],
-                byMethod: [],
-                byStatus: []
-            }
+            source: USE_SNAPSHOT ? 'snapshot' : 'aggregate',
+            data
         });
         
     } catch (error) {

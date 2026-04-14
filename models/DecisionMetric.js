@@ -10,13 +10,15 @@ import mongoose from 'mongoose';
 const { Schema, model, models } = mongoose;
 
 const DecisionMetricSchema = new Schema({
-  ts:          { type: Date,    required: true, index: true },
+  ts:          { type: Date,    required: true },
   action:      { type: String,  required: true, enum: ['RULE', 'HYBRID', 'AI', 'unknown'] },
   domain:      { type: String,  default: null },
   confidence:  { type: Number,  default: null },
   flags:       { type: [String], default: [] },
   latencyMs:   { type: Number,  default: null },
   orchestrator:{ type: String,  default: null },
+  hasError:    { type: Boolean, default: false },
+  error:       { type: String,  default: null },
 }, {
   timestamps: false,
   versionKey: false,

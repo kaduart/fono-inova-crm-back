@@ -1608,11 +1608,81 @@ export async function getOptimizedAmandaResponse({
     context = {},
     messageId = null,
 }) {
-    // 🆕 WRAPPER DE SEGURANÇA: Garante que nunca retorne null
-    const result = await _getOptimizedAmandaResponseInternal({
-        content, userText, lead, context, messageId
-    });
-    
+    const text = userText || content || "";
+    const _decisionStart = Date.now();
+    let decisionLogData = null;
+
+    // 🔥 PRÉ-COMPUTA DECISÃO PARA OBSERVABILIDADE (independente de early returns)
+    try {
+        const intentPriority = detectIntentPriority(text);
+        const forceFlags = {
+            forceExplainFirst: intentPriority === "EXPLICACAO",
+            forceEmpathy: intentPriority === "SINTOMA" || intentPriority === "URGENCIA",
+            forceScheduling: intentPriority === "AGENDAMENTO",
+            forceRedirect: intentPriority === "FORA_ESCOPO",
+            forcePrice: intentPriority === "PRECO",
+            forceFirstContact: intentPriority === "FIRST_CONTACT",
+            forceUrgencia: intentPriority === "URGENCIA",
+            forceHighIntent: intentPriority === "ALTA_INTENCAO",
+            forceUrgency: /(?:^|\s)(hoje|amanh[ãa]|urgente|desesperad[oa]?|preciso logo|quanto antes|tem vaga|tem hor[áa]rio)(?:\s|$|[,.!?])/i.test(text.toLowerCase()),
+        };
+        const flags = detectAllFlags(text, lead);
+        const detectorResults = extractDetectorResults(flags);
+        const currentState = lead.triageStep || lead.stage || 'IDLE';
+        const decision = resolveDecision({
+            forceFlags,
+            detectorResults,
+            currentState,
+            messageIndex: lead.messagesCount || lead.messageCount || 0,
+            enrichedContext: { lead, context },
+            businessRules: {},
+            contextModifiers: {}
+        });
+        decisionLogData = { flags, decision };
+    } catch (err) {
+        console.warn('[AmandaMetrics] Falha ao pré-computar decisão:', err.message);
+    }
+
+    let result;
+    let hasError = false;
+    let errorMessage = null;
+
+    try {
+        result = await _getOptimizedAmandaResponseInternal({
+            content, userText, lead, context, messageId
+        });
+    } catch (err) {
+        hasError = true;
+        errorMessage = err.message;
+        throw err; // re-lança para não mudar comportamento externo
+    } finally {
+        // 🔥 LOG SEMPRE EXECUTA — independente de early returns ou erro
+        if (decisionLogData) {
+            logDecision({
+                leadId: lead._id,
+                text: text.substring(0, 100),
+                flags: decisionLogData.flags,
+                decision: decisionLogData.decision,
+                latencyMs: Date.now() - _decisionStart,
+                currentState: lead.triageStep || lead.stage || 'IDLE',
+                orchestrator: 'AmandaOrchestrator',
+                ...(hasError ? { error: errorMessage } : {}),
+            });
+        } else if (hasError) {
+            // fallback se pré-computação falhou mas execução também falhou
+            logDecision({
+                leadId: lead._id,
+                text: text.substring(0, 100),
+                flags: {},
+                decision: { action: 'unknown', domain: 'unknown', reason: 'error', systemConfidence: 0 },
+                latencyMs: Date.now() - _decisionStart,
+                currentState: lead.triageStep || lead.stage || 'IDLE',
+                orchestrator: 'AmandaOrchestrator',
+                error: errorMessage,
+            });
+        }
+    }
+
     if (!result || result === null || (typeof result === 'object' && !result.text)) {
         console.error('🚨 [GUARD CRÍTICO] Resposta nula detectada, usando fallback de emergência');
         return {
@@ -1621,7 +1691,7 @@ export async function getOptimizedAmandaResponse({
             _fallback: true
         };
     }
-    
+
     return result;
 }
 
@@ -2242,15 +2312,6 @@ async function _getOptimizedAmandaResponseInternal({
         currentState: lead.triageStep || lead.stage || 'IDLE',
         messageIndex: enrichedContext?.conversationHistory?.filter(m => m.role === 'user').length || 0,
         enrichedContext
-    });
-
-    logDecision({
-        leadId:       lead._id,
-        text:         lead.complaint || text,
-        flags,
-        decision,
-        latencyMs:    Date.now() - _decisionStart,
-        currentState: lead.triageStep || lead.stage || 'IDLE',
     });
 
     console.log("🧠 DECISION:", {

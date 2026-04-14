@@ -86,6 +86,16 @@ export function startPaymentWorker() {
                 'payment_worker'
             );
 
+            // 🆕 V2: atualiza snapshot financeiro de forma não-bloqueante
+            try {
+                const { processFinancialEvent } = await import('./financialSnapshotWorker.js');
+                processFinancialEvent(eventType, payload).catch(err =>
+                    log.error('snapshot_update_error', err.message, { eventId, eventType })
+                );
+            } catch (importErr) {
+                log.warn('snapshot_import_failed', importErr.message, { eventId });
+            }
+
             return result.result;
             
         } catch (error) {
@@ -178,7 +188,7 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
 
     // 3. Cria registro de pagamento
     const payment = new Payment({
-        patient: patientId,  // 🎯 Schema espera 'patient'
+        patient: appointment?.patient || patientId,  // 🎯 Schema obrigatório: busca do appointment ou fallback payload
         patientId: patientId,
         appointment: appointmentId,  // 🎯 Schema espera 'appointment'
         appointmentId: appointmentId,
@@ -463,6 +473,7 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
         const mappedMethod = methodMap[rawMethod] || rawMethod;
         
         const mainPayment = new Payment({
+            patient: patientId,
             patientId: patientId,
             amount: totalAmount,
             paymentMethod: mappedMethod,
@@ -637,9 +648,11 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
         };
 
     } catch (error) {
-        await mongoSession.abortTransaction();
+        if (mongoSession.inTransaction()) {
+            await mongoSession.abortTransaction();
+        }
         log.error('multi_payment_error', `Erro no payment-multi: ${error.message}`);
-        
+
         // Publica evento de falha
         await publishEvent(
             EventTypes.PAYMENT_FAILED,
@@ -651,7 +664,7 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             },
             { correlationId }
         );
-        
+
         throw error;
     } finally {
         mongoSession.endSession();
@@ -955,7 +968,9 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
         };
 
     } catch (error) {
-        await mongoSession.abortTransaction();
+        if (mongoSession.inTransaction()) {
+            await mongoSession.abortTransaction();
+        }
         log.error('single_payment_error', `Erro no recebimento: ${error.message}`);
         throw error;
     } finally {
