@@ -1,6 +1,7 @@
 import './Specialty.js';
 import "./Doctor.js";
 import "./Patient.js";
+import "./PatientsView.js";
 import "./Appointment.js";
 import "./Session.js";
 import "./Package.js";
