@@ -187,4 +187,90 @@ router.post('/:patientId/debit', auth, async (req, res) => {
     }
 });
 
+// ======================================================
+// POST /v2/balance/:patientId/credit - Adiciona crédito (event-driven)
+// ======================================================
+router.post('/:patientId/credit', auth, async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        const { amount, description } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'ID de paciente inválido'
+            });
+        }
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valor deve ser maior que zero'
+            });
+        }
+
+        const resolvedPatientId = await resolvePatientId(patientId);
+
+        const balance = await PatientBalance.findOne(
+            { patient: resolvedPatientId },
+            { processingStatus: 1 }
+        ).lean();
+
+        if (balance?.processingStatus === 'updating') {
+            return res.status(409).json({
+                success: false,
+                error: 'Saldo está sendo processado, tente novamente'
+            });
+        }
+
+        const correlationId = `balance_credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const eventResult = await publishEvent(
+            EventTypes.BALANCE_CREDIT_REQUESTED,
+            {
+                patientId: resolvedPatientId,
+                amount,
+                description,
+                type: 'credit',
+                requestedBy: req.user?._id?.toString(),
+                requestedAt: new Date().toISOString()
+            },
+            {
+                correlationId,
+                aggregateType: 'balance',
+                aggregateId: resolvedPatientId,
+                metadata: {
+                    source: 'balance_api_v2',
+                    userId: req.user?._id?.toString()
+                }
+            }
+        );
+
+        console.log(`[BalanceV2] Crédito enfileirado: ${eventResult.eventId}`, {
+            patientId: resolvedPatientId,
+            amount,
+            correlationId
+        });
+
+        res.status(202).json({
+            success: true,
+            message: 'Crédito enfileirado para processamento',
+            data: {
+                eventId: eventResult.eventId,
+                correlationId,
+                patientId: resolvedPatientId,
+                amount,
+                status: 'pending',
+                checkStatusUrl: `/api/v2/balance/status/${eventResult.eventId}`
+            }
+        });
+
+    } catch (error) {
+        console.error('[BalanceV2] Erro ao criar crédito:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao criar crédito: ' + error.message
+        });
+    }
+});
+
 export default router;

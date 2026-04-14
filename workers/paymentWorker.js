@@ -1222,6 +1222,15 @@ async function handlePaymentConfirmed(payload, eventId, correlationId, log) {
         paymentStatus: 'paid'
     });
     
+    // 🏦 REGISTRAR NO LEDGER (caixa)
+    try {
+        const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
+        await recordPaymentReceived(payment, { correlationId: correlationId || `webhook_${Date.now()}` });
+        log.info('ledger_recorded', `Lançamento contábil registrado no caixa (webhook)`);
+    } catch (ledgerError) {
+        log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+    }
+    
     log.info('confirmed_via_webhook', `Pagamento ${paymentId} confirmado via webhook`);
     
     return { status: 'confirmed_via_webhook', paymentId };

@@ -613,6 +613,19 @@ export async function handlePackageCreate(payload, correlationId) {
 
     await newPackage.save({ session: mongoSession });
 
+    // 🏦 REGISTRAR NO LEDGER FINANCEIRO (dentro da transação)
+    if (paymentDocs.length > 0) {
+      try {
+        const { recordPackagePurchase } = await import('../../services/financialLedgerService.js');
+        for (const payment of paymentDocs) {
+          await recordPackagePurchase(newPackage, payment, { correlationId: `pkg_worker_${Date.now()}` }, mongoSession);
+        }
+        logger.info(`[PackageProcessingWorker] Ledger registrado para ${paymentDocs.length} payments`);
+      } catch (ledgerError) {
+        logger.error(`[PackageProcessingWorker] Erro ao registrar no ledger (não-fatal)`, { error: ledgerError.message });
+      }
+    }
+
     // ==========================================================
     // 7️⃣ FINALIZAÇÃO
     // ==========================================================

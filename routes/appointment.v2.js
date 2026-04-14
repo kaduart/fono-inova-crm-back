@@ -229,9 +229,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
       operationalStatus: 'scheduled',
       clinicalStatus: 'pending',
-      paymentStatus: 'pending',
+      paymentStatus: req.body.paymentStatus || 'pending',
 
-      sessionValue: finalAmount,
+      sessionValue: req.body.sessionValue || finalAmount,
       paymentMethod: req.body.paymentMethod || 'dinheiro',
       billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
 
@@ -739,8 +739,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🔥 OTIMIZAÇÃO: Query base - SEM POPULATES (mais rápido)
   let queryBuilder = Appointment.find(filter)
     .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package patientInfo professionalName metadata'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package notes createdAt patientInfo professionalName metadata'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata'
     )
     .sort({ date: 1, time: 1 })
     .skip(skip)
@@ -768,8 +768,23 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     const patientPopulated = appt.patient && typeof appt.patient === 'object' ? appt.patient : null;
     const doctorPopulated = appt.doctor && typeof appt.doctor === 'object' ? appt.doctor : null;
     
+    // 🎯 CORREÇÃO: Garantir que o campo date reflita o horário real do agendamento (time)
+    let formattedDate = appt.date;
+    if (appt.time && appt.date) {
+      try {
+        const datePart = moment(appt.date).tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const combined = moment.tz(`${datePart} ${appt.time}`, 'YYYY-MM-DD HH:mm', 'America/Sao_Paulo');
+        if (combined.isValid()) {
+          formattedDate = combined.toDate();
+        }
+      } catch (e) {
+        // fallback: mantém a data original
+      }
+    }
+    
     return {
       ...appt,
+      date: formattedDate,
       patientName: patientPopulated?.fullName || appt.patientInfo?.fullName || null,
       doctorName: doctorPopulated?.fullName || appt.professionalName || null,
       patientId: patientPopulated?._id?.toString() || appt.patient?.toString() || appt.patient,

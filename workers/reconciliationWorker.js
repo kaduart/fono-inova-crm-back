@@ -133,11 +133,11 @@ async function reconcilePaymentLedger(results, month) {
     const paymentsCount = paymentsAgg[0]?.count || 0;
     const paymentIds = paymentsAgg[0]?.ids || [];
     
-    // 2. Total no Ledger (créditos de payment_received)
+    // 2. Total no Ledger (créditos de payment_received + package_purchase)
     const ledgerAgg = await FinancialLedger.aggregate([
         {
             $match: {
-                type: 'payment_received',
+                type: { $in: ['payment_received', 'package_purchase'] },
                 occurredAt: { $gte: startOfMonth, $lte: endOfMonth }
             }
         },
@@ -177,14 +177,18 @@ async function reconcilePaymentLedger(results, month) {
             for (const payment of missingPayments) {
                 const existsInLedger = await FinancialLedger.exists({
                     payment: payment._id,
-                    type: 'payment_received'
+                    type: { $in: ['payment_received', 'package_purchase'] }
                 });
                 
                 if (!existsInLedger) {
                     // Recria lançamento
                     try {
                         const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
-                        await recordPaymentReceived(payment, { source: 'reconciliation_auto_fix' });
+                        const autoCorrelationId = payment.correlationId || `recon_${payment._id}_${Date.now()}`;
+                        await recordPaymentReceived(payment, { 
+                            correlationId: autoCorrelationId,
+                            source: 'reconciliation_auto_fix' 
+                        });
                         results.autoFixed++;
                         console.log(`[ReconciliationWorker] Auto-fix: Payment ${payment._id} → Ledger`);
                     } catch (err) {

@@ -2,6 +2,7 @@ import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
 import Appointment from '../models/Appointment.js';
+import Package from '../models/Package.js';
 import { createBatch, sendBatch, processReturn } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
@@ -19,17 +20,28 @@ export async function getInsuranceReceivables(req, res) {
     if (month) {
       const startOfMonth = new Date(month + '-01T00:00:00-03:00');
       const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
-      
+
+      // Resolve pacotes de convênio (package é referência, não subdocumento)
+      const convenioPackages = await Package.find({ type: 'convenio' }).select('_id').lean();
+      const convenioPackageIds = convenioPackages.map(p => p._id.toString());
+
       // Busca sessões COMPLETADAS de convênio no mês (igual ao legado)
-      sessions = await Session.find({
+      const sessionQuery = {
         status: 'completed',  // ← SÓ SESSÕES REALIZADAS
         date: { $gte: startOfMonth, $lte: endOfMonth },
         $or: [
           { paymentMethod: 'convenio' },
-          { insuranceGuide: { $exists: true, $ne: null } },
-          { 'package.type': 'convenio' }
+          { insuranceGuide: { $exists: true, $ne: null } }
         ]
-      })
+      };
+
+      if (convenioPackageIds.length > 0) {
+        sessionQuery.$or.push({
+          package: { $in: convenioPackageIds.map(id => new mongoose.Types.ObjectId(id)) }
+        });
+      }
+
+      sessions = await Session.find(sessionQuery)
       .populate('patient', 'fullName phone')
       .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount insuranceGuideNumber')
       .populate('doctor', 'fullName specialty')

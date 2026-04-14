@@ -189,6 +189,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 sessionUpdate.isPaid = true;
                 sessionUpdate.paymentStatus = 'paid';
                 sessionUpdate.paymentOrigin = 'convenio';
+                sessionUpdate.paymentMethod = 'convenio';
                 sessionUpdate.paidAt = new Date();
             } else {
                 // 💰 Per-session: depende se pagou no ato ou ficou fiado (tudo unpaid se não pago)
@@ -279,7 +280,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             paymentDate: now,
                             financialDate: now,
                             amount: sessionValue,
-                            paymentMethod: 'cash',
+                            paymentMethod: appointment.paymentMethod || 'cash',
                             kind: 'session_payment',
                             updatedAt: now
                         }
@@ -295,7 +296,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     status: 'paid',
                     type: 'service',
                     serviceType: 'session',
-                    paymentMethod: 'cash',
+                    paymentMethod: appointment.paymentMethod || 'cash',
                     paymentDate: now,
                     paidAt: now,
                     financialDate: now, // 🎯 ESSENCIAL pro caixa
