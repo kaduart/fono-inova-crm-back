@@ -762,6 +762,78 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   
   const [appointments, total] = await Promise.all(queries);
   
+  // 🆕 CALCULAR FLAGS DE LIFECYCLE (isFirstVisit / isReturningAfter45Days)
+  const patientIds = [
+    ...new Set(
+      appointments
+        .filter(a => a.patient && typeof a.patient === 'object')
+        .map(a => a.patient._id.toString())
+    )
+  ];
+  
+  let patientHistoryMap = new Map();
+  if (patientIds.length > 0) {
+    const histories = await Appointment.find({
+      patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) }
+    })
+      .select('patient date specialty createdAt')
+      .lean();
+    
+    histories.forEach(h => {
+      const pid = h.patient?.toString?.();
+      if (!pid) return;
+      if (!patientHistoryMap.has(pid)) patientHistoryMap.set(pid, []);
+      patientHistoryMap.get(pid).push(h);
+    });
+  }
+  
+  const DAY_IN_MS = 1000 * 60 * 60 * 24;
+  
+  function computeFlags(appt) {
+    const pid = appt.patient?._id?.toString?.() || appt.patient?.toString?.();
+    
+    if (!pid) {
+      return { isFirstVisit: true, isReturningAfter45Days: false };
+    }
+    
+    const history = patientHistoryMap.get(pid) || [];
+    const ownId = appt._id.toString();
+    
+    // Ordenar por createdAt (fallback _id para empate)
+    const sortedByCreated = [...history].sort((a, b) => {
+      const diff = new Date(a.createdAt) - new Date(b.createdAt);
+      if (diff !== 0) return diff;
+      return a._id.toString().localeCompare(b._id.toString());
+    });
+    
+    const earlierAppointments = sortedByCreated.filter(
+      h => h._id.toString() !== ownId &&
+        (new Date(h.createdAt) < new Date(appt.createdAt) ||
+         (new Date(h.createdAt).getTime() === new Date(appt.createdAt).getTime() &&
+          h._id.toString() < ownId))
+    );
+    const isFirstVisit = earlierAppointments.length === 0;
+    
+    const sameSpecialty = history
+      .filter(h => h.specialty === appt.specialty && h._id.toString() !== ownId)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    const earlierSameSpecialty = sameSpecialty.filter(
+      h => new Date(h.date) < new Date(appt.date) ||
+        (new Date(h.date).getTime() === new Date(appt.date).getTime() &&
+         h._id.toString() < ownId)
+    );
+    
+    let isReturningAfter45Days = false;
+    if (earlierSameSpecialty.length > 0) {
+      const lastPrevious = earlierSameSpecialty[earlierSameSpecialty.length - 1];
+      const diffDays = (new Date(appt.date) - new Date(lastPrevious.date)) / DAY_IN_MS;
+      isReturningAfter45Days = diffDays >= 45;
+    }
+    
+    return { isFirstVisit, isReturningAfter45Days };
+  }
+  
   // Formatação rápida
   const formattedAppointments = appointments.map(appt => {
     // 🎯 Garantir que patient e doctor estão populados corretamente
@@ -782,6 +854,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       }
     }
     
+    const flags = computeFlags(appt);
+    
     return {
       ...appt,
       date: formattedDate,
@@ -794,7 +868,9 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       paymentStatus: appt.package
         ? (appt.paymentStatus || 'package_paid')
         : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
-      source: appt.package ? 'package' : (appt.metadata?.origin?.source || 'individual')
+      source: appt.package ? 'package' : (appt.metadata?.origin?.source || 'individual'),
+      // 🆕 Lifecycle flags
+      ...flags
     };
   });
   

@@ -70,6 +70,8 @@ export const queues = {
     'lead-recovery':             new Queue('lead-recovery',             { connection: redisConnection }),
     'context-builder':           new Queue('context-builder',           { connection: redisConnection }),
     'conversation-state':        new Queue('conversation-state',        { connection: redisConnection }),
+    'whatsapp-intent-classifier': new Queue('whatsapp-intent-classifier', { connection: redisConnection }),
+    'whatsapp-fsm-router':        new Queue('whatsapp-fsm-router',        { connection: redisConnection }),
 };
 
 /**
@@ -205,6 +207,9 @@ export const EventTypes = {
     FOLLOWUP_SENT: 'FOLLOWUP_SENT',
     FOLLOWUP_FAILED: 'FOLLOWUP_FAILED',
     FOLLOWUP_RESPONSE_RECEIVED: 'FOLLOWUP_RESPONSE_RECEIVED',
+
+    // 🧠 Intent Classification Pipeline
+    INTENT_CLASSIFIED: 'INTENT_CLASSIFIED',
     
     // 💬 WhatsApp inbound (mensagem recebida do webhook → processamento async)
     WHATSAPP_MESSAGE_RECEIVED: 'WHATSAPP_MESSAGE_RECEIVED',
@@ -357,7 +362,10 @@ export const eventToQueueMap = {
     [EventTypes.FOLLOWUP_SCHEDULED]: 'followup-processing',
     [EventTypes.FOLLOWUP_SENT]: 'notification',
     [EventTypes.FOLLOWUP_FAILED]: 'notification',
-    [EventTypes.FOLLOWUP_RESPONSE_RECEIVED]: 'notification',
+    [EventTypes.FOLLOWUP_RESPONSE_RECEIVED]: ['notification', 'whatsapp-intent-classifier'],
+
+    // 🧠 Intent Classification → FSM Router
+    [EventTypes.INTENT_CLASSIFIED]: 'whatsapp-fsm-router',
     
     // 💬 WhatsApp inbound
     [EventTypes.WHATSAPP_MESSAGE_RECEIVED]: 'whatsapp-inbound',

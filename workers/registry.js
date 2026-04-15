@@ -39,6 +39,8 @@ import { createChatProjectionWorker } from '../domains/whatsapp/workers/chatProj
 
 // optional safety worker (se existir)
 import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
+import { createIntentClassifierWorker } from '../domains/whatsapp/workers/intentClassifierWorker.js';
+import { createFsmRouterWorker } from '../domains/whatsapp/workers/fsmRouterWorker.js';
 
 const GROUPS = {
 
@@ -118,6 +120,12 @@ const GROUPS = {
 
     // 10. read model / dashboard
     workers.push(createChatProjectionWorker());
+
+    // 11. classificação de intenção de follow-up
+    workers.push(createIntentClassifierWorker());
+
+    // 12. roteamento FSM baseado na intenção
+    workers.push(createFsmRouterWorker());
 
     // opcional (envio direto se necessário)
     if (process.env.ENABLE_SEND_WORKER === 'true') {

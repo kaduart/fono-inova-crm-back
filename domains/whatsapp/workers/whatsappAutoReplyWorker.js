@@ -130,10 +130,25 @@ export function createWhatsappAutoReplyWorker() {
                 const greetingsRegex = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
                 const isFirstContact = lastMessages.length <= 1 || greetingsRegex.test(content.trim());
 
-                // ── 5. CONTEXTO ENRIQUECIDO PARA O ORQUESTRADOR ──────────────
+                // ── 5a. INTENT HINT (resposta de follow-up classificada) ─────
+                // Escrito pelo fsmRouterWorker quando lead responde a um follow-up.
+                // Consumido atomicamente aqui (lê + deleta) para evitar reuso.
+                let intentHint = null;
+                try {
+                    const hintRaw = await redis?.get(`intent:hint:${leadId}`);
+                    if (hintRaw) {
+                        intentHint = JSON.parse(hintRaw);
+                        await redis.del(`intent:hint:${leadId}`);
+                        logger.info('intent_hint_consumed', { leadId, intent: intentHint.intent, confidence: intentHint.confidence, correlationId });
+                    }
+                } catch (hintErr) {
+                    logger.warn('intent_hint_read_error', { leadId, err: hintErr.message });
+                }
+
+                // ── 5b. CONTEXTO ENRIQUECIDO PARA O ORQUESTRADOR ─────────────
                 // 🧠 USA CONTEXTO DO CONTEXT BUILDER se disponível
                 const builderContext = job.data.payload?.context || job.data.context;
-                
+
                 const enrichedContext = {
                     // 🎯 Prioriza contexto do Context Builder
                     intent:            builderContext?.intent?.primary,
@@ -156,6 +171,9 @@ export function createWhatsappAutoReplyWorker() {
                     // Metadados
                     _contextVersion:   builderContext?._meta?.contextVersion || 'legacy',
                     _contextBuiltAt:   builderContext?._meta?.builtAt,
+
+                    // 🧠 Intent hint de follow-up (null se não houver)
+                    intentHint,
                 };
 
                 // ── 6. ORQUESTRADOR COM LOCK ATÔMICO (Amanda FSM / legacy) ────
