@@ -8,7 +8,7 @@ import Redis from 'ioredis';
 
 // Configurações
 const API_URL = process.env.API_URL || 'http://localhost:5000';
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL;
 
 // Cliente HTTP para testes
 export function createTestContext() {

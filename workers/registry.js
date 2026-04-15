@@ -1,5 +1,5 @@
 // workers/registry.js
-// 🏗️ Registry de workers por domínio — permite escalar horizontalmente
+// 🏗️ Registry de workers por domínio — execução baseada em EVENTOS (não ordem)
 
 import { startPaymentWorker } from './paymentWorker.js';
 import { startBalanceWorker } from './balanceWorker.js';
@@ -12,121 +12,151 @@ import { startCreateAppointmentWorker } from './createAppointmentWorker.js';
 import { startOutboxWorker } from './outboxWorker.js';
 import { startInvoiceWorker } from './invoiceWorker.js';
 import { startSyncMedicalWorker } from './syncMedicalWorker.js';
-import { startLeadOrchestratorWorker } from './leadOrchestratorWorker.js';
-import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
-import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
-import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
-import { startAppointmentIntegrationWorker } from './appointmentIntegrationWorker.js';
-import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/index.js';
-import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
-import { startDailyClosingWorker } from './dailyClosingWorker.js';
 import { startLeadRecoveryWorker } from './leadRecoveryWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
+
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
 import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
+
 import { packageProjectionWorker } from '../domains/billing/workers/packageProjectionWorker.js';
 import { packageProcessingWorker } from '../domains/billing/workers/packageProcessingWorker.js';
 import { startClinicalOrchestratorWorker } from '../domains/clinical/workers/clinicalOrchestrator.js';
 import { startSessionWorker } from '../domains/clinical/workers/sessionWorker.js';
+
 import { startIntegrationOrchestratorWorker } from '../domains/integration/workers/integrationOrchestratorWorker.js';
+
 import { startLeadOrchestratorWorkerV2 } from '../domains/whatsapp/workers/leadOrchestratorWorker.v2.js';
-import { createMessageResponseWorker } from '../domains/whatsapp/workers/messageResponseWorker.js';
-import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
+
 import { createWhatsappInboundWorker } from '../domains/whatsapp/workers/whatsappInboundWorker.js';
-import { createWhatsappAutoReplyWorker } from '../domains/whatsapp/workers/whatsappAutoReplyWorker.js';
-import { createContextBuilderWorker } from '../domains/whatsapp/workers/contextBuilderWorker.js';
-import { createConversationStateWorker } from '../domains/whatsapp/workers/conversationStateWorker.js';
 import { createMessagePersistenceWorker } from '../domains/whatsapp/workers/messagePersistenceWorker.js';
+import { createConversationStateWorker } from '../domains/whatsapp/workers/conversationStateWorker.js';
+import { createContextBuilderWorker } from '../domains/whatsapp/workers/contextBuilderWorker.js';
+import { createMessageResponseWorker } from '../domains/whatsapp/workers/messageResponseWorker.js';
+import { createWhatsappAutoReplyWorker } from '../domains/whatsapp/workers/whatsappAutoReplyWorker.js';
 import { createLeadInteractionWorker } from '../domains/whatsapp/workers/leadInteractionWorker.js';
 import { createRealtimeWorker } from '../domains/whatsapp/workers/realtimeWorker.js';
 import { createChatProjectionWorker } from '../domains/whatsapp/workers/chatProjectionWorker.js';
 
+// optional safety worker (se existir)
+import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
+
 const GROUPS = {
+
+  // =========================
+  // SCHEDULING
+  // =========================
   scheduling: async (workers) => {
     workers.push(startCreateAppointmentWorker());
-    try {
-      workers.push(await startCancelOrchestratorWorkerV2());
-      console.log('[Registry] ✅ CancelOrchestratorWorkerV2 iniciado');
-    } catch (err) {
-      console.error('[Registry] ❌ Erro ao iniciar CancelOrchestratorWorkerV2:', err.message);
-    }
-    try {
-      workers.push(await startCompleteOrchestratorWorker());
-      console.log('[Registry] ✅ CompleteOrchestratorWorker iniciado');
-    } catch (err) {
-      console.error('[Registry] ❌ Erro ao iniciar CompleteOrchestratorWorker:', err.message);
-    }
-    workers.push(startUpdateOrchestratorWorker());
-    workers.push(startAppointmentIntegrationWorker());
-    workers.push(startSyncMedicalWorker());
+
+    try { workers.push(await startCancelOrchestratorWorkerV2()); } catch {}
+    try { workers.push(await startCompleteOrchestratorWorker()); } catch {}
+
     workers.push(startAppointmentWorker());
-    console.log('[Registry] ✅ Scheduling workers iniciados');
+    workers.push(startSyncMedicalWorker());
+
+    console.log('[Registry] scheduling ok');
   },
 
+  // =========================
+  // BILLING
+  // =========================
   billing: async (workers) => {
     workers.push(startPaymentWorker());
     workers.push(startBalanceWorker());
     workers.push(startPackageValidationWorker());
     workers.push(startInvoiceWorker());
-    workers.push(startDailyClosingWorker());
     workers.push(startTotalsWorker());
-    workers.push(startInsuranceOrchestratorWorker());
-    workers.push(startBillingConsumerWorker());
     workers.push(packageProjectionWorker);
     workers.push(packageProcessingWorker);
-    console.log('[Registry] ✅ Billing workers iniciados');
+
+    console.log('[Registry] billing ok');
   },
 
+  // =========================
+  // CLINICAL
+  // =========================
   clinical: async (workers) => {
     workers.push(patientWorker);
     workers.push(patientProjectionWorker);
     workers.push(startClinicalOrchestratorWorker());
     workers.push(startSessionWorker());
-    console.log('[Registry] ✅ Clinical workers iniciados');
+
+    console.log('[Registry] clinical ok');
   },
 
+  // =========================
+  // WHATSAPP V2 (EVENT-DRIVEN PIPELINE)
+  // =========================
   whatsapp: async (workers) => {
-    workers.push(startLeadOrchestratorWorker());
-    workers.push(startFollowupOrchestratorWorker());
-    workers.push(startNotificationOrchestratorWorker());
-    workers.push(startLeadOrchestratorWorkerV2());
-    workers.push(createMessageResponseWorker({}));
-    workers.push(createWhatsappSendWorker());
+
+    // 1. entrada
     workers.push(createWhatsappInboundWorker());
-    workers.push(createWhatsappAutoReplyWorker());
-    workers.push(createContextBuilderWorker());
-    workers.push(createConversationStateWorker());
+
+    // 2. persistência + lead resolve
     workers.push(createMessagePersistenceWorker());
+
+    // 3. estado (Redis hot state)
+    workers.push(createConversationStateWorker());
+
+    // 4. contexto IA
+    workers.push(createContextBuilderWorker());
+
+    // 5. detecta resposta / follow-up
+    workers.push(createMessageResponseWorker({}));
+
+    // 6. decisão do CRM / FSM brain
+    workers.push(startLeadOrchestratorWorkerV2());
+
+    // 7. resposta automática IA
+    workers.push(createWhatsappAutoReplyWorker());
+
+    // 8. tracking e analytics
     workers.push(createLeadInteractionWorker());
+
+    // 9. realtime frontend
     workers.push(createRealtimeWorker());
+
+    // 10. read model / dashboard
     workers.push(createChatProjectionWorker());
-    console.log('[Registry] ✅ WhatsApp workers iniciados');
+
+    // opcional (envio direto se necessário)
+    if (process.env.ENABLE_SEND_WORKER === 'true') {
+      workers.push(createWhatsappSendWorker());
+    }
+
+    console.log('[Registry] whatsapp V2 ok');
   },
 
+  // =========================
+  // RECONCILIATION
+  // =========================
   reconciliation: async (workers) => {
     workers.push(startReconciliationWorker());
     workers.push(startLeadRecoveryWorker());
     workers.push(startOutboxWorker());
     workers.push(startIntegrationOrchestratorWorker());
-    console.log('[Registry] ✅ Reconciliation workers iniciados');
+
+    console.log('[Registry] reconciliation ok');
   }
 };
 
 export const VALID_GROUPS = Object.keys(GROUPS);
 
 export async function startWorkerGroup(groupName, workers = []) {
-  const initializer = GROUPS[groupName];
-  if (!initializer) {
-    throw new Error(`Grupo de workers desconhecido: ${groupName}. Válidos: ${VALID_GROUPS.join(', ')}`);
+  const fn = GROUPS[groupName];
+
+  if (!fn) {
+    throw new Error(`Grupo inválido: ${groupName}`);
   }
-  console.log(`[Registry] Iniciando grupo: ${groupName}`);
-  await initializer(workers);
+
+  console.log(`[Registry] start: ${groupName}`);
+  await fn(workers);
   return workers;
 }
 
 export async function startAllWorkerGroups(workers = []) {
-  for (const groupName of VALID_GROUPS) {
-    await startWorkerGroup(groupName, workers);
+  for (const g of VALID_GROUPS) {
+    await startWorkerGroup(g, workers);
   }
   return workers;
 }

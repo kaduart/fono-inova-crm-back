@@ -61,16 +61,19 @@ export function createWhatsappInboundWorker() {
 
       // Publica para messagePersistenceWorker (V2 — sem chamar processInboundMessage)
       try {
-        await publishEvent(EventTypes.WHATSAPP_MESSAGE_PREPROCESSED, {
-          msg,
-          value,
-          combinedText: msg.text?.body || null, // já foi merged pelo debounce acima
-        }, {
-          correlationId,
-          jobId: `persist:${wamid}`,
-          aggregateType: 'message',
-          aggregateId: wamid,
-        });
+       await publishEvent(
+  'MESSAGE_RESPONSE_DETECTED',
+  {
+    messageId: wamid,
+    leadId: from, 
+    text: msg.text?.body || '',
+  },
+  {
+    correlationId,
+    aggregateType: 'message',
+    aggregateId: wamid,
+  }
+);
 
         logger.info('[WhatsappInboundWorker] ✅ Publicado para persistence worker', { wamid, from });
         return { status: 'dispatched', wamid };

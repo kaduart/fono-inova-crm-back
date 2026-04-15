@@ -16,7 +16,7 @@ import fs from 'fs';
 import path from 'path';
 
 const MONGO_URI = process.env.MONGO_URI;
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL;
 
 const checks = [];
 

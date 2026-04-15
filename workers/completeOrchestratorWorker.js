@@ -19,7 +19,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+const redis = new Redis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false
 });

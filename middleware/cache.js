@@ -9,7 +9,7 @@ import { createClient } from 'redis';
 
 // Configuração do cliente Redis
 const redisClient = createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    url: process.env.REDIS_URL,
     socket: {
         reconnectStrategy: (retries) => {
             if (retries > 10) {
