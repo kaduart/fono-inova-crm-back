@@ -59,3 +59,5 @@ export { createOrchestratorWorker } from './orchestratorWorker.js';
 export { createNotificationWorker } from './notificationWorker.js';
 export { createRealtimeWorker } from './realtimeWorker.js';
 export { createMessageResponseWorker } from './messageResponseWorker.js';
+export { createIntentClassifierWorker } from './intentClassifierWorker.js';
+export { createFsmRouterWorker } from './fsmRouterWorker.js';
