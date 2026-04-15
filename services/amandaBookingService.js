@@ -29,6 +29,34 @@ if (!API_BASE) {
 const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
 
 // ============================================================================
+// 🗺️ SPECIALTY MAP — converte chaves FSM para specialty do banco
+// FSM usa: speech, psychology, occupational_therapy, physiotherapy, neuropsychological...
+// Banco usa: fonoaudiologia, psicologia, terapia_ocupacional, fisioterapia, neuropsicologia...
+// ============================================================================
+const SPECIALTY_MAP = {
+    // FSM keys → DB values
+    speech:               'fonoaudiologia',
+    psychology:           'psicologia',
+    occupational_therapy: 'terapia_ocupacional',
+    physiotherapy:        'fisioterapia',
+    music_therapy:        'musicoterapia',
+    psychopedagogy:       'psicopedagogia',
+    neuropsychological:   'neuropsicologia',
+    // Aliases português
+    fono:                 'fonoaudiologia',
+    fonoaudiologia:       'fonoaudiologia',
+    psicologia:           'psicologia',
+    neuropsicologia:      'neuropsicologia',
+    fisioterapia:         'fisioterapia',
+    to:                   'terapia_ocupacional',
+    terapia_ocupacional:  'terapia_ocupacional',
+    musicoterapia:        'musicoterapia',
+    psicopedagogia:       'psicopedagogia',
+    psicomotricidade:     'psicomotricidade',
+    neuro:                'neuropsicologia',
+};
+
+// ============================================================================
 // 🌐 Cliente HTTP interno com token da Amanda
 // ============================================================================
 const api = axios.create({
@@ -129,9 +157,14 @@ export async function findAvailableSlots({
     const MAX_REQUESTS = 25;
     let requestCount = 0;
 
+    const normalizedSpecialty = SPECIALTY_MAP[therapyArea] ?? therapyArea;
+    if (normalizedSpecialty !== therapyArea) {
+        console.log(`[BOOKING] Specialty normalizada: "${therapyArea}" → "${normalizedSpecialty}"`);
+    }
+
     const doctorFilter = {
         active: true,
-        specialty: therapyArea,
+        specialty: normalizedSpecialty,
     };
 
     if (Array.isArray(specialties) && specialties.length) {
@@ -147,14 +180,14 @@ export async function findAvailableSlots({
 
     let doctors = await Doctor.find(doctorFilter).lean();
 
-    // Fallback 1: case-insensitive
-    if (!doctors.length && therapyArea) {
+    // Fallback 1: case-insensitive (usa specialty normalizada)
+    if (!doctors.length && normalizedSpecialty) {
         doctors = await Doctor.find({
             active: true,
-            specialty: { $regex: new RegExp(`^${therapyArea}$`, 'i') },
+            specialty: { $regex: new RegExp(`^${normalizedSpecialty}$`, 'i') },
         }).lean();
         if (doctors.length) {
-            console.log(`[BOOKING] Fallback case-insensitive: ${doctors.length} doctor(s) para "${therapyArea}"`);
+            console.log(`[BOOKING] Fallback case-insensitive: ${doctors.length} doctor(s) para "${normalizedSpecialty}"`);
         }
     }
 

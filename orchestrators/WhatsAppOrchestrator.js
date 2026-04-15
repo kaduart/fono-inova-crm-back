@@ -110,6 +110,26 @@ export default class WhatsAppOrchestrator {
       const currentState = freshLead.currentState || STATES.IDLE;
       const stateData = freshLead.stateData || {};
 
+      // ══ INTENT HINT (resposta de follow-up classificada pelo fsmRouterWorker) ══
+      // Consumido atomicamente no autoReplyWorker (já deletado do Redis).
+      // Aqui apenas aplicamos: PRICING responde direto; SCHEDULE/DELAY passam
+      // para o this.currentContext e influenciam o routing do IDLE.
+      const intentHint = providedContext?.intentHint ?? null;
+      if (intentHint) {
+        this.logger.info('V8_INTENT_HINT_RECEIVED', {
+          leadId,
+          intent: intentHint.intent,
+          confidence: intentHint.confidence,
+          currentState,
+        });
+
+        // PRICING: responde diretamente sobre preços, ignora o estado atual
+        if (intentHint.intent === 'PRICING') {
+          const priceReply = await this._handleGlobalIntent('PRICE_QUERY', freshLead);
+          return this._reply(priceReply, { skipEnrichment: true });
+        }
+      }
+
       // ══ RESET DE retryCount POR SESSÃO ══
       // Se o lead ficou sem interagir por mais de 4 horas, zera o retryCount.
       // Isso evita que um retryCount acumulado de ontem cause HANDOFF imediato
@@ -217,7 +237,7 @@ export default class WhatsAppOrchestrator {
       }
       
       // Armazena ctx completo: leadData, canOfferScheduling, promptMode, flags, etc.
-      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage, gmbContext };
+      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage, gmbContext, intentHint };
 
       // ══ DECISION RESOLVER v2.0 (decisão unificada) ══
       const _decisionStart = Date.now();
@@ -515,6 +535,46 @@ export default class WhatsAppOrchestrator {
       // ── ESTADO INICIAL ──
       case STATES.IDLE:
       case STATES.GREETING: {
+        // ── INTENT HINT: SCHEDULE (lead respondeu follow-up querendo agendar) ──
+        // Acelera o fluxo direto para o ponto certo sem reper as perguntas já respondidas.
+        const _scheduleHint = ctx?.intentHint?.intent === 'SCHEDULE';
+        const _delayHint    = ctx?.intentHint?.intent === 'DELAY';
+
+        if (_scheduleHint) {
+          this.logger.info('V8_INTENT_HINT_SCHEDULE_IDLE', { leadId, therapyArea: ctx.leadData?.therapy });
+
+          // Tem tudo → mostra slots
+          if (ctx.leadData?.therapy && ctx.leadData?.name) {
+            const resumeData = { ...stateData, therapy: ctx.leadData.therapy, patientName: ctx.leadData.name };
+            await jumpToState(leadId, STATES.SHOW_SLOTS, resumeData);
+            return this._handleOfferBooking(resumeData, freshLead, services);
+          }
+          // Tem terapia + queixa → pergunta período
+          if (ctx.leadData?.therapy && ctx.leadData?.complaint) {
+            const resumeData = { ...stateData, therapy: ctx.leadData.therapy, complaint: ctx.leadData.complaint };
+            await jumpToState(leadId, STATES.COLLECT_PERIOD, resumeData);
+            return await this._replyWithAI(ctx, 'Lead quer agendar (respondeu follow-up). Já temos a terapia e queixa. Pergunte qual período funciona melhor: manhã ou tarde.');
+          }
+          // Tem terapia → pergunta queixa
+          if (ctx.leadData?.therapy) {
+            const resumeData = { ...stateData, therapy: ctx.leadData.therapy };
+            await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
+            return await this._replyWithAI(ctx, 'Lead quer agendar (respondeu follow-up). Já temos a terapia. Acolha positivamente e pergunte sobre a situação que precisa de ajuda.');
+          }
+          // Sem dados → coleta terapia normalmente, mas com intro de retomada
+          await jumpToState(leadId, STATES.COLLECT_THERAPY);
+          return await this._replyWithAI(ctx, 'Lead respondeu positivamente a um follow-up e quer agendar. Acolha com entusiasmo e pergunte qual especialidade está buscando.');
+        }
+
+        if (_delayHint) {
+          this.logger.info('V8_INTENT_HINT_DELAY_IDLE', { leadId });
+          // Lead pediu pra falar depois — Amanda reconhece e deixa o lead liderar
+          return this._reply(
+            'Claro, sem pressão! 😊 Quando você se sentir pronto é só me chamar aqui que verifico os horários disponíveis na hora 💚',
+            { skipEnrichment: true }
+          );
+        }
+
         // 🆕 TRACKING: Detectar origem GMB (se veio de post do Google)
         if (text.includes('Vi o post sobre') || text.includes('Vi sobre')) {
           await Leads.updateOne({ _id: leadId }, { 
@@ -1141,23 +1201,30 @@ export default class WhatsAppOrchestrator {
           }
         }
 
-        const period = extractPeriodFromText(text);
+        let period = extractPeriodFromText(text);
         const preferredDate = extractPreferredDate(text);
-        
-        if (period) {
-          this.logger.info('V8_PERIOD_COLLECTED', { leadId, period, preferredDate });
-          await this._savePeriod(leadId, period);
+
+        // ── SKIP: se período já foi coletado anteriormente ──────
+        const existingPeriod = stateData?.period
+          || lead.autoBookingContext?.preferredPeriod
+          || lead.pendingPreferredPeriod
+          || lead.qualificationData?.disponibilidade;
+        const effectivePeriod = period || existingPeriod;
+
+        if (effectivePeriod) {
+          this.logger.info('V8_PERIOD_COLLECTED', { leadId, period: effectivePeriod, preferredDate, source: period ? 'message' : 'existing' });
+          await this._savePeriod(leadId, effectivePeriod);
 
           // Se lead já tem nome (ctx.leadData resolve de qualquer fonte), pular COLLECT_NAME
           const existingName = ctx.leadData?.name;
           if (existingName) {
             this.logger.info('V8_NAME_ALREADY_EXISTS_SKIP_COLLECT', { leadId, existingName });
-            const newData = { ...stateData, period, preferredDate, patientName: existingName };
+            const newData = { ...stateData, period: effectivePeriod, preferredDate, patientName: existingName };
             await jumpToState(leadId, STATES.SHOW_SLOTS, newData);
             return this._handleOfferBooking(newData, lead, services);
           }
 
-          const newData = { ...stateData, period, preferredDate };
+          const newData = { ...stateData, period: effectivePeriod, preferredDate };
           await jumpToState(leadId, STATES.COLLECT_NAME, newData);
           return this._reply(`Perfeito! ☀️\n\nQual o *nome completo do paciente*?`);
         }

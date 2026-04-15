@@ -450,7 +450,7 @@ app.use('/api/alerts', alertsRoutes);
 app.use('/api/journey', journeyRoutes);
 app.use('/api/scoring', scoringRoutes);
 app.use('/api/medical-events', medicalEventRoutes);
-app.use('/api/analytics/appointments', appointmentAnalyticsRoutes);
+app.use('/api/analytics', appointmentAnalyticsRoutes);
 app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/observability', observabilityRoutes);  // 🚀 NOVO: Dashboard de Observabilidade
