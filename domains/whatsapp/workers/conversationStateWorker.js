@@ -16,6 +16,7 @@ import { Worker } from 'bullmq';
 import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
 import Lead from '../../../models/Leads.js';
 import { createContextLogger } from '../../../utils/logger.js';
+import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 
 const logger = createContextLogger('conversationStateWorker');
 
@@ -75,7 +76,8 @@ export function createConversationStateWorker() {
     const worker = new Worker(
         'conversation-state',
         async (job) => {
-            const { leadId, from, content, type, direction = 'inbound', timestamp } = job.data.payload ?? job.data;
+            const { leadId, from, content, type, direction = 'inbound', timestamp,
+                    wamid, messageId } = job.data.payload ?? job.data;
             const correlationId = job.data.metadata?.correlationId || `conv:${leadId}`;
 
             if (!leadId || !from) {
@@ -133,6 +135,22 @@ export function createConversationStateWorker() {
 
                 // 5. Atualiza fallback no Mongo (fire-and-forget)
                 updateMongoSnapshot(leadId, updatedState).catch(() => {});
+
+                // 6. Publica CONTEXT_BUILD_REQUESTED APÓS estado salvo no Redis
+                // Garante que contextBuilderWorker sempre lê estado fresco (sem race condition)
+                if (direction === 'inbound' && content) {
+                    publishEvent(EventTypes.CONTEXT_BUILD_REQUESTED, {
+                        leadId,
+                        from,
+                        content,
+                        type,
+                        wamid,
+                        messageId,
+                    }, {
+                        correlationId,
+                        jobId: `context:${leadId || wamid}`,
+                    }).catch(() => {});
+                }
 
                 logger.info('state_updated', {
                     leadId,

@@ -1,12 +1,13 @@
 // back/domains/whatsapp/workers/realtimeWorker.js
 /**
  * Realtime Worker
- * 
+ *
  * Papel: Emitir eventos em tempo real via Socket.io e atualizar dashboards
- * 
- * Evento Consumido: MESSAGE_SENT
- * Eventos Socket Emitted: new_message, conversation_update, dashboard_stats
- * 
+ *
+ * Eventos Consumidos (fila whatsapp-realtime):
+ *   - MESSAGE_PERSISTED  → inbound  (vindo do messagePersistenceWorker)
+ *   - WHATSAPP_MESSAGE_SENT → outbound (opcional — sendWorker já emite diretamente)
+ *
  * Regras:
  * - RN-WHATSAPP-017: Socket.io rooms (salas por lead)
  * - RN-WHATSAPP-018: Broadcast seletivo (enviar só para quem precisa)
@@ -15,121 +16,109 @@
  */
 
 import { Worker } from 'bullmq';
-import { getRedisConnection } from '../../../infra/redis/redisClient.js';
-import { logger } from '../../../infra/logger.js';
+import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
+import { getIo } from '../../../config/socket.js';
+import logger from '../../../utils/logger.js';
 
-/**
- * Cria o Realtime Worker
- * 
- * @param {Object} deps - Dependências
- * @param {Object} deps.io - Instância Socket.io
- * @param {Object} deps.redis - Cliente Redis
- * @param {Object} deps.analyticsService - Serviço de analytics
- */
-export function createRealtimeWorker(deps) {
-  const { io, redis, analyticsService } = deps;
-
+export function createRealtimeWorker() {
   return new Worker(
     'whatsapp-realtime',
     async (job) => {
       const { eventId, payload, metadata } = job.data;
-      const { phone, leadId, messageId, sentAt, originalEventId } = payload;
       const correlationId = metadata?.correlationId || eventId;
+      const io = getIo();
+
+      // Detecta direção para rotear payload corretamente
+      const direction = payload.direction || 'outbound';
 
       logger.info('[RealtimeWorker] Processing', {
-        phone,
-        leadId,
-        correlationId
+        direction,
+        leadId: payload.leadId,
+        correlationId,
       });
 
       try {
-        const results = await Promise.allSettled([
-          // RN-WHATSAPP-017: Emitir para sala do lead
-          emitToLeadRoom(io, leadId, {
-            type: 'message_sent',
-            data: {
-              phone,
-              messageId,
-              sentAt,
-              metadata: payload.metadata,
-              correlationId
-            }
-          }),
+        if (direction === 'inbound') {
+          // ── INBOUND: MESSAGE_PERSISTED ──────────────────────────────────
+          const { messageId, leadId, from, to, type, content, timestamp } = payload;
 
-          // RN-WHATSAPP-018: Broadcast para atendentes
-          emitToAttendees(io, {
+          const socketPayload = {
+            id: messageId,
+            from,
+            to,
+            type,
+            content,
+            timestamp,
+            direction: 'inbound',
+          };
+
+          // Broadcast global (compatibilidade com frontend atual)
+          io?.emit('message:new', socketPayload);
+          io?.emit('whatsapp:new_message', socketPayload);
+
+          // RN-WHATSAPP-017: Sala do lead (seletivo)
+          if (leadId) {
+            await emitToLeadRoom(io, leadId, { type: 'message_received', data: socketPayload });
+          }
+
+          // RN-WHATSAPP-018: Atendentes
+          await emitToAttendees(io, {
             type: 'conversation_update',
-            data: {
-              leadId,
-              phone,
-              lastMessageAt: sentAt,
-              direction: 'outgoing',
-              correlationId
-            }
-          }),
-
-          // RN-WHATSAPP-019: Atualizar dashboard stats
-          updateDashboardStats(redis, analyticsService, {
-            eventType: 'message_sent',
-            phone,
-            leadId,
-            timestamp: sentAt,
-            isEscalation: payload.metadata?.isEscalation,
-            isNewLead: payload.metadata?.isNewLead
-          }),
-
-          // RN-WHATSAPP-020: Salvar para usuários offline
-          queueForOfflineUsers(redis, leadId, {
-            type: 'message_sent',
-            data: payload,
-            correlationId
-          })
-        ]);
-
-        // Log falhas parciais
-        const failures = results.filter(r => r.status === 'rejected');
-        if (failures.length > 0) {
-          logger.warn('[RealtimeWorker] Some realtime updates failed', {
-            phone,
-            failures: failures.map(f => f.reason?.message)
+            data: { leadId, phone: from, lastMessageAt: timestamp, direction: 'inbound', correlationId },
           });
+
+          // RN-WHATSAPP-020: Offline queue
+          if (leadId) {
+            await queueForOfflineUsers(redis, leadId, { type: 'message_received', data: socketPayload, correlationId });
+          }
+
+          // RN-WHATSAPP-019: Stats
+          await updateDashboardStats({ eventType: 'message_received', phone: from, leadId, timestamp });
+
+        } else {
+          // ── OUTBOUND: WHATSAPP_MESSAGE_SENT ────────────────────────────
+          const { phone, leadId, messageId, sentAt } = payload;
+
+          const results = await Promise.allSettled([
+            emitToLeadRoom(io, leadId, {
+              type: 'message_sent',
+              data: { phone, messageId, sentAt, correlationId },
+            }),
+            emitToAttendees(io, {
+              type: 'conversation_update',
+              data: { leadId, phone, lastMessageAt: sentAt, direction: 'outgoing', correlationId },
+            }),
+            updateDashboardStats({
+              eventType: 'message_sent',
+              phone,
+              leadId,
+              timestamp: sentAt,
+              isEscalation: payload.metadata?.isEscalation,
+              isNewLead: payload.metadata?.isNewLead,
+            }),
+            queueForOfflineUsers(redis, leadId, { type: 'message_sent', data: payload, correlationId }),
+          ]);
+
+          const failures = results.filter(r => r.status === 'rejected');
+          if (failures.length > 0) {
+            logger.warn('[RealtimeWorker] Partial failures (outbound)', {
+              failures: failures.map(f => f.reason?.message),
+            });
+          }
         }
 
-        logger.info('[RealtimeWorker] Realtime updates completed', {
-          phone,
-          socketEmitted: results[0].status === 'fulfilled',
-          dashboardUpdated: results[2].status === 'fulfilled'
-        });
-
-        return {
-          status: 'completed',
-          socketEmitted: results[0].status === 'fulfilled',
-          broadcastSent: results[1].status === 'fulfilled',
-          dashboardUpdated: results[2].status === 'fulfilled',
-          offlineQueued: results[3].status === 'fulfilled'
-        };
+        return { status: 'completed', direction };
 
       } catch (error) {
-        logger.error('[RealtimeWorker] Error', {
-          error: error.message,
-          phone,
-          correlationId
-        });
-        
-        // Realtime é best-effort, não falha o job
-        return {
-          status: 'completed_with_errors',
-          error: error.message
-        };
+        logger.error('[RealtimeWorker] Error', { error: error.message, correlationId });
+        // Realtime é best-effort — não falha o job para não bloquear retry
+        return { status: 'completed_with_errors', error: error.message };
       }
     },
     {
-      connection: getRedisConnection(),
+      connection: bullMqConnection,
       concurrency: 20,
-      limiter: {
-        max: 100,
-        duration: 1000
-      }
+      limiter: { max: 100, duration: 1000 },
     }
   );
 }
@@ -140,64 +129,35 @@ export function createRealtimeWorker(deps) {
 
 async function emitToLeadRoom(io, leadId, event) {
   if (!leadId || !io) return;
-
   const room = `lead:${leadId}`;
-  
   io.to(room).emit(event.type, event.data);
-  
-  logger.debug('[RealtimeWorker] Emitted to lead room', {
-    room,
-    eventType: event.type
-  });
+  logger.debug('[RealtimeWorker] Emitted to lead room', { room, eventType: event.type });
 }
 
 async function emitToAttendees(io, event) {
   if (!io) return;
-
-  // Emite para sala de atendentes
   io.to('attendees').emit(event.type, event.data);
-  
-  // Se for escalonamento, emite também para sala de prioridade
-  if (event.data.isEscalation) {
+  if (event.data?.isEscalation) {
     io.to('priority-attendees').emit('escalation_alert', event.data);
   }
-
-  logger.debug('[RealtimeWorker] Broadcast to attendees', {
-    eventType: event.type,
-    isEscalation: event.data.isEscalation
-  });
+  logger.debug('[RealtimeWorker] Broadcast to attendees', { eventType: event.type });
 }
 
-async function updateDashboardStats(redis, analyticsService, data) {
+async function updateDashboardStats(data) {
   const { eventType, isEscalation, isNewLead } = data;
-
-  // Incrementa contadores em Redis ( rápido )
-  const pipeline = redis.pipeline();
-  
-  pipeline.incr('stats:messages:sent:today');
-  pipeline.incr('stats:messages:sent:hour');
-  
-  if (isEscalation) {
-    pipeline.incr('stats:escalations:today');
+  try {
+    const pipeline = redis.pipeline();
+    const counterKey = eventType === 'message_received'
+      ? 'stats:messages:received:today'
+      : 'stats:messages:sent:today';
+    pipeline.incr(counterKey);
+    if (isEscalation) pipeline.incr('stats:escalations:today');
+    if (isNewLead) pipeline.incr('stats:leads:new:today');
+    await pipeline.exec();
+  } catch (err) {
+    logger.warn('[RealtimeWorker] Stats update failed', { error: err.message });
   }
-  
-  if (isNewLead) {
-    pipeline.incr('stats:leads:new:today');
-  }
-  
-  await pipeline.exec();
-
-  // Atualiza analytics (assíncrono, não bloqueia)
-  if (analyticsService) {
-    analyticsService.track('whatsapp_message_sent', {
-      ...data,
-      timestamp: new Date()
-    }).catch(err => {
-      logger.warn('[RealtimeWorker] Analytics track failed', { error: err.message });
-    });
-  }
-
-  logger.debug('[RealtimeWorker] Dashboard stats updated');
+  logger.debug('[RealtimeWorker] Dashboard stats updated', { eventType });
 }
 
 async function queueForOfflineUsers(redis, leadId, event) {

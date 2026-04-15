@@ -47,6 +47,10 @@ export const queues = {
     'update-orchestrator': new Queue('update-orchestrator', { connection: redisConnection }),
     'appointment-integration': new Queue('appointment-integration', { connection: redisConnection }),
     'whatsapp-notification': new Queue('whatsapp-notification', { connection: redisConnection }),
+    'whatsapp-persistence': new Queue('whatsapp-persistence', { connection: redisConnection }),
+    'whatsapp-lead-interaction': new Queue('whatsapp-lead-interaction', { connection: redisConnection }),
+    'whatsapp-realtime': new Queue('whatsapp-realtime', { connection: redisConnection }),
+    'whatsapp-chat-projection': new Queue('whatsapp-chat-projection', { connection: redisConnection }),
     'email-notification': new Queue('email-notification', { connection: redisConnection }),
     'totals-calculation': new Queue('totals-calculation', { connection: redisConnection }),
     'daily-closing': new Queue('daily-closing', { connection: redisConnection }),
@@ -205,6 +209,12 @@ export const EventTypes = {
     // 💬 WhatsApp inbound (mensagem recebida do webhook → processamento async)
     WHATSAPP_MESSAGE_RECEIVED: 'WHATSAPP_MESSAGE_RECEIVED',
 
+    // 💬 WhatsApp inbound pré-processada (debounce feito → vai para persistence worker)
+    WHATSAPP_MESSAGE_PREPROCESSED: 'WHATSAPP_MESSAGE_PREPROCESSED',
+
+    // 💬 Mensagem persistida no Mongo (dispara lead-interaction + realtime)
+    MESSAGE_PERSISTED: 'MESSAGE_PERSISTED',
+
     // 💬 WhatsApp Response Tracking
     MESSAGE_RESPONSE_DETECTED: 'MESSAGE_RESPONSE_DETECTED',
     
@@ -352,6 +362,12 @@ export const eventToQueueMap = {
     // 💬 WhatsApp inbound
     [EventTypes.WHATSAPP_MESSAGE_RECEIVED]: 'whatsapp-inbound',
 
+    // 💬 WhatsApp inbound pré-processada (debounce concluído → persistence)
+    [EventTypes.WHATSAPP_MESSAGE_PREPROCESSED]: 'whatsapp-persistence',
+
+    // 💬 Mensagem persistida → lead-interaction + realtime + chat projection em paralelo
+    [EventTypes.MESSAGE_PERSISTED]: ['whatsapp-lead-interaction', 'whatsapp-realtime', 'whatsapp-chat-projection'],
+
     // 💬 WhatsApp Response Tracking
     [EventTypes.MESSAGE_RESPONSE_DETECTED]: 'whatsapp-message-response',
 
@@ -372,7 +388,7 @@ export const eventToQueueMap = {
     [EventTypes.NOTIFICATION_SENT]: 'notification',
     [EventTypes.NOTIFICATION_FAILED]: 'notification',
     [EventTypes.WHATSAPP_MESSAGE_REQUESTED]: 'whatsapp-notification',
-    [EventTypes.WHATSAPP_MESSAGE_SENT]: 'notification',
+    [EventTypes.WHATSAPP_MESSAGE_SENT]: ['notification', 'whatsapp-chat-projection'],
     [EventTypes.WHATSAPP_MESSAGE_FAILED]: 'notification',
     [EventTypes.EMAIL_MESSAGE_REQUESTED]: 'email-notification',
     [EventTypes.EMAIL_MESSAGE_SENT]: 'notification',
