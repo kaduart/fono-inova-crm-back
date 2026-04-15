@@ -181,7 +181,19 @@ export default class WhatsAppOrchestrator {
       // ══ PIPELINE DE INTELIGÊNCIA (roda para toda mensagem) ══
       // Todos os detectores são chamados aqui, antes de qualquer decisão de estado.
       // O FSM decide com contexto rico, não no escuro.
-      const ctx = await buildMessageContext(text, freshLead, currentState, stateData, insights);
+      // 🔗 Usa histórico Redis (providedContext.conversation) quando disponível — vem do
+      // contextBuilderWorker que já leu o hot state. Evita usar stateData do Mongo como
+      // histórico de conversa (stateData é dado FSM, não histórico de mensagens).
+      const hasRedisHistory = !!(providedContext?.conversation?.messages?.length);
+      const conversationHotState = hasRedisHistory
+          ? { messages: providedContext.conversation.messages, messageCount: providedContext.conversation.messageCount }
+          : stateData;
+      this.logger.info('V8_CONTEXT_SOURCE', {
+          leadId,
+          source: hasRedisHistory ? 'redis_hot_state' : 'mongo_statedata_fallback',
+          messageCount: providedContext?.conversation?.messageCount ?? 0,
+      });
+      const ctx = await buildMessageContext(text, freshLead, currentState, conversationHotState, insights);
       const { flags, globalIntent, manualIntent } = ctx;
       
       // 🆕 Parse de mensagem para detectar origem (WhatsApp link, GMB, etc)
@@ -469,7 +481,19 @@ export default class WhatsAppOrchestrator {
       }
 
       // ══ 3. FSM DETERMINÍSTICA ══
-      return this._processState(currentState, text, freshLead, stateData, services, ctx);
+      const result = await this._processState(currentState, text, freshLead, stateData, services, ctx);
+
+      // ══ SILENCE GUARD: nunca retornar vazio (exceto NO_REPLY intencional) ══
+      if (!result) {
+        this.logger.warn('V8_SILENCE_GUARD', { leadId, state: currentState, text: text.substring(0, 60) });
+        return this._reply('Entendi 💚 como posso te ajudar melhor? Quer agendar uma avaliação ou tem alguma dúvida?');
+      }
+      if (result.command !== 'NO_REPLY' && !result.reply && !result.message) {
+        this.logger.warn('V8_EMPTY_REPLY_GUARD', { leadId, state: currentState, resultKeys: Object.keys(result) });
+        return this._reply('Entendi 💚 pode me contar mais sobre o que você precisa?');
+      }
+
+      return result;
 
     } catch (error) {
       this.logger.error('V8_CRITICAL_ERROR', { error: error.message, stack: error.stack });
@@ -1305,6 +1329,15 @@ export default class WhatsAppOrchestrator {
       // 🆕 NOVO: Detector de origem GMB
       case 'GMB_ORIGIN':
         return this._handleGMBOrigin(lead);
+
+      case 'NEUROPEDIATRIA_QUERY':
+        return 'Neuropediatria é uma especialidade médica — não atendemos aqui. 💚\n\nMas temos *Neuropsicologia*, que faz avaliação do desenvolvimento, atenção, memória e aprendizagem.\n\nQuer saber mais sobre a avaliação neuropsicológica?';
+
+      case 'AUDIO_EXAM_QUERY':
+        return 'Não realizamos exame de audição (audiometria) — esse exame é feito por otorrinolaringologista. 💚\n\nSe a preocupação é com fala, linguagem ou desenvolvimento auditivo do seu filho, a *fonoaudiologia* pode te ajudar.\n\nQuer saber mais?';
+
+      case 'ADULTS_QUERY':
+        return 'Nosso foco é atendimento *infantil e adolescente* 💚\n\nAtendemos crianças e adolescentes em fonoaudiologia, psicologia, terapia ocupacional, fisioterapia e neuropsicologia.\n\nÉ para seu filho(a)?';
 
       default:
         return 'Claro, posso ajudar com isso! 💚';

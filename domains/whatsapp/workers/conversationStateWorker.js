@@ -92,7 +92,7 @@ export function createConversationStateWorker() {
 
                 // 2. Monta mensagem
                 const message = {
-                    content: content?.substring(0, 500), // limita tamanho
+                    content: content?.substring(0, 1500), // limita tamanho (aumentado de 200 para preservar contexto clínico)
                     type,
                     direction,
                     timestamp: now,
@@ -112,7 +112,7 @@ export function createConversationStateWorker() {
 
                     // Contexto enriquecido
                     context: {
-                        lastMessage: content?.substring(0, 200),
+                        lastMessage: content?.substring(0, 500),
                         lastType: type,
                         lastDirection: direction,
                         messageCount: (existing?.context?.messageCount || 0) + 1,

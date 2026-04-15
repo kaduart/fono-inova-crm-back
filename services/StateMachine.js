@@ -58,6 +58,12 @@ const GLOBAL_INTENTS = {
     
     // 🆕 NOVO: Detectar origem GMB (Google Meu Negócio)
     GMB_ORIGIN: /vi\s+(o\s+)?post\s+(sobre|de|no)|vi\s+no\s+post|vi\s+(o\s+)?post\s+do\s+google|vi\s+no\s+google\s+meu\s+negocio|vim\s+pelo?\s+(post|google)|encontrei\s+no\s+google/i,
+    // 🆕 Especialidades que NÃO atendemos — redireciona ao invés de silenciar
+    NEUROPEDIATRIA_QUERY: /neuropediatra|neuropediatri/i,
+    // 🆕 Exame de audição — clínica não faz audiometria
+    AUDIO_EXAM_QUERY: /exame\s*de\s*audi[çc][ãa]o|audiometria|medir\s*(a\s*)?audi[çc][ãa]o|teste\s*(de\s*)?audi[çc][ãa]o/i,
+    // 🆕 Atende adultos?
+    ADULTS_QUERY: /atende\s*(adulto|adultos|pessoa\s*grande)|[eé]\s*(s[oó]\s*)?para\s*crian[çc]a|aten(de|dem)\s*s[oó]\s*crian[çc]/i,
 };
 
 const MAX_RETRIES = 3; // Após 3 erros no mesmo estado → handoff humano

@@ -14,6 +14,7 @@ import {
 import { getFirstAvailableDate, isInRecesso } from '../config/clinic.js';
 import Doctor from "../models/Doctor.js";
 import { sendTextMessage } from './whatsappService.js';
+import { calculateAvailableSlots } from '../middleware/conflictDetection.js';
 
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
@@ -97,23 +98,17 @@ export function isDateBlocked(dateStr) {
 // ============================================================================
 
 export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
+    // Chama calculateAvailableSlots diretamente (sem HTTP round-trip)
+    // Elimina dependência de ADMIN_API_TOKEN e falhas de rede interna
     try {
-        const res = await api.get("/api/appointments/available-slots", {
-            params: { doctorId, date },
-        });
-        console.log("[BOOKING] Request slots", {
-            baseURL: api.defaults.baseURL,
-            doctorId,
-            date
-        });
-        return res.data;
+        const slots = await calculateAvailableSlots(doctorId, date);
+        console.log("[BOOKING] Slots diretos", { doctorId, date, count: slots?.length ?? 0 });
+        return slots;
     } catch (err) {
-        console.error("[AMANDA-BOOKING] available-slots falhou", {
-            base: API_BASE,
+        console.error("[AMANDA-BOOKING] calculateAvailableSlots falhou", {
             doctorId,
             date,
-            status: err.response?.status,
-            data: err.response?.data,
+            error: err.message,
         });
         throw err;
     }
@@ -150,8 +145,44 @@ export async function findAvailableSlots({
         preferredDate,
     });
 
-    const doctors = await Doctor.find(doctorFilter).lean();
+    let doctors = await Doctor.find(doctorFilter).lean();
+
+    // Fallback 1: case-insensitive
+    if (!doctors.length && therapyArea) {
+        doctors = await Doctor.find({
+            active: true,
+            specialty: { $regex: new RegExp(`^${therapyArea}$`, 'i') },
+        }).lean();
+        if (doctors.length) {
+            console.log(`[BOOKING] Fallback case-insensitive: ${doctors.length} doctor(s) para "${therapyArea}"`);
+        }
+    }
+
+    // Fallback 2: todos os doctors ativos com weeklyAvailability configurada
     if (!doctors.length) {
+        console.warn(`[BOOKING] Specialty "${therapyArea}" sem match — usando fallback: todos os doctors ativos com agenda`);
+        doctors = await Doctor.find({
+            active: true,
+            weeklyAvailability: { $exists: true, $not: { $size: 0 } },
+        }).lean();
+        if (doctors.length) {
+            console.log(`[BOOKING] Fallback geral: ${doctors.length} doctor(s) disponíveis`);
+        }
+    }
+
+    if (!doctors.length) {
+        console.error(`[BOOKING] CRÍTICO: nenhum doctor ativo com weeklyAvailability. Configure a agenda no painel.`);
+        return null;
+    }
+
+    // Diagnóstico: doctors sem weeklyAvailability configurada
+    const semAgenda = doctors.filter(d => !d.weeklyAvailability?.length);
+    if (semAgenda.length) {
+        console.warn(`[BOOKING] ${semAgenda.length} doctor(s) SEM weeklyAvailability: ${semAgenda.map(d => d.fullName).join(', ')}`);
+    }
+    doctors = doctors.filter(d => d.weeklyAvailability?.length > 0);
+    if (!doctors.length) {
+        console.error(`[BOOKING] CRÍTICO: todos os doctors estão sem weeklyAvailability configurada.`);
         return null;
     }
 
