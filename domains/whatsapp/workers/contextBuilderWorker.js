@@ -52,7 +52,7 @@ export function createContextBuilderWorker() {
                     content,
                     lead,
                     lead.stage || 'novo',
-                    {}, // stateData - pode evoluir para usar conversationState
+                    conversationState || {}, // hot state do Redis (últimas msgs, intenção prévia)
                     null // insights - pode vir de amandaLearningService no futuro
                 );
 

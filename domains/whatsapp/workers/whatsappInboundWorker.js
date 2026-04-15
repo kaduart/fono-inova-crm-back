@@ -7,7 +7,7 @@
 import { Worker } from 'bullmq';
 import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
 import logger from '../../../utils/logger.js';
-import { processInboundMessage } from '../../../controllers/whatsappController.js';
+import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 
 export function createWhatsappInboundWorker() {
   console.log('[WhatsappInboundWorker] 🚀 Criando worker...');
@@ -59,20 +59,25 @@ export function createWhatsappInboundWorker() {
         }
       }
 
+      // Publica para messagePersistenceWorker (V2 — sem chamar processInboundMessage)
       try {
-        const result = await processInboundMessage(msg, value);
-        
-        if (result?.duplicate) {
-          logger.info('[WhatsappInboundWorker] Mensagem duplicada ignorada', { wamid });
-          return { status: 'skipped', reason: 'DUPLICATE', wamid };
-        }
+        await publishEvent(EventTypes.WHATSAPP_MESSAGE_PREPROCESSED, {
+          msg,
+          value,
+          combinedText: msg.text?.body || null, // já foi merged pelo debounce acima
+        }, {
+          correlationId,
+          jobId: `persist:${wamid}`,
+          aggregateType: 'message',
+          aggregateId: wamid,
+        });
 
-        logger.info('[WhatsappInboundWorker] ✅ Mensagem processada com sucesso', { wamid, from });
-        return { status: 'processed', wamid };
-      } catch (processErr) {
-        console.error(`[WhatsappInboundWorker] ❌ Erro ao processar mensagem:`, processErr.message);
-        logger.error('[WhatsappInboundWorker] Erro ao processar mensagem:', processErr);
-        throw processErr; // Re-throw para BullMQ tentar novamente
+        logger.info('[WhatsappInboundWorker] ✅ Publicado para persistence worker', { wamid, from });
+        return { status: 'dispatched', wamid };
+      } catch (publishErr) {
+        console.error(`[WhatsappInboundWorker] ❌ Erro ao publicar evento:`, publishErr.message);
+        logger.error('[WhatsappInboundWorker] Erro ao publicar WHATSAPP_MESSAGE_PREPROCESSED:', publishErr);
+        throw publishErr; // Re-throw para BullMQ tentar novamente
       }
     },
     {

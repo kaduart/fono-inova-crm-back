@@ -36,6 +36,10 @@ import { createWhatsappInboundWorker } from '../domains/whatsapp/workers/whatsap
 import { createWhatsappAutoReplyWorker } from '../domains/whatsapp/workers/whatsappAutoReplyWorker.js';
 import { createContextBuilderWorker } from '../domains/whatsapp/workers/contextBuilderWorker.js';
 import { createConversationStateWorker } from '../domains/whatsapp/workers/conversationStateWorker.js';
+import { createMessagePersistenceWorker } from '../domains/whatsapp/workers/messagePersistenceWorker.js';
+import { createLeadInteractionWorker } from '../domains/whatsapp/workers/leadInteractionWorker.js';
+import { createRealtimeWorker } from '../domains/whatsapp/workers/realtimeWorker.js';
+import { createChatProjectionWorker } from '../domains/whatsapp/workers/chatProjectionWorker.js';
 
 const GROUPS = {
   scheduling: async (workers) => {
@@ -92,6 +96,10 @@ const GROUPS = {
     workers.push(createWhatsappAutoReplyWorker());
     workers.push(createContextBuilderWorker());
     workers.push(createConversationStateWorker());
+    workers.push(createMessagePersistenceWorker());
+    workers.push(createLeadInteractionWorker());
+    workers.push(createRealtimeWorker());
+    workers.push(createChatProjectionWorker());
     console.log('[Registry] ✅ WhatsApp workers iniciados');
   },
 
