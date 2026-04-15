@@ -11,7 +11,7 @@ import Appointment from './models/Appointment.js';
 
 dotenv.config();
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisUrl = process.env.REDIS_URL;
 const appointmentId = process.argv[2];
 
 if (!appointmentId) {
