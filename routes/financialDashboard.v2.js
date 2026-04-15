@@ -15,6 +15,7 @@ import Session from '../models/Session.js';
 import Expense from '../models/Expense.js';
 import Doctor from '../models/Doctor.js';
 import FinancialGoal from '../models/FinancialGoal.js';
+import Planning from '../models/Planning.js';
 import { calculateDoctorCommission } from '../services/commissionService.js';
 
 const router = express.Router();
@@ -38,15 +39,33 @@ async function loadGoal(year, month, clinicId = 'default') {
         active: true
     }).lean();
 
+    if (goal) {
+        return {
+            metaMensal: goal.metaMensal,
+            diasUteis: goal.diasUteis ?? META_CONFIG.diasUteis,
+            breakdown: {
+                particular: goal.breakdown?.particular ?? 0,
+                convenio: goal.breakdown?.convenio ?? 0,
+                pacote: goal.breakdown?.pacote ?? 0,
+                liminar: goal.breakdown?.liminar ?? 0
+            }
+        };
+    }
+
+    // Fallback: busca no modelo Planning (salvo via /api/v2/goals)
+    const start = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const planning = await Planning.findOne({
+        type: 'monthly',
+        'period.start': start,
+        'period.end': end,
+    }).lean();
+
     return {
-        metaMensal: goal?.metaMensal ?? META_CONFIG.mensal,
-        diasUteis: goal?.diasUteis ?? META_CONFIG.diasUteis,
-        breakdown: {
-            particular: goal?.breakdown?.particular ?? 0,
-            convenio: goal?.breakdown?.convenio ?? 0,
-            pacote: goal?.breakdown?.pacote ?? 0,
-            liminar: goal?.breakdown?.liminar ?? 0
-        }
+        metaMensal: planning?.targets?.expectedRevenue ?? META_CONFIG.mensal,
+        diasUteis: META_CONFIG.diasUteis,
+        breakdown: { particular: 0, convenio: 0, pacote: 0, liminar: 0 }
     };
 }
 
@@ -60,13 +79,21 @@ router.get('/', auth, async (req, res) => {
 
         console.log(`[DashboardV3] Calculando real-time: ${monthKey}`);
 
-        const data = await calculateRealTime(targetYear, targetMonth);
-        const aReceber = await calculateAReceber(targetYear, targetMonth);
-        const despesas = await calculateDespesas(targetYear, targetMonth);
-        const metas = await calculateMetas(data, targetYear, targetMonth);
-        const profissionais = await calculateProfissionais(data, targetYear, targetMonth);
+        // Fase 1: queries independentes em paralelo
+        const [data, aReceber, despesas, comparativos] = await Promise.all([
+            calculateRealTime(targetYear, targetMonth),
+            calculateAReceber(targetYear, targetMonth),
+            calculateDespesas(targetYear, targetMonth),
+            calculateComparativos(targetYear, targetMonth),
+        ]);
+
+        // Fase 2: dependem de `data`
+        const [metas, profissionais] = await Promise.all([
+            calculateMetas(data, targetYear, targetMonth),
+            calculateProfissionais(data, targetYear, targetMonth),
+        ]);
+
         const insights = generateInsights(data, metas, profissionais);
-        const comparativos = await calculateComparativos(targetYear, targetMonth);
         const riscoOperacional = calculateRiscoOperacional(data, metas, profissionais);
         const acoesExecutivas = calculateAcoesExecutivas(data, metas, profissionais, riscoOperacional);
         const drillDown = buildDrillDown(data, profissionais);

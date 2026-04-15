@@ -75,6 +75,7 @@ import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import whatsappVPSRoutes from "./routes/whatsappVPS.js";
+import chatV2Routes from "./routes/chat/index.js";
 import aiRoutes from "./routes/ai.js";
 import diagnosticRouter from './routes/whatsapp/diagnostic.js';
 import protocolRoutes from './routes/protocol.js';
@@ -459,6 +460,7 @@ app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/whatsapp-vps", whatsappVPSRoutes);
+app.use("/api/v2/chat", auth, chatV2Routes);
 
 app.use("/api/followups", followupRoutes);
 

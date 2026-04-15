@@ -211,11 +211,17 @@ router.post('/test-socket', (req, res) => {
     }
 });
 
-// 💬 Histórico de chat
-router.get('/chat/:phone', whatsappController.getChat);
+// 💬 Histórico de chat — APOSENTADO: usar GET /api/v2/chat/:leadId/messages
+router.get('/chat/:phone', (_req, res) =>
+  res.status(410).json({ success: false, error: 'Endpoint aposentado. Use GET /api/v2/chat/:leadId/messages' })
+);
 
-// 👥 CRUD de contatos
-router.get('/contacts', whatsappController.listContacts);
+// 👥 Listagem de contatos — APOSENTADO para inbox: usar GET /api/v2/chat/inbox
+// Mantido APENAS para ?search= (busca por texto não tem equivalente V2)
+router.get('/contacts', (req, res, next) => {
+  if (req.query.search) return next(); // deixa passar para o controller
+  return res.status(410).json({ success: false, error: 'Endpoint aposentado. Use GET /api/v2/chat/inbox' });
+}, whatsappController.listContacts);
 router.post('/contacts', whatsappController.addContact);
 router.put('/contacts/:id', whatsappController.updateContact);
 router.delete('/contacts/:id', whatsappController.deleteContact);
