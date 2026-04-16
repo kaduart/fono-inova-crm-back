@@ -61,21 +61,21 @@ export function createWhatsappInboundWorker() {
 
       // Publica para messagePersistenceWorker (V2 — sem chamar processInboundMessage)
       try {
-       await publishEvent(
-  'MESSAGE_RESPONSE_DETECTED',
-  {
-    messageId: wamid,
-    leadId: from, 
-    text: msg.text?.body || '',
-  },
-  {
-    correlationId,
-    aggregateType: 'message',
-    aggregateId: wamid,
-  }
-);
+        await publishEvent(
+          EventTypes.WHATSAPP_MESSAGE_PREPROCESSED,
+          {
+            msg,
+            value,
+            combinedText: msg.text?.body || '',
+          },
+          {
+            correlationId,
+            aggregateType: 'message',
+            aggregateId: wamid,
+          }
+        );
 
-        logger.info('[WhatsappInboundWorker] ✅ Publicado para persistence worker', { wamid, from });
+        logger.info('[WhatsappInboundWorker] ✅ Publicado WHATSAPP_MESSAGE_PREPROCESSED', { wamid, from });
         return { status: 'dispatched', wamid };
       } catch (publishErr) {
         console.error(`[WhatsappInboundWorker] ❌ Erro ao publicar evento:`, publishErr.message);

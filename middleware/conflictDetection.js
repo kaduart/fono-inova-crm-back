@@ -284,6 +284,20 @@ function appointmentBlocksSlot(slotTime, appointmentTime, durationMinutes = 40) 
 }
 
 // ======================================================
+// 🔧 FALLBACK: Slots padrão quando doctor não tem agenda
+// ======================================================
+function generateDefaultSlots() {
+  return [
+    { time: "08:00", available: true },
+    { time: "09:00", available: true },
+    { time: "10:00", available: true },
+    { time: "14:00", available: true },
+    { time: "15:00", available: true },
+    { time: "16:00", available: true },
+  ];
+}
+
+// ======================================================
 // 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
 // Retorna: [{ time, available, reason?, label? }]
 // ======================================================
@@ -312,7 +326,7 @@ export async function calculateAvailableSlots(doctorId, date) {
 
   if (!rawTimes.length) {
     console.log(`[calculateAvailableSlots] Sem horários configurados para ${dayKey}`);
-    return [];
+    return generateDefaultSlots();
   }
 
   // normalize + dedupe + sort + business hours
@@ -327,7 +341,7 @@ export async function calculateAvailableSlots(doctorId, date) {
 
   if (!normalizedTimes.length) {
     console.log(`[calculateAvailableSlots] Sem horários normalizados válidos`);
-    return [];
+    return generateDefaultSlots();
   }
   
   console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
