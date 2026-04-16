@@ -663,6 +663,22 @@ if (size > 5000) {
             log.warn('snapshot_import_failed', importErr.message, { eventId, eventType });
         }
     }
+
+    // 🆕 V2: atualiza snapshot de DESPESAS de forma não-bloqueante
+    const expenseEventTypes = [
+        'EXPENSE_CREATED',
+        EventTypes.SESSION_COMPLETED,
+    ];
+    if (expenseEventTypes.includes(eventType)) {
+        try {
+            const { processExpenseEvent } = await import('../../workers/financialExpenseWorker.js');
+            processExpenseEvent(eventType, payload).catch(err =>
+                log.error('expense_snapshot_hook_failed', err.message, { eventId, eventType })
+            );
+        } catch (importErr) {
+            log.warn('expense_snapshot_import_failed', importErr.message, { eventId, eventType });
+        }
+    }
     
     return {
         eventId,
