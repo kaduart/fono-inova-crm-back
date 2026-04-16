@@ -128,7 +128,7 @@ export async function onPaymentRequested(payload) {
 
 export async function onPaymentCompleted(payload) {
   const payment = await Payment.findById(payload.paymentId || payload._id)
-    .select('paymentDate billingType insurance.receivedAmount amount paymentMethod category status')
+    .select('paymentDate billingType insurance.receivedAmount amount paymentMethod category status notes description type serviceType')
     .lean();
 
   if (!payment) return;
@@ -142,7 +142,30 @@ export async function onPaymentCompleted(payload) {
     'payments.received': received,
     'payments.countPaid': 1,
     [`payments.byMethod.${method}`]: received,
+    'cash.total': received,
   };
+
+  // Mapeia método para dashboard V3
+  const rawMethod = (payment.paymentMethod || '').toLowerCase();
+  if (rawMethod.includes('pix')) inc['cash.byMethod.pix'] = received;
+  else if (rawMethod.includes('card') || rawMethod.includes('cartao') || rawMethod.includes('crédito') || rawMethod.includes('debito') || rawMethod.includes('credit') || rawMethod.includes('debit')) inc['cash.byMethod.cartao'] = received;
+  else if (rawMethod.includes('cash') || rawMethod.includes('dinheiro')) inc['cash.byMethod.dinheiro'] = received;
+  else inc['cash.byMethod.outros'] = received;
+
+  // Classificação por tipo de negócio (mesma lógica do dashboard V3)
+  const notes = (payment.notes || '').toLowerCase();
+  const desc = (payment.description || '').toLowerCase();
+  const billingType = payment.billingType || 'particular';
+
+  if (notes.includes('pacote') || desc.includes('pacote') || payment.type === 'package' || payment.serviceType === 'package_session') {
+    inc['cash.convenioPacote'] = received;
+  } else if (billingType === 'convenio' || notes.includes('convênio') || desc.includes('convenio') || payment.type === 'insurance') {
+    inc['cash.convenioAvulso'] = received;
+  } else if (billingType === 'liminar' || notes.includes('liminar')) {
+    inc['cash.liminar'] = received;
+  } else {
+    inc['cash.particular'] = received;
+  }
 
   // Se antes estava pending, compensa
   if (payment.status === 'pending') {
@@ -157,7 +180,7 @@ export async function onPaymentCompleted(payload) {
 
 export async function onPaymentPartial(payload) {
   const payment = await Payment.findById(payload.paymentId || payload._id)
-    .select('paymentDate amount insurance.receivedAmount paymentMethod status')
+    .select('paymentDate amount insurance.receivedAmount paymentMethod status notes description type serviceType billingType')
     .lean();
 
   if (!payment) return;
@@ -170,7 +193,30 @@ export async function onPaymentPartial(payload) {
     'payments.received': received,
     'payments.countPartial': 1,
     [`payments.byMethod.${method}`]: received,
+    'cash.total': received,
   };
+
+  // Mapeia método para dashboard V3
+  const rawMethod = (payment.paymentMethod || '').toLowerCase();
+  if (rawMethod.includes('pix')) inc['cash.byMethod.pix'] = received;
+  else if (rawMethod.includes('card') || rawMethod.includes('cartao') || rawMethod.includes('crédito') || rawMethod.includes('debito') || rawMethod.includes('credit') || rawMethod.includes('debit')) inc['cash.byMethod.cartao'] = received;
+  else if (rawMethod.includes('cash') || rawMethod.includes('dinheiro')) inc['cash.byMethod.dinheiro'] = received;
+  else inc['cash.byMethod.outros'] = received;
+
+  // Classificação por tipo de negócio
+  const notes = (payment.notes || '').toLowerCase();
+  const desc = (payment.description || '').toLowerCase();
+  const billingType = payment.billingType || 'particular';
+
+  if (notes.includes('pacote') || desc.includes('pacote') || payment.type === 'package' || payment.serviceType === 'package_session') {
+    inc['cash.convenioPacote'] = received;
+  } else if (billingType === 'convenio' || notes.includes('convênio') || desc.includes('convenio') || payment.type === 'insurance') {
+    inc['cash.convenioAvulso'] = received;
+  } else if (billingType === 'liminar' || notes.includes('liminar')) {
+    inc['cash.liminar'] = received;
+  } else {
+    inc['cash.particular'] = received;
+  }
 
   if (payment.status === 'pending') {
     inc['payments.countPending'] = -1;
@@ -208,7 +254,8 @@ export async function onPaymentFailedOrCancelled(payload) {
 
 export async function onSessionCompleted(payload) {
   const session = await Session.findById(payload.sessionId || payload._id)
-    .select('date sessionValue paymentMethod package status')
+    .select('date sessionValue paymentMethod package status doctor paymentOrigin')
+    .populate('package', 'insuranceGrossAmount sessionValue sessionType')
     .lean();
 
   if (!session || session.status !== 'completed') return;
@@ -216,23 +263,55 @@ export async function onSessionCompleted(payload) {
   const dateStr = toDateStr(session.date);
   if (!dateStr) return;
 
-  const value = session.sessionValue || 0;
+  const value = (session.sessionValue > 0 ? session.sessionValue : null)
+    ?? session.package?.sessionValue
+    ?? session.package?.insuranceGrossAmount
+    ?? 0;
+
+  if (value === 0) {
+    log.warn('session_zero_value_detected', 'Sessão completed com valor 0 no snapshot', {
+      sessionId: session._id?.toString(),
+      doctorId: session.doctor?.toString(),
+      date: dateStr,
+      packageId: session.package?._id?.toString(),
+      rawSessionValue: session.sessionValue,
+      packageSessionValue: session.package?.sessionValue,
+      packageInsuranceGrossAmount: session.package?.insuranceGrossAmount
+    });
+  }
+
   const method = session.paymentMethod || 'unknown';
+  const isPacote = !!session.package;
+  const isLiminar = method === 'liminar_credit' || session.paymentOrigin === 'liminar';
+  const isConvenio = method === 'convenio';
 
   const inc = {
     'production.total': value,
     'production.count': 1,
   };
 
-  if (method === 'convenio') {
+  // byBusinessType (alinhado com dashboard V3)
+  if (isConvenio) {
+    inc['production.byBusinessType.convenio.total'] = value;
+    inc['production.byBusinessType.convenio.count'] = 1;
     inc['production.byPaymentMethod.convenio.total'] = value;
     inc['production.byPaymentMethod.convenio.count'] = 1;
     inc['convenio.atendido.total'] = value;
     inc['convenio.atendido.count'] = 1;
-  } else if (method === 'particular') {
+  } else if (isLiminar) {
+    inc['production.byBusinessType.liminar.total'] = value;
+    inc['production.byBusinessType.liminar.count'] = 1;
+  } else if (isPacote) {
+    inc['production.byBusinessType.pacote.total'] = value;
+    inc['production.byBusinessType.pacote.count'] = 1;
+  } else {
+    inc['production.byBusinessType.particular.total'] = value;
+    inc['production.byBusinessType.particular.count'] = 1;
     inc['production.byPaymentMethod.particular.total'] = value;
     inc['production.byPaymentMethod.particular.count'] = 1;
-  } else if (method === 'pix') {
+  }
+
+  if (method === 'pix') {
     inc['production.byPaymentMethod.pix.total'] = value;
     inc['production.byPaymentMethod.pix.count'] = 1;
   } else if (method === 'credit_card') {
@@ -240,7 +319,53 @@ export async function onSessionCompleted(payload) {
     inc['production.byPaymentMethod.credit_card.count'] = 1;
   }
 
-  await updateSnapshot({ date: dateStr, clinicId: payload.clinicId || 'default' }, { $inc: inc });
+  await updateSnapshot(
+    { date: dateStr, clinicId: payload.clinicId || 'default', eventId: payload.eventId || payload._id || `sess_${Date.now()}` },
+    { $inc: inc }
+  );
+
+  // Atualiza professional no snapshot (upsert no array)
+  if (session.doctor) {
+    const profId = session.doctor.toString();
+    const profInc = {
+      'production': value,
+      'count': 1,
+    };
+    if (isConvenio) profInc['convenio'] = value;
+    else if (isLiminar) profInc['liminar'] = value;
+    else if (isPacote) profInc['pacote'] = value;
+    else profInc['particular'] = value;
+
+    await FinancialDailySnapshot.findOneAndUpdate(
+      { date: dateStr, clinicId: payload.clinicId || 'default', 'professionals.professionalId': profId },
+      {
+        $set: { updatedAt: new Date(), lastEventAt: new Date() },
+        $inc: Object.fromEntries(Object.entries(profInc).map(([k, v]) => [`professionals.$.${k}`, v]))
+      },
+      { upsert: false }
+    );
+
+    // Se o profissional ainda não existe no array, adiciona
+    await FinancialDailySnapshot.findOneAndUpdate(
+      { date: dateStr, clinicId: payload.clinicId || 'default', 'professionals.professionalId': { $ne: profId } },
+      {
+        $set: { updatedAt: new Date(), lastEventAt: new Date() },
+        $push: {
+          professionals: {
+            professionalId: profId,
+            production: value,
+            cash: 0,
+            count: 1,
+            particular: isConvenio || isLiminar || isPacote ? 0 : value,
+            convenio: isConvenio ? value : 0,
+            liminar: isLiminar ? value : 0,
+            pacote: isPacote ? value : 0,
+          }
+        }
+      },
+      { upsert: false }
+    );
+  }
 }
 
 // ─── APPOINTMENT EVENTS ─────────────────────────────────────────────────────
