@@ -21,6 +21,15 @@ import { assertPayloadField, throwIfNotFoundRetryable } from '../infrastructure/
 
 const processedEvents = new Map();
 const EVENT_CACHE_TTL = 24 * 60 * 60 * 1000;
+const MAX_CACHE_SIZE = 5_000;
+
+function cacheEvent(eventId) {
+    if (processedEvents.size >= MAX_CACHE_SIZE) {
+        // Remove entrada mais antiga (Map mantém ordem de inserção)
+        processedEvents.delete(processedEvents.keys().next().value);
+    }
+    processedEvents.set(eventId, Date.now());
+}
 
 // Limpa cache
 setInterval(() => {
@@ -101,7 +110,7 @@ export function startAppointmentWorker() {
                     { correlationId }
                 );
                 
-                processedEvents.set(eventId, Date.now());
+                cacheEvent(eventId);
                 
                 return {
                     status: 'rejected',
@@ -116,7 +125,7 @@ export function startAppointmentWorker() {
             // 7. Publica eventos seguintes baseado no tipo
             await publishNextEvents(appointment, payload, correlationId);
 
-            processedEvents.set(eventId, Date.now());
+            cacheEvent(eventId);
 
             console.log(`[AppointmentWorker] Agendamento ${appointment._id} confirmado`);
 

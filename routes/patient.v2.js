@@ -32,6 +32,7 @@ const logger = createContextLogger('PatientV2Routes');
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutos
 const VIEW_TIMEOUT_MS = 3000; // 3s para build sync
+const WORKERS_ENABLED = process.env.ENABLE_WORKERS === 'true';
 
 // ============================================
 // READ SIDE (PatientsView + fallback)
@@ -151,6 +152,20 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     view = await PatientsView.findOne({ $or: [{ patientId: id }, { _id: id }] }).lean();
     // Resolve o patientId real caso tenha chegado o _id da view
     const resolvedPatientId = view?.patientId || id;
+
+    // 🛡️ VALIDAÇÃO: garante que o aggregate Patient existe, mesmo se a view existir
+    const patientExists = await Patient.exists({ _id: new mongoose.Types.ObjectId(resolvedPatientId) });
+    if (!patientExists) {
+      logger.warn(`[${correlationId}] ⚠️ Patient aggregate não encontrado para view existente`, { 
+        patientId: resolvedPatientId, 
+        viewId: view?._id?.toString() 
+      });
+      // Invalida view órfã para forçar rebuild na próxima tentativa
+      if (view) {
+        await PatientsView.findByIdAndUpdate(view._id, { 'snapshot.isStale': true });
+      }
+      return res.status(404).json(formatError('Paciente não encontrado', 404));
+    }
 
     // 2. Se não existe → FALLBACK: build sync
     if (!view) {
@@ -325,6 +340,37 @@ router.post('/', flexibleAuth, async (req, res) => {
       fullName: fullName.substring(0, 50)
     });
     
+    // 🚀 Fallback síncrono se workers estiverem desabilitados
+    if (!WORKERS_ENABLED) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+      
+      const patient = await Patient.create({
+        _id: new mongoose.Types.ObjectId(patientId),
+        fullName: fullName.trim(),
+        dateOfBirth,
+        phone: req.body.phone?.replace(/\D/g, ''),
+        email: req.body.email?.toLowerCase(),
+        cpf: req.body.cpf?.replace(/\D/g, ''),
+        rg: req.body.rg,
+        gender: req.body.gender,
+        address: req.body.address,
+        healthPlan: req.body.healthPlan,
+        mainComplaint: req.body.mainComplaint,
+        emergencyContact: req.body.emergencyContact,
+        createdBy: req.user?.id
+      });
+      
+      const view = await buildPatientView(patient._id.toString(), { correlationId, force: true });
+      
+      return res.status(201).json(
+        formatSuccess({
+          patientId: patient._id.toString(),
+          status: 'completed',
+          patientView: view
+        }, { message: 'Paciente criado' })
+      );
+    }
+
     // Publica evento
     const event = await publishEvent(
       EventTypes.PATIENT_CREATE_REQUESTED,
@@ -389,6 +435,42 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       patientId = view.patientId;
     }
 
+    // 🚀 Fallback síncrono se workers estiverem desabilitados
+    if (!WORKERS_ENABLED) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+      
+      const allowedFields = [
+        'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
+        'gender', 'address', 'healthPlan', 'mainComplaint',
+        'emergencyContact', 'clinicalHistory', 'medications', 'allergies',
+        'familyHistory', 'placeOfBirth', 'profession', 'maritalStatus',
+        'birthCertificate', 'legalGuardian', 'imageAuthorization'
+      ];
+      
+      const updates = {};
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updates[field] = req.body[field];
+        }
+      }
+      
+      if (updates.fullName) updates.fullName = updates.fullName.trim();
+      if (updates.phone) updates.phone = updates.phone.replace(/\D/g, '');
+      if (updates.email) updates.email = updates.email.toLowerCase();
+      
+      await Patient.findByIdAndUpdate(patientId, {
+        ...updates,
+        updatedAt: new Date()
+      });
+      
+      const view = await buildPatientView(patientId, { correlationId, force: true });
+      
+      return res.json(formatSuccess({
+        status: 'completed',
+        patientView: view
+      }, { message: 'Paciente atualizado' }));
+    }
+
     const event = await publishEvent(
       EventTypes.PATIENT_UPDATE_REQUESTED,
       {
@@ -433,6 +515,20 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
         return res.status(404).json(formatError('Paciente não encontrado', 404));
       }
       patientId = view.patientId;
+    }
+
+    // 🚀 Fallback síncrono se workers estiverem desabilitados
+    if (!WORKERS_ENABLED) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+      
+      await Patient.findByIdAndDelete(patientId);
+      await PatientsView.findOneAndDelete({ patientId });
+      
+      return res.json(formatSuccess({
+        patientId,
+        status: 'completed',
+        deleted: true
+      }, { message: 'Paciente removido' }));
     }
 
     const event = await publishEvent(

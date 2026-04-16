@@ -8,6 +8,37 @@
  */
 
 import FinancialLedger from '../models/FinancialLedger.js';
+import { resolveSessionBillingType } from '../utils/billingHelpers.js';
+
+/**
+ * Registra reconhecimento de receita de uma sessão avulsa (particular, convênio ou liminar)
+ */
+export async function recordSessionRevenue(session, options = {}, mongoSession) {
+    const { userId, userName, correlationId } = options;
+    
+    const billingType = resolveSessionBillingType(session);
+    const amount = session.package?.insuranceGrossAmount || session.sessionValue || 0;
+    
+    return FinancialLedger.credit({
+        type: 'revenue_recognition',
+        amount,
+        billingType,
+        patient: session.patient,
+        appointment: session.appointmentId,
+        session: session._id,
+        correlationId: correlationId || session.correlationId || `session_${session._id}`,
+        description: `Receita reconhecida - ${billingType}`,
+        occurredAt: session.revenueRecognizedAt || session.completedAt || session.updatedAt || new Date(),
+        createdBy: userId,
+        createdByName: userName,
+        metadata: {
+            source: 'session_complete',
+            paymentMethod: session.paymentMethod,
+            sessionType: session.sessionType,
+            insuranceGuide: session.insuranceGuide
+        }
+    }, mongoSession);
+}
 
 /**
  * Registra um pagamento recebido
@@ -116,6 +147,62 @@ export async function recordRefund(payment, refundAmount, options = {}, mongoSes
 }
 
 /**
+ * Registra faturamento de convênio (conta a receber)
+ */
+export async function recordInsuranceBilled(payment, options = {}, mongoSession) {
+    const { userId, userName, correlationId, billedAt } = options;
+    
+    return FinancialLedger.credit({
+        type: 'insurance_billed',
+        amount: payment.insurance?.grossAmount || payment.amount || 0,
+        billingType: 'convenio',
+        patient: payment.patient,
+        appointment: payment.appointment,
+        session: payment.session,
+        payment: payment._id,
+        correlationId: correlationId || payment.correlationId || `insurance_billed_${payment._id}`,
+        description: `Convênio faturado - ${payment.insurance?.provider || 'Convênio'}`,
+        occurredAt: billedAt || payment.insurance?.billedAt || new Date(),
+        createdBy: userId,
+        createdByName: userName,
+        metadata: {
+            source: 'insurance_billing',
+            provider: payment.insurance?.provider,
+            authorizationCode: payment.insurance?.authorizationCode
+        }
+    }, mongoSession);
+}
+
+/**
+ * Registra recebimento de convênio (entrada de caixa)
+ */
+export async function recordInsuranceReceived(payment, options = {}, mongoSession) {
+    const { userId, userName, correlationId, receivedAt } = options;
+    
+    return FinancialLedger.credit({
+        type: 'insurance_received',
+        amount: payment.insurance?.receivedAmount || payment.amount || 0,
+        billingType: 'convenio',
+        patient: payment.patient,
+        appointment: payment.appointment,
+        session: payment.session,
+        payment: payment._id,
+        correlationId: correlationId || payment.correlationId || `insurance_received_${payment._id}`,
+        description: `Convênio recebido - ${payment.insurance?.provider || 'Convênio'}`,
+        occurredAt: receivedAt || payment.insurance?.receivedAt || new Date(),
+        createdBy: userId,
+        createdByName: userName,
+        metadata: {
+            source: 'insurance_return',
+            provider: payment.insurance?.provider,
+            grossAmount: payment.insurance?.grossAmount,
+            receivedAmount: payment.insurance?.receivedAmount,
+            glosaAmount: payment.insurance?.glosaAmount || 0
+        }
+    }, mongoSession);
+}
+
+/**
  * Registra compra de pacote
  */
 export async function recordPackagePurchase(pkg, payment, options = {}, mongoSession) {
@@ -161,6 +248,39 @@ export async function recordAdjustment(data, options = {}, mongoSession) {
             reason,
             previousValue: originalAmount,
             newValue: newAmount
+        }
+    }, mongoSession);
+}
+
+/**
+ * Registra reversão de receita por cancelamento de sessão
+ */
+export async function recordSessionCancellationReversal(session, options = {}, mongoSession) {
+    const { userId, userName, correlationId, reason } = options;
+    
+    const billingType = resolveSessionBillingType(session);
+    const amount = session.package?.insuranceGrossAmount || session.sessionValue || 0;
+    
+    return FinancialLedger.debit({
+        type: 'reversal',
+        amount,
+        billingType,
+        patient: session.patient,
+        appointment: session.appointmentId,
+        session: session._id,
+        correlationId: correlationId || `cancel_${session._id}_${Date.now()}`,
+        description: `Reversão de receita - sessão cancelada: ${reason || 'Sem motivo'}`,
+        occurredAt: new Date(),
+        createdBy: userId,
+        createdByName: userName,
+        metadata: {
+            source: 'session_cancel',
+            paymentMethod: session.paymentMethod,
+            sessionType: session.sessionType,
+            insuranceGuide: session.insuranceGuide,
+            originalPaymentStatus: session.paymentStatus,
+            originalPaymentOrigin: session.paymentOrigin,
+            reason
         }
     }, mongoSession);
 }
@@ -238,9 +358,12 @@ export async function generateCashflowReport(startDate, endDate, groupBy = 'day'
 }
 
 export default {
+    recordSessionRevenue,
     recordPaymentReceived,
     recordPaymentPending,
     recordPackageSessionConsumed,
+    recordInsuranceBilled,
+    recordInsuranceReceived,
     recordRefund,
     recordPackagePurchase,
     recordAdjustment,

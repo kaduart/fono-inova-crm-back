@@ -371,7 +371,8 @@ export const createPackageV2 = async (req, res) => {
     notes,
     sessionsPerWeek,
     durationMonths,
-    idempotencyKey
+    idempotencyKey,
+    appointmentId = null   // 🔗 appointment avulso a reutilizar (opcional)
   } = req.body;
 
   // 🔄 RESOLVER patientId (pode vir como ID da PatientsView)
@@ -494,14 +495,51 @@ export const createPackageV2 = async (req, res) => {
     }
 
     // Verificar paciente
-    const patient = await Patient.findById(patientId).session(mongoSession);
+    logger.info(`[${correlationId}] 🔍 Verificando paciente no aggregate`, { patientId });
+    let patient = await Patient.findById(patientId).session(mongoSession);
+    
+    // 🛡️ AUTO-HEALING: se aggregate não existe mas view existe, tenta reconstruir
     if (!patient) {
-      await mongoSession.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        errorCode: 'PATIENT_NOT_FOUND',
-        message: 'Paciente não encontrado'
-      });
+      logger.warn(`[${correlationId}] ⚠️ Patient aggregate não encontrado, tentando auto-healing`, { patientId });
+      
+      const view = await PatientsView.findOne({ patientId }).lean();
+      if (view) {
+        try {
+          // Reconstroi aggregate mínimo a partir da view
+          const { buildPatientView } = await import('../domains/clinical/services/patientProjectionService.js');
+          await Patient.create({
+            _id: new mongoose.Types.ObjectId(patientId),
+            fullName: view.fullName || 'Paciente sem nome',
+            dateOfBirth: view.dateOfBirth || new Date('1900-01-01'),
+            phone: view.phone || '',
+            email: view.email || '',
+            cpf: view.cpf || '',
+            mainComplaint: view.mainComplaint || '',
+            healthPlan: view.healthPlan || {},
+            createdAt: view.createdAt || new Date(),
+            updatedAt: new Date()
+          });
+          
+          // Rebuild view para garantir consistência
+          await buildPatientView(patientId, { correlationId, force: true });
+          
+          // Recarrega patient na sessão atual
+          patient = await Patient.findById(patientId).session(mongoSession);
+          logger.info(`[${correlationId}] ✅ Auto-healing bem-sucedido`, { patientId });
+        } catch (healError) {
+          logger.error(`[${correlationId}] ❌ Auto-healing falhou`, { patientId, error: healError.message });
+        }
+      }
+      
+      if (!patient) {
+        logger.error(`[${correlationId}] ❌ Patient aggregate não encontrado após auto-healing`, { patientId });
+        await mongoSession.abortTransaction();
+        return res.status(404).json({
+          success: false,
+          errorCode: 'PATIENT_NOT_FOUND',
+          message: 'Paciente não encontrado'
+        });
+      }
     }
 
     // ========================================
@@ -592,15 +630,30 @@ export const createPackageV2 = async (req, res) => {
       // Usa o schedule ajustado
       schedule = adjustedSchedule;
       
+      // 🔗 PRÉ-BUSCAR appointment reutilizável (uma query, fora do loop)
+      let reuseAppt = null;
+      if (appointmentId) {
+        reuseAppt = await Appointment.findById(appointmentId).session(mongoSession);
+      }
+
       // 🚨 VALIDAR CONFLITOS DE AGENDA
       for (const slot of schedule) {
+        // FIX: usar buildDateTime para comparação correta Date vs Date
+        const slotDateTime = buildDateTime(slot.date, slot.time);
+
+        // 🔗 Pular slot que será reutilizado (usuário selecionou explicitamente)
+        if (reuseAppt && reuseAppt.time === slot.time) {
+          const reuseMs = new Date(reuseAppt.date).getTime();
+          if (Math.abs(slotDateTime.getTime() - reuseMs) < 60000) continue;
+        }
+
         const conflict = await Appointment.findOne({
           doctor: doctorId,
-          date: slot.date,
+          date: slotDateTime,          // FIX: Date object, não string
           time: slot.time,
           operationalStatus: { $nin: ['canceled', 'no_show'] }
         }).session(mongoSession);
-        
+
         if (conflict) {
           await mongoSession.abortTransaction();
           return res.status(409).json({
@@ -612,19 +665,60 @@ export const createPackageV2 = async (req, res) => {
         }
       }
 
-      // Criar em batch (2 inserts: appointments + sessions)
-      appointments = await createAppointmentsBatch(pkg, schedule, mongoSession);
-      sessions = await createSessionsBatch(pkg, appointments, mongoSession);
-      operationsCount += 2; // 2 batch inserts
-      
-      // Vincular (1 bulkWrite)
-      await linkSessionsToAppointments(sessions, mongoSession);
+      // 🔗 REUTILIZAR appointment existente (só roda se appointmentId fornecido)
+      let slotsToCreate = schedule;
+      if (reuseAppt) {
+        // Vincular ao pacote
+        reuseAppt.package = pkg._id;
+        reuseAppt.serviceType = 'package_session';
+        reuseAppt.paymentStatus = pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid';
+        reuseAppt.paymentOrigin = pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid';
+        await reuseAppt.save({ session: mongoSession });
+
+        // Atualizar session existente se houver
+        if (reuseAppt.session) {
+          await Session.findByIdAndUpdate(
+            reuseAppt.session,
+            { $set: { package: pkg._id, paymentStatus: reuseAppt.paymentStatus } },
+            { session: mongoSession }
+          );
+        }
+
+        // Remover o slot correspondente — não criar duplicata
+        const reuseMs = new Date(reuseAppt.date).getTime();
+        slotsToCreate = schedule.filter(slot => {
+          const slotMs = buildDateTime(slot.date, slot.time).getTime();
+          return !(reuseAppt.time === slot.time && Math.abs(slotMs - reuseMs) < 60000);
+        });
+      }
+
+      // Criar em batch apenas os slots novos
+      const newAppointments = await createAppointmentsBatch(pkg, slotsToCreate, mongoSession);
+      const newSessions = await createSessionsBatch(pkg, newAppointments, mongoSession);
+      await linkSessionsToAppointments(newSessions, mongoSession);
+      operationsCount += 2;
       operationsCount++;
+
+      // Session para o appointment reutilizado (cria se não tiver, atualiza se tiver)
+      let reuseSession = null;
+      if (reuseAppt) {
+        if (reuseAppt.session) {
+          reuseSession = { _id: reuseAppt.session };
+        } else {
+          const [created] = await createSessionsBatch(pkg, [reuseAppt], mongoSession);
+          await linkSessionsToAppointments([created], mongoSession);
+          reuseSession = created;
+        }
+      }
+
+      // Combinar: reutilizado + novos
+      appointments = reuseAppt ? [reuseAppt, ...newAppointments] : newAppointments;
+      sessions    = reuseSession ? [reuseSession, ...newSessions] : newSessions;
 
       // Atualizar package com referências
       pkg.sessions = sessions.map(s => s._id);
       pkg.appointments = appointments.map(a => a._id);
-      
+
       // 🔥 INVARIANTE: schedule DEVE ser igual ao totalSessions
       if (appointments.length !== parseInt(totalSessions)) {
         await mongoSession.abortTransaction();
@@ -636,6 +730,83 @@ export const createPackageV2 = async (req, res) => {
       }
       
       await pkg.save({ session: mongoSession });
+
+      // ==========================================================
+      // QUITAR DÉBITOS SELECIONADOS (via PatientBalance)
+      // ==========================================================
+      const selectedDebts = req.body.selectedDebts || [];
+      if (selectedDebts.length > 0) {
+        logger.info('[PackageV2] Quitando débitos selecionados', { count: selectedDebts.length });
+
+        const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
+        if (patientBalance) {
+          const alreadySettled = patientBalance.transactions.filter(
+            t => selectedDebts.includes(t._id?.toString()) &&
+                 t.settledByPackageId &&
+                 t.settledByPackageId.toString() !== pkg._id.toString()
+          );
+
+          if (alreadySettled.length > 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+              success: false,
+              errorCode: 'DEBTS_ALREADY_SETTLED',
+              message: `${alreadySettled.length} débito(s) já foram quitados em outro pacote`
+            });
+          }
+
+          const debitsToSettle = patientBalance.transactions.filter(
+            t => selectedDebts.includes(t._id?.toString()) &&
+                 t.type === 'debit' &&
+                 !t.settledByPackageId &&
+                 !t.isPaid
+          );
+
+          if (debitsToSettle.length > 0) {
+            const totalToSettle = debitsToSettle.reduce((sum, t) => sum + t.amount, 0);
+
+            for (const debit of debitsToSettle) {
+              debit.settledByPackageId = pkg._id;
+              debit.isPaid = true;
+              debit.paidAmount = debit.amount;
+            }
+
+            patientBalance.transactions.push({
+              type: 'credit',
+              amount: totalToSettle,
+              description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
+              specialty: debitsToSettle[0]?.specialty || req.body.sessionType,
+              settledByPackageId: pkg._id,
+              registeredBy: req.user?._id,
+              transactionDate: new Date()
+            });
+
+            patientBalance.currentBalance -= totalToSettle;
+            patientBalance.totalCredited += totalToSettle;
+            patientBalance.lastTransactionAt = new Date();
+
+            await patientBalance.save({ session: mongoSession });
+
+            const appointmentIds = debitsToSettle
+              .filter(t => t.appointmentId)
+              .map(t => t.appointmentId);
+
+            if (appointmentIds.length > 0) {
+              await Appointment.updateMany(
+                { _id: { $in: appointmentIds } },
+                {
+                  $set: {
+                    paymentStatus: 'paid',
+                    addedToBalance: false,
+                    isPaid: true
+                  }
+                },
+                { session: mongoSession }
+              );
+            }
+          }
+        }
+      }
     }
 
     // Vincular ao paciente
