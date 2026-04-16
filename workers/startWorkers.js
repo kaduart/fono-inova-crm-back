@@ -30,6 +30,15 @@ if (!MONGO_URI) {
 
 async function main() {
     try {
+        // 🛡️ Workers desabilitados → modo idle (evita crash loop no Render)
+        if (process.env.ENABLE_WORKERS !== 'true') {
+            console.log('⏸️  ENABLE_WORKERS !== true. Workers desabilitados. Modo idle ativo.');
+            setInterval(() => {
+                console.log(`[${new Date().toISOString()}] ⏸️ Workers desabilitados (ENABLE_WORKERS=${process.env.ENABLE_WORKERS}). Aguardando...`);
+            }, 60000);
+            return;
+        }
+
         console.log(`🚀 Iniciando Worker Service (grupo: ${WORKER_GROUP})...\n`);
 
         // 1. Conecta ao MongoDB
@@ -41,7 +50,7 @@ async function main() {
         });
         console.log('✅ MongoDB conectado\n');
 
-        // 2. Inicia workers conforme grupo
+        // 2. Inicia workers conforme grupo (com tolerância a falhas parciais)
         if (WORKER_GROUP === 'all') {
             console.log('⚙️  Iniciando TODOS os workers...');
             await startAllWorkers();

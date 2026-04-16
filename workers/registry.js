@@ -176,7 +176,12 @@ export async function startWorkerGroup(groupName, workers = []) {
   }
 
   console.log(`[Registry] start: ${groupName}`);
-  await fn(workers);
+  try {
+    await fn(workers);
+  } catch (err) {
+    console.error(`[Registry] ❌ Grupo '${groupName}' falhou:`, err.message);
+    // Não propaga o erro — permite que outros grupos continuem iniciando
+  }
   return workers;
 }
 
