@@ -271,6 +271,31 @@ patientBalanceSchema.methods.addCredit = async function(amount, description, reg
     return await this.save();
 };
 
+// Método para reverter débito por appointmentId (soft-delete)
+patientBalanceSchema.methods.revertDebitByAppointment = async function(appointmentId, reason = 'Reversão de completação') {
+    const txIndex = this.transactions.findIndex(t =>
+        t.type === 'debit' &&
+        !t.isDeleted &&
+        t.appointmentId?.toString() === appointmentId.toString()
+    );
+
+    if (txIndex === -1) {
+        return { skipped: true, reason: 'debit_not_found' };
+    }
+
+    const tx = this.transactions[txIndex];
+    tx.isDeleted = true;
+    tx.deletedAt = new Date();
+    tx.deleteReason = reason;
+
+    this.currentBalance = Math.max(0, this.currentBalance - tx.amount);
+    this.totalDebited = Math.max(0, this.totalDebited - tx.amount);
+    this.lastTransactionAt = new Date();
+
+    await this.save();
+    return { skipped: false, revertedAmount: tx.amount, transaction: tx };
+};
+
 // Método estático para obter ou criar saldo do paciente
 patientBalanceSchema.statics.getOrCreate = async function(patientId) {
     let balance = await this.findOne({ patient: patientId });

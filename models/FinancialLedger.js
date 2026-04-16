@@ -23,12 +23,23 @@ const ledgerSchema = new mongoose.Schema({
             'payment_pending',       // ⏳ A receber - pagamento pendente
             'refund',                // ↩️ Saída - estorno
             'adjustment',            // 🔧 Ajuste manual (correção)
+            'reversal',              // ⏪ Reversão de receita (cancelamento pós-completação)
             'package_purchase',      // 📦 Entrada - compra de pacote
             'package_consumed',      // 🎯 Reconhecimento - sessão consumida
             'revenue_recognition',   // 📈 Reconhecimento de receita
+            'insurance_billed',      // 🏥 Convênio faturado (conta a receber)
+            'insurance_received',    // 💰 Convênio recebido (entrada de caixa)
             'write_off',             // 🗑️ Baixa - perda/dívida incobrável
             'transfer'               // 🔄 Transferência entre contas
         ]
+    },
+
+    // 🏷️ Tipo de cobrança/origem clínica (aditivo, não breaking)
+    billingType: {
+        type: String,
+        enum: ['particular', 'convenio', 'liminar', 'unknown'],
+        index: true,
+        default: null
     },
 
     // ⬆️⬇️ Direção: credit = entra dinheiro, debit = sai dinheiro

@@ -481,7 +481,38 @@ export class AppointmentCompleteService {
      * Registra entrada no ledger (auditoria)
      */
     async recordLedgerEntry(appointment, financialStatus, paymentResult, correlationId, userId, session) {
-        // Implementação básica - pode ser expandida
+        const { recordSessionRevenue, recordPaymentReceived, recordPaymentPending } = LedgerService;
+        const billingType = appointment.billingType || 'particular';
+        const sessionValue = appointment.sessionValue || 0;
+
+        // 1. Sempre reconhece receita da sessão
+        if (sessionValue > 0) {
+            const sessionForLedger = session || {
+                _id: appointment.session,
+                patient: appointment.patient,
+                appointmentId: appointment._id,
+                sessionValue,
+                paymentMethod: appointment.paymentMethod,
+                sessionType: appointment.sessionType,
+                insuranceGuide: appointment.insuranceGuide,
+                correlationId
+            };
+            await recordSessionRevenue(sessionForLedger, { userId, correlationId });
+        }
+
+        // 2. Se houve pagamento, registra entrada de caixa
+        if (paymentResult?.payment && paymentResult.payment.status === 'paid') {
+            await recordPaymentReceived(paymentResult.payment, { userId, correlationId });
+        }
+
+        // 3. Se ficou fiado (addToBalance), registra a receber
+        if (financialStatus === 'pending' && sessionValue > 0) {
+            await recordPaymentPending(
+                { amount: sessionValue, patient: appointment.patient, appointment: appointment._id, correlationId },
+                { userId, correlationId }
+            );
+        }
+
         console.log(`[CompleteService] Ledger recorded [${appointment._id}]: ${financialStatus}`);
     }
 }

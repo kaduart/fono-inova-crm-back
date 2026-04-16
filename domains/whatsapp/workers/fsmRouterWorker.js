@@ -19,7 +19,7 @@ import { bullMqConnection } from '../../../config/redisConnection.js';
 import { getRedisConnection } from '../../../infra/redis/redisClient.js';
 import { moveToDLQ } from '../../../infrastructure/queue/queueConfig.js';
 import logger from '../../../utils/logger.js';
-import Lead from '../../../models/Lead.js';
+import Lead from '../../../models/Leads.js';
 
 // TTL dos hints de intenção no Redis (em segundos)
 const INTENT_HINT_TTL = {

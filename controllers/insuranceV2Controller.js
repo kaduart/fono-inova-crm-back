@@ -6,6 +6,8 @@ import Package from '../models/Package.js';
 import { createBatch, sendBatch, processReturn } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
+import { isConvenioSession } from '../utils/billingHelpers.js';
+import insuranceBilling from '../services/billing/insuranceBilling.js';
 
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
@@ -21,32 +23,19 @@ export async function getInsuranceReceivables(req, res) {
       const startOfMonth = new Date(month + '-01T00:00:00-03:00');
       const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      // Resolve pacotes de convênio (package é referência, não subdocumento)
-      const convenioPackages = await Package.find({ type: 'convenio' }).select('_id').lean();
-      const convenioPackageIds = convenioPackages.map(p => p._id.toString());
-
-      // Busca sessões COMPLETADAS de convênio no mês (igual ao legado)
-      const sessionQuery = {
-        status: 'completed',  // ← SÓ SESSÕES REALIZADAS
-        date: { $gte: startOfMonth, $lte: endOfMonth },
-        $or: [
-          { paymentMethod: 'convenio' },
-          { insuranceGuide: { $exists: true, $ne: null } }
-        ]
-      };
-
-      if (convenioPackageIds.length > 0) {
-        sessionQuery.$or.push({
-          package: { $in: convenioPackageIds.map(id => new mongoose.Types.ObjectId(id)) }
-        });
-      }
-
-      sessions = await Session.find(sessionQuery)
+      // Busca TODAS as sessões completadas do mês e filtra por isConvenioSession
+      // Isso garante consistência com outros endpoints financeiros.
+      const allSessions = await Session.find({
+        status: 'completed',
+        date: { $gte: startOfMonth, $lte: endOfMonth }
+      })
       .populate('patient', 'fullName phone')
-      .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount insuranceGuideNumber')
+      .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount insuranceGuideNumber type')
       .populate('doctor', 'fullName specialty')
       .sort({ date: -1 })
       .lean();
+
+      sessions = allSessions.filter(isConvenioSession);
     } else {
       // Sem mês, busca todos os payments pendentes (comportamento antigo)
       const matchFilter = { billingType: 'convenio' };
@@ -335,8 +324,67 @@ export async function receberLote(req, res) {
   }
 }
 
+/**
+ * PATCH /api/v2/insurance/session/:sessionId/bill
+ * Marca sessão de convênio como faturada
+ */
+export async function billSession(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const { billedAmount, billedAt, notes } = req.body;
+
+    if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+    }
+
+    const result = await insuranceBilling.markSessionAsBilled(
+      sessionId,
+      billedAmount,
+      billedAt,
+      notes
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[InsuranceV2][billSession] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * PATCH /api/v2/insurance/session/:sessionId/receive
+ * Marca sessão de convênio como recebida
+ */
+export async function receiveSession(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const { receivedAmount, receivedDate } = req.body;
+
+    if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+    }
+
+    if (receivedAmount === undefined || receivedAmount === null || Number(receivedAmount) < 0) {
+      return res.status(400).json({ success: false, error: 'receivedAmount obrigatório' });
+    }
+
+    const result = await insuranceBilling.markSessionAsReceived(
+      sessionId,
+      Number(receivedAmount),
+      receivedDate
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[InsuranceV2][receiveSession] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getInsuranceReceivables,
   faturarLote,
-  receberLote
+  receberLote,
+  billSession,
+  receiveSession
 };

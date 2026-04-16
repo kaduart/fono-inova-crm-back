@@ -15,6 +15,7 @@ import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMapp
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { invalidateDailyClosingCache, invalidateCacheForPayment } from '../services/dailyClosingCacheService.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { recordPaymentReceived, recordInsuranceBilled, recordInsuranceReceived } from '../services/financialLedgerService.js';
 
 const router = express.Router();
 
@@ -686,6 +687,76 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                 );
             }
 
+            // 4) 🏦 LEDGER: registra payment_received (dentro da transaction)
+            try {
+                await recordPaymentReceived(
+                    payment,
+                    {
+                        userId: req.user?._id?.toString(),
+                        userName: req.user?.name,
+                        correlationId: `mark_paid_${payment._id}_${Date.now()}`
+                    },
+                    session
+                );
+            } catch (ledgerErr) {
+                // Idempotência: se já existe entrada para este payment, ignora
+                if (ledgerErr.code === 11000 || ledgerErr.message?.includes('duplicate key')) {
+                    console.log(`[mark-as-paid] Ledger entry já existe para payment ${payment._id}`);
+                } else {
+                    throw ledgerErr;
+                }
+            }
+
+            // 5) 🏦 PACOTE PER-SESSION: atualiza totalPaid e recalcula balance
+            if (payment.package) {
+                const pkg = await Package.findById(payment.package).session(session).lean();
+                if (pkg && (pkg.model === 'per_session' || pkg.paymentType === 'per-session')) {
+                    const novoTotalPaid = (pkg.totalPaid || 0) + payment.amount;
+                    const novoPaidSessions = (pkg.paidSessions || 0) + 1;
+                    const sessionsDone = pkg.sessionsDone || 0;
+                    const sessionValue = pkg.sessionValue || payment.amount || 0;
+                    const totalSessionDebt = sessionsDone * sessionValue;
+                    const currentBalance = totalSessionDebt - novoTotalPaid;
+                    await Package.findByIdAndUpdate(
+                        payment.package,
+                        {
+                            $set: {
+                                totalPaid: novoTotalPaid,
+                                paidSessions: novoPaidSessions,
+                                balance: currentBalance,
+                                financialStatus: currentBalance > 0.001 ? 'unpaid' : 'paid',
+                                updatedAt: new Date()
+                            }
+                        },
+                        { session }
+                    );
+                    console.log(`[mark-as-paid] 📦 Package per-session atualizado: totalPaid=${novoTotalPaid}, balance=${currentBalance}`);
+                }
+            }
+
+            // 6) 🏦 PATIENT BALANCE: quita débito associado ao appointment (dentro da transaction)
+            if (payment.appointment && payment.patient) {
+                const balanceDoc = await PatientBalance.findOne({ patient: payment.patient }).session(session);
+                if (balanceDoc) {
+                    const debitTx = balanceDoc.transactions.find(t =>
+                        t.type === 'debit' &&
+                        !t.isDeleted &&
+                        !t.isPaid &&
+                        t.appointmentId?.toString() === payment.appointment.toString()
+                    );
+
+                    if (debitTx) {
+                        debitTx.isPaid = true;
+                        debitTx.paidAmount = debitTx.amount;
+                        balanceDoc.currentBalance = Math.max(0, balanceDoc.currentBalance - debitTx.amount);
+                        balanceDoc.totalCredited += debitTx.amount;
+                        balanceDoc.lastTransactionAt = new Date();
+                        await balanceDoc.save({ session });
+                        console.log(`[mark-as-paid] PatientBalance quitado para appointment ${payment.appointment}`);
+                    }
+                }
+            }
+
             return res.json({
                 success: true,
                 message: 'Pagamento marcado como pago com sucesso',
@@ -729,6 +800,159 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
         });
     } finally {
         session.endSession();
+    }
+});
+
+// Endpoint para marcar como pago via sessionId (fallback para particular sem paymentId explícito)
+router.patch('/session/:sessionId/mark-as-paid', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    const mongooseSession = await mongoose.startSession();
+
+    const runTx = async () => {
+        return await mongooseSession.withTransaction(async () => {
+            const { sessionId } = req.params;
+
+            // Resolve Payment a partir da session
+            const payment = await Payment.findOne({ session: sessionId }).session(mongooseSession).lean();
+            if (!payment) {
+                return res.status(404).json({ success: false, message: 'Pagamento não encontrado para esta sessão' });
+            }
+
+            // Reutiliza lógica de mark-as-paid por ID
+            req.params.id = payment._id.toString();
+            // Não podemos chamar o router internamente de forma limpa; portanto,
+            // duplicamos a lógica essencial aqui de forma enxuta.
+
+            const existing = payment;
+            if (existing.status === 'paid') {
+                return res.json({ success: true, message: 'Pagamento já estava pago', data: existing });
+            }
+
+            const paidAt = new Date();
+            const today = moment.tz(paidAt, "America/Sao_Paulo").format("YYYY-MM-DD");
+            const updated = await Payment.findOneAndUpdate(
+                { _id: existing._id, status: { $ne: 'paid' } },
+                { $set: { status: 'paid', paidAt, paymentDate: today } },
+                { new: true, session: mongooseSession, runValidators: true }
+            );
+
+            if (!updated) {
+                const latest = await Payment.findById(existing._id).session(mongooseSession);
+                return res.json({ success: true, message: 'Pagamento já foi marcado como pago', data: latest });
+            }
+
+            if (updated.session) {
+                await Session.updateOne(
+                    { _id: updated.session },
+                    { $set: { isPaid: true, paymentStatus: 'paid', visualFlag: 'ok', paymentMethod: updated.paymentMethod } },
+                    { session: mongooseSession }
+                );
+            }
+            if (updated.appointment) {
+                await Appointment.updateOne(
+                    { _id: updated.appointment },
+                    { $set: { paymentStatus: 'paid', visualFlag: 'ok', paymentMethod: updated.paymentMethod } },
+                    { session: mongooseSession }
+                );
+            }
+
+            // 4) 🏦 LEDGER: registra payment_received (dentro da transaction)
+            try {
+                await recordPaymentReceived(
+                    updated,
+                    {
+                        userId: req.user?._id?.toString(),
+                        userName: req.user?.name,
+                        correlationId: `mark_paid_${updated._id}_${Date.now()}`
+                    },
+                    mongooseSession
+                );
+            } catch (ledgerErr) {
+                if (ledgerErr.code === 11000 || ledgerErr.message?.includes('duplicate key')) {
+                    console.log(`[session/mark-as-paid] Ledger entry já existe para payment ${updated._id}`);
+                } else {
+                    throw ledgerErr;
+                }
+            }
+
+            // 5) 🏦 PACOTE PER-SESSION: atualiza totalPaid e recalcula balance
+            if (updated.package) {
+                const pkg = await Package.findById(updated.package).session(mongooseSession).lean();
+                if (pkg && (pkg.model === 'per_session' || pkg.paymentType === 'per-session')) {
+                    const novoTotalPaid = (pkg.totalPaid || 0) + updated.amount;
+                    const novoPaidSessions = (pkg.paidSessions || 0) + 1;
+                    const sessionsDone = pkg.sessionsDone || 0;
+                    const sessionValue = pkg.sessionValue || updated.amount || 0;
+                    const totalSessionDebt = sessionsDone * sessionValue;
+                    const currentBalance = totalSessionDebt - novoTotalPaid;
+                    await Package.findByIdAndUpdate(
+                        updated.package,
+                        {
+                            $set: {
+                                totalPaid: novoTotalPaid,
+                                paidSessions: novoPaidSessions,
+                                balance: currentBalance,
+                                financialStatus: currentBalance > 0.001 ? 'unpaid' : 'paid',
+                                updatedAt: new Date()
+                            }
+                        },
+                        { session: mongooseSession }
+                    );
+                    console.log(`[session/mark-as-paid] 📦 Package per-session atualizado: totalPaid=${novoTotalPaid}, balance=${currentBalance}`);
+                }
+            }
+
+            // 6) 🏦 PATIENT BALANCE: quita débito associado ao appointment
+            if (updated.appointment && updated.patient) {
+                const balanceDoc = await PatientBalance.findOne({ patient: updated.patient }).session(mongooseSession);
+                if (balanceDoc) {
+                    const debitTx = balanceDoc.transactions.find(t =>
+                        t.type === 'debit' &&
+                        !t.isDeleted &&
+                        !t.isPaid &&
+                        t.appointmentId?.toString() === updated.appointment.toString()
+                    );
+                    if (debitTx) {
+                        debitTx.isPaid = true;
+                        debitTx.paidAmount = debitTx.amount;
+                        balanceDoc.currentBalance = Math.max(0, balanceDoc.currentBalance - debitTx.amount);
+                        balanceDoc.totalCredited += debitTx.amount;
+                        balanceDoc.lastTransactionAt = new Date();
+                        await balanceDoc.save({ session: mongooseSession });
+                        console.log(`[session/mark-as-paid] PatientBalance quitado para appointment ${updated.appointment}`);
+                    }
+                }
+            }
+
+            return res.json({ success: true, message: 'Pagamento marcado como pago com sucesso', data: updated });
+        });
+    };
+
+    try {
+        let attempt = 0;
+        const maxAttempts = 5;
+        while (true) {
+            try {
+                await runTx();
+                break;
+            } catch (e) {
+                const msg = String(e?.message || '');
+                const isTransient = e?.errorLabels?.includes('TransientTransactionError')
+                    || msg.includes('Write conflict')
+                    || msg.includes('WriteConflict')
+                    || msg.includes('yielding is disabled');
+                if (isTransient && attempt < maxAttempts - 1) {
+                    attempt += 1;
+                    await new Promise(r => setTimeout(r, 50 * Math.pow(2, attempt)));
+                    continue;
+                }
+                throw e;
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao marcar pagamento da sessão como pago:', error);
+        return res.status(500).json({ success: false, message: 'Erro ao marcar pagamento como pago', error: error?.message });
+    } finally {
+        mongooseSession.endSession();
     }
 });
 
@@ -3000,16 +3224,30 @@ router.get('/insurance/audit', auth, async (req, res) => {
  * Marca convênio como recebido (entra no caixa)
  */
 router.patch('/insurance/:id/receive', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
     try {
         const { id } = req.params;
         const { receivedAmount, receivedDate, notes } = req.body;
 
-        const payment = await Payment.findById(id);
+        await mongoSession.startTransaction();
+
+        const payment = await Payment.findById(id).session(mongoSession);
 
         if (!payment || payment.billingType !== 'convenio') {
+            await mongoSession.abortTransaction();
             return res.status(404).json({
                 success: false,
                 message: 'Pagamento de convênio não encontrado'
+            });
+        }
+
+        // 🛡️ GUARD OBRIGATÓRIO: só permite receber se já estiver faturado
+        if (payment.insurance?.status !== 'billed') {
+            await mongoSession.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                message: 'Não é possível registrar recebimento antes do faturamento. O convênio deve estar com status "faturado".',
+                currentStatus: payment.insurance?.status || 'unknown'
             });
         }
 
@@ -3020,28 +3258,61 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
         
         const finalAmount = receivedAmount ?? payment.insurance.grossAmount ?? 0;
         const isGlosa = receivedAmount !== undefined && receivedAmount < (payment.insurance.grossAmount || 0);
-
-        payment.amount = finalAmount; // ← Agora entra no caixa!
-        payment.status = 'paid';
-        payment.insurance.status = isGlosa ? 'partial' : 'received';
-        payment.insurance.receivedAt = receivedDate
+        const receiptDate = receivedDate
             ? moment(receivedDate).tz('America/Sao_Paulo').format('YYYY-MM-DD')
             : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
+
+        payment.amount = finalAmount;
+        payment.status = 'paid';
+        payment.insurance.status = isGlosa ? 'partial' : 'received';
+        payment.insurance.receivedAt = receiptDate;
         payment.insurance.receivedAmount = finalAmount;
 
         if (isGlosa && notes) {
             payment.insurance.glosaReason = notes;
         }
 
-        await payment.save();
+        await payment.save({ session: mongoSession });
 
         // Atualiza sessão como paga
         if (payment.session) {
-            await Session.findByIdAndUpdate(payment.session, {
-                isPaid: true,
-                paymentStatus: 'paid'
-            });
+            await Session.findByIdAndUpdate(
+                payment.session,
+                { isPaid: true, paymentStatus: 'paid' },
+                { session: mongoSession }
+            );
         }
+
+        // Atualiza Appointment
+        if (payment.appointment) {
+            await Appointment.findByIdAndUpdate(
+                payment.appointment,
+                { paymentStatus: 'paid', visualFlag: 'ok' },
+                { session: mongoSession }
+            );
+        }
+
+        // 🏦 LEDGER: registra insurance_received
+        try {
+            await recordInsuranceReceived(
+                payment,
+                {
+                    userId: req.user?._id?.toString(),
+                    userName: req.user?.name,
+                    correlationId: `insurance_receive_${payment._id}_${Date.now()}`,
+                    receivedAt: receiptDate
+                },
+                mongoSession
+            );
+        } catch (ledgerErr) {
+            if (ledgerErr.code === 11000 || ledgerErr.message?.includes('duplicate key')) {
+                console.log(`[insurance/receive] Ledger entry já existe para payment ${payment._id}`);
+            } else {
+                throw ledgerErr;
+            }
+        }
+
+        await mongoSession.commitTransaction();
 
         res.json({
             success: true,
@@ -3051,8 +3322,11 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
             data: payment
         });
     } catch (error) {
+        await mongoSession.abortTransaction();
         console.error('❌ Erro ao registrar recebimento:', error);
         res.status(500).json({ success: false, message: error.message });
+    } finally {
+        mongoSession.endSession();
     }
 });
 
@@ -3061,21 +3335,75 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
  * Marca como faturado (enviado pro convênio)
  */
 router.patch('/insurance/:id/bill', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
     try {
         const { id } = req.params;
+        const { billedAt } = req.body;
 
-        const payment = await Payment.findByIdAndUpdate(
-            id,
-            {
-                'insurance.status': 'billed',
-                'insurance.billedAt': new Date()
-            },
-            { new: true }
-        );
+        await mongoSession.startTransaction();
 
+        const payment = await Payment.findById(id).session(mongoSession);
         if (!payment) {
+            await mongoSession.abortTransaction();
             return res.status(404).json({ success: false, message: 'Não encontrado' });
         }
+
+        // Guard contra re-faturamento
+        if (payment.insurance?.status === 'billed' || payment.insurance?.status === 'received') {
+            await mongoSession.commitTransaction();
+            return res.json({
+                success: true,
+                message: 'Já estava faturado',
+                data: payment
+            });
+        }
+
+        payment.insurance = payment.insurance || {};
+        payment.insurance.status = 'billed';
+        payment.insurance.billedAt = billedAt
+            ? moment(billedAt).tz('America/Sao_Paulo').format('YYYY-MM-DD')
+            : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        await payment.save({ session: mongoSession });
+
+        // Atualiza Session
+        if (payment.session) {
+            await Session.findByIdAndUpdate(
+                payment.session,
+                { paymentStatus: 'billed' },
+                { session: mongoSession }
+            );
+        }
+
+        // Atualiza Appointment
+        if (payment.appointment) {
+            await Appointment.findByIdAndUpdate(
+                payment.appointment,
+                { paymentStatus: 'billed' },
+                { session: mongoSession }
+            );
+        }
+
+        // 🏦 LEDGER: registra insurance_billed
+        try {
+            await recordInsuranceBilled(
+                payment,
+                {
+                    userId: req.user?._id?.toString(),
+                    userName: req.user?.name,
+                    correlationId: `insurance_bill_${payment._id}_${Date.now()}`,
+                    billedAt: payment.insurance.billedAt
+                },
+                mongoSession
+            );
+        } catch (ledgerErr) {
+            if (ledgerErr.code === 11000 || ledgerErr.message?.includes('duplicate key')) {
+                console.log(`[insurance/bill] Ledger entry já existe para payment ${payment._id}`);
+            } else {
+                throw ledgerErr;
+            }
+        }
+
+        await mongoSession.commitTransaction();
 
         res.json({
             success: true,
@@ -3083,7 +3411,10 @@ router.patch('/insurance/:id/bill', auth, async (req, res) => {
             data: payment
         });
     } catch (error) {
+        await mongoSession.abortTransaction();
         res.status(500).json({ success: false, message: error.message });
+    } finally {
+        mongoSession.endSession();
     }
 });
 

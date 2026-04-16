@@ -42,24 +42,34 @@ export async function resolvePatientId(inputId, options = {}) {
   const objectId = new mongoose.Types.ObjectId(inputId);
   
   // 1. Verifica se é um patientId real (collection patients)
-  const patientExists = await Patient.exists({ _id: objectId });
+  let patientExists = await Patient.exists({ _id: objectId });
   if (patientExists) {
     logger.debug(`[${correlationId}] ✅ ID é patientId real: ${inputId}`);
     return inputId;
   }
   
   // 2. Verifica se é _id da patients_view
-  const viewDoc = await PatientsView.findById(objectId).select('patientId').lean();
+  const viewDoc = await PatientsView.findById(objectId).select('patientId fullName').lean();
   if (viewDoc?.patientId) {
-    logger.info(`[${correlationId}] 🔄 Resolvido _id da view para patientId: ${viewDoc.patientId}`);
-    return viewDoc.patientId.toString();
+    const resolvedId = viewDoc.patientId.toString();
+    // 🛡️ VALIDAÇÃO: garante que o patientId resolvido existe na collection patients
+    patientExists = await Patient.exists({ _id: new mongoose.Types.ObjectId(resolvedId) });
+    if (patientExists) {
+      logger.info(`[${correlationId}] 🔄 Resolvido _id da view para patientId: ${resolvedId}`);
+      return resolvedId;
+    }
+    logger.error(`[${correlationId}] ⚠️ View órfã detectada: _id=${inputId}, patientId=${resolvedId}, nome=${viewDoc.fullName}`);
   }
   
   // 3. Tenta buscar na view por patientId (caso o input já seja patientId mas não exista mais)
-  const viewByPatientId = await PatientsView.findOne({ patientId: inputId }).select('patientId').lean();
+  const viewByPatientId = await PatientsView.findOne({ patientId: inputId }).select('patientId fullName').lean();
   if (viewByPatientId?.patientId) {
-    logger.debug(`[${correlationId}] ✅ ID encontrado na view por patientId: ${inputId}`);
-    return inputId;
+    patientExists = await Patient.exists({ _id: objectId });
+    if (patientExists) {
+      logger.debug(`[${correlationId}] ✅ ID encontrado na view por patientId: ${inputId}`);
+      return inputId;
+    }
+    logger.error(`[${correlationId}] ⚠️ View com patientId órfão: patientId=${inputId}, nome=${viewByPatientId.fullName}`);
   }
   
   // Não encontrou em lugar nenhum
