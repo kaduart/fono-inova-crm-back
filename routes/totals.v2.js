@@ -21,8 +21,13 @@ router.get('/', async (req, res) => {
     const log = createContextLogger(correlationId, 'totals_v2');
     
     try {
-        const { clinicId, date, period = 'month' } = req.query;
-        const targetDate = date ? moment.tz(date, TIMEZONE) : moment.tz(TIMEZONE);
+        const { clinicId, date, period = 'month', month, year } = req.query;
+        let targetDate;
+        if (month && year) {
+            targetDate = moment.tz(`${year}-${String(month).padStart(2, '0')}-15`, TIMEZONE);
+        } else {
+            targetDate = date ? moment.tz(date, TIMEZONE) : moment.tz(TIMEZONE);
+        }
         const dateStr = targetDate.format('YYYY-MM-DD');
         
         log.info('totals_requested', `Buscando totais: ${dateStr}`, { clinicId, period });

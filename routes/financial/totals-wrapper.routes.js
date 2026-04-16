@@ -11,10 +11,15 @@ const TIMEZONE = 'America/Sao_Paulo';
 // GET /api/v2/totals-usa-cashflow
 router.get('/totals-usa-cashflow', auth, async (req, res) => {
     try {
-        const { date, period = 'month' } = req.query;
-        const targetDate = date 
-            ? moment.tz(date, "America/Sao_Paulo") 
-            : moment.tz(TIMEZONE);
+        const { date, period = 'month', month, year } = req.query;
+        let targetDate;
+        if (month && year) {
+            targetDate = moment.tz(`${year}-${String(month).padStart(2, '0')}-15`, TIMEZONE);
+        } else {
+            targetDate = date 
+                ? moment.tz(date, TIMEZONE) 
+                : moment.tz(TIMEZONE);
+        }
         
         // Define período igual ao cashflow
         const start = targetDate.clone().startOf(period);
