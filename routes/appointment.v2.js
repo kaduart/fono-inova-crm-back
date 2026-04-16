@@ -610,7 +610,8 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
       date: { $in: dates },
       doctor: { $in: doctorIds },
       operationalStatus: { $nin: [...CANCELED_STATUSES, 'no_show', 'missed', ...PRE_APPOINTMENT_STATUSES] },
-      appointmentId: { $exists: false }
+      appointmentId: { $exists: false },
+      isDeleted: { $ne: true }
     }).select('doctor date time').lean();
 
     const availability = weekDays.map(({ date, dayOfWeek, dayLabel }) => {
@@ -732,6 +733,9 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     filter.operationalStatus = { $ne: 'pre_agendado' };
     filter.appointmentId = { $exists: false };
   }
+
+  // 🛡️ Nunca retorna appointments soft-deletados
+  filter.isDeleted = { $ne: true };
   
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const limitNum = parseInt(limit);
