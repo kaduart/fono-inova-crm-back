@@ -48,12 +48,17 @@ beforeAll(async () => {
     Session = (await import('../../models/Session.js')).default;
     Payment = (await import('../../models/Payment.js')).default;
     Appointment = (await import('../../models/Appointment.js')).default;
+
+    // Models dependentes que DEVEM ser carregados antes de InsuranceGuide (resolvePatientId)
+    await import('../../models/PatientsView.js');
+    await import('../../models/PatientBalance.js');
+    await import('../../models/FinancialLedger.js');
+
     InsuranceGuide = (await import('../../models/InsuranceGuide.js')).default;
     Convenio = (await import('../../models/Convenio.js')).default;
 
-    // Models dependentes que podem ser importados implicitamente
+    // Outros models dependentes
     await import('../../models/MedicalEvent.js');
-    await import('../../models/PatientBalance.js');
     await import('../../models/FinancialEvent.js');
 
     app = express();
@@ -208,8 +213,8 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
         const sessions = await Session.find({ package: pkgId });
         expect(sessions.length).toBe(2);
         
-        // Per-session: sessões devem estar com status pending
-        expect(sessions[0].paymentStatus).toBe('pending');
+        // Per-session: sessões devem estar com status unpaid (não pagas ainda)
+        expect(sessions[0].paymentStatus).toBe('unpaid');
         expect(sessions[0].isPaid).toBe(false);
     });
 

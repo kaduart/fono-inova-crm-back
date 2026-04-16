@@ -15,11 +15,13 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
+import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import {
     recordPaymentReceived,
-    recordPackageSessionConsumed
+    recordPackageSessionConsumed,
+    recordSessionRevenue
 } from './financialLedgerService.js';
 
 /**
@@ -329,6 +331,32 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 appointmentUpdate.$set.payment = paymentCreated._id;
                 console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
                 }
+
+                // 🏦 PACOTE PER-SESSION: atualiza totalPaid e recalcula balance
+                if (packageId && paymentCreated) {
+                    const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
+                    if (pkgAtual && (pkgAtual.model === 'per_session' || pkgAtual.paymentType === 'per-session')) {
+                        const novoTotalPaid = (pkgAtual.totalPaid || 0) + sessionValue;
+                        const novoPaidSessions = (pkgAtual.paidSessions || 0) + 1;
+                        const sessionsDone = pkgAtual.sessionsDone || 0;
+                        const totalSessionDebt = sessionsDone * sessionValue;
+                        const currentBalance = totalSessionDebt - novoTotalPaid;
+                        await Package.findByIdAndUpdate(
+                            packageId,
+                            {
+                                $set: {
+                                    totalPaid: novoTotalPaid,
+                                    paidSessions: novoPaidSessions,
+                                    balance: currentBalance,
+                                    financialStatus: currentBalance > 0.001 ? 'unpaid' : 'paid',
+                                    updatedAt: new Date()
+                                }
+                            },
+                            { session: mongoSession }
+                        );
+                        console.log(`[CompleteSessionV2] 📦 Package per-session atualizado: totalPaid=${novoTotalPaid}, balance=${currentBalance}`);
+                    }
+                }
             }
         } else if (billingType === 'liminar' && sessionValue > 0) {
             // ⚖️ LIMINAR: revenue recognition no dia da execução da sessão
@@ -352,6 +380,61 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             paymentCreated = paymentDoc;
             appointmentUpdate.$set.payment = paymentCreated._id;
             console.log(`[CompleteSessionV2] 💰 Payment liminar criado: ${paymentCreated._id}`);
+        } else if (billingType === 'convenio') {
+            // 🏥 CONVÊNIO: cria Payment pending_billing para faturamento posterior
+            const now = new Date();
+            const insuranceValue = appointment.insuranceValue || sessionValue || 0;
+
+            if (appointment.payment) {
+                // 🔄 Reutiliza payment existente
+                const existingPaymentId = appointment.payment._id || appointment.payment;
+                paymentCreated = await Payment.findByIdAndUpdate(
+                    existingPaymentId,
+                    {
+                        $set: {
+                            status: 'pending',
+                            billingType: 'convenio',
+                            paymentMethod: 'convenio',
+                            amount: insuranceValue,
+                            serviceDate: now,
+                            'insurance.provider': appointment.insuranceProvider || 'Convênio',
+                            'insurance.authorizationCode': appointment.authorizationCode || '',
+                            'insurance.status': 'pending_billing',
+                            'insurance.grossAmount': insuranceValue,
+                            updatedAt: now
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                console.log(`[CompleteSessionV2] 💰 Payment convênio atualizado: ${paymentCreated._id}`);
+            } else {
+                // 🆕 Cria novo payment
+                const [paymentDoc] = await Payment.create([{
+                    patient: appointment.patient?._id,
+                    amount: insuranceValue,
+                    status: 'pending',
+                    type: 'service',
+                    serviceType: 'session',
+                    paymentMethod: 'convenio',
+                    paymentDate: now,
+                    billingType: 'convenio',
+                    insurance: {
+                        provider: appointment.insuranceProvider || 'Convênio',
+                        authorizationCode: appointment.authorizationCode || '',
+                        status: 'pending_billing',
+                        grossAmount: insuranceValue
+                    },
+                    serviceDate: now,
+                    description: `Sessão convênio realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment: appointmentId,
+                    session: sessionId,
+                    createdBy: userId,
+                    kind: 'session_payment'
+                }], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[CompleteSessionV2] 💰 Payment convênio criado: ${paymentCreated._id}`);
+            }
         }
 
         await Appointment.updateOne(
@@ -361,6 +444,24 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         );
 
         // 🏦 REGISTRAR LANÇAMENTOS NO LEDGER FINANCEIRO (dentro da transação)
+        // 1. Receita reconhecida para sessões AVULSAS (sem package)
+        if (!packageId && sessionValue > 0) {
+            const sessionForLedger = sessionDoc || {
+                _id: sessionId,
+                patient: appointment.patient?._id,
+                appointmentId: appointmentId,
+                sessionValue,
+                paymentMethod: sessionUpdate?.paymentMethod || appointment.paymentMethod,
+                sessionType: sessionDoc?.sessionType || appointment.sessionType,
+                insuranceGuide: sessionDoc?.insuranceGuide || appointment.insuranceGuide,
+                correlationId,
+                completedAt: new Date()
+            };
+            await recordSessionRevenue(sessionForLedger, { userId, correlationId }, mongoSession);
+            console.log(`[CompleteSessionV2] 🏦 Ledger: revenue_recognition registrado (${billingType})`);
+        }
+
+        // 2. Consumo de pacote
         if (packageId && packageUpdateResult) {
             const packageForLedger = {
                 ...packageData,
@@ -406,6 +507,38 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     }
                 }, mongoSession);
                 console.log(`[CompleteSessionV2] 🏦 Ledger: payment_pending registrado`);
+
+                // 🏦 PATIENT BALANCE: registra débito sincronamente dentro da transaction
+                // Usamos findOneAndUpdate com upsert para criar/atualizar atomicamente dentro da session
+                const balanceResult = await PatientBalance.findOneAndUpdate(
+                    { patient: appointment.patient?._id },
+                    {
+                        $push: {
+                            transactions: {
+                                type: 'debit',
+                                amount: sessionValue,
+                                description: `Sessão fiada - ${appointment.patient?.fullName || 'Paciente'}`,
+                                sessionId: sessionId || null,
+                                appointmentId: appointmentId,
+                                specialty: appointment.specialty || null,
+                                correlationId,
+                                registeredBy: userId,
+                                transactionDate: new Date()
+                            }
+                        },
+                        $inc: { currentBalance: sessionValue, totalDebited: sessionValue },
+                        $setOnInsert: {
+                            patient: appointment.patient?._id,
+                            createdAt: new Date()
+                        },
+                        $set: { lastTransactionAt: new Date() }
+                    },
+                    { session: mongoSession, upsert: true, new: true }
+                );
+                console.log(`[CompleteSessionV2] 🏦 PatientBalance: débito registrado`, {
+                    patientId: appointment.patient?._id?.toString(),
+                    newBalance: balanceResult ? balanceResult.currentBalance : sessionValue
+                });
             }
         }
 
@@ -467,10 +600,14 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         };
 
     } catch (error) {
+        console.error(`[CompleteSessionV2] ❌ Erro ORIGINAL:`, error.message, error.stack);
         if (!externalSession) {
-            await mongoSession.abortTransaction();
+            try {
+                await mongoSession.abortTransaction();
+            } catch (abortErr) {
+                console.error(`[CompleteSessionV2] ⚠️ Erro ao abortar transação (já commitada?):`, abortErr.message);
+            }
         }
-        console.error(`[CompleteSessionV2] ❌ Erro:`, error.message);
         throw error;
     } finally {
         if (!externalSession) {

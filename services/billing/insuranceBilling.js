@@ -7,6 +7,7 @@ import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import { updatePatientAppointments } from '../../utils/appointmentUpdater.js';
 import { validateDateTime, checkScheduleConflict } from '../../utils/billingHelpers.js';
+import { recordInsuranceBilled, recordInsuranceReceived } from '../financialLedgerService.js';
 
 /**
  * 💼 Insurance Billing Service
@@ -280,10 +281,10 @@ class InsuranceBillingService {
         updateData.notes = notes;
       }
 
-      await Payment.findOneAndUpdate(
+      const paymentDoc = await Payment.findOneAndUpdate(
         { session: sessionId },
         { $set: updateData },
-        { session }
+        { session, new: true }
       );
 
       // Atualizar Session
@@ -299,6 +300,17 @@ class InsuranceBillingService {
         { $set: { paymentStatus: 'pending' } },
         { session }
       );
+
+      // 🏦 LEDGER: registrar insurance_billed
+      if (paymentDoc) {
+        try {
+          await recordInsuranceBilled(paymentDoc, { billedAt }, session);
+        } catch (ledgerErr) {
+          if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+            console.warn(`[InsuranceBilling] Ledger billed warning:`, ledgerErr.message);
+          }
+        }
+      }
 
       if (shouldCommit) {
         await session.commitTransaction();
@@ -361,7 +373,7 @@ class InsuranceBillingService {
           : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
 
       // Atualizar Payment
-      await Payment.findOneAndUpdate(
+      const paymentDoc = await Payment.findOneAndUpdate(
         { session: sessionId },
         {
           $set: {
@@ -373,7 +385,7 @@ class InsuranceBillingService {
             amount: receivedAmount
           }
         },
-        { session }
+        { session, new: true }
       );
 
       // Atualizar Session
@@ -402,6 +414,17 @@ class InsuranceBillingService {
         },
         { session }
       );
+
+      // 🏦 LEDGER: registrar insurance_received
+      if (paymentDoc) {
+        try {
+          await recordInsuranceReceived(paymentDoc, { receivedAt: receiptDate }, session);
+        } catch (ledgerErr) {
+          if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+            console.warn(`[InsuranceBilling] Ledger received warning:`, ledgerErr.message);
+          }
+        }
+      }
 
       if (shouldCommit) {
         await session.commitTransaction();

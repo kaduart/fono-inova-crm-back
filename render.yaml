@@ -1,94 +1,242 @@
-# 🚀 Render Blueprint - CRM Fono Inova
-# Arquitetura: API separada de Workers (evita Redis overload)
-# Deploy: conecte este repo no Render via Blueprint
+# 🚀 Render Blueprint - CRM Fono Inova v4.0
+# Arquitetura: API + Workers separados por domínio (ledger + event-driven)
+# Última atualização: 2026-04-16
+#
+# Como usar:
+#   1. Configure MONGODB_URI, REDIS_URL e JWT_SECRET no dashboard do Render
+#   2. Conecte este repo via "Blueprints" no Render
+#   3. Cada serviço será provisionado automaticamente
 
 services:
   # =========================
-  # 🖥️ WEB API SERVICE
+  # 🖥️ API CORE (sem workers)
   # =========================
   - type: web
-    name: fono-inova-crm-back
+    name: fono-inova-crm-api
     runtime: node
-    plan: starter
+    plan: standard
+    region: ohio
+    branch: main
+    rootDir: back
     buildCommand: npm install
     startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: "10000"
       - key: ENABLE_WORKERS
         value: "false"
-      - key: PORT
-        value: "5000"
+      - key: ENABLE_PROJECTIONS
+        value: "true"
       - key: MONGODB_URI
         sync: false
-    autoDeploy: true
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-api.onrender.com"
+    scaling:
+      minInstances: 1
+      maxInstances: 2
+      targetCPUPercent: 70
+      targetMemoryPercent: 80
 
   # =========================
-  # ⚙️ WORKER SERVICE (todos os workers)
+  # ⚙️ WORKER: SCHEDULING
   # =========================
   - type: worker
-    name: crm-worker
+    name: crm-worker-scheduling
     runtime: node
     plan: starter
+    region: ohio
+    branch: main
+    rootDir: back
     buildCommand: npm install
-    startCommand: node workers/startWorkers.js
+    startCommand: node workers/entrypoints/scheduling-worker.js
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       - key: ENABLE_WORKERS
         value: "true"
       - key: WORKER_GROUP
-        value: "all"
+        value: scheduling
       - key: MONGODB_URI
-        sync: false
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: JWT_SECRET
       - key: INTERNAL_BASE_URL
-        value: "https://fono-inova-crm-back.onrender.com"
-    autoDeploy: true
+        value: "https://fono-inova-crm-api.onrender.com"
 
   # =========================
-  # 🔥 WORKERS ESCALÁVEIS (descomente quando quiser escalar)
+  # 💰 WORKER: BILLING + FINANCIAL LEDGER
   # =========================
-  # - type: worker
-  #   name: crm-worker-scheduling
-  #   runtime: node
-  #   plan: starter
-  #   buildCommand: npm install
-  #   startCommand: node workers/entrypoints/scheduling-worker.js
-  #   envVars:
-  #     - key: NODE_ENV
-  #       value: production
-  #     - key: ENABLE_WORKERS
-  #       value: "true"
-  #     - key: WORKER_GROUP
-  #       value: "scheduling"
-  #   autoDeploy: true
-  #
-  # - type: worker
-  #   name: crm-worker-billing
-  #   runtime: node
-  #   plan: starter
-  #   buildCommand: npm install
-  #   startCommand: node workers/entrypoints/billing-worker.js
-  #   envVars:
-  #     - key: NODE_ENV
-  #       value: production
-  #     - key: ENABLE_WORKERS
-  #       value: "true"
-  #     - key: WORKER_GROUP
-  #       value: "billing"
-  #   autoDeploy: true
-  #
-  # - type: worker
-  #   name: crm-worker-whatsapp
-  #   runtime: node
-  #   plan: starter
-  #   buildCommand: npm install
-  #   startCommand: node workers/entrypoints/whatsapp-worker.js
-  #   envVars:
-  #     - key: NODE_ENV
-  #       value: production
-  #     - key: ENABLE_WORKERS
-  #       value: "true"
-  #     - key: WORKER_GROUP
-  #       value: "whatsapp"
-  #   autoDeploy: true
+  - type: worker
+    name: crm-worker-billing
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node workers/entrypoints/billing-worker.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "true"
+      - key: WORKER_GROUP
+        value: billing
+      - key: MONGODB_URI
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-api.onrender.com"
+
+  # =========================
+  # 🏥 WORKER: CLINICAL
+  # =========================
+  - type: worker
+    name: crm-worker-clinical
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node workers/entrypoints/clinical-worker.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "true"
+      - key: WORKER_GROUP
+        value: clinical
+      - key: MONGODB_URI
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-api.onrender.com"
+
+  # =========================
+  # 💬 WORKER: WHATSAPP / COMUNICAÇÃO
+  # =========================
+  - type: worker
+    name: crm-worker-whatsapp
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node workers/entrypoints/whatsapp-worker.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "true"
+      - key: WORKER_GROUP
+        value: whatsapp
+      - key: MONGODB_URI
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-api.onrender.com"
+
+  # =========================
+  # 🔍 WORKER: RECONCILIATION + OUTBOX + FOLLOWUP + NOTIFICATION
+  # =========================
+  - type: worker
+    name: crm-worker-reconciliation
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node workers/entrypoints/reconciliation-worker.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_WORKERS
+        value: "true"
+      - key: WORKER_GROUP
+        value: reconciliation
+      - key: MONGODB_URI
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          name: fono-inova-crm-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: INTERNAL_BASE_URL
+        value: "https://fono-inova-crm-api.onrender.com"
+
+# 📝 Notas de deploy:
+# - Cada worker group roda isolado em seu próprio processo
+# - Ledger é populado pelo grupo billing (fonte única de verdade financeira)
+# - Se um worker cair, os outros continuam operando
+# - Escalar: aumente instâncias de grupos específicos conforme demanda

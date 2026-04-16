@@ -6,14 +6,21 @@ import { startBalanceWorker } from './balanceWorker.js';
 import { startPackageValidationWorker } from './packageValidationWorker.js';
 import { startReconciliationWorker } from './reconciliationWorker.js';
 import { startAppointmentWorker } from './appointmentWorker.js';
+import { startPreAgendamentoWorker } from './preAgendamentoWorker.js';
+import { startAppointmentIntegrationWorker } from './appointmentIntegrationWorker.js';
+import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
 import { startCancelOrchestratorWorkerV2 } from './cancelOrchestratorWorker.v2.js';
 import { startCompleteOrchestratorWorker } from './completeOrchestratorWorker.js';
 import { startCreateAppointmentWorker } from './createAppointmentWorker.js';
 import { startOutboxWorker } from './outboxWorker.js';
 import { startInvoiceWorker } from './invoiceWorker.js';
 import { startSyncMedicalWorker } from './syncMedicalWorker.js';
+import { startSyncWorker } from './syncWorker.js';
 import { startLeadRecoveryWorker } from './leadRecoveryWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
+import { startDailyClosingWorker } from './dailyClosingWorker.js';
+import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
+import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
 
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
 import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
@@ -24,6 +31,8 @@ import { startClinicalOrchestratorWorker } from '../domains/clinical/workers/cli
 import { startSessionWorker } from '../domains/clinical/workers/sessionWorker.js';
 
 import { startIntegrationOrchestratorWorker } from '../domains/integration/workers/integrationOrchestratorWorker.js';
+import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
+import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/insuranceOrchestratorWorker.js';
 
 import { startLeadOrchestratorWorkerV2 } from '../domains/whatsapp/workers/leadOrchestratorWorker.v2.js';
 
@@ -54,6 +63,9 @@ const GROUPS = {
     try { workers.push(await startCompleteOrchestratorWorker()); } catch {}
 
     workers.push(startAppointmentWorker());
+    workers.push(startPreAgendamentoWorker());
+    workers.push(startAppointmentIntegrationWorker());
+    workers.push(startUpdateOrchestratorWorker());
     workers.push(startSyncMedicalWorker());
 
     console.log('[Registry] scheduling ok');
@@ -70,6 +82,8 @@ const GROUPS = {
     workers.push(startTotalsWorker());
     workers.push(packageProjectionWorker);
     workers.push(packageProcessingWorker);
+    workers.push(startBillingConsumerWorker());
+    workers.push(startInsuranceOrchestratorWorker());
 
     console.log('[Registry] billing ok');
   },
@@ -82,6 +96,7 @@ const GROUPS = {
     workers.push(patientProjectionWorker);
     workers.push(startClinicalOrchestratorWorker());
     workers.push(startSessionWorker());
+    workers.push(startSyncWorker());
 
     console.log('[Registry] clinical ok');
   },
@@ -143,6 +158,9 @@ const GROUPS = {
     workers.push(startLeadRecoveryWorker());
     workers.push(startOutboxWorker());
     workers.push(startIntegrationOrchestratorWorker());
+    workers.push(startDailyClosingWorker());
+    workers.push(startFollowupOrchestratorWorker());
+    workers.push(startNotificationOrchestratorWorker());
 
     console.log('[Registry] reconciliation ok');
   }

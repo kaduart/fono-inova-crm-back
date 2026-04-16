@@ -9,6 +9,14 @@ import { buildDateTime } from '../utils/datetime.js';
 
 const processedEvents = new Map();
 const EVENT_CACHE_TTL = 24 * 60 * 60 * 1000;
+const MAX_CACHE_SIZE = 5_000;
+
+function cacheEvent(eventId) {
+    if (processedEvents.size >= MAX_CACHE_SIZE) {
+        processedEvents.delete(processedEvents.keys().next().value);
+    }
+    processedEvents.set(eventId, Date.now());
+}
 
 setInterval(() => {
     const now = Date.now();
@@ -48,7 +56,7 @@ export function startPreAgendamentoWorker() {
                     throw new Error(`Tipo de evento desconhecido: ${eventType}`);
             }
             
-            processedEvents.set(eventId, Date.now());
+            cacheEvent(eventId);
             return result;
             
         } catch (error) {

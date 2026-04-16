@@ -18,6 +18,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
+import PatientBalance from '../models/PatientBalance.js';
 import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
 import Doctor from '../models/Doctor.js';
@@ -27,7 +28,10 @@ import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js
 import { completeSessionEventDrivenV2 } from '../services/completeSessionEventService.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { completeSessionDtoMapper } from '../middleware/dtoMiddleware.js';
+import FinancialGuard from '../services/financialGuard/index.js';
+import { recordSessionCancellationReversal } from '../services/financialLedgerService.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { buildIndividualSession, buildInsuranceSession } from '../domain/session/sessionFactory.js';
 import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
@@ -54,6 +58,10 @@ function getCached(key) {
 
 function setCached(key, data) {
   listCache.set(key, { data, timestamp: Date.now() });
+}
+
+function clearCache() {
+  listCache.clear();
 }
 
 // ======================================================================
@@ -261,10 +269,31 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     
     await appointment.save();
     
+    // 🎯 CRIAR SESSION SÍNCRONA para agendamentos AVULSOS (garantia de consistência)
+    // Pacotes: Session é criada pelo packageController ou worker (lógica complexa de crédito)
+    let session = null;
+    if (!packageId) {
+      try {
+        const sessionData = (billingType === 'convenio' || insuranceGuideId)
+          ? buildInsuranceSession(appointment)
+          : buildIndividualSession(appointment);
+        
+        session = await Session.create(sessionData);
+        appointment.session = session._id;
+        await appointment.save();
+        
+        console.log(`[POST /v2/appointments] ✅ Session criada: ${session._id}`);
+      } catch (sessionErr) {
+        console.error(`[POST /v2/appointments] ⚠️ Falha ao criar session:`, sessionErr.message);
+        // Não falha o request — worker pode tentar compensar, mas logamos
+      }
+    }
+    
     console.log(`[POST /v2/appointments] ✅ Appointment criado: ${appointment._id}`);
     console.log(`   Status: ${appointment.operationalStatus} (SÍNCRONO)`);
 
     // ========== RESPOSTA RÁPIDA ==========
+    clearCache();
     res.status(201).json(
       formatSuccess(
         {
@@ -272,7 +301,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
           status: 'scheduled',
           operationalStatus: 'scheduled',
           clinicalStatus: 'pending',
-          correlationId: appointment._id.toString()
+          correlationId: appointment._id.toString(),
+          sessionId: session?._id?.toString() || null
         },
         {
           message: 'Agendamento criado com sucesso',
@@ -340,6 +370,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
  * 🔥 SEM TRANSACTION - Event Store garante consistência
  */
 router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
+  const mongoSession = await mongoose.startSession();
+  
   try {
     const { id } = req.params;
     const { reason, confirmedAbsence = false } = req.body;
@@ -350,27 +382,33 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       );
     }
 
-    const appointment = await Appointment.findById(id);
+    await mongoSession.startTransaction();
+
+    const appointment = await Appointment.findById(id).session(mongoSession);
 
     if (!appointment) {
+      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
       );
     }
 
     // Guards com mensagens claras
     if (appointment.operationalStatus === 'processing_cancel') {
+      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_CANCEL, 409, ErrorCodes.ALREADY_PROCESSING,
         { status: 'processing_cancel' }
       );
     }
 
     if (appointment.operationalStatus === 'canceled') {
+      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.ALREADY_CANCELED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
     // 🎯 CRM: operationalStatus é a fonte da verdade
     if (appointment.operationalStatus === 'completed') {
+      await mongoSession.abortTransaction();
       throw createBusinessError(Messages.BUSINESS.CANNOT_CANCEL_COMPLETED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
@@ -388,7 +426,57 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       context: `Motivo: ${reason}`
     });
 
-    await appointment.save();
+    await appointment.save({ session: mongoSession });
+
+    // 💰 FINANCIAL GUARD: processa efeitos financeiros do cancelamento dentro da mesma transaction
+    let financialResult = null;
+    try {
+      financialResult = await FinancialGuard.execute({
+        context: 'CANCEL_APPOINTMENT',
+        // 🎯 Se tem package, SEMPRE usar package guard (independentemente de billingType do appointment)
+        billingType: appointment.package ? 'package' : (appointment.billingType || 'particular'),
+        payload: {
+          appointmentId: id,
+          packageId: appointment.package?.toString(),
+          paymentId: appointment.payment?.toString(),
+          appointmentStatus: appointment.operationalStatus,
+          paymentOrigin: appointment.paymentOrigin,
+          sessionValue: appointment.sessionValue || 0,
+          confirmedAbsence,
+          reason,
+          billingType: appointment.billingType
+        },
+        session: mongoSession
+      });
+      
+      if (financialResult?.handled) {
+        console.log(`[cancel] 💰 Financial Guard processado:`, financialResult);
+      }
+    } catch (financialErr) {
+      console.error(`[cancel] ❌ ERRO CRÍTICO no Financial Guard:`, financialErr.message);
+      await mongoSession.abortTransaction();
+      throw createBusinessError(
+        `Erro ao processar cancelamento financeiro: ${financialErr.message}`,
+        500,
+        'FINANCIAL_GUARD_FAILED'
+      );
+    }
+
+    // 🔄 CANCELA PAYMENT se existir (independentemente do tipo de billing)
+    if (appointment.payment) {
+      const paymentId = appointment.payment._id || appointment.payment;
+      const payment = await Payment.findById(paymentId).session(mongoSession);
+      if (payment && payment.status !== 'canceled') {
+        payment.status = 'canceled';
+        payment.canceledAt = new Date();
+        payment.canceledReason = reason;
+        payment.updatedAt = new Date();
+        await payment.save({ session: mongoSession });
+        console.log(`[cancel] 💰 Payment ${paymentId} cancelado`);
+      }
+    }
+
+    await mongoSession.commitTransaction();
 
     // 🔄 REBUILD SÍNCRONO da view (se houver pacote)
     let viewRebuilt = false;
@@ -416,7 +504,8 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
             packageId: appointment.package?.toString(),
             reason,
             confirmedAbsence,
-            userId: req.user?._id?.toString()
+            userId: req.user?._id?.toString(),
+            financialResult
           },
           {
             correlationId: id,
@@ -428,6 +517,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       }
     });
 
+    clearCache();
     res.status(200).json(
       formatSuccess(
         {
@@ -436,7 +526,8 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
           operationalStatus: 'canceled',
           correlationId: id,
           idempotencyKey,
-          viewRebuilt
+          viewRebuilt,
+          financialResult
         },
         {
           message: 'Agendamento cancelado com sucesso',
@@ -449,6 +540,8 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
   } catch (error) {
     console.error(`[cancel] ❌ Erro:`, error.message);
     throw error;
+  } finally {
+    mongoSession.endSession();
   }
 }));
 
@@ -537,6 +630,7 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
       idempotent: result.idempotent || false
     });
     
+    clearCache();
     res.status(200).json(responseDto);
 
   } catch (error) {
@@ -889,7 +983,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   };
   
   // 🔥 CACHE: Salva no cache se aplicável
-  if (cacheKey && startTime - Date.now() < 1000) { // Só cache se foi rápido
+  if (cacheKey && Date.now() - startTime < 1000) { // Só cache se foi rápido
     setCached(cacheKey, responseData);
   }
   
@@ -1250,13 +1344,29 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     if (!appointment) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+      throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
     }
     
     // 2. Verificar permissões (médico só edita o próprio)
     if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
       await mongoSession.abortTransaction();
       throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+    }
+    
+    // 🛡️ PROTEÇÃO CRÍTICA: appointment completed só pode ter campos não-financeiros editados
+    if (appointment.operationalStatus === 'completed') {
+      const allowedFieldsWhenCompleted = ['notes', 'clinicalStatus', 'cancellationReason', 'metadata'];
+      const attemptedChanges = Object.keys(req.body);
+      const disallowedChanges = attemptedChanges.filter(f => !allowedFieldsWhenCompleted.includes(f));
+      
+      if (disallowedChanges.length > 0) {
+        await mongoSession.abortTransaction();
+        throw createBusinessError(
+          `Não é possível editar campos de um agendamento já completado. Campos bloqueados: ${disallowedChanges.join(', ')}. Para alterar dados financeiros/operacionais, cancele e recrie o agendamento.`,
+          409,
+          'CANNOT_EDIT_COMPLETED_APPOINTMENT'
+        );
+      }
     }
     
     const updateData = {
@@ -1469,6 +1579,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       }
     });
     
+    clearCache();
     res.json(formatSuccess({
       appointment: updatedAppointment,
       message: 'Agendamento atualizado com sucesso'
@@ -1521,6 +1632,7 @@ router.delete('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     timestamp: new Date()
   });
   
+  clearCache();
   res.json(formatSuccess({
     message: 'Agendamento deletado com sucesso',
     appointmentId: id
@@ -1605,6 +1717,7 @@ router.patch('/:id/confirm', flexibleAuth, asyncHandler(async (req, res) => {
       timestamp: new Date()
     });
     
+    clearCache();
     res.json(formatSuccess({
       appointment: updatedAppointment,
       message: 'Agendamento confirmado com sucesso'
@@ -1711,6 +1824,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
       timestamp: new Date()
     });
     
+    clearCache();
     res.json(formatSuccess({
       appointment: updatedAppointment,
       message: 'Agendamento reagendado com sucesso'
@@ -1782,6 +1896,7 @@ router.post('/:id/release-lock', flexibleAuth, asyncHandler(async (req, res) => 
   
   console.log(`[release-lock] ✅ Lock liberado: ${id} (${previousStatus} → ${newStatus})`);
   
+  clearCache();
   res.json(formatSuccess({
     appointmentId: id,
     previousStatus: previousStatus,
@@ -1789,6 +1904,193 @@ router.post('/:id/release-lock', flexibleAuth, asyncHandler(async (req, res) => 
     released: true,
     message: `Lock liberado com sucesso. Status alterado de ${previousStatus} para ${newStatus}`
   }));
+}));
+
+/**
+ * 🔄 POST /api/v2/appointments/:id/revert-complete - Reverter uma sessão completada
+ *
+ * Regras:
+ * - Só permite reverter appointments com operationalStatus === 'completed'
+ * - Restaura Session para 'scheduled'
+ * - Restaura Appointment para 'scheduled'
+ * - Se tiver package: restaura crédito/sessão via FinancialGuard
+ * - Se tiver payment: cancela o payment
+ * - Registra reversão no Ledger
+ * - Reverte débito no PatientBalance se existir
+ */
+router.post('/:id/revert-complete', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason = 'Reversão de agendamento completado' } = req.body;
+  const mongoSession = await mongoose.startSession();
+
+  try {
+    await mongoSession.startTransaction();
+
+    const appointment = await Appointment.findById(id)
+      .session(mongoSession)
+      .populate('session patient');
+
+    if (!appointment) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+    }
+
+    if (appointment.operationalStatus !== 'completed') {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Só é possível reverter agendamentos concluídos', 409, ErrorCodes.CONFLICT_STATE);
+    }
+
+    // 1. Reverte Session
+    if (appointment.session) {
+      await Session.findByIdAndUpdate(
+        appointment.session._id,
+        {
+          $set: {
+            status: 'scheduled',
+            completedAt: null,
+            isPaid: false,
+            paymentStatus: 'unpaid',
+            paymentOrigin: null,
+            paidAt: null,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession }
+      );
+    }
+
+    // 2. Reverte Appointment
+    appointment.operationalStatus = 'scheduled';
+    appointment.clinicalStatus = 'pending';
+    appointment.completedAt = null;
+    appointment.isPaid = false;
+    appointment.paymentStatus = 'unpaid';
+    appointment.balanceAmount = 0;
+    appointment.updatedAt = new Date();
+    if (!appointment.history) appointment.history = [];
+    appointment.history.push({
+      action: 'revert_complete',
+      changedBy: req.user?._id,
+      timestamp: new Date(),
+      context: 'operacional',
+      details: { reason, previousStatus: 'completed', newStatus: 'scheduled' }
+    });
+    await appointment.save({ session: mongoSession });
+
+    // 3. Cancela payment se existir (independentemente do tipo)
+    let paymentCanceled = false;
+    if (appointment.payment) {
+      const paymentId = appointment.payment._id || appointment.payment;
+      const payment = await Payment.findById(paymentId).session(mongoSession);
+      if (payment && payment.status !== 'canceled') {
+        payment.status = 'canceled';
+        payment.canceledAt = new Date();
+        payment.canceledReason = reason;
+        payment.updatedAt = new Date();
+        await payment.save({ session: mongoSession });
+        paymentCanceled = true;
+      }
+    }
+
+    // 4. Restaura package via FinancialGuard (usa contexto CANCEL_APPOINTMENT pois semântica é a mesma)
+    let packageRestored = false;
+    if (appointment.package) {
+      const guardResult = await FinancialGuard.execute({
+        context: 'CANCEL_APPOINTMENT',
+        billingType: 'package',
+        payload: {
+          appointmentId: id,
+          packageId: appointment.package.toString(),
+          appointmentStatus: 'completed',
+          paymentOrigin: appointment.paymentOrigin,
+          sessionValue: appointment.sessionValue || 0,
+          confirmedAbsence: false,
+          reason
+        },
+        session: mongoSession
+      });
+      packageRestored = guardResult?.handled || false;
+    }
+
+    // 5. Ledger reversal
+    let ledgerReversed = false;
+    if (appointment.session) {
+      const sessionForReversal = {
+        _id: appointment.session._id,
+        patient: appointment.patient?._id,
+        appointmentId: id,
+        sessionValue: appointment.sessionValue || 0,
+        paymentMethod: appointment.paymentMethod,
+        sessionType: appointment.sessionType,
+        insuranceGuide: appointment.insuranceGuide,
+        correlationId: appointment.session.correlationId || `complete_${appointment.session._id}`
+      };
+      await recordSessionCancellationReversal(sessionForReversal, {
+        userId: req.user?._id?.toString(),
+        userName: req.user?.name,
+        correlationId: `revert_${id}_${Date.now()}`,
+        reason
+      }, mongoSession);
+      ledgerReversed = true;
+    }
+
+    // 6. Reverte PatientBalance
+    let balanceReverted = false;
+    if (appointment.patient) {
+      const balanceUpdate = await PatientBalance.findOneAndUpdate(
+        {
+          patient: appointment.patient._id,
+          'transactions.appointmentId': appointment._id,
+          'transactions.type': 'debit',
+          'transactions.isDeleted': false
+        },
+        {
+          $set: {
+            'transactions.$.isDeleted': true,
+            'transactions.$.deletedAt': new Date(),
+            'transactions.$.deleteReason': reason
+          },
+          $inc: {
+            currentBalance: -Math.abs(appointment.sessionValue || 0),
+            totalDebited: -Math.abs(appointment.sessionValue || 0)
+          }
+        },
+        { session: mongoSession }
+      );
+      if (balanceUpdate) balanceReverted = true;
+    }
+
+    await mongoSession.commitTransaction();
+
+    // 🔄 Rebuild síncrono da view do pacote
+    let viewRebuilt = false;
+    if (appointment.package) {
+      try {
+        const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
+        await buildPackageView(appointment.package.toString(), { correlationId: id });
+        viewRebuilt = true;
+      } catch (viewErr) {
+        console.warn(`[revert-complete] ⚠️ Erro ao reconstruir view:`, viewErr.message);
+      }
+    }
+
+    clearCache();
+    res.json(formatSuccess({
+      appointmentId: id,
+      status: 'scheduled',
+      paymentCanceled,
+      packageRestored,
+      ledgerReversed,
+      balanceReverted,
+      viewRebuilt,
+      message: 'Agendamento revertido com sucesso'
+    }));
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    throw error;
+  } finally {
+    mongoSession.endSession();
+  }
 }));
 
 export default router;

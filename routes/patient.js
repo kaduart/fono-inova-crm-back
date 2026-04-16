@@ -7,6 +7,7 @@ import Patient from '../models/Patient.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
+import PatientsView from '../models/PatientsView.js';
 
 const router = express.Router();
 
@@ -442,6 +443,7 @@ router.delete('/:id', validateId, auth, async (req, res) => {
   try {
     const deleted = await Patient.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Patient not found' });
+    await PatientsView.findOneAndDelete({ patientId: deleted._id });
     res.json({ message: 'Patient deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

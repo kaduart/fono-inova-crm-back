@@ -111,6 +111,7 @@ import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
 import { scheduleDailyScoring } from './crons/dailyScoring.js';
 import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.cron.js';
+import { schedulePatientConsistency } from './crons/patientConsistency.cron.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -501,6 +502,16 @@ import { errorHandler } from './middleware/errorHandler.js';
 app.use(errorHandler);
 
 // ======================================================
+// 🖥️ Bull Board (Dashboard de filas) - DEVE vir antes do catch-all do frontend
+// ======================================================
+try {
+  app.use("/admin/queues", bullBoardAdapter.getRouter());
+  console.log("🖥️ Bull Board disponível em: /admin/queues");
+} catch (err) {
+  console.error("⚠️ Falha ao inicializar Bull Board:", err.message, err.stack);
+}
+
+// ======================================================
 // 🎨 Servir Frontend (Produção)
 // ======================================================
 const distPath = path.resolve(__dirname, "./dist");
@@ -602,9 +613,15 @@ server.listen(PORT, '0.0.0.0', () => {
       // await import("./workers/post.worker.js");
       
       if (process.env.ENABLE_WORKERS === "true") {
-        const { startAllWorkers } = await import("./workers/index.js");
-        await startAllWorkers();
-        console.log("🎯 Workers 4.0 iniciados");
+        const { startAllWorkers, startWorkersByGroup, VALID_GROUPS } = await import("./workers/index.js");
+        const workerGroup = process.env.WORKER_GROUP;
+        if (workerGroup && VALID_GROUPS.includes(workerGroup)) {
+          await startWorkersByGroup(workerGroup);
+          console.log(`🎯 Workers 4.0 iniciados (grupo: ${workerGroup})`);
+        } else {
+          await startAllWorkers();
+          console.log("🎯 Workers 4.0 iniciados (modo monolítico)");
+        }
         console.log("✅ Workers ATIVADOS no Web Service");
       } else {
         console.log("⏭️ Workers desabilitados (ENABLE_WORKERS !== true). Use o serviço de Worker separado.");
@@ -659,6 +676,7 @@ server.listen(PORT, '0.0.0.0', () => {
     const { initEventReaperCron } = await import("./crons/eventReaper.cron.js");
     startCron('eventReaper', () => initEventReaperCron());
     startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
+    startCron('patientConsistency', () => schedulePatientConsistency());
 
     // Crons opcionais desligados (modo memória otimizada)
     // startCron('learning', () => startLearningCron());
@@ -678,7 +696,7 @@ server.listen(PORT, '0.0.0.0', () => {
       console.warn("⚠️ Falha ao iniciar GMB Retry Worker:", gmbWorkerErr.message);
     }
 
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + gmb.cron)");
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + gmb.cron)");
 
     // Registrar Webhook PIX no Sicoob
     try {
@@ -729,12 +747,4 @@ try {
   console.error("⚠️ Falha ao inicializar eventos de fila:", err.message);
 }
 
-// ======================================================
-// 🖥️ Bull Board (todas as filas)
-// ======================================================
-try {
-  app.use("/admin/queues", auth, bullBoardAdapter.getRouter());
-  console.log("🖥️ Bull Board disponível em: /admin/queues");
-} catch (err) {
-  console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
-}
+

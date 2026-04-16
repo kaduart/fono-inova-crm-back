@@ -88,6 +88,42 @@ export function validateDateTime(date, time) {
  *   throw new Error('Horário já ocupado');
  * }
  */
+/**
+ * Determina se uma sessão é de convênio de forma robusta.
+ * Centraliza a lógica de elegibilidade para evitar divergências entre endpoints.
+ *
+ * @param {Object} session - Objeto Session (pode ser lean ou documento)
+ * @returns {boolean} true se a sessão é de convênio
+ */
+export function isConvenioSession(session) {
+  if (!session) return false;
+  return (
+    session.billingType === 'convenio' ||
+    session.paymentMethod === 'convenio' ||
+    !!session.insuranceGuide ||
+    session.package?.type === 'convenio' ||
+    session.packageType === 'convenio'
+  );
+}
+
+/**
+ * Determina o billingType canônico de uma sessão.
+ * Fallback para 'particular' quando nenhum sinal forte é encontrado.
+ *
+ * @param {Object} session - Objeto Session
+ * @returns {'particular' | 'convenio' | 'liminar'} billingType derivado
+ */
+export function resolveSessionBillingType(session) {
+  if (!session) return 'particular';
+  if (isConvenioSession(session)) return 'convenio';
+  if (
+    session.billingType === 'liminar' ||
+    session.paymentMethod === 'liminar_credit' ||
+    session.paymentOrigin === 'liminar'
+  ) return 'liminar';
+  return 'particular';
+}
+
 export async function checkScheduleConflict({
   date,
   time,

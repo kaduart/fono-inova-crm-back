@@ -439,4 +439,134 @@ async function runDetailedChecks() {
     };
 }
 
+/**
+ * Health check consolidado de workers por domínio
+ * GET /api/health/workers
+ */
+router.get('/workers', async (req, res) => {
+    try {
+        const GROUP_QUEUES = {
+            scheduling: [
+                'appointment-processing',
+                'preagendamento-processing',
+                'appointment-integration',
+                'appointment-update',
+                'cancel-orchestrator',
+                'complete-orchestrator',
+                'create-appointment'
+            ],
+            billing: [
+                'payment-processing',
+                'package-validation',
+                'package-projection',
+                'package-processing',
+                'billing-orchestrator',
+                'totals-calculation',
+                'invoice-generation'
+            ],
+            clinical: [
+                'patient-processing',
+                'patient-projection',
+                'clinical-orchestrator',
+                'session-processing',
+                'event-sync'
+            ],
+            whatsapp: [
+                'whatsapp-inbound',
+                'message-persistence',
+                'conversation-state',
+                'context-builder',
+                'message-response',
+                'lead-orchestrator',
+                'whatsapp-autoreply',
+                'lead-interaction',
+                'whatsapp-realtime',
+                'chat-projection',
+                'intent-classifier',
+                'fsm-router'
+            ],
+            reconciliation: [
+                'reconciliation-processing',
+                'lead-recovery',
+                'outbox',
+                'integration-orchestrator',
+                'daily-closing',
+                'followup-processing',
+                'notification'
+            ]
+        };
+
+        const results = {};
+        let globalFailed = 0;
+        let globalWaiting = 0;
+        let globalAlert = false;
+
+        for (const [group, queues] of Object.entries(GROUP_QUEUES)) {
+            const groupStats = {
+                queues: {},
+                totalWaiting: 0,
+                totalActive: 0,
+                totalFailed: 0,
+                totalDelayed: 0,
+                status: 'ok'
+            };
+
+            for (const name of queues) {
+                try {
+                    const queue = new Queue(name, { connection: redisConnection });
+                    const [waiting, active, failed, delayed] = await Promise.all([
+                        queue.getWaitingCount(),
+                        queue.getActiveCount(),
+                        queue.getFailedCount(),
+                        queue.getDelayedCount()
+                    ]);
+                    await queue.close();
+
+                    groupStats.queues[name] = { waiting, active, failed, delayed };
+                    groupStats.totalWaiting += waiting;
+                    groupStats.totalActive += active;
+                    groupStats.totalFailed += failed;
+                    groupStats.totalDelayed += delayed;
+
+                    globalFailed += failed;
+                    globalWaiting += waiting;
+                } catch (err) {
+                    groupStats.queues[name] = { error: err.message };
+                }
+            }
+
+            // Define status do grupo
+            if (groupStats.totalFailed > 10) {
+                groupStats.status = 'critical';
+                globalAlert = true;
+            } else if (groupStats.totalFailed > 0 || groupStats.totalWaiting > ALERTS.queueWaiting) {
+                groupStats.status = 'warning';
+                if (groupStats.totalWaiting > ALERTS.queueWaiting) globalAlert = true;
+            }
+
+            results[group] = groupStats;
+        }
+
+        res.status(globalAlert ? 503 : 200).json({
+            status: globalAlert ? 'alert' : 'ok',
+            timestamp: new Date().toISOString(),
+            summary: {
+                totalWaiting: globalWaiting,
+                totalFailed: globalFailed
+            },
+            groups: results,
+            alertThreshold: {
+                waitingPerQueue: ALERTS.queueWaiting,
+                failedPerGroup: 10
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 export default router;

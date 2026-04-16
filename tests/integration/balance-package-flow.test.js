@@ -9,18 +9,24 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import '../../models/PatientsView.js';
 import PatientBalance from '../../models/PatientBalance.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
 import { packageOperations } from '../../controllers/therapyPackageController.js';
 
 describe('Integração: Balance ↔ Pacote', () => {
+    let mongoReplSet;
     const PATIENT_ID = new mongoose.Types.ObjectId();
     const DOCTOR_ID = new mongoose.Types.ObjectId();
     const APPOINTMENT_IDS = [];
 
     beforeAll(async () => {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/crm_test');
+        mongoReplSet = await MongoMemoryReplSet.create({
+            replSet: { count: 1, dbName: 'crm_test' }
+        });
+        await mongoose.connect(mongoReplSet.getUri());
     });
 
     afterAll(async () => {
@@ -28,6 +34,7 @@ describe('Integração: Balance ↔ Pacote', () => {
         await Appointment.deleteMany({ patient: PATIENT_ID });
         await Package.deleteMany({ patient: PATIENT_ID });
         await mongoose.disconnect();
+        await mongoReplSet.stop();
     });
 
     beforeEach(async () => {
@@ -42,10 +49,10 @@ describe('Integração: Balance ↔ Pacote', () => {
         const balance = await PatientBalance.create({
             patient: PATIENT_ID,
             transactions: [
-                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', appointmentId: new mongoose.Types.ObjectId() },
-                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', appointmentId: new mongoose.Types.ObjectId() },
-                { type: 'debit', amount: 150, specialty: 'psicologia', appointmentId: new mongoose.Types.ObjectId() },
-                { type: 'debit', amount: 140, specialty: 'terapia ocupacional', appointmentId: new mongoose.Types.ObjectId() },
+                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', appointmentId: new mongoose.Types.ObjectId(), description: 'Sessão fono' },
+                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', appointmentId: new mongoose.Types.ObjectId(), description: 'Sessão fono' },
+                { type: 'debit', amount: 150, specialty: 'psicologia', appointmentId: new mongoose.Types.ObjectId(), description: 'Sessão psico' },
+                { type: 'debit', amount: 140, specialty: 'terapia ocupacional', appointmentId: new mongoose.Types.ObjectId(), description: 'Sessão to' },
             ]
         });
 
@@ -75,9 +82,9 @@ describe('Integração: Balance ↔ Pacote', () => {
         const balance = await PatientBalance.create({
             patient: PATIENT_ID,
             transactions: [
-                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId() },
-                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId() },
-                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId() },
+                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId(), description: 'Sessão 1' },
+                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId(), description: 'Sessão 2' },
+                { type: 'debit', amount: 100, specialty: 'fonoaudiologia', _id: new mongoose.Types.ObjectId(), description: 'Sessão 3' },
             ]
         });
 
@@ -100,7 +107,8 @@ describe('Integração: Balance ↔ Pacote', () => {
             type: 'credit',
             amount: 200,
             specialty: 'fonoaudiologia',
-            settledByPackageId: packageId
+            settledByPackageId: packageId,
+            description: 'Quitação via pacote'
         });
 
         await balance.save();
@@ -109,7 +117,7 @@ describe('Integração: Balance ↔ Pacote', () => {
         const updated = await PatientBalance.findOne({ patient: PATIENT_ID });
         
         // 2 débitos quitados, 1 pendente
-        const settledCount = updated.transactions.filter(t => t.settledByPackageId?.toString() === packageId.toString()).length;
+        const settledCount = updated.transactions.filter(t => t.type === 'debit' && t.settledByPackageId?.toString() === packageId.toString()).length;
         expect(settledCount).toBe(2);
 
         const pendingCount = updated.transactions.filter(t => 
@@ -122,9 +130,9 @@ describe('Integração: Balance ↔ Pacote', () => {
         const balance = await PatientBalance.create({
             patient: PATIENT_ID,
             transactions: [
-                { type: 'debit', amount: 100, specialty: 'fono' },
-                { type: 'debit', amount: 100, specialty: 'fono' },
-                { type: 'debit', amount: 100, specialty: 'fono' },
+                { type: 'debit', amount: 100, specialty: 'fono', description: 'Sessão 1' },
+                { type: 'debit', amount: 100, specialty: 'fono', description: 'Sessão 2' },
+                { type: 'debit', amount: 100, specialty: 'fono', description: 'Sessão 3' },
             ]
         });
 
@@ -140,7 +148,8 @@ describe('Integração: Balance ↔ Pacote', () => {
         balance.transactions.push({
             type: 'credit',
             amount: 100,
-            specialty: 'fono'
+            specialty: 'fono',
+            description: 'Quitação via pacote'
         });
         
         balance.currentBalance -= 100;
@@ -194,9 +203,9 @@ describe('Integração: Balance ↔ Pacote', () => {
         const balance = await PatientBalance.create({
             patient: PATIENT_ID,
             transactions: [
-                { type: 'debit', amount: 130, specialty: 'fonoaudiologia' },
-                { type: 'debit', amount: 130, specialty: 'fonoaudiologia' },
-                { type: 'debit', amount: 150, specialty: 'psicologia' },
+                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', description: 'Sessão fono' },
+                { type: 'debit', amount: 130, specialty: 'fonoaudiologia', description: 'Sessão fono' },
+                { type: 'debit', amount: 150, specialty: 'psicologia', description: 'Sessão psico' },
             ]
         });
 

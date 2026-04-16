@@ -6,6 +6,7 @@ import Session from '../models/Session.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import Payment from '../models/Payment.js';
 import { v4 as uuidv4 } from 'uuid';
+import { recordInsuranceBilled, recordInsuranceReceived } from './financialLedgerService.js';
 
 // 🔄 Importação dinâmica do cache para evitar circular dependency
 let dashboardCache;
@@ -128,6 +129,22 @@ export async function sendBatch(batchId, userId) {
       }
     }
   );
+
+  // 🏦 LEDGER: registrar insurance_billed para cada payment
+  const billedPayments = await Payment.find({
+    session: { $in: sessionIds },
+    billingType: 'convenio'
+  }).lean();
+
+  for (const payment of billedPayments) {
+    try {
+      await recordInsuranceBilled(payment, { billedAt: new Date() });
+    } catch (ledgerErr) {
+      if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+        console.warn(`[InsuranceBatch] Ledger billed warning:`, ledgerErr.message);
+      }
+    }
+  }
   
   console.log(`[InsuranceBatch] Lote ${batchId} enviado + ${sessionIds.length} payments atualizados para 'billed'`);
   
@@ -240,6 +257,22 @@ export async function processReturn(batchId, returnData) {
         }
       }
     );
+  }
+
+  // 🏦 LEDGER: registrar insurance_received para payments com status 'received'
+  const receivedItems = (returnData.items || []).filter(i => i.status === 'paid' || i.status === 'partial');
+  for (const item of receivedItems) {
+    const query = item.paymentId ? { _id: item.paymentId } : { session: item.sessionId };
+    const paymentDoc = await Payment.findOne(query).lean();
+    if (paymentDoc) {
+      try {
+        await recordInsuranceReceived(paymentDoc, { receivedAt: new Date() });
+      } catch (ledgerErr) {
+        if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+          console.warn(`[InsuranceBatch] Ledger received warning:`, ledgerErr.message);
+        }
+      }
+    }
   }
   
   console.log(`[InsuranceBatch] Retorno processado: ${totalReceived} recebido, ${totalGlosa} glosa, ${returnData.items?.length || 0} payments atualizados`);

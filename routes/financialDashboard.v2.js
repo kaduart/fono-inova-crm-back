@@ -16,10 +16,13 @@ import Expense from '../models/Expense.js';
 import Doctor from '../models/Doctor.js';
 import FinancialGoal from '../models/FinancialGoal.js';
 import Planning from '../models/Planning.js';
+import FinancialLedger from '../models/FinancialLedger.js';
+import mongoose from 'mongoose';
 import { calculateDoctorCommission } from '../services/commissionService.js';
 import financialMetricsService from '../services/financialMetrics.service.js';
 import financialSnapshotService from '../services/financialSnapshot.service.js';
 import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
+import { isConvenioSession } from '../utils/billingHelpers.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -146,9 +149,10 @@ router.get('/', auth, async (req, res) => {
                 despesasSnap = await calculateDespesas(targetYear, targetMonth);
             }
 
-            const [aReceberSnap, comparativosSnap] = await Promise.all([
+            const [aReceberSnap, comparativosSnap, pendentesSnap] = await Promise.all([
                 calculateAReceber(targetYear, targetMonth),
                 calculateComparativos(targetYear, targetMonth),
+                calculatePendentes(targetYear, targetMonth),
             ]);
 
             const metasSnap = await calculateMetas(data, targetYear, targetMonth);
@@ -167,8 +171,9 @@ router.get('/', auth, async (req, res) => {
                     caixa: data.caixa,
                     caixaDetalhe: data.caixaDetalhe,
                     producao: data.producao,
-                    producaoDetalhe: data.producaoDetalhe,
+                    producaoDetalhe: { ...data.producaoDetalhe, pendente: pendentesSnap.total },
                     aReceber: aReceberSnap,
+                    pendentes: pendentesSnap,
                     saldo: data.saldo,
                     despesas: despesasSnap,
                     metas: metasSnap,
@@ -184,8 +189,9 @@ router.get('/', auth, async (req, res) => {
                     },
                     revenue: {
                         total: data.producao,
-                        byMethod: data.producaoDetalhe
+                        byMethod: { ...data.producaoDetalhe, pendente: pendentesSnap.total }
                     },
+                    pendentes: pendentesSnap,
                     expenses: {
                         total: despesasSnap.total,
                         count: despesasSnap.count,
@@ -208,11 +214,12 @@ router.get('/', auth, async (req, res) => {
         console.log(`[DashboardV3] Calculando real-time: ${monthKey}`);
 
         // Fase 1: queries independentes em paralelo
-        const [dataRt, aReceber, despesas, comparativos] = await Promise.all([
+        const [dataRt, aReceber, despesas, comparativos, pendentes] = await Promise.all([
             calculateRealTime(targetYear, targetMonth),
             calculateAReceber(targetYear, targetMonth),
             calculateDespesas(targetYear, targetMonth),
             calculateComparativos(targetYear, targetMonth),
+            calculatePendentes(targetYear, targetMonth),
         ]);
         data = dataRt;
 
@@ -236,8 +243,9 @@ router.get('/', auth, async (req, res) => {
                 caixa: data.caixa,
                 caixaDetalhe: data.caixaDetalhe,
                 producao: data.producao,
-                producaoDetalhe: data.producaoDetalhe,
+                producaoDetalhe: { ...data.producaoDetalhe, pendente: pendentes.total },
                 aReceber,
+                pendentes,
                 saldo: data.saldo,
                 despesas,
                 metas,
@@ -253,8 +261,9 @@ router.get('/', auth, async (req, res) => {
                 },
                 revenue: {
                     total: data.producao,
-                    byMethod: data.producaoDetalhe
+                    byMethod: { ...data.producaoDetalhe, pendente: pendentes.total }
                 },
+                pendentes,
                 expenses: {
                     total: despesas.total,
                     count: despesas.count
@@ -590,7 +599,7 @@ async function calculateProfissionais(data, year, month) {
         const prof = profMap.get(docId);
         const valor = s.sessionValue || 0;
         const paymentMethod = s.paymentMethod || 'particular';
-        const isConvenio = paymentMethod === 'convenio';
+        const isConvenio = isConvenioSession(s);
         const isPacote = !!s.package;
         const isLiminar = paymentMethod === 'liminar_credit' || s.paymentOrigin === 'liminar';
 
@@ -938,7 +947,7 @@ async function calculateRealTime(year, month) {
           ?? s.package?.insuranceGrossAmount
           ?? 0;
         const paymentMethod = s.paymentMethod || 'particular';
-        const isConvenio = paymentMethod === 'convenio';
+        const isConvenio = isConvenioSession(s);
         const isPacote = !!s.package;
         const isLiminar = paymentMethod === 'liminar_credit' || s.paymentOrigin === 'liminar';
 
@@ -1313,6 +1322,240 @@ function calculateIndicadores(caixa, producao, despesasTotal, metas) {
         pontoEquilibrioVsMeta,
         statusLucro,
         statusMargem
+    };
+}
+
+async function calculatePendentes(year, month) {
+    const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
+    const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
+    const startDate = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
+    const endDate = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
+
+    // ───────────────────────────────────────────────
+    // 1. CONVÊNIO PENDENTE (via FinancialLedger — ledger as source of truth)
+    // ───────────────────────────────────────────────
+    const convenioLedger = await FinancialLedger.aggregate([
+        {
+            $match: {
+                type: 'revenue_recognition',
+                billingType: 'convenio',
+                occurredAt: { $gte: startDate, $lte: endDate }
+            }
+        },
+        {
+            // Exclui se já houve recebimento de convênio
+            $lookup: {
+                from: 'financial_ledger',
+                let: { sessionId: '$session' },
+                pipeline: [
+                    {
+                        $match: {
+                            type: 'insurance_received',
+                            $expr: { $eq: ['$session', '$$sessionId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'received'
+            }
+        },
+        { $match: { received: { $size: 0 } } },
+        {
+            // Verifica se já foi faturado para definir status
+            $lookup: {
+                from: 'financial_ledger',
+                let: { sessionId: '$session' },
+                pipeline: [
+                    {
+                        $match: {
+                            type: 'insurance_billed',
+                            $expr: { $eq: ['$session', '$$sessionId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'billed'
+            }
+        },
+        {
+            $lookup: {
+                from: 'sessions',
+                localField: 'session',
+                foreignField: '_id',
+                as: 'sessionDoc'
+            }
+        },
+        { $unwind: { path: '$sessionDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: 'patients',
+                localField: 'patient',
+                foreignField: '_id',
+                as: 'patientDoc'
+            }
+        },
+        { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: 'payments',
+                let: { sessionId: '$session' },
+                pipeline: [
+                    {
+                        $match: {
+                            billingType: 'convenio',
+                            $expr: { $eq: ['$session', '$$sessionId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'paymentDoc'
+            }
+        },
+        { $unwind: { path: '$paymentDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $project: {
+                sessionId: '$session',
+                paymentId: '$paymentDoc._id',
+                data: { $ifNull: ['$sessionDoc.date', '$occurredAt'] },
+                hora: '$sessionDoc.time',
+                paciente: { $ifNull: ['$patientDoc.fullName', 'Paciente'] },
+                convenio: {
+                    $ifNull: [
+                        '$sessionDoc.package.insuranceProvider',
+                        '$sessionDoc.package.insuranceCompany',
+                        '$paymentDoc.insurance.provider',
+                        '$metadata.provider',
+                        'Convênio'
+                    ]
+                },
+                valor: '$amount',
+                status: { $cond: [{ $gt: [{ $size: '$billed' }, 0] }, 'billed', 'pending_billing'] }
+            }
+        }
+    ]);
+
+    let convenioTotal = 0;
+    const convenioItems = convenioLedger.map(item => {
+        convenioTotal += item.valor || 0;
+        return {
+            sessionId: item.sessionId,
+            paymentId: item.paymentId,
+            data: item.data,
+            hora: item.hora,
+            paciente: item.paciente,
+            convenio: item.convenio,
+            valor: parseFloat((item.valor || 0).toFixed(2)),
+            status: item.status
+        };
+    });
+
+    // ───────────────────────────────────────────────
+    // 2. PARTICULAR/ME PENDENTE (via FinancialLedger — ledger as source of truth)
+    // ───────────────────────────────────────────────
+    const particularLedger = await FinancialLedger.aggregate([
+        {
+            $match: {
+                type: 'revenue_recognition',
+                billingType: 'particular',
+                occurredAt: { $gte: startDate, $lte: endDate }
+            }
+        },
+        {
+            // Só inclui se NÃO existe payment_received para essa session
+            $lookup: {
+                from: 'financial_ledger',
+                let: { sessionId: '$session' },
+                pipeline: [
+                    {
+                        $match: {
+                            type: 'payment_received',
+                            $expr: { $eq: ['$session', '$$sessionId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'payment'
+            }
+        },
+        { $match: { payment: { $size: 0 } } },
+        {
+            $lookup: {
+                from: 'sessions',
+                localField: 'session',
+                foreignField: '_id',
+                as: 'sessionDoc'
+            }
+        },
+        { $unwind: { path: '$sessionDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: 'patients',
+                localField: 'patient',
+                foreignField: '_id',
+                as: 'patientDoc'
+            }
+        },
+        { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: 'payments',
+                let: { sessionId: '$session' },
+                pipeline: [
+                    {
+                        $match: {
+                            billingType: 'particular',
+                            $expr: { $eq: ['$session', '$$sessionId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'paymentDoc'
+            }
+        },
+        { $unwind: { path: '$paymentDoc', preserveNullAndEmptyArrays: true } },
+        {
+            $project: {
+                sessionId: '$session',
+                paymentId: '$paymentDoc._id',
+                data: { $ifNull: ['$sessionDoc.date', '$occurredAt'] },
+                hora: '$sessionDoc.time',
+                paciente: { $ifNull: ['$patientDoc.fullName', 'Paciente'] },
+                paymentMethod: { $ifNull: ['$sessionDoc.paymentMethod', '$metadata.paymentMethod', 'particular'] },
+                valor: '$amount',
+                status: { $literal: 'pending_payment' }
+            }
+        }
+    ]);
+
+    let particularTotal = 0;
+    const particularItems = particularLedger.map(item => {
+        particularTotal += item.valor || 0;
+        return {
+            sessionId: item.sessionId,
+            paymentId: item.paymentId,
+            data: item.data,
+            hora: item.hora,
+            paciente: item.paciente,
+            paymentMethod: item.paymentMethod,
+            valor: parseFloat((item.valor || 0).toFixed(2)),
+            status: item.status
+        };
+    });
+
+    const total = convenioTotal + particularTotal;
+
+    return {
+        total: parseFloat(total.toFixed(2)),
+        convenio: {
+            total: parseFloat(convenioTotal.toFixed(2)),
+            count: convenioItems.length,
+            items: convenioItems
+        },
+        particular: {
+            total: parseFloat(particularTotal.toFixed(2)),
+            count: particularItems.length,
+            items: particularItems
+        }
     };
 }
 
