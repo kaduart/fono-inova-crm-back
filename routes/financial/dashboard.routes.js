@@ -19,7 +19,7 @@ import { auth, authorize } from '../../middleware/auth.js';
 import financialMetricsService from '../../services/financialMetrics.service.js';
 import historicalRatesService from '../../services/historicalRates.service.js';
 import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
-import { reduceFullStats } from '../../services/financialSnapshot.service.js';
+import  reduceFullStats  from '../../services/financialSnapshot.service.js';
 
 // 🆕 V2: feature flag para usar snapshot no dashboard
 const USE_SNAPSHOT_DASHBOARD = process.env.FF_DASHBOARD_SNAPSHOT !== 'false';

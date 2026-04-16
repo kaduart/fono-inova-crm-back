@@ -54,15 +54,19 @@ export function recordDecision({ action, domain, confidence, activeFlags, latenc
  * @param {number} [opts.windowMinutes] — janela em minutos (alternativa ao `last`)
  */
 export async function getSnapshot({ last, windowMinutes } = {}) {
+  const windowLabel = windowMinutes
+    ? `${windowMinutes} min`
+    : `últimas ${last ?? 500}`;
+
   try {
     const entries = await _queryMongo({ last, windowMinutes });
-    if (entries.length > 0) return _aggregate(entries);
+    if (entries.length > 0) return _aggregate(entries, windowLabel);
   } catch (err) {
     console.warn('[DecisionMetrics] MongoDB indisponível, usando buffer:', err.message);
   }
 
   // Fallback para buffer em memória
-  return _aggregate(_bufferEntries({ last, windowMinutes }));
+  return _aggregate(_bufferEntries({ last, windowMinutes }), windowLabel);
 }
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -108,12 +112,12 @@ function _bufferEntries({ last, windowMinutes }) {
   return entries;
 }
 
-function _aggregate(entries) {
+function _aggregate(entries, windowLabel = 'últimas 500') {
   const total = entries.length;
 
   if (total === 0) {
     return {
-      total: 0, actions: {}, domains: {}, topFlags: [],
+      total: 0, window: windowLabel, actions: {}, domains: {}, topFlags: [],
       latency: null, latencyByAction: {}, alerts: [],
       errors: { count: 0, pct: 0 },
       bufferSize: buffer.length, source: 'empty',
@@ -200,6 +204,7 @@ function _aggregate(entries) {
 
   return {
     total,
+    window: windowLabel,
     actions, domains, topFlags,
     latency, latencyByAction, alerts, errors,
     bufferSize: buffer.length,

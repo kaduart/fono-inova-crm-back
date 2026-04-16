@@ -168,9 +168,26 @@ expenseSchema.pre('save', function(next) {
   next();
 });
 
-// 🔹 POST-SAVE: Disparar recálculo de totais (não bloqueante)
+// 🔹 POST-SAVE: Disparar recálculo de totais e projeção de despesa (não bloqueante)
 expenseSchema.post('save', async function(doc) {
   try {
+    const basePayload = {
+      clinicId: null,
+      date: doc.date || new Date().toISOString().split('T')[0],
+      expenseId: doc._id.toString(),
+      expenseStatus: doc.status,
+      expenseAmount: doc.amount,
+      expenseType: doc.type,
+      expenseCategory: doc.category,
+      doctor: doc.doctor,
+    };
+
+    // Evento semântico para projeção de despesas V2
+    await publishEvent(
+      'EXPENSE_CREATED',
+      basePayload
+    );
+
     // Só recalcula se status mudou para paid ou se é nova despesa
     await publishEvent(
       EventTypes.TOTALS_RECALCULATE_REQUESTED,

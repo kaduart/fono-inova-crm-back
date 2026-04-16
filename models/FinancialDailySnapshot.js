@@ -9,6 +9,12 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
   production: {
     total: { type: Number, default: 0 },
     count: { type: Number, default: 0 },
+    byBusinessType: {
+      particular: { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
+      convenio:   { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
+      pacote:     { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
+      liminar:    { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
+    },
     byPaymentMethod: {
       particular: { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
       convenio:   { total: { type: Number, default: 0 }, count: { type: Number, default: 0 } },
@@ -23,6 +29,13 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
     particular: { type: Number, default: 0 },
     convenioAvulso: { type: Number, default: 0 },
     convenioPacote: { type: Number, default: 0 },
+    liminar: { type: Number, default: 0 },
+    byMethod: {
+      pix:        { type: Number, default: 0 },
+      dinheiro:   { type: Number, default: 0 },
+      cartao:     { type: Number, default: 0 },
+      outros:     { type: Number, default: 0 },
+    }
   },
 
   // A receber (trabalho feito, dinheiro pendente)
@@ -96,6 +109,18 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   lastEventAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+
+  // Profissionais no dia (projeção para ranking)
+  professionals: [{
+    professionalId: { type: String, required: true },
+    production:     { type: Number, default: 0 },
+    cash:           { type: Number, default: 0 },
+    count:          { type: Number, default: 0 },
+    particular:     { type: Number, default: 0 },
+    convenio:       { type: Number, default: 0 },
+    pacote:         { type: Number, default: 0 },
+    liminar:        { type: Number, default: 0 },
+  }],
 
   // 🛡️ Idempotência: guarda eventIds já processados
   processedEvents: {

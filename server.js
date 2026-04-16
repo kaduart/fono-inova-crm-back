@@ -91,6 +91,7 @@ import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
 import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
 import { scheduleGmbAutoRepublish } from './crons/gmbAutoRepublish.js';  // 🔄 NOVO: Republicação automática de posts GMB
+import { initGmbRetryWorker } from './config/bullConfigGmbRetry.js';  // 🔄 Worker de retry para publicações GMB
 import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
 import landingPageRoutes from './routes/landingPage.routes.js';
@@ -121,6 +122,7 @@ import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import insuranceV2Routes from './routes/insuranceV2.routes.js';
 import insuranceGuidesV2Routes from './routes/insuranceGuides.v2.js';
+import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
 import reminderRoutes from './routes/reminder.js';
 
 import imageBankRoutes from './routes/imageBank.routes.js';
@@ -179,9 +181,9 @@ console.log("🖥️ INSTANCE INFO:", {
 // scheduleMonthlyCommissions();
 // iniciarJobConfirmacao();
 // scheduleDailyAlerts();
-// scheduleGmbCron();
-// scheduleLandingPageDailyPosts();
-// scheduleGmbAutoRepublish();
+scheduleGmbCron();  // Geração e envio de posts GMB via Make
+scheduleLandingPageDailyPosts();  // Posts diários vinculados a landing pages
+scheduleGmbAutoRepublish();  // Republicação automática de posts que expiram
 // scheduleDailyScoring()
 
 
@@ -434,6 +436,7 @@ app.use('/api/v2', totalsWrapperRoutes);
 
 app.use('/api/v2', insuranceV2Routes);
 app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
+app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
 app.use('/api/v2/financial', financialOverviewRoutes);
 app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
 app.use('/api/reminders', reminderRoutes);
@@ -661,13 +664,21 @@ server.listen(PORT, '0.0.0.0', () => {
     // startCron('learning', () => startLearningCron());
     // const { startRegressionCron } = await import("./crons/regressionCron.js");
     // startCron('regression', () => startRegressionCron());
-    // await import("./crons/gmb.cron.js");
+    // await import("./crons/gmb.cron.js");  // Standalone: não importar no server principal (reconecta MongoDB)
     // startCron('metaAds', () => startMetaAdsCron());
     // const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
     // startCron('leadRecovery', () => initLeadRecoveryCron());
     // const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
     // startScheduledPublisher();
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit)");
+    // Inicializar worker de retry GMB/Instagram/Facebook
+    try {
+      initGmbRetryWorker();
+      console.log("🔄 GMB Retry Worker iniciado");
+    } catch (gmbWorkerErr) {
+      console.warn("⚠️ Falha ao iniciar GMB Retry Worker:", gmbWorkerErr.message);
+    }
+
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + gmb.cron)");
 
     // Registrar Webhook PIX no Sicoob
     try {

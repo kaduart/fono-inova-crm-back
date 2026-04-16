@@ -27,7 +27,7 @@ const gmbPostSchema = new mongoose.Schema({
   // Status do post (assistido)
   status: {
     type: String,
-    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'cancelled', 'processing'],
+    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'cancelled', 'processing', 'publishing_retry'],
     default: 'draft',
     index: true
   },

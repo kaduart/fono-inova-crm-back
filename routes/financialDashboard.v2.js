@@ -17,6 +17,9 @@ import Doctor from '../models/Doctor.js';
 import FinancialGoal from '../models/FinancialGoal.js';
 import Planning from '../models/Planning.js';
 import { calculateDoctorCommission } from '../services/commissionService.js';
+import financialMetricsService from '../services/financialMetrics.service.js';
+import financialSnapshotService from '../services/financialSnapshot.service.js';
+import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -27,11 +30,37 @@ const paymentBaseFilter = {
 };
 
 const META_CONFIG = {
-    mensal: 40000,
     diasUteis: 26
 };
 
 async function loadGoal(year, month, clinicId = 'default') {
+    const start = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    // 1. Busca no Planning primeiro (onde o front gerencia metas via /api/v2/goals)
+    const planning = await Planning.findOne({
+        type: 'monthly',
+        'period.start': start,
+        'period.end': end,
+    }).lean();
+
+    if (planning) {
+        return {
+            metaMensal: planning.targets?.expectedRevenue || 0,
+            diasUteis: planning.targets?.workHours > 0
+                ? Math.round(planning.targets.workHours / 8)
+                : META_CONFIG.diasUteis,
+            breakdown: {
+                particular: 0,
+                convenio: 0,
+                pacote: 0,
+                liminar: 0
+            }
+        };
+    }
+
+    // 2. Fallback: busca no modelo FinancialGoal
     const goal = await FinancialGoal.findOne({
         clinicId,
         year,
@@ -52,18 +81,9 @@ async function loadGoal(year, month, clinicId = 'default') {
         };
     }
 
-    // Fallback: busca no modelo Planning (salvo via /api/v2/goals)
-    const start = `${year}-${String(month).padStart(2, '0')}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
-    const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    const planning = await Planning.findOne({
-        type: 'monthly',
-        'period.start': start,
-        'period.end': end,
-    }).lean();
-
+    // 3. Sem meta configurada — não inventar valor fixo
     return {
-        metaMensal: planning?.targets?.expectedRevenue ?? META_CONFIG.mensal,
+        metaMensal: 0,
         diasUteis: META_CONFIG.diasUteis,
         breakdown: { particular: 0, convenio: 0, pacote: 0, liminar: 0 }
     };
@@ -77,26 +97,137 @@ router.get('/', auth, async (req, res) => {
         const targetYear = year ? parseInt(year) : moment().year();
         const monthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
 
+        // 🆕 PROJEÇÃO V2: tenta usar snapshot primeiro
+        const snapshotReady = await financialSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
+        let data, profissionais, source = 'real-time';
+
+        if (snapshotReady) {
+            console.log(`[DashboardV3] Usando snapshot: ${monthKey}`);
+            source = 'snapshot';
+            const snap = await financialSnapshotService.getMonthlyAggregate(targetYear, targetMonth);
+            data = {
+                caixa: snap.caixa,
+                caixaHoje: snap.caixaHoje,
+                caixaDetalhe: snap.caixaDetalhe,
+                caixaByMethod: snap.caixaByMethod,
+                producao: snap.producao,
+                producaoDetalhe: snap.producaoDetalhe,
+                saldo: snap.saldo
+            };
+
+            // 🆕 PROJEÇÃO V2 de DESPESAS (separada da receita)
+            const expenseSnapshotReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
+            let despesasSnap;
+            if (expenseSnapshotReady) {
+                const expSnap = await financialExpenseSnapshotService.getMonthlyAggregate(targetYear, targetMonth);
+                // Monta detalhe de comissões com nomes dos profissionais
+                const doctorIds = Array.from(expSnap.profissionais.keys());
+                const doctorsForExp = await Doctor.find({ _id: { $in: doctorIds } }).select('_id fullName').lean();
+                const doctorNameMap = new Map(doctorsForExp.map(d => [d._id.toString(), d.fullName]));
+                const detalheComissoes = Array.from(expSnap.profissionais.values())
+                    .filter(p => p.commission > 0 || p.commissionProvisao > 0)
+                    .map(p => ({
+                        doctorId: p.doctorId,
+                        doctorName: doctorNameMap.get(p.doctorId) || 'Profissional',
+                        total: parseFloat(((p.commission || 0) + (p.commissionProvisao || 0)).toFixed(2)),
+                        sessions: p.countSessions
+                    }));
+
+                despesasSnap = {
+                    total: parseFloat(expSnap.total.toFixed(2)),
+                    count: expSnap.count,
+                    breakdown: {
+                        expenses: parseFloat(((expSnap.breakdown.fixed || 0) + (expSnap.breakdown.variable || 0) + (expSnap.breakdown.other || 0)).toFixed(2)),
+                        comissoes: parseFloat((expSnap.breakdown.commission || 0).toFixed(2)),
+                        detalheComissoes
+                    }
+                };
+            } else {
+                despesasSnap = await calculateDespesas(targetYear, targetMonth);
+            }
+
+            const [aReceberSnap, comparativosSnap] = await Promise.all([
+                calculateAReceber(targetYear, targetMonth),
+                calculateComparativos(targetYear, targetMonth),
+            ]);
+
+            const metasSnap = await calculateMetas(data, targetYear, targetMonth);
+            const profissionaisSnap = await calculateProfissionaisFromSnapshot(snap.profissionais, targetYear, targetMonth);
+
+            const insightsSnap = generateInsights(data, metasSnap, profissionaisSnap);
+            const riscoOperacionalSnap = calculateRiscoOperacional(data, metasSnap, profissionaisSnap);
+            const acoesExecutivasSnap = calculateAcoesExecutivas(data, metasSnap, profissionaisSnap, riscoOperacionalSnap);
+            const drillDownSnap = buildDrillDown(data, profissionaisSnap);
+            const indicadoresSnap = calculateIndicadores(data.caixa, data.producao, despesasSnap.total, metasSnap);
+
+            return res.json({
+                success: true,
+                source,
+                resumo: {
+                    caixa: data.caixa,
+                    caixaDetalhe: data.caixaDetalhe,
+                    producao: data.producao,
+                    producaoDetalhe: data.producaoDetalhe,
+                    aReceber: aReceberSnap,
+                    saldo: data.saldo,
+                    despesas: despesasSnap,
+                    metas: metasSnap,
+                    profissionais: profissionaisSnap.ranking,
+                    indicadores: indicadoresSnap
+                },
+                data: {
+                    period: { month: targetMonth, year: targetYear },
+                    cash: {
+                        total: data.caixa,
+                        breakdown: data.caixaDetalhe,
+                        byMethod: data.caixaByMethod
+                    },
+                    revenue: {
+                        total: data.producao,
+                        byMethod: data.producaoDetalhe
+                    },
+                    expenses: {
+                        total: despesasSnap.total,
+                        count: despesasSnap.count,
+                        breakdown: despesasSnap.breakdown
+                    },
+                    balance: data.saldo,
+                    metas: metasSnap,
+                    profissionais: profissionaisSnap,
+                    insights: insightsSnap,
+                    comparativos: comparativosSnap,
+                    riscoOperacional: riscoOperacionalSnap,
+                    acoesExecutivas: acoesExecutivasSnap,
+                    drillDown: drillDownSnap,
+                    indicadores: indicadoresSnap
+                },
+                metadata: { projection: true }
+            });
+        }
+
         console.log(`[DashboardV3] Calculando real-time: ${monthKey}`);
 
         // Fase 1: queries independentes em paralelo
-        const [data, aReceber, despesas, comparativos] = await Promise.all([
+        const [dataRt, aReceber, despesas, comparativos] = await Promise.all([
             calculateRealTime(targetYear, targetMonth),
             calculateAReceber(targetYear, targetMonth),
             calculateDespesas(targetYear, targetMonth),
             calculateComparativos(targetYear, targetMonth),
         ]);
+        data = dataRt;
 
         // Fase 2: dependem de `data`
-        const [metas, profissionais] = await Promise.all([
+        const [metas, profissionaisRt] = await Promise.all([
             calculateMetas(data, targetYear, targetMonth),
             calculateProfissionais(data, targetYear, targetMonth),
         ]);
+        profissionais = profissionaisRt;
 
         const insights = generateInsights(data, metas, profissionais);
         const riscoOperacional = calculateRiscoOperacional(data, metas, profissionais);
         const acoesExecutivas = calculateAcoesExecutivas(data, metas, profissionais, riscoOperacional);
         const drillDown = buildDrillDown(data, profissionais);
+        const indicadores = calculateIndicadores(data.caixa, data.producao, despesas.total, metas);
 
         res.json({
             success: true,
@@ -110,7 +241,8 @@ router.get('/', auth, async (req, res) => {
                 saldo: data.saldo,
                 despesas,
                 metas,
-                profissionais: profissionais.ranking
+                profissionais: profissionais.ranking,
+                indicadores
             },
             data: {
                 period: { month: targetMonth, year: targetYear },
@@ -134,7 +266,8 @@ router.get('/', auth, async (req, res) => {
                 comparativos,
                 riscoOperacional,
                 acoesExecutivas,
-                drillDown
+                drillDown,
+                indicadores
             },
             metadata: {
                 projection: false
@@ -143,6 +276,84 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[DashboardV3] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * 🔄 POST /v2/financial/dashboard/rebuild-snapshot
+ * Reprocessa Payments e Sessions para reconstruir snapshots de um período.
+ * Útil para correções pontuais ou backfill manual.
+ */
+router.post('/rebuild-snapshot', auth, async (req, res) => {
+    try {
+        const { startDate, endDate } = req.body;
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, error: 'startDate e endDate são obrigatórios' });
+        }
+
+        console.log(`[DashboardV3] Rebuild snapshot: ${startDate} → ${endDate}`);
+
+        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
+
+        // 1. Reprocessar Sessions completed
+        const sessions = await Session.find({
+            date: { $gte: startDate, $lte: endDate },
+            status: 'completed'
+        }).select('date sessionValue paymentMethod package status doctor paymentOrigin').lean();
+
+        for (const s of sessions) {
+            await processFinancialEvent('SESSION_COMPLETED', {
+                eventId: `rebuild-session-${s._id}`,
+                _id: s._id,
+                sessionId: s._id,
+                clinicId: req.user?.clinicId || 'default',
+                sessionValue: s.sessionValue,
+                paymentMethod: s.paymentMethod,
+                date: s.date,
+                doctor: s.doctor,
+                paymentOrigin: s.paymentOrigin,
+            });
+        }
+
+        // 2. Reprocessar Payments (paid / partial)
+        const payments = await Payment.find({
+            $or: [
+                { status: 'paid', paymentDate: { $gte: startDate, $lte: endDate } },
+                { billingType: 'convenio', 'insurance.status': { $in: ['received', 'partial'] }, 'insurance.receivedAt': { $gte: new Date(startDate), $lte: new Date(endDate) } }
+            ]
+        }).select('paymentDate billingType insurance.receivedAmount amount paymentMethod status notes description type serviceType doctor').lean();
+
+        for (const p of payments) {
+            const payload = {
+                eventId: `rebuild-payment-${p._id}`,
+                paymentId: p._id,
+                _id: p._id,
+                clinicId: req.user?.clinicId || 'default',
+                amount: p.amount,
+                paymentMethod: p.paymentMethod,
+                status: p.status,
+                billingType: p.billingType,
+                notes: p.notes,
+                description: p.description,
+                type: p.type,
+                serviceType: p.serviceType,
+                doctor: p.doctor,
+            };
+            if (p.status === 'paid') {
+                await processFinancialEvent('PAYMENT_COMPLETED', payload);
+            } else if (p.status === 'partial') {
+                await processFinancialEvent('PAYMENT_PARTIAL', payload);
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Snapshot reconstruído',
+            processed: { sessions: sessions.length, payments: payments.length }
+        });
+    } catch (error) {
+        console.error('[DashboardV3] Erro no rebuild:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -175,7 +386,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diferencaRitmo = realizadoMes - ritmoEsperado;
 
     const percentualEsperado = (daysPassed / diasUteis) * 100;
-    const percentualRealizado = (realizadoMes / metaMensal) * 100;
+    const percentualRealizado = metaMensal > 0 ? (realizadoMes / metaMensal) * 100 : 0;
 
     let statusMeta = 'vermelho';
     if (percentualRealizado >= 100) statusMeta = 'verde';
@@ -183,21 +394,30 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     else if (percentualRealizado >= 60) statusMeta = 'amarelo';
 
     const alertas = {
-        atrasado: realizadoMes < ritmoEsperado,
-        critico: realizadoDia < (metaDiariaNecessaria * 0.7),
-        ok: realizadoMes >= metaMensal,
+        atrasado: metaMensal > 0 && realizadoMes < ritmoEsperado,
+        critico: metaMensal > 0 && realizadoDia < (metaDiariaNecessaria * 0.7),
+        ok: metaMensal > 0 && realizadoMes >= metaMensal,
         mensagem: []
     };
 
-    if (alertas.ok) alertas.mensagem.push('🎉 Meta mensal batida!');
-    else if (alertas.critico) alertas.mensagem.push('⚠️ Dia crítico: caixa abaixo de 70% da meta diária.');
-    else if (alertas.atrasado) alertas.mensagem.push('🐢 Ritmo abaixo do necessário para bater meta.');
-    else alertas.mensagem.push('✅ Ritmo adequado para meta mensal.');
-
-    if (projecaoFinal < metaMensal) {
-        alertas.mensagem.push(`🔮 Projeção de fechamento: R$ ${projecaoFinal.toFixed(2).replace('.', ',')} (abaixo da meta).`);
+    if (metaMensal === 0) {
+        alertas.mensagem.push('📌 Nenhuma meta mensal configurada para este período.');
+    } else if (alertas.ok) {
+        alertas.mensagem.push('🎉 Meta mensal batida!');
+    } else if (alertas.critico) {
+        alertas.mensagem.push('⚠️ Dia crítico: caixa abaixo de 70% da meta diária.');
+    } else if (alertas.atrasado) {
+        alertas.mensagem.push('🐢 Ritmo abaixo do necessário para bater meta.');
     } else {
-        alertas.mensagem.push(`🔮 Projeção de fechamento: R$ ${projecaoFinal.toFixed(2).replace('.', ',')} (acima da meta).`);
+        alertas.mensagem.push('✅ Ritmo adequado para meta mensal.');
+    }
+
+    if (metaMensal > 0) {
+        if (projecaoFinal < metaMensal) {
+            alertas.mensagem.push(`🔮 Projeção de fechamento: R$ ${projecaoFinal.toFixed(2).replace('.', ',')} (abaixo da meta).`);
+        } else {
+            alertas.mensagem.push(`🔮 Projeção de fechamento: R$ ${projecaoFinal.toFixed(2).replace('.', ',')} (acima da meta).`);
+        }
     }
 
     return {
@@ -255,7 +475,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
 }
 
 /**
- * 👩‍⚕️ Calcula performance por profissional
+ * 👩‍⚕️ Calcula performance por profissional — ALINHADO COM ARQUITETURA V2 (Session)
  */
 async function calculateProfissionais(data, year, month) {
     const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
@@ -263,26 +483,88 @@ async function calculateProfissionais(data, year, month) {
 
     const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName specialty commissionRules').lean();
 
-    // Appointments do mês (produção)
-    const appointments = await Appointment.find({
-        date: { $gte: start, $lt: end },
-        operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
-        isDeleted: { $ne: true }
-    }).select('doctor sessionValue billingType serviceType insuranceProvider paymentStatus paymentOrigin').lean();
+    // Produção = Sessions completadas no mês (V2)
+    const sessions = await Session.find({
+        date: { $gte: start, $lte: end },
+        status: 'completed'
+    }).select('doctor sessionValue paymentMethod package paymentOrigin').lean();
 
-    // Payments do mês (caixa real) com appointment vinculado
-    const payments = await Payment.find({
-        ...paymentBaseFilter,
-        financialDate: { $gte: start, $lte: end },
-        
-        appointment: { $exists: true, $ne: null }
-    }).select('appointment amount').lean();
+    // Caixa real = Payments do mês vinculados a sessões
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
+    const [particularPayments, convenioPayments] = await Promise.all([
+        Payment.find({
+            billingType: 'particular',
+            status: 'paid',
+            paymentDate: { $gte: startStr, $lte: endStr },
+            session: { $exists: true, $ne: null }
+        }).select('session amount').lean(),
+        Payment.find({
+            billingType: 'convenio',
+            'insurance.status': { $in: ['received', 'partial'] },
+            'insurance.receivedAt': { $gte: start, $lte: end },
+            session: { $exists: true, $ne: null }
+        }).select('session amount insurance.receivedAmount').lean()
+    ]);
 
     const paymentMap = new Map();
-    payments.forEach(p => {
-        const apptId = p.appointment?.toString();
-        if (!paymentMap.has(apptId)) paymentMap.set(apptId, 0);
-        paymentMap.set(apptId, paymentMap.get(apptId) + (p.amount || 0));
+    [...particularPayments, ...convenioPayments].forEach(p => {
+        const sessionId = p.session?.toString();
+        if (!sessionId) return;
+        const val = p.billingType === 'convenio' ? (p.insurance?.receivedAmount || p.amount || 0) : (p.amount || 0);
+        paymentMap.set(sessionId, (paymentMap.get(sessionId) || 0) + val);
+    });
+
+    // Sessões de pacote convênio pagas (sem Payment vinculado)
+    const sessionCashResult = await Session.aggregate([
+        {
+            $match: {
+                isPaid: true,
+                paidAt: { $gte: start, $lte: end },
+                paymentMethod: 'convenio',
+                $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
+            }
+        },
+        {
+            $lookup: {
+                from: 'payments',
+                let: { sessionId: '$_id' },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    { $eq: ['$session', '$$sessionId'] },
+                                    { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }
+                                ]
+                            }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'linkedPayment'
+            }
+        },
+        { $match: { linkedPayment: { $size: 0 } } },
+        {
+            $lookup: {
+                from: 'packages',
+                localField: 'package',
+                foreignField: '_id',
+                as: 'pkg'
+            }
+        },
+        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+        {
+            $project: {
+                _id: 1,
+                doctor: 1,
+                amount: { $ifNull: ['$sessionValue', '$pkg.insuranceGrossAmount'] }
+            }
+        }
+    ]);
+    sessionCashResult.forEach(s => {
+        paymentMap.set(s._id.toString(), (paymentMap.get(s._id.toString()) || 0) + (s.amount || 0));
     });
 
     const profMap = new Map();
@@ -301,26 +583,26 @@ async function calculateProfissionais(data, year, month) {
         });
     });
 
-    appointments.forEach(a => {
-        const docId = a.doctor?.toString();
+    sessions.forEach(s => {
+        const docId = s.doctor?.toString();
         if (!docId || !profMap.has(docId)) return;
 
         const prof = profMap.get(docId);
-        const valor = a.sessionValue || 0;
-        const billingType = a.billingType || 'particular';
-        const isConvenio = billingType === 'convenio' || (a.insuranceProvider && a.insuranceProvider.trim() !== '');
-        const isPacote = a.serviceType === 'package_session';
-        const isLiminar = billingType === 'liminar' || a.paymentOrigin === 'liminar';
+        const valor = s.sessionValue || 0;
+        const paymentMethod = s.paymentMethod || 'particular';
+        const isConvenio = paymentMethod === 'convenio';
+        const isPacote = !!s.package;
+        const isLiminar = paymentMethod === 'liminar_credit' || s.paymentOrigin === 'liminar';
 
         prof.producao += valor;
         prof.quantidade += 1;
 
         if (isConvenio) prof.convenio += valor;
-        else if (isPacote) prof.pacote += valor;
         else if (isLiminar) prof.liminar += valor;
+        else if (isPacote) prof.pacote += valor;
         else prof.particular += valor;
 
-        const pago = paymentMap.get(a._id.toString()) || 0;
+        const pago = paymentMap.get(s._id.toString()) || 0;
         prof.realizado += pago;
     });
 
@@ -351,21 +633,113 @@ async function calculateProfissionais(data, year, month) {
 
     const mediaProducao = lista.length > 0 ? lista.reduce((s, p) => s + p.producao, 0) / lista.length : 0;
 
-    lista = lista.map(p => ({
-        ...p,
-        comissao: commissionMap.get(p.id) || { total: 0, sessoes: 0, breakdown: null },
-        ticketMedio: p.quantidade > 0 ? parseFloat((p.producao / p.quantidade).toFixed(2)) : 0,
-        eficiencia: p.producao > 0 ? parseFloat(((p.realizado / p.producao) * 100).toFixed(1)) : 0,
-        produtividade: mediaProducao > 0 ? parseFloat(((p.producao / mediaProducao) * 100).toFixed(1)) : 100
-    }));
+    lista = lista.map(p => {
+        const comissaoTotal = commissionMap.get(p.id)?.total || 0;
+        const lucro = parseFloat((p.producao - comissaoTotal).toFixed(2));
+        const margem = p.producao > 0 ? parseFloat(((lucro / p.producao) * 100).toFixed(1)) : 0;
+        return {
+            ...p,
+            comissao: commissionMap.get(p.id) || { total: 0, sessoes: 0, breakdown: null },
+            lucro,
+            margem,
+            ticketMedio: p.quantidade > 0 ? parseFloat((p.producao / p.quantidade).toFixed(2)) : 0,
+            eficiencia: p.producao > 0 ? parseFloat(((p.realizado / p.producao) * 100).toFixed(1)) : 0,
+            produtividade: mediaProducao > 0 ? parseFloat(((p.producao / mediaProducao) * 100).toFixed(1)) : 100
+        };
+    });
 
     const rankingPorRealizado = [...lista].sort((a, b) => b.realizado - a.realizado);
     const rankingPorProducao = [...lista].sort((a, b) => b.producao - a.producao);
+    const rankingPorLucro = [...lista].sort((a, b) => b.lucro - a.lucro);
 
     return {
         lista,
         ranking: rankingPorRealizado.slice(0, 10),
         rankingPorProducao: rankingPorProducao.slice(0, 10),
+        rankingPorLucro: rankingPorLucro.slice(0, 10),
+        mediaProducao: parseFloat(mediaProducao.toFixed(2)),
+        totalProfissionais: lista.length
+    };
+}
+
+/**
+ * 👩‍⚕️ Calcula performance por profissional a partir do snapshot diário
+ */
+async function calculateProfissionaisFromSnapshot(snapshotProfMap, year, month) {
+    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
+    const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
+
+    const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName specialty commissionRules').lean();
+    const doctorMap = new Map(doctors.map(d => [d._id.toString(), d]));
+
+    let lista = [];
+    for (const [profId, snapProf] of snapshotProfMap.entries()) {
+        const doc = doctorMap.get(profId);
+        if (!doc) continue;
+
+        lista.push({
+            id: profId,
+            nome: doc.fullName,
+            especialidade: doc.specialty || 'Outra',
+            producao: snapProf.producao,
+            realizado: snapProf.realizado,
+            quantidade: snapProf.quantidade,
+            particular: snapProf.particular,
+            convenio: snapProf.convenio,
+            pacote: snapProf.pacote,
+            liminar: snapProf.liminar
+        });
+    }
+
+    // 💰 Calcular comissões
+    const commissionResults = await Promise.all(
+        lista.map(async (p) => {
+            try {
+                const comm = await calculateDoctorCommission(p.id, start, end);
+                return {
+                    id: p.id,
+                    comissao: {
+                        total: parseFloat(comm.totalCommission.toFixed(2)),
+                        sessoes: comm.totalSessions,
+                        breakdown: comm.breakdown
+                    }
+                };
+            } catch (err) {
+                return {
+                    id: p.id,
+                    comissao: { total: 0, sessoes: 0, breakdown: null }
+                };
+            }
+        })
+    );
+    const commissionMap = new Map(commissionResults.map(c => [c.id, c.comissao]));
+
+    const mediaProducao = lista.length > 0 ? lista.reduce((s, p) => s + p.producao, 0) / lista.length : 0;
+
+    lista = lista.map(p => {
+        const comissaoTotal = commissionMap.get(p.id)?.total || 0;
+        const lucro = parseFloat((p.producao - comissaoTotal).toFixed(2));
+        const margem = p.producao > 0 ? parseFloat(((lucro / p.producao) * 100).toFixed(1)) : 0;
+        return {
+            ...p,
+            comissao: commissionMap.get(p.id) || { total: 0, sessoes: 0, breakdown: null },
+            lucro,
+            margem,
+            ticketMedio: p.quantidade > 0 ? parseFloat((p.producao / p.quantidade).toFixed(2)) : 0,
+            eficiencia: p.producao > 0 ? parseFloat(((p.realizado / p.producao) * 100).toFixed(1)) : 0,
+            produtividade: mediaProducao > 0 ? parseFloat(((p.producao / mediaProducao) * 100).toFixed(1)) : 100
+        };
+    });
+
+    const rankingPorRealizado = [...lista].sort((a, b) => b.realizado - a.realizado);
+    const rankingPorProducao = [...lista].sort((a, b) => b.producao - a.producao);
+    const rankingPorLucro = [...lista].sort((a, b) => b.lucro - a.lucro);
+
+    return {
+        lista,
+        ranking: rankingPorRealizado.slice(0, 10),
+        rankingPorProducao: rankingPorProducao.slice(0, 10),
+        rankingPorLucro: rankingPorLucro.slice(0, 10),
         mediaProducao: parseFloat(mediaProducao.toFixed(2)),
         totalProfissionais: lista.length
     };
@@ -424,54 +798,113 @@ function generateInsights(data, metas, profissionais) {
 }
 
 /**
- * 🔄 Calcula dados em tempo real
+ * 🔄 Calcula dados em tempo real — ALINHADO COM ARQUITETURA V2
+ *
+ * Caixa e Produção totais usam FinancialMetricsService (fonte única de verdade).
+ * Breakdowns manuais são calculados sobre a MESMA base de dados do V2.
  */
 async function calculateRealTime(year, month) {
     const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
     const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
     const todayStart = moment.tz(TIMEZONE).startOf('day').utc().toDate();
     const todayEnd = moment.tz(TIMEZONE).endOf('day').utc().toDate();
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
 
-    const payments = await Payment.find({
-        ...paymentBaseFilter,
-        financialDate: { $gte: start, $lte: end }
-    }).populate('patient', 'fullName').lean();
+    // ───────────────────────────────────────────────
+    // 1. TOTAIS V2 (fonte única de verdade)
+    // ───────────────────────────────────────────────
+    const [cashV2, productionV2, todayCashV2] = await Promise.all([
+        financialMetricsService.calculateCash({ startDate: start, endDate: end }),
+        financialMetricsService.calculateProduction({ startDate: start, endDate: end }),
+        financialMetricsService.calculateCash({ startDate: todayStart, endDate: todayEnd })
+    ]);
 
-    let validPayments = payments.filter(p => {
-        const nome = (p.patient?.fullName || p.patientName || '').toLowerCase();
-        return !nome.includes('teste') && !nome.includes('test ');
-    });
+    const caixaTotal = cashV2.total;
+    const caixaHoje = todayCashV2.total;
+    const producaoTotal = productionV2.total;
 
-    const paymentAppointmentIds = validPayments
-        .map(p => p.appointment?.toString())
-        .filter(Boolean);
-    if (paymentAppointmentIds.length > 0) {
-        const paymentAppointments = await Appointment.find({
-            _id: { $in: paymentAppointmentIds }
-        }).select('_id isDeleted operationalStatus').lean();
-        const existingAppointmentsMap = new Map(
-            paymentAppointments.map(a => [a._id.toString(), a])
-        );
-        validPayments = validPayments.filter(p => {
-            const apptId = p.appointment?.toString();
-            if (!apptId) return true;
-            const appt = existingAppointmentsMap.get(apptId);
-            if (!appt) return false;
-            if (appt.isDeleted === true) return false;
-            if (['canceled', 'cancelled', 'cancelado'].includes(appt.operationalStatus)) return false;
-            return true;
-        });
-    }
+    // ───────────────────────────────────────────────
+    // 2. Breakdown de CAIXA por método e tipo de negócio
+    //    Usa os MESMOS critérios do V2 para seleção de documentos.
+    // ───────────────────────────────────────────────
+    const [particularPayments, convenioPayments] = await Promise.all([
+        Payment.find({
+            billingType: 'particular',
+            status: 'paid',
+            paymentDate: { $gte: startStr, $lte: endStr }
+        }).select('amount paymentMethod notes description type serviceType billingType').lean(),
 
-    let caixaTotal = 0;
-    let caixaHoje = 0;
+        Payment.find({
+            billingType: 'convenio',
+            'insurance.status': { $in: ['received', 'partial'] },
+            'insurance.receivedAt': { $gte: start, $lte: end }
+        }).select('amount insurance.receivedAmount paymentMethod notes description type serviceType billingType').lean()
+    ]);
+
+    // Sessões de pacote convênio pagas (FASE 1 — proteção anti-duplicação)
+    const sessionCashResult = await Session.aggregate([
+        {
+            $match: {
+                isPaid: true,
+                paidAt: { $gte: start, $lte: end },
+                paymentMethod: 'convenio',
+                $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
+            }
+        },
+        {
+            $lookup: {
+                from: 'payments',
+                let: { sessionId: '$_id' },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    { $eq: ['$session', '$$sessionId'] },
+                                    { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }
+                                ]
+                            }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'linkedPayment'
+            }
+        },
+        { $match: { linkedPayment: { $size: 0 } } },
+        {
+            $lookup: {
+                from: 'packages',
+                localField: 'package',
+                foreignField: '_id',
+                as: 'pkg'
+            }
+        },
+        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+        {
+            $project: {
+                amount: { $ifNull: ['$sessionValue', '$pkg.insuranceGrossAmount'] },
+                paymentMethod: '$paymentMethod',
+                notes: { $literal: '' },
+                description: { $literal: '' },
+                billingType: { $literal: 'convenio' },
+                type: { $literal: '' },
+                serviceType: { $literal: 'package_session' }
+            }
+        }
+    ]);
+
+    const allCashItems = [
+        ...particularPayments.map(p => ({ ...p, amount: p.amount })),
+        ...convenioPayments.map(p => ({ ...p, amount: p.insurance?.receivedAmount || p.amount })),
+        ...sessionCashResult
+    ];
+
     let caixaParticular = 0, caixaConvenio = 0, caixaPacote = 0, caixaLiminar = 0;
     const caixaByMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
 
-    validPayments.forEach(p => {
-        caixaTotal += p.amount;
-        if (moment(p.financialDate).isBetween(todayStart, todayEnd, null, '[]')) caixaHoje += p.amount;
-
+    allCashItems.forEach(p => {
         const method = (p.paymentMethod || '').toLowerCase();
         if (method.includes('pix')) caixaByMethod.pix += p.amount;
         else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) caixaByMethod.cartao += p.amount;
@@ -488,52 +921,33 @@ async function calculateRealTime(year, month) {
         else caixaParticular += p.amount;
     });
 
-    const appointments = await Appointment.find({
-        date: { $gte: start, $lt: end },
-        operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
-        isDeleted: { $ne: true },
-        patient: { $exists: true, $ne: null }
-    }).populate('patient', 'fullName').lean();
+    // ───────────────────────────────────────────────
+    // 3. Produção: Session.status = 'completed' (V2)
+    // ───────────────────────────────────────────────
+    const sessions = await Session.find({
+        date: { $gte: start, $lte: end },
+        status: 'completed'
+    }).populate('package', 'insuranceGrossAmount type').lean();
 
-    const patientIdsArray = [...new Set(appointments.map(a => a.patient?._id?.toString() || a.patient?.toString()).filter(Boolean))];
-
-    const Patient = (await import('../models/Patient.js')).default;
-    const validPatients = await Patient.find({ _id: { $in: patientIdsArray }, isDeleted: { $ne: true } }).select('_id').lean();
-    const validPatientIdsSet = new Set(validPatients.map(p => p._id.toString()));
-
-    const validAppointments = appointments.filter(a => {
-        const pid = a.patient?._id?.toString() || a.patient?.toString();
-        return validPatientIdsSet.has(pid);
-    });
-
-    const monthPayments = await Payment.find({
-        ...paymentBaseFilter,
-        financialDate: { $gte: start, $lte: end }
-    }).select('appointment').lean();
-    const paidAppointmentIds = new Set(monthPayments.map(p => p.appointment?.toString()).filter(Boolean));
-
-    let producaoTotal = 0;
     let producaoParticular = 0, producaoConvenio = 0, producaoPacote = 0, producaoLiminar = 0;
     let recebidoProducao = 0, aReceberProducao = 0;
 
-    validAppointments.forEach(a => {
-        const valor = a.sessionValue || 0;
-        producaoTotal += valor;
-
-        const billingType = a.billingType || 'particular';
-        const isConvenio = billingType === 'convenio' || (a.insuranceProvider && a.insuranceProvider.trim() !== '');
-        const isPacote = a.serviceType === 'package_session';
-        const isLiminar = billingType === 'liminar' || a.paymentOrigin === 'liminar';
+    sessions.forEach(s => {
+        const valor = (s.sessionValue > 0 ? s.sessionValue : null)
+          ?? s.package?.sessionValue
+          ?? s.package?.insuranceGrossAmount
+          ?? 0;
+        const paymentMethod = s.paymentMethod || 'particular';
+        const isConvenio = paymentMethod === 'convenio';
+        const isPacote = !!s.package;
+        const isLiminar = paymentMethod === 'liminar_credit' || s.paymentOrigin === 'liminar';
 
         if (isConvenio) producaoConvenio += valor;
-        else if (isPacote) producaoPacote += valor;
         else if (isLiminar) producaoLiminar += valor;
+        else if (isPacote) producaoPacote += valor;
         else producaoParticular += valor;
 
-        const temPayment = paidAppointmentIds.has(a._id.toString());
-        const foiPagoViaPacote = a.paymentStatus === 'package_paid' || isPacote;
-        const foiPago = temPayment || foiPagoViaPacote || isConvenio || isLiminar;
-
+        const foiPago = s.isPaid === true || isConvenio || isLiminar;
         if (foiPago) recebidoProducao += valor;
         else aReceberProducao += valor;
     });
@@ -619,36 +1033,75 @@ async function calculateDespesas(year, month) {
 
 /**
  * 📊 Comparativos: mês atual vs mês anterior
+ *
+ * Regra arquitetural: usa snapshot quando disponível; fallback para runtime.
  */
 async function calculateComparativos(year, month) {
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
-
-    const prevData = await calculateRealTime(prevYear, prevMonth);
-    const prevDespesas = await calculateDespesas(prevYear, prevMonth);
-    const currentData = await calculateRealTime(year, month);
-    const currentDespesas = await calculateDespesas(year, month);
 
     const calcVariacao = (atual, anterior) => {
         if (!anterior || anterior === 0) return atual > 0 ? 100 : 0;
         return parseFloat((((atual - anterior) / anterior) * 100).toFixed(1));
     };
 
+    // Tenta snapshot para mês anterior
+    let prevCaixa = 0, prevProducao = 0, prevDespesas = 0;
+    const prevSnapReady = await financialSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
+    const prevExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
+    if (prevSnapReady) {
+        const prevSnap = await financialSnapshotService.getMonthlyAggregate(prevYear, prevMonth);
+        prevCaixa = prevSnap.caixa;
+        prevProducao = prevSnap.producao;
+    } else {
+        const prevRt = await calculateRealTime(prevYear, prevMonth);
+        prevCaixa = prevRt.caixa;
+        prevProducao = prevRt.producao;
+    }
+    if (prevExpReady) {
+        const prevExp = await financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth);
+        prevDespesas = prevExp.total;
+    } else {
+        const prevDp = await calculateDespesas(prevYear, prevMonth);
+        prevDespesas = prevDp.total;
+    }
+
+    // Tenta snapshot para mês atual
+    let currentCaixa = 0, currentProducao = 0, currentDespesas = 0;
+    const currentSnapReady = await financialSnapshotService.isMonthlySnapshotReady(year, month);
+    const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
+    if (currentSnapReady) {
+        const currSnap = await financialSnapshotService.getMonthlyAggregate(year, month);
+        currentCaixa = currSnap.caixa;
+        currentProducao = currSnap.producao;
+    } else {
+        const currRt = await calculateRealTime(year, month);
+        currentCaixa = currRt.caixa;
+        currentProducao = currRt.producao;
+    }
+    if (currentExpReady) {
+        const currExp = await financialExpenseSnapshotService.getMonthlyAggregate(year, month);
+        currentDespesas = currExp.total;
+    } else {
+        const currDp = await calculateDespesas(year, month);
+        currentDespesas = currDp.total;
+    }
+
     return {
         mesAnterior: {
-            caixa: parseFloat(prevData.caixa.toFixed(2)),
-            producao: parseFloat(prevData.producao.toFixed(2)),
-            despesas: parseFloat(prevDespesas.total.toFixed(2))
+            caixa: parseFloat(prevCaixa.toFixed(2)),
+            producao: parseFloat(prevProducao.toFixed(2)),
+            despesas: parseFloat(prevDespesas.toFixed(2))
         },
         mesAtual: {
-            caixa: parseFloat(currentData.caixa.toFixed(2)),
-            producao: parseFloat(currentData.producao.toFixed(2)),
-            despesas: parseFloat(currentDespesas.total.toFixed(2))
+            caixa: parseFloat(currentCaixa.toFixed(2)),
+            producao: parseFloat(currentProducao.toFixed(2)),
+            despesas: parseFloat(currentDespesas.toFixed(2))
         },
         variacao: {
-            caixa: calcVariacao(currentData.caixa, prevData.caixa),
-            producao: calcVariacao(currentData.producao, prevData.producao),
-            despesas: calcVariacao(currentDespesas.total, prevDespesas.total)
+            caixa: calcVariacao(currentCaixa, prevCaixa),
+            producao: calcVariacao(currentProducao, prevProducao),
+            despesas: calcVariacao(currentDespesas, prevDespesas)
         }
     };
 }
@@ -832,6 +1285,34 @@ function buildDrillDown(data, profissionais) {
             emAtencao: profissionaisDetalhe.filter(p => p.diagnostico.status === 'atencao').length,
             topPerformers: profissionaisDetalhe.filter(p => p.diagnostico.status === 'top').length
         }
+    };
+}
+
+/**
+ * 💰 Indicadores financeiros: Lucro, Margem e Ponto de Equilíbrio
+ */
+function calculateIndicadores(caixa, producao, despesasTotal, metas) {
+    const lucro = parseFloat(((caixa || 0) - (despesasTotal || 0)).toFixed(2));
+    const margemPercentual = caixa > 0 ? parseFloat(((lucro / caixa) * 100).toFixed(1)) : 0;
+    const pontoEquilibrio = lucro >= 0 ? 0 : parseFloat((Math.abs(lucro)).toFixed(2));
+
+    let statusLucro = lucro >= 0 ? 'positivo' : 'negativo';
+    let statusMargem = 'ruim';
+    if (margemPercentual >= 30) statusMargem = 'bom';
+    else if (margemPercentual >= 15) statusMargem = 'atencao';
+
+    // Ponto de equilíbrio em relação à meta mensal (% do que falta para cobrir despesas vs meta)
+    const pontoEquilibrioVsMeta = metas?.configuracao?.metaMensal > 0
+        ? parseFloat(((pontoEquilibrio / metas.configuracao.metaMensal) * 100).toFixed(1))
+        : 0;
+
+    return {
+        lucro,
+        margemPercentual,
+        pontoEquilibrio,
+        pontoEquilibrioVsMeta,
+        statusLucro,
+        statusMargem
     };
 }
 
