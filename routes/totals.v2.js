@@ -4,12 +4,12 @@ import moment from 'moment-timezone';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import TotalsSnapshot from '../models/TotalsSnapshot.js';
 import Payment from '../models/Payment.js';
+import Appointment from '../models/Appointment.js';
 import Expense from '../models/Expense.js';
 import PackagesView from '../models/PackagesView.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { createContextLogger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
-import { acquireLock, releaseLock } from '../utils/redisLock.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -88,7 +88,7 @@ router.get('/', async (req, res) => {
         };
         if (clinicId) matchStage.clinicId = clinicId;
 
-        const [paymentResult, expenseResult, packageResult, balanceResult] = await Promise.all([
+        const [paymentResult, expenseResult, packageResult, balanceResult, appointments] = await Promise.all([
             Payment.aggregate([
                 { $match: matchStage },
                 { $group: {
@@ -98,7 +98,8 @@ router.get('/', async (req, res) => {
                     totalPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
                     countReceived: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
                     countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-                    particularReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, '$amount', 0] } }
+                    particularReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, '$amount', 0] } },
+                    particularCountReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, 1, 0] } }
                 }}
             ]),
             Expense.aggregate([
@@ -106,7 +107,13 @@ router.get('/', async (req, res) => {
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }
             ]),
             PackagesView.aggregate([{ $match: { status: { $in: ['active', 'finished'] } } }, { $group: { _id: null, contractedRevenue: { $sum: '$totalValue' }, cashReceived: { $sum: '$totalPaid' }, deferredRevenue: { $sum: { $multiply: ['$sessionsRemaining', '$sessionValue'] } }, deferredSessions: { $sum: '$sessionsRemaining' }, recognizedRevenue: { $sum: { $multiply: ['$sessionsUsed', '$sessionValue'] } }, recognizedSessions: { $sum: '$sessionsUsed' }, totalSessions: { $sum: '$totalSessions' }, activePackages: { $sum: 1 } } }]),
-            PatientBalance.aggregate([{ $group: { _id: null, totalDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, '$currentBalance', 0] } }, totalCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, { $multiply: ['$currentBalance', -1] }, 0] } }, totalDebited: { $sum: '$totalDebited' }, totalCredited: { $sum: '$totalCredited' }, patientsWithDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, 1, 0] } }, patientsWithCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, 1, 0] } } } }])
+            PatientBalance.aggregate([{ $group: { _id: null, totalDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, '$currentBalance', 0] } }, totalCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, { $multiply: ['$currentBalance', -1] }, 0] } }, totalDebited: { $sum: '$totalDebited' }, totalCredited: { $sum: '$totalCredited' }, patientsWithDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, 1, 0] } }, patientsWithCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, 1, 0] } } } }]),
+            Appointment.find({
+                date: { $gte: rangeStart, $lt: rangeEnd },
+                operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
+                isDeleted: { $ne: true },
+                patient: { $exists: true, $ne: null }
+            }).select('_id sessionValue billingType insuranceProvider serviceType paymentStatus').lean()
         ]);
 
         const p = paymentResult[0] || {};
@@ -114,17 +121,72 @@ router.get('/', async (req, res) => {
         const pkg = packageResult[0] || {};
         const bal = balanceResult[0] || {};
 
+        // Busca payments vinculados aos appointments para saber o que foi pago
+        const appointmentIds = appointments.map(a => a._id.toString());
+        const appointmentPayments = await Payment.find({
+            appointment: { $in: appointmentIds },
+            status: { $in: ['paid', 'completed', 'confirmed'] }
+        }).select('appointment').lean();
+        const paidAppointmentIds = new Set(appointmentPayments.map(pay => pay.appointment?.toString()));
+
+        // Calcula pendentes baseado em appointments (particular + convenio não pagos)
+        let appointmentPendingTotal = 0;
+        let appointmentPendingCount = 0;
+        let particularPendingTotal = 0;
+        let particularPendingCount = 0;
+        let totalInsuranceProduction = 0;
+        let totalInsurancePending = 0;
+        let countInsuranceTotal = 0;
+        let countInsurancePending = 0;
+        let totalPartial = 0;
+        let countPartial = 0;
+
+        for (const a of appointments) {
+            const valor = a.sessionValue || 0;
+            const isPacote = a.serviceType === 'package_session';
+            const isConvenio = a.billingType === 'convenio' || (a.insuranceProvider && a.insuranceProvider.trim() !== '');
+            const foiPago = paidAppointmentIds.has(a._id.toString()) || a.paymentStatus === 'package_paid' || isPacote;
+
+            if (isConvenio) {
+                totalInsuranceProduction += valor;
+                countInsuranceTotal += 1;
+                if (!foiPago) {
+                    totalInsurancePending += valor;
+                    countInsurancePending += 1;
+                    appointmentPendingTotal += valor;
+                    appointmentPendingCount += 1;
+                }
+            } else if (!isPacote && !foiPago) {
+                particularPendingTotal += valor;
+                particularPendingCount += 1;
+                appointmentPendingTotal += valor;
+                appointmentPendingCount += 1;
+            }
+        }
+
         const totalReceived = p.totalReceived || 0;
         const totalExpenses = exp.totalExpenses || 0;
         const profit = totalReceived - totalExpenses;
 
         const totals = {
             totalReceived,
-            totalProduction: p.totalProduction || 0,
-            totalPending: p.totalPending || 0,
+            totalProduction: (p.totalProduction || 0) + appointmentPendingTotal, // produção = recebido + a receber
+            totalPending: appointmentPendingTotal, // 💰 a receber real do período
+            totalPartial,
             countReceived: p.countReceived || 0,
-            countPending: p.countPending || 0,
+            countPending: appointmentPendingCount,
+            countPartial,
             particularReceived: p.particularReceived || 0,
+            particularPending: particularPendingTotal,
+            particularCountReceived: p.particularCountReceived || 0,
+            particularCountPending: particularPendingCount,
+            totalInsuranceProduction,
+            totalInsuranceReceived: 0, // caixa real de convênio é 0 nesse endpoint (vem do insurance)
+            totalInsurancePending,
+            countInsuranceTotal,
+            countInsuranceReceived: 0,
+            countInsurancePending,
+            totalCombined: totalReceived + appointmentPendingTotal,
             insurance: { pendingBilling: 0, billed: 0, received: 0 },
             packageCredit: { contractedRevenue: pkg.contractedRevenue || 0, cashReceived: pkg.cashReceived || 0, deferredRevenue: Math.max(0, pkg.deferredRevenue || 0), deferredSessions: Math.max(0, pkg.deferredSessions || 0), recognizedRevenue: pkg.recognizedRevenue || 0, recognizedSessions: pkg.recognizedSessions || 0, totalSessions: pkg.totalSessions || 0, activePackages: pkg.activePackages || 0 },
             patientBalance: { totalDebt: bal.totalDebt || 0, totalCredit: bal.totalCredit || 0, totalDebited: bal.totalDebited || 0, totalCredited: bal.totalCredited || 0, patientsWithDebt: bal.patientsWithDebt || 0, patientsWithCredit: bal.patientsWithCredit || 0 },

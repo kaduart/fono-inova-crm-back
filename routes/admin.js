@@ -7,6 +7,7 @@ import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
 import Patient from '../models/Patient.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 dotenv.config();
 
 const router = express.Router();
@@ -249,10 +250,12 @@ router.get('/appointment/completed-cancelled', auth, async (req, res) => {
     const appointments = await Appointment.find({
       status: { $in: ['completed', 'cancelled'] }
     })
-      .populate('doctor', 'fullName').populate('patientId', 'fullName')
-      .sort({ date: -1 }); // Show latest first
+      .populate('doctor', 'fullName specialty')
+      .populate('patient', 'fullName phone dateOfBirth email')
+      .sort({ date: -1 })
+      .lean();
 
-    res.json(appointments);
+    res.json(appointments.map(mapAppointmentDTO));
   } catch (error) {
     console.error('Error fetching completed/cancelled appointments:', error);
     res.status(500).send({ error: 'Server error' });

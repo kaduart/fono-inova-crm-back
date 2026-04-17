@@ -10,6 +10,7 @@ import { findDoctorByName } from '../utils/doctorHelper.js';
 import { getIo } from '../config/socket.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 
 const router = express.Router();
 
@@ -283,7 +284,7 @@ router.get('/', async (req, res) => {
 
     const [preAgendamentos, total, resumo, urgencias] = await Promise.all([
       Appointment.find(filters)
-        .populate('patient', 'fullName phone')
+        .populate('patient', 'fullName phone dateOfBirth email')
         .populate('doctor', 'fullName specialty')
         .populate('assignedTo', 'fullName')
         .sort({ urgency: -1, date: 1 })
@@ -304,17 +305,8 @@ router.get('/', async (req, res) => {
       ])
     ]);
 
-    // Compatibilidade: adicionar aliases de campo para o frontend antigo
-    const data = preAgendamentos.map(a => ({
-      ...a,
-      patientName: a.patient?.fullName || a.patientInfo?.fullName || '',
-      preferredDate: a.date,
-      preferredTime: a.time,
-      status: a.operationalStatus,
-      patientId: a.patient,
-      professionalId: a.doctor,
-      suggestedValue: a.sessionValue
-    }));
+    // 🔥 DTO único: garante compat com scheduled
+    const data = preAgendamentos.map(mapAppointmentDTO);
 
     res.json({
       success: true,
@@ -433,7 +425,7 @@ router.get('/stats/dashboard', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const pre = await Appointment.findById(req.params.id)
-      .populate('patient', 'fullName phone dateOfBirth')
+      .populate('patient', 'fullName phone dateOfBirth email')
       .populate('doctor', 'fullName specialty')
       .populate('assignedTo', 'fullName')
       .lean();
@@ -444,16 +436,7 @@ router.get('/:id', async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        ...pre,
-        patientName: pre.patient?.fullName || pre.patientInfo?.fullName || '',
-        preferredDate: pre.date,
-        preferredTime: pre.time,
-        status: pre.operationalStatus,
-        patientId: pre.patient,
-        professionalId: pre.doctor,
-        suggestedValue: pre.sessionValue
-      },
+      data: mapAppointmentDTO(pre),
       availableDoctors: doctors
     });
 

@@ -4,6 +4,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
+import Patient from '../models/Patient.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import crypto from 'crypto';
 
@@ -63,10 +64,20 @@ export class AppointmentHybridService {
             forcePayment
         });
 
+        // Resolve patientInfo do documento do paciente
+        const patientDoc = await Patient.findById(patientId).select('fullName name phone dateOfBirth email').session(mongoSession).lean();
+        const patientInfo = patientDoc ? {
+            fullName: patientDoc.fullName || patientDoc.name || '',
+            phone: patientDoc.phone || '',
+            birthDate: patientDoc.dateOfBirth || null,
+            email: patientDoc.email || null,
+        } : (data.patientInfo || {});
+
         // 1. Cria APPOINTMENT
         const appointment = new this.Appointment({
             patient: patientId,
             doctor: doctorId,
+            patientInfo,
             date,
             time,
             specialty,

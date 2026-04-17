@@ -28,6 +28,7 @@ import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 
 // 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
@@ -1086,9 +1087,12 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
             specialty,
             operationalStatus: { $ne: 'pre_agendado' },
             appointmentId: { $exists: false }
-        }).populate('patient', 'fullName');
+        })
+            .populate('patient', 'fullName phone dateOfBirth email')
+            .populate('doctor', 'fullName specialty')
+            .lean();
 
-        res.json(appointments);
+        res.json(appointments.map(mapAppointmentDTO));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

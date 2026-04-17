@@ -1,8 +1,10 @@
 /**
  * 🔧 FIX: Corrige appointments recuperados que ficaram com patient/doctor null
- * e patientInfo.fullName = 'Recuperado'
+ * e patientInfo.fullName = 'Recuperado'. Também corrige serviceType: "individual"
+ * (inválido no enum) para "individual_session".
  *
- * Causa: type mismatch — session.patient era string, patients._id é ObjectId
+ * Causa 1: type mismatch — session.patient era string, patients._id é ObjectId
+ * Causa 2: recover-appointments-from-sessions.js usava 'individual' sem '_session'
  *
  * DRY_RUN=true  → só lista (padrão)
  * DRY_RUN=false → corrige
@@ -26,6 +28,17 @@ async function run() {
   const db = mongoose.connection.db;
 
   console.log(`\n🔍 Modo: ${DRY_RUN ? 'DRY RUN' : '⚠️  REAL'}\n`);
+
+  // 0. Corrigir serviceType: "individual" → "individual_session" (enum inválido)
+  const invalidServiceType = await db.collection('appointments').countDocuments({ serviceType: 'individual' });
+  console.log(`🔧 serviceType "individual" inválido: ${invalidServiceType} docs`);
+  if (!DRY_RUN && invalidServiceType > 0) {
+    const result = await db.collection('appointments').updateMany(
+      { serviceType: 'individual' },
+      { $set: { serviceType: 'individual_session' } }
+    );
+    console.log(`  ✅ Corrigidos: ${result.modifiedCount}`);
+  }
 
   // 1. Buscar appointments recuperados sem patient
   const broken = await db.collection('appointments').find({

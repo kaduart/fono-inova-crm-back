@@ -35,6 +35,7 @@ import { buildIndividualSession, buildInsuranceSession } from '../domain/session
 import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 
 // ======================================================================
 // 🔥 CACHE RÁPIDO PARA LISTAGEM (30 segundos)
@@ -268,7 +269,36 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     });
     
     await appointment.save();
-    
+
+    // Popula patientInfo a partir do paciente (campo denormalizado para buscas rápidas)
+    if (!appointment.patientInfo?.fullName) {
+      try {
+        const bodyInfo = req.body.patientInfo;
+        const bodyName = req.body.patientName || req.body.patient;
+        if (bodyInfo?.fullName || bodyName) {
+          appointment.patientInfo = {
+            fullName: bodyInfo?.fullName || bodyName || '',
+            phone: bodyInfo?.phone || req.body.phone || '',
+            birthDate: bodyInfo?.birthDate || req.body.birthDate || null,
+            email: bodyInfo?.email || req.body.email || null,
+          };
+        } else {
+          const pat = await Patient.findById(patientId).select('fullName name phone dateOfBirth email');
+          if (pat) {
+            appointment.patientInfo = {
+              fullName: pat.fullName || pat.name || '',
+              phone: pat.phone || '',
+              birthDate: pat.dateOfBirth || null,
+              email: pat.email || null,
+            };
+          }
+        }
+        if (appointment.patientInfo?.fullName) await appointment.save();
+      } catch (err) {
+        console.warn('[POST /v2/appointments] ⚠️ Falha ao popular patientInfo:', err.message);
+      }
+    }
+
     // 🎯 CRIAR SESSION SÍNCRONA para agendamentos AVULSOS (garantia de consistência)
     // Pacotes: Session é criada pelo packageController ou worker (lógica complexa de crédito)
     let session = null;
@@ -932,20 +962,17 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     return { isFirstVisit, isReturningAfter45Days };
   }
   
-  // Formatação rápida
+  // 🔥 DTO único: nunca mais construir response inline
   const formattedAppointments = appointments.map(appt => {
-    // 🎯 Garantir que patient e doctor estão populados corretamente
-    const patientPopulated = appt.patient && typeof appt.patient === 'object' ? appt.patient : null;
-    const doctorPopulated = appt.doctor && typeof appt.doctor === 'object' ? appt.doctor : null;
+    const dto = mapAppointmentDTO(appt);
     
     // 🎯 CORREÇÃO: Garantir que o campo date reflita o horário real do agendamento (time)
-    let formattedDate = appt.date;
     if (appt.time && appt.date) {
       try {
         const datePart = moment(appt.date).tz('America/Sao_Paulo').format('YYYY-MM-DD');
         const combined = moment.tz(`${datePart} ${appt.time}`, 'YYYY-MM-DD HH:mm', 'America/Sao_Paulo');
         if (combined.isValid()) {
-          formattedDate = combined.toDate();
+          dto.date = combined.toDate();
         }
       } catch (e) {
         // fallback: mantém a data original
@@ -953,14 +980,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     }
     
     const flags = computeFlags(appt);
-    
     return {
-      ...appt,
-      date: formattedDate,
-      patientName: patientPopulated?.fullName || appt.patientInfo?.fullName || null,
-      doctorName: doctorPopulated?.fullName || appt.professionalName || null,
-      patientId: patientPopulated?._id?.toString() || appt.patient?.toString() || appt.patient,
-      doctorId: doctorPopulated?._id?.toString() || appt.doctor?.toString() || appt.doctor,
+      ...dto,
       // 🎯 Adicionar balance se existir (para pacotes)
       balance: appt.balance || 0,
       paymentStatus: appt.package
@@ -1374,7 +1395,31 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       doctor: req.body.doctorId || appointment.doctor,
       updatedAt: new Date()
     };
-    
+
+    // Garante patientInfo — busca do paciente se veio vazio ou zerado (dos dois lados)
+    const hasValidPatientInfo = updateData.patientInfo?.fullName && updateData.patientInfo.fullName.trim() !== '';
+    if (!hasValidPatientInfo) {
+      const pid = appointment.patient || updateData.patientId || req.body.patientId;
+      if (pid) {
+        try {
+          const pat = await Patient.findById(pid).select('fullName name phone dateOfBirth email').lean();
+          if (pat) {
+            updateData.patientInfo = {
+              fullName: pat.fullName || pat.name || '',
+              phone: pat.phone || updateData.patientInfo?.phone || '',
+              birthDate: pat.dateOfBirth || updateData.patientInfo?.birthDate || null,
+              email: pat.email || updateData.patientInfo?.email || null,
+            };
+            console.log('[PUT /appointments] patientInfo reconstruído do Patient:', pid, updateData.patientInfo.fullName);
+          }
+        } catch (e) {
+          console.warn('[PUT /appointments] falha ao buscar paciente para patientInfo:', e.message);
+        }
+      }
+    } else if (updateData.patientInfo && !updateData.patientInfo.phone && appointment.patientInfo?.phone) {
+      updateData.patientInfo.phone = appointment.patientInfo.phone;
+    }
+
     // 🎯 CAPTURAR DADOS PARA SIDE EFFECTS (antes de alterar)
     // Importante: capturar o estado ANTES da atualização
     const previousDoctorId = appointment.doctor?.toString();
@@ -1580,8 +1625,9 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     });
     
     clearCache();
+    await updatedAppointment.populate('patient', 'fullName name phone dateOfBirth email');
     res.json(formatSuccess({
-      appointment: updatedAppointment,
+      appointment: mapAppointmentDTO(updatedAppointment),
       message: 'Agendamento atualizado com sucesso'
     }));
     

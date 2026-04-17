@@ -193,9 +193,15 @@ export const getAppointmentsByType = async (req, res) => {
             }
         }
 
+        // Deduplica pré-agendamentos que já estão na lista principal (mesmo _id)
+        const appointmentIds = new Set(appointments.map(a => a._id.toString()));
+        const uniquePreAgendamentos = preAgendamentos
+            .filter(p => !appointmentIds.has(p._id.toString()))
+            .map(p => ({ ...p, origin: 'pre_agendamento' }));
+
         const allAppointments = [
             ...appointments,
-            ...preAgendamentos.map(p => ({ ...p, origin: 'pre_agendamento' }))
+            ...uniquePreAgendamentos
         ];
 
         // ─── 4. Buscar histórico completo dos pacientes envolvidos ───

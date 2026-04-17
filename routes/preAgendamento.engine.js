@@ -18,6 +18,7 @@ import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
 import { findDoctorByName } from '../utils/doctorHelper.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 
 const router = express.Router();
 
@@ -86,13 +87,14 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         const preAppointments = await Appointment.find(query)
             .populate('doctor', 'fullName specialty')
+            .populate('patient', 'fullName phone dateOfBirth email')
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
             .lean();
 
         res.json({
             success: true,
-            data: preAppointments,
+            data: preAppointments.map(mapAppointmentDTO),
             count: preAppointments.length
         });
 
@@ -117,13 +119,14 @@ router.get('/:id', flexibleAuth, async (req, res) => {
 
         const pre = await Appointment.findById(id)
             .populate('doctor', 'fullName specialty')
+            .populate('patient', 'fullName phone dateOfBirth email')
             .lean();
 
         if (!pre || pre.operationalStatus !== 'pre_agendado') {
             return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
         }
 
-        res.json({ success: true, data: pre });
+        res.json({ success: true, data: mapAppointmentDTO(pre) });
 
     } catch (error) {
         console.error('[PreAppointmentEngine] Erro ao buscar:', error);
@@ -347,6 +350,15 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
         const createdAppointment = await Appointment.findById(hybridResult.appointmentId).session(mongoSession);
         if (createdAppointment) {
             createdAppointment.operationalStatus = 'scheduled';
+            // Popula patientInfo do pré-agendamento (hybrid service não persiste esse campo)
+            if (!createdAppointment.patientInfo?.fullName && pre.patientInfo?.fullName) {
+                createdAppointment.patientInfo = {
+                    fullName: pre.patientInfo.fullName,
+                    phone: pre.patientInfo.phone || '',
+                    birthDate: pre.patientInfo.birthDate || null,
+                    email: pre.patientInfo.email || null,
+                };
+            }
             await createdAppointment.save({ session: mongoSession });
         }
 
@@ -418,17 +430,22 @@ router.patch('/:id', flexibleAuth, async (req, res) => {
         if (updates.status) { updates.operationalStatus = updates.status; delete updates.status; }
         if (updates.suggestedValue !== undefined) { updates.sessionValue = updates.suggestedValue; delete updates.suggestedValue; }
 
-        const pre = await Appointment.findByIdAndUpdate(
+        await Appointment.findByIdAndUpdate(
             id,
             { ...updates, updatedAt: new Date() },
             { new: true, runValidators: false }
         );
 
+        const pre = await Appointment.findById(id)
+            .populate('patient', 'fullName phone dateOfBirth email')
+            .populate('doctor', 'fullName specialty')
+            .lean();
+
         if (!pre) {
             return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
         }
 
-        res.json({ success: true, data: pre });
+        res.json({ success: true, data: mapAppointmentDTO(pre) });
     } catch (error) {
         console.error('[PreAppointmentEngine] Erro ao atualizar:', error);
         res.status(500).json({ success: false, error: 'Erro ao atualizar pré-agendamento: ' + error.message });

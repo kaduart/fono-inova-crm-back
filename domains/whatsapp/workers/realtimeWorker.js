@@ -19,6 +19,7 @@ import { Worker } from 'bullmq';
 import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
 import { getIo } from '../../../config/socket.js';
 import logger from '../../../utils/logger.js';
+import { MessagePersistedSchema } from '../events/messageEventSchema.js';
 
 export function createRealtimeWorker() {
   return new Worker(
@@ -28,8 +29,21 @@ export function createRealtimeWorker() {
       const correlationId = metadata?.correlationId || eventId;
       const io = getIo();
 
-      // Detecta direção para rotear payload corretamente
-      const direction = payload.direction || 'outbound';
+      // 🛡️ VALIDAÇÃO DE CONTRATO: elimina fallback silencioso que mascarava bugs
+      const validation = MessagePersistedSchema.validate(payload);
+      if (!validation.valid) {
+        logger.error('[RealtimeWorker] Invalid MESSAGE_PERSISTED payload', {
+          errors: validation.errors,
+          correlationId,
+        });
+        // Best-effort: não quebra fila, mas também não assume direção errada
+        return {
+          status: 'completed_with_errors',
+          error: `Schema violation: ${validation.errors.join('; ')}`,
+        };
+      }
+
+      const direction = payload.direction;
 
       logger.info('[RealtimeWorker] Processing', {
         direction,
@@ -48,6 +62,7 @@ export function createRealtimeWorker() {
             to,
             type,
             content,
+            text: content,
             timestamp,
             direction: 'inbound',
           };
