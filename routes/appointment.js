@@ -1052,7 +1052,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
         }
 
-        res.json({ success: true, data: appointment });
+        res.json({ success: true, data: mapAppointmentDTO(appointment) });
     } catch (error) {
         console.error('[APPOINTMENT] Erro ao buscar:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -1317,7 +1317,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 }
             }, 100);
 
-            res.json(updatedAppointment);
+            res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
 
         } catch (error) {
             console.error('Erro ao atualizar agendamento:', error);
@@ -1429,7 +1429,7 @@ router.get('/history/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
         const history = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).sort({ date: -1 });
-        res.json(history);
+        res.json({ success: true, data: history.map(mapAppointmentDTO) });
     } catch (error) {
         if (error.name === 'ValidationError') {
             const errors = Object.keys(error.errors).reduce((acc, key) => {
@@ -1703,7 +1703,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             const responseData = existingAppointment.toObject ? existingAppointment.toObject() : existingAppointment;
             responseData.patientBalance = balanceDoc?.currentBalance || 0;
             console.log(`[complete] ⚠️ Sessão fiada já registrada, retornando sem duplicar`);
-            return res.json(responseData);
+            return res.json({ success: true, data: { ...mapAppointmentDTO(existingAppointment), patientBalance: balanceDoc?.currentBalance || 0 } });
         }
 
         // Guard para sessão já confirmada sem saldo devedor
@@ -1714,7 +1714,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             const responseData = existingAppointment.toObject ? existingAppointment.toObject() : existingAppointment;
             responseData.patientBalance = balanceDoc?.currentBalance || 0;
             console.log(`[complete] ⚠️ Agendamento já concluído, retornando sem duplicar`);
-            return res.json(responseData);
+            return res.json({ success: true, data: { ...mapAppointmentDTO(existingAppointment), patientBalance: balanceDoc?.currentBalance || 0 } });
         }
 
         // Declarar variáveis
@@ -2369,7 +2369,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const responseData = finalAppointment.toObject ? finalAppointment.toObject() : finalAppointment;
         responseData.patientBalance = patientBalance;
 
-        res.json(responseData);
+        res.json({ success: true, data: { ...mapAppointmentDTO(finalAppointment), patientBalance } });
 
     } catch (error) {
         if (session) {
@@ -2470,9 +2470,12 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
         ]).lean();
 
         const formattedAppointments = appointments.map(appt => {
+            const dto = mapAppointmentDTO(appt);
+            
             // Formatar sessões adiantadas
-            if (appt.advancedSessions) {
-                appt.advancedSessions = appt.advancedSessions.map(session => ({
+            let advancedSessions = appt.advancedSessions;
+            if (advancedSessions) {
+                advancedSessions = advancedSessions.map(session => ({
                     ...session,
                     formattedDate: session.date && isValidDateString(session.date)
                         ? new Date(session.date).toLocaleDateString('pt-BR')
@@ -2482,18 +2485,21 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
             }
 
             return {
-                ...appt,
+                ...dto,
+                advancedSessions,
                 paymentStatus:
                     appt.package
                         ? (appt.paymentStatus || 'package_paid')
                         : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
-
-                source: appt.package ? 'package' : 'individual'
+                source: appt.package ? 'package' : 'individual',
+                // Campos enriquecidos que o DTO não cobre
+                history: appt.history,
+                session: appt.session,
+                package: appt.package
             };
         });
 
-
-        res.json(formattedAppointments);
+        res.json({ success: true, data: formattedAppointments });
     } catch (error) {
         if (error.name === 'ValidationError') {
             const errors = Object.keys(error.errors).reduce((acc, key) => {
@@ -2762,7 +2768,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
         // Salva sem validar campos problemáticos
         const updatedAppointment = await appointment.save({ validateBeforeSave: false });
 
-        res.json(updatedAppointment);
+        res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
 
     } catch (error) {
         console.error('Erro ao atualizar status clínico:', error);
@@ -2819,7 +2825,7 @@ router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
         // Sincronização pós-commit (opcional, mas recomendado)
         setTimeout(() => syncEvent(updatedAppointment, 'appointment').catch(console.error), 100);
 
-        res.json({ success: true, appointment: updatedAppointment });
+        res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
 
     } catch (error) {
         if (session) await session.abortTransaction();
@@ -2878,7 +2884,7 @@ export const bookFromAmanda = async (req, res) => {
             $set: { status: 'agendado' }
         });
 
-        return res.json({ success: true, appointment });
+        return res.json({ success: true, data: mapAppointmentDTO(appointment) });
     } catch (err) {
         console.error('❌ Erro bookFromAmanda:', err);
         return res.status(500).json({ error: err.message });

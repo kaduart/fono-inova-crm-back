@@ -23,6 +23,7 @@ export function mapAppointmentDTO(appointment) {
     const patientName = patientPopulated?.fullName ||
                         patientPopulated?.name ||
                         appointment.patientName ||
+                        appointment.patientInfo?.fullName ||
                         null;
 
     const doctorName = doctorPopulated?.fullName ||

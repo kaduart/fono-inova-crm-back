@@ -107,8 +107,6 @@ import spyRoutes from './routes/spy.routes.js';
 import metaAdsRoutes from './routes/meta-ads.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
-import preAgendamentoRoutes from './routes/preAgendamento.js';
-import preAgendamentoV2Routes from './routes/preAgendamento.v2.js';
 import preAgendamentoEngineRoutes from './routes/preAgendamento.engine.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
@@ -421,9 +419,10 @@ function legacyRouteAlert(req, res, next) {
   next();
 }
 
-app.use('/api/pre-agendamento', legacyRouteAlert, preAgendamentoRoutes);
-app.use('/api/v2/pre-agendamento', legacyRouteAlert, preAgendamentoRoutes);  // LEGADO: mantido para compatibilidade
 app.use('/api/v2/pre-appointments', preAgendamentoEngineRoutes);  // 🚀 V2 REAL: engine transacional + hybrid service
+
+// 🗑️ V1 removido: /api/pre-agendamento e /api/v2/pre-agendamento desativados
+// Todos os pré-agendamentos agora usam /api/v2/pre-appointments
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', etagMiddleware({ ttl: 120 }), dashboardRoutes);
 app.use('/api/sales', salesRoutes);
