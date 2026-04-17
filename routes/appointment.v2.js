@@ -852,11 +852,9 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       filter.operationalStatus = statusMap[status];
     }
   }
-  // Se não tem status, exclui pré-agendamentos pendentes e convertidos
-  if (!status) {
-    filter.operationalStatus = { $ne: 'pre_agendado' };
-    filter.appointmentId = { $exists: false };
-  }
+  // 🔄 UNIFICAÇÃO: pré-agendamentos agora aparecem no calendário também
+  // O frontend diferencia visualmente via operationalStatus === 'pre_agendado'
+  // Filtro legado removido — status default não exclui mais pre_agendado
 
   // 🛡️ Nunca retorna appointments soft-deletados
   filter.isDeleted = { $ne: true };
@@ -1039,7 +1037,7 @@ router.get('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   }
 
   console.log(`[GET /v2/appointments/:id] Retornando sucesso`);
-  res.json(formatSuccess({ appointment }));
+  res.json(formatSuccess({ appointment: mapAppointmentDTO(appointment) }));
 }));
 
 /**
@@ -1529,8 +1527,55 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       appointment.payment = newPayment._id;
       appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
       await appointment.save({ session: mongoSession });
+    } else if (appointment.package && updateData.billingType !== 'convenio') {
+      // Sessão de pacote: permite registrar/atualizar valor se não for convênio
+      const existingPayment = appointment.payment
+        ? await Payment.findById(appointment.payment).session(mongoSession).lean()
+        : null;
+
+      if (existingPayment?.status === 'paid') {
+        // Já pago: não altera nada financeiro
+        console.log(`[PUT /appointments/${id}] Package session já paga — ignorando alterações financeiras`);
+      } else if (existingPayment && existingPayment.status !== 'paid') {
+        // Payment pendente existente: atualiza valor
+        const paymentUpdate = Payment.findByIdAndUpdate(
+          appointment.payment,
+          {
+            $set: {
+              amount: updateData.paymentAmount ?? existingPayment.amount,
+              paymentMethod: updateData.paymentMethod || existingPayment.paymentMethod,
+              serviceDate: updateData.date || appointment.date,
+              updatedAt: new Date()
+            }
+          },
+          { session: mongoSession, new: true }
+        );
+        updatePromises.push(paymentUpdate);
+      } else if (!existingPayment && updateData.paymentAmount > 0) {
+        // Sem payment: cria registro avulso para a sessão
+        console.log(`[PUT /appointments/${id}] Package session sem payment — criando registro de valor avulso`);
+        const newPayment = new Payment({
+          patient: appointment.patient,
+          doctor: updateData.doctor || appointment.doctor,
+          appointment: appointment._id,
+          amount: updateData.paymentAmount,
+          paymentMethod: updateData.paymentMethod || 'dinheiro',
+          serviceDate: updateData.date || appointment.date,
+          serviceType: updateData.serviceType || appointment.serviceType,
+          billingType: 'particular',
+          status: 'paid',
+          paymentDate: new Date(),
+          paidAt: new Date(),
+          kind: 'session_payment',
+          notes: `Valor avulso registrado em sessão de pacote - ${new Date().toLocaleString('pt-BR')}`
+        });
+        await newPayment.save({ session: mongoSession });
+        appointment.payment = newPayment._id;
+        appointment.sessionValue = updateData.paymentAmount;
+        await appointment.save({ session: mongoSession });
+      }
     }
-    
+
     // 🚀 FASE 2 EXTRAÇÃO: Package movido para side effects async
     // Antes: Atualização síncrona na transaction
     // Agora: Processado por appointment-integration worker

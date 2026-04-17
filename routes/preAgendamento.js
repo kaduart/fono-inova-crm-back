@@ -465,7 +465,7 @@ router.post('/:id/assign', async (req, res) => {
       getIo().emit('preagendamento:updated', { id: String(pre._id), operationalStatus: pre.operationalStatus, action: 'assigned' });
     } catch (e) {}
 
-    res.json({ success: true, data: pre });
+    res.json({ success: true, data: mapAppointmentDTO(pre) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -502,7 +502,7 @@ router.post('/:id/contact', async (req, res) => {
       getIo().emit('preagendamento:contact', { id: String(pre._id), attemptCount: pre.attemptCount });
     } catch (e) {}
 
-    res.json({ success: true, data: pre });
+    res.json({ success: true, data: mapAppointmentDTO(pre) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -695,7 +695,7 @@ router.post('/:id/descartar', async (req, res) => {
       { new: true }
     );
 
-    res.json({ success: true, message: 'Descartado com sucesso', data: pre });
+    res.json({ success: true, message: 'Descartado com sucesso', data: mapAppointmentDTO(pre) });
 
     try {
       getIo().emit('preagendamento:discarded', { id: String(pre._id), reason });
@@ -724,7 +724,7 @@ router.patch('/:id', async (req, res) => {
       { new: true, runValidators: false }
     );
 
-    res.json({ success: true, data: pre });
+    res.json({ success: true, data: mapAppointmentDTO(pre) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
