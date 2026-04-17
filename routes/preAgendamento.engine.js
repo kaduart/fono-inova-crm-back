@@ -62,7 +62,7 @@ async function markIdempotency(requestId) {
 // ======================================================
 router.get('/', flexibleAuth, async (req, res) => {
     try {
-        const { limit = 50, status, phone, from, to, doctorId, specialty } = req.query;
+        const { limit = 50, page = 1, status, phone, from, to, doctorId, specialty } = req.query;
 
         const query = { operationalStatus: 'pre_agendado' };
 
@@ -85,17 +85,28 @@ router.get('/', flexibleAuth, async (req, res) => {
             query.doctor = doctorId;
         }
 
-        const preAppointments = await Appointment.find(query)
-            .populate('doctor', 'fullName specialty')
-            .populate('patient', 'fullName phone dateOfBirth email')
-            .sort({ createdAt: -1 })
-            .limit(parseInt(limit))
-            .lean();
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const [preAppointments, total] = await Promise.all([
+            Appointment.find(query)
+                .populate('doctor', 'fullName specialty')
+                .populate('patient', 'fullName phone dateOfBirth email')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit))
+                .lean(),
+            Appointment.countDocuments(query)
+        ]);
 
         res.json({
             success: true,
             data: preAppointments.map(mapAppointmentDTO),
-            count: preAppointments.length
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            }
         });
 
     } catch (error) {
@@ -331,6 +342,11 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             ? pre.date.toISOString().split('T')[0]
             : String(pre.date || '').split('T')[0]);
 
+        // 🔥 LIBERA O SLOT do pré-agendamento ANTES de criar o appointment real,
+        // senão o índice unique_appointment_slot bloqueia a inserção (pré-agendado agora bloqueia slot)
+        pre.doctor = null;
+        await pre.save({ session: mongoSession });
+
         // Chama o CRM Core V2 (HYBRID SERVICE)
         const hybridResult = await appointmentHybridService.create({
             patientId,
@@ -368,7 +384,6 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             return res.status(500).json({ success: false, error: 'Falha ao criar agendamento: appointmentId não retornado' });
         }
         pre.operationalStatus = 'converted';
-        pre.doctor = null; // libera o slot para o appointment real
         pre.appointmentId = hybridResult.appointmentId;
         pre.importedAt = new Date();
         pre.importedBy = req.user?._id?.toString();
@@ -478,7 +493,7 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
         }
 
-        res.json({ success: true, message: 'Descartado com sucesso', data: pre });
+        res.json({ success: true, message: 'Descartado com sucesso', data: mapAppointmentDTO(pre) });
     } catch (error) {
         console.error('[PreAppointmentEngine] Erro ao descartar:', error);
         res.status(500).json({ success: false, error: 'Erro ao descartar pré-agendamento: ' + error.message });
@@ -509,6 +524,161 @@ router.post('/:id/cancel', flexibleAuth, async (req, res) => {
     } catch (error) {
         console.error('[PreAppointmentEngine] Erro ao cancelar:', error);
         res.status(500).json({ success: false, error: 'Erro ao cancelar pré-agendamento: ' + error.message });
+    }
+});
+
+// ======================================================
+// GET /api/v2/pre-appointments/stats/dashboard — Stats do painel de pré-agendamentos
+// ======================================================
+router.get('/stats/dashboard', flexibleAuth, async (req, res) => {
+    try {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+        const [porUrgencia, urgentes, semContato, total, porEspecialidade, conversao, porPatientType] = await Promise.all([
+            Appointment.aggregate([
+                { $match: { operationalStatus: 'pre_agendado' } },
+                { $group: { _id: '$urgency', count: { $sum: 1 } } }
+            ]),
+            Appointment.countDocuments({
+                operationalStatus: 'pre_agendado',
+                urgency: { $in: ['alta', 'critica'] }
+            }),
+            Appointment.countDocuments({
+                operationalStatus: 'pre_agendado',
+                $or: [{ attemptCount: 0 }, { attemptCount: { $exists: false } }]
+            }),
+            Appointment.countDocuments({ operationalStatus: 'pre_agendado' }),
+            Appointment.aggregate([
+                { $match: { operationalStatus: 'pre_agendado' } },
+                { $group: { _id: '$specialty', count: { $sum: 1 } } }
+            ]),
+            Appointment.aggregate([
+                {
+                    $match: {
+                        'metadata.origin.source': { $in: ['agenda_externa', 'amandaAI'] },
+                        createdAt: { $gte: thirtyDaysAgo }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: 1 },
+                        importados: {
+                            $sum: { $cond: [{ $in: ['$operationalStatus', ['scheduled', 'confirmed', 'paid']] }, 1, 0] }
+                        }
+                    }
+                }
+            ]),
+            Appointment.aggregate([
+                {
+                    $match: {
+                        patientType: { $in: ['novo', 'retorno', 'recorrente'] },
+                        createdAt: { $gte: thirtyDaysAgo }
+                    }
+                },
+                { $group: { _id: '$patientType', count: { $sum: 1 } } }
+            ])
+        ]);
+
+        const conv = conversao[0] || { total: 0, importados: 0 };
+        const porUrgenciaMap = porUrgencia.reduce((acc, item) => { acc[item._id] = item.count; return acc; }, {});
+        const patientTypeMap = porPatientType.reduce((acc, item) => { acc[item._id] = item.count; return acc; }, {});
+
+        res.json({
+            success: true,
+            data: {
+                porUrgencia: porUrgenciaMap,
+                porStatus: porUrgenciaMap,
+                urgentes,
+                semContato,
+                total,
+                porEspecialidade,
+                conversao: {
+                    taxa: conv.total > 0 ? Math.round((conv.importados / conv.total) * 100) : 0,
+                    total: conv.total,
+                    importados: conv.importados
+                },
+                novos: patientTypeMap['novo'] || 0,
+                retornos: patientTypeMap['retorno'] || 0,
+                recorrentes: patientTypeMap['recorrente'] || 0
+            }
+        });
+    } catch (error) {
+        console.error('[PreAppointmentEngine] Erro ao buscar stats:', error);
+        res.status(500).json({ success: false, error: 'Erro ao buscar estatísticas: ' + error.message });
+    }
+});
+
+// ======================================================
+// POST /api/v2/pre-appointments/:id/contact - Registra tentativa de contato
+// ======================================================
+router.post('/:id/contact', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'ID inválido' });
+        }
+
+        const { channel, success, notes } = req.body;
+        const madeByUserId = req.user?._id?.toString?.() || null;
+
+        const pre = await Appointment.findByIdAndUpdate(
+            id,
+            {
+                $push: {
+                    contactAttempts: {
+                        date: new Date(),
+                        channel,
+                        success: !!success,
+                        notes,
+                        madeBy: madeByUserId
+                    }
+                },
+                $inc: { attemptCount: 1 },
+                updatedAt: new Date()
+            },
+            { new: true }
+        );
+
+        if (!pre) {
+            return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+        }
+
+        res.json({ success: true, data: mapAppointmentDTO(pre) });
+    } catch (error) {
+        console.error('[PreAppointmentEngine] Erro ao registrar contato:', error);
+        res.status(500).json({ success: false, error: 'Erro ao registrar contato: ' + error.message });
+    }
+});
+
+// ======================================================
+// POST /api/v2/pre-appointments/:id/assign - Atribui pré-agendamento a um usuário
+// ======================================================
+router.post('/:id/assign', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'ID inválido' });
+        }
+
+        const { userId } = req.body;
+        const assignedUserId = (userId && mongoose.Types.ObjectId.isValid(userId)) ? userId :
+            (req.user?._id?.toString?.() || null);
+
+        const pre = await Appointment.findByIdAndUpdate(
+            id,
+            { assignedTo: assignedUserId, updatedAt: new Date() },
+            { new: true }
+        );
+
+        if (!pre) {
+            return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+        }
+
+        res.json({ success: true, data: mapAppointmentDTO(pre) });
+    } catch (error) {
+        console.error('[PreAppointmentEngine] Erro ao atribuir:', error);
+        res.status(500).json({ success: false, error: 'Erro ao atribuir pré-agendamento: ' + error.message });
     }
 });
 

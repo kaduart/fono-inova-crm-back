@@ -2,6 +2,7 @@ import express from 'express';
 import { auth } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import Appointment from '../models/Appointment.js';
+import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 import PatientBalance from '../models/PatientBalance.js';
@@ -227,7 +228,7 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
       .populate('doctor', 'fullName specialty')
       .sort({ date: -1 });
     
-    res.json({ success: true, data: appointments });
+    res.json({ success: true, data: appointments.map(mapAppointmentDTO) });
   } catch (err) {
     console.error('[APPOINTMENTS SUMMARY] Erro:', err);
     res.status(500).json({ error: 'Erro ao buscar agendamentos' });

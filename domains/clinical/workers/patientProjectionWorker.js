@@ -444,13 +444,25 @@ async function handlePaymentStatusChanged(payload, correlationId) {
 }
 
 async function handlePaymentEvent(patientId, eventType, correlationId) {
-  logger.info(`[${correlationId}] 💰 Rebuilding view after payment event`, { 
-    patientId, 
-    eventType 
+  logger.info(`[${correlationId}] 💰 Rebuilding view after payment event`, {
+    patientId,
+    eventType
   });
-  
+
   const view = await buildPatientView(patientId, { correlationId });
-  
+
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping ${eventType} — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
+
   return {
     operation: 'rebuild_payments',
     viewVersion: view.snapshot?.version,
@@ -461,13 +473,25 @@ async function handlePaymentEvent(patientId, eventType, correlationId) {
 }
 
 async function handlePackageEvent(patientId, eventType, correlationId) {
-  logger.info(`[${correlationId}] 📦 Rebuilding view after package event`, { 
-    patientId, 
-    eventType 
+  logger.info(`[${correlationId}] 📦 Rebuilding view after package event`, {
+    patientId,
+    eventType
   });
-  
+
   const view = await buildPatientView(patientId, { correlationId });
-  
+
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping ${eventType} — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
+
   return {
     operation: 'rebuild_packages',
     viewVersion: view.snapshot?.version,
@@ -476,13 +500,25 @@ async function handlePackageEvent(patientId, eventType, correlationId) {
 }
 
 async function handleBalanceEvent(patientId, eventType, correlationId) {
-  logger.info(`[${correlationId}] 💳 Rebuilding view after balance event`, { 
-    patientId, 
-    eventType 
+  logger.info(`[${correlationId}] 💳 Rebuilding view after balance event`, {
+    patientId,
+    eventType
   });
-  
+
   const view = await buildPatientView(patientId, { correlationId });
-  
+
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping ${eventType} — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
+
   return {
     operation: 'rebuild_balance',
     viewVersion: view.snapshot?.version,
