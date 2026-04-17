@@ -15,8 +15,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
-import { Queue } from 'bullmq';
-import { redisConnection } from '../infrastructure/queue/queueConfig.js';
+import { getQueue } from '../infrastructure/queue/queueConfig.js';
 
 const router = express.Router();
 
@@ -71,14 +70,13 @@ router.get('/monitor', async (req, res) => {
         const queueStats = {};
         for (const name of queueNames) {
             try {
-                const queue = new Queue(name, { connection: redisConnection });
+                const queue = getQueue(name);
                 const [waiting, active, failed] = await Promise.all([
                     queue.getWaitingCount(),
                     queue.getActiveCount(),
                     queue.getFailedCount()
                 ]);
                 queueStats[name] = { waiting, active, failed };
-                await queue.close();
             } catch (err) {
                 queueStats[name] = { error: err.message };
             }
@@ -208,7 +206,7 @@ router.get('/queues', async (req, res) => {
 
         for (const name of queueNames) {
             try {
-                const queue = new Queue(name, { connection: redisConnection });
+                const queue = getQueue(name);
                 const [waiting, active, completed, failed, delayed] = await Promise.all([
                     queue.getWaitingCount(),
                     queue.getActiveCount(),
@@ -227,7 +225,6 @@ router.get('/queues', async (req, res) => {
                 };
 
                 if (queueStats[name].alert) hasAlert = true;
-                await queue.close();
             } catch (err) {
                 queueStats[name] = { error: err.message };
             }
@@ -251,11 +248,12 @@ router.get('/full', async (req, res) => {
     try {
         const memUsage = process.memoryUsage();
         const heapPercentNum = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
+        const rssMB = Math.round(memUsage.rss / 1024 / 1024);
         
-        // Determina status da memória
+        // Determina status da memória baseado no RSS (uso real de RAM)
         let memoryStatus = 'healthy';
-        if (heapPercentNum >= 85) memoryStatus = 'critical';
-        else if (heapPercentNum >= 70) memoryStatus = 'warning';
+        if (rssMB >= 2048) memoryStatus = 'critical';
+        else if (rssMB >= 1024) memoryStatus = 'warning';
         
         // Busca estatísticas das filas
         const queueNames = [
@@ -267,7 +265,7 @@ router.get('/full', async (req, res) => {
         
         for (const name of queueNames) {
             try {
-                const queue = new Queue(name, { connection: redisConnection });
+                const queue = getQueue(name);
                 const [waiting, active, completed, failed, delayed] = await Promise.all([
                     queue.getWaitingCount(),
                     queue.getActiveCount(),
@@ -276,7 +274,6 @@ router.get('/full', async (req, res) => {
                     queue.getDelayedCount()
                 ]);
                 queues[name] = { waiting, active, completed, failed, delayed };
-                await queue.close();
             } catch (err) {
                 queues[name] = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, error: err.message };
             }
@@ -302,8 +299,8 @@ router.get('/full', async (req, res) => {
             memory: {
                 heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
                 heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-                heapPercent: `${heapPercentNum}%`,  // 🟢 STRING com % - compatível com frontend
-                rssMB: Math.round(memUsage.rss / 1024 / 1024),
+                heapPercent: heapPercentNum,
+                rssMB,
                 externalMB: Math.round((memUsage.external || 0) / 1024 / 1024),
                 status: memoryStatus
             },
@@ -342,14 +339,14 @@ async function runBasicChecks() {
     // 1. Database
     checks.database = mongoose.connection.readyState === 1;
 
-    // 2. Memória
+    // 2. Memória (baseado em RSS para refletir uso real de RAM)
     const memUsage = process.memoryUsage();
-    const heapPercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
+    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
     checks.memory = {
-        ok: heapPercent < ALERTS.memoryPercent,
-        percent: heapPercent,
-        used: Math.round(memUsage.heapUsed / 1024 / 1024),
-        total: Math.round(memUsage.heapTotal / 1024 / 1024)
+        ok: rssMB < 2048,
+        percent: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100),
+        used: rssMB,
+        total: Math.round(memUsage.heapTotal / 1024 / 1024) * 2 + 512
     };
 
     // 3. Eventos travados
@@ -513,14 +510,13 @@ router.get('/workers', async (req, res) => {
 
             for (const name of queues) {
                 try {
-                    const queue = new Queue(name, { connection: redisConnection });
+                    const queue = getQueue(name);
                     const [waiting, active, failed, delayed] = await Promise.all([
                         queue.getWaitingCount(),
                         queue.getActiveCount(),
                         queue.getFailedCount(),
                         queue.getDelayedCount()
                     ]);
-                    await queue.close();
 
                     groupStats.queues[name] = { waiting, active, failed, delayed };
                     groupStats.totalWaiting += waiting;
