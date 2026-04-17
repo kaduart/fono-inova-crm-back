@@ -20,8 +20,17 @@ export async function getInsuranceReceivables(req, res) {
     let sessions = [];
     
     if (month) {
+      // Validar formato YYYY-MM para evitar Invalid Date
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ success: false, error: 'Formato de mês inválido. Use YYYY-MM.' });
+      }
+
       const startOfMonth = new Date(month + '-01T00:00:00-03:00');
       const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      if (isNaN(startOfMonth.getTime()) || isNaN(endOfMonth.getTime())) {
+        return res.status(400).json({ success: false, error: 'Mês inválido.' });
+      }
 
       // Busca TODAS as sessões completadas do mês e filtra por isConvenioSession
       // Isso garante consistência com outros endpoints financeiros.
@@ -64,11 +73,20 @@ export async function getInsuranceReceivables(req, res) {
     }
     
     // Para cada sessão, busca o payment associado
-    const sessionIds = sessions.map(s => s._id.toString());
-    const payments = await Payment.find({
-      session: { $in: sessionIds.map(id => new mongoose.Types.ObjectId(id)) },
-      billingType: 'convenio'
-    }).lean();
+    const sessionIds = sessions
+      .map(s => s._id?.toString())
+      .filter(Boolean);
+
+    const validSessionObjectIds = sessionIds
+      .filter(id => mongoose.isValidObjectId(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
+    const payments = validSessionObjectIds.length > 0
+      ? await Payment.find({
+          session: { $in: validSessionObjectIds },
+          billingType: 'convenio'
+        }).lean()
+      : [];
     
     // Cria map de session -> payment
     const paymentBySession = {};
@@ -82,66 +100,74 @@ export async function getInsuranceReceivables(req, res) {
     const grouped = {};
     
     for (const session of sessions) {
-      const payment = paymentBySession[session._id.toString()];
-      
-      // 🆕 CORREÇÃO: Se não tem payment, considera como 'pending_billing'
-      const paymentStatus = payment?.insurance?.status || 'pending_billing';
-      
-      // Se especificou status, filtra
-      if (status && paymentStatus !== status) continue;
-      // Se não especificou, mostra pending_billing e billed
-      if (!status && !['pending_billing', 'billed'].includes(paymentStatus)) continue;
-      
-      const providerName = session.package?.insuranceProvider || 
-                           session.package?.insuranceCompany || 
-                           payment?.insurance?.provider || 
-                           'Outros';
-      
-      const patientId = session.patient?._id?.toString();
-      if (!patientId) continue;
-      
-      if (!grouped[providerName]) {
-        grouped[providerName] = {
-          _id: providerName,
-          name: providerName,
-          totalPending: 0,
-          count: 0,
-          patients: []
-        };
+      try {
+        const sessionIdStr = session._id?.toString();
+        if (!sessionIdStr) continue;
+
+        const payment = paymentBySession[sessionIdStr];
+        
+        // 🆕 CORREÇÃO: Se não tem payment, considera como 'pending_billing'
+        const paymentStatus = payment?.insurance?.status || 'pending_billing';
+        
+        // Se especificou status, filtra
+        if (status && paymentStatus !== status) continue;
+        // Se não especificou, mostra pending_billing e billed
+        if (!status && !['pending_billing', 'billed'].includes(paymentStatus)) continue;
+        
+        const providerName = session.package?.insuranceProvider || 
+                             session.package?.insuranceCompany || 
+                             payment?.insurance?.provider || 
+                             'Outros';
+        
+        const patientId = session.patient?._id?.toString();
+        if (!patientId) continue;
+        
+        if (!grouped[providerName]) {
+          grouped[providerName] = {
+            _id: providerName,
+            name: providerName,
+            totalPending: 0,
+            count: 0,
+            patients: []
+          };
+        }
+        
+        // Encontrar ou criar o paciente neste grupo
+        let patientGroup = grouped[providerName].patients.find(p => p.patientId === patientId);
+        if (!patientGroup) {
+          patientGroup = {
+            patientId: patientId,
+            patientName: session.patient?.fullName || 'N/A',
+            total: 0,
+            count: 0,
+            payments: []
+          };
+          grouped[providerName].patients.push(patientGroup);
+        }
+        
+        const grossAmount = session.package?.insuranceGrossAmount || 
+                           payment?.insurance?.grossAmount || 
+                           payment?.amount || 80;
+        
+        // Atualizar totais
+        grouped[providerName].totalPending += grossAmount;
+        grouped[providerName].count += 1;
+        patientGroup.total += grossAmount;
+        patientGroup.count += 1;
+        
+        // Adicionar payment
+        patientGroup.payments.push({
+          paymentId: payment?._id?.toString() || sessionIdStr,
+          grossAmount: grossAmount,
+          status: payment?.insurance?.status || 'pending_billing',
+          paymentDate: session.date,
+          authorizationCode: payment?.insurance?.authorizationCode || session.package?.insuranceAuthorizationCode,
+          specialty: session.doctor?.specialty || 'Outros'
+        });
+      } catch (sessionError) {
+        console.error('[InsuranceV2] Erro ao processar sessão:', session?._id, sessionError.message);
+        // Continua processando as demais sessões
       }
-      
-      // Encontrar ou criar o paciente neste grupo
-      let patientGroup = grouped[providerName].patients.find(p => p.patientId === patientId);
-      if (!patientGroup) {
-        patientGroup = {
-          patientId: patientId,
-          patientName: session.patient?.fullName || 'N/A',
-          total: 0,
-          count: 0,
-          payments: []
-        };
-        grouped[providerName].patients.push(patientGroup);
-      }
-      
-      const grossAmount = session.package?.insuranceGrossAmount || 
-                         payment?.insurance?.grossAmount || 
-                         payment?.amount || 80;
-      
-      // Atualizar totais
-      grouped[providerName].totalPending += grossAmount;
-      grouped[providerName].count += 1;
-      patientGroup.total += grossAmount;
-      patientGroup.count += 1;
-      
-      // Adicionar payment
-      patientGroup.payments.push({
-        paymentId: payment?._id?.toString() || session._id.toString(),
-        grossAmount: grossAmount,
-        status: payment?.insurance?.status || 'pending_billing',
-        paymentDate: session.date,
-        authorizationCode: payment?.insurance?.authorizationCode || session.package?.insuranceAuthorizationCode,
-        specialty: session.doctor?.specialty || 'Outros'
-      });
     }
     
     const result = Object.values(grouped);
@@ -159,7 +185,7 @@ export async function getInsuranceReceivables(req, res) {
     res.json({ success: true, data: result, summary });
   } catch (error) {
     console.error('[InsuranceV2] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
   }
 }
 

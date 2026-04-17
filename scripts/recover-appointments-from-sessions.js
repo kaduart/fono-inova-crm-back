@@ -105,7 +105,7 @@ async function run() {
       time: session.time,
       specialty: session.sessionType || 'fonoaudiologia',
       sessionType: session.sessionType || 'fonoaudiologia',
-      serviceType: session.package ? 'package_session' : 'individual',
+      serviceType: session.package ? 'package_session' : 'individual_session',
       operationalStatus,
       clinicalStatus,
       paymentStatus: session.paymentStatus || 'unpaid',
