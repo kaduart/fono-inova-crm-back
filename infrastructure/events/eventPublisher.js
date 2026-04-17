@@ -3,6 +3,8 @@ import { Queue } from 'bullmq';
 import { redisConnection } from '../queue/queueConfig.js';
 import { appendEvent, eventExists } from './eventStoreService.js';
 import { classifyError, NonRetryableError } from './errorClassifier.js';
+import { validateEvent, getEventVersion } from './eventContractRegistry.js';
+import { ErrorCodes } from './errorCodes.js';
 import { createContextLogger } from '../../utils/logger.js';
 import EventStore from '../../models/EventStore.js';
 
@@ -571,9 +573,31 @@ if (size > 5000) {
         }
     }
     
+    // 🛡️ VALIDAÇÃO DE CONTRACT (Event Contract Layer) — MODO WARNING
+    // Nunca bloqueia o publish para garantir estabilidade total da aplicação
+    const validation = validateEvent(eventType, payload);
+    const eventVersion = getEventVersion(eventType);
+
+    if (!validation.valid) {
+        log.warn('event_validation_failed', 'Evento com schema inválido — publicado mesmo assim (modo permissivo)', {
+            eventType,
+            aggregateId: finalAggregateId,
+            errors: validation.errors,
+            warnings: validation.warnings,
+            code: validation.code
+        });
+        console.warn(`⚠️ [EVENT_PUBLISHER] VALIDATION_WARNING ${eventType}:`, validation.errors);
+    } else if (validation.warnings.length > 0) {
+        log.warn('event_validation_warnings', 'Evento publicado com warnings de contract', {
+            eventType,
+            warnings: validation.warnings
+        });
+    }
+    
     // ============ PASSO 1: PERSISTE NO EVENT STORE ============
     const eventStoreData = {
         eventType,
+        eventVersion,
         aggregateType: finalAggregateType,
         aggregateId: finalAggregateId,
         payload,
@@ -584,7 +608,8 @@ if (size > 5000) {
             source: metadata.source || 'eventPublisher',
             userId: metadata.userId,
             ip: metadata.ip,
-            userAgent: metadata.userAgent
+            userAgent: metadata.userAgent,
+            validationWarnings: validation.warnings.length > 0 ? validation.warnings : undefined
         }
     };
     
