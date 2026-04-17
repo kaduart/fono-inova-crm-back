@@ -11,8 +11,7 @@
  */
 
 import express from 'express';
-import { Queue } from 'bullmq';
-import { redisConnection } from '../infrastructure/queue/queueConfig.js';
+import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../utils/logger.js';
 import mongoose from 'mongoose';
 import { getSnapshot } from '../orchestrators/decision/decisionMetricsService.js';
@@ -21,26 +20,25 @@ const router = express.Router();
 const logger = createContextLogger('MetricsDashboard');
 
 // Filas monitoradas - EXPANDIDO: inclui appointment e DLQ
-const monitoredQueues = {
-  // Billing & Sync (original)
-  'sync-medical': new Queue('sync-medical', { connection: redisConnection }),
-  'insurance-orchestrator': new Queue('insurance-orchestrator', { connection: redisConnection }),
-  'patient-projection': new Queue('patient-projection', { connection: redisConnection }),
-  'package-projection': new Queue('package-projection', { connection: redisConnection }),
-  
-  // Appointment Core (novo)
-  'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
-  'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
-  'cancel-orchestrator': new Queue('cancel-orchestrator', { connection: redisConnection }),
-  'complete-orchestrator': new Queue('complete-orchestrator', { connection: redisConnection }),
-  
-  // Clinical (novo)
-  'clinical-orchestrator': new Queue('clinical-orchestrator', { connection: redisConnection }),
-  
-  // DLQ (novo - monitoramento crítico)
-  'dlq': new Queue('dlq', { connection: redisConnection }),
-  'dlq-critical': new Queue('dlq-critical', { connection: redisConnection })
-};
+// Usa getQueue para reaproveitar instâncias e evitar multiplicação de conexões
+const monitoredQueueNames = [
+  'sync-medical',
+  'insurance-orchestrator',
+  'patient-projection',
+  'package-projection',
+  'appointment-processing',
+  'create-appointment-processing',
+  'payment-processing',
+  'cancel-orchestrator',
+  'complete-orchestrator',
+  'clinical-orchestrator',
+  'dlq',
+  'dlq-critical'
+];
+
+const monitoredQueues = Object.fromEntries(
+  monitoredQueueNames.map(name => [name, getQueue(name)])
+);
 
 // ============================================
 // GET /api/metrics/dashboard

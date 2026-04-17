@@ -21,6 +21,21 @@ import { createContextLogger } from '../utils/logger.js';
 const log = createContextLogger('cron', 'PatientConsistency');
 const TIMEZONE = 'America/Sao_Paulo';
 
+async function fetchPatientIdsInBatches(model, selectField, batchSize = 2000) {
+  const ids = new Set();
+  let skip = 0;
+  while (true) {
+    const docs = await model.find({}).select(selectField).skip(skip).limit(batchSize).lean();
+    for (const doc of docs) {
+      const id = selectField === '_id' ? doc._id.toString() : doc.patientId?.toString();
+      if (id) ids.add(id);
+    }
+    if (docs.length < batchSize) break;
+    skip += batchSize;
+  }
+  return ids;
+}
+
 async function runConsistencyCheck() {
   const startTime = Date.now();
   const correlationId = `pat_consistency_${Date.now()}`;
@@ -28,30 +43,38 @@ async function runConsistencyCheck() {
   log.info(`[${correlationId}] 🔍 Iniciando verificação de consistência`);
   
   try {
-    // 1. Busca todas as views
-    const views = await PatientsView.find({}).select('patientId fullName').lean();
-    const viewPatientIds = new Set(views.map(v => v.patientId?.toString()).filter(Boolean));
+    // 1. Busca IDs de views e aggregates em batches (evita carregar tudo em memória)
+    const viewPatientIds = await fetchPatientIdsInBatches(PatientsView, 'patientId');
+    const patientIds = await fetchPatientIdsInBatches(Patient, '_id');
     
-    // 2. Busca todos os aggregates
-    const patients = await Patient.find({}).select('_id fullName').lean();
-    const patientIds = new Set(patients.map(p => p._id.toString()));
-    
-    // 3. Detecta órfãos
+    // 2. Detecta órfãos e aggregates sem view em batches também
     const orphanViews = [];
-    for (const view of views) {
-      const pid = view.patientId?.toString();
-      if (!pid || !patientIds.has(pid)) {
-        orphanViews.push(view);
+    let skip = 0;
+    const BATCH_SIZE = 2000;
+    while (true) {
+      const views = await PatientsView.find({}).select('patientId fullName').skip(skip).limit(BATCH_SIZE).lean();
+      for (const view of views) {
+        const pid = view.patientId?.toString();
+        if (!pid || !patientIds.has(pid)) {
+          orphanViews.push(view);
+        }
       }
+      if (views.length < BATCH_SIZE) break;
+      skip += BATCH_SIZE;
     }
     
-    // 4. Detecta aggregates sem view
     const orphanAggregates = [];
-    for (const patient of patients) {
-      const pid = patient._id.toString();
-      if (!viewPatientIds.has(pid)) {
-        orphanAggregates.push(patient);
+    skip = 0;
+    while (true) {
+      const patients = await Patient.find({}).select('_id fullName').skip(skip).limit(BATCH_SIZE).lean();
+      for (const patient of patients) {
+        const pid = patient._id.toString();
+        if (!viewPatientIds.has(pid)) {
+          orphanAggregates.push(patient);
+        }
       }
+      if (patients.length < BATCH_SIZE) break;
+      skip += BATCH_SIZE;
     }
     
     log.info(`[${correlationId}] 📊 Resumo`, {

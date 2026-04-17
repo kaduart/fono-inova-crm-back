@@ -33,7 +33,7 @@ const router = Router();
 // 1. BULL BOARD (Dashboard)
 // ==========================
 const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath("/admin/queues");
+serverAdapter.setBasePath("/admin/queues/");
 export { serverAdapter };
 
 const allQueues = [

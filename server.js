@@ -505,7 +505,9 @@ app.use(errorHandler);
 // 🖥️ Bull Board (Dashboard de filas) - DEVE vir antes do catch-all do frontend
 // ======================================================
 try {
-  app.use("/admin/queues", bullBoardAdapter.getRouter());
+  // Redirecionamento explícito para evitar 404 no adapter do Bull Board
+  app.get("/admin/queues", (req, res) => res.redirect("/admin/queues/"));
+  app.use("/admin/queues/", bullBoardAdapter.getRouter());
   console.log("🖥️ Bull Board disponível em: /admin/queues");
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message, err.stack);
@@ -533,31 +535,44 @@ function initFollowupWatcher() {
     
     const changeStream = Followup.watch();
     
+    // Throttle por lead para evitar tempestade de queries/emits sob carga alta
+    const pendingEmits = new Map();
+    
     changeStream.on("change", async (change) => {
       if (
         change.operationType === "update" &&
         change.updateDescription?.updatedFields?.status
       ) {
-        // 🔥 CORREÇÃO: Não fazer populate, apenas select lean()
-        const updatedFollowup = await Followup.findById(
-          change.documentKey._id
-        )
-        .select('status message lead')
-        .lean();
-
-        if (updatedFollowup) {
-          io.emit("whatsapp-message", {
-            leadId: updatedFollowup.lead,
-            status: updatedFollowup.status,
-            message: updatedFollowup.message,
-          });
+        const leadId = change.documentKey._id.toString();
+        
+        // Debounce: se já temos um emit pendente para este lead, substitui
+        if (pendingEmits.has(leadId)) {
+          clearTimeout(pendingEmits.get(leadId));
         }
+        
+        const timeoutId = setTimeout(async () => {
+          pendingEmits.delete(leadId);
+          // 🔥 CORREÇÃO: Não fazer populate, apenas select lean()
+          const updatedFollowup = await Followup.findById(change.documentKey._id)
+            .select('status message lead')
+            .lean();
+
+          if (updatedFollowup) {
+            io.emit("whatsapp-message", {
+              leadId: updatedFollowup.lead,
+              status: updatedFollowup.status,
+              message: updatedFollowup.message,
+            });
+          }
+        }, 500); // 500ms de debounce
+        
+        pendingEmits.set(leadId, timeoutId);
       }
     });
     
     // 🔥 CORREÇÃO: Fechar stream gracefulmente
-    process.on('SIGINT', () => changeStream.close());
-    process.on('SIGTERM', () => changeStream.close());
+    process.on('SIGINT', () => { pendingEmits.forEach(id => clearTimeout(id)); changeStream.close(); });
+    process.on('SIGTERM', () => { pendingEmits.forEach(id => clearTimeout(id)); changeStream.close(); });
     
   } catch (err) {
     console.error("⚠️ Erro ao iniciar watcher Followup:", err.message);

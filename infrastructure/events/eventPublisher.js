@@ -34,6 +34,7 @@ function shouldDebounce(aggregateId, eventType) {
 // Filas disponíveis
 export const queues = {
     'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
+    'create-appointment-processing': new Queue('create-appointment-processing', { connection: redisConnection }),
     'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
     'balance-update': new Queue('balance-update', { connection: redisConnection }),
     'package-validation': new Queue('package-validation', { connection: redisConnection }),
@@ -79,6 +80,10 @@ export const queues = {
  */
 export const EventTypes = {
     // 🎯 Intenções (REQUESTED) → entrada da API
+    APPOINTMENT_REQUESTED: 'APPOINTMENT_REQUESTED',
+    PACKAGE_APPOINTMENT_REQUESTED: 'PACKAGE_APPOINTMENT_REQUESTED',
+    INSURANCE_APPOINTMENT_REQUESTED: 'INSURANCE_APPOINTMENT_REQUESTED',
+    ADVANCE_APPOINTMENT_REQUESTED: 'ADVANCE_APPOINTMENT_REQUESTED',
     APPOINTMENT_CREATE_REQUESTED: 'APPOINTMENT_CREATE_REQUESTED',
     APPOINTMENT_CANCEL_REQUESTED: 'APPOINTMENT_CANCEL_REQUESTED',
     APPOINTMENT_COMPLETE_REQUESTED: 'APPOINTMENT_COMPLETE_REQUESTED',
@@ -268,7 +273,11 @@ export const EventTypes = {
  */
 export const eventToQueueMap = {
     // Intenções → Workers de orquestração
-    [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'appointment-processing',
+    [EventTypes.APPOINTMENT_REQUESTED]: 'appointment-processing',
+    [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'create-appointment-processing',
+    [EventTypes.PACKAGE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
+    [EventTypes.INSURANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
+    [EventTypes.ADVANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
     [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
     [EventTypes.APPOINTMENT_COMPLETE_REQUESTED]: 'complete-orchestrator',
     [EventTypes.APPOINTMENT_UPDATE_REQUESTED]: 'update-orchestrator',
