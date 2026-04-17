@@ -6,7 +6,7 @@ import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import { createPackageSession, findAndConsumeReusableCredit } from '../domain/package/consumePackageSession.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
-import { eventExists, processWithGuarantees, appendEvent } from '../infrastructure/events/eventStoreService.js';
+import { eventExists, processWithGuarantees, appendEvent, markEventProcessed } from '../infrastructure/events/eventStoreService.js';
 import { assertPayloadField, throwIfNotFoundRetryable } from '../infrastructure/events/errorClassifier.js';
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
@@ -24,7 +24,7 @@ import mongoose from 'mongoose';
 export function startCreateAppointmentWorker() {
     console.log('[CreateAppointmentWorker] 🚀 Iniciando worker...');
     
-    const worker = new Worker('appointment-processing', async (job) => {
+    const worker = new Worker('create-appointment-processing', async (job) => {
         const { eventId, eventType, correlationId, idempotencyKey, payload } = job.data;
         
         const log = createContextLogger(correlationId, 'create-appointment');
@@ -40,11 +40,13 @@ export function startCreateAppointmentWorker() {
         const validEventTypes = [
             'APPOINTMENT_CREATE_REQUESTED',   // Novo evento 4.0
             'PACKAGE_APPOINTMENT_REQUESTED',  // Pacote
-            'APPOINTMENT_REQUESTED'           // Legado
+            'INSURANCE_APPOINTMENT_REQUESTED', // Convênio
+            'ADVANCE_APPOINTMENT_REQUESTED'   // Adiantamento
         ];
 
         if (!validEventTypes.includes(eventType)) {
             log.warn('unknown_event', 'Ignorando evento não suportado', { eventType });
+            await markEventProcessed(eventId, 'createAppointmentWorker');
             return { status: 'ignored', reason: 'UNKNOWN_EVENT_TYPE', eventType };
         }
         

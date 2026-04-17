@@ -5,6 +5,7 @@ import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { assertPayloadField, throwIfNotFoundRetryable } from '../infrastructure/events/errorClassifier.js';
+import { markEventProcessed } from '../infrastructure/events/eventStoreService.js';
 
 /**
  * Appointment Worker
@@ -53,12 +54,14 @@ export function startAppointmentWorker() {
 
         if (!validEventTypes.includes(eventType)) {
             console.log(`[AppointmentWorker] Ignorando evento não suportado: ${eventType}`);
+            await markEventProcessed(eventId, 'appointmentWorker');
             return { status: 'ignored', reason: 'EVENT_TYPE_NOT_HANDLED', eventType };
         }
 
         // 1. IDEMPOTÊNCIA
         if (processedEvents.has(eventId)) {
             console.log(`[AppointmentWorker] Evento já processado: ${eventId}`);
+            await markEventProcessed(eventId, 'appointmentWorker');
             return { status: 'already_processed' };
         }
 
@@ -77,6 +80,7 @@ export function startAppointmentWorker() {
             const processableStatuses = ['pending', 'processing_create'];
             if (!processableStatuses.includes(appointment.operationalStatus)) {
                 console.log(`[AppointmentWorker] Agendamento ${appointment._id} já processado (status: ${appointment.operationalStatus})`);
+                await markEventProcessed(eventId, 'appointmentWorker');
                 return { status: 'already_handled', currentStatus: appointment.operationalStatus };
             }
 
@@ -111,6 +115,7 @@ export function startAppointmentWorker() {
                 );
                 
                 cacheEvent(eventId);
+                await markEventProcessed(eventId, 'appointmentWorker');
                 
                 return {
                     status: 'rejected',
@@ -126,6 +131,7 @@ export function startAppointmentWorker() {
             await publishNextEvents(appointment, payload, correlationId);
 
             cacheEvent(eventId);
+            await markEventProcessed(eventId, 'appointmentWorker');
 
             console.log(`[AppointmentWorker] Agendamento ${appointment._id} confirmado`);
 

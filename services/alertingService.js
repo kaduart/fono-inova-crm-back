@@ -7,7 +7,6 @@
  */
 
 import { createContextLogger } from '../utils/logger.js';
-import { Queue } from 'bullmq';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 
 const logger = createContextLogger('AlertingService');
@@ -71,9 +70,10 @@ export async function checkAllAlerts() {
 }
 
 async function checkQueueSizes() {
+  const { getQueue } = await import('../infrastructure/queue/queueConfig.js');
   const queues = [
-    { name: 'sync-medical', queue: new Queue('sync-medical', { connection: redisConnection }) },
-    { name: 'insurance-orchestrator', queue: new Queue('insurance-orchestrator', { connection: redisConnection }) }
+    { name: 'sync-medical', queue: getQueue('sync-medical') },
+    { name: 'insurance-orchestrator', queue: getQueue('insurance-orchestrator') }
   ];
   
   const alerts = [];

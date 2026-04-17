@@ -8,7 +8,6 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
-import { Queue } from 'bullmq';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
@@ -580,7 +579,8 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
  */
 async function hasActiveJobInQueue(appointmentId) {
   try {
-    const queue = new Queue('complete-orchestrator', { connection: redisConnection });
+    const { getQueue } = await import('../infrastructure/queue/queueConfig.js');
+    const queue = getQueue('complete-orchestrator');
     const jobs = await queue.getJobs(['waiting', 'active', 'delayed']);
     return jobs.some(job => job.data?.payload?.appointmentId === appointmentId);
   } catch (error) {

@@ -10,11 +10,8 @@
  * Sem dependências externas. Leve. Seguro.
  */
 
-import { redisConnection } from '../../config/redisConnection.js';
+import { getQueue } from '../queue/queueConfig.js';
 import { createContextLogger } from '../../utils/logger.js';
-import BullMQ from 'bullmq';
-
-const { Queue } = BullMQ;
 const logger = createContextLogger(null, 'runtime_monitor');
 
 // ============================================
@@ -23,8 +20,8 @@ const logger = createContextLogger(null, 'runtime_monitor');
 
 const MEM_INTERVAL_MS = 10_000;   // a cada 10s
 const QUEUE_INTERVAL_MS = 15_000; // a cada 15s
-const HEAP_THRESHOLD_WARN = 0.70; // 70%
-const HEAP_THRESHOLD_CRIT = 0.85; // 85% — alinhado com memory guard
+const RSS_THRESHOLD_WARN_MB = 1024; // 1GB
+const RSS_THRESHOLD_CRIT_MB = 2048; // 2GB
 
 // ============================================
 // HELPERS
@@ -35,16 +32,17 @@ const toMB = (v) => Math.round(v / 1024 / 1024);
 function getMemorySnapshot() {
   const mem = process.memoryUsage();
   const heapPercent = mem.heapUsed / mem.heapTotal;
+  const rssMB = toMB(mem.rss);
 
   return {
     heapUsedMB: toMB(mem.heapUsed),
     heapTotalMB: toMB(mem.heapTotal),
     heapPercent: parseFloat((heapPercent * 100).toFixed(1)),
-    rssMB: toMB(mem.rss),
+    rssMB,
     externalMB: toMB(mem.external),
     status:
-      heapPercent >= HEAP_THRESHOLD_CRIT ? 'critical' :
-      heapPercent >= HEAP_THRESHOLD_WARN ? 'warning' : 'healthy'
+      rssMB >= RSS_THRESHOLD_CRIT_MB ? 'critical' :
+      rssMB >= RSS_THRESHOLD_WARN_MB ? 'warning' : 'healthy'
   };
 }
 
@@ -63,11 +61,11 @@ function startMemoryMonitor() {
                  snap.status === 'warning'  ? '🟡' : '🟢';
 
     // Log enxuto — fácil de grep no Render/Logtail
-    console.log(`${icon} [MEMORY] heap=${snap.heapUsedMB}/${snap.heapTotalMB}MB (${snap.heapPercent}%) rss=${snap.rssMB}MB`);
+    console.log(`${icon} [MEMORY] rss=${snap.rssMB}MB heap=${snap.heapUsedMB}/${snap.heapTotalMB}MB (${snap.heapPercent}%)`);
 
     // Se crítico, log estruturado para alerta
     if (snap.status === 'critical') {
-      logger.error('memory_critical', 'Heap acima de 85%', snap);
+      logger.error('memory_critical', 'RSS acima de 2GB', snap);
     }
   }, MEM_INTERVAL_MS);
 }
@@ -90,17 +88,13 @@ const MONITORED_QUEUES = [
 let lastQueueStats = {};
 
 async function startQueueMonitor() {
-  // Cria instâncias temporárias de Queue só para ler counts
-  const queueInstances = MONITORED_QUEUES.map(name =>
-    new Queue(name, { connection: redisConnection })
-  );
-
   setInterval(async () => {
     try {
       const stats = {};
-      for (const q of queueInstances) {
+      for (const name of MONITORED_QUEUES) {
+        const q = getQueue(name);
         const counts = await q.getJobCounts();
-        stats[q.name] = counts;
+        stats[name] = counts;
       }
       lastQueueStats = stats;
 

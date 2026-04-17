@@ -1,7 +1,6 @@
 import express from 'express';
 import { getIo } from '../../config/socket.js';
 import { redisConnection } from '../../config/redisConnection.js';
-import { Queue } from 'bullmq';
 import mongoose from 'mongoose';
 import Message from '../../models/Message.js';
 import Contacts from '../../models/Contacts.js';
@@ -54,7 +53,8 @@ router.get('/chat-status', async (req, res) => {
 
     // Verifica filas
     try {
-      const inboundQueue = new Queue('whatsapp-inbound', { connection: redisConnection });
+      const { getQueue } = await import('../infrastructure/queue/queueConfig.js');
+      const inboundQueue = getQueue('whatsapp-inbound');
       status.queues.whatsappInbound = {
         waiting: await inboundQueue.getWaitingCount(),
         active: await inboundQueue.getActiveCount(),

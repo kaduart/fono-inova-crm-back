@@ -168,7 +168,11 @@ function getQueueNameForEvent(eventType) {
         
         // 🆕 NOVOS - Sincronizado com eventPublisher.js
         // Intenções → Workers de orquestração
-        'APPOINTMENT_CREATE_REQUESTED': 'appointment-processing',
+        'APPOINTMENT_REQUESTED': 'appointment-processing',
+        'APPOINTMENT_CREATE_REQUESTED': 'create-appointment-processing',
+        'PACKAGE_APPOINTMENT_REQUESTED': 'create-appointment-processing',
+        'INSURANCE_APPOINTMENT_REQUESTED': 'create-appointment-processing',
+        'ADVANCE_APPOINTMENT_REQUESTED': 'create-appointment-processing',
         'APPOINTMENT_CANCEL_REQUESTED': 'cancel-orchestrator',
         'APPOINTMENT_COMPLETE_REQUESTED': 'complete-orchestrator',
         'APPOINTMENT_UPDATE_REQUESTED': 'update-orchestrator',
