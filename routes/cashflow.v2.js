@@ -320,7 +320,7 @@ router.get('/', auth, async (req, res) => {
             const foiPago = temPaymentNoAppointment || foiPagoViaPacote;
             const categoria = foiPago ? 'recebido' : 'a_receber';
 
-            if (!foiPago && !isConvenio) {
+            if (!foiPago) {
                 aReceber += valor;
                 porEspecialidade[esp].pendente += valor;
                 pendentesCobranca.push({

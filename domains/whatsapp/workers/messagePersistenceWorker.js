@@ -123,8 +123,11 @@ export function createMessagePersistenceWorker() {
         to,
         type,
         content: contentToSave,
+        text: contentToSave,
         timestamp: timestamp.toISOString(),
         wamid,
+        direction: 'inbound',
+        source: 'whatsapp',
       }, {
         correlationId,
         aggregateType: 'message',
