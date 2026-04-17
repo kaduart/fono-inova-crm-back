@@ -1,10 +1,9 @@
 // workers/balanceWorker.js
-import { Worker, Queue } from 'bullmq';
-import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
+import { Worker } from 'bullmq';
+import { redisConnection, moveToDLQ, getQueue } from '../infrastructure/queue/queueConfig.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 
-const patientProjectionQueue = new Queue('patient-projection', { connection: redisConnection });
 
 const processedEvents = new Map();
 const EVENT_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -112,7 +111,7 @@ async function handleDebit(payload, eventId) {
     
     console.log(`[BalanceWorker] Débito: patient=${patientId}, amount=${amount}`);
 
-    await patientProjectionQueue.add('rebuild', {
+    await getQueue('patient-projection').add('rebuild', {
         eventType: 'BALANCE_UPDATED',
         payload: { patientId },
         correlationId: eventId
@@ -147,7 +146,7 @@ async function handleCredit(payload, eventId) {
 
     console.log(`[BalanceWorker] Crédito: patient=${patientId}, amount=${amount}`);
 
-    await patientProjectionQueue.add('rebuild', {
+    await getQueue('patient-projection').add('rebuild', {
         eventType: 'BALANCE_UPDATED',
         payload: { patientId },
         correlationId: eventId
@@ -183,7 +182,7 @@ async function handleLegacy(payload, eventId) {
         { upsert: true }
     );
 
-    await patientProjectionQueue.add('rebuild', {
+    await getQueue('patient-projection').add('rebuild', {
         eventType: 'BALANCE_UPDATED',
         payload: { patientId },
         correlationId: eventId

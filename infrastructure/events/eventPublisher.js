@@ -1,6 +1,5 @@
 // infrastructure/events/eventPublisher.js
-import { Queue } from 'bullmq';
-import { redisConnection } from '../queue/queueConfig.js';
+import { getQueue, closeQueues } from '../queue/queueConfig.js';
 import { appendEvent, eventExists } from './eventStoreService.js';
 import { classifyError, NonRetryableError } from './errorClassifier.js';
 import { validateEvent, getEventVersion } from './eventContractRegistry.js';
@@ -33,49 +32,10 @@ function shouldDebounce(aggregateId, eventType) {
     return false;
 }
 
-// Filas disponíveis
-export const queues = {
-    'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
-    'create-appointment-processing': new Queue('create-appointment-processing', { connection: redisConnection }),
-    'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
-    'balance-update': new Queue('balance-update', { connection: redisConnection }),
-    'package-validation': new Queue('package-validation', { connection: redisConnection }),
-    'sync-medical': new Queue('sync-medical', { connection: redisConnection }),
-    'notification': new Queue('notification', { connection: redisConnection }),
-    'cancel-orchestrator': new Queue('cancel-orchestrator', { connection: redisConnection }),
-    'complete-orchestrator': new Queue('complete-orchestrator', { connection: redisConnection }),
-    'invoice-processing': new Queue('invoice-processing', { connection: redisConnection }),
-    'lead-processing': new Queue('lead-processing', { connection: redisConnection }),
-    'followup-processing': new Queue('followup-processing', { connection: redisConnection }),
-    'update-orchestrator': new Queue('update-orchestrator', { connection: redisConnection }),
-    'appointment-integration': new Queue('appointment-integration', { connection: redisConnection }),
-    'whatsapp-notification': new Queue('whatsapp-notification', { connection: redisConnection }),
-    'whatsapp-persistence': new Queue('whatsapp-persistence', { connection: redisConnection }),
-    'whatsapp-lead-interaction': new Queue('whatsapp-lead-interaction', { connection: redisConnection }),
-    'whatsapp-realtime': new Queue('whatsapp-realtime', { connection: redisConnection }),
-    'whatsapp-chat-projection': new Queue('whatsapp-chat-projection', { connection: redisConnection }),
-    'email-notification': new Queue('email-notification', { connection: redisConnection }),
-    'totals-calculation': new Queue('totals-calculation', { connection: redisConnection }),
-    'daily-closing': new Queue('daily-closing', { connection: redisConnection }),
-    'patient-projection': new Queue('patient-projection', { connection: redisConnection }),
-    'patient-processing': new Queue('patient-processing', { connection: redisConnection }),
-    'package-processing': new Queue('package-processing', { connection: redisConnection }),
-    'insurance-orchestrator': new Queue('insurance-orchestrator', { connection: redisConnection }),
-    'clinical-orchestrator': new Queue('clinical-orchestrator', { connection: redisConnection }),
-    'clinical-session': new Queue('clinical-session', { connection: redisConnection }),
-    'package-projection': new Queue('package-projection', { connection: redisConnection }),
-    'billing-orchestrator': new Queue('billing-orchestrator', { connection: redisConnection }),
-    'integration-orchestrator': new Queue('integration-orchestrator', { connection: redisConnection }),
-    'lead-orchestrator-v2':    new Queue('lead-orchestrator-v2',    { connection: redisConnection }),
-    'whatsapp-message-response': new Queue('whatsapp-message-response', { connection: redisConnection }),
-    'whatsapp-inbound':          new Queue('whatsapp-inbound',          { connection: redisConnection }),
-    'whatsapp-auto-reply':       new Queue('whatsapp-auto-reply',       { connection: redisConnection }),
-    'lead-recovery':             new Queue('lead-recovery',             { connection: redisConnection }),
-    'context-builder':           new Queue('context-builder',           { connection: redisConnection }),
-    'conversation-state':        new Queue('conversation-state',        { connection: redisConnection }),
-    'whatsapp-intent-classifier': new Queue('whatsapp-intent-classifier', { connection: redisConnection }),
-    'whatsapp-fsm-router':        new Queue('whatsapp-fsm-router',        { connection: redisConnection }),
-};
+// Proxy lazy — cada acesso a queues['nome'] retorna o singleton via getQueue()
+export const queues = new Proxy({}, {
+    get(_, name) { return getQueue(String(name)); }
+});
 
 /**
  * Tipos de Eventos
@@ -656,12 +616,8 @@ if (size > 5000) {
     const jobs = [];
     
     for (const qName of queuesToPublish) {
-        const queue = queues[qName];
-        if (!queue) {
-            log.error('queue_not_found', `Fila ${qName} não encontrada`, { eventType });
-            continue;
-        }
-        
+        const queue = getQueue(qName);
+
         try {
             const job = await queue.add(eventType, jobData, jobOptions);
             jobs.push({ queue: qName, jobId: job.id });
@@ -858,11 +814,6 @@ function validatePayload(eventType, payload) {
 /**
  * Fecha todas as conexões de fila
  */
-export async function closeQueues() {
-    for (const [name, queue] of Object.entries(queues)) {
-        await queue.close();
-        console.log(`[EventPublisher] Fila ${name} fechada`);
-    }
-}
+export { closeQueues };
 
 

@@ -14,7 +14,7 @@
  * ============================================================================
  */
 
-import { Worker, Queue } from 'bullmq';
+import { Worker } from 'bullmq';
 import { insuranceBillingService } from '../services/insuranceBillingService.v2.js';
 import EventStore from '../../../models/EventStore.js';
 import Payment from '../../../models/Payment.js';
@@ -43,6 +43,7 @@ const RETRY_CONFIG = {
 };
 
 import { bullMqConnection as redisConnection } from '../../../config/redisConnection.js';
+import { getQueue } from '../../../infrastructure/queue/queueConfig.js';
 
 // =============================================================================
 // WORKER
@@ -500,7 +501,7 @@ function isRetryableError(error) {
 }
 
 async function moveToDLQ(job, error) {
-  const dlqQueue = new Queue('billing-dlq', { connection: redisConnection });
+  const dlqQueue = getQueue('billing-dlq');
   
   await dlqQueue.add(
     'failed-job',
