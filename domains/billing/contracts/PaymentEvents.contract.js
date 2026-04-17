@@ -1,3 +1,5 @@
+import { defineEventContract, V } from '../../../infrastructure/events/eventContractRegistry.js';
+
 /**
  * ============================================================================
  * PAYMENT EVENTS CONTRACT — Billing Domain
@@ -163,6 +165,28 @@ export function generatePaymentIdempotencyKey(eventType, payload) {
     const anchor = payload.paymentId || payload.correlationId || 'unknown';
     const action = eventType.toLowerCase().replace(/_/g, '-');
     return `payment:${anchor}:${action}`;
+}
+
+/**
+ * Registra todos os contracts de Payment no registry global
+ */
+export function registerPaymentEventContracts() {
+    for (const [eventType, contract] of Object.entries(PaymentEventTypes)) {
+        defineEventContract(eventType, {
+            version: contract.version,
+            required: contract.required,
+            optional: contract.optional,
+            description: contract.description,
+            validators: {
+                paymentId: V.isOptionalMongoId(),
+                patientId: V.isMongoId(),
+                appointmentId: V.isOptionalMongoId(),
+                sessionId: V.isOptionalMongoId(),
+                packageId: V.isOptionalMongoId(),
+                batchId: V.isOptionalMongoId(),
+            }
+        });
+    }
 }
 
 export default PaymentEventTypes;

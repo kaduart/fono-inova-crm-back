@@ -8,8 +8,10 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
+import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
 
 dotenv.config();
+bootstrapEventContracts();
 
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 

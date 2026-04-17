@@ -6,6 +6,8 @@
  * sem gastar tentativas inúteis.
  */
 
+import { ErrorCodes } from './errorCodes.js';
+
 // Códigos/mensagens que NUNCA devem ser retryados
 const NON_RETRYABLE_PATTERNS = [
     'INVALID_PAYLOAD',
@@ -42,7 +44,7 @@ const RETRYABLE_PATTERNS = [
  * Classe para erros que não devem ser retryados
  */
 export class NonRetryableError extends Error {
-    constructor(message, code = 'NON_RETRYABLE') {
+    constructor(message, code = ErrorCodes.NON_RETRYABLE) {
         super(message);
         this.name = 'NonRetryableError';
         this.code = code;
@@ -54,7 +56,7 @@ export class NonRetryableError extends Error {
  * Classe para erros permanentes (causa raiz já conhecida)
  */
 export class PermanentFailureError extends Error {
-    constructor(message, code = 'PERMANENT_FAILURE') {
+    constructor(message, code = ErrorCodes.PERMANENT_FAILURE) {
         super(message);
         this.name = 'PermanentFailureError';
         this.code = code;
@@ -107,7 +109,7 @@ export function assertPayloadField(value, fieldName, entity = '') {
         const prefix = entity ? `${entity}_` : '';
         throw new NonRetryableError(
             `${prefix.toUpperCase()}${fieldName.toUpperCase()}_MISSING`,
-            'INVALID_PAYLOAD'
+            ErrorCodes.MISSING_REQUIRED_FIELD
         );
     }
 }
@@ -124,6 +126,6 @@ export function throwIfNotFoundRetryable(entityName, entityId, attemptsMade, max
     }
     throw new NonRetryableError(
         `${entityName}_NOT_FOUND_FINAL: ${entityId}`,
-        `${entityName}_NOT_FOUND`
+        ErrorCodes.RESOURCE_NOT_FOUND
     );
 }

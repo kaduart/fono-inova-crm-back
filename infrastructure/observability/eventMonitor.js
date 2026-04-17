@@ -296,7 +296,24 @@ export async function getAlerts() {
         });
     }
 
-    // 5. APPOINTMENT_NOT_FOUND — separar temporário (race condition) vs definitivo
+    // 5. Schema mismatches (Event Contract Layer) nas últimas 2h
+    const schemaMismatches = await EventStore.countDocuments({
+        status: { $in: ['failed', 'dead_letter'] },
+        'error.code': { $in: ['SCHEMA_MISMATCH', 'MISSING_REQUIRED_FIELD', 'INVALID_FIELD_TYPE', 'UNKNOWN_EVENT_TYPE'] },
+        updatedAt: { $gte: new Date(now - 2 * 60 * 60 * 1000) }
+    });
+
+    if (schemaMismatches > 0) {
+        alerts.push({
+            level: 'error',
+            type: 'schema_mismatch',
+            message: `${schemaMismatches} evento(s) rejeitados por schema inválido (últimas 2h)`,
+            count: schemaMismatches,
+            category: 'contract_validation'
+        });
+    }
+
+    // 6. APPOINTMENT_NOT_FOUND — separar temporário (race condition) vs definitivo
     const [appointmentRetryable, appointmentPermanent] = await Promise.all([
         EventStore.countDocuments({
             aggregateType: 'appointment',

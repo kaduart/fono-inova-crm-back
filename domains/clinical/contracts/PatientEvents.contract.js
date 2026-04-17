@@ -9,6 +9,8 @@
  * - Mudanças devem incrementar a versão
  */
 
+import { defineEventContract, V } from '../../../infrastructure/events/eventContractRegistry.js';
+
 export const PatientEventTypes = {
   // ========================================
   // PATIENT LIFECYCLE
@@ -212,6 +214,27 @@ export function generateIdempotencyKey(eventType, payload) {
   return entityId 
     ? `patient:${patientId}:${action}:${entityId}`
     : `patient:${patientId}:${action}`;
+}
+
+/**
+ * Registra todos os contracts de Patient no registry global
+ */
+export function registerPatientEventContracts() {
+  for (const [eventType, contract] of Object.entries(PatientEventTypes)) {
+    defineEventContract(eventType, {
+      version: contract.version,
+      required: contract.required,
+      optional: contract.optional,
+      description: contract.description,
+      validators: {
+        patientId: V.isMongoId(),
+        appointmentId: V.isOptionalMongoId(),
+        sessionId: V.isOptionalMongoId(),
+        packageId: V.isOptionalMongoId(),
+        paymentId: V.isOptionalMongoId(),
+      }
+    });
+  }
 }
 
 export default PatientEventTypes;
