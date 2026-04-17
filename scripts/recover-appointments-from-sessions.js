@@ -95,6 +95,16 @@ async function run() {
       }
     }
 
+    // Buscar specialty real do doctor
+    let doctorSpecialty = session.sessionType || null;
+    if (!doctorSpecialty && session.doctor) {
+      const doctor = await db.collection('doctors').findOne(
+        { _id: session.doctor },
+        { projection: { specialty: 1 } }
+      );
+      doctorSpecialty = doctor?.specialty || null;
+    }
+
     const { operationalStatus, clinicalStatus } = mapStatus(session.status);
 
     const appointment = {
@@ -103,8 +113,8 @@ async function run() {
       doctor: session.doctor || null,
       date: session.date,
       time: session.time,
-      specialty: session.sessionType || 'fonoaudiologia',
-      sessionType: session.sessionType || 'fonoaudiologia',
+      specialty: doctorSpecialty,
+      sessionType: doctorSpecialty,
       serviceType: session.package ? 'package_session' : 'individual_session',
       operationalStatus,
       clinicalStatus,

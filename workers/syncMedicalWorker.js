@@ -17,8 +17,8 @@
  * - APPOINTMENT_CANCELLED → Ack (futuro: cancelar invoice se existir)
  */
 
-import { Worker, Queue } from 'bullmq';
-import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
+import { Worker } from 'bullmq';
+import { redisConnection, moveToDLQ, getQueue } from '../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../utils/logger.js';
 import EventStore from '../models/EventStore.js';
 
@@ -37,15 +37,6 @@ const CONFIG = {
   concurrency: 5
 };
 
-// DLQ para eventos que falham
-const dlqQueue = new Queue('sync-medical-dlq', {
-  connection: redisConnection,
-  defaultJobOptions: {
-    removeOnComplete: false,
-    removeOnFail: false,
-    attempts: 1
-  }
-});
 
 // Cache de eventos processados (idempotência em memória)
 const processedEvents = new Map();
@@ -310,7 +301,7 @@ async function handleAppointmentCancelled(payload, log) {
 // ============================================
 
 export async function listDLQMessages(limit = 100) {
-  const jobs = await dlqQueue.getJobs(['waiting'], 0, limit);
+  const jobs = await getQueue('sync-medical-dlq').getJobs(['waiting'], 0, limit);
   return jobs.map(job => ({
     id: job.id,
     eventType: job.data?.eventType,
@@ -321,7 +312,7 @@ export async function listDLQMessages(limit = 100) {
 }
 
 export async function reprocessDLQMessage(jobId) {
-  const job = await dlqQueue.getJob(jobId);
+  const job = await getQueue('sync-medical-dlq').getJob(jobId);
   if (!job) {
     throw new Error(`Job ${jobId} não encontrado na DLQ`);
   }
@@ -330,8 +321,7 @@ export async function reprocessDLQMessage(jobId) {
   await job.remove();
   
   // Adiciona novamente na fila principal
-  const mainQueue = new Queue('sync-medical', { connection: redisConnection });
-  await mainQueue.add(job.name, job.data, {
+  await getQueue('sync-medical').add(job.name, job.data, {
     jobId: `reprocess_${jobId}_${Date.now()}`
   });
 

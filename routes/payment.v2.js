@@ -681,4 +681,110 @@ router.get('/queue/status', auth, async (req, res) => {
     }
 });
 
+// ============================================
+// PATCH /api/v2/payments/:id
+// Atualiza pagamento existente - BLINDADO
+// ============================================
+router.patch('/:id', auth, async (req, res) => {
+    const { id } = req.params;
+    const { amount, paymentMethod, status, serviceType, specialty, paymentDate } = req.body;
+
+    // 1. Fail fast: ID válido?
+    if (!isValidObjectId(id)) {
+        return res.status(400).json({
+            success: false,
+            error: 'ID de pagamento inválido',
+            code: 'INVALID_PAYMENT_ID'
+        });
+    }
+
+    // 2. Fail fast: payload vazio?
+    const hasChanges = amount !== undefined ||
+                       paymentMethod !== undefined ||
+                       status !== undefined ||
+                       serviceType !== undefined ||
+                       specialty !== undefined ||
+                       paymentDate !== undefined;
+
+    if (!hasChanges) {
+        return res.status(400).json({
+            success: false,
+            error: 'Nenhum campo para atualizar',
+            code: 'NO_CHANGES'
+        });
+    }
+
+    try {
+        // 3. Buscar payment
+        const payment = await Payment.findById(id).lean();
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                error: 'Pagamento não encontrado',
+                code: 'PAYMENT_NOT_FOUND'
+            });
+        }
+
+        // 4. Montar update
+        const updateData = {
+            ...(amount !== undefined && { amount }),
+            ...(paymentMethod !== undefined && { paymentMethod }),
+            ...(status !== undefined && { status }),
+            ...(serviceType !== undefined && { serviceType }),
+            ...(specialty !== undefined && { specialty }),
+            ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
+            updatedAt: new Date()
+        };
+
+        // 🏦 FINANCIAL LOCK: se mudou para pago, precisa de paidAt
+        if (status !== undefined && ['paid', 'completed', 'confirmed'].includes(status) && !payment.paidAt) {
+            updateData.paidAt = new Date();
+        }
+
+        await Payment.findByIdAndUpdate(id, { $set: updateData });
+
+        // 5. Publicar evento PAYMENT_UPDATED
+        try {
+            await publishEvent(
+                EventTypes.PAYMENT_UPDATED,
+                {
+                    paymentId: id,
+                    patientId: payment.patient?.toString?.(),
+                    doctorId: payment.doctor?.toString?.(),
+                    amount: updateData.amount ?? payment.amount,
+                    status: updateData.status ?? payment.status,
+                    paymentMethod: updateData.paymentMethod ?? payment.paymentMethod,
+                    serviceType: updateData.serviceType ?? payment.serviceType,
+                    specialty: updateData.specialty ?? payment.specialty,
+                    paymentDate: updateData.paymentDate ?? payment.paymentDate,
+                    sessionId: payment.session?.toString?.(),
+                    appointmentId: payment.appointment?.toString?.(),
+                    packageId: payment.package?.toString?.(),
+                    previousStatus: payment.status,
+                    updatedAt: new Date().toISOString()
+                },
+                { correlationId: `v2_payment_patch_${id}_${Date.now()}` }
+            );
+        } catch (pubErr) {
+            logger.error(`[V2 PATCH ${id}] ⚠️ Falha ao publicar evento: ${pubErr.message}`);
+            // Não falha a requisição — evento é side-effect
+        }
+
+        const updated = await Payment.findById(id).populate('patient doctor session');
+        return res.json({
+            success: true,
+            data: updated,
+            message: 'Pagamento atualizado com sucesso'
+        });
+
+    } catch (error) {
+        logger.error(`[V2 PATCH ${id}] ❌ Erro: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: 'Erro ao atualizar pagamento',
+            code: 'PAYMENT_UPDATE_ERROR'
+        });
+    }
+});
+
 export default router;

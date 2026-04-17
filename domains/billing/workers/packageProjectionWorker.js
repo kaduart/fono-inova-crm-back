@@ -17,8 +17,8 @@
  * - PACKAGE_VIEW_REBUILD_REQUESTED → rebuild manual
  */
 
-import { Worker, Queue } from 'bullmq';
-import { redisConnection } from '../../../infrastructure/queue/queueConfig.js';
+import { Worker } from 'bullmq';
+import { redisConnection, getQueue } from '../../../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildPackageView, deletePackageView } from '../services/PackageProjectionService.js';
 
@@ -65,14 +65,6 @@ setInterval(() => {
 // DLQ: Fila de mensagens falhas
 // ============================================
 
-const dlqQueue = new Queue('package-projection-dlq', {
-  connection: redisConnection,
-  defaultJobOptions: {
-    removeOnComplete: false,
-    removeOnFail: false,
-    attempts: 1
-  }
-});
 
 // ============================================
 // MÉTRICAS (para monitoramento)
@@ -206,7 +198,7 @@ async function moveToDLQ(job, error) {
     }
   };
   
-  await dlqQueue.add('failed_job', dlqEntry);
+  await getQueue('package-projection-dlq').add('failed_job', dlqEntry);
   metrics.movedToDLQ++;
   
   logger.error(`[${correlationId}] 📦 Moved to DLQ`, {
@@ -412,7 +404,7 @@ packageProjectionWorker.on('failed', (job, err) => {
 // ============================================
 
 export async function listDLQMessages(limit = 100) {
-  const jobs = await dlqQueue.getJobs(['waiting'], 0, limit);
+  const jobs = await getQueue('package-projection-dlq').getJobs(['waiting'], 0, limit);
   return jobs.map(job => ({
     id: job.id,
     failedAt: job.data.metadata?.movedToDlqAt,
@@ -424,7 +416,7 @@ export async function listDLQMessages(limit = 100) {
 }
 
 export async function reprocessDLQMessage(jobId) {
-  const job = await dlqQueue.getJob(jobId);
+  const job = await getQueue('package-projection-dlq').getJob(jobId);
   
   if (!job) {
     throw new Error(`Job ${jobId} not found in DLQ`);
@@ -460,7 +452,7 @@ export async function reprocessDLQMessage(jobId) {
 }
 
 export async function getDLQStats() {
-  const counts = await dlqQueue.getJobCounts();
+  const counts = await getQueue('package-projection-dlq').getJobCounts();
   return {
     ...counts,
     metrics: { ...metrics }

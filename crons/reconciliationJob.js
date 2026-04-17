@@ -173,8 +173,7 @@ async function checkOrphanEvents() {
 
 async function checkDLQStatus() {
   // Verificar tamanho das DLQs
-  const { redisConnection } = await import('../infrastructure/queue/queueConfig.js');
-  const { Queue } = await import('bullmq');
+  const { getQueue } = await import('../infrastructure/queue/queueConfig.js');
 
   const dlqs = [
     'sync-medical-dlq',
@@ -185,10 +184,9 @@ async function checkDLQStatus() {
 
   for (const dlqName of dlqs) {
     try {
-      const queue = new Queue(dlqName, { connection: redisConnection });
+      const queue = getQueue(dlqName);
       const count = await queue.getWaitingCount();
       results.push({ name: dlqName, count });
-      await queue.close();
     } catch (error) {
       results.push({ name: dlqName, count: 0, error: error.message });
     }

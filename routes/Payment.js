@@ -15,6 +15,7 @@ import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMapp
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { invalidateDailyClosingCache, invalidateCacheForPayment } from '../services/dailyClosingCacheService.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { recordPaymentReceived, recordInsuranceBilled, recordInsuranceReceived } from '../services/financialLedgerService.js';
 
 const router = express.Router();
@@ -120,6 +121,7 @@ router.post('/', async (req, res) => {
         }
 
         // Criar pagamento com sessões futuras
+        const paymentStatus = status || 'paid';
         const paymentData = {
             patient: patientId,
             doctor: doctorId,
@@ -127,7 +129,8 @@ router.post('/', async (req, res) => {
             amount,
             paymentMethod,
             notes,
-            status: status || 'paid',
+            status: paymentStatus,
+            paymentDate: paymentDate ? new Date(paymentDate) : currentDate,
             createdAt: currentDate,
             updatedAt: currentDate,
             sessionType,
@@ -139,6 +142,11 @@ router.post('/', async (req, res) => {
             isAdvance: advanceSessions.length > 0
         };
 
+        // 🏦 FINANCIAL LOCK: paidAt é obrigatório quando status='paid'
+        if (['paid', 'completed', 'confirmed'].includes(paymentStatus)) {
+            paymentData.paidAt = currentDate;
+        }
+
         // Adiciona campos condicionais
         if (serviceType === 'session') {
             paymentData.session = sessionId;
@@ -149,6 +157,31 @@ router.post('/', async (req, res) => {
         }
 
         const payment = await Payment.create(paymentData);
+
+        // Publica evento PAYMENT_CREATED para projeções e workers reativos
+        try {
+            await publishEvent(
+                EventTypes.PAYMENT_CREATED,
+                {
+                    paymentId: payment._id.toString(),
+                    patientId: payment.patient?.toString?.(),
+                    doctorId: payment.doctor?.toString?.(),
+                    amount: payment.amount,
+                    status: payment.status,
+                    paymentMethod: payment.paymentMethod,
+                    serviceType: payment.serviceType,
+                    sessionType: payment.sessionType,
+                    packageId: payment.package?.toString?.(),
+                    sessionId: payment.session?.toString?.(),
+                    appointmentId: payment.appointment?.toString?.(),
+                    createdAt: payment.createdAt.toISOString()
+                },
+                { correlationId: `payment_create_${payment._id}_${Date.now()}` }
+            );
+            console.log(`[Payment POST] 📤 Evento PAYMENT_CREATED publicado: ${payment._id}`);
+        } catch (pubErr) {
+            console.error('[Payment POST] ⚠️ Falha ao publicar evento:', pubErr.message);
+        }
 
         // Invalida cache do daily-closing para a data do pagamento
         await invalidateCacheForPayment(payment);
@@ -527,6 +560,16 @@ router.patch('/:id', auth, async (req, res) => {
                 )
             );
         }
+
+        // 🔄 Garante que o appointment tenha o campo payment vinculado (consistência idempotente)
+        if (payment.appointment) {
+            essentialUpdates.push(
+                Appointment.updateOne(
+                    { _id: payment.appointment, $or: [{ payment: { $exists: false } }, { payment: null }] },
+                    { $set: { payment: payment._id, updatedAt: currentDate } }
+                )
+            );
+        }
         
         if (essentialUpdates.length > 0) {
             await Promise.all(essentialUpdates);
@@ -545,9 +588,36 @@ router.patch('/:id', auth, async (req, res) => {
                 : 'Pagamento atualizado com sucesso'
         });
         
-        // 🔥 BACKGROUND: Package status, advanceServices, cache
+        // 🔥 BACKGROUND: Package status, advanceServices, cache, eventos
         setImmediate(async () => {
             try {
+                // Publica evento PAYMENT_UPDATED para que workers de projeção atualizem views
+                try {
+                    await publishEvent(
+                        EventTypes.PAYMENT_UPDATED,
+                        {
+                            paymentId: id,
+                            patientId: payment.patient?.toString(),
+                            doctorId: payment.doctor?.toString(),
+                            amount: updateData.amount ?? payment.amount,
+                            status: updateData.status ?? payment.status,
+                            paymentMethod: updateData.paymentMethod ?? payment.paymentMethod,
+                            serviceType: updateData.serviceType ?? payment.serviceType,
+                            specialty: updateData.specialty ?? payment.specialty,
+                            paymentDate: updateData.paymentDate ?? payment.paymentDate,
+                            sessionId: payment.session?.toString(),
+                            appointmentId: payment.appointment?.toString(),
+                            packageId: payment.package?.toString(),
+                            previousStatus: payment.status,
+                            updatedAt: currentDate.toISOString()
+                        },
+                        { correlationId: `payment_patch_${id}_${Date.now()}` }
+                    );
+                    console.log(`[Payment PATCH] 📤 Evento PAYMENT_UPDATED publicado: ${id}`);
+                } catch (pubErr) {
+                    console.error('[Payment PATCH] ⚠️ Falha ao publicar evento:', pubErr.message);
+                }
+                
                 if (payment.package) {
                     await updatePackageStatus(payment.package, null).catch(err => console.error('[Payment BG] ⚠️ Package:', err.message));
                 }
@@ -757,6 +827,33 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                 }
             }
 
+            // 7) 📤 Publica evento PAYMENT_UPDATED para projeções
+            try {
+                await publishEvent(
+                    EventTypes.PAYMENT_UPDATED,
+                    {
+                        paymentId: payment._id.toString(),
+                        patientId: payment.patient?.toString?.(),
+                        doctorId: payment.doctor?.toString?.(),
+                        amount: payment.amount,
+                        status: 'paid',
+                        paymentMethod: payment.paymentMethod,
+                        serviceType: payment.serviceType,
+                        specialty: payment.specialty,
+                        paymentDate: payment.paymentDate,
+                        sessionId: payment.session?.toString?.(),
+                        appointmentId: payment.appointment?.toString?.(),
+                        packageId: payment.package?.toString?.(),
+                        previousStatus: existing.status,
+                        updatedAt: paidAt.toISOString()
+                    },
+                    { correlationId: `mark_paid_${payment._id}_${Date.now()}` }
+                );
+                console.log(`[mark-as-paid] 📤 Evento PAYMENT_UPDATED publicado: ${payment._id}`);
+            } catch (pubErr) {
+                console.error('[mark-as-paid] ⚠️ Falha ao publicar evento:', pubErr.message);
+            }
+
             return res.json({
                 success: true,
                 message: 'Pagamento marcado como pago com sucesso',
@@ -921,6 +1018,33 @@ router.patch('/session/:sessionId/mark-as-paid', auth, authorize(['admin', 'secr
                         console.log(`[session/mark-as-paid] PatientBalance quitado para appointment ${updated.appointment}`);
                     }
                 }
+            }
+
+            // 7) 📤 Publica evento PAYMENT_UPDATED para projeções
+            try {
+                await publishEvent(
+                    EventTypes.PAYMENT_UPDATED,
+                    {
+                        paymentId: updated._id.toString(),
+                        patientId: updated.patient?.toString?.(),
+                        doctorId: updated.doctor?.toString?.(),
+                        amount: updated.amount,
+                        status: 'paid',
+                        paymentMethod: updated.paymentMethod,
+                        serviceType: updated.serviceType,
+                        specialty: updated.specialty,
+                        paymentDate: updated.paymentDate,
+                        sessionId: updated.session?.toString?.(),
+                        appointmentId: updated.appointment?.toString?.(),
+                        packageId: updated.package?.toString?.(),
+                        previousStatus: existing.status,
+                        updatedAt: paidAt.toISOString()
+                    },
+                    { correlationId: `session_mark_paid_${updated._id}_${Date.now()}` }
+                );
+                console.log(`[session/mark-as-paid] 📤 Evento PAYMENT_UPDATED publicado: ${updated._id}`);
+            } catch (pubErr) {
+                console.error('[session/mark-as-paid] ⚠️ Falha ao publicar evento:', pubErr.message);
             }
 
             return res.json({ success: true, message: 'Pagamento marcado como pago com sucesso', data: updated });

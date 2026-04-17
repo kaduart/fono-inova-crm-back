@@ -9,8 +9,8 @@
  * - Observabilidade: logs detalhados + métricas
  */
 
-import { Worker, Queue } from 'bullmq';
-import { redisConnection } from '../../../infrastructure/queue/queueConfig.js';
+import { Worker } from 'bullmq';
+import { redisConnection, getQueue } from '../../../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildPatientView } from '../services/patientProjectionService.js';
 import PatientsView from '../../../models/PatientsView.js';
@@ -32,10 +32,6 @@ const RETRY_CONFIG = {
 };
 
 const dlqManager = new DLQManager(redisConnection);
-const dlqQueue = new Queue('patient-projection-dlq', {
-  connection: redisConnection,
-  defaultJobOptions: { removeOnComplete: false, removeOnFail: false }
-});
 
 // ============================================
 // WORKER
@@ -270,6 +266,18 @@ async function handleAppointmentEvent(patientId, eventType, correlationId) {
   
   const view = await buildPatientView(patientId, { correlationId });
   
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping appointment event — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
+  
   return {
     operation: 'rebuild_appointments',
     viewVersion: view.snapshot?.version,
@@ -285,6 +293,18 @@ async function handleSessionEvent(patientId, eventType, correlationId) {
   });
   
   const view = await buildPatientView(patientId, { correlationId });
+  
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping session event — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
   
   return {
     operation: 'rebuild_sessions',
@@ -309,6 +329,18 @@ async function handlePaymentCreated(payload, correlationId) {
 
     // ── Rebuild da patient view (sempre) ─────────────────────────────────────
     const view = await buildPatientView(patientId, { correlationId });
+
+    if (!view) {
+        logger.warn(`[${correlationId}] ⏭️ Skipping PAYMENT_CREATED — patient not found (eventual consistency)`, {
+            patientId,
+            paymentId
+        });
+        return {
+            operation: 'skip_patient_not_found',
+            patientId,
+            paymentId
+        };
+    }
 
     // ── Shadow update — replica exata do hook ────────────────────────────────
     if (appointmentId) {
@@ -505,7 +537,7 @@ patientProjectionWorker.on('failed', (job, err) => {
       event: job.data,
       error: err.message
     });
-    dlqQueue.add('failed-event', {
+    getQueue('patient-projection-dlq').add('failed-event', {
       originalJob: job.data,
       error: err.message,
       attempts,
