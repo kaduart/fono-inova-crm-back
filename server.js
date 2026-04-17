@@ -18,7 +18,11 @@ import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
 import { followupEvents, followupQueue, videoGenerationQueue, videoGenerationEvents } from "./config/bullConfig.js";
+import { bootstrapEventContracts } from "./infrastructure/events/bootstrapContracts.js";
 process.env.TZ = 'America/Sao_Paulo';
+
+// 📜 Registra schemas de eventos antes de tudo
+bootstrapEventContracts();
 
 // 🔧 Carregar .env ANTES de tudo (para ENABLE_WWWEB funcionar)
 const __filename = fileURLToPath(import.meta.url);
@@ -761,5 +765,34 @@ try {
 } catch (err) {
   console.error("⚠️ Falha ao inicializar eventos de fila:", err.message);
 }
+
+// ======================================================
+// 🛑 Graceful shutdown: libera lock de workers embedded
+// ======================================================
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 SIGTERM no server — parando workers embedados...');
+  if (process.env.ENABLE_WORKERS === 'true') {
+    try {
+      const { stopAllWorkers } = await import('./workers/index.js');
+      await stopAllWorkers();
+    } catch (err) {
+      console.error('Erro ao parar workers:', err.message);
+    }
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('\n🛑 SIGINT no server — parando workers embedados...');
+  if (process.env.ENABLE_WORKERS === 'true') {
+    try {
+      const { stopAllWorkers } = await import('./workers/index.js');
+      await stopAllWorkers();
+    } catch (err) {
+      console.error('Erro ao parar workers:', err.message);
+    }
+  }
+  process.exit(0);
+});
 
 
