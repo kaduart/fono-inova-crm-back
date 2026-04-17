@@ -8,11 +8,11 @@
  * Ou: import { startWatchdogWorker } from './watchdogBullmq.js'
  */
 
-import { Worker, Queue } from 'bullmq';
+import { Worker } from 'bullmq';
 import mongoose from 'mongoose';
 import EventStore from '../../models/EventStore.js';
 import Appointment from '../../models/Appointment.js';
-import { redisConnection } from '../queue/queueConfig.js';
+import { redisConnection, getQueue } from '../queue/queueConfig.js';
 import { createContextLogger } from '../../utils/logger.js';
 
 const log = createContextLogger('watchdog-bullmq', 'system');
@@ -33,7 +33,7 @@ export async function startWatchdogWorker() {
     await ensureMongoConnection();
     
     // Cria queue para agendar jobs
-    const queue = new Queue(WATCHDOG_QUEUE, { connection: redisConnection });
+    const queue = getQueue(WATCHDOG_QUEUE);
     
     // Remove jobs antigos e agenda novo
     await queue.obliterate({ force: true });
