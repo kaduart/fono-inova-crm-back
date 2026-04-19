@@ -448,7 +448,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             serviceDate: now,
                             'insurance.provider': appointment.insuranceProvider || 'Convênio',
                             'insurance.authorizationCode': appointment.authorizationCode || '',
-                            'insurance.status': 'pending_billing',
+                            'insurance.status': 'pending',
                             'insurance.grossAmount': insuranceValue,
                             updatedAt: now
                         }
@@ -470,7 +470,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     insurance: {
                         provider: appointment.insuranceProvider || 'Convênio',
                         authorizationCode: appointment.authorizationCode || '',
-                        status: 'pending_billing',
+                        status: 'pending',
                         grossAmount: insuranceValue
                     },
                     serviceDate: now,

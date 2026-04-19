@@ -966,7 +966,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         paymentData.insurance = {
           provider: insuranceProvider || appointment.insuranceProvider || '',
           authorizationCode: authorizationCode || appointment.authorizationCode || '',
-          status: 'pending_billing',
+          status: 'pending',
           grossAmount: Number(insuranceValue || appointment.insuranceValue || 0),
         };
       }
