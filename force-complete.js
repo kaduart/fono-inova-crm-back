@@ -86,10 +86,9 @@ async function forceComplete() {
         if (session && session.status !== 'completed') {
             console.log('✅ Completando sessão...');
             session.status = 'completed';
-            session.isPaid = true;
-            session.paymentStatus = 'paid';
-            session.paidAt = new Date();
-            session.visualFlag = 'ok';
+            session.isPaid = false;
+            session.paymentStatus = 'pending';
+            session.visualFlag = 'pending';
             await session.save();
             console.log('✅ Sessão completada\n');
         }
@@ -98,8 +97,8 @@ async function forceComplete() {
         console.log('✅ Atualizando appointment...');
         appointment.operationalStatus = 'confirmed';
         appointment.clinicalStatus = 'completed';
-        appointment.paymentStatus = 'paid';
-        appointment.visualFlag = 'ok';
+        appointment.paymentStatus = 'pending';
+        appointment.visualFlag = 'pending';
         appointment.completedAt = new Date();
         appointment.history.push({
             action: 'complete_manual_script',

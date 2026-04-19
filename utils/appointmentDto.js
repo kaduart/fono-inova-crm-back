@@ -57,9 +57,10 @@ export function mapAppointmentDTO(appointment) {
         _id: appointment._id?.toString?.() || appointment.id,
 
         // Status
-        operationalStatus: appointment.operationalStatus || 'scheduled',
+        // 🔥 converted é estado transitório interno — nunca expõe no contrato público
+        operationalStatus: appointment.operationalStatus === 'converted' ? 'scheduled' : (appointment.operationalStatus || 'scheduled'),
         clinicalStatus: appointment.clinicalStatus || 'pending',
-        status: appointment.status || appointment.operationalStatus || 'scheduled',
+        status: appointment.operationalStatus === 'converted' ? 'Agendado' : (appointment.status || appointment.operationalStatus || 'scheduled'),
 
         // Data / hora
         date: appointment.date,

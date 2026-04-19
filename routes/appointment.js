@@ -1046,7 +1046,8 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             .populate('patient', 'fullName phone email dateOfBirth')
             .populate('doctor', 'fullName specialty')
             .populate('package', 'totalSessions sessionsUsed')
-            .populate('session', 'status paymentStatus');
+            .populate('session', 'status paymentStatus')
+            .populate('payment', 'status amount paymentMethod');
 
         if (!appointment) {
             return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
@@ -1428,7 +1429,10 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 router.get('/history/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
-        const history = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).sort({ date: -1 });
+        const history = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } })
+            .sort({ date: -1 })
+            .populate('doctor', 'fullName specialty')
+            .populate('payment', 'status amount paymentMethod');
         res.json({ success: true, data: history.map(mapAppointmentDTO) });
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -2005,7 +2009,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 updateData.paymentStatus = 'package_paid';
             }
         } else {
-            updateData.paymentStatus = 'paid';
+            // 💰 NÃO assumimos pagamento — Payment é fonte de verdade
+            updateData.paymentStatus = 'pending';
+            updateData.visualFlag = 'pending';
         }
 
         // 💰 Atualizar sessionValue — para fiada, sempre sincroniza com balanceAmount

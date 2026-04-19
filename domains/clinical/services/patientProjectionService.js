@@ -102,13 +102,13 @@ export async function buildPatientView(patientId, options = {}) {
         .limit(200)
         .select('status amount createdAt')
         .lean(),
-      // Aggregation para totais financeiros (só completed/pending)
+      // Aggregation para totais financeiros (paid ou completed)
       Payment.aggregate([
-        { $match: { patientId: new mongoose.Types.ObjectId(patientId), status: 'completed' } },
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: { $in: ['paid', 'completed'] } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Payment.aggregate([
-        { $match: { patientId: new mongoose.Types.ObjectId(patientId), status: 'pending' } },
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'pending' } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       PatientBalance.findOne({ patient: patientId }).lean(),

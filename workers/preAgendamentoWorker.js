@@ -151,7 +151,7 @@ async function handleImported(payload, eventId) {
         const newPatient = await Patient.create({
             fullName: preAgendamento.patientInfo.name,
             phone: preAgendamento.patientInfo.phone || '',
-            birthDate: preAgendamento.patientInfo.birthDate || null,
+            dateOfBirth: preAgendamento.patientInfo.birthDate || null,
             email: preAgendamento.patientInfo.email || null,
             source: 'pre-agendamento-v2'
         });
@@ -186,15 +186,20 @@ async function handleImported(payload, eventId) {
         hybridResult.appointment.operationalStatus = 'scheduled';
         await hybridResult.appointment.save({ session: mongoSession });
         
-        // Vincula pré-agendamento ao appointment real
+        // Vincula pré-agendamento ao appointment real — marca como canceled com link de auditoria
         if (!hybridResult.appointment?._id) {
             throw new Error('Falha ao criar agendamento: appointment._id não retornado pelo hybridService');
         }
-        preAgendamento.operationalStatus = 'converted';
+        preAgendamento.operationalStatus = 'canceled';
         preAgendamento.doctor = null; // libera o slot para o appointment real
         preAgendamento.appointmentId = hybridResult.appointment._id;
         preAgendamento.importedBy = importedBy;
         preAgendamento.importedAt = new Date();
+        preAgendamento.metadata = {
+            ...preAgendamento.metadata,
+            convertedToAppointmentId: hybridResult.appointment._id,
+            convertedAt: new Date().toISOString()
+        };
         await preAgendamento.save({ session: mongoSession });
         
         await mongoSession.commitTransaction();

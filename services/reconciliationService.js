@@ -1,4 +1,5 @@
 // services/reconciliationService.js
+import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -40,6 +41,10 @@ export async function runReconciliation() {
         // 3. Status divergence
         const statusDivergence = await findStatusDivergence();
         report.inconsistencies.push(...statusDivergence);
+        
+        // 4. Ledger divergence (Payment vs PatientBalance)
+        const ledgerDivergence = await findLedgerDivergence();
+        report.inconsistencies.push(...ledgerDivergence);
         
         console.log(`[Reconciliation] ${report.inconsistencies.length} inconsistências encontradas`);
         
@@ -145,6 +150,113 @@ async function findStatusDivergence() {
     }
     
     return issues;
+}
+
+// ==============================================================================
+// CHECK 4: LEDGER DIVERGENCE (Payment vs PatientBalance)
+// ==============================================================================
+
+async function findLedgerDivergence() {
+    const issues = [];
+    
+    // Busca todos os PatientBalance com saldo > 0
+    const ledgers = await PatientBalance.find({
+        currentBalance: { $gt: 0 }
+    }).select('patient currentBalance').lean();
+    
+    for (const ledger of ledgers) {
+        const patientId = ledger.patient;
+        
+        // Soma payments pendentes deste paciente
+        const paymentsAgg = await Payment.aggregate([
+            { $match: { patient: patientId, status: 'pending' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        
+        const paymentsTotal = paymentsAgg[0]?.total || 0;
+        const ledgerTotal = ledger.currentBalance || 0;
+        const diff = Math.abs(paymentsTotal - ledgerTotal);
+        
+        // Se divergir mais de R$ 0.01, reporta
+        if (diff > 0.01) {
+            issues.push({
+                type: 'LEDGER_DIVERGENCE',
+                severity: diff > 100 ? 'critical' : diff > 10 ? 'high' : 'medium',
+                patientId: patientId.toString(),
+                paymentsTotal,
+                ledgerTotal,
+                diff,
+                autoFixable: false,
+                suggestedFix: 'Verificar payments pendentes vs lançamentos no ledger. Fonte da verdade: Payment.'
+            });
+        }
+    }
+    
+    // Também detecta payments órfãos sem session/appointment
+    const orphanPayments = await Payment.find({
+        status: 'pending',
+        session: null,
+        appointment: null
+    }).select('_id patient amount paymentDate').lean();
+    
+    for (const p of orphanPayments) {
+        issues.push({
+            type: 'ORPHAN_PAYMENT',
+            severity: 'medium',
+            paymentId: p._id.toString(),
+            patientId: p.patient?.toString(),
+            amount: p.amount,
+            paymentDate: p.paymentDate,
+            autoFixable: true,
+            suggestedFix: 'Linkar payment à session/appointment correspondente'
+        });
+    }
+    
+    return issues;
+}
+
+// ==============================================================================
+// API PÚBLICA: Reconciliação por paciente ou global
+// ==============================================================================
+
+export async function reconcilePatientLedger(patientId) {
+    const paymentsAgg = await Payment.aggregate([
+        { $match: { patient: new mongoose.Types.ObjectId(patientId), status: 'pending' } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    
+    const ledger = await PatientBalance.findOne({ patient: patientId }).select('currentBalance').lean();
+    
+    const paymentsTotal = paymentsAgg[0]?.total || 0;
+    const ledgerTotal = ledger?.currentBalance || 0;
+    const diff = Math.abs(paymentsTotal - ledgerTotal);
+    
+    return {
+        patientId,
+        paymentsTotal,
+        ledgerTotal,
+        diff,
+        isConsistent: diff <= 0.01,
+        paymentsCount: paymentsAgg[0]?.count || 0
+    };
+}
+
+export async function reconcileAllLedgers() {
+    const ledgers = await PatientBalance.find({ currentBalance: { $gt: 0 } }).select('patient').lean();
+    
+    const results = [];
+    for (const ledger of ledgers) {
+        const result = await reconcilePatientLedger(ledger.patient.toString());
+        if (!result.isConsistent) {
+            results.push(result);
+        }
+    }
+    
+    return {
+        totalChecked: ledgers.length,
+        inconsistent: results.length,
+        details: results
+    };
 }
 
 async function fixIssue(issue) {

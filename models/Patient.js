@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const patientSchema = new mongoose.Schema({
   fullName: { type: String, required: true, trim: true },
-  dateOfBirth: { type: Date, required: true },
+  dateOfBirth: { type: Date, required: false, default: null },
   birthCertificate: { type: String },
   doctor: {
     type: mongoose.Schema.Types.ObjectId,
@@ -50,6 +50,34 @@ const patientSchema = new mongoose.Schema({
   appointments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
   packages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],
   imageAuthorization: { type: Boolean, default: false },
+
+  // ─── FUNIL CRM ─────────────────────────────────────────────
+  status: {
+    type: String,
+    enum: ['lead', 'active', 'inactive'],
+    default: 'active'
+  },
+  isLead: {
+    type: Boolean,
+    default: false
+  },
+  createdFromLead: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lead',
+    default: null
+  },
+  convertedAt: {
+    type: Date,
+    default: null
+  },
+  firstSessionAt: {
+    type: Date,
+    default: null
+  },
+  lastSessionAt: {
+    type: Date,
+    default: null
+  }
 }, {
   toJSON: { virtuals: true },
   toObject: { virtuals: true },

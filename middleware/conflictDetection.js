@@ -62,27 +62,30 @@ function getDayKeyFromYMD(dateYMD) {
 // ✅ MIDDLEWARE: conflicts (doctor + patient)
 // ======================================================
 export const checkAppointmentConflicts = async (req, res, next) => {
-  const { doctorId, patientId, date, time } = req.body;
+  const { doctorId, patientId, date, time, operationalStatus, isNewPatient } = req.body;
   const appointmentId = req.params?.id;
 
-  if (!doctorId || !patientId || !date || !time) {
+  // 🔥 Pré-agendamentos podem não ter patientId (paciente ainda não cadastrado)
+  const isPreAgendamento = operationalStatus === 'pre_agendado' || isNewPatient === true;
+
+  if (!doctorId || (!isPreAgendamento && !patientId) || !date || !time) {
     return res.status(400).json({
       error: "Dados incompletos para verificação de conflitos",
       requiredFields: {
         doctorId: !doctorId ? "Campo obrigatório" : "OK",
-        patientId: !patientId ? "Campo obrigatório" : "OK",
+        patientId: (!isPreAgendamento && !patientId) ? "Campo obrigatório" : "OK",
         date: !date ? "Campo obrigatório" : "OK",
         time: !time ? "Campo obrigatório" : "OK",
       },
     });
   }
 
-  if (!isValidObjectId(doctorId) || !isValidObjectId(patientId)) {
+  if (!isValidObjectId(doctorId) || (!isPreAgendamento && !isValidObjectId(patientId))) {
     return res.status(400).json({
       error: "IDs inválidos",
       details: {
         doctorId: isValidObjectId(doctorId) ? "OK" : "ObjectId inválido",
-        patientId: isValidObjectId(patientId) ? "OK" : "ObjectId inválido",
+        patientId: (!isPreAgendamento && !isValidObjectId(patientId)) ? "ObjectId inválido" : "OK",
       },
     });
   }
@@ -105,7 +108,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 
   try {
     const doctorObjectId = toObjectId(doctorId);
-    const patientObjectId = toObjectId(patientId);
+    const patientObjectId = patientId && !isPreAgendamento ? toObjectId(patientId) : null;
     const excludeSelf = appointmentId ? { _id: { $ne: toObjectId(appointmentId) } } : {};
     
     // 🆕 NOVO: Duração do novo agendamento (padrão 40 min)
@@ -117,7 +120,8 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const dayRange = buildDayRange(date);
 
     // 🆕 NOVO: Buscar TODOS os agendamentos do dia para verificar sobreposição
-    const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all([
+    const queries = [
+      // Doctor appointments (sempre)
       Appointment.find({
         doctor: doctorObjectId,
         date: dayRange,
@@ -128,17 +132,20 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         .populate("patient", "fullName")
         .lean(),
 
-      Appointment.find({
-        patient: patientObjectId,
-        date: dayRange,
-        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-        ...excludeSelf,
-      })
-        .select("time duration doctor")
-        .populate("doctor", "fullName")
-        .lean(),
+      // Patient appointments (só se tem patientId)
+      patientObjectId
+        ? Appointment.find({
+            patient: patientObjectId,
+            date: dayRange,
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+            ...excludeSelf,
+          })
+            .select("time duration doctor")
+            .populate("doctor", "fullName")
+            .lean()
+        : Promise.resolve([]),
 
-      // Sessões de pacote do médico (modelo Session)
+      // Doctor sessions (sempre)
       Session.find({
         doctor: doctorObjectId,
         date: dayRange,
@@ -148,16 +155,20 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         .populate("patient", "fullName")
         .lean(),
 
-      // Sessões de pacote do paciente (modelo Session)
-      Session.find({
-        patient: patientObjectId,
-        date: dayRange,
-        status: { $nin: ['canceled'] },
-      })
-        .select("time doctor")
-        .populate("doctor", "fullName")
-        .lean(),
-    ]);
+      // Patient sessions (só se tem patientId)
+      patientObjectId
+        ? Session.find({
+            patient: patientObjectId,
+            date: dayRange,
+            status: { $nin: ['canceled'] },
+          })
+            .select("time doctor")
+            .populate("doctor", "fullName")
+            .lean()
+        : Promise.resolve([]),
+    ];
+
+    const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all(queries);
 
     // Combina appointments + sessions para checagem unificada (sessions usam duration 40 padrão)
     const allDoctorSlots = [...doctorAppointments, ...doctorSessions];
@@ -284,17 +295,10 @@ function appointmentBlocksSlot(slotTime, appointmentTime, durationMinutes = 40) 
 }
 
 // ======================================================
-// 🔧 FALLBACK: Slots padrão quando doctor não tem agenda
+// 🔧 FALLBACK: Quando doctor não tem agenda → vazio
 // ======================================================
 function generateDefaultSlots() {
-  return [
-    { time: "08:00", available: true },
-    { time: "09:00", available: true },
-    { time: "10:00", available: true },
-    { time: "14:00", available: true },
-    { time: "15:00", available: true },
-    { time: "16:00", available: true },
-  ];
+  return [];
 }
 
 // ======================================================
@@ -351,14 +355,14 @@ export async function calculateAvailableSlots(doctorId, date) {
   
   console.log(`[calculateAvailableSlots] Buscando agendamentos entre ${dayRange.$gte.toISOString()} e ${dayRange.$lte.toISOString()}`);
 
-  // 🚨 FIX: Buscar agendamentos COM DURAÇÃO para verificar sobreposição
+  // 🚨 FIX: Buscar agendamentos COM startDateTime/endDateTime (novo padrão Date-based)
   const [bookedAppointments, preAgendadosAtivos, packageSessions] = await Promise.all([
     Appointment.find({
       doctor: toObjectId(doctorId),
       date: dayRange,
       operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
     })
-      .select("time duration patient -_id")
+      .select("date time duration startDateTime endDateTime patient -_id")
       .lean(),
 
     // 🚨 FIX: pre_agendado agora BLOQUEIA o slot
@@ -370,21 +374,40 @@ export async function calculateAvailableSlots(doctorId, date) {
         { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
       ]
     })
-      .select("time duration patient -_id")
+      .select("date time duration startDateTime endDateTime patient -_id")
       .lean(),
 
-    // 🚨 FIX: Sessões de pacote (modelo Session) bloqueiam slots — nunca estavam sendo consultadas
+    // 🚨 FIX: Sessões de pacote (modelo Session) bloqueiam slots
     Session.find({
       doctor: toObjectId(doctorId),
       date: dayRange,
       status: { $nin: ['canceled'] },
     })
-      .select("time -_id")
+      .select("date time duration -_id")
       .lean(),
   ]);
 
-  // Combinar todos os agendamentos (sessions de pacote usam duração padrão de 40min)
-  const allAppointments = [...bookedAppointments, ...preAgendadosAtivos, ...packageSessions];
+  // 🕐 Helper: converte documento (Appointment/Session) para intervalo Date
+  function docToInterval(doc) {
+    if (doc.startDateTime && doc.endDateTime) {
+      return { start: new Date(doc.startDateTime), end: new Date(doc.endDateTime) };
+    }
+    // Fallback legado: monta de date + time + duration
+    const d = new Date(doc.date);
+    const t = String(doc.time || '').trim();
+    const [h, m] = t.split(':').map(Number);
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h || 0, m || 0, 0, 0);
+    const duration = doc.duration || 40;
+    const end = new Date(start.getTime() + duration * 60000);
+    return { start, end };
+  }
+
+  // Combinar todos os agendamentos/sessions como intervalos Date
+  const allIntervals = [
+    ...bookedAppointments,
+    ...preAgendadosAtivos,
+    ...packageSessions
+  ].map(docToInterval);
 
   // 🆕 NOVO: Montar array de slots com metadados
   const slotsWithMetadata = normalizedTimes.map((slotTime) => {
@@ -399,17 +422,20 @@ export async function calculateAvailableSlots(doctorId, date) {
       };
     }
 
-    // Prioridade 2: Verificar se está bloqueado por agendamento
-    const blockingAppt = allAppointments.find((appt) => {
-      const apptTime = normalizeTimeHHmm(appt.time);
-      if (!apptTime) return false;
-      
-      const apptDuration = appt.duration || 40;
-      return appointmentBlocksSlot(slotTime, apptTime, apptDuration);
+    // Prioridade 2: Date-based overlap
+    const slotDate = new Date(`${date}T12:00:00-03:00`);
+    const [sh, sm] = slotTime.split(':').map(Number);
+    const slotStart = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate(), sh, sm, 0, 0);
+    const slotEnd = new Date(slotStart.getTime() + 40 * 60000);
+
+    const isBlocked = allIntervals.some(ai => {
+      const sameDay = ai.start.toDateString() === slotStart.toDateString();
+      if (!sameDay) return false;
+      return ai.start < slotEnd && ai.end > slotStart;
     });
 
-    if (blockingAppt) {
-      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento às ${blockingAppt.time}`);
+    if (isBlocked) {
+      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento`);
       return {
         time: slotTime,
         available: false,
@@ -418,7 +444,7 @@ export async function calculateAvailableSlots(doctorId, date) {
       };
     }
 
-    // Disponível (ou feriado parcial onde este horário não é afetado)
+    // Disponível
     return {
       time: slotTime,
       available: true
@@ -429,6 +455,80 @@ export async function calculateAvailableSlots(doctorId, date) {
   console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
   return slotsWithMetadata;
+}
+
+// ======================================================
+// 🔧 FUNÇÃO REUTILIZÁVEL: Verifica overlap de slot
+// Usada em: create, update, reschedule, availability
+// ======================================================
+/**
+ * Verifica se existe conflito de horário para um determinado médico e data.
+ * Considera overlap de intervalos (não apenas time exato).
+ * 
+ * @param {Object} params
+ * @param {string} params.doctorId - ID do médico
+ * @param {string|Date} params.date - Data (YYYY-MM-DD ou Date)
+ * @param {string} params.time - Horário (HH:mm)
+ * @param {number} [params.duration=40] - Duração em minutos
+ * @param {string} [params.excludeAppointmentId] - ID para ignorar (edição/reschedule)
+ * @returns {Promise<Object|null>} - Retorna o primeiro conflito encontrado ou null
+ */
+export async function checkSlotOverlap({ doctorId, date, time, duration = 40, excludeAppointmentId = null }) {
+  if (!doctorId || !date || !time) return null;
+  if (!isValidObjectId(doctorId)) return null;
+
+  const timeHHmm = normalizeTimeHHmm(time);
+  if (!timeHHmm) return null;
+
+  const newStart = timeToMinutes(timeHHmm);
+  const newEnd = newStart + (parseInt(duration) || 40);
+
+  const dayRange = buildDayRange(date);
+  const doctorObjectId = toObjectId(doctorId);
+  const excludeFilter = excludeAppointmentId && isValidObjectId(excludeAppointmentId)
+    ? { _id: { $ne: toObjectId(excludeAppointmentId) } }
+    : {};
+
+  // Busca appointments + sessions do médico no dia
+  const [doctorAppointments, doctorSessions] = await Promise.all([
+    Appointment.find({
+      doctor: doctorObjectId,
+      date: dayRange,
+      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+      ...excludeFilter,
+    })
+      .select("time duration")
+      .lean(),
+    Session.find({
+      doctor: doctorObjectId,
+      date: dayRange,
+      status: { $nin: ['canceled'] },
+      ...excludeFilter,
+    })
+      .select("time duration")
+      .lean(),
+  ]);
+
+  const allSlots = [...doctorAppointments, ...doctorSessions];
+
+  const conflict = allSlots.find((slot) => {
+    const slotTime = normalizeTimeHHmm(slot.time);
+    if (!slotTime) return false;
+
+    const slotDuration = slot.duration || 40;
+    const slotStart = timeToMinutes(slotTime);
+    const slotEnd = slotStart + slotDuration;
+
+    const overlaps = newStart < slotEnd && newEnd > slotStart;
+
+    if (overlaps) {
+      console.log(`[checkSlotOverlap] CONFLITO: Novo ${timeHHmm}-${newEnd} sobrepõe existente ${slotTime}-${slotEnd}`);
+    }
+
+    return overlaps;
+  });
+
+  return conflict || null;
 }
 
 // ======================================================
