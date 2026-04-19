@@ -19,6 +19,7 @@ import { startSyncWorker } from './syncWorker.js';
 import { startLeadRecoveryWorker } from './leadRecoveryWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
 import { startDailyClosingWorker } from './dailyClosingWorker.js';
+import { startEvolutionWorker } from './evolutionWorker.js';
 import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
 import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
 
@@ -92,6 +93,7 @@ const GROUPS = {
   // CLINICAL
   // =========================
   clinical: async (workers) => {
+    workers.push(startEvolutionWorker());
     workers.push(patientWorker);
     workers.push(patientProjectionWorker);
     workers.push(startClinicalOrchestratorWorker());

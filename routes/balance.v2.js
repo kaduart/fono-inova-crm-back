@@ -13,6 +13,7 @@ import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { getPatientPendingPayments } from '../services/financialEngine.js';
 
 const router = express.Router();
 
@@ -56,33 +57,56 @@ router.get('/:patientId', auth, async (req, res) => {
         // Resolver patientId (pode vir do patients_view)
         const resolvedPatientId = await resolvePatientId(patientId);
 
-        // Busca ou cria balance
-        let balance = await PatientBalance.findOne({ patient: resolvedPatientId })
+        // Busca ou cria balance (LEGADO)
+        const balancePromise = PatientBalance.findOne({ patient: resolvedPatientId })
             .populate('transactions.registeredBy', 'fullName')
             .lean();
 
-        if (!balance) {
-            // Retorna vazio se não existe
-            return res.json({
-                success: true,
-                data: {
-                    patientId: resolvedPatientId,
-                    currentBalance: 0,
-                    totalDebited: 0,
-                    totalCredited: 0,
-                    transactions: []
+        // 🆕 V2 FINANCIAL ENGINE: source of truth via Payment
+        const financialPromise = getPatientPendingPayments(resolvedPatientId, { populate: true });
+
+        const [balance, financial] = await Promise.all([balancePromise, financialPromise]);
+
+        // Normaliza resposta legado
+        const legacyData = balance ? {
+            patientId,
+            currentBalance: balance.currentBalance,
+            totalDebited: balance.totalDebited || 0,
+            totalCredited: balance.totalCredited || 0,
+            transactions: balance.transactions || []
+        } : {
+            patientId: resolvedPatientId,
+            currentBalance: 0,
+            totalDebited: 0,
+            totalCredited: 0,
+            transactions: []
+        };
+
+        // Agrupa por especialidade para facilitar o frontend
+        const bySpecialty = {};
+        if (financial.items) {
+            for (const item of financial.items) {
+                const spec = item.specialty || 'N/A';
+                if (!bySpecialty[spec]) {
+                    bySpecialty[spec] = { total: 0, count: 0, items: [] };
                 }
-            });
+                bySpecialty[spec].total += item.amount || 0;
+                bySpecialty[spec].count += 1;
+                bySpecialty[spec].items.push(item);
+            }
         }
 
         res.json({
             success: true,
             data: {
-                patientId,
-                currentBalance: balance.currentBalance,
-                totalDebited: balance.totalDebited || 0,
-                totalCredited: balance.totalCredited || 0,
-                transactions: balance.transactions || []
+                ...legacyData,
+                // ── 🆕 V2 FINANCIAL: source of truth ──
+                v2_financial: {
+                    totalPendentes: financial.total,
+                    count: financial.count,
+                    bySpecialty,
+                    items: financial.items
+                }
             }
         });
 

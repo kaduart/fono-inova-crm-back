@@ -29,7 +29,11 @@ router.get('/', auth, async (req, res) => {
 
         const payments = await Payment.find({
             ...paymentBaseFilter,
-            financialDate: { $gte: start, $lte: end }
+            $or: [
+                { financialDate: { $gte: start, $lte: end } },
+                { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+            ]
         }).populate('patient', 'fullName').lean();
 
         // ============================================================

@@ -3553,7 +3553,9 @@ async function getOrCreateBalance(patientId) {
 }
 
 // GET /api/payments/balance/:patientId
+// ⚠️ DEPRECATED: Use /v2/balance/:patientId (financialEngine - Payment-based)
 router.get('/balance/:patientId', auth, async (req, res) => {
+    console.warn('[DEPRECATED] V1 /payments/balance/:patientId chamado. Migrar para /v2/balance/:patientId');
     try {
         const { patientId } = req.params;
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
@@ -3588,7 +3590,9 @@ router.get('/balance/:patientId', auth, async (req, res) => {
 });
 
 // POST /api/payments/balance/:patientId/debit
+// ⚠️ DEPRECATED: Use /v2/balance/:patientId/debit
 router.post('/balance/:patientId/debit', auth, async (req, res) => {
+    console.warn('[DEPRECATED] V1 /payments/balance/:patientId/debit chamado. Migrar para /v2/balance/:patientId/debit');
     const mongoSession = await mongoose.startSession();
     try {
         await mongoSession.startTransaction();
@@ -3650,7 +3654,9 @@ router.post('/balance/:patientId/debit', auth, async (req, res) => {
 });
 
 // POST /api/payments/balance/:patientId/payment
+// ⚠️ DEPRECATED: Use /v2/balance/:patientId/credit ou financialEngine
 router.post('/balance/:patientId/payment', auth, async (req, res) => {
+    console.warn('[DEPRECATED] V1 /payments/balance/:patientId/payment chamado. Migrar para /v2/balance/:patientId/credit');
     const mongoSession = await mongoose.startSession();
     try {
         await mongoSession.startTransaction();
@@ -3694,8 +3700,10 @@ router.post('/balance/:patientId/payment', auth, async (req, res) => {
 });
 
 // POST /api/payments/balance/:patientId/payment-multi
+// ⚠️ DEPRECATED: Use /api/v2/payments/balance/:patientId/multi
 // Aceita múltiplas formas de pagamento em uma única transação
 router.post('/balance/:patientId/payment-multi', auth, async (req, res) => {
+    console.warn('[DEPRECATED] V1 /payments/balance/:patientId/payment-multi chamado. Migrar para /v2/payments/balance/:patientId/multi');
     const { patientId } = req.params;
     const { payments, debitIds, totalAmount } = req.body;
     
@@ -4112,7 +4120,9 @@ router.patch('/balance/:patientId/transaction/:transactionId', auth, async (req,
 });
 
 // GET /api/payments/balance/debtors
+// ⚠️ DEPRECATED: Use /v2/financial/dashboard com v2_financial.byPatient
 router.get('/balance/debtors', auth, async (req, res) => {
+    console.warn('[DEPRECATED] V1 /payments/balance/debtors chamado. Migrar para /v2/financial/dashboard');
     try {
         const debtors = await PatientBalance.find({ currentBalance: { $gt: 0 } })
             .populate('patient', 'fullName phone email')

@@ -15,6 +15,8 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
+import Patient from '../models/Patient.js';
+import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
@@ -38,6 +40,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         evolution = '',
         userId,
         addToBalance = false,
+        balanceAmount,
+        balanceDescription,
         correlationId = `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     } = options;
 
@@ -108,7 +112,9 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         packagePaymentType: packageData?.paymentType
     });
     
-    const sessionValue = options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0;
+    const sessionValue = (addToBalance && balanceAmount > 0)
+        ? balanceAmount
+        : (options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0);
     
     // 🚨 VALIDAÇÃO: liminar exige sessionValue > 0 (consome crédito)
     if (billingType === 'liminar' && (!sessionValue || sessionValue <= 0)) {
@@ -194,11 +200,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 sessionUpdate.paymentMethod = 'convenio';
                 sessionUpdate.paidAt = new Date();
             } else {
-                // 💰 Per-session: depende se pagou no ato ou ficou fiado (tudo unpaid se não pago)
-                sessionUpdate.isPaid = paidNow;
-                sessionUpdate.paymentStatus = paidNow ? 'paid' : 'unpaid';
-                sessionUpdate.paymentOrigin = paidNow ? 'cash' : 'balance';
-                if (paidNow) sessionUpdate.paidAt = new Date();
+                // 💰 Per-session: NÃO assumimos pagamento. Payment é fonte de verdade.
+                sessionUpdate.isPaid = false;
+                sessionUpdate.paymentStatus = addToBalance ? 'unpaid' : 'pending';
+                sessionUpdate.paymentOrigin = addToBalance ? 'balance' : 'cash';
             }
             
             await Session.findByIdAndUpdate(
@@ -539,6 +544,48 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     patientId: appointment.patient?._id?.toString(),
                     newBalance: balanceResult ? balanceResult.currentBalance : sessionValue
                 });
+            }
+        }
+
+        // 🔄 ATUALIZAR LEAD → PACIENTE (primeira sessão completa)
+        if (appointment.patient?._id) {
+            try {
+                const patient = await Patient.findById(appointment.patient._id).session(mongoSession);
+                if (patient) {
+                    // Converte lead em paciente ativo
+                    if (patient.status === 'lead' || patient.isLead === true) {
+                        patient.status = 'active';
+                        patient.isLead = false;
+                        patient.convertedAt = new Date();
+                        console.log(`[CompleteSessionV2] 🎯 Lead convertido para paciente: ${patient._id} (${patient.fullName})`);
+                    }
+                    
+                    // Atualiza timestamps de sessão
+                    if (!patient.firstSessionAt) {
+                        patient.firstSessionAt = new Date();
+                    }
+                    patient.lastSessionAt = new Date();
+                    
+                    await patient.save({ session: mongoSession });
+
+                    // 🔄 CONVERTER LEAD vinculado (funil real)
+                    const lead = await Lead.findOne({
+                        $or: [
+                            { convertedToPatient: patient._id },
+                            { _id: patient.createdFromLead }
+                        ]
+                    }).session(mongoSession);
+
+                    if (lead) {
+                        lead.convertedToPatient = patient._id;
+                        lead.stage = 'paciente';
+                        lead.status = 'virou_paciente';
+                        await lead.save({ session: mongoSession });
+                        console.log(`[CompleteSessionV2] 🎯 Lead convertido no funil: ${lead._id} → Patient ${patient._id}`);
+                    }
+                }
+            } catch (leadErr) {
+                console.warn(`[CompleteSessionV2] ⚠️ Erro ao atualizar patient/lead (não crítico):`, leadErr.message);
             }
         }
 

@@ -237,5 +237,17 @@ evolutionSchema.pre('save', function (next) {
     next();
 });
 
+// 🔒 Índices únicos para prevenir duplicatas
+// 1. Cada appointment só pode ter 1 evolution
+// 2. Cada paciente só pode ter 1 evolution por dia com o mesmo profissional
+evolutionSchema.index(
+    { appointmentId: 1 },
+    { unique: true, sparse: true, name: 'unique_evolution_per_appointment' }
+);
+evolutionSchema.index(
+    { patient: 1, date: 1, doctor: 1 },
+    { unique: true, name: 'unique_evolution_per_session' }
+);
+
 const Evolution = mongoose.model('Evolution', evolutionSchema);
 export default Evolution;

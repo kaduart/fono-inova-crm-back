@@ -22,6 +22,7 @@ import { calculateDoctorCommission } from '../services/commissionService.js';
 import financialMetricsService from '../services/financialMetrics.service.js';
 import financialSnapshotService from '../services/financialSnapshot.service.js';
 import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
+import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
 
 const router = express.Router();
@@ -973,25 +974,25 @@ async function calculateRealTime(year, month) {
 }
 
 async function calculateAReceber(year, month) {
-    const startOfMonth = moment.tz([year, month - 1], TIMEZONE).startOf('month');
-    const endOfMonth = moment.tz([year, month - 1], TIMEZONE).endOf('month');
+    const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
+    const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
 
-    const sessoes = await Session.find({
-        date: { $gte: startOfMonth.utc().toDate(), $lte: endOfMonth.utc().toDate() },
-        status: 'completed',
+    // 🆕 Fonte de verdade: Payment (V1) — convênios pendentes
+    const payments = await Payment.find({
+        status: 'pending',
         $or: [
-            { paymentMethod: 'convenio' },
             { billingType: 'convenio' },
-            { insuranceGuide: { $exists: true, $ne: null } }
+            { paymentMethod: 'convenio' },
+            { 'insurance.status': { $in: ['pending_billing', 'billed', 'partial'] } }
         ],
         $or: [
-            { isPaid: false },
-            { isPaid: { $exists: false } },
-            { paymentStatus: { $in: ['pending', 'pending_receipt'] } }
+            { paymentDate: { $gte: startStr, $lte: endStr } },
+            { serviceDate: { $gte: startStr, $lte: endStr } },
+            { createdAt: { $gte: moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate(), $lte: moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate() } }
         ]
-    }).populate('package', 'insuranceGrossAmount').lean();
+    }).lean();
 
-    const total = sessoes.reduce((sum, s) => sum + (s.package?.insuranceGrossAmount || s.sessionValue || 0), 0);
+    const total = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
     return { total: parseFloat(total.toFixed(2)), mesAtual: parseFloat(total.toFixed(2)), historico: 0 };
 }
 
@@ -1328,221 +1329,161 @@ function calculateIndicadores(caixa, producao, despesasTotal, metas) {
 async function calculatePendentes(year, month) {
     const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
     const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
-    const startDate = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
-    const endDate = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
 
-    // ───────────────────────────────────────────────
-    // 1. CONVÊNIO PENDENTE (via FinancialLedger — ledger as source of truth)
-    // ───────────────────────────────────────────────
-    const convenioLedger = await FinancialLedger.aggregate([
-        {
-            $match: {
-                type: 'revenue_recognition',
-                billingType: 'convenio',
-                occurredAt: { $gte: startDate, $lte: endDate }
-            }
-        },
-        {
-            // Exclui se já houve recebimento de convênio
-            $lookup: {
-                from: 'financial_ledger',
-                let: { sessionId: '$session' },
-                pipeline: [
-                    {
-                        $match: {
-                            type: 'insurance_received',
-                            $expr: { $eq: ['$session', '$$sessionId'] }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'received'
-            }
-        },
-        { $match: { received: { $size: 0 } } },
-        {
-            // Verifica se já foi faturado para definir status
-            $lookup: {
-                from: 'financial_ledger',
-                let: { sessionId: '$session' },
-                pipeline: [
-                    {
-                        $match: {
-                            type: 'insurance_billed',
-                            $expr: { $eq: ['$session', '$$sessionId'] }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'billed'
-            }
-        },
-        {
-            $lookup: {
-                from: 'sessions',
-                localField: 'session',
-                foreignField: '_id',
-                as: 'sessionDoc'
-            }
-        },
-        { $unwind: { path: '$sessionDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $lookup: {
-                from: 'patients',
-                localField: 'patient',
-                foreignField: '_id',
-                as: 'patientDoc'
-            }
-        },
-        { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $lookup: {
-                from: 'payments',
-                let: { sessionId: '$session' },
-                pipeline: [
-                    {
-                        $match: {
-                            billingType: 'convenio',
-                            $expr: { $eq: ['$session', '$$sessionId'] }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'paymentDoc'
-            }
-        },
-        { $unwind: { path: '$paymentDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $project: {
-                sessionId: '$session',
-                paymentId: '$paymentDoc._id',
-                data: { $ifNull: ['$sessionDoc.date', '$occurredAt'] },
-                hora: '$sessionDoc.time',
-                paciente: { $ifNull: ['$patientDoc.fullName', 'Paciente'] },
-                convenio: {
-                    $ifNull: [
-                        '$sessionDoc.package.insuranceProvider',
-                        '$sessionDoc.package.insuranceCompany',
-                        '$paymentDoc.insurance.provider',
-                        '$metadata.provider',
-                        'Convênio'
-                    ]
-                },
-                valor: '$amount',
-                status: { $cond: [{ $gt: [{ $size: '$billed' }, 0] }, 'billed', 'pending_billing'] }
-            }
-        }
-    ]);
+    // 🆕 VALIDAÇÃO: Busca TODOS os pendentes para auditoria
+    const allPendingRaw = await Payment.find({ status: 'pending' })
+        .select('_id amount paymentDate serviceDate createdAt appointment patient billingType paymentMethod')
+        .lean();
+    
+    const allPendingTotal = allPendingRaw.reduce((s, p) => s + (p.amount || 0), 0);
+    console.log(`[DashboardV3][AUDIT] Todos os payments pending no BD: ${allPendingRaw.length} items, total: ${allPendingTotal}`);
+
+    // 🆕 Fonte de verdade: Payment (V1) — BUSCA AMPLA para não perder dados
+    // Problema: payments criados em meses anteriores para sessões deste mês
+    // Solução: busca todos os pending e filtra no JS pela data do appointment/payment
+    const paymentsAll = await Payment.find({ status: 'pending' })
+        .populate('patient', 'fullName')
+        .populate('doctor', 'fullName specialty')
+        .populate('appointment', 'date time')
+        .lean();
 
     let convenioTotal = 0;
-    const convenioItems = convenioLedger.map(item => {
-        convenioTotal += item.valor || 0;
-        return {
-            sessionId: item.sessionId,
-            paymentId: item.paymentId,
-            data: item.data,
-            hora: item.hora,
-            paciente: item.paciente,
-            convenio: item.convenio,
-            valor: parseFloat((item.valor || 0).toFixed(2)),
-            status: item.status
-        };
-    });
-
-    // ───────────────────────────────────────────────
-    // 2. PARTICULAR/ME PENDENTE (via FinancialLedger — ledger as source of truth)
-    // ───────────────────────────────────────────────
-    const particularLedger = await FinancialLedger.aggregate([
-        {
-            $match: {
-                type: 'revenue_recognition',
-                billingType: 'particular',
-                occurredAt: { $gte: startDate, $lte: endDate }
-            }
-        },
-        {
-            // Só inclui se NÃO existe payment_received para essa session
-            $lookup: {
-                from: 'financial_ledger',
-                let: { sessionId: '$session' },
-                pipeline: [
-                    {
-                        $match: {
-                            type: 'payment_received',
-                            $expr: { $eq: ['$session', '$$sessionId'] }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'payment'
-            }
-        },
-        { $match: { payment: { $size: 0 } } },
-        {
-            $lookup: {
-                from: 'sessions',
-                localField: 'session',
-                foreignField: '_id',
-                as: 'sessionDoc'
-            }
-        },
-        { $unwind: { path: '$sessionDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $lookup: {
-                from: 'patients',
-                localField: 'patient',
-                foreignField: '_id',
-                as: 'patientDoc'
-            }
-        },
-        { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $lookup: {
-                from: 'payments',
-                let: { sessionId: '$session' },
-                pipeline: [
-                    {
-                        $match: {
-                            billingType: 'particular',
-                            $expr: { $eq: ['$session', '$$sessionId'] }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'paymentDoc'
-            }
-        },
-        { $unwind: { path: '$paymentDoc', preserveNullAndEmptyArrays: true } },
-        {
-            $project: {
-                sessionId: '$session',
-                paymentId: '$paymentDoc._id',
-                data: { $ifNull: ['$sessionDoc.date', '$occurredAt'] },
-                hora: '$sessionDoc.time',
-                paciente: { $ifNull: ['$patientDoc.fullName', 'Paciente'] },
-                paymentMethod: { $ifNull: ['$sessionDoc.paymentMethod', '$metadata.paymentMethod', 'particular'] },
-                valor: '$amount',
-                status: { $literal: 'pending_payment' }
-            }
-        }
-    ]);
-
     let particularTotal = 0;
-    const particularItems = particularLedger.map(item => {
-        particularTotal += item.valor || 0;
-        return {
-            sessionId: item.sessionId,
-            paymentId: item.paymentId,
-            data: item.data,
-            hora: item.hora,
-            paciente: item.paciente,
-            paymentMethod: item.paymentMethod,
-            valor: parseFloat((item.valor || 0).toFixed(2)),
-            status: item.status
+    const convenioItems = [];
+    const particularItems = [];
+    const skippedAudit = [];
+
+    for (const p of paymentsAll) {
+        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio' || (p.insurance && p.insurance.status);
+        const valor = p.amount || 0;
+
+        // Determina a data relevante para filtro de mês
+        const dataRef = p.appointment?.date || (p.paymentDate ? moment(p.paymentDate).format('YYYY-MM-DD') : null) || (p.serviceDate ? moment(p.serviceDate).format('YYYY-MM-DD') : null);
+        
+        // Se não tem data de referência, inclui mesmo assim (payment órfão)
+        const dentroDoMes = !dataRef || (dataRef >= startStr && dataRef <= endStr);
+
+        if (!dentroDoMes) {
+            skippedAudit.push({
+                _id: p._id.toString(),
+                amount: valor,
+                dataRef,
+                patient: p.patient?.fullName,
+                reason: 'FORA_DO_MES'
+            });
+            continue;
+        }
+
+        const item = {
+            sessionId: p._id,
+            data: dataRef || moment(p.createdAt).format('YYYY-MM-DD'),
+            hora: p.appointment?.time || '',
+            paciente: p.patient?.fullName || 'Paciente',
+            valor: parseFloat((valor || 0).toFixed(2)),
+            status: p.status
         };
-    });
+
+        if (isConvenio) {
+            item.convenio = p.insurance?.provider || p.insurance?.insuranceCompany || 'Convênio';
+            convenioTotal += valor;
+            convenioItems.push(item);
+        } else {
+            item.paymentMethod = p.paymentMethod || 'particular';
+            particularTotal += valor;
+            particularItems.push(item);
+        }
+    }
+
+    if (skippedAudit.length > 0) {
+        console.log(`[DashboardV3][AUDIT] ${skippedAudit.length} payments pending FORA do mês ${startStr}~${endStr}:`, skippedAudit.slice(0, 10));
+    }
 
     const total = convenioTotal + particularTotal;
+    console.log(`[DashboardV3][AUDIT] No mês ${startStr}~${endStr}: particular=${particularItems.length} convenio=${convenioItems.length} total=${total}`);
+
+    // ── 🆕 DÉBITOS VENCIDOS: apenas data <= hoje (sessões que já deveriam ter sido pagas) ──
+    const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+    const convenioVencidos = convenioItems.filter(i => i.data && i.data <= hoje);
+    const particularVencidos = particularItems.filter(i => i.data && i.data <= hoje);
+    const vencidosTotal = convenioVencidos.reduce((s, i) => s + i.valor, 0) + particularVencidos.reduce((s, i) => s + i.valor, 0);
+    console.log(`[DashboardV3][AUDIT] Vencidos até ${hoje}: particular=${particularVencidos.length} convenio=${convenioVencidos.length} total=${vencidosTotal}`);
+
+    // ── 🆕 V2 FINANCIAL ENGINE: agrupamento por paciente + especialidade correta ──
+    // Passa todos os pending do mês para o engine (sem filtro de data, pois já filtramos)
+    const monthPayments = [...convenioItems, ...particularItems].map(i => i.sessionId);
+    const enginePayments = paymentsAll.filter(p => monthPayments.includes(p._id.toString()));
+    
+    // Monta resultado do engine manualmente a partir dos payments já filtrados
+    const byPatient = {};
+    const byDoctor = {};
+    const bySpecialty = {};
+    const byBillingType = { particular: { total: 0, count: 0, items: [] }, convenio: { total: 0, count: 0, items: [] } };
+
+    for (const p of enginePayments) {
+        const valor = p.amount || 0;
+        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio' || (p.insurance && p.insurance.status);
+        const btype = isConvenio ? 'convenio' : 'particular';
+        
+        // byPatient
+        const pid = p.patient?._id?.toString() || p.patientId;
+        if (pid) {
+            if (!byPatient[pid]) {
+                byPatient[pid] = {
+                    patient: p.patient || { fullName: 'Desconhecido', _id: pid },
+                    patientId: pid,
+                    total: 0,
+                    count: 0,
+                    items: []
+                };
+            }
+            byPatient[pid].total += valor;
+            byPatient[pid].count += 1;
+            byPatient[pid].items.push({
+                _id: p._id,
+                amount: valor,
+                status: p.status,
+                paymentMethod: p.paymentMethod,
+                billingType: p.billingType,
+                paymentDate: p.paymentDate,
+                serviceDate: p.serviceDate,
+                data: p.appointment?.date || p.paymentDate,
+                hora: p.appointment?.time || '',
+                specialty: p.doctor?.specialty || p.serviceType || p.sessionType || 'N/A',
+                doctor: p.doctor || null,
+                appointment: p.appointment || null,
+                notes: p.notes
+            });
+        }
+
+        // byDoctor
+        const did = p.doctor?._id?.toString();
+        if (did) {
+            if (!byDoctor[did]) {
+                byDoctor[did] = {
+                    doctor: p.doctor,
+                    doctorId: did,
+                    total: 0,
+                    count: 0,
+                    items: []
+                };
+            }
+            byDoctor[did].total += valor;
+            byDoctor[did].count += 1;
+            byDoctor[did].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
+        }
+
+        // bySpecialty
+        const spec = p.doctor?.specialty || p.serviceType || p.sessionType || 'N/A';
+        if (!bySpecialty[spec]) bySpecialty[spec] = { total: 0, count: 0, items: [] };
+        bySpecialty[spec].total += valor;
+        bySpecialty[spec].count += 1;
+        bySpecialty[spec].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
+
+        // byBillingType
+        byBillingType[btype].total += valor;
+        byBillingType[btype].count += 1;
+        byBillingType[btype].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
+    }
 
     return {
         total: parseFloat(total.toFixed(2)),
@@ -1555,6 +1496,29 @@ async function calculatePendentes(year, month) {
             total: parseFloat(particularTotal.toFixed(2)),
             count: particularItems.length,
             items: particularItems
+        },
+        // 🆕 DÉBITOS VENCIDOS: apenas sessões com data <= hoje
+        vencidos: {
+            total: parseFloat(vencidosTotal.toFixed(2)),
+            convenio: {
+                total: parseFloat(convenioVencidos.reduce((s, i) => s + i.valor, 0).toFixed(2)),
+                count: convenioVencidos.length,
+                items: convenioVencidos
+            },
+            particular: {
+                total: parseFloat(particularVencidos.reduce((s, i) => s + i.valor, 0).toFixed(2)),
+                count: particularVencidos.length,
+                items: particularVencidos
+            }
+        },
+        // ── COMPAT V2: estrutura nova para frontend moderno ──
+        v2_financial: {
+            total,
+            count: enginePayments.length,
+            byPatient,
+            byDoctor,
+            bySpecialty,
+            byBillingType
         }
     };
 }
