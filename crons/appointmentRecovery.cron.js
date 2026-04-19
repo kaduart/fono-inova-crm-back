@@ -18,7 +18,7 @@ async function recoverStuckAppointments() {
   const stuckAppointments = await Appointment.find({
     operationalStatus: { $in: ['processing_complete', 'processing_cancel', 'processing_create'] },
     updatedAt: { $lt: fiveMinutesAgo }
-  }).select('_id operationalStatus patient date time updatedAt');
+  }).select('_id operationalStatus patient date time updatedAt').limit(1000);
 
   if (stuckAppointments.length === 0) {
     return { reset: 0, total: 0 };

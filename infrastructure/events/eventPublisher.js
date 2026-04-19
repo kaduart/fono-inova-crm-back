@@ -153,6 +153,14 @@ export const EventTypes = {
     PATIENT_CREATE_FAILED: 'PATIENT_CREATE_FAILED',
     PATIENT_VIEW_REBUILD_REQUESTED: 'PATIENT_VIEW_REBUILD_REQUESTED',
     
+    // 🧬 Evolution V2
+    EVOLUTION_CREATE_REQUESTED: 'EVOLUTION_CREATE_REQUESTED',
+    EVOLUTION_UPDATE_REQUESTED: 'EVOLUTION_UPDATE_REQUESTED',
+    EVOLUTION_DELETE_REQUESTED: 'EVOLUTION_DELETE_REQUESTED',
+    EVOLUTION_CREATED: 'EVOLUTION_CREATED',
+    EVOLUTION_UPDATED: 'EVOLUTION_UPDATED',
+    EVOLUTION_DELETED: 'EVOLUTION_DELETED',
+    
     // 👨‍⚕️ Doctors V2
     DOCTOR_CREATE_REQUESTED: 'DOCTOR_CREATE_REQUESTED',
     DOCTOR_UPDATE_REQUESTED: 'DOCTOR_UPDATE_REQUESTED',
@@ -237,6 +245,11 @@ export const eventToQueueMap = {
     // Intenções → Workers de orquestração
     [EventTypes.APPOINTMENT_REQUESTED]: 'appointment-processing',
     [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'create-appointment-processing',
+    
+    // 🧬 Evolution V2
+    [EventTypes.EVOLUTION_CREATE_REQUESTED]: 'evolution-processing',
+    [EventTypes.EVOLUTION_UPDATE_REQUESTED]: 'evolution-processing',
+    [EventTypes.EVOLUTION_DELETE_REQUESTED]: 'evolution-processing',
     [EventTypes.PACKAGE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
     [EventTypes.INSURANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
     [EventTypes.ADVANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',

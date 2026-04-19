@@ -63,7 +63,7 @@ import evolutionRoutes from "./routes/evolution.js";
 import followupRoutes from "./routes/followup.js";
 import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
-import { default as leadRoutes, default as leadsRouter } from "./routes/leads.js";
+import leadRoutes from "./routes/leads.js";
 import loginRoutes from "./routes/login.js";
 
 import PackageRoutes from "./routes/Package.js";
@@ -108,6 +108,7 @@ import metaAdsRoutes from './routes/meta-ads.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoEngineRoutes from './routes/preAgendamento.engine.js';
+import evolutionV2Routes from './routes/evolution.v2.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
@@ -120,6 +121,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import revenueAnalyticsRoutes from './routes/analytics.js';
 import operationalAnalyticsRoutes from './routes/analytics/operational.routes.js';
+import roiAnalyticsRoutes from './routes/analytics/roi.routes.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
@@ -389,7 +391,6 @@ app.use("/api/v2/convenio", convenioV2Routes);  // 🚀 NOVO: Convênio V2
 app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 
 app.use("/api/evolutions", evolutionRoutes);
-app.use("/api/leads", leadsRouter);
 app.use("/api/packages", PackageRoutes);
 app.use("/api/payments", etagMiddleware({ ttl: 60 }), PaymentRoutes);
 app.use("/api/users", UserRoutes);
@@ -420,6 +421,7 @@ function legacyRouteAlert(req, res, next) {
 }
 
 app.use('/api/v2/pre-appointments', preAgendamentoEngineRoutes);  // 🚀 V2 REAL: engine transacional + hybrid service
+app.use('/api/v2/evolutions', evolutionV2Routes);  // 🧬 V2: evolution event-driven
 
 // 🗑️ V1 removido: /api/pre-agendamento e /api/v2/pre-agendamento desativados
 // Todos os pré-agendamentos agora usam /api/v2/pre-appointments
@@ -430,6 +432,7 @@ app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
 app.use('/api/v2/analytics/operational', operationalAnalyticsRoutes);
+app.use('/api/v2/analytics/roi', roiAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);

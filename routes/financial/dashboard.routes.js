@@ -329,12 +329,16 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         }
       },
       {
-        // Usa sessionValue (histórico imutável) ou fallback para package
+        // Usa sessionValue (histórico imutável) ou fallback para package.sessionValue / insuranceGrossAmount
         $group: {
           _id: null,
           total: {
             $sum: {
-              $ifNull: ['$sessionValue', '$pkg.insuranceGrossAmount']
+              $cond: [
+                { $gt: ['$sessionValue', 0] },
+                '$sessionValue',
+                { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }
+              ]
             }
           },
           count: { $sum: 1 }
@@ -350,17 +354,68 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const aReceberConvenio = overview.receivable.convenio?.total || 0;
     const aReceberParticular = overview.receivable.particular?.doMes?.total || 0;
 
-    // Sessões do mês — apenas para analytics/detalhes (produção já calculada pelo serviço)
-    const sessoesDoMes = await Session.find({
-      status: 'completed',
+    // Sessões do mês — apenas para analytics/detalhes (V2: dados em Appointment)
+    const sessoesDoMes = await Appointment.find({
+      operationalStatus: { $in: ['completed', 'confirmed'] },
+      paymentStatus: { $in: ['paid', 'package_paid'] },
       date: { $gte: inicioPeriodo, $lte: fimPeriodo }
     })
-    .select('date time sessionValue package doctor patient patientName sessionType paymentMethod status')
-    .populate('package', 'insuranceGrossAmount type')
+    .select('date time sessionValue package doctor patient patientName sessionType paymentMethod operationalStatus paymentStatus')
+    .populate('package', 'insuranceGrossAmount type sessionValue')
     .populate('doctor', 'fullName specialty')
+    .populate('patient', 'fullName')
     .lean();
 
-    const valorSessao = (s) => s.sessionValue || s.package?.insuranceGrossAmount || 0;
+    const valorSessao = (s) => s.sessionValue || s.package?.sessionValue || s.package?.insuranceGrossAmount || 0;
+
+    // ─── Realizadas mas NÃO pagas (pending_balance, unpaid, pending, partial…) ─
+    // Sessões completed que o dashboard ignorava antes (ex: Isis Caldas)
+    const realizadasNaoPagasRaw = await Appointment.aggregate([
+      {
+        $match: {
+          operationalStatus: 'completed',
+          paymentStatus: { $nin: ['paid', 'package_paid', 'canceled'] },
+          date: { $gte: inicioPeriodo, $lte: fimPeriodo }
+        }
+      },
+      {
+        $lookup: {
+          from: 'packages',
+          localField: 'package',
+          foreignField: '_id',
+          pipeline: [{ $project: { sessionValue: 1, insuranceGrossAmount: 1 } }],
+          as: 'pkg'
+        }
+      },
+      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'patients',
+          localField: 'patient',
+          foreignField: '_id',
+          pipeline: [{ $project: { fullName: 1 } }],
+          as: 'pat'
+        }
+      },
+      { $unwind: { path: '$pat', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          date: 1,
+          time: 1,
+          paymentStatus: 1,
+          paciente: { $ifNull: ['$pat.fullName', '$patientName'] },
+          valor: {
+            $cond: [
+              { $gt: ['$sessionValue', 0] },
+              '$sessionValue',
+              { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }
+            ]
+          }
+        }
+      }
+    ]);
+    const realizadasNaoPagasTotal = realizadasNaoPagasRaw.reduce((s, a) => s + (a.valor || 0), 0);
 
     // Detalhes por especialidade
     const porEspecialidade = {};
@@ -454,25 +509,33 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       operationalStatus: { $in: ['confirmed', 'scheduled'] },
       clinicalStatus: { $nin: ['completed', 'cancelled'] }
-    }).select('date time sessionValue package patient operationalStatus clinicalStatus').lean();
+    }).select('date time sessionValue package patient operationalStatus clinicalStatus')
+      .populate('patient', 'fullName')
+      .populate('package', 'sessionValue insuranceGrossAmount type')
+      .lean();
 
     const pendentesTodos = await Appointment.find({
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
       clinicalStatus: { $ne: 'completed' }
-    }).select('date time sessionValue package patient operationalStatus clinicalStatus').lean();
+    }).select('date time sessionValue package patient operationalStatus clinicalStatus')
+      .populate('patient', 'fullName')
+      .populate('package', 'sessionValue insuranceGrossAmount type')
+      .lean();
+
+    const valorAppt = (a) => a.sessionValue || a.package?.sessionValue || a.package?.insuranceGrossAmount || 0;
 
     // Total (todos os tipos) — usado no Provisionamento
-    const agendadosValor = agendadosTodos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
-    const pendentesValor = pendentesTodos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+    const agendadosValor = agendadosTodos.reduce((sum, a) => sum + valorAppt(a), 0);
+    const pendentesValor = pendentesTodos.reduce((sum, a) => sum + valorAppt(a), 0);
 
     // Avulso (sem pacote) — usado nos Cenários: sessões de pacote não geram novo caixa
     const agendadosAvulsoValor = agendadosTodos
       .filter(a => !a.package)
-      .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+      .reduce((sum, a) => sum + valorAppt(a), 0);
     const pendentesAvulsoValor = pendentesTodos
       .filter(a => !a.package)
-      .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+      .reduce((sum, a) => sum + valorAppt(a), 0);
 
     // ========================================
     // 6. CENÁRIOS DE PROJEÇÃO (taxas históricas reais)
@@ -632,6 +695,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
           convenio: aReceberConvenio,
           particular: aReceberParticular
         },
+        realizadasNaoPagas: realizadasNaoPagasTotal, // completed mas sem pagamento (ex: pending_balance)
         creditoPacotes: creditoPacotesValor,
         convenioAgendado: convenioAgendadoValor,
         agendadoConfirmado: agendadosValor,        // todos os tipos (para provisionamento)
@@ -681,12 +745,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
           _id: s._id,
           data: s.date,
           hora: s.time,
-          paciente: s.patientName || 'Paciente',
+          paciente: s.patient?.fullName || s.patientName || 'Paciente',
           tipo: s.paymentMethod === 'convenio' 
             ? (s.package ? 'Convênio Pacote' : 'Convênio Avulso')
             : (s.package ? 'Pacote Particular' : 'Particular'),
           valor: valorSessao(s)
         })),
+        realizadasNaoPagas: realizadasNaoPagasRaw,
+        realizadasNaoPagasTotal,
         creditoPacotes: creditoPacotesDetalhes,
         convenioAgendado: convenioAgendadoDetalhes,
         agendados: agendadosTodos.filter(a => !a.package).map(a => ({
@@ -744,17 +810,16 @@ router.get('/projection-daily', auth, authorize(['admin', 'secretary']), async (
     const endStr    = `${ano}-${String(mes).padStart(2, '0')}-${diasNoMes}`;
     const hoje      = moment().tz(TIMEZONE).format('YYYY-MM-DD');
 
-    const { default: Payment  } = await import('../../models/Payment.js');
     const { default: Planning } = await import('../../models/Planning.js');
 
-    // 1. Aggregate pagamentos por dia (todos os pagamentos pagos do mês)
-    const dailyRaw = await Payment.aggregate([
-      { $match: { status: 'paid', paymentDate: { $gte: startStr, $lte: endStr } } },
-      { $group: { _id: '$paymentDate', total: { $sum: '$amount' } } }
-    ]);
+    // 1. Busca caixa real diário a partir do FinancialDailySnapshot (fonte única de verdade)
+    const snapshots = await FinancialDailySnapshot.find({
+      date: { $gte: startStr, $lte: endStr },
+      clinicId: 'default'
+    }).select('date cash.total').lean();
 
     const dailyMap = {};
-    dailyRaw.forEach(d => { dailyMap[d._id] = d.total; });
+    snapshots.forEach(s => { dailyMap[s.date] = s.cash?.total || 0; });
 
     // 2. Meta mensal do Planning
     const planning = await Planning.findOne({
@@ -861,6 +926,68 @@ router.get('/cache/stats', auth, authorize(['admin']), (req, res) => {
     keysCount: keys.length,
     keys: keys.slice(0, 20) // Limita a 20 keys para não sobrecarregar
   });
+});
+
+/**
+ * @route   GET /api/financial/dashboard/debitos
+ * @desc    Todos os pagamentos pendentes — fonte de verdade: Payment
+ *          💰 V2 RULE: nunca mais usar Appointment/Session para valor financeiro
+ *          Usado para o card "Débito Total" no dashboard executivo
+ */
+router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const { default: Payment } = await import('../../models/Payment.js');
+    const { month, year } = req.query;
+
+    const query = { status: 'pending' };
+    if (month && year) {
+      const start = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      query.paymentDate = { $gte: start, $lte: end };
+    }
+
+    const payments = await Payment.find(query)
+      .populate('patient', 'fullName')
+      .populate('appointment', 'date time')
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    const debitos = payments.map(p => ({
+      _id: p._id,
+      date: p.appointment?.date || (p.serviceDate ? p.serviceDate.toISOString().split('T')[0] : (p.paymentDate ? p.paymentDate.toISOString().split('T')[0] : null)),
+      time: p.appointment?.time || null,
+      paymentStatus: p.status,
+      paciente: p.patient?.fullName || 'Paciente',
+      valor: p.amount,
+      tipo: p.paymentMethod || p.billingType || 'N/A'
+    }));
+
+    const total = debitos.reduce((s, d) => s + (d.valor || 0), 0);
+
+    res.json({ success: true, data: debitos, total });
+  } catch (error) {
+    console.error('[Dashboard] Erro /debitos:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/financial/dashboard/reconciliation
+ * @desc    Reconciliação Payment vs Ledger para todos os pacientes com saldo
+ */
+router.get('/reconciliation', auth, authorize(['admin']), async (req, res) => {
+  try {
+    const { reconcileAllLedgers } = await import('../../services/reconciliationService.js');
+    const result = await reconcileAllLedgers();
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      ...result
+    });
+  } catch (error) {
+    console.error('[Dashboard] Erro /reconciliation:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 // Exporta cache para invalidação externa (ex: quando processar retorno de convênio)

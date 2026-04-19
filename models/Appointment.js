@@ -70,6 +70,10 @@ const appointmentSchema = new mongoose.Schema({
   },
   duration: { type: Number, default: 40 },
 
+  // 🕐 Fonte única de verdade temporal (calculada automaticamente via hook)
+  startDateTime: { type: Date, required: false },
+  endDateTime:   { type: Date, required: false },
+
   // ─── STATUS ────────────────────────────────────────────────
   operationalStatus: {
     type: String,
@@ -82,7 +86,7 @@ const appointmentSchema = new mongoose.Schema({
       'paid',
       'missed',
       'completed',
-      'converted',    // Pré-agendamento convertido em agendamento real
+      // 🔥 REMOVIDO: 'converted' era estado transitório interno, nunca deveria ter sido persistido
       'processing_create',
       'processing_complete',
       'processing_cancel'
@@ -237,7 +241,7 @@ const appointmentSchema = new mongoose.Schema({
     origin: {
       source: {
         type: String,
-        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'crm', 'outro'],
+        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'crm', 'web_app', 'outro'],
         default: 'outro'
       },
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -274,6 +278,46 @@ const appointmentSchema = new mongoose.Schema({
   balanceDescription: {
     type: String,
     description: 'Descrição do saldo devedor'
+  },
+
+  // ─── REMARCAÇÃO / HISTÓRICO DE CADEIA ──────────────────────
+  originalAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    index: true,
+    description: 'ID do appointment original que foi remarcado'
+  },
+  rescheduledFrom: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    description: 'ID do appointment imediatamente anterior na cadeia'
+  },
+  rootAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    index: true,
+    description: 'ID da raiz da cadeia de remarcações (primeiro appointment)'
+  },
+  rescheduleReason: {
+    type: String,
+    default: ''
+  },
+  rescheduledAt: {
+    type: Date,
+    default: null
+  },
+
+  // ─── CANCELAMENTO ESTRUTURADO ──────────────────────────────
+  canceledAt: {
+    type: Date,
+    default: null
+  },
+  cancelReason: {
+    type: String,
+    default: ''
   }
 
 }, {
@@ -283,6 +327,11 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // ─── ÍNDICES ────────────────────────────────────────────────
+appointmentSchema.index(
+  { originalAppointmentId: 1, date: 1, time: 1 },
+  { name: 'reschedule_idempotency' }
+);
+
 appointmentSchema.index(
   { doctor: 1, date: 1, time: 1 },
   {
@@ -324,6 +373,19 @@ appointmentSchema.index({ doctor: 1, date: 1, operationalStatus: 1 });
 appointmentSchema.index({ date: -1 });
 
 // ─── VIRTUAL ────────────────────────────────────────────────
+appointmentSchema.virtual('rescheduleHistory', {
+  ref: 'Appointment',
+  localField: '_id',
+  foreignField: 'originalAppointmentId'
+});
+
+appointmentSchema.virtual('originalAppointment', {
+  ref: 'Appointment',
+  localField: 'originalAppointmentId',
+  foreignField: '_id',
+  justOne: true
+});
+
 appointmentSchema.virtual('daysUntilDate').get(function () {
   if (!this.date) return null;
   const preferred = new Date(this.date);
@@ -331,8 +393,27 @@ appointmentSchema.virtual('daysUntilDate').get(function () {
   return Math.floor((preferred - today) / (1000 * 60 * 60 * 24));
 });
 
+// 🕐 Helper: converte date + time + duration → startDateTime / endDateTime
+function computeDateTimes(doc) {
+  if (!doc.date || !doc.time) return;
+  const d = new Date(doc.date);
+  const [h, m] = doc.time.split(':').map(Number);
+  // date no MongoDB é UTC 12:00 quando salvo via string YYYY-MM-DD
+  // Usamos construtor local para respeitar o dia correto
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
+  const duration = doc.duration || 40;
+  const end = new Date(start.getTime() + duration * 60000);
+  doc.startDateTime = start;
+  doc.endDateTime = end;
+}
+
 // ─── MIDDLEWARE PRÉ-SAVE ────────────────────────────────────
 appointmentSchema.pre('save', function (next) {
+  // 🕐 Calcula startDateTime / endDateTime sempre que necessário
+  if (this.isModified('date') || this.isModified('time') || this.isModified('duration') || this.isNew) {
+    computeDateTimes(this);
+  }
+
   // Urgência só calculada para pré-agendamentos
   if (this.operationalStatus === 'pre_agendado' && (this.isModified('date') || this.isNew)) {
     const days = this.daysUntilDate;
@@ -354,6 +435,25 @@ appointmentSchema.pre('save', function (next) {
 appointmentSchema.pre('findOneAndUpdate', function (next) {
   this.options.runValidators = true;
   this.options.context = 'query';
+
+  // 🕐 Se o update modificar date/time/duration, recalcula startDateTime/endDateTime
+  const update = this.getUpdate() || {};
+  const $set = update.$set || update;
+  if ($set.date || $set.time || $set.duration) {
+    // Precisamos buscar o doc atual para ter os valores que não foram modificados
+    // Como não temos acesso ao doc no hook de query, adicionamos um $set explícito
+    // se todos os 3 campos estiverem presentes no update
+    if ($set.date && $set.time) {
+      const d = new Date($set.date);
+      const [h, m] = String($set.time).split(':').map(Number);
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
+      const duration = $set.duration || 40;
+      const end = new Date(start.getTime() + duration * 60000);
+      $set.startDateTime = start;
+      $set.endDateTime = end;
+      if (!update.$set) update.$set = $set;
+    }
+  }
   next();
 });
 

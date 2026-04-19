@@ -44,11 +44,10 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         const isFirstVisit = earlierAppointments.length === 0;
 
         // 🔥 Fonte de verdade para lead:
-        // 1. operationalStatus === 'pre_agendado' (ainda não convertido), OU
-        // 2. operationalStatus === 'converted' E é o primeiro agendamento do paciente
-        //    (cenário: cadastro foi criado logo após o pré-agendamento, mas ainda é um novo lead)
-        const isLead = apt.operationalStatus === 'pre_agendado' ||
-                       (apt.operationalStatus === 'converted' && isFirstVisit);
+        // operationalStatus === 'pre_agendado' (ainda não convertido)
+        // NOTA: 'converted' foi removido do domínio — pré-agendamentos convertidos viram 'canceled'
+        // com metadata.convertedToAppointmentId, e um novo appointment 'scheduled' é criado.
+        const isLead = apt.operationalStatus === 'pre_agendado';
 
         if (isLead) {
             return { ...apt, isLead: true, isFirstVisit: false, isReturningAfter45Days: false };
@@ -101,10 +100,12 @@ export const getAppointmentsByType = async (req, res) => {
         let dateFilter = {};
 
         if (date) {
-            const targetDate = new Date(date);
-            const nextDay = new Date(targetDate);
-            nextDay.setDate(nextDay.getDate() + 1);
-            dateFilter = { [dateField]: { $gte: targetDate, $lt: nextDay } };
+            dateFilter = {
+                [dateField]: {
+                    $gte: new Date(date + 'T00:00:00.000Z'),
+                    $lte: new Date(date + 'T23:59:59.999Z')
+                }
+            };
         } else if (startDate && endDate) {
             dateFilter = {
                 [dateField]: {
@@ -154,10 +155,10 @@ export const getAppointmentsByType = async (req, res) => {
         if (mode === 'date') {
             const createdAtFilter = {};
             if (date) {
-                const targetDate = new Date(date);
-                const nextDay = new Date(targetDate);
-                nextDay.setDate(nextDay.getDate() + 1);
-                createdAtFilter.createdAt = { $gte: targetDate, $lt: nextDay };
+                createdAtFilter.createdAt = {
+                    $gte: new Date(date + 'T00:00:00.000Z'),
+                    $lte: new Date(date + 'T23:59:59.999Z')
+                };
             } else if (startDate && endDate) {
                 createdAtFilter.createdAt = {
                     $gte: new Date(startDate + 'T00:00:00.000Z'),
@@ -193,10 +194,20 @@ export const getAppointmentsByType = async (req, res) => {
             }
         }
 
-        // Deduplica pré-agendamentos que já estão na lista principal (mesmo _id)
+        // Deduplica pré-agendamentos: mesmo _id OU mesmo paciente já no pool principal
         const appointmentIds = new Set(appointments.map(a => a._id.toString()));
+        const patientIdsInMainPool = new Set(
+            appointments
+                .filter(a => a.patient?._id)
+                .map(a => a.patient._id.toString())
+        );
         const uniquePreAgendamentos = preAgendamentos
-            .filter(p => !appointmentIds.has(p._id.toString()))
+            .filter(p => {
+                if (appointmentIds.has(p._id.toString())) return false;
+                const pid = p.patient?._id?.toString?.();
+                if (pid && patientIdsInMainPool.has(pid)) return false;
+                return true;
+            })
             .map(p => ({ ...p, origin: 'pre_agendamento' }));
 
         const allAppointments = [
@@ -216,9 +227,10 @@ export const getAppointmentsByType = async (req, res) => {
         let patientHistoryMap = new Map();
         if (patientIds.length > 0) {
             const histories = await Appointment.find({
-                patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) }
+                patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) },
+                operationalStatus: { $nin: ['pre_agendado', 'canceled', 'cancelled'] }
             })
-                .select('patient date specialty createdAt')
+                .select('patient date specialty createdAt operationalStatus')
                 .lean();
 
             histories.forEach(h => {

@@ -208,7 +208,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 updateData.paymentStatus = 'package_paid';
             }
         } else {
-            updateData.paymentStatus = 'paid';
+            // 💰 NÃO assumimos pagamento — Payment é fonte de verdade
+            updateData.paymentStatus = 'pending';
+            updateData.visualFlag = 'pending';
         }
 
         console.log(`[complete] Executando Appointment.updateOne (${Date.now() - startTime}ms)`);

@@ -322,10 +322,19 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             }
         }
         if (!patientId && pre.patientInfo?.fullName) {
+            // 🎯 Validação: data de nascimento obrigatória na confirmação
+            if (!pre.patientInfo.birthDate) {
+                await mongoSession.abortTransaction();
+                return res.status(400).json({
+                    success: false,
+                    error: 'Data de nascimento obrigatória para confirmar agendamento',
+                    code: 'BIRTHDATE_REQUIRED_ON_CONFIRM'
+                });
+            }
             const newPatient = new Patient({
                 fullName: pre.patientInfo.fullName,
                 phone: pre.patientInfo.phone || '',
-                dateOfBirth: pre.patientInfo.birthDate ? new Date(pre.patientInfo.birthDate) : new Date('2000-01-01'),
+                dateOfBirth: new Date(pre.patientInfo.birthDate),
                 email: pre.patientInfo.email || null,
                 source: 'agenda_externa_v2'
             });
@@ -378,15 +387,20 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             await createdAppointment.save({ session: mongoSession });
         }
 
-        // Atualiza pré-agendamento original
+        // Atualiza pré-agendamento original — marca como canceled com link de auditoria
         if (!hybridResult.appointmentId) {
             await mongoSession.abortTransaction();
             return res.status(500).json({ success: false, error: 'Falha ao criar agendamento: appointmentId não retornado' });
         }
-        pre.operationalStatus = 'converted';
+        pre.operationalStatus = 'canceled';
         pre.appointmentId = hybridResult.appointmentId;
         pre.importedAt = new Date();
         pre.importedBy = req.user?._id?.toString();
+        pre.metadata = {
+            ...pre.metadata,
+            convertedToAppointmentId: hybridResult.appointmentId,
+            convertedAt: new Date().toISOString()
+        };
         await pre.save({ session: mongoSession });
 
         await mongoSession.commitTransaction();

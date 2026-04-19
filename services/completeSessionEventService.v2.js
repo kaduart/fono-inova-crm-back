@@ -285,11 +285,11 @@ function buildSessionUpdate({ addToBalance, paymentOrigin, correlationId }) {
     
     return {
         status: 'completed',
-        isPaid: true,
-        paymentStatus: 'paid',
+        isPaid: false,
+        paymentStatus: 'pending',
         paymentOrigin,
         correlationId,
-        visualFlag: 'ok',
+        visualFlag: 'pending',
         updatedAt: new Date()
     };
 }
@@ -339,8 +339,9 @@ function buildAppointmentUpdate({
             update.$set.visualFlag = 'ok';
         }
     } else {
-        update.$set.paymentStatus = 'paid';
-        update.$set.visualFlag = 'ok';
+        // 💰 NÃO assumimos pagamento — Payment é fonte de verdade
+        update.$set.paymentStatus = 'pending';
+        update.$set.visualFlag = 'pending';
     }
     
     return update;

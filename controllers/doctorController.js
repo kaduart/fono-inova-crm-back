@@ -305,6 +305,7 @@ export const getCalendarAppointments = async (req, res) => {
     })
       .populate('patient', 'fullName phone email dateOfBirth gender')
       .populate('doctor', 'fullName specialty')
+      .populate('payment', 'status amount paymentMethod')
       .sort({ date: 1, time: 1 })
       .lean();
     
@@ -481,7 +482,8 @@ export const getTodaysAppointments = async (req, res) => {
 
     const appointments = await Appointment.find(filter)
       .populate('patient', 'fullName')
-      .select('_id date time operationalStatus clinicalStatus patient')
+      .populate('payment', 'status')
+      .select('_id date time operationalStatus clinicalStatus patient payment')
       .lean();
 
     console.log('[GET_TODAYS_APPOINTMENTS] encontrados:', appointments.length);

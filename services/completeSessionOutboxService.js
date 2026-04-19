@@ -305,8 +305,9 @@ function buildAppointmentUpdate({
             update.$set.visualFlag = 'ok';
         }
     } else {
-        update.$set.paymentStatus = 'paid';
-        update.$set.visualFlag = 'ok';
+        // 💰 NÃO assumimos pagamento — Payment é fonte de verdade
+        update.$set.paymentStatus = 'pending';
+        update.$set.visualFlag = 'pending';
     }
     
     return update;

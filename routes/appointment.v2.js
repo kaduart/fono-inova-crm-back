@@ -12,11 +12,12 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
-import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
+import { checkAppointmentConflicts, getAvailableTimeSlots, checkSlotOverlap } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
+import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
@@ -125,10 +126,83 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     });
 
     // ========== VALIDAÇÕES SÍNCRONAS ==========
-    if (!patientId) {
+    const isPreAgendamento = req.body.operationalStatus === 'pre_agendado' || req.body.isNewPatient === true;
+    
+    if (!patientId && !isPreAgendamento) {
       throw createBusinessError(Messages.VALIDATION.PATIENT_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'patientId' }
       );
+    }
+
+    // 🆕 AUTO-CREATE LEAD → PATIENT para pré-agendamentos sem patientId
+    // Fluxo obrigatório: Lead (origem) → Patient (cadastro) → Appointment
+    let resolvedPatientId = patientId;
+    let resolvedLeadId = req.body.leadId || null;
+    const parsedDate = parseDateInTimezone(date, time);
+    
+    if (!resolvedPatientId && isPreAgendamento && req.body.patientInfo?.fullName) {
+      try {
+        const phoneNormalized = req.body.patientInfo.phone?.replace(/\D/g, '') || '';
+        const emailNormalized = req.body.patientInfo.email?.toLowerCase() || null;
+        const fullName = req.body.patientInfo.fullName.trim();
+
+        // 1. BUSCAR LEAD EXISTENTE (por telefone ou email)
+        let lead = await Lead.findOne({
+          $or: [
+            { 'contact.phone': phoneNormalized },
+            ...(emailNormalized ? [{ 'contact.email': emailNormalized }] : [])
+          ]
+        });
+
+        // 2. SE NÃO EXISTIR → CRIAR LEAD
+        if (!lead) {
+          lead = await Lead.create({
+            name: fullName,
+            contact: {
+              phone: phoneNormalized,
+              email: emailNormalized
+            },
+            origin: req.body.source || 'web_app',
+            stage: 'interessado_agendamento',
+            status: 'agendado'
+          });
+          console.log(`[POST /v2/appointments] 🆕 Lead criado: ${lead._id} (${fullName})`);
+        } else {
+          console.log(`[POST /v2/appointments] 🔗 Lead existente encontrado: ${lead._id} (${fullName})`);
+        }
+
+        resolvedLeadId = lead._id.toString();
+
+        // 3. CRIAR PATIENT a partir do Lead + patientInfo
+        const newPatient = await Patient.create({
+          fullName: fullName,
+          phone: phoneNormalized,
+          dateOfBirth: req.body.patientInfo.birthDate || null,
+          email: emailNormalized,
+          status: 'lead',
+          isLead: true,
+          createdFromLead: lead._id
+        });
+        resolvedPatientId = newPatient._id.toString();
+        console.log(`[POST /v2/appointments] 🆕 Patient auto-criado: ${resolvedPatientId} (${fullName})`);
+
+        // 4. ATUALIZAR LEAD (apenas vincula, NÃO converte ainda)
+        // Conversão real só acontece quando a sessão for completada
+        lead.stage = 'triagem_agendamento';
+        lead.status = 'agendado';
+        lead.scheduledDate = parsedDate;
+        await lead.save();
+        console.log(`[POST /v2/appointments] 🔗 Lead vinculado ao agendamento: ${lead._id} → Patient ${resolvedPatientId}`);
+
+      } catch (patientErr) {
+        console.error('[POST /v2/appointments] ❌ Falha no fluxo Lead→Patient:', patientErr);
+        throw createBusinessError(
+          `Falha ao cadastrar paciente para pré-agendamento: ${patientErr.message}`,
+          500,
+          'PATIENT_CREATE_FAILED',
+          { originalError: patientErr.message, stack: patientErr.stack }
+        );
+      }
     }
 
     if (!doctorId) {
@@ -184,7 +258,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
         );
       }
       
-      if (guide.patient?.toString() !== patientId?.toString()) {
+      if (guide.patient?.toString() !== resolvedPatientId?.toString()) {
         throw createBusinessError('Guia de convênio não pertence a este paciente', 400, ErrorCodes.BUSINESS_RULE_VIOLATION,
           { field: 'insuranceGuideId' }
         );
@@ -194,38 +268,40 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     }
 
     // ========== CRIAÇÃO SÍNCRONA ==========
-    const parsedDate = parseDateInTimezone(date, time);
-    const idempotencyKey = `${patientId}_${doctorId}_${date}_${time}`;
+    const idempotencyKey = `${resolvedPatientId}_${doctorId}_${date}_${time}`;
     
     // Check idempotência (mesmo paciente, mesmo horário = duplicado)
-    const existingAppointment = await Appointment.findOne({
-      patient: patientId,
-      doctor: doctorId,
-      date: parsedDate,
-      time,
-      operationalStatus: { $nin: ['canceled'] }
-    });
-    
-    if (existingAppointment) {
-      console.log(`[Create V2] ⚠️ DUPLICADO DETECTADO: ${existingAppointment._id}`, {
-        patientId,
-        doctorId,
-        date,
+    // Só aplica para pacientes existentes (patientId presente)
+    if (resolvedPatientId) {
+      const existingAppointment = await Appointment.findOne({
+        patient: resolvedPatientId,
+        doctor: doctorId,
+        date: parsedDate,
         time,
-        packageId,
-        source: req.body.source || 'unknown'
+        operationalStatus: { $nin: ['canceled'] }
       });
-      return res.status(409).json(
-        formatError('Agendamento duplicado para este paciente/horário', 409, 'DUPLICATE_APPOINTMENT', {
-          existingAppointmentId: existingAppointment._id.toString(),
-          message: 'Use PATCH /:id/complete ou PATCH /:id/cancel para atualizar'
-        })
-      );
+      
+      if (existingAppointment) {
+        console.log(`[Create V2] ⚠️ DUPLICADO DETECTADO: ${existingAppointment._id}`, {
+          patientId: resolvedPatientId,
+          doctorId,
+          date,
+          time,
+          packageId,
+          source: req.body.source || 'unknown'
+        });
+        return res.status(409).json(
+          formatError('Agendamento duplicado para este paciente/horário', 409, 'DUPLICATE_APPOINTMENT', {
+            existingAppointmentId: existingAppointment._id.toString(),
+            message: 'Use PATCH /:id/complete ou PATCH /:id/cancel para atualizar'
+          })
+        );
+      }
     }
     
     // Cria Appointment direto como "scheduled"
     const appointment = new Appointment({
-      patient: patientId,
+      patient: resolvedPatientId,
       doctor: doctorId,
       date: parsedDate,
       time,
@@ -234,8 +310,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       sessionType: normalizeSessionType(sessionType || specialty),
       package: packageId,
       insuranceGuide: insuranceGuideId,
+      lead: resolvedLeadId || null,
 
-      operationalStatus: 'scheduled',
+      operationalStatus: isPreAgendamento ? 'pre_agendado' : (req.body.operationalStatus || 'scheduled'),
       clinicalStatus: 'pending',
       paymentStatus: req.body.paymentStatus || 'pending',
 
@@ -249,6 +326,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
       notes,
       createdBy: req.user?._id,
+
+      patientInfo: req.body.patientInfo ? {
+        fullName: req.body.patientInfo.fullName || '',
+        phone: req.body.patientInfo.phone || '',
+        email: req.body.patientInfo.email || '',
+        birthDate: req.body.patientInfo.birthDate || ''
+      } : undefined,
 
       metadata: {
         origin: {
@@ -282,7 +366,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
             email: bodyInfo?.email || req.body.email || null,
           };
         } else {
-          const pat = await Patient.findById(patientId).select('fullName name phone dateOfBirth email');
+          const pat = await Patient.findById(resolvedPatientId).select('fullName name phone dateOfBirth email');
           if (pat) {
             appointment.patientInfo = {
               fullName: pat.fullName || pat.name || '',
@@ -300,8 +384,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
     // 🎯 CRIAR SESSION SÍNCRONA para agendamentos AVULSOS (garantia de consistência)
     // Pacotes: Session é criada pelo packageController ou worker (lógica complexa de crédito)
+    // Pré-agendamentos (sem patientId): session é criada depois, na confirmação
     let session = null;
-    if (!packageId) {
+    if (!packageId && resolvedPatientId) {
       try {
         const sessionData = (billingType === 'convenio' || insuranceGuideId)
           ? buildInsuranceSession(appointment)
@@ -351,7 +436,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
           EventTypes.APPOINTMENT_CREATED,
           {
             appointmentId: appointment._id.toString(),
-            patientId: patientId?.toString(),
+            patientId: resolvedPatientId?.toString(),
             doctorId: doctorId?.toString(),
             date,
             time,
@@ -684,6 +769,9 @@ router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 /**
  * 🗓️ GET /api/v2/appointments/weekly-availability
  * Disponibilidade semanal por especialidade — substitui /api/agenda-externa/disponibilidade
+ * 
+ * Lógica 100% Date-based: converte date+time+duration em Date start/end e compara por overlap.
+ * Zero comparação por string de horário.
  */
 router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) => {
   try {
@@ -724,43 +812,111 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
       currentDate.setDate(start.getDate() + i);
       const dateStr = currentDate.toISOString().split('T')[0];
       const dayOfWeek = DAYS_EN[currentDate.getDay()];
+      // 🚫 Remove sábado e domingo
+      if (dayOfWeek === 'saturday' || dayOfWeek === 'sunday') continue;
       weekDays.push({ date: dateStr, dayOfWeek, dayLabel: DAYS_PT[dayOfWeek] });
     }
 
-    const dates = weekDays.map(d => d.date);
     const doctorIds = doctors.map(d => d._id);
 
+    // Range de busca no timezone BRT
+    const dateRangeStart = new Date(`${weekDays[0].date}T00:00:00-03:00`);
+    const dateRangeEnd = new Date(`${weekDays[weekDays.length - 1].date}T23:59:59-03:00`);
+
     const appointments = await Appointment.find({
-      date: { $in: dates },
+      date: { $gte: dateRangeStart, $lte: dateRangeEnd },
       doctor: { $in: doctorIds },
       operationalStatus: { $nin: [...CANCELED_STATUSES, 'no_show', 'missed', ...PRE_APPOINTMENT_STATUSES] },
       appointmentId: { $exists: false },
       isDeleted: { $ne: true }
-    }).select('doctor date time').lean();
+    }).select('doctor date time duration startDateTime endDateTime').lean();
+
+    // ── Helpers Date-based ──────────────────────────────────────
+    function parseTimeToMinutes(timeStr) {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.trim().split(':');
+      return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
+    }
+
+    function buildSlotDate(baseDate, minutesFromMidnight) {
+      const d = new Date(baseDate);
+      d.setUTCHours(0, 0, 0, 0);
+      // baseDate no MongoDB é salvo como UTC 12:00 quando vem de string YYYY-MM-DD
+      // Então usamos a data local BRT correta
+      const brDate = new Date(d.getTime() + (12 * 60 * 60 * 1000));
+      const hours = Math.floor(minutesFromMidnight / 60);
+      const mins = minutesFromMidnight % 60;
+      return new Date(brDate.getFullYear(), brDate.getMonth(), brDate.getDate(), hours, mins, 0, 0);
+    }
+
+    function appointmentToInterval(appt) {
+      // 🕐 Usa startDateTime/endDateTime se já persistido (novo padrão)
+      if (appt.startDateTime && appt.endDateTime) {
+        return { start: new Date(appt.startDateTime), end: new Date(appt.endDateTime), doctor: String(appt.doctor) };
+      }
+      // Fallback legado: calcula de date + time + duration
+      const apptDate = new Date(appt.date);
+      const startMins = parseTimeToMinutes(appt.time);
+      const duration = appt.duration || 40;
+      const start = buildSlotDate(apptDate, startMins);
+      const end = new Date(start.getTime() + duration * 60000);
+      return { start, end, doctor: String(appt.doctor) };
+    }
+
+    // Pré-converte todos os appointments para intervalos Date
+    const apptIntervals = appointments.map(appointmentToInterval);
+    console.log(`[weekly-availability] Total appointments encontrados: ${appointments.length} | Intervals: ${apptIntervals.length}`);
 
     const availability = weekDays.map(({ date, dayOfWeek, dayLabel }) => {
-      const dayAppointments = appointments.filter(a => {
-        const d = new Date(a.date).toISOString().split('T')[0];
-        return d === date;
-      });
-
       const professionals = doctors.map(doc => {
-        const docAppointments = dayAppointments.filter(a => String(a.doctor) === String(doc._id));
-        const occupiedSlots = docAppointments.map(a => a.time).filter(Boolean);
+        const docId = String(doc._id);
 
-        // slots padrão: 08:00 às 18:00 de 40 em 40 min
-        const slots = [];
-        for (let h = 8; h < 18; h++) {
-          for (let m = 0; m < 60; m += 40) {
-            const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-            slots.push({
-              time,
-              available: !occupiedSlots.includes(time),
-              professional: doc.fullName,
-              professionalId: doc._id
-            });
-          }
-        }
+        // 🗓️ Busca horários configurados no weeklyAvailability do doutor
+        const dayConfig = doc.weeklyAvailability?.find(d => d.day === dayOfWeek);
+        const rawTimes = dayConfig?.times || [];
+
+        // Normaliza, deduplica e ordena
+        const normalizedTimes = Array.from(
+          new Set(
+            rawTimes
+              .map(t => {
+                if (!t) return null;
+                const s = String(t).trim();
+                const m = s.match(/^(\d{1,2}):(\d{2})$/);
+                if (!m) return null;
+                const hh = String(m[1]).padStart(2, '0');
+                return `${hh}:${m[2]}`;
+              })
+              .filter(Boolean)
+          )
+        ).sort();
+
+        // 🔍 LOG CIRÚRGICO
+        console.log(`[weekly-availability] doc=${doc.fullName} | date=${date} | dayOfWeek=${dayOfWeek} | rawTimes=${JSON.stringify(rawTimes)} | normalized=${JSON.stringify(normalizedTimes)}`);
+
+        // Gera slots baseado na configuração do doutor (ou vazio se não atende nesse dia)
+        const slots = normalizedTimes.map(time => {
+          const [h, m] = time.split(':').map(Number);
+          const slotMins = h * 60 + m;
+          const slotDate = buildSlotDate(new Date(`${date}T12:00:00-03:00`), slotMins);
+          const slotStart = slotDate;
+          const slotEnd = new Date(slotStart.getTime() + 40 * 60000);
+
+          // 🔥 Date-based overlap: verifica se algum appointment intersecta este slot
+          const isBlocked = apptIntervals.some(ai => {
+            if (ai.doctor !== docId) return false;
+            const sameDay = ai.start.toDateString() === slotStart.toDateString();
+            if (!sameDay) return false;
+            return ai.start < slotEnd && ai.end > slotStart;
+          });
+
+          return {
+            time,
+            available: !isBlocked,
+            professional: doc.fullName,
+            professionalId: doc._id
+          };
+        });
 
         return {
           professionalId: doc._id,
@@ -768,9 +924,14 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
           specialty: doc.specialty,
           slots
         };
-      });
+      }).filter(prof => prof.slots.length > 0 && prof.slots.some(s => s.available));
+      // 🚫 Remove profissionais com 0 slots ou 0 vagas disponíveis
 
-      return { date, dayOfWeek, dayLabel, professionals };
+      const message = professionals.length === 0
+        ? 'Nenhum horário disponível para este dia'
+        : undefined;
+
+      return { date, dayOfWeek, dayLabel, professionals, ...(message && { message }) };
     });
 
     return res.json({
@@ -851,6 +1012,9 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     if (statusMap[status]) {
       filter.operationalStatus = statusMap[status];
     }
+  } else {
+    // 🔥 NUNCA retorna estado transitório interno no contrato público
+    filter.operationalStatus = { $ne: 'converted' };
   }
   // 🔄 UNIFICAÇÃO: pré-agendamentos agora aparecem no calendário também
   // O frontend diferencia visualmente via operationalStatus === 'pre_agendado'
@@ -862,12 +1026,13 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const limitNum = parseInt(limit);
   
-  // 🔥 OTIMIZAÇÃO: Query base - SEM POPULATES (mais rápido)
+  // 🔥 OTIMIZAÇÃO: Query base com populate essencial
   let queryBuilder = Appointment.find(filter)
     .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment'
     )
+    .populate('payment', 'status amount paymentMethod')
     .sort({ date: 1, time: 1 })
     .skip(skip)
     .limit(limitNum)
@@ -875,7 +1040,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   
   // 🎯 SEMPRE popula nomes (essencial para o frontend identificar agendamentos)
   queryBuilder = queryBuilder
-    .populate('patient', 'fullName')
+    .populate('patient', 'fullName phone dateOfBirth email')
     .populate('doctor', 'fullName specialty');
   
   // 🔥 OTIMIZAÇÃO: Roda query e count em PARALELO
@@ -1204,15 +1369,14 @@ router.get('/:id/process-manual', flexibleAuth, asyncHandler(async (req, res) =>
   
   if (session && session.status !== 'completed') {
     session.status = 'completed';
-    session.isPaid = true;
-    session.paymentStatus = 'paid';
-    session.paidAt = new Date();
-    session.visualFlag = 'ok';
+    session.isPaid = false;
+    session.paymentStatus = 'pending';
+    session.visualFlag = 'pending';
     await session.save();
     
     appointment.operationalStatus = 'confirmed';
     appointment.clinicalStatus = 'completed';
-    appointment.paymentStatus = 'paid';
+    appointment.paymentStatus = 'pending';
     appointment.history.push({
       action: 'complete_manual',
       newStatus: 'confirmed',
@@ -1269,16 +1433,15 @@ router.get('/:id/complete-manual', flexibleAuth, asyncHandler(async (req, res) =
   
   // Completa sessão
   session.status = 'completed';
-  session.isPaid = true;
-  session.paymentStatus = 'paid';
-  session.paidAt = new Date();
-  session.visualFlag = 'ok';
+  session.isPaid = false;
+  session.paymentStatus = 'pending';
+  session.visualFlag = 'pending';
   await session.save();
   
   // Atualiza appointment
   appointment.operationalStatus = 'confirmed';
   appointment.clinicalStatus = 'completed';
-  appointment.paymentStatus = 'paid';
+  appointment.paymentStatus = 'pending';
   appointment.history.push({
     action: 'complete_manual',
     newStatus: 'confirmed',
@@ -1353,6 +1516,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const mongoSession = await mongoose.startSession();
   let transactionCommitted = false;
+  let transactionAborted = false;
   
   try {
     await mongoSession.startTransaction();
@@ -1363,12 +1527,14 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     if (!appointment) {
       await mongoSession.abortTransaction();
+      transactionAborted = true;
       throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
     }
     
     // 2. Verificar permissões (médico só edita o próprio)
     if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
       await mongoSession.abortTransaction();
+      transactionAborted = true;
       throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
     }
     
@@ -1380,6 +1546,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       
       if (disallowedChanges.length > 0) {
         await mongoSession.abortTransaction();
+        transactionAborted = true;
         throw createBusinessError(
           `Não é possível editar campos de um agendamento já completado. Campos bloqueados: ${disallowedChanges.join(', ')}. Para alterar dados financeiros/operacionais, cancele e recrie o agendamento.`,
           409,
@@ -1677,9 +1844,10 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     }));
     
   } catch (error) {
-    // ✅ Só aborta se a transação não foi commitada ainda
-    if (!transactionCommitted) {
+    // ✅ Só aborta se a transação não foi commitada nem abortada ainda
+    if (!transactionCommitted && !transactionAborted) {
       await mongoSession.abortTransaction();
+      transactionAborted = true;
     }
     throw error;
   } finally {
@@ -1832,95 +2000,254 @@ router.patch('/:id/confirm', flexibleAuth, asyncHandler(async (req, res) => {
  */
 router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { date, time, reason } = req.body;
-  
+  const { date, time, reason, doctorId, professionalName } = req.body;
+
   const mongoSession = await mongoose.startSession();
-  
+
   try {
     await mongoSession.startTransaction();
-    
-    // Validações
+
+    // ─── 1. VALIDAÇÕES ─────────────────────────────────────────
     if (!date || !time) {
       await mongoSession.abortTransaction();
       throw createBusinessError('Data e hora são obrigatórios', 400, ErrorCodes.MISSING_REQUIRED_FIELD);
     }
-    
-    const appointment = await Appointment.findById(id).session(mongoSession)
-      .populate('session');
-    
-    if (!appointment) {
+
+    const existing = await Appointment.findById(id).session(mongoSession)
+      .populate('session payment');
+
+    if (!existing) {
       await mongoSession.abortTransaction();
       throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
     }
-    
+
     // Verificar permissões
-    if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+    if (req.user.role === 'doctor' && existing.doctor.toString() !== req.user.id) {
       await mongoSession.abortTransaction();
       throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
     }
-    
-    const oldDate = appointment.date;
-    const oldTime = appointment.time;
-    
-    // Atualizar appointment
-    appointment.date = date;
-    appointment.time = time;
-    
-    // Registrar histórico
-    if (!appointment.history) appointment.history = [];
-    appointment.history.push({
-      action: 'reagendamento_v2',
-      changedBy: req.user._id,
-      timestamp: new Date(),
-      context: 'operacional',
-      details: { 
-        oldDate: oldDate,
-        newDate: date,
-        oldTime: oldTime,
-        newTime: time,
-        reason: reason || 'Reagendamento manual'
-      }
+
+    // Bloqueia reschedule de cancelado
+    if (existing.operationalStatus === 'canceled') {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Agendamento cancelado não pode ser remarcado', 400, 'ALREADY_CANCELED');
+    }
+
+    // ─── 2. IDEMPOTÊNCIA ───────────────────────────────────────
+    const rootId = existing.rootAppointmentId || existing._id;
+    const duplicateReschedule = await Appointment.findOne({
+      $or: [
+        { originalAppointmentId: existing._id },
+        { rescheduledFrom: existing._id }
+      ],
+      date,
+      time,
+      operationalStatus: { $nin: ['canceled', 'cancelado'] }
+    }).session(mongoSession);
+
+    if (duplicateReschedule) {
+      await mongoSession.abortTransaction();
+      return res.json({
+        success: true,
+        data: { appointment: duplicateReschedule },
+        meta: { idempotent: true, message: 'Remarcação idêntica já existe' }
+      });
+    }
+
+    // ─── 3. CHECAGEM DE CONFLITO NO NOVO HORÁRIO ───────────────
+    const targetDoctorId = doctorId || existing.doctor;
+    const slotConflict = await checkSlotOverlap({
+      doctorId: targetDoctorId,
+      date,
+      time,
+      duration: existing.duration || 40,
+      excludeAppointmentId: existing._id.toString()
     });
-    
-    const updatedAppointment = await appointment.save({ session: mongoSession });
-    
-    // Atualizar Session vinculada
-    if (appointment.session) {
+
+    if (slotConflict) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError(
+        'Conflito de agenda no novo horário',
+        409,
+        'SLOT_CONFLICT'
+      );
+    }
+
+    const oldDate = existing.date;
+    const oldTime = existing.time;
+
+    // ─── 4. CANCELA O ORIGINAL ─────────────────────────────────
+    existing.operationalStatus = 'canceled';
+    existing.status = 'Cancelado';
+    existing.canceledAt = new Date();
+    existing.cancelReason = reason || 'Remarcado para outro horário';
+    await existing.save({ session: mongoSession });
+
+    // Cancela session antiga
+    if (existing.session) {
       await Session.findByIdAndUpdate(
-        appointment.session,
+        existing.session,
         {
-          $set: {
-            date: date,
-            time: time,
-            updatedAt: new Date()
-          }
+          status: 'canceled',
+          canceledAt: new Date(),
+          cancelReason: 'Remarcado para novo agendamento'
         },
         { session: mongoSession }
       );
     }
-    
+
+    // ─── 5. CRIA NOVO APPOINTMENT ──────────────────────────────
+    const newAppointment = new Appointment({
+      patient: existing.patient,
+      patientId: existing.patientId,
+      patientInfo: existing.patientInfo,
+      isNewPatient: false,
+      doctor: targetDoctorId,
+      professionalName: professionalName || existing.professionalName,
+      specialty: existing.specialty,
+      date,
+      time,
+      duration: existing.duration || 40,
+      operationalStatus: 'scheduled',
+      status: 'Agendado',
+      notes: existing.notes || '',
+      observations: existing.observations || '',
+      billingType: existing.billingType || 'particular',
+      insuranceProvider: existing.insuranceProvider || '',
+      insuranceValue: existing.insuranceValue || 0,
+      authorizationCode: existing.authorizationCode || '',
+      paymentStatus: existing.paymentStatus || 'pending',
+      sessionValue: existing.sessionValue || 0,
+      paymentMethod: existing.paymentMethod || 'pix',
+      crm: existing.crm || {},
+      package: existing.package || null,
+      responsible: existing.responsible || '',
+      metadata: {
+        origin: { source: 'reschedule' },
+        previousAppointmentId: existing._id,
+        rescheduledAt: new Date().toISOString()
+      },
+      originalAppointmentId: existing.originalAppointmentId || existing._id,
+      rescheduledFrom: existing._id,
+      rootAppointmentId: rootId,
+      rescheduleReason: reason || '',
+      rescheduledAt: new Date(),
+      serviceType: existing.serviceType,
+      sessionType: existing.sessionType,
+      clinicalStatus: 'scheduled'
+    });
+
+    await newAppointment.save({ session: mongoSession });
+
+    // ─── 6. CRIA NOVA SESSION ──────────────────────────────────
+    const newSession = new Session({
+      appointmentId: newAppointment._id,
+      patient: newAppointment.patient,
+      doctor: newAppointment.doctor,
+      date: newAppointment.date,
+      time: newAppointment.time,
+      sessionType: newAppointment.specialty,
+      sessionValue: newAppointment.sessionValue || 0,
+      status: 'scheduled',
+      paymentStatus: newAppointment.paymentStatus || 'pending',
+      duration: newAppointment.duration || 40
+    });
+
+    await newSession.save({ session: mongoSession });
+
+    // Vincula session ao appointment
+    newAppointment.session = newSession._id;
+    await newAppointment.save({ session: mongoSession });
+
+    // ─── 7. POLÍTICA DE PAYMENT ────────────────────────────────
+    if (existing.payment) {
+      const originalPayment = await Payment.findById(existing.payment).session(mongoSession).lean();
+
+      if (originalPayment) {
+        if (originalPayment.status === 'paid') {
+          // Pago: mantém no original, cria novo pendente
+          const newPayment = new Payment({
+            patient: newAppointment.patient,
+            doctor: newAppointment.doctor,
+            appointment: newAppointment._id,
+            session: newSession._id,
+            amount: originalPayment.amount,
+            status: 'pending',
+            method: originalPayment.method || 'pix',
+            parentPaymentId: originalPayment._id,
+            description: `Remarcação de ${oldDate.toISOString?.() || oldDate} ${oldTime}`
+          });
+          await newPayment.save({ session: mongoSession });
+          newAppointment.payment = newPayment._id;
+          newAppointment.paymentStatus = 'pending';
+          await newAppointment.save({ session: mongoSession });
+        } else {
+          // Pendente: cancela original, cria novo pendente
+          await Payment.findByIdAndUpdate(
+            existing.payment,
+            { status: 'canceled', canceledAt: new Date(), cancelReason: 'Remarcado' },
+            { session: mongoSession }
+          );
+
+          const newPayment = new Payment({
+            patient: newAppointment.patient,
+            doctor: newAppointment.doctor,
+            appointment: newAppointment._id,
+            session: newSession._id,
+            amount: originalPayment.amount,
+            status: 'pending',
+            method: originalPayment.method || 'pix',
+            parentPaymentId: originalPayment._id,
+            description: `Remarcação de ${oldDate.toISOString?.() || oldDate} ${oldTime}`
+          });
+          await newPayment.save({ session: mongoSession });
+          newAppointment.payment = newPayment._id;
+          newAppointment.paymentStatus = 'pending';
+          await newAppointment.save({ session: mongoSession });
+        }
+      }
+    }
+
+    // ─── 8. COMMIT + EVENTOS ───────────────────────────────────
     await mongoSession.commitTransaction();
-    
-    // Publicar evento
+
+    const populatedNew = await Appointment.findById(newAppointment._id)
+      .populate('patient', 'fullName phone email dateOfBirth')
+      .populate('doctor', 'fullName specialty');
+
     await publishEvent(EventTypes.APPOINTMENT_RESCHEDULED, {
-      appointmentId: updatedAppointment._id,
-      patientId: updatedAppointment.patient,
-      doctorId: updatedAppointment.doctor,
-      oldDate: oldDate,
-      newDate: date,
-      oldTime: oldTime,
-      newTime: time,
+      from: existing._id,
+      to: newAppointment._id,
       reason: reason,
       rescheduledBy: req.user._id,
       timestamp: new Date()
     });
-    
+
+    await publishEvent(EventTypes.APPOINTMENT_CANCELLED, {
+      _id: existing._id,
+      reason: 'Remarcado',
+      replacedBy: newAppointment._id
+    });
+
+    await publishEvent(EventTypes.APPOINTMENT_CREATED, {
+      _id: newAppointment._id,
+      data: populatedNew
+    });
+
     clearCache();
-    res.json(formatSuccess({
-      appointment: updatedAppointment,
-      message: 'Agendamento reagendado com sucesso'
-    }));
-    
+    res.json({
+      success: true,
+      data: {
+        appointment: populatedNew,
+        session: newSession
+      },
+      meta: {
+        rescheduledFrom: existing._id,
+        reason: reason,
+        timestamp: new Date().toISOString()
+      }
+    });
+
   } catch (error) {
     await mongoSession.abortTransaction();
     throw error;

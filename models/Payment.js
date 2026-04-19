@@ -49,6 +49,12 @@ const paymentSchema = new mongoose.Schema({
     paidAt: { type: Date, default: null },
     confirmedAt: { type: Date, default: null },
     financialDate: { type: Date, default: null, index: true },
+    parentPaymentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment',
+        default: null,
+        description: 'ID do payment original quando este for criado por remarcação'
+    },
 }, { timestamps: true });
 
 // ============ SCHEMA GUARD - PROTEÇÃO CONSISTÊNCIA ============
