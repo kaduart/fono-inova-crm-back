@@ -271,52 +271,25 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             });
         }
 
-        // 💰 CRIAR OU ATUALIZAR PAYMENT se foi pago no ato (particular sem addToBalance ou liminar)
+        // 💰 CRIAR OU ATUALIZAR PAYMENT — TODA session completed GERA Payment
         let paymentCreated = null;
-        if (billingType === 'particular' && !addToBalance && sessionValue > 0) {
-            let deveCriarPayment = true;
+        if (billingType === 'particular' && sessionValue > 0) {
+            const now = new Date();
 
-            // 🛡️ BLINDAGEM PACOTE: se é pacote per-session e já está quitado, não criar payment
+            // Determinar se é pacote pré-pago já quitado (coberto por crédito)
+            let isPrepaidCovered = false;
             if (packageId) {
                 const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
                 if (pkgAtual) {
                     const sessionsDone = pkgAtual.sessionsDone || 0;
                     const totalPaid = pkgAtual.totalPaid || 0;
                     const dividaTotal = sessionsDone * sessionValue;
-
-                    if (totalPaid >= dividaTotal) {
-                        deveCriarPayment = false;
-                        console.log(`[CompleteSessionV2] Package ${packageId} já quitado (${totalPaid} >= ${dividaTotal}). Não criando payment para sessão.`);
-                    }
+                    isPrepaidCovered = totalPaid >= dividaTotal;
                 }
             }
 
-            if (!deveCriarPayment) {
-                // Nada a fazer — caixa do pacote já entrou no dia da compra
-            } else {
-                const now = new Date();
-                if (appointment.payment) {
-                // 🔄 Reutiliza payment existente (evita duplicidade)
-                const existingPaymentId = appointment.payment._id || appointment.payment;
-                paymentCreated = await Payment.findByIdAndUpdate(
-                    existingPaymentId,
-                    {
-                        $set: {
-                            status: 'paid',
-                            paidAt: now,
-                            paymentDate: now,
-                            financialDate: now,
-                            amount: sessionValue,
-                            paymentMethod: appointment.paymentMethod || 'cash',
-                            kind: 'session_payment',
-                            updatedAt: now
-                        }
-                    },
-                    { session: mongoSession, new: true }
-                );
-                console.log(`[CompleteSessionV2] 💰 Payment existente atualizado: ${paymentCreated._id}`);
-            } else {
-                // 🆕 Cria novo payment
+            if (isPrepaidCovered) {
+                // 🟢 PACOTE PRÉ-PAGO QUITADO: cria Payment prepaid (evento contábil, não caixa novo)
                 const [paymentDoc] = await Payment.create([{
                     patient: appointment.patient?._id,
                     amount: sessionValue,
@@ -326,15 +299,81 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     paymentMethod: appointment.paymentMethod || 'cash',
                     paymentDate: now,
                     paidAt: now,
-                    financialDate: now, // 🎯 ESSENCIAL pro caixa
-                    description: `Sessão realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    financialDate: now,
+                    description: `Sessão pacote pré-pago - ${appointment.patient?.fullName || 'Paciente'}`,
                     appointment: appointmentId,
+                    session: sessionId,
                     createdBy: userId,
-                    kind: 'session_payment'
+                    kind: 'package_consumed',
+                    billingType: 'prepaid'
                 }], { session: mongoSession });
                 paymentCreated = paymentDoc;
                 appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
+                console.log(`[CompleteSessionV2] 💰 Payment prepaid criado: ${paymentCreated._id}`);
+            } else if (addToBalance) {
+                // 🟠 ADD TO BALANCE: cria Payment pending (dívida do paciente)
+                const [paymentDoc] = await Payment.create([{
+                    patient: appointment.patient?._id,
+                    amount: sessionValue,
+                    status: 'pending',
+                    type: 'service',
+                    serviceType: 'session',
+                    paymentMethod: appointment.paymentMethod || 'cash',
+                    paymentDate: now,
+                    financialDate: now,
+                    description: `Sessão particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment: appointmentId,
+                    session: sessionId,
+                    createdBy: userId,
+                    kind: 'session_payment',
+                    billingType: 'particular'
+                }], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[CompleteSessionV2] 💰 Payment pending criado (addToBalance): ${paymentCreated._id}`);
+            } else {
+                // 🔵 PAGO NO ATO: avulso ou per-session não quitado
+                if (appointment.payment) {
+                    const existingPaymentId = appointment.payment._id || appointment.payment;
+                    paymentCreated = await Payment.findByIdAndUpdate(
+                        existingPaymentId,
+                        {
+                            $set: {
+                                status: 'paid',
+                                paidAt: now,
+                                paymentDate: now,
+                                financialDate: now,
+                                amount: sessionValue,
+                                paymentMethod: appointment.paymentMethod || 'cash',
+                                kind: 'session_payment',
+                                billingType: 'particular',
+                                updatedAt: now
+                            }
+                        },
+                        { session: mongoSession, new: true }
+                    );
+                    console.log(`[CompleteSessionV2] 💰 Payment existente atualizado: ${paymentCreated._id}`);
+                } else {
+                    const [paymentDoc] = await Payment.create([{
+                        patient: appointment.patient?._id,
+                        amount: sessionValue,
+                        status: 'paid',
+                        type: 'service',
+                        serviceType: 'session',
+                        paymentMethod: appointment.paymentMethod || 'cash',
+                        paymentDate: now,
+                        paidAt: now,
+                        financialDate: now,
+                        description: `Sessão realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                        appointment: appointmentId,
+                        session: sessionId,
+                        createdBy: userId,
+                        kind: 'session_payment',
+                        billingType: 'particular'
+                    }], { session: mongoSession });
+                    paymentCreated = paymentDoc;
+                    appointmentUpdate.$set.payment = paymentCreated._id;
+                    console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
                 }
 
                 // 🏦 PACOTE PER-SESSION: atualiza totalPaid e recalcula balance
