@@ -55,27 +55,35 @@ export async function calculateFinancialSnapshot({
   };
 
   // Date filter: usa paymentDate (data do pagamento/agendamento) ou serviceDate
+  // paymentDate e serviceDate são strings 'YYYY-MM-DD' no DB
+  const dateConditions = [];
   if (startDate || endDate) {
-    query.$or = [];
     const dateFilter = {};
-    if (startDate) dateFilter.$gte = new Date(startDate);
-    if (endDate) dateFilter.$lte = new Date(endDate);
+    if (startDate) dateFilter.$gte = startDate;
+    if (endDate) dateFilter.$lte = endDate;
     
-    query.$or.push({ paymentDate: dateFilter });
-    query.$or.push({ serviceDate: dateFilter });
-    // Se não tiver nenhuma das datas, ainda assim pega pelo paymentDate
-    if (Object.keys(dateFilter).length > 0 && query.$or.length === 0) {
-      query.paymentDate = dateFilter;
-      delete query.$or;
-    }
+    dateConditions.push({ paymentDate: dateFilter });
+    dateConditions.push({ serviceDate: dateFilter });
   }
 
+  const patientConditions = [];
   if (patientId) {
     const pid = patientId.toString();
-    query.$or = [
-      { patient: new mongoose.Types.ObjectId(pid) },
-      { patientId: pid }
-    ];
+    patientConditions.push({ patient: new mongoose.Types.ObjectId(pid) });
+    patientConditions.push({ patientId: pid });
+  }
+
+  // Monta $and para não sobrescrever condições
+  const andConditions = [];
+  if (dateConditions.length > 0) {
+    andConditions.push({ $or: dateConditions });
+  }
+  if (patientConditions.length > 0) {
+    andConditions.push({ $or: patientConditions });
+  }
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+    delete query.$or;
   }
 
   // ── Fetch payments ──

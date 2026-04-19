@@ -139,9 +139,12 @@ class ConvenioMetricsService {
      * Estas contam como RECEITA REALIZADA
      */
     async _getSessoesRealizadas(start, end) {
+        // start/end podem ser strings ou Date; garantir Date para ISODate queries
+        const startDate = start instanceof Date ? start : moment.tz(start, TIMEZONE).startOf('day').toDate();
+        const endDate = end instanceof Date ? end : moment.tz(end, TIMEZONE).endOf('day').toDate();
         const sessoes = await Session.find({
             status: 'completed',
-            date: { $gte: start, $lte: end },
+            date: { $gte: startDate, $lte: endDate },
             $or: [
                 { paymentMethod: 'convenio' },
                 { insuranceGuide: { $exists: true, $ne: null } }
@@ -161,9 +164,11 @@ class ConvenioMetricsService {
      * Estas representam pipeline futuro
      */
     async _getSessoesAgendadas(start, end) {
+        const startDate = start instanceof Date ? start : moment.tz(start, TIMEZONE).startOf('day').toDate();
+        const endDate = end instanceof Date ? end : moment.tz(end, TIMEZONE).endOf('day').toDate();
         const sessoes = await Session.find({
             status: 'scheduled',
-            date: { $gte: start, $lte: end },
+            date: { $gte: startDate, $lte: endDate },
             $or: [
                 { paymentMethod: 'convenio' },
                 { insuranceGuide: { $exists: true, $ne: null } }
@@ -225,9 +230,10 @@ class ConvenioMetricsService {
         
         // Busca TODAS as sessões realizadas ATÉ O ÚLTIMO DIA DO MÊS PESQUISADO
         // que ainda não foram pagas
+        const ultimoDiaDate = moment.tz(ultimoDiaMes, TIMEZONE).endOf('day').toDate();
         const sessoes = await Session.find({
             status: 'completed',
-            date: { $lte: ultimoDiaMes },
+            date: { $lte: ultimoDiaDate },
             $and: [
                 {
                     $or: [
@@ -292,9 +298,10 @@ class ConvenioMetricsService {
             .format('YYYY-MM-DD');
         
         // Busca TODAS as sessões agendadas a partir do mês seguinte
+        const primeiroDiaDate = moment.tz(primeiroDiaMesSeguinte, TIMEZONE).startOf('day').toDate();
         const sessoes = await Session.find({
             status: 'scheduled',
-            date: { $gte: primeiroDiaMesSeguinte }, // A partir do próximo mês
+            date: { $gte: primeiroDiaDate }, // A partir do próximo mês
             $or: [
                 { paymentMethod: 'convenio' },
                 { insuranceGuide: { $exists: true, $ne: null } }
@@ -456,12 +463,16 @@ class ConvenioMetricsService {
      * Retorna datas do período
      */
     _getPeriodDates(month, year) {
-        const start = `${year}-${String(month).padStart(2, '0')}-01`;
-        const end = moment(`${year}-${String(month).padStart(2, '0')}-01`)
+        const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        const endStr = moment(`${year}-${String(month).padStart(2, '0')}-01`)
             .endOf('month')
             .format('YYYY-MM-DD');
         
-        return { start, end };
+        // Retornar Date objects para queries ISODate no MongoDB
+        const start = moment.tz(startStr, TIMEZONE).startOf('day').toDate();
+        const end = moment.tz(endStr, TIMEZONE).endOf('day').toDate();
+        
+        return { start, end, startStr, endStr };
     }
 
     /**

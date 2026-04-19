@@ -307,8 +307,10 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
         const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
 
         // 1. Reprocessar Sessions completed
+        const startDateObj = moment.tz(startDate, TIMEZONE).startOf('day').toDate();
+        const endDateObj = moment.tz(endDate, TIMEZONE).endOf('day').toDate();
         const sessions = await Session.find({
-            date: { $gte: startDate, $lte: endDate },
+            date: { $gte: startDateObj, $lte: endDateObj },
             status: 'completed'
         }).select('date sessionValue paymentMethod package status doctor paymentOrigin').lean();
 
@@ -977,18 +979,26 @@ async function calculateAReceber(year, month) {
     const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
     const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
 
-    // 🆕 Fonte de verdade: Payment (V1) — convênios pendentes
+    // 🆕 Fonte de verdade: Payment — convênios pendentes
+    const startDate = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
+    const endDate = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
     const payments = await Payment.find({
         status: 'pending',
-        $or: [
-            { billingType: 'convenio' },
-            { paymentMethod: 'convenio' },
-            { 'insurance.status': { $in: ['pending_billing', 'billed', 'partial'] } }
-        ],
-        $or: [
-            { paymentDate: { $gte: startStr, $lte: endStr } },
-            { serviceDate: { $gte: startStr, $lte: endStr } },
-            { createdAt: { $gte: moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate(), $lte: moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate() } }
+        $and: [
+            {
+                $or: [
+                    { billingType: 'convenio' },
+                    { paymentMethod: 'convenio' },
+                    { 'insurance.status': { $in: ['pending_billing', 'billed', 'partial'] } }
+                ]
+            },
+            {
+                $or: [
+                    { paymentDate: { $gte: startStr, $lte: endStr } },
+                    { serviceDate: { $gte: startStr, $lte: endStr } },
+                    { createdAt: { $gte: startDate, $lte: endDate } }
+                ]
+            }
         ]
     }).lean();
 
@@ -1358,7 +1368,15 @@ async function calculatePendentes(year, month) {
         const valor = p.amount || 0;
 
         // Determina a data relevante para filtro de mês
-        const dataRef = p.appointment?.date || (p.paymentDate ? moment(p.paymentDate).format('YYYY-MM-DD') : null) || (p.serviceDate ? moment(p.serviceDate).format('YYYY-MM-DD') : null);
+        // appointment.date é ISODate (Date object), paymentDate/serviceDate são strings
+        let dataRef = null;
+        if (p.appointment?.date) {
+            dataRef = moment(p.appointment.date).format('YYYY-MM-DD');
+        } else if (p.paymentDate) {
+            dataRef = moment(p.paymentDate).format('YYYY-MM-DD');
+        } else if (p.serviceDate) {
+            dataRef = moment(p.serviceDate).format('YYYY-MM-DD');
+        }
         
         // Se não tem data de referência, inclui mesmo assim (payment órfão)
         const dentroDoMes = !dataRef || (dataRef >= startStr && dataRef <= endStr);
