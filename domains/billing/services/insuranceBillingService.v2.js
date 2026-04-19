@@ -396,7 +396,7 @@ export class InsuranceBillingService {
             appointmentId: appointment._id,
             patientId: session.patient?._id,
             amount: grossAmount,
-            status: 'pending_billing'
+            status: 'pending'
           }
         },
         {
@@ -596,7 +596,7 @@ export class InsuranceBillingService {
         totalSessions: guide.totalSessions,
         grossAmount: amount,
         netAmount: amount,
-        status: 'pending_billing'
+        status: 'pending'
       },
       
       source: {
@@ -671,7 +671,7 @@ export class InsuranceBillingService {
       patient: session.patient._id,
       'insurance.month': month,
       'insurance.insuranceProvider': guide.insuranceProvider._id || guide.insuranceProvider,
-      status: { $in: ['pending_billing', 'billed'] }
+      status: { $in: ['pending', 'billed'] }
     }).session(mongoSession);
     
     if (payment) {
@@ -707,7 +707,7 @@ export class InsuranceBillingService {
           guideNumber: guide.number,
           grossAmount: amount,
           netAmount: amount,
-          status: 'pending_billing'
+          status: 'pending'
         },
         
         appointments: [{

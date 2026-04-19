@@ -788,7 +788,34 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
     }
 
     // ===================================
-    // 5. ATUALIZAR STATUS DO PACOTE
+    // 5. ATUALIZAR PAYMENTS
+    // ===================================
+    const sessionObjectIds = sessions.map(s => s._id);
+    const paymentUpdateResult = await Payment.updateMany(
+      {
+        $or: [
+          { session: { $in: sessionObjectIds } },
+          { sessionId: { $in: sessionObjectIds } },
+          { appointment: { $in: appointmentIds } },
+          { appointmentId: { $in: appointmentIds } }
+        ],
+        status: { $ne: 'paid' }
+      },
+      {
+        $set: {
+          status: 'paid',
+          paidAt: paymentDateObj,
+          financialDate: paymentDateObj,
+          confirmedAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+    ).session(mongoSession);
+
+    console.log(`✅ ${paymentUpdateResult.modifiedCount} payments marcados como pagos`);
+
+    // ===================================
+    // 6. ATUALIZAR STATUS DO PACOTE
     // ===================================
     pkg.insuranceBillingStatus = 'received';
     await pkg.save({ session: mongoSession });
