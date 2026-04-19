@@ -21,20 +21,29 @@ async function getDashboardCache() {
 /**
  * Cria um novo lote de faturamento de convênio
  */
-export async function createBatch({ insuranceProvider, startDate, endDate, userId }) {
-  console.log(`[InsuranceBatch] Criando lote para ${insuranceProvider}`, { startDate, endDate });
+export async function createBatch({ insuranceProvider, startDate, endDate, userId, sessionIds }) {
+  console.log(`[InsuranceBatch] Criando lote para ${insuranceProvider}`, { startDate, endDate, sessionIds: sessionIds?.length });
   
   // 1. Buscar sessões elegíveis (apenas NÃO vinculadas a lote)
-  const sessions = await Session.find({
+  const query = {
     paymentMethod: 'convenio',
     status: 'completed',
-    insuranceBillingProcessed: true,
     $or: [
       { billingBatchId: { $exists: false } },
       { billingBatchId: null }
-    ],
-    date: { $gte: startDate, $lte: endDate }
-  }).populate('patient appointment insuranceGuide paymentId');
+    ]
+  };
+  
+  // Se sessionIds fornecido, usar explicitamente (faturamento seletivo)
+  // Senão, buscar pelo período e exigir insuranceBillingProcessed
+  if (sessionIds && sessionIds.length > 0) {
+    query._id = { $in: sessionIds };
+  } else {
+    query.insuranceBillingProcessed = true;
+    query.date = { $gte: startDate, $lte: endDate };
+  }
+  
+  const sessions = await Session.find(query).populate('patient appointmentId insuranceGuide paymentId');
   
   console.log(`[InsuranceBatch] Encontradas ${sessions.length} sessões elegíveis (billingBatchId: null)`);
   
@@ -52,7 +61,7 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
     endDate: new Date(endDate),
     sessions: sessions.map(s => ({
       session: s._id,
-      appointment: s.appointment?._id,
+      appointment: s.appointmentId,
       guide: s.insuranceGuide,
       payment: s.paymentId,  // ✅ Vínculo seguro para retorno
       protocolItemId: null,  // ✅ Será preenchido ao gerar XML TISS
@@ -120,12 +129,15 @@ export async function sendBatch(batchId, userId) {
   await Payment.updateMany(
     { 
       session: { $in: sessionIds },
-      billingType: 'convenio'
+      billingType: 'convenio',
+      status: { $in: ['pending', 'pending_billing'] }
     },
     { 
       $set: { 
+        status: 'billed',
         'insurance.status': 'billed',
-        'insurance.billedAt': new Date()
+        'insurance.billedAt': new Date(),
+        updatedAt: new Date()
       }
     }
   );
@@ -246,15 +258,24 @@ export async function processReturn(batchId, returnData) {
       }
     }
     
+    const paymentUpdate = {
+      'insurance.status': insuranceStatus,
+      'insurance.receivedAmount': item.returnAmount || 0,
+      'insurance.glosaAmount': item.glosaAmount || 0,
+      'insurance.receivedAt': new Date().toISOString().split('T')[0]
+    };
+    
+    // Se convênio pagou, atualizar status principal também
+    if (item.status === 'paid') {
+      paymentUpdate.status = 'paid';
+      paymentUpdate.paidAt = new Date();
+      paymentUpdate.financialDate = new Date();
+    }
+    
     await Payment.updateOne(
       query,
       {
-        $set: {
-          'insurance.status': insuranceStatus,
-          'insurance.receivedAmount': item.returnAmount || 0,
-          'insurance.glosaAmount': item.glosaAmount || 0,
-          'insurance.receivedAt': new Date().toISOString().split('T')[0]
-        }
+        $set: paymentUpdate
       }
     );
   }

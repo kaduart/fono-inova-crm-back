@@ -283,12 +283,19 @@ export async function faturarLote(req, res) {
     const startDate = dates[0];
     const endDate = dates[dates.length - 1];
     
-    // 1. Criar batch V2
+    // Extrair sessionIds dos payments selecionados
+    const sessionIds = payments
+      .map(p => p.session?._id)
+      .filter(Boolean)
+      .map(id => id.toString());
+    
+    // 1. Criar batch V2 com sessions específicas
     const batch = await createBatch({
       insuranceProvider: provider,
       startDate,
       endDate,
-      userId
+      userId,
+      sessionIds
     });
     
     // 2. Enviar batch V2

@@ -2232,7 +2232,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         provider: packageDoc.insuranceProvider,
                         grossAmount: convenioValue,
                         authorizationCode: guide?.authorizationCode || null,
-                        status: 'pending_billing'
+                        status: 'pending'
                     },
                     serviceDate: appointment.date,
                     notes: `Sessão de convênio - Guia ${guide?.number || 'N/A'} - Pacote ${packageId}`,

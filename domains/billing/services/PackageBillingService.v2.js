@@ -209,7 +209,7 @@ export class PackageBillingService {
       payment.insurance = {
         provider: guide.insurance,
         authorizationCode: guide.number,
-        status: 'pending_billing',
+        status: 'pending',
         grossAmount: packageValue,
         netAmount: packageValue
       };
@@ -310,7 +310,7 @@ export class PackageBillingService {
         authorizationCode: guide.number,
         month,
         guideNumber: guide.number,
-        status: 'pending_billing',
+        status: 'pending',
         grossAmount: packageValue,
         netAmount: packageValue
       },
