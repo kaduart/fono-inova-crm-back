@@ -112,7 +112,12 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         packagePaymentType: packageData?.paymentType
     });
     
-    const sessionValue = (addToBalance && balanceAmount > 0)
+    const isBalanceOrigin = addToBalance ||
+        appointment.paymentOrigin === 'manual_balance' ||
+        appointment.paymentOrigin === 'add_to_balance' ||
+        (appointment.balanceAmount > 0 && !appointment.sessionValue);
+
+    const sessionValue = (isBalanceOrigin && balanceAmount > 0)
         ? balanceAmount
         : (options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0);
     
@@ -177,8 +182,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 correlationId
             };
             
-            // 💰 REGRA UNIFICADA: isPaid = !addToBalance (para todos os tipos)
-            const paidNow = !addToBalance;
+            // 💰 REGRA UNIFICADA: isPaid = !isBalanceOrigin (para todos os tipos)
+            const paidNow = !isBalanceOrigin;
             
             if (billingType === 'liminar') {
                 // ⚖️ Liminar: sempre pago (crédito judicial)
@@ -202,8 +207,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             } else {
                 // 💰 Per-session: NÃO assumimos pagamento. Payment é fonte de verdade.
                 sessionUpdate.isPaid = false;
-                sessionUpdate.paymentStatus = addToBalance ? 'unpaid' : 'pending';
-                sessionUpdate.paymentOrigin = addToBalance ? 'balance' : 'cash';
+                sessionUpdate.paymentStatus = isBalanceOrigin ? 'unpaid' : 'pending';
+                sessionUpdate.paymentOrigin = isBalanceOrigin ? 'balance' : 'cash';
             }
             
             await Session.findByIdAndUpdate(
@@ -310,8 +315,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 paymentCreated = paymentDoc;
                 appointmentUpdate.$set.payment = paymentCreated._id;
                 console.log(`[CompleteSessionV2] 💰 Payment prepaid criado: ${paymentCreated._id}`);
-            } else if (addToBalance) {
-                // 🟠 ADD TO BALANCE: cria Payment pending (dívida do paciente)
+            } else if (isBalanceOrigin) {
+                // 🟠 ADD TO BALANCE / MANUAL BALANCE: cria Payment pending (dívida do paciente)
                 const [paymentDoc] = await Payment.create([{
                     patient: appointment.patient?._id,
                     amount: sessionValue,
@@ -534,7 +539,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     mongoSession
                 );
                 console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado (${billingType})`);
-            } else if (billingType === 'particular' && addToBalance) {
+            } else if (billingType === 'particular' && isBalanceOrigin) {
                 await FinancialLedger.credit({
                     type: 'payment_pending',
                     amount: sessionValue,
