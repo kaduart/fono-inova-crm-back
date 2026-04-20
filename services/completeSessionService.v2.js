@@ -133,14 +133,17 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         willUpdatePackage: !!packageId
     });
 
-    // 🚨 VALIDAÇÃO: Não permitir addToBalance em pacotes já pagos (prepaid, convenio, liminar)
-    // 🎯 FONTE ÚNICA DA VERDADE: billingType (resolvido por determineBillingType)
-    const isPaidPackage = ['convenio', 'liminar'].includes(billingType) || !!packageId;
-    
-    console.log(`[CompleteSessionV2] Validação addToBalance:`, { billingType, addToBalance, isPaidPackage });
-    
+    // 🚨 VALIDAÇÃO: Não permitir addToBalance em pacotes pré-pagos (prepaid/full/convenio/liminar)
+    // per-session: paga individualmente por sessão → PERMITE addToBalance
+    const pkgPaymentType = packageData?.paymentType;
+    const isPerSessionPkg = pkgPaymentType === 'per-session' || pkgPaymentType === 'per_session';
+    const isPaidPackage = ['convenio', 'liminar'].includes(billingType)
+        || (!!packageId && !isPerSessionPkg);
+
+    console.log(`[CompleteSessionV2] Validação addToBalance:`, { billingType, addToBalance, isPaidPackage, pkgPaymentType });
+
     if (isPaidPackage && addToBalance) {
-        const typeLabel = billingType === 'convenio' ? 'convênio' : 
+        const typeLabel = billingType === 'convenio' ? 'convênio' :
                          billingType === 'liminar' ? 'liminar' : 'já pago';
         throw new Error(`SESSION_ALREADY_PAID: Esta sessão faz parte de um pacote ${typeLabel} e não pode gerar saldo devedor`);
     }
@@ -190,8 +193,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 sessionUpdate.paymentStatus = 'paid';
                 sessionUpdate.paymentOrigin = 'liminar_credit';
                 sessionUpdate.paidAt = new Date();
-            } else if (packageId && !['convenio', 'liminar'].includes(billingType)) {
-                // 📦 Pacote pré-pago/per-session quitado: já foi pago no pacote
+            } else if (packageId && !['convenio', 'liminar'].includes(billingType) && !isPerSessionPkg) {
+                // 📦 Pacote pré-pago (full/prepaid): já foi pago no pacote
                 sessionUpdate.isPaid = true;
                 sessionUpdate.paymentStatus = 'package_paid';
                 sessionUpdate.paymentOrigin = 'package_prepaid';
@@ -207,7 +210,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 // 💰 Per-session: NÃO assumimos pagamento. Payment é fonte de verdade.
                 sessionUpdate.isPaid = false;
                 sessionUpdate.paymentStatus = isBalanceOrigin ? 'unpaid' : 'pending';
-                sessionUpdate.paymentOrigin = isBalanceOrigin ? 'balance' : 'cash';
+                sessionUpdate.paymentOrigin = isBalanceOrigin ? 'manual_balance' : 'auto_per_session';
             }
             
             await Session.findByIdAndUpdate(
@@ -251,7 +254,9 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         if (sessionId && sessionUpdate) {
             appointmentUpdate.$set.isPaid = sessionUpdate.isPaid ?? false;
             appointmentUpdate.$set.paymentStatus = sessionUpdate.paymentStatus ?? 'unknown';
-            appointmentUpdate.$set.paymentMethod = sessionUpdate.paymentOrigin ?? 'unknown';
+            const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
+            const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
+            appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
             appointmentUpdate.$set.balanceAmount = (sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
             
             console.log(`[CompleteSessionV2] Appointment espelhando Session:`, {
@@ -479,7 +484,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             serviceDate: now,
                             'insurance.provider': appointment.insuranceProvider || 'Convênio',
                             'insurance.authorizationCode': appointment.authorizationCode || '',
-                            'insurance.status': 'pending',
+                            'insurance.status': 'pending_billing',
                             'insurance.grossAmount': insuranceValue,
                             updatedAt: now
                         }
@@ -501,7 +506,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     insurance: {
                         provider: appointment.insuranceProvider || 'Convênio',
                         authorizationCode: appointment.authorizationCode || '',
-                        status: 'pending',
+                        status: 'pending_billing',
                         grossAmount: insuranceValue
                     },
                     serviceDate: now,
