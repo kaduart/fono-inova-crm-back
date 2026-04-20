@@ -194,6 +194,7 @@ export const handlePixWebhook = async (req, res) => {
     }
 
     // 🔹 aqui segue o fluxo normal se achou pacote...
+    const paymentDate = date || new Date();
     const paymentDoc = new Payment({
       package: pkg._id,
       patient: pkg.patient,
@@ -206,7 +207,8 @@ export const handlePixWebhook = async (req, res) => {
       serviceType: "package_session",
       kind: "package_receipt",
       notes: `Pagamento via PIX - ${payer}`,
-      paymentDate: date || new Date(),
+      paymentDate: paymentDate,
+      financialDate: paymentDate, // 🎯 Alinhado com paymentDate
     });
     await paymentDoc.save({ session: mongoSession });
 

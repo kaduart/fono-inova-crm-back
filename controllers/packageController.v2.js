@@ -323,20 +323,23 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
 
   const Payment = (await import('../models/Payment.js')).default;
   
-  const paymentDocs = payments.map(p => ({
-    package: pkg._id,
-    patient: pkg.patient,
-    doctor: pkg.doctor,
-    amount: p.amount,
-    paymentMethod: p.method || 'pix',
-    paymentDate: p.date || new Date(),
-    financialDate: new Date(), // 🎯 ESSENCIAL pro caixa
-    kind: 'package_receipt',
-    status: 'paid',
-    paidAt: new Date(),
-    serviceType: 'package_session',
-    notes: p.description || 'Pagamento do pacote'
-  }));
+  const paymentDocs = payments.map(p => {
+    const paymentDate = p.date || new Date();
+    return {
+      package: pkg._id,
+      patient: pkg.patient,
+      doctor: pkg.doctor,
+      amount: p.amount,
+      paymentMethod: p.method || 'pix',
+      paymentDate: paymentDate,
+      financialDate: paymentDate, // 🎯 Alinhado com paymentDate — caixa usa data real do pagamento
+      kind: 'package_receipt',
+      status: 'paid',
+      paidAt: new Date(),
+      serviceType: 'package_session',
+      notes: p.description || 'Pagamento do pacote'
+    };
+  });
 
   const options = mongoSession ? { session: mongoSession } : {};
   return await Payment.insertMany(paymentDocs, options);
