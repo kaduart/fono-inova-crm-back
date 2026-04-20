@@ -62,6 +62,12 @@ function formatSpecialtyName(raw) {
 export async function buildPatientView(patientId, options = {}) {
   const { force = false, correlationId = 'unknown' } = options;
   
+  // 🛡️ GUARDA: patientId inválido = skip imediato
+  if (!patientId || patientId === 'null' || patientId === 'undefined') {
+    logger.warn(`[${correlationId}] ⏭️ Skipping build — invalid patientId: ${patientId}`);
+    return null;
+  }
+  
   logger.info(`[${correlationId}] Building view for patient ${patientId}`, { force });
   
   try {
