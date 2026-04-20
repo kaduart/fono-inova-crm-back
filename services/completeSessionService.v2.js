@@ -294,27 +294,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             }
 
             if (isPrepaidCovered) {
-                // 🟢 PACOTE PRÉ-PAGO QUITADO: cria Payment prepaid (evento contábil, não caixa novo)
-                const [paymentDoc] = await Payment.create([{
-                    patient: appointment.patient?._id,
-                    amount: sessionValue,
-                    status: 'paid',
-                    type: 'service',
-                    serviceType: 'session',
-                    paymentMethod: appointment.paymentMethod || 'cash',
-                    paymentDate: now,
-                    paidAt: now,
-                    financialDate: now,
-                    description: `Sessão pacote pré-pago - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment: appointmentId,
-                    session: sessionId,
-                    createdBy: userId,
-                    kind: 'package_consumed',
-                    billingType: 'prepaid'
-                }], { session: mongoSession });
-                paymentCreated = paymentDoc;
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[CompleteSessionV2] 💰 Payment prepaid criado: ${paymentCreated._id}`);
+                // 🟢 PACOTE PRÉ-PAGO QUITADO: não cria Payment (evita duplicação de caixa)
+                // O dinheiro já entrou no momento da compra do pacote (package_receipt).
+                // O ledger package_consumed será registrado abaixo para reconhecimento contábil.
+                console.log(`[CompleteSessionV2] 💳 Sessão coberta por pagamento antecipado — Payment não criado (evita duplicação de caixa)`);
             } else if (isBalanceOrigin) {
                 // 🟠 ADD TO BALANCE / MANUAL BALANCE: cria Payment pending (dívida do paciente)
                 const [paymentDoc] = await Payment.create([{
@@ -448,7 +431,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             serviceDate: now,
                             'insurance.provider': appointment.insuranceProvider || 'Convênio',
                             'insurance.authorizationCode': appointment.authorizationCode || '',
-                            'insurance.status': 'pending',
+                            'insurance.status': 'pending_billing',
                             'insurance.grossAmount': insuranceValue,
                             updatedAt: now
                         }
@@ -470,7 +453,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     insurance: {
                         provider: appointment.insuranceProvider || 'Convênio',
                         authorizationCode: appointment.authorizationCode || '',
-                        status: 'pending',
+                        status: 'pending_billing',
                         grossAmount: insuranceValue
                     },
                     serviceDate: now,

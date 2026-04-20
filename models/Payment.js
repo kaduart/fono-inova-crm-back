@@ -55,6 +55,16 @@ const paymentSchema = new mongoose.Schema({
         default: null,
         description: 'ID do payment original quando este for criado por remarcação'
     },
+    insurance: {
+        provider: { type: String, default: null },
+        authorizationCode: { type: String, default: null },
+        status: {
+            type: String,
+            enum: ['pending', 'pending_billing', 'billed', 'received', 'rejected', null],
+            default: 'pending'
+        },
+        grossAmount: { type: Number, default: 0 }
+    }
 }, { timestamps: true });
 
 // ============ SCHEMA GUARD - PROTEÇÃO CONSISTÊNCIA ============
