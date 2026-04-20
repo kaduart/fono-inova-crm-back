@@ -31,6 +31,7 @@ import { completeSessionDtoMapper } from '../middleware/dtoMiddleware.js';
 import FinancialGuard from '../services/financialGuard/index.js';
 import { recordSessionCancellationReversal } from '../services/financialLedgerService.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { normalizePaymentMethod } from '../utils/paymentResolver.js';
 import { buildIndividualSession, buildInsuranceSession } from '../domain/session/sessionFactory.js';
 import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
@@ -1687,29 +1688,40 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         amount: updateData.paymentAmount,
         billingType: updateData.billingType
       });
-      const newPayment = new Payment({
-        patient: appointment.patient,
-        doctor: updateData.doctor || appointment.doctor,
-        appointment: appointment._id,
-        amount: updateData.paymentAmount || 0,
-        paymentMethod: updateData.paymentMethod || 'dinheiro',
-        serviceDate: updateData.date || appointment.date,
-        serviceType: updateData.serviceType || appointment.serviceType,
-        billingType: updateData.billingType || 'particular',
-        insuranceProvider: updateData.billingType === 'convenio' ? updateData.insuranceProvider : null,
-        insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
-        authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
-        status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
-        paymentDate: new Date(),
-        paidAt: updateData.billingType === 'convenio' ? undefined : new Date(),
-        kind: 'session_payment',
-        notes: `Pagamento registrado via edição V2 - ${new Date().toLocaleString('pt-BR')}`
-      });
-      
-      await newPayment.save({ session: mongoSession });
-      appointment.payment = newPayment._id;
-      appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
-      await appointment.save({ session: mongoSession });
+
+      // 🩹 RESOLVE PATIENT: appointment.patient pode ser null (pré-agendamento convertido)
+      let resolvedPatientId = appointment.patient || updateData.patientId || null;
+      if (!resolvedPatientId && appointment.patientInfo?.phone) {
+        const foundPatient = await Patient.findOne({ phone: appointment.patientInfo.phone }).session(mongoSession).select('_id');
+        resolvedPatientId = foundPatient?._id || null;
+      }
+      if (!resolvedPatientId) {
+        console.error(`[PUT /appointments/${id}] ❌ Não foi possível resolver patient para criar Payment. Pulando criação de Payment.`);
+      } else {
+        const newPayment = new Payment({
+          patient: resolvedPatientId,
+          doctor: updateData.doctor || appointment.doctor,
+          appointment: appointment._id,
+          amount: updateData.paymentAmount || 0,
+          paymentMethod: normalizePaymentMethod(updateData.paymentMethod) || 'dinheiro',
+          serviceDate: updateData.date || appointment.date,
+          serviceType: updateData.serviceType || appointment.serviceType,
+          billingType: updateData.billingType || 'particular',
+          insuranceProvider: updateData.billingType === 'convenio' ? updateData.insuranceProvider : null,
+          insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
+          authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
+          status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
+          paymentDate: new Date(),
+          paidAt: updateData.billingType === 'convenio' ? undefined : new Date(),
+          kind: 'session_payment',
+          notes: `Pagamento registrado via edição V2 - ${new Date().toLocaleString('pt-BR')}`
+        });
+        
+        await newPayment.save({ session: mongoSession });
+        appointment.payment = newPayment._id;
+        appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
+        await appointment.save({ session: mongoSession });
+      }
     } else if (appointment.package && updateData.billingType !== 'convenio') {
       // Sessão de pacote: permite registrar/atualizar valor se não for convênio
       const existingPayment = appointment.payment
@@ -1737,25 +1749,36 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       } else if (!existingPayment && updateData.paymentAmount > 0) {
         // Sem payment: cria registro avulso para a sessão
         console.log(`[PUT /appointments/${id}] Package session sem payment — criando registro de valor avulso`);
-        const newPayment = new Payment({
-          patient: appointment.patient,
-          doctor: updateData.doctor || appointment.doctor,
-          appointment: appointment._id,
-          amount: updateData.paymentAmount,
-          paymentMethod: updateData.paymentMethod || 'dinheiro',
-          serviceDate: updateData.date || appointment.date,
-          serviceType: updateData.serviceType || appointment.serviceType,
-          billingType: 'particular',
-          status: 'paid',
-          paymentDate: new Date(),
-          paidAt: new Date(),
-          kind: 'session_payment',
-          notes: `Valor avulso registrado em sessão de pacote - ${new Date().toLocaleString('pt-BR')}`
-        });
-        await newPayment.save({ session: mongoSession });
-        appointment.payment = newPayment._id;
-        appointment.sessionValue = updateData.paymentAmount;
-        await appointment.save({ session: mongoSession });
+
+        // 🩹 RESOLVE PATIENT: appointment.patient pode ser null
+        let resolvedPatientId = appointment.patient || updateData.patientId || null;
+        if (!resolvedPatientId && appointment.patientInfo?.phone) {
+          const foundPatient = await Patient.findOne({ phone: appointment.patientInfo.phone }).session(mongoSession).select('_id');
+          resolvedPatientId = foundPatient?._id || null;
+        }
+        if (!resolvedPatientId) {
+          console.error(`[PUT /appointments/${id}] ❌ Não foi possível resolver patient para criar Payment (package). Pulando criação.`);
+        } else {
+          const newPayment = new Payment({
+            patient: resolvedPatientId,
+            doctor: updateData.doctor || appointment.doctor,
+            appointment: appointment._id,
+            amount: updateData.paymentAmount,
+            paymentMethod: normalizePaymentMethod(updateData.paymentMethod) || 'dinheiro',
+            serviceDate: updateData.date || appointment.date,
+            serviceType: updateData.serviceType || appointment.serviceType,
+            billingType: 'particular',
+            status: 'paid',
+            paymentDate: new Date(),
+            paidAt: new Date(),
+            kind: 'session_payment',
+            notes: `Valor avulso registrado em sessão de pacote - ${new Date().toLocaleString('pt-BR')}`
+          });
+          await newPayment.save({ session: mongoSession });
+          appointment.payment = newPayment._id;
+          appointment.sessionValue = updateData.paymentAmount;
+          await appointment.save({ session: mongoSession });
+        }
       }
     }
 
