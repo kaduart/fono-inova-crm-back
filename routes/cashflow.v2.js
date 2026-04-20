@@ -52,7 +52,7 @@ router.get('/', auth, async (req, res) => {
             operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
             isDeleted: { $ne: true },
             patient: { $exists: true, $ne: null }
-        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
+        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').populate('package', 'paymentType').lean();
 
         // ============================================================
         // 🔧 RESOLVE NOMES DE PACIENTES E FILTRA DELETADOS
@@ -322,7 +322,11 @@ router.get('/', auth, async (req, res) => {
 
             // Verificação real de pagamento: Payment vinculado ao appointment
             const temPaymentNoAppointment = !!appointmentPaymentMap.get(a._id.toString());
-            const foiPagoViaPacote = a.paymentStatus === 'package_paid' || isPacote;
+            const packagePaymentType = a.package?.paymentType || null;
+            // per_session / per-session: cada sessão paga individualmente → não conta como pago via pacote
+            const isPerSession = packagePaymentType === 'per_session' || packagePaymentType === 'per-session';
+            const foiPagoViaPacote = a.paymentStatus === 'package_paid'
+                || (isPacote && !isPerSession);
             const foiPago = temPaymentNoAppointment || foiPagoViaPacote;
             const categoria = foiPago ? 'recebido' : 'a_receber';
 
