@@ -82,20 +82,23 @@ export async function buildPatientView(patientId, options = {}) {
       recentPayments,
       totalRevenueAgg,
       totalPendingAgg,
+      totalPendingParticularAgg,
       balance,
       packages
     ] = await Promise.all([
       // Últimos 50 agendamentos (para last/next + lista resumida)
-      Appointment.find({ patient: patientId })
+      // 🎯 ALINHADO com resto do sistema: exclui pré-agendamentos e "fantasmas" de conversão
+      Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } })
         .sort({ date: -1, time: -1 })
         .limit(50)
         .select('date time operationalStatus clinicalStatus doctor serviceType specialty sessionValue paymentStatus')
         .lean(),
       // Counts via aggregation — barato, não carrega documentos
-      Appointment.countDocuments({ patient: patientId }),
-      Appointment.countDocuments({ patient: patientId, operationalStatus: 'completed' }),
-      Appointment.countDocuments({ patient: patientId, operationalStatus: 'canceled' }),
-      Appointment.countDocuments({ patient: patientId, clinicalStatus: 'no_show' }),
+      // 🎯 MESMO FILTRO: evita contar pré-agendamentos e duplicatas de conversão
+      Appointment.countDocuments({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }),
+      Appointment.countDocuments({ patient: patientId, operationalStatus: 'completed', appointmentId: { $exists: false } }),
+      Appointment.countDocuments({ patient: patientId, operationalStatus: 'canceled', appointmentId: { $exists: false } }),
+      Appointment.countDocuments({ patient: patientId, clinicalStatus: 'no_show', operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }),
       // Últimos 200 pagamentos (cobre 99% dos pacientes)
       Payment.find({ patientId })
         .sort({ createdAt: -1 })
@@ -109,6 +112,11 @@ export async function buildPatientView(patientId, options = {}) {
       ]),
       Payment.aggregate([
         { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'pending' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      // 🎯 DÍVIDA REAL DO PACIENTE: exclui convênio e insurance (não é dívida do paciente)
+      Payment.aggregate([
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'pending', billingType: { $nin: ['convenio', 'insurance'] } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       PatientBalance.findOne({ patient: patientId }).lean(),
@@ -129,6 +137,7 @@ export async function buildPatientView(patientId, options = {}) {
       totalPackages: packages.length,
       totalRevenue: totalRevenueAgg[0]?.total || 0,
       totalPending: totalPendingAgg[0]?.total || 0,
+      totalPendingParticular: totalPendingParticularAgg[0]?.total || 0,
       firstAppointmentDate: recentAppointments.length > 0 
         ? recentAppointments[recentAppointments.length - 1].date 
         : null,
@@ -195,9 +204,12 @@ export async function buildPatientView(patientId, options = {}) {
         : [],
       
       // Saldo
+      // 🎯 FONTE DE VERDADE FINANCEIRA: usa totalPendingParticular (Payment) em vez de PatientBalance.currentBalance
+      // PatientBalance é um contador mutável que pode ficar desatualizado/corrompido.
+      // totalPendingParticular = status:pending EXCLUINDO convênio/insurance — é o que o paciente realmente deve.
       balance: {
-        current: balance?.currentBalance || 0,
-        lastUpdated: balance?.updatedAt || null
+        current: stats.totalPendingParticular || 0,
+        lastUpdated: new Date()
       },
       
       // Status
