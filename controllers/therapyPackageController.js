@@ -842,6 +842,32 @@ export const packageOperations = {
                 },
             });
 
+            // 🔗 Retroativamente vincula appointments futuros sem pacote (ex: criados como evaluation/session antes do pacote existir)
+            try {
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const orphanResult = await Appointment.updateMany(
+                    {
+                        patient: patientId,
+                        doctor: doctorId,
+                        date: { $gte: today },
+                        package: null,
+                        operationalStatus: { $nin: ['canceled', 'completed'] },
+                        serviceType: { $in: ['evaluation', 'session', 'individual_session'] }
+                    },
+                    {
+                        $set: {
+                            serviceType: 'package_session',
+                            package: newPackage._id
+                        }
+                    }
+                );
+                if (orphanResult.modifiedCount > 0) {
+                    console.log(`[CREATE PACKAGE] 🔗 ${orphanResult.modifiedCount} appointment(s) retroativamente vinculado(s) ao pacote ${newPackage._id}`);
+                }
+            } catch (orphanErr) {
+                console.warn('[CREATE PACKAGE] ⚠️ Falha ao retroativamente vincular appointments:', orphanErr.message);
+            }
+
             // 🔹 Recarrega o pacote completo para garantir consistência
             const freshPackage = await Package.findById(newPackage._id)
                 .populate('sessions appointments payments')
@@ -2269,6 +2295,7 @@ export const packageOperations = {
             if (!pkg) throw new Error("Pacote não encontrado.");
 
             // 🔹 Criar pagamento principal (recibo do pacote)
+            const paymentDate = moment().tz("America/Sao_Paulo").startOf('day').toDate();
             const paymentDoc = new Payment({
                 package: pkg._id,
                 patient: pkg.patient,
@@ -2280,9 +2307,8 @@ export const packageOperations = {
                 paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
                 kind: "package_receipt",
                 serviceType: "package_session",
-                paymentDate: moment()
-                    .tz("America/Sao_Paulo")
-                    .format("YYYY-MM-DD"),
+                paymentDate: paymentDate,
+                financialDate: paymentDate, // 🎯 Alinhado com paymentDate
                 updatedAt: new Date()
             });
 

@@ -55,6 +55,11 @@ const paymentSchema = new mongoose.Schema({
         default: null,
         description: 'ID do payment original quando este for criado por remarcação'
     },
+    isFromPackage: {
+        type: Boolean,
+        default: false,
+        description: 'True quando o payment representa consumo de crédito de pacote (não é entrada de caixa)'
+    },
     insurance: {
         provider: { type: String, default: null },
         authorizationCode: { type: String, default: null },
@@ -86,8 +91,8 @@ paymentSchema.pre('validate', function(next) {
         this.appointmentId = this.appointment.toString();
     }
     
-    // financialDate para payments pagos
-    if (['paid', 'completed', 'confirmed'].includes(this.status) && !this.financialDate) {
+    // financialDate para payments pagos (exceto consumo de pacote)
+    if (['paid', 'completed', 'confirmed'].includes(this.status) && !this.financialDate && !this.isFromPackage) {
         this.financialDate = this.paidAt || this.paymentDate || new Date();
     }
     
@@ -111,9 +116,30 @@ paymentSchema.pre('save', async function(next) {
     }
     
     if (['paid', 'completed', 'confirmed'].includes(this.status)) {
-        if (!this.financialDate) {
+        if (!this.financialDate && !this.isFromPackage) {
             this.financialDate = this.createdAt || new Date();
         }
+    }
+    
+    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA deve ter financialDate
+    if (this.isFromPackage && this.financialDate) {
+        const error = new Error(
+            `[FINANCIAL_LOCK] Payment de consumo de pacote (isFromPackage=true) não pode ter financialDate. `
+        );
+        error.code = 'PACKAGE_PAYMENT_CANNOT_HAVE_FINANCIAL_DATE';
+        return next(error);
+    }
+    
+    // 🚨 GUARDA LEGADO: prepaid foi removido do domínio
+    if (this.billingType === 'prepaid') {
+        console.error('[FINANCIAL_GUARD] billingType=prepaid detectado — tipo removido do domínio', {
+            paymentId: this._id,
+            patient: this.patient,
+            amount: this.amount
+        });
+        const error = new Error(`[FINANCIAL_LOCK] billingType='prepaid' foi removido do domínio. Use isFromPackage=true + paymentMethod='package'.`);
+        error.code = 'PREPAID_BILLING_TYPE_DEPRECATED';
+        return next(error);
     }
     
     next();

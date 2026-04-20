@@ -143,10 +143,12 @@ router.get('/', auth, async (req, res) => {
         let particularCaixa = 0, pacoteCaixa = 0, convenioCaixa = 0;
         const porEspecialidadeCaixa = {};
 
-        // 1) Filtra testes
+        // 1) Filtra testes e consumo de pacote (NÃO é entrada de caixa)
         let validPayments = payments.filter(p => {
             const nome = (p.patient?.fullName || p.patientName || '').toLowerCase();
-            return !nome.includes('teste') && !nome.includes('test ');
+            if (nome.includes('teste') || nome.includes('test ')) return false;
+            if (p.isFromPackage === true) return false; // 📦 Dinheiro já entrou na compra do pacote
+            return true;
         });
 
         // 2) Exclui payments cujo appointment foi deletado ou cancelado

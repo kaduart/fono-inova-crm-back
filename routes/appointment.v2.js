@@ -301,6 +301,28 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       }
     }
     
+    // Auto-detecta pacote ativo se nenhum packageId foi enviado
+    let resolvedPackageId = packageId || null;
+    let resolvedServiceType = serviceType;
+
+    if (!resolvedPackageId && resolvedPatientId && doctorId && billingType !== 'convenio' && !insuranceGuideId) {
+      try {
+        const activePackage = await Package.findOne({
+          patient: resolvedPatientId,
+          doctor: doctorId,
+          status: 'active'
+        }).select('_id sessionType').lean();
+
+        if (activePackage) {
+          resolvedPackageId = activePackage._id;
+          resolvedServiceType = 'package_session';
+          console.log(`[Create V2] 📦 Pacote ativo detectado automaticamente: ${activePackage._id} → serviceType: package_session`);
+        }
+      } catch (pkgErr) {
+        console.warn('[Create V2] ⚠️ Falha ao detectar pacote ativo:', pkgErr.message);
+      }
+    }
+
     // Cria Appointment direto como "scheduled"
     const appointment = new Appointment({
       patient: resolvedPatientId,
@@ -308,9 +330,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       date: parsedDate,
       time,
       specialty,
-      serviceType,
+      serviceType: resolvedServiceType,
       sessionType: normalizeSessionType(sessionType || specialty),
-      package: packageId,
+      package: resolvedPackageId,
       insuranceGuide: insuranceGuideId,
       lead: resolvedLeadId || null,
 
@@ -319,7 +341,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       paymentStatus: req.body.paymentStatus || 'pending',
 
       // 🩹 GUARD DEFINITIVO: sessionValue nunca pode ser 0 quando há paymentAmount
-      sessionValue: Number(req.body.sessionValue) > 0 ? Number(req.body.sessionValue) : finalAmount,
+      sessionValue: (() => {
+        const sv = Number(req.body.sessionValue ?? 0);
+        if (sv === 0 && finalAmount > 0) {
+          console.warn(`[POST /v2/appointments] 🩹 sessionValue corrigido automaticamente`, { original: req.body.sessionValue, paymentAmount: finalAmount });
+        }
+        return sv > 0 ? sv : finalAmount;
+      })(),
       paymentMethod: req.body.paymentMethod || 'dinheiro',
       billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
 
@@ -444,9 +472,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
             date,
             time,
             specialty,
-            serviceType,
+            serviceType: resolvedServiceType,
             sessionType: normalizeSessionType(sessionType || specialty),
-            packageId: packageId?.toString() || null,
+            packageId: resolvedPackageId?.toString() || null,
             insuranceGuideId: insuranceGuideId?.toString() || null,
             amount: finalAmount,
             paymentMethod,
