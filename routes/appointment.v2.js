@@ -590,6 +590,21 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       }
     }
 
+    // 🔄 CANCELA SESSION associada se existir e não estiver completada
+    if (appointment.session) {
+      const sessionId = appointment.session._id || appointment.session;
+      const sessionDoc = await Session.findById(sessionId).session(mongoSession);
+      if (sessionDoc && sessionDoc.status !== 'completed') {
+        sessionDoc.status = 'canceled';
+        sessionDoc.canceledAt = new Date();
+        sessionDoc.cancelReason = reason;
+        await sessionDoc.save({ session: mongoSession });
+        console.log(`[cancel] 📋 Session ${sessionId} cancelada (status anterior: ${sessionDoc.status})`);
+      } else if (sessionDoc && sessionDoc.status === 'completed') {
+        console.log(`[cancel] 📋 Session ${sessionId} já completada — não cancelada para preservar histórico`);
+      }
+    }
+
     await mongoSession.commitTransaction();
 
     // 🔄 REBUILD SÍNCRONO da view (se houver pacote)
@@ -1557,6 +1572,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     const updateData = {
       ...req.body,
+      patient: req.body.patientId || appointment.patient,   // 🎯 converte patientId → patient (igual ao POST)
       doctor: req.body.doctorId || appointment.doctor,
       updatedAt: new Date()
     };
