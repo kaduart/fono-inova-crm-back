@@ -37,6 +37,7 @@ import { buildDateTime } from '../utils/datetime.js';
 import moment from 'moment-timezone';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
+import { PatientService } from '../domains/clinical/services/patientService.js';
 
 // ======================================================================
 // 🔥 CACHE RÁPIDO PARA LISTAGEM (30 segundos)
@@ -317,7 +318,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       clinicalStatus: 'pending',
       paymentStatus: req.body.paymentStatus || 'pending',
 
-      sessionValue: req.body.sessionValue || finalAmount,
+      // 🩹 GUARD DEFINITIVO: sessionValue nunca pode ser 0 quando há paymentAmount
+      sessionValue: Number(req.body.sessionValue) > 0 ? Number(req.body.sessionValue) : finalAmount,
       paymentMethod: req.body.paymentMethod || 'dinheiro',
       billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
 
@@ -706,7 +708,24 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 
   // 🚀 LOCK V2 MODE - Sempre usa V2, sem dualidade
   console.log(`[complete] 🔒 LOCK V2 - Completando ${id}`, { body: req.body });
-  
+
+  // 🩹 RESOLVE PATIENT: se appointment.patient é null (paciente novo nunca persistido)
+  // Delega 100% ao PatientService do domínio clínico
+  const preAppointment = await Appointment.findById(id).select('patient patientInfo patientName phone').lean();
+  if (preAppointment && !preAppointment.patient) {
+    const { patient: resolvedPatient, isNew } = await PatientService.resolvePatientFromInfo({
+      fullName: preAppointment.patientInfo?.fullName || preAppointment.patientName,
+      phone: preAppointment.patientInfo?.phone || preAppointment.phone,
+      email: preAppointment.patientInfo?.email,
+      birthDate: preAppointment.patientInfo?.birthDate
+    }, { userId: req.user?._id?.toString() });
+
+    if (resolvedPatient) {
+      await Appointment.findByIdAndUpdate(id, { $set: { patient: resolvedPatient._id } });
+      console.log(`[complete] ${isNew ? '🆕 Patient criado' : '🔍 Patient resolvido'} via PatientService: ${resolvedPatient._id}`);
+    }
+  }
+
   const result = await completeSessionV2(id, {
     notes,
     evolution,
@@ -1578,6 +1597,15 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       updatedAt: new Date()
     };
 
+    // 🩹 BLINDAGEM: sessionValue 0 com paymentAmount > 0 → usa paymentAmount
+    // O front (agenda externa) às vezes manda sessionValue: 0 mesmo com paymentAmount: 150
+    const rawSessionValue = Number(updateData.sessionValue ?? 0);
+    const rawPaymentAmount = Number(updateData.paymentAmount ?? updateData.crm?.paymentAmount ?? 0);
+    if (rawSessionValue === 0 && rawPaymentAmount > 0) {
+      console.warn(`[PUT /appointments/${id}] 🩹 sessionValue era 0 mas paymentAmount é ${rawPaymentAmount}. Corrigindo sessionValue.`);
+      updateData.sessionValue = rawPaymentAmount;
+    }
+
     // Garante patientInfo — busca do paciente se veio vazio ou zerado (dos dois lados)
     const hasValidPatientInfo = updateData.patientInfo?.fullName && updateData.patientInfo.fullName.trim() !== '';
     if (!hasValidPatientInfo) {
@@ -1856,24 +1884,28 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       }
     });
     
-    await publishEvent(EventTypes.APPOINTMENT_UPDATED, {
-      appointmentId: updatedAppointment._id,
-      patientId: updatedAppointment.patient,
-      doctorId: updatedAppointment.doctor,
-      changes: Object.keys(updateData),
-      previousDate: appointment.date,
-      newDate: updateData.date,
-      previousTime: appointment.time,
-      newTime: updateData.time,
-      updatedBy: req.user._id,
-      timestamp: new Date(),
-      // 🎯 SIDE EFFECTS DATA (para processamento async)
-      sideEffects: sideEffectsPayload,
-      _meta: {
-        version: '2.1-event-enriched',
-        extractedAt: new Date().toISOString()
+    // 🛡️ Só publica evento se tiver patientId válido (evita crash no worker)
+    const eventPatientId = updatedAppointment.patient || updateData.patientId || req.body.patientId;
+    if (eventPatientId) {
+      await publishEvent(EventTypes.APPOINTMENT_UPDATED, {
+        appointmentId: updatedAppointment._id,
+        patientId: eventPatientId,
+        doctorId: updatedAppointment.doctor,
+        changes: Object.keys(updateData),
+        previousDate: appointment.date,
+        newDate: updateData.date,
+        previousTime: appointment.time,
+        newTime: updateData.time,
+        updatedBy: req.user._id,
+        timestamp: new Date(),
+        // 🎯 SIDE EFFECTS DATA (para processamento async)
+        sideEffects: sideEffectsPayload,
+        _meta: {
+          version: '2.1-event-enriched',
+          extractedAt: new Date().toISOString()
       }
-    });
+      });
+    }
     
     clearCache();
     await updatedAppointment.populate('patient', 'fullName name phone dateOfBirth email');
