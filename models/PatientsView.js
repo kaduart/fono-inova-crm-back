@@ -51,7 +51,8 @@ const patientsViewSchema = new mongoose.Schema({
     totalPackages: { type: Number, default: 0 },
     
     totalRevenue: { type: Number, default: 0 }, // valor total pago
-    totalPending: { type: Number, default: 0 }, // valor em aberto
+    totalPending: { type: Number, default: 0 }, // valor em aberto (todos os pending)
+    totalPendingParticular: { type: Number, default: 0 }, // 🎯 dívida real do paciente (exclui convênio/insurance)
     
     firstAppointmentDate: { type: Date },
     lastAppointmentDate: { type: Date },
