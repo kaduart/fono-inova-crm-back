@@ -299,6 +299,40 @@ export async function upsertPatientByPhone(data, context = {}) {
   }
 }
 
+/**
+ * Resolve ou cria paciente a partir de informações cruas (ex: patientInfo de um Appointment).
+ * Usado quando um agendamento chega sem patientId (paciente novo da agenda externa).
+ *
+ * @param {Object} info - Objeto com dados do paciente
+ * @param {Object} context - Contexto (userId, correlationId)
+ * @returns {Promise<{patient: Object, isNew: boolean}>}
+ */
+export async function resolvePatientFromInfo(info, context = {}) {
+  const { userId, correlationId = crypto.randomUUID() } = context;
+  const phone = info.phone || '';
+  let patient = null;
+  let isNew = false;
+
+  if (phone) {
+    patient = await Patient.findOne({ phone }).lean();
+  }
+
+  if (!patient && info.fullName) {
+    const result = await createPatient({
+      fullName: info.fullName,
+      phone: phone || undefined,
+      email: info.email || undefined,
+      dateOfBirth: info.birthDate || info.dateOfBirth || null,
+      status: 'active',
+      isLead: false
+    }, { userId, correlationId });
+    patient = result.patient;
+    isNew = true;
+  }
+
+  return { patient, isNew };
+}
+
 // Exporta service completo
 export const PatientService = {
   createPatient,
@@ -308,6 +342,7 @@ export const PatientService = {
   confirmPatientData,
   findPatientsByIds,
   upsertPatientByPhone,
+  resolvePatientFromInfo,
   ClinicalEventTypes
 };
 

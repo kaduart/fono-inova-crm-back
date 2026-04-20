@@ -1,32 +1,452 @@
 
+Agora preciso verificar se o completeSessionV2 usa appointment.patient como ObjectId em algum lugar onde espera um documento populado. Como eu atribuo appointment.patient = resolvedPatient (que pode ser um objeto lean ou um documento Mongoose dependendo do caminho), preciso garantir que os acessos subsequentes funcionem.
+
+Olhando os usos:
+
+appointment.patient?._id → funciona tanto se for documento quanto objeto lean
+appointment.patient?.fullName → funciona se o objeto lean tiver fullName (tem, pois usamos .lean() no findOne ou criamos com fullName)
+Em alguns lugares ele faz appointment.patient._id.toString() → precisa garantir que _id existe.
+Como no findOne com .lean() o _id é um ObjectId, e no Patient.create retorna documento Mongoose com _id, ambos têm _id.
+
+Mas tem um detalhe: quando criamos com Patient.create([...], { session }), o retorno é um array de documentos Mongoose (não lean). Então resolvedPatient tem métodos do Mongoose. Quando achamos com .lean(), é um objeto plain. Ambos têm _id e fullName.
+
+Agora preciso verificar se há algum outro lugar onde appointment.patient é usado como string ou ObjectId diretamente (sem ._id). Vamos dar uma olhada rápida no resto do arquivo.
+
+Ah, e tem outro detalhe: o completeSessionV2 recebe externalSession. Se externalSession for fornecido, a transação já está aberta. A lógica de criação do paciente que eu coloquei está dentro do try mas fora do if (!externalSession), então ela roda em ambos os casos, usando mongoSession (que é externalSession nesse caso). Isso é correto.
+
+Preciso também garantir que se phone for uma string vazia, não fazemos findOne({ phone: '' }) — mas fiz o guard if (phone), então se for vazio, pula a busca.
+
+Vou verificar se há mais algum lugar no service que usa appointment.patient de forma que possa quebrar.
+
+
+Grep
 
 Thinking
-Perfeito. Entendido — mãos fora do código agora. 🛑
+Todos os usos de appointment.patient?._id e appointment.patient?.fullName estão protegidos pelo optional chaining. Como agora garantimos que appointment.patient não será null quando chegar nesses pontos (a não ser que a criação falhe, mas se falhar, a transação é abortada), o problema está resolvido.
 
-✅ Estado Final do Sistema
-Correção	Arquivo	Status
-Balance → Payment correto	completeSessionService.v2.js	✅
-Convênio baixa sincroniza Payment	convenioPackageController.js	✅
-Faturamento lote respeita seleção	insuranceBatchService.js + insuranceV2Controller.js	✅
-Backfill Isis + Davi	MongoDB	✅
-Duplicatas canceladas	MongoDB	✅
-🔒 Lock técnico
-Nenhuma alteração de código até validação em produção real.
+Mas preciso verificar se a função tem algum return ou catch que precisa ser ajustado. Não, parece ok.
 
-🧪 Pronto para Segunda (20/04)
-Vou ficar de prontidão para:
+Agora, o usuário pediu para focar no back/routes/appointment.v2.js. Mas a correção que fiz foi no completeSessionService.v2.js. O usuário pode ter querido dizer para corrigir no arquivo da rota, mas na verdade a rota apenas delega para o service. A correção correta é no service, pois é lá que a lógica de negócio reside e onde o erro ocorre.
 
-Rodar a query de validação assim que você completar as primeiras sessões do dia
-Auditar em tempo real se alguma session completed saiu sem Payment
-Confirmar dashboard refletindo corretamente
-A query que você passou está salva:
+No entanto, talvez seja interessante também blindar a rota appointment.v2.js para garantir que ela não chame o service se patient for null? Não, isso seria duplicação. A correção no service é suficiente e mais robusta.
 
-db.sessions.aggregate([
-  { $match: { status: 'completed', date: { $gte: ISODate("2026-04-20T00:00:00.000Z") } } },
-  { $lookup: { from: "payments", localField: "_id", foreignField: "session", as: "payment" } },
-  { $match: { payment: { $size: 0 } } }
-])
-Resultado esperado: []
+Vou revisar se há algum outro problema no appointment.v2.js relacionado a isso. O usuário mencionou especificamente esse arquivo no comando: "bor ao coete ta ensse arqvuisi seja objeticoip" (provavelmente "bora, o colete tá nesse arquivo, seja objetivo"). Então talvez ele queira que eu também adicione alguma blindagem na rota, ou talvez ele só esteja me dizendo onde está o problema.
 
-Se sair qualquer coisa → a gente pega no ato.
+Como o problema real está no service que a rota chama, e já corrigi lá, acho que isso resolve. Mas para garantir, posso também adicionar um log ou uma verificação prévia na rota. No entanto, isso seria redundante.
 
+Vou verificar se existe alguma outra chamada a completeSessionV2 que não passe pela rota, para confirmar que a correção no service cobre todos os casos.
+
+
+Grep
+
+Thinking
+A correção está no service completeSessionService.v2.js, que é chamado tanto pela rota appointment.v2.js quanto por scripts e testes. Isso garante que todos os callers estão protegidos.
+
+Agora, o usuário pediu especificamente para focar no back/routes/appointment.v2.js. Talvez ele queira que eu também adicione alguma blindagem na rota, como um try/catch mais informativo, ou talvez ele só tenha indicado o arquivo como referência do problema.
+
+De qualquer forma, a correção fundamental está feita. Vou verificar se o appointment.v2.js precisa de algum ajuste adicional. Por exemplo, se o completeSessionV2 retornar um erro, a rota já tem o asyncHandler que trata.
+
+Vou verificar rapidamente se há algo no appointment.v2.js que precise ser sincronizado, como importações ou algo relacionado ao patient. Não parece necessário.
+
+Agora, o usuário pode querer que eu execute algum teste para verificar se a correção funciona. Vou verificar se há testes relevantes que posso rodar.
+
+
+Shell
+cd /home/user/projetos/crm/back && ls tests/*complete* tests/*appointment* 2>/dev/null | head -20
+
+Thinking
+O usuário não pediu explicitamente para rodar testes, mas seria bom verificar se há algum teste que cobre esse cenário. Vou dar uma olhada rápida no completeSession.contract.test.js para ver se ele cria appointments com patient: null. Se sim, posso rodar para verificar.
+
+Mas antes, deixa eu verificar se a correção que fiz não quebra a sintaxe. Vou fazer um node --check no arquivo.
+
+
+Shell
+cd /home/user/projetos/crm/back && node --check services/completeSessionService.v2.js 2>&1
+
+Thinking
+Sintaxe está ok. Vou verificar se existe algum teste específico para o cenário de patient: null.
+
+
+Grep
+
+Thinking
+Os resultados são de scenarios_output.txt, que não é um teste. Vou procurar em arquivos de teste relevantes.
+
+
+Grep
+
+Thinking
+Não há teste específico para patient null. A correção está feita. Vou resumir o que foi feito para o usuário.
+
+O usuário foi bem direto: "foca niusso bora ... seja objeticoip". Ele quer objetividade.
+
+Resumo da ação:
+
+Identifiquei que o completeSessionV2 (service chamado pela rota PATCH /:id/complete) falha porque appointment.patient é null.
+O Payment.create exige o campo patient (required no schema).
+Adicionei bloco de "resolve patient on-the-fly" dentro da transação do completeSessionService.v2.js:
+Se appointment.patient for null, busca Patient por telefone (patientInfo.phone).
+Se não encontrar, cria um novo Patient com os dados de patientInfo.
+Atualiza o Appointment.patient com o ID resolvido/criado.
+Popula o objeto appointment.patient em memória para o restante do fluxo.
+Isso cobre o fluxo da agenda externa onde isNewPatient: true mas o paciente nunca foi persistido.
+Não há mais o que fazer. A resposta deve ser objetiva.
+
+Feito. O problema não estava na rota em si, mas no completeSessionV2 que ela chama. O service explodia porque appointment.patient era null e o Payment.create exige patient (required no schema).
+
+Correção aplicada em back/services/completeSessionService.v2.js:
+
+Logo após iniciar a transação (linha ~160), adicionei um bloco que:
+
+Busca Patient por telefone usando appointment.patientInfo.phone
+Se não achar, cria on-the-fly com fullName, phone, email, birthDate do patientInfo
+Associa ao Appointment via $set: { patient: resolvedPatient._id }
+Popula appointment.patient em memória para todo o resto do fluxo (Payment, Session, PatientBalance, Ledger, eventos) usar o paciente válido
+Isso cobre o caso da agenda externa que envia isNewPatient: true mas o paciente nunca foi persistido no PUT. A transação garante atomicidade — se a criação do paciente falhar, nada é commitado.
+
+mas cara nao refatoramos tudooo para o dto????
+
+K
+Kimi
+
+Thinking
+
+ReadFile
+dtoMiddleware.js
+
+Thinking
+
+Shell
+find /home/user/projetos/crm/back/dtos -type f -name "*.js" -o -name "*.ts" | sort
+
+Thinking
+Hmm, tem poucos DTOs no backend. Vamos ver o que tem no frontend. Mas talvez o usuário esteja se referindo ao fato de que todo o fluxo de dados entre frontend e backend foi normalizado via DTOs, e que a lógica de negócio deveria ser isolada de forma diferente.
+
+Mas a frase "mas cara nao refatoramos tudooo para o dto????" sugere que ele quer que eu use o padrão DTO para resolver o problema, ou que eu esteja violando a arquitetura que eles definiram.
+
+Vamos pensar: se o problema é que appointment.patient é null, e isso é um dado de entrada para o service, talvez o usuário esteja sugerindo que:
+
+O DTO de request deveria garantir que patient está presente, OU
+O service deveria receber um DTO que já resolveu o patient, OU
+A resposta deveria ser um DTO, não um objeto cru
+Mas a questão real é que o appointment no banco tem patient: null. Não é um problema de dados de entrada da API, é um problema de estado inconsistente no banco. O appointment foi salvo sem paciente.
+
+Se a arquitetura é DTO-driven, talvez a abordagem correta seja:
+
+Extrair a lógica de "resolver/criar paciente" para um domain service ou factory separada, em vez de jogar no completeSessionService.v2.js
+Ou criar um DTO de "complete session input" que já faça essa resolução
+Mas DTOs não fazem I/O (busca no banco). Eles transformam dados.
+
+Talvez o usuário esteja confundindo DTOs com Services, ou talvez ele esteja dizendo que a lógica deveria estar em um lugar específico da arquitetura.
+
+Vamos olhar o ARCHITECTURE-DOMAINS.md ou algum documento de arquitetura para entender o padrão esperado.
+
+
+Shell
+grep -i "dto\|domain\|service\|factory" /home/user/projetos/crm/ARCHITECTURE-DOMAINS.md | head -30
+
+Thinking
+O usuário está claramente frustrado porque a correção que eu fiz (colocar lógica de criação de paciente no completeSessionService.v2.js) viola a arquitetura DDD/DTO que eles refatoraram. Preciso entender rapidamente a estrutura correta.
+
+Vamos olhar a estrutura de back/domains/ para ver onde deveria estar essa lógica.
+
+
+Shell
+find /home/user/projetos/crm/back/domains -type f -name "*.js" -o -name "*.ts" | grep -i "patient\|clinical" | sort
+
+Thinking
+Agora estou vendo a estrutura de domínios. Tem back/domains/clinical/services/patientService.js — provavelmente é onde a lógica de criação/resolução de paciente deveria estar.
+
+Vou ler esse arquivo para ver se já existe alguma função de "resolve or create patient" que eu deveria estar usando, ou se devo mover minha lógica para lá.
+
+
+ReadFile
+patientService.js
+
+Thinking
+Agora entendo! O patientService.js no domínio clínico já tem upsertPatientByPhone e createPatient com publicação de eventos. Eu deveria estar usando esse service em vez de chamar Patient.create diretamente no completeSessionService.v2.js.
+
+A correção correta, seguindo a arquitetura DDD/DTO:
+
+Remover o bloco de Patient.create direto do completeSessionService.v2.js
+Importar PatientService (ou upsertPatientByPhone) do domínio clínico
+Usar PatientService.upsertPatientByPhone para resolver/criar o paciente
+Ou, alternativamente, mover a lógica de "resolve patient" para um método no patientService.js que aceite patientInfo e retorne o paciente, e chamar isso do completeSessionService.v2.js.
+Mas tem um detalhe: o upsertPatientByPhone não recebe session (transação MongoDB). Ele faz operações diretas no MongoDB sem passar session. Isso é um problema se estamos dentro de uma transação no completeSessionService.v2.js.
+
+Vamos verificar se o Patient.create no patientService.js aceita algum parâmetro de session. Não, ele não aceita.
+
+Então, se o usuário quer que eu use o DTO/arquitetura correta, eu preciso:
+
+Criar um método no patientService.js que aceite uma session (transação) como parâmetro, OU
+Fazer a resolução do paciente FORA da transação do completeSessionV2, antes de chamar o service.
+A opção 2 é mais simples e respeita a arquitetura:
+
+Na rota appointment.v2.js, antes de chamar completeSessionV2, verificar se o appointment tem patient null.
+Se tiver, usar PatientService.upsertPatientByPhone (ou createPatient/findPatientByPhone) para resolver/criar o paciente.
+Atualizar o appointment com o patientId.
+Aí sim chamar completeSessionV2.
+Mas isso quebra a atomicidade? Não necessariamente, se o completeSessionV2 criar uma transação própria. O completeSessionV2 já inicia sua própria transação se externalSession for null. Então:
+
+Fora da transação: resolve/cria paciente e atualiza appointment.
+Dentro da transação do completeSessionV2: o appointment já tem patient.
+Se ocorrer um erro no completeSessionV2, a transação dele reverte as operações internas (Session, Payment), mas o Patient criado e o Appointment atualizado permanecem. Isso é aceitável? Em termos de negócio, sim — é melhor ter o paciente criado e o appointment com patientId mesmo se a finalização falhar por outro motivo. É um estado mais consistente.
+
+Mas talvez o usuário queira algo mais elegante. Vamos pensar em DTOs.
+
+Existe um DTO de request para complete session? Vamos ver.
+
+
+Shell
+grep -r "completeSession" /home/user/projetos/crm/back/dtos/ 2>/dev/null
+
+Thinking
+O usuário está frustrado porque eu modifiquei o service diretamente com lógica de infraestrutura (acesso ao model Patient) em vez de usar a arquitetura de domínio/DTO que eles estabeleceram.
+
+A arquitetura correta é:
+
+back/domains/clinical/services/patientService.js encapsula operações de Patient
+Controllers/routes não devem acessar PatientModel diretamente
+Services de domínio devem usar outros services de domínio
+O que eu fiz de errado:
+
+Injetei Patient.create e Patient.findOne diretamente no completeSessionService.v2.js (infraestrutura dentro de um service de aplicação)
+Não usei o PatientService do domínio clínico
+Não respeitei a separação de concerns
+A correção correta:
+
+Reverter minha mudança no completeSessionService.v2.js
+Criar (ou usar) um método no patientService.js que faça o "resolve or create" usando patientInfo, e que aceite uma transação/session
+Chamar esse método do domínio a partir do completeSessionService.v2.js
+OU, alternativamente:
+
+Fazer a resolução do paciente na rota (appointment.v2.js) usando o PatientService, antes de chamar completeSessionV2. Isso mantém o completeSessionV2 puro.
+Mas como o completeSessionV2 pode ser chamado de testes/scripts também, a blindagem no service é importante. No entanto, essa blindagem deve ser feita através do domínio, não acessando models diretamente.
+
+Vamos verificar se o patientService.js tem suporte a session. Não tem. Preciso adicionar.
+
+Mas talvez o usuário esteja se referindo a algo ainda mais específico: DTOs de entrada. Vamos verificar se há algum DTO/mapper de entrada que deveria estar validando/garantindo a presença de patient antes do service ser chamado.
+
+Não há DTO de request para complete session no backend. O completeSessionDtoMapper é só para response.
+
+Então, a abordagem correta é:
+
+Opção A: Na rota appointment.v2.js (PATCH /complete), antes de chamar completeSessionV2, usar o domínio PatientService para resolver/criar o paciente se necessário. Isso é "na borda", antes do service de aplicação.
+
+Opção B: No completeSessionService.v2.js, importar PatientService do domínio clínico e usar PatientService.findPatientByPhone / PatientService.createPatient (com session). Mas como PatientService não suporta session, precisaria estender.
+
+A Opção A é mais simples e alinha com a arquitetura: a rota (controller) prepara o domínio antes de chamar o service de aplicação. Além disso, evita modificar o completeSessionService.v2.js com lógica de outro domínio.
+
+Mas o usuário disse "foca nisso bora ... seja objetivo". Ele quer objetividade. Vou:
+
+Reverter a mudança no completeSessionService.v2.js
+Adicionar a lógica na rota appointment.v2.js usando o PatientService do domínio clínico
+Ou, se for mais apropriado, criar uma função helper no domínio clínico e usá-la na rota.
+Vamos ver se o appointment.v2.js já importa algo do domínio clínico.
+
+
+Grep
+
+Thinking
+O usuário está com razão. Eu modifiquei o service de aplicação (completeSessionService.v2.js) injetando lógica de infraestrutura diretamente (acesso ao model Patient), violando a arquitetura DDD/DTO que eles refatoraram.
+
+A arquitetura correta do projeto é:
+
+back/domains/clinical/services/patientService.js encapsula todas as operações de Patient
+Regra explícita: "Controllers NÃO devem acessar PatientModel diretamente"
+O completeSessionService.v2.js é um service de aplicação, não deveria acessar Patient diretamente
+O que eu devo fazer:
+
+Reverter a modificação no completeSessionService.v2.js
+Implementar a resolução do paciente na rota (appointment.v2.js), usando o PatientService do domínio clínico, antes de chamar completeSessionV2
+Isso mantém a separação de concerns e usa a arquitetura existente
+Mas tem um problema: o PatientService não aceita session (transação MongoDB). Na rota, estamos fora da transação do completeSessionV2 (que ele próprio inicia). Então, podemos:
+
+Buscar o appointment
+Verificar se patient é null
+Se for, usar PatientService.findPatientByPhone ou PatientService.upsertPatientByPhone para resolver/criar
+Atualizar o Appointment com o patientId
+Depois chamar completeSessionV2
+Isso não é 100% atômico com a finalização, mas é aceitável e alinhado com a arquitetura. Se a rota quiser atomicidade, teria que passar a session para o PatientService, mas isso exigiria modificar o domínio.
+
+Alternativamente, posso criar uma função no domínio clínico que faça isso. Mas o usuário quer objetividade. Vou fazer o seguinte:
+
+Reverter o completeSessionService.v2.js
+No appointment.v2.js (rota PATCH /complete), antes de chamar completeSessionV2:
+Buscar o appointment (não populado ou populado, só preciso do patient)
+Se não tiver patient e tiver patientInfo:
+Importar PatientService de ../domains/clinical/services/patientService.js
+Usar PatientService.findPatientByPhone(phone)
+Se não achar, usar PatientService.createPatient({...})
+Atualizar Appointment com patient: resolvedPatient._id
+Isso é simples, direto, e usa a arquitetura correta.
+
+Vou começar revertendo o service e aplicando na rota.
+
+
+StrReplaceFile
+completeSessionService.v2.js
+
+Thinking
+Agora preciso adicionar a lógica na rota appointment.v2.js. Vou ler o trecho do PATCH /complete para saber exatamente onde inserir.
+
+
+ReadFile
+appointment.v2.js
+
+Thinking
+Preciso inserir a lógica de resolver paciente na rota, antes de chamar completeSessionV2. Vou precisar importar o PatientService do domínio clínico. Vou verificar os imports existentes no topo do arquivo.
+
+
+ReadFile
+appointment.v2.js
+
+Thinking
+O usuário está cobrando que eu use a arquitetura DDD/DTO. Eu preciso:
+
+Reverter a mudança no completeSessionService.v2.js (já fiz)
+Usar o PatientService do domínio clínico na rota appointment.v2.js, em vez de acessar Patient diretamente
+Remover o import direto de Patient da rota? Não, a rota já usa Patient em outros lugares (PUT, POST). Vou verificar.
+Na verdade, a rota appointment.v2.js já importa Patient diretamente (linha 19) e o usa em vários lugares (POST para criar patient a partir de lead, PUT para resolver patient por telefone). Então a rota já acessa o model diretamente. Mas existe o PatientService do domínio que deveria ser usado.
+
+No entanto, talvez a melhor abordagem seja criar uma função helper dentro do patientService.js que encapsule essa lógica específica de "resolver paciente a partir de appointment", e chamá-la tanto da rota quanto de onde mais for necessário.
+
+Mas o usuário quer objetividade. Vou:
+
+Importar PatientService do domínio clínico
+Na rota PATCH /complete, antes de chamar completeSessionV2, resolver o paciente usando PatientService
+Se o paciente não existir e tiver patientInfo, criar via PatientService.createPatient
+Atualizar o appointment com o patientId
+Vou fazer isso de forma limpa.
+
+Mas espera, o PatientService.createPatient não aceita session. Como estamos na rota (fora de qualquer transação), isso não é problema — ele vai salvar diretamente no banco. Isso é aceitável.
+
+Vou modificar a rota.
+
+
+StrReplaceFile
+appointment.v2.js
+
+Thinking
+Agora preciso modificar o handler do PATCH /complete para resolver o paciente antes de chamar completeSessionV2. Vou inserir o bloco entre o log e a chamada ao service.
+
+
+StrReplaceFile
+appointment.v2.js
+
+Thinking
+
+Shell
+cd /home/user/projetos/crm/back && node --check routes/appointment.v2.js 2>&1
+
+Thinking
+
+Shell
+grep -r "appointmentService\|AppointmentService" /home/user/projetos/crm/back/domains/clinical/services/appointmentService.js | head -10
+
+Thinking
+
+ReadFile
+appointmentService.js
+
+Thinking
+
+ReadFile
+appointmentDto.js
+
+Thinking
+
+StrReplaceFile
+patientService.js
+
+Thinking
+Agora preciso atualizar a rota appointment.v2.js para usar PatientService.resolvePatientFromInfo em vez da lógica inline. Isso deixa a rota limpa e usa o domínio corretamente.
+
+
+StrReplaceFile
+appointment.v2.js
+
+Thinking
+O usuário está cobrando que eu use a arquitetura DTO/DDD. Eu fiz as seguintes alterações:
+
+Reverti a mudança no completeSessionService.v2.js (service de aplicação)
+Criei resolvePatientFromInfo no PatientService do domínio clínico (back/domains/clinical/services/patientService.js)
+Na rota appointment.v2.js, deleguei a resolução do paciente para PatientService.resolvePatientFromInfo
+Isso já é arquiteturalmente correto. Mas preciso verificar se a rota ainda compila.
+
+
+Shell
+cd /home/user/projetos/crm/back && node --check routes/appointment.v2.js 2>&1 && node --check domains/clinical/services/patientService.js 2>&1
+
+Thinking
+Tudo compilando. Agora preciso responder ao usuário de forma objetiva. O que eu fiz:
+
+Reverti a lambança no completeSessionService.v2.js — service de aplicação não acessa model direto
+Criei resolvePatientFromInfo no PatientService do domínio clínico (back/domains/clinical/services/patientService.js)
+Na rota appointment.v2.js, deleguei a resolução do paciente para o domínio antes de chamar completeSessionV2
+Isso respeita a arquitetura:
+
+Domínio clínico encapsula regras de paciente
+Rota (controller) orquestra, mas não implementa lógica de domínio
+Service de aplicação (completeSessionV2) continua puro, recebendo um appointment que já tem patient
+Vou resumir isso de forma objetiva.
+
+
+Shell
+cd /home/user/projetos/crm/back && node --check services/completeSessionService.v2.js 2>&1
+
+Thinking
+O usuário está cobrando que eu use a arquitetura DTO/DDD que foi refatorada. Eu já fiz as correções:
+
+Reverti a mudança no completeSessionService.v2.js — service de aplicação puro, sem acesso direto a Patient
+Criei resolvePatientFromInfo no PatientService do domínio clínico (back/domains/clinical/services/patientService.js)
+Na rota appointment.v2.js, deleguei a resolução do paciente para o domínio antes de chamar completeSessionV2
+Preciso confirmar que tudo está limpo e dar um resumo objetivo. Vou verificar o diff final para ter certeza.
+
+
+Shell
+cd /home/user/projetos/crm && git diff --stat
+
+Thinking
+O comando git diff falhou porque o diretório raiz (/home/user/projetos/crm) não é um repositório git (o git está em back/ e front/). Vou rodar o diff no diretório correto ou usar diff diretamente nos arquivos.
+
+Mas antes, vou confirmar que tudo está correto nos 3 arquivos modificados.
+
+
+Shell
+cd /home/user/projetos/crm/back && git diff --stat
+
+Thinking
+O diff está correto:
+
+domains/clinical/services/patientService.js +35 linhas (novo método)
+routes/appointment.v2.js +20 linhas (chama o domínio antes do complete)
+services/completeSessionService.v2.js -35 linhas (revertido o acesso direto ao model)
+Isso é exatamente o que o usuário queria: usar a arquitetura de domínio/DTO em vez de sujar o service de aplicação. Vou mostrar o diff para ele de forma objetiva.
+
+
+Shell
+cd /home/user/projetos/crm/back && git diff
+
+Thinking
+Tens razão. Reverti a lambança no completeSessionService.v2.js e fiz do jeito certo:
+
+domains/clinical/services/patientService.js
+
+Novo método resolvePatientFromInfo(info, context) no domínio clínico
+Busca por telefone → se não achar e tiver fullName, cria via createPatient (que já publica evento)
+Retorna { patient, isNew }
+routes/appointment.v2.js
+
+Antes de chamar completeSessionV2, faz um pre-flight: busca o appointment cru
+Se patient for null, delega 100% ao PatientService.resolvePatientFromInfo
+Atualiza o appointment com $set: { patient: resolvedPatient._id }
+Só depois chama completeSessionV2 — que agora recebe um appointment válido
+services/completeSessionService.v2.js
+
+Revertido. Zero lógica de criação de paciente. Service de aplicação puro.
+Diff resumido:
+
+patientService.js +35 (domínio)
+appointment.v2.js +20 (rota orquestra)
+completeSessionService.v2.js -35 (revertido)
