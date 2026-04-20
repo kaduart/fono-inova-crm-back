@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import axios from 'axios';
 
 const BASE_URL = 'http://localhost:5000';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3NzYwOTkwOTIsImV4cCI6MTc3NjE4NTQ5Mn0.pyJovW-uOkvJ0oK6IHlzmPFyQqCdQUnzIutcxpqep6s';
+const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZDk0NjVhYTcxNzUyNDlkMGIxYzg3OSIsImVtYWlsIjoiY2xpbmljYWZvbm9pbm92YUBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJuYW1lIjoiQWRtaW5pc3RyYWRvciIsImlhdCI6MTc3NjcwNTczMiwiZXhwIjoxNzc2NzEyOTMyfQ.jzAkeFT_7VK_RpcwpqJRlR4CJeke-hsqHs9Xut7MMr8';
 const MONGO_URI = 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/test';
 
 const headers = {

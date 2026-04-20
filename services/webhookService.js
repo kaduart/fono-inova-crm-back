@@ -83,6 +83,7 @@ async function processPixTransaction(formattedPix, io) {
 
 
         // 🔹 Cria registro principal de pagamento
+        const paymentDate = moment().tz("America/Sao_Paulo").startOf('day').toDate();
         const paymentDoc = new Payment({
             package: pkg._id,
             patient: pkg.patient,
@@ -95,9 +96,8 @@ async function processPixTransaction(formattedPix, io) {
             serviceType: "package_session",
             kind: "package_receipt",
             notes: `Pagamento via PIX - ${payer}`,
-            paymentDate: moment()
-                .tz("America/Sao_Paulo")
-                .format("YYYY-MM-DD"),
+            paymentDate: paymentDate,
+            financialDate: paymentDate, // 🎯 Alinhado com paymentDate
             updatedAt: new Date()
         });
         await paymentDoc.save({ session: mongoSession });
