@@ -1737,8 +1737,8 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         );
         updatePromises.push(paymentUpdate);
       }
-    } else if (!appointment.package && !appointment.payment && (updateData.paymentAmount > 0 || updateData.billingType === 'convenio')) {
-      // 🛡️ HARDENING: Só cria Payment no PUT se NÃO existir anterior E houver valor real ou convenio
+    } else if (!appointment.package && !appointment.payment && updateData.registrarPagamento === true && (updateData.paymentAmount > 0 || updateData.billingType === 'convenio')) {
+      // 🛡️ HARDENING: Só cria Payment se flag explícito registrarPagamento=true (evita criar pagamento ao confirmar agendamento)
       console.warn(`[PUT /appointments/${id}] ⚠️ Criando novo payment via fluxo de edição. Idealmente payment só deveria ser criado no complete.`, {
         appointmentId: appointment._id,
         amount: updateData.paymentAmount,

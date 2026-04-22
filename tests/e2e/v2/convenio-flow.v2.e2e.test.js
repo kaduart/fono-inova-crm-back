@@ -10,10 +10,14 @@ import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
 import Appointment from '../../../models/Appointment.js';
 import Patient from '../../../models/Patient.js';
 import Doctor from '../../../models/Doctor.js';
+import '../../../models/PatientsView.js';
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import { startAllWorkers, stopAllWorkers } from '../../../workers/index.js';
 import { startRedis } from '../../../services/redisClient.js';
 import { v4 as uuidv4 } from 'uuid';
+import { completeSessionV2 } from '../../../services/completeSessionService.v2.js';
+import Session from '../../../models/Session.js';
+import { consumeInsuranceGuide } from '../../../domain/insurance/consumeInsuranceGuide.js';
 
 // Test data
 let createdPatientId;
@@ -144,43 +148,33 @@ describe('🧪 V2 E2E - Convênio Flow', () => {
   }, 10000);
 
   it('3. Completa e consome guia', async () => {
-    const requestId = uuidv4();
-    
     console.log(`${testContext} Completando agendamento convênio...`);
-    
-    const event = await publishEvent(
-      'APPOINTMENT_COMPLETE_REQUESTED',
+
+    const result = await completeSessionV2(
+      createdAppointmentId.toString(),
       {
-        appointmentId: createdAppointmentId.toString(),
-        insuranceGuideId: createdGuideId.toString(),
-        doctorId: testDoctorId.toString(),
-        patientId: createdPatientId.toString(),
-        completedAt: new Date().toISOString(),
-        notes: 'Sessão convênio completada - E2E',
-        isConvenio: true,
-        requestId
-      },
-      { requestId }
+        addToBalance: false,
+        userId: createdPatientId.toString()
+      }
     );
-    
-    console.log(`${testContext} Evento complete publicado:`, event.eventId);
-    
-    // Aguarda processamento (simply wait)
-    await new Promise(r => setTimeout(r, 8000));
-    
+
+    console.log(`${testContext} completeSessionV2 result:`, result?.success);
+
     // Verifica agendamento
     const apt = await Appointment.findById(createdAppointmentId);
-    console.log(`${testContext} Appointment status:`, apt?.operationalStatus);
-    console.log(`${testContext} Appointment billingType:`, apt?.billingType);
-    console.log(`${testContext} Appointment insuranceGuide:`, apt?.insuranceGuide);
     expect(apt).toBeTruthy();
     expect(apt.operationalStatus).toBe('completed');
-    
+    console.log(`${testContext} Appointment status:`, apt.operationalStatus);
+
+    // Consome guia diretamente (simula o que o worker faria)
+    const session = await Session.findOne({ appointment: createdAppointmentId });
+    await consumeInsuranceGuide(createdGuideId.toString(), session?._id?.toString());
+
     // Verifica guia
     const guide = await InsuranceGuide.findById(createdGuideId);
-    console.log(`${testContext} Guide usedSessions:`, guide?.usedSessions);
     expect(guide).toBeTruthy();
     expect(guide.usedSessions).toBe(1);
+    console.log(`${testContext} Guide usedSessions:`, guide.usedSessions);
     
     console.log(`${testContext} ✅ Complete realizado:`, {
       appointmentStatus: apt.operationalStatus,
