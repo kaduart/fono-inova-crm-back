@@ -286,6 +286,15 @@ router.get('/', auth, async (req, res) => {
         const saldoLiquido = totalCaixa - totalDespesas;
 
         // ========== PRODUÇÃO DO DIA ==========
+        // Para hoje: só conta sessões cuja hora já passou (produção real)
+        const nowBrasilia = moment.tz('America/Sao_Paulo');
+        const isToday = targetDate === nowBrasilia.format('YYYY-MM-DD');
+        const currentTimeStr = nowBrasilia.format('HH:mm');
+
+        const appointmentsProducao = isToday
+            ? validAppointments.filter(a => !a.time || a.time <= currentTimeStr)
+            : validAppointments;
+
         let totalProducao = 0;
         let recebidoProducao = 0;
         let aReceber = 0;
@@ -293,7 +302,7 @@ router.get('/', auth, async (req, res) => {
         const porEspecialidade = {};
         const pendentesCobranca = [];
 
-        const transacoesProducao = validAppointments.map(a => {
+        const transacoesProducao = appointmentsProducao.map(a => {
             const valor = a.sessionValue || 0;
             totalProducao += valor;
 
@@ -423,7 +432,7 @@ router.get('/', auth, async (req, res) => {
                     total: totalProducao,
                     aReceber,
                     recebido: recebidoProducao,
-                    quantidadeAtendimentos: validAppointments.length,
+                    quantidadeAtendimentos: appointmentsProducao.length,
                     ticketMedio: ticketMedioProducao,
                     taxaEficiencia: parseFloat(taxaEficiencia),
                     porTipo: {
@@ -465,7 +474,7 @@ router.get('/', auth, async (req, res) => {
                 },
                 estatisticas: {
                     quantidade: validPayments.length,
-                    quantidadeAtendimentos: validAppointments.length,
+                    quantidadeAtendimentos: appointmentsProducao.length,
                     ticketMedio,
                     ontem: yesterdayTotal
                 },

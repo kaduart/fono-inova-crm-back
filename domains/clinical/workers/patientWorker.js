@@ -174,9 +174,12 @@ async function handleCreatePatient(payload, correlationId) {
     await patient.save({ session });
     
     logger.info(`[${correlationId}] 💾 Patient saved to MongoDB`, { patientId });
-    
-    // 4. Publica evento de sucesso (após commit garantido)
-    // Usamos setImmediate para não bloquear, mas garantir ordem
+
+    await session.commitTransaction();
+
+    logger.info(`[${correlationId}] ✅ Transaction committed`, { patientId });
+
+    // 4. Publica evento APÓS commit — garante que o paciente já está visível no MongoDB
     await publishEvent(
       EventTypes.PATIENT_CREATED,
       {
@@ -189,10 +192,6 @@ async function handleCreatePatient(payload, correlationId) {
       },
       { correlationId }
     );
-    
-    await session.commitTransaction();
-    
-    logger.info(`[${correlationId}] ✅ Transaction committed`, { patientId });
     
     return {
       operation: 'create',
