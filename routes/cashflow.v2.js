@@ -184,7 +184,7 @@ router.get('/', auth, async (req, res) => {
             if (packageIdsFromAppointments.length > 0) {
                 const packages = await Package.find({
                     _id: { $in: packageIdsFromAppointments }
-                }).select('_id sessionsDone totalPaid sessionValue').lean();
+                }).select('_id sessionsDone totalPaid sessionValue paymentType').lean();
                 const packageMap = new Map(packages.map(p => [p._id.toString(), p]));
 
                 validPayments = validPayments.filter(p => {
@@ -194,6 +194,9 @@ router.get('/', auth, async (req, res) => {
 
                     const pkg = packageMap.get(appt.package.toString());
                     if (!pkg) return true;
+
+                    // Pacote per-session: cada sessão é paga no dia — nunca excluir do caixa
+                    if (pkg.paymentType === 'per-session') return true;
 
                     const dividaTotal = (pkg.sessionsDone || 0) * (pkg.sessionValue || 0);
                     const totalPaid = pkg.totalPaid || 0;
