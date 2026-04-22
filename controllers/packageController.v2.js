@@ -29,7 +29,7 @@ import { recordPackageMetric } from '../routes/package.metrics.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
-import moment from 'moment';
+import moment from 'moment-timezone';
 
 const logger = createContextLogger('PackageV2');
 
@@ -324,7 +324,11 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
   const Payment = (await import('../models/Payment.js')).default;
   
   const paymentDocs = payments.map(p => {
-    const paymentDate = p.date || new Date();
+    // Parseia a data no timezone de Brasília para evitar deslocamento UTC
+    // Ex: "2026-04-22" → 2026-04-22T03:00:00Z (meia-noite BRT), não 2026-04-22T00:00:00Z
+    const paymentDate = p.date
+      ? moment.tz(String(p.date).split('T')[0], 'YYYY-MM-DD', 'America/Sao_Paulo').toDate()
+      : moment.tz('America/Sao_Paulo').startOf('day').toDate();
     return {
       package: pkg._id,
       patient: pkg.patient,
@@ -332,7 +336,7 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
       amount: p.amount,
       paymentMethod: p.method || 'pix',
       paymentDate: paymentDate,
-      financialDate: paymentDate, // 🎯 Alinhado com paymentDate — caixa usa data real do pagamento
+      financialDate: paymentDate,
       kind: 'package_receipt',
       status: 'paid',
       paidAt: new Date(),
