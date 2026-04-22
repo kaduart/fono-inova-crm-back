@@ -178,8 +178,8 @@ function createPackageData(data) {
       model: 'convenio',  // 🎯 CAMPO V2 OBRIGATÓRIO
       insuranceGuide: insuranceGuideId,
       insuranceProvider,
-      sessionValue: 0,
-      totalValue: 0,
+      sessionValue: sessionValue || 0,
+      totalValue: (sessionValue || 0) * parseInt(totalSessions),
       totalPaid: 0,
       balance: 0,
       financialStatus: 'paid',
