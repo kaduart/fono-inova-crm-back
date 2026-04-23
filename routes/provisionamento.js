@@ -355,7 +355,8 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       // 2. CAIXA REAL = pagamentos recebidos
       Payment.find({
         paymentDate: { $gte: inicioMes, $lte: fimMes },
-        status: 'paid'
+        status: 'paid',
+        kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
       }).lean(),
 
       // 3. CRÉDITO DE PACOTES ativos pagos
@@ -720,7 +721,8 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
     // 2. VALORES DO MÊS ATUAL
     const pagamentosMes = await Payment.find({
       paymentDate: { $gte: inicioMes, $lte: fimMes },
-      status: 'paid'
+      status: 'paid',
+      kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
     });
 
     const faturamentoMes = pagamentosMes.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -735,7 +737,8 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
       {
         $match: {
           paymentDate: { $gte: inicioMesAnterior, $lte: fimMesAnterior },
-          status: 'paid'
+          status: 'paid',
+          kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
         }
       },
       {

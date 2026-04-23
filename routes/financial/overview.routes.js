@@ -60,6 +60,7 @@ router.get('/overview', async (req, res) => {
         // MATCH: Busca por financialDate (V2) ou paymentDate (legado)
         const matchStage = {
             status: { $ne: 'canceled' },
+            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
             $or: [
                 { financialDate: { $gte: rangeStart, $lte: rangeEnd } },
                 { paymentDate: { $gte: rangeStart, $lte: rangeEnd } }

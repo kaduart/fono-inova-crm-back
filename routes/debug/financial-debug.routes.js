@@ -15,11 +15,13 @@ router.get('/financial-debug', async (req, res) => {
         
         const paidV1 = await Payment.countDocuments({
             status: 'paid',
+            kind: { $ne: 'package_consumed' },
             paymentDate: { $gte: start, $lte: end }
         });
         
         const paidV2 = await Payment.countDocuments({
             status: 'paid',
+            kind: { $ne: 'package_consumed' },
             createdAt: { $gte: start, $lte: end }
         });
         
@@ -27,6 +29,7 @@ router.get('/financial-debug', async (req, res) => {
             {
                 $match: {
                     status: 'paid',
+                    kind: { $ne: 'package_consumed' },
                     $or: [
                         { paymentDate: { $gte: start, $lte: end } },
                         { createdAt: { $gte: start, $lte: end } }

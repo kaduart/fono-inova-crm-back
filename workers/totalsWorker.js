@@ -67,6 +67,7 @@ export function startTotalsWorker() {
         // MATCH: Date direto no paymentDate
         const matchStage = {
             status: { $ne: 'canceled' },
+            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
             paymentDate: { $gte: rangeStart, $lte: rangeEnd }
         };
         if (clinicId) matchStage.clinicId = clinicId;

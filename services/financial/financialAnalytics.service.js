@@ -92,7 +92,7 @@ class FinancialAnalyticsService {
 
         // --- Particular: Payment model ---
         const paymentPipeline = [
-            { $match: { status: 'paid', ...this._getDateMatch(from, to) } },
+            { $match: { status: 'paid', kind: { $ne: 'package_consumed' }, ...this._getDateMatch(from, to) } },
             ...doctorFilter,
             {
                 $lookup: {
@@ -201,7 +201,7 @@ class FinancialAnalyticsService {
 
         // --- Particular: Payment model ---
         const paymentPipeline = [
-            { $match: { status: 'paid', ...this._getDateMatch(from, to) } },
+            { $match: { status: 'paid', kind: { $ne: 'package_consumed' }, ...this._getDateMatch(from, to) } },
             {
                 $lookup: {
                     from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'docInfo'
@@ -337,7 +337,7 @@ class FinancialAnalyticsService {
             Patient.findById(patientId).lean(),
 
             Payment.aggregate([
-                { $match: { patient: new mongoose.Types.ObjectId(patientId), status: 'paid' } },
+                { $match: { patient: new mongoose.Types.ObjectId(patientId), status: 'paid', kind: { $ne: 'package_consumed' } } },
                 {
                     $group: {
                         _id: null,
@@ -424,7 +424,7 @@ class FinancialAnalyticsService {
 
         // --- Particular: Payment model ---
         const paymentPipeline = [
-            { $match: { status: 'paid' } },
+            { $match: { status: 'paid', kind: { $ne: 'package_consumed' } } },
             {
                 $group: {
                     _id: '$patient',

@@ -114,7 +114,8 @@ router.get('/overview', auth, async (req, res) => {
           {
             $match: {
               status: 'paid',
-              paymentDate: { $gte: startOfMonth, $lte: endOfMonth }
+              paymentDate: { $gte: startOfMonth, $lte: endOfMonth },
+              kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
             }
           },
           { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -169,7 +170,8 @@ router.get('/quick-stats', auth, async (req, res) => {
           {
             $match: {
               status: 'paid',
-              createdAt: { $gte: new Date(today.getFullYear(), today.getMonth(), 1) }
+              createdAt: { $gte: new Date(today.getFullYear(), today.getMonth(), 1) },
+              kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
             }
           },
           { $group: { _id: null, total: { $sum: '$amount' } } }

@@ -79,9 +79,12 @@ async function main() {
                     $set: {
                         billingType: newBillingType,
                         kind: newKind,
+                        status: 'consumed',
+                        isFromPackage: true,
                         notes: `[CORREÇÃO BACKFILL: ajustado de '${p.billingType || 'null'}' para '${newBillingType}' para evitar duplicação de caixa] ${p.notes || ''}`.trim(),
                         updatedAt: new Date()
-                    }
+                    },
+                    $unset: { paidAt: "" }
                 });
                 console.log(`[CORRIGIDO] Payment ${p._id}: ${p.billingType || 'null'} → ${newBillingType}, kind: ${newKind}`);
             }

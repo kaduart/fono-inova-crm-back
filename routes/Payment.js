@@ -1420,6 +1420,7 @@ router.get("/totals", async (req, res) => {
         const matchStage = {
             // ❌ EXCLUIR PAGAMENTOS CANCELADOS SEMPRE
             status: { $ne: 'canceled' },
+            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
             $or: [
                 // Preferência: paymentDate (data do atendimento)
                 {
