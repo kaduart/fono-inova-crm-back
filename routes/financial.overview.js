@@ -83,7 +83,7 @@ router.get('/overview', auth, async (req, res) => {
 
         // 🚀 AGGREGATION: Tudo em uma query
         const [data] = await Payment.aggregate([
-            { $match: dateFilter },
+            { $match: { ...dateFilter, kind: { $ne: 'package_consumed' } } },
             {
                 $facet: {
                     // Totais principais

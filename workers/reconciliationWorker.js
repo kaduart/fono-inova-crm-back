@@ -116,6 +116,7 @@ async function reconcilePaymentLedger(results, month) {
         {
             $match: {
                 status: 'paid',
+                kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
                 paymentDate: { $gte: startOfMonth, $lte: endOfMonth }
             }
         },
@@ -226,7 +227,7 @@ async function reconcilePaymentProjection(results, month) {
     
     // Total de payments
     const paymentsTotal = await Payment.aggregate([
-        { $match: { status: 'paid', paymentDate: { $gte: startOfMonth, $lte: endOfMonth } } },
+        { $match: { status: 'paid', kind: { $ne: 'package_consumed' }, paymentDate: { $gte: startOfMonth, $lte: endOfMonth } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
     ]).then(r => r[0]?.total || 0);
     

@@ -54,6 +54,7 @@ router.get('/', auth, async (req, res) => {
         // ======================================================
         const paymentsMatch = {
             status: { $in: ['paid', 'completed', 'confirmed'] },
+            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
             $or: [
                 {
                     paymentDate: {
@@ -154,6 +155,7 @@ router.get('/', auth, async (req, res) => {
             {
                 $match: {
                     status: { $in: ['paid', 'completed', 'confirmed'] },
+                    kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
                     $or: [
                         { paymentDate: { $gte: currentWeekStart.format('YYYY-MM-DD'), $lte: currentWeekEnd.format('YYYY-MM-DD') } },
                         { createdAt: { $gte: currentWeekStart.toDate(), $lte: currentWeekEnd.toDate() } }
@@ -169,6 +171,7 @@ router.get('/', auth, async (req, res) => {
             {
                 $match: {
                     status: { $in: ['paid', 'completed', 'confirmed'] },
+                    kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
                     $or: [
                         { paymentDate: today.format('YYYY-MM-DD') },
                         { createdAt: { $gte: today.toDate(), $lte: today.endOf('day').toDate() } }

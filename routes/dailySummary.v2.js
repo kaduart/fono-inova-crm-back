@@ -67,6 +67,7 @@ router.get('/', async (req, res) => {
                 {
                     $match: {
                         status: 'paid',
+                        kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
                         ...dateRangeQuery
                     }
                 },
@@ -109,6 +110,7 @@ router.get('/', async (req, res) => {
                 {
                     $match: {
                         status: { $in: ['paid', 'pending'] },
+                        kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é produção (já contado na venda)
                         ...dateRangeQuery
                     }
                 },

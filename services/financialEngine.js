@@ -51,7 +51,8 @@ export async function calculateFinancialSnapshot({
   // ── Build query ──
   const query = {
     status: { $in: status },
-    clinicId
+    clinicId,
+    kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
   };
 
   // Date filter: usa paymentDate (data do pagamento/agendamento) ou serviceDate

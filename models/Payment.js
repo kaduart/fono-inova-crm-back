@@ -24,14 +24,14 @@ const paymentSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'partial', 'paid', 'canceled', 'refunded', 'converted_to_package', 'recognized'],
+        enum: ['pending', 'partial', 'paid', 'canceled', 'refunded', 'converted_to_package', 'recognized', 'consumed'],
         default: 'pending'
     },
     serviceType: { type: String, default: null },
     sessionType: { type: String, default: null },
     kind: {
         type: String,
-        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', null],
+        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', null],
         default: null
     },
     billingType: {
@@ -96,6 +96,16 @@ paymentSchema.pre('validate', function(next) {
         this.financialDate = this.paidAt || this.paymentDate || new Date();
     }
     
+    // 🚨 GUARDA FINANCEIRA: package_consumed SEMPRE é consumo de pacote
+    if (this.kind === 'package_consumed' && !this.isFromPackage) {
+        this.isFromPackage = true;
+    }
+    
+    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA pode ter paidAt
+    if ((this.isFromPackage || this.kind === 'package_consumed') && this.paidAt) {
+        this.paidAt = null;
+    }
+    
     next();
 });
 
@@ -105,6 +115,16 @@ paymentSchema.pre('save', async function(next) {
     if (ctx === 'session' || ctx === 'appointment') {
         console.error(`[SECURITY BLOCK] Tentativa de save em Payment por ${ctx} bloqueada`);
         throw new Error(`[SECURITY] ${ctx} não pode criar/atualizar Payment diretamente`);
+    }
+    
+    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA pode ter status 'paid' nem paidAt
+    if ((this.isFromPackage || this.kind === 'package_consumed')) {
+        if (this.status === 'paid') {
+            this.status = 'consumed';
+        }
+        if (this.paidAt) {
+            this.paidAt = null;
+        }
     }
     
     if (this.status === 'paid' && !this.paidAt) {

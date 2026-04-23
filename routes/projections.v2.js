@@ -51,6 +51,7 @@ router.get('/', auth, async (req, res) => {
         // ======================================================
         const paymentsMatch = {
             status: { $ne: 'canceled' },
+            kind: { $ne: 'package_consumed' },
             paymentDate: {
                 $gte: startOfMonth.format('YYYY-MM-DD'),
                 $lte: isCurrentMonth ? today.format('YYYY-MM-DD') : endOfMonth.format('YYYY-MM-DD')
