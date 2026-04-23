@@ -99,7 +99,8 @@ async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
     date: s.date,
     time: s.time,
     status: s.status,
-    isPaid: s.isPaid || false
+    isPaid: s.isPaid || false,
+    paymentMethod: s.paymentMethod || ''
   }));
   return {
     totalSessions,
@@ -211,7 +212,7 @@ export async function buildPackageView(packageId, options = {}) {
       },
       
       snapshot: {
-        version: 1,
+        version: 2,
         calculatedAt: new Date(),
         ttl: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
         isStale: false

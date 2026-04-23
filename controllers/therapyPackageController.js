@@ -1254,6 +1254,14 @@ export const packageOperations = {
                 if (sessionType) sessionDoc.sessionType = sessionType;
                 if (!sessionType && specialty) sessionDoc.sessionType = specialty;
 
+                // 💳 Atualiza dados financeiros da sessão
+                if (payment && payment.method) {
+                    sessionDoc.paymentMethod = payment.method;
+                }
+                if (payment && typeof payment.amount === 'number') {
+                    sessionDoc.sessionValue = payment.amount;
+                }
+
                 // Atualiza confirmedAbsence
                 if (confirmedAbsence !== undefined) {
                     sessionDoc.confirmedAbsence = confirmedAbsence;
@@ -1649,6 +1657,15 @@ export const packageOperations = {
                 // Commit da transação
                 await mongoSession.commitTransaction();
                 transactionCommitted = true;
+
+                // 🔄 Reconstrói view V2 para manter consistência
+                try {
+                    if (sessionDoc.package?._id) {
+                        await buildPackageView(sessionDoc.package._id.toString(), { correlationId: `legacy_session_update_${sessionId}_${Date.now()}` });
+                    }
+                } catch (viewError) {
+                    console.warn('⚠️ Falha ao reconstruir view V2 (não crítico):', viewError.message);
+                }
 
                 // Retorna dados atualizados
                 const updatedSession = await Session.findById(sessionId)

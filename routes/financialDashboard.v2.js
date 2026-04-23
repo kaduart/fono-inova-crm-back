@@ -24,6 +24,7 @@ import financialSnapshotService from '../services/financialSnapshot.service.js';
 import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
+import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -297,12 +298,24 @@ router.get('/', auth, async (req, res) => {
  */
 router.post('/rebuild-snapshot', auth, async (req, res) => {
     try {
-        const { startDate, endDate } = req.body;
+        const { startDate, endDate, clearFirst = true, clinicId } = req.body;
         if (!startDate || !endDate) {
             return res.status(400).json({ success: false, error: 'startDate e endDate são obrigatórios' });
         }
 
-        console.log(`[DashboardV3] Rebuild snapshot: ${startDate} → ${endDate}`);
+        console.log(`[DashboardV3] Rebuild snapshot: ${startDate} → ${endDate} (clearFirst=${clearFirst})`);
+
+        // Limpa snapshots do período antes de reconstruir (evita double-count)
+        if (clearFirst) {
+            const startStr = moment.tz(startDate, TIMEZONE).startOf('day').format('YYYY-MM-DD');
+            const endStr = moment.tz(endDate, TIMEZONE).endOf('day').format('YYYY-MM-DD');
+            const cid = clinicId || req.user?.clinicId || 'default';
+            const deleted = await FinancialDailySnapshot.deleteMany({
+                clinicId: cid,
+                date: { $gte: startStr, $lte: endStr }
+            });
+            console.log(`[DashboardV3] Snapshots deletados: ${deleted.deletedCount} (${startStr} → ${endStr})`);
+        }
 
         const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
 
@@ -366,6 +379,111 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[DashboardV3] Erro no rebuild:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * 🔍 GET /v2/financial/dashboard/audit
+ * Auditoria detalhada do caixa: lista cada pagamento e sessão paga, dia a dia.
+ * Responde à pergunta: "de onde vem o valor do caixa deste mês?"
+ */
+router.get('/audit', auth, async (req, res) => {
+    try {
+        const { month, year } = req.query;
+        const m = parseInt(month || new Date().getMonth() + 1);
+        const y = parseInt(year || new Date().getFullYear());
+        const clinicId = req.user?.clinicId || 'default';
+
+        const startDate = moment.tz([y, m - 1, 1], TIMEZONE).startOf('day').toDate();
+        const endDate   = moment.tz([y, m - 1], TIMEZONE).endOf('month').toDate();
+
+        // 1. Payments pagos (particular + convênio avulso)
+        const payments = await Payment.find({
+            clinicId,
+            status: { $in: ['paid', 'completed', 'confirmed'] },
+            paymentDate: { $gte: startDate, $lte: endDate },
+            amount: { $gte: 1 }
+        })
+        .select('paymentDate paidAt amount billingType paymentMethod description notes patientId doctor')
+        .sort({ paymentDate: 1 })
+        .lean();
+
+        // 2. Sessions de pacote pagas (sem paymentId vinculado — FASE 1 híbrido)
+        const packageSessions = await Session.find({
+            clinicId,
+            isPaid: true,
+            paymentMethod: { $in: ['package', 'convenio', 'plano'] },
+            paymentId: { $exists: false },
+            paidAt: { $gte: startDate, $lte: endDate }
+        })
+        .select('paidAt date sessionValue paymentMethod doctor patientId')
+        .sort({ paidAt: 1 })
+        .lean();
+
+        // 3. Agrupa por dia
+        const byDay = {};
+
+        for (const p of payments) {
+            const day = moment.tz(p.paymentDate, TIMEZONE).format('YYYY-MM-DD');
+            if (!byDay[day]) byDay[day] = { payments: [], sessions: [], totalPayments: 0, totalSessions: 0 };
+            byDay[day].payments.push({
+                tipo: p.billingType || 'particular',
+                metodo: p.paymentMethod,
+                valor: p.amount,
+                descricao: p.description || p.notes || '—',
+                paidAt: p.paidAt,
+                paymentDate: p.paymentDate
+            });
+            byDay[day].totalPayments += p.amount;
+        }
+
+        for (const s of packageSessions) {
+            const day = moment.tz(s.paidAt || s.date, TIMEZONE).format('YYYY-MM-DD');
+            if (!byDay[day]) byDay[day] = { payments: [], sessions: [], totalPayments: 0, totalSessions: 0 };
+            byDay[day].sessions.push({
+                tipo: 'pacote/convênio',
+                metodo: s.paymentMethod,
+                valor: s.sessionValue,
+                paidAt: s.paidAt,
+                sessionDate: s.date
+            });
+            byDay[day].totalSessions += s.sessionValue || 0;
+        }
+
+        // 4. Totais gerais
+        const totalPayments = payments.reduce((a, p) => a + p.amount, 0);
+        const totalSessions = packageSessions.reduce((a, s) => a + (s.sessionValue || 0), 0);
+
+        const breakdown = {
+            particular: payments.filter(p => (p.billingType || 'particular') === 'particular').reduce((a, p) => a + p.amount, 0),
+            convenioAvulso: payments.filter(p => p.billingType === 'convenio').reduce((a, p) => a + p.amount, 0),
+            pacote: totalSessions
+        };
+
+        res.json({
+            success: true,
+            periodo: { mes: m, ano: y, inicio: startDate, fim: endDate },
+            resumo: {
+                totalCaixa: totalPayments + totalSessions,
+                totalPayments,
+                totalSessions,
+                qtdPayments: payments.length,
+                qtdSessions: packageSessions.length,
+                breakdown
+            },
+            porDia: Object.entries(byDay)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([dia, d]) => ({
+                    dia,
+                    totalDia: d.totalPayments + d.totalSessions,
+                    pagamentos: d.payments,
+                    sessoesPacote: d.sessions,
+                    subtotais: { pagamentos: d.totalPayments, sessoesPacote: d.totalSessions }
+                }))
+        });
+    } catch (error) {
+        console.error('[DashboardV3] Erro na auditoria:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
