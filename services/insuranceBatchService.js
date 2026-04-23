@@ -127,13 +127,12 @@ export async function sendBatch(batchId, userId) {
   const sessionIds = batch.sessions.map(s => s.session.toString());
   
   await Payment.updateMany(
-    { 
+    {
       session: { $in: sessionIds },
-      billingType: 'convenio',
-      status: { $in: ['pending', 'pending_billing'] }
+      billingType: 'convenio'
     },
-    { 
-      $set: { 
+    {
+      $set: {
         status: 'billed',
         'insurance.status': 'billed',
         'insurance.billedAt': new Date(),
