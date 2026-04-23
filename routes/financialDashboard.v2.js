@@ -343,6 +343,7 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
 
         // 2. Reprocessar Payments (paid / partial)
         const payments = await Payment.find({
+            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
             $or: [
                 { status: 'paid', paymentDate: { $gte: startDate, $lte: endDate } },
                 { billingType: 'convenio', 'insurance.status': { $in: ['received', 'partial'] }, 'insurance.receivedAt': { $gte: new Date(startDate), $lte: new Date(endDate) } }

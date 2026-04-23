@@ -415,6 +415,7 @@ class FinancialMetricsService {
         $match: {
           billingType: 'particular',
           status: 'paid',
+          kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
           paymentDate: { $gte: start, $lte: end }
         }
       },

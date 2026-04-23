@@ -84,7 +84,8 @@ router.get('/', async (req, res) => {
         // MATCH: Fonte única de verdade = financialDate (V2)
         const matchStage = {
             status: { $ne: 'canceled' },
-            financialDate: { $gte: rangeStart, $lte: rangeEnd }
+            financialDate: { $gte: rangeStart, $lte: rangeEnd },
+            kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
         };
         if (clinicId) matchStage.clinicId = clinicId;
 

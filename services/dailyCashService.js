@@ -21,7 +21,8 @@ const getDailyCash = async (date) => {
                             }
                         ]
                     },
-                    { status: { $ne: 'cancelled' } }
+                    { status: { $ne: 'cancelled' } },
+                    { kind: { $ne: 'package_consumed' } }
                 ]
             }
         },
