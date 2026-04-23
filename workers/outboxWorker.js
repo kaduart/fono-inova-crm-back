@@ -34,23 +34,35 @@ export function startOutboxWorker() {
       outbox.status = 'processing';
       outbox.attempts += 1;
       await outbox.save();
-      
+
+      // Rota especial: snapshot que falhou no fire-and-forget
+      if (outbox.eventType === 'SNAPSHOT_UPDATE') {
+        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
+        const { _originalEventType, ...snapshotPayload } = outbox.payload;
+        await processFinancialEvent(_originalEventType, snapshotPayload);
+        outbox.status = 'published';
+        outbox.publishedAt = new Date();
+        await outbox.save();
+        console.log(`[OutboxWorker] ✅ Snapshot atualizado via outbox: ${outboxId} (${_originalEventType})`);
+        return { status: 'snapshot_updated', originalEventType: _originalEventType };
+      }
+
       // Publica no Redis
       const result = await publishEvent(
         outbox.eventType,
         outbox.payload,
         outbox.options
       );
-      
+
       // Marca como publicado
       outbox.status = 'published';
       outbox.publishedAt = new Date();
       await outbox.save();
-      
+
       console.log(`[OutboxWorker] ✅ Evento publicado: ${outboxId}`);
-      
-      return { 
-        status: 'published', 
+
+      return {
+        status: 'published',
         eventId: result.eventId,
         queue: result.queue
       };

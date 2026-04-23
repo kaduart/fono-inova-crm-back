@@ -657,14 +657,42 @@ if (size > 5000) {
         EventTypes.APPOINTMENT_CANCELED,
     ];
     if (snapshotEventTypes.includes(eventType)) {
-        try {
-            const { processFinancialEvent } = await import('../../workers/financialSnapshotWorker.js');
-            processFinancialEvent(eventType, payload).catch(err =>
-                log.error('snapshot_hook_failed', err.message, { eventId, eventType })
-            );
-        } catch (importErr) {
-            log.warn('snapshot_import_failed', importErr.message, { eventId, eventType });
-        }
+        (async () => {
+            try {
+                const { processFinancialEvent } = await import('../../workers/financialSnapshotWorker.js');
+                let lastErr;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        await processFinancialEvent(eventType, payload);
+                        return;
+                    } catch (err) {
+                        lastErr = err;
+                        if (attempt < 3) await new Promise(r => setTimeout(r, 200 * attempt));
+                    }
+                }
+                log.error('snapshot_hook_failed', `Snapshot falhou após 3 tentativas: ${lastErr?.message}`, { eventId, eventType });
+                // Fallback: persiste no Outbox para retry via worker
+                try {
+                    const OutboxModel = (await import('../../models/Outbox.js')).default;
+                    const entry = new OutboxModel({
+                        eventType: 'SNAPSHOT_UPDATE',
+                        payload: { _originalEventType: eventType, ...payload },
+                        status: 'pending'
+                    });
+                    await entry.save();
+                    const queue = getQueue('outbox-processor');
+                    await queue.add('process-outbox', { outboxId: entry._id.toString() }, {
+                        attempts: 5,
+                        backoff: { type: 'exponential', delay: 1000 }
+                    });
+                    log.info('snapshot_queued_to_outbox', 'Snapshot salvo no outbox para retry', { eventId, eventType, outboxId: entry._id });
+                } catch (outboxErr) {
+                    log.error('snapshot_outbox_save_failed', outboxErr.message, { eventId, eventType });
+                }
+            } catch (importErr) {
+                log.warn('snapshot_import_failed', importErr.message, { eventId, eventType });
+            }
+        })();
     }
 
     // 🆕 V2: atualiza snapshot de DESPESAS de forma não-bloqueante
@@ -673,14 +701,24 @@ if (size > 5000) {
         EventTypes.SESSION_COMPLETED,
     ];
     if (expenseEventTypes.includes(eventType)) {
-        try {
-            const { processExpenseEvent } = await import('../../workers/financialExpenseWorker.js');
-            processExpenseEvent(eventType, payload).catch(err =>
-                log.error('expense_snapshot_hook_failed', err.message, { eventId, eventType })
-            );
-        } catch (importErr) {
-            log.warn('expense_snapshot_import_failed', importErr.message, { eventId, eventType });
-        }
+        (async () => {
+            try {
+                const { processExpenseEvent } = await import('../../workers/financialExpenseWorker.js');
+                let lastErr;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        await processExpenseEvent(eventType, payload);
+                        return;
+                    } catch (err) {
+                        lastErr = err;
+                        if (attempt < 3) await new Promise(r => setTimeout(r, 200 * attempt));
+                    }
+                }
+                log.error('expense_snapshot_hook_failed', `Expense snapshot falhou após 3 tentativas: ${lastErr?.message}`, { eventId, eventType });
+            } catch (importErr) {
+                log.warn('expense_snapshot_import_failed', importErr.message, { eventId, eventType });
+            }
+        })();
     }
     
     return {

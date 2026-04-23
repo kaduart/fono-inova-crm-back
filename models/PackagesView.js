@@ -110,7 +110,8 @@ const packagesViewSchema = new mongoose.Schema({
     date: String,
     time: String,
     status: String,
-    isPaid: Boolean
+    isPaid: Boolean,
+    paymentMethod: String
   }],
 
   // 📈 Metadados do Snapshot

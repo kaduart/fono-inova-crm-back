@@ -388,9 +388,8 @@ class FinancialMetricsService {
 
   // ... (resto do arquivo permanece igual)
   async _calculateCashFromPayments(start, end) {
-    // Converte Date objects para 'YYYY-MM-DD' para comparar com o campo paymentDate (String)
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
+    // Usa Date objects diretamente — paymentDate é type:Date no schema.
+    // Aggregate bypassa Mongoose type casting, então string comparison falha silenciosamente.
 
     // Convênio recebido
     const convenioPayments = await Payment.aggregate([
@@ -410,13 +409,13 @@ class FinancialMetricsService {
       }
     ]);
 
-    // Particular recebido
+    // Particular recebido — usa Date objects, não strings
     const particularPayments = await Payment.aggregate([
       {
         $match: {
           billingType: 'particular',
           status: 'paid',
-          paymentDate: { $gte: startStr, $lte: endStr }
+          paymentDate: { $gte: start, $lte: end }
         }
       },
       {
@@ -713,8 +712,6 @@ class FinancialMetricsService {
   async calculateReceivable(period) {
     const start = period.startDate;
     const end = period.endDate;
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
 
     // 1️⃣ Convênio avulso faturado mas não recebido — filtrado pelo período do mês
     const avulsoReceivable = await Payment.aggregate([
@@ -722,7 +719,7 @@ class FinancialMetricsService {
         $match: {
           billingType: 'convenio',
           'insurance.status': 'billed',
-          paymentDate: { $gte: startStr, $lte: endStr }
+          paymentDate: { $gte: start, $lte: end }
         }
       },
       {
@@ -743,7 +740,7 @@ class FinancialMetricsService {
           paymentMethod: 'convenio',
           package: { $exists: true, $ne: null },
           $or: [{ isPaid: false }, { isPaid: { $exists: false } }],
-          date: { $gte: startStr, $lte: endStr }
+          date: { $gte: start, $lte: end }
         }
       },
       {

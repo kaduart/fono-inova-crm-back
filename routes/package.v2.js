@@ -152,9 +152,14 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       ]
     }).lean();
     
-    // 2. FALLBACK: Se não achou, builda on-the-fly
-    if (!packageView) {
-      logger.info(`[${correlationId}] View not found, building on-the-fly`, { packageId: id });
+    // 2. Verifica se a view precisa ser reconstruída (schema evoluiu)
+    const needsRebuild = !packageView || 
+                         packageView.snapshot?.version < 2 ||
+                         (packageView.sessions?.length > 0 && !packageView.sessions[0].hasOwnProperty('paymentMethod'));
+    
+    // 3. FALLBACK: Se não achou ou está desatualizada, builda on-the-fly
+    if (!packageView || needsRebuild) {
+      logger.info(`[${correlationId}] View not found or stale, building on-the-fly`, { packageId: id, needsRebuild });
       
       try {
         const buildResult = await buildPackageView(id, { correlationId });
