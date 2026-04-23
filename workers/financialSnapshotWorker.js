@@ -23,6 +23,15 @@ import { createContextLogger } from '../utils/logger.js';
 
 const log = createContextLogger(null, 'FinancialSnapshotWorker');
 
+async function findWithRetry(Model, id, select, retries = 2, delayMs = 200) {
+  for (let i = 0; i < retries; i++) {
+    const doc = await Model.findById(id).select(select).lean();
+    if (doc) return doc;
+    if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
 const toDateStr = (d) => {
   if (!d) return null;
   const date = d instanceof Date ? d : new Date(d);
@@ -127,11 +136,17 @@ export async function onPaymentRequested(payload) {
 }
 
 export async function onPaymentCompleted(payload) {
-  const payment = await Payment.findById(payload.paymentId || payload._id)
-    .select('paymentDate billingType insurance.receivedAmount amount paymentMethod category status notes description type serviceType')
-    .lean();
+  const paymentId = payload.paymentId || payload._id;
+  const payment = await findWithRetry(
+    Payment,
+    paymentId,
+    'paymentDate billingType insurance.receivedAmount amount paymentMethod category status notes description type serviceType'
+  );
 
-  if (!payment) return;
+  if (!payment) {
+    log.error('snapshot_payment_not_found', 'Payment não encontrado após retry — snapshot não atualizado', { paymentId, eventId: payload.eventId });
+    return;
+  }
 
   const dateStr = payment.paymentDate || toDateStr(new Date());
   const amount = Number(payment.amount) || 0;
@@ -179,11 +194,17 @@ export async function onPaymentCompleted(payload) {
 }
 
 export async function onPaymentPartial(payload) {
-  const payment = await Payment.findById(payload.paymentId || payload._id)
-    .select('paymentDate amount insurance.receivedAmount paymentMethod status notes description type serviceType billingType')
-    .lean();
+  const paymentId = payload.paymentId || payload._id;
+  const payment = await findWithRetry(
+    Payment,
+    paymentId,
+    'paymentDate amount insurance.receivedAmount paymentMethod status notes description type serviceType billingType'
+  );
 
-  if (!payment) return;
+  if (!payment) {
+    log.error('snapshot_payment_not_found', 'Payment parcial não encontrado após retry — snapshot não atualizado', { paymentId, eventId: payload.eventId });
+    return;
+  }
 
   const dateStr = payment.paymentDate || toDateStr(new Date());
   const received = Number(payment.insurance?.receivedAmount || 0);
@@ -229,11 +250,13 @@ export async function onPaymentPartial(payload) {
 }
 
 export async function onPaymentFailedOrCancelled(payload) {
-  const payment = await Payment.findById(payload.paymentId || payload._id)
-    .select('paymentDate amount status')
-    .lean();
+  const paymentId = payload.paymentId || payload._id;
+  const payment = await findWithRetry(Payment, paymentId, 'paymentDate amount status');
 
-  if (!payment) return;
+  if (!payment) {
+    log.error('snapshot_payment_not_found', 'Payment cancelado/falho não encontrado após retry', { paymentId, eventId: payload.eventId });
+    return;
+  }
 
   const dateStr = payment.paymentDate || toDateStr(new Date());
   const amount = Number(payment.amount) || 0;
