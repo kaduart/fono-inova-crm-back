@@ -77,8 +77,8 @@ export const initializeSocket = (server) => {
 
 export const getIo = () => {
   if (!io) {
-    console.error("❌ getIo() chamado antes de initializeSocket()");
-    throw new Error("Socket.IO não inicializado");
+    console.warn("⚠️ getIo() chamado antes de initializeSocket() — retornando null");
+    return null;
   }
   return io;
 };
