@@ -644,6 +644,14 @@ server.listen(PORT, '0.0.0.0', () => {
           console.log("🎯 Workers 4.0 iniciados (modo monolítico)");
         }
         console.log("✅ Workers ATIVADOS no Web Service");
+
+        // 🛡️ Inicia guardião do pipeline WhatsApp (watchdog crítico)
+        try {
+          const { startWhatsAppPipelineGuard } = await import("./infrastructure/observability/whatsappPipelineGuard.js");
+          startWhatsAppPipelineGuard();
+        } catch (guardErr) {
+          console.warn("⚠️ WhatsApp Pipeline Guard não iniciado:", guardErr.message);
+        }
       } else {
         console.log("⏭️ Workers desabilitados (ENABLE_WORKERS !== true). Use o serviço de Worker separado.");
       }
