@@ -14,7 +14,7 @@
 
 import { Worker } from 'bullmq';
 import { bullMqConnection } from '../../../config/redisConnection.js';
-import { getIo } from '../../../config/socket.js';
+import { emitSocketEvent } from '../../../config/socket.js';
 import ChatProjection from '../../../models/ChatProjection.js';
 import Message from '../../../models/Message.js';
 import logger from '../../../utils/logger.js';
@@ -98,16 +98,10 @@ export function createChatProjectionWorker() {
 
       if (projection) {
         try {
-          const io = getIo();
-          // Atualiza inbox de todos os atendentes conectados
-          io?.emit('chat:inbox:update', projection);
-          // Atualiza sala específica do lead (ChatWindow aberto)
-          io?.to(`chat:${leadId}`).emit('chat:new_message', {
-            leadId,
-            direction: eventType === 'MESSAGE_PERSISTED' ? 'inbound' : 'outbound',
-            lastMessage: projection.lastMessage,
-            lastMessageAt: projection.lastMessageAt,
-          });
+          // Atualiza inbox de todos os atendentes conectados (via Socket.IO ou Redis bridge)
+          await emitSocketEvent('chat:inbox:update', projection);
+          // Sala específica do lead só funciona no monolítico (fallback global cobre 99%)
+          logger.debug('[ChatProjectionWorker] socket emit via bridge', { leadId });
         } catch (socketErr) {
           // Socket.IO só existe no web service — normal em arquitetura separada
           logger.debug('[ChatProjectionWorker] socket emit skipped (worker mode)');

@@ -13,7 +13,7 @@
 
 import { Worker } from 'bullmq';
 import { bullMqConnection } from '../../../config/redisConnection.js';
-import { getIo } from '../../../config/socket.js';
+import { emitSocketEvent } from '../../../config/socket.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { extractMessageContent } from '../../../utils/whatsappMediaExtractor.js';
 import { normalizeE164BR } from '../../../utils/phone.js';
@@ -137,26 +137,21 @@ export function createMessagePersistenceWorker() {
 
       // 🔔 EMITE SOCKET IMEDIATAMENTE (garante atualização da sidebar em tempo real)
       try {
-        const io = getIo();
         const contactIdStr = contact?._id ? String(contact._id) : null;
-        if (io) {
-          io.emit('message:new', {
-            id: messageId,
-            leadId,
-            from,
-            to,
-            type,
-            content: contentToSave,
-            text: contentToSave,
-            timestamp: timestamp.toISOString(),
-            direction: 'inbound',
-            contactId: contactIdStr,
-            contactName: contact?.name || msg.profile?.name || undefined,
-          });
-          console.log('📡 [MessagePersistenceWorker] SOCKET EMITIDO message:new para', from);
-        } else {
-          console.log('⚠️ [MessagePersistenceWorker] getIo() retornou null — socket NÃO emitido');
-        }
+        const result = await emitSocketEvent('message:new', {
+          id: messageId,
+          leadId,
+          from,
+          to,
+          type,
+          content: contentToSave,
+          text: contentToSave,
+          timestamp: timestamp.toISOString(),
+          direction: 'inbound',
+          contactId: contactIdStr,
+          contactName: contact?.name || msg.profile?.name || undefined,
+        });
+        console.log(`📡 [MessagePersistenceWorker] SOCKET ${result.via} message:new para ${from} (${result.clients ?? 'redis'} clients)`);
       } catch (socketErr) {
         // Socket é best-effort — não falha o worker
         logger.warn('[MessagePersistenceWorker] Socket emit falhou (não crítico)', { error: socketErr.message });

@@ -1,6 +1,8 @@
 import { Server } from "socket.io";
+import { redisConnection } from "./redisConnection.js";
 
 let io = null; // Inicia como null
+const REDIS_SOCKET_CHANNEL = "socket:emit";
 
 export const initializeSocket = (server) => {
   // ✅ SINGLETON: Se já existe, retorna a instância existente
@@ -36,6 +38,37 @@ export const initializeSocket = (server) => {
     allowUpgrades: true,
     upgradeTimeout: 10000,
   });
+
+  // 🔄 REDIS BRIDGE: Workers sem Socket.IO publicam aqui; web server repassa
+  if (redisConnection) {
+    try {
+      const subscriber = redisConnection.duplicate();
+      subscriber.subscribe(REDIS_SOCKET_CHANNEL, (err) => {
+        if (err) {
+          console.error("❌ Falha ao subscrever no canal Redis socket:emit:", err.message);
+        } else {
+          console.log("📡 Redis bridge ativo no canal:", REDIS_SOCKET_CHANNEL);
+        }
+      });
+
+      subscriber.on("message", (channel, message) => {
+        if (channel !== REDIS_SOCKET_CHANNEL || !io) return;
+        try {
+          const { event, payload } = JSON.parse(message);
+          io.emit(event, payload);
+          console.log(`📡 [Redis Bridge] Rebroadcast ${event} → ${io.engine?.clientsCount ?? 0} clientes`);
+        } catch (parseErr) {
+          console.error("❌ Redis bridge parse error:", parseErr.message);
+        }
+      });
+
+      subscriber.on("error", (err) => {
+        console.error("❌ Redis subscriber error:", err.message);
+      });
+    } catch (err) {
+      console.error("❌ Erro ao configurar Redis bridge:", err.message);
+    }
+  }
 
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
@@ -81,4 +114,30 @@ export const getIo = () => {
     return null;
   }
   return io;
+};
+
+/**
+ * 🔄 Emite evento via Socket.IO se disponível (monolítico/local),
+ *    ou publica no Redis para o web server rebroadcast (workers no Render).
+ */
+export const emitSocketEvent = async (event, payload) => {
+  const socketIo = getIo();
+  if (socketIo) {
+    socketIo.emit(event, payload);
+    return { emitted: true, via: "socket.io", clients: socketIo.engine?.clientsCount ?? 0 };
+  }
+
+  // Fallback: worker sem Socket.IO → publica no Redis
+  if (redisConnection) {
+    try {
+      await redisConnection.publish(REDIS_SOCKET_CHANNEL, JSON.stringify({ event, payload }));
+      return { emitted: true, via: "redis" };
+    } catch (err) {
+      console.error(`❌ emitSocketEvent Redis falhou (${event}):`, err.message);
+      return { emitted: false, error: err.message };
+    }
+  }
+
+  console.warn(`⚠️ emitSocketEvent: nem Socket.IO nem Redis disponíveis (${event})`);
+  return { emitted: false, error: "No transport available" };
 };
