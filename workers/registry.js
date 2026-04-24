@@ -236,9 +236,13 @@ export async function startWorkerGroup(groupName, workers = []) {
   return workers;
 }
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function startAllWorkerGroups(workers = []) {
   for (const g of VALID_GROUPS) {
     await startWorkerGroup(g, workers);
+    // 🎯 Staggered boot: espera 2s entre grupos para evitar pico de conexões Redis
+    await sleep(2000);
   }
   return workers;
 }
