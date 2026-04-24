@@ -1015,7 +1015,7 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
     console.error('[AppointmentV2] Erro weekly-availability:', error);
     return res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Não foi possível consultar a disponibilidade. Tente novamente.'
     });
   }
 }));
