@@ -52,22 +52,33 @@ import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSe
 import { createIntentClassifierWorker } from '../domains/whatsapp/workers/intentClassifierWorker.js';
 import { createFsmRouterWorker } from '../domains/whatsapp/workers/fsmRouterWorker.js';
 
+// 🎯 Feature flag helper — default true para backward compatibility
+const isEnabled = (flag, defaultValue = true) => {
+  const val = process.env[flag];
+  if (val === undefined || val === '') return defaultValue;
+  return val === 'true';
+};
+
 const GROUPS = {
 
   // =========================
   // SCHEDULING
   // =========================
   scheduling: async (workers) => {
-    workers.push(startCreateAppointmentWorker());
+    if (isEnabled('ENABLE_SCHEDULING_CREATE_APPOINTMENT')) workers.push(startCreateAppointmentWorker());
 
-    try { workers.push(await startCancelOrchestratorWorkerV2()); } catch {}
-    try { workers.push(await startCompleteOrchestratorWorker()); } catch {}
+    if (isEnabled('ENABLE_SCHEDULING_CANCEL')) {
+      try { workers.push(await startCancelOrchestratorWorkerV2()); } catch {}
+    }
+    if (isEnabled('ENABLE_SCHEDULING_COMPLETE')) {
+      try { workers.push(await startCompleteOrchestratorWorker()); } catch {}
+    }
 
-    workers.push(startAppointmentWorker());
-    workers.push(startPreAgendamentoWorker());
-    workers.push(startAppointmentIntegrationWorker());
-    workers.push(startUpdateOrchestratorWorker());
-    workers.push(startSyncMedicalWorker());
+    if (isEnabled('ENABLE_SCHEDULING_APPOINTMENT')) workers.push(startAppointmentWorker());
+    if (isEnabled('ENABLE_SCHEDULING_PRE_AGENDAMENTO')) workers.push(startPreAgendamentoWorker());
+    if (isEnabled('ENABLE_SCHEDULING_APPOINTMENT_INTEGRATION')) workers.push(startAppointmentIntegrationWorker());
+    if (isEnabled('ENABLE_SCHEDULING_UPDATE')) workers.push(startUpdateOrchestratorWorker());
+    if (isEnabled('ENABLE_SCHEDULING_SYNC_MEDICAL')) workers.push(startSyncMedicalWorker());
 
     console.log('[Registry] scheduling ok');
   },
@@ -76,15 +87,15 @@ const GROUPS = {
   // BILLING
   // =========================
   billing: async (workers) => {
-    workers.push(startPaymentWorker());
-    workers.push(startBalanceWorker());
-    workers.push(startPackageValidationWorker());
-    workers.push(startInvoiceWorker());
-    workers.push(startTotalsWorker());
-    workers.push(packageProjectionWorker);
-    workers.push(packageProcessingWorker);
-    workers.push(startBillingConsumerWorker());
-    workers.push(startInsuranceOrchestratorWorker());
+    if (isEnabled('ENABLE_BILLING_PAYMENT')) workers.push(startPaymentWorker());
+    if (isEnabled('ENABLE_BILLING_BALANCE')) workers.push(startBalanceWorker());
+    if (isEnabled('ENABLE_BILLING_PACKAGE_VALIDATION')) workers.push(startPackageValidationWorker());
+    if (isEnabled('ENABLE_BILLING_INVOICE')) workers.push(startInvoiceWorker());
+    if (isEnabled('ENABLE_BILLING_TOTALS')) workers.push(startTotalsWorker());
+    if (isEnabled('ENABLE_BILLING_PACKAGE_PROJECTION')) workers.push(packageProjectionWorker);
+    if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
+    if (isEnabled('ENABLE_BILLING_CONSUMER')) workers.push(startBillingConsumerWorker());
+    if (isEnabled('ENABLE_BILLING_INSURANCE')) workers.push(startInsuranceOrchestratorWorker());
 
     console.log('[Registry] billing ok');
   },
@@ -93,12 +104,12 @@ const GROUPS = {
   // CLINICAL
   // =========================
   clinical: async (workers) => {
-    workers.push(startEvolutionWorker());
-    workers.push(patientWorker);
-    workers.push(patientProjectionWorker);
-    workers.push(startClinicalOrchestratorWorker());
-    workers.push(startSessionWorker());
-    workers.push(startSyncWorker());
+    if (isEnabled('ENABLE_CLINICAL_EVOLUTION')) workers.push(startEvolutionWorker());
+    if (isEnabled('ENABLE_CLINICAL_PATIENT')) workers.push(patientWorker);
+    if (isEnabled('ENABLE_CLINICAL_PATIENT_PROJECTION')) workers.push(patientProjectionWorker);
+    if (isEnabled('ENABLE_CLINICAL_ORCHESTRATOR')) workers.push(startClinicalOrchestratorWorker());
+    if (isEnabled('ENABLE_CLINICAL_SESSION')) workers.push(startSessionWorker());
+    if (isEnabled('ENABLE_CLINICAL_SYNC')) workers.push(startSyncWorker());
 
     console.log('[Registry] clinical ok');
   },
@@ -107,62 +118,100 @@ const GROUPS = {
   // WHATSAPP V2 (EVENT-DRIVEN PIPELINE)
   // =========================
   whatsapp: async (workers) => {
+    const started = [];
 
-    // 1. entrada
-    workers.push(createWhatsappInboundWorker());
+    // 1. entrada (CRÍTICO)
+    if (isEnabled('ENABLE_WHATSAPP_INBOUND', true)) {
+      workers.push(createWhatsappInboundWorker());
+      started.push('inbound');
+    }
 
-    // 2. persistência + lead resolve
-    workers.push(createMessagePersistenceWorker());
+    // 2. persistência + lead resolve (CRÍTICO)
+    if (isEnabled('ENABLE_WHATSAPP_PERSISTENCE', true)) {
+      workers.push(createMessagePersistenceWorker());
+      started.push('persistence');
+    }
 
-    // 3. estado (Redis hot state)
-    workers.push(createConversationStateWorker());
+    // 3. estado (Redis hot state) (CRÍTICO)
+    if (isEnabled('ENABLE_WHATSAPP_CONVERSATION_STATE', true)) {
+      workers.push(createConversationStateWorker());
+      started.push('conversation-state');
+    }
 
-    // 4. contexto IA
-    workers.push(createContextBuilderWorker());
+    // 4. contexto IA (otimização — pode ser desligado se usar contexto inline)
+    if (isEnabled('ENABLE_WHATSAPP_CONTEXT_BUILDER', true)) {
+      workers.push(createContextBuilderWorker());
+      started.push('context-builder');
+    }
 
-    // 5. detecta resposta / follow-up
-    workers.push(createMessageResponseWorker({}));
+    // 5. detecta resposta / follow-up (otimização)
+    if (isEnabled('ENABLE_WHATSAPP_MESSAGE_RESPONSE', true)) {
+      workers.push(createMessageResponseWorker({}));
+      started.push('message-response');
+    }
 
-    // 6. decisão do CRM / FSM brain
-    workers.push(startLeadOrchestratorWorkerV2());
+    // 6. decisão do CRM / FSM brain (CRÍTICO)
+    if (isEnabled('ENABLE_WHATSAPP_LEAD_ORCHESTRATOR', true)) {
+      workers.push(startLeadOrchestratorWorkerV2());
+      started.push('lead-orchestrator');
+    }
 
-    // 7. resposta automática IA
-    workers.push(createWhatsappAutoReplyWorker());
+    // 7. resposta automática IA (CRÍTICO)
+    if (isEnabled('ENABLE_WHATSAPP_AUTO_REPLY', true)) {
+      workers.push(createWhatsappAutoReplyWorker());
+      started.push('auto-reply');
+    }
 
-    // 8. tracking e analytics
-    workers.push(createLeadInteractionWorker());
+    // 8. tracking e analytics (NÃO CRÍTICO — pode desligar)
+    if (isEnabled('ENABLE_WHATSAPP_LEAD_INTERACTION', false)) {
+      workers.push(createLeadInteractionWorker());
+      started.push('lead-interaction');
+    }
 
-    // 9. realtime frontend
-    workers.push(createRealtimeWorker());
+    // 9. realtime frontend (NÃO CRÍTICO — pode desligar)
+    if (isEnabled('ENABLE_WHATSAPP_REALTIME', false)) {
+      workers.push(createRealtimeWorker());
+      started.push('realtime');
+    }
 
-    // 10. read model / dashboard
-    workers.push(createChatProjectionWorker());
+    // 10. read model / dashboard (NÃO CRÍTICO — pode desligar)
+    if (isEnabled('ENABLE_WHATSAPP_CHAT_PROJECTION', false)) {
+      workers.push(createChatProjectionWorker());
+      started.push('chat-projection');
+    }
 
-    // 11. classificação de intenção de follow-up
-    workers.push(createIntentClassifierWorker());
+    // 11. classificação de intenção de follow-up (NÃO CRÍTICO — pode ser inline)
+    if (isEnabled('ENABLE_WHATSAPP_INTENT_CLASSIFIER', false)) {
+      workers.push(createIntentClassifierWorker());
+      started.push('intent-classifier');
+    }
 
-    // 12. roteamento FSM baseado na intenção
-    workers.push(createFsmRouterWorker());
+    // 12. roteamento FSM baseado na intenção (NÃO CRÍTICO — pode ser inline)
+    if (isEnabled('ENABLE_WHATSAPP_FSM_ROUTER', false)) {
+      workers.push(createFsmRouterWorker());
+      started.push('fsm-router');
+    }
 
     // opcional (envio direto se necessário)
     if (process.env.ENABLE_SEND_WORKER === 'true') {
       workers.push(createWhatsappSendWorker());
+      started.push('send');
     }
 
-    console.log('[Registry] whatsapp V2 ok');
+    console.log(`[Registry] whatsapp V2 ok (${started.length} workers: ${started.join(', ')})`);
   },
 
   // =========================
   // RECONCILIATION
   // =========================
   reconciliation: async (workers) => {
-    workers.push(startReconciliationWorker());
-    workers.push(startLeadRecoveryWorker());
-    workers.push(startOutboxWorker());
-    workers.push(startIntegrationOrchestratorWorker());
-    workers.push(startDailyClosingWorker());
-    workers.push(startFollowupOrchestratorWorker());
-    workers.push(startNotificationOrchestratorWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_RECONCILIATION')) workers.push(startReconciliationWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_LEAD_RECOVERY')) workers.push(startLeadRecoveryWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_OUTBOX')) workers.push(startOutboxWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_INTEGRATION')) workers.push(startIntegrationOrchestratorWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_DAILY_CLOSING')) workers.push(startDailyClosingWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_FOLLOWUP')) workers.push(startFollowupOrchestratorWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_NOTIFICATION')) workers.push(startNotificationOrchestratorWorker());
 
     console.log('[Registry] reconciliation ok');
   }
