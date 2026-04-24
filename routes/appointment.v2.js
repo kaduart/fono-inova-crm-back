@@ -198,11 +198,20 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
       } catch (patientErr) {
         console.error('[POST /v2/appointments] ❌ Falha no fluxo Lead→Patient:', patientErr);
+        const isDuplicatePhone = patientErr.code === 11000 && patientErr.keyPattern?.['contact.phone'];
+        if (isDuplicatePhone) {
+          throw createBusinessError(
+            'Já existe um paciente cadastrado com este número de telefone. Verifique se o lead já foi convertido anteriormente.',
+            409,
+            'PATIENT_PHONE_DUPLICATE',
+            { phone: patientErr.keyValue?.['contact.phone'] }
+          );
+        }
         throw createBusinessError(
-          `Falha ao cadastrar paciente para pré-agendamento: ${patientErr.message}`,
+          'Não foi possível cadastrar o paciente para o pré-agendamento. Tente novamente ou contate o suporte.',
           500,
           'PATIENT_CREATE_FAILED',
-          { originalError: patientErr.message, stack: patientErr.stack }
+          { originalError: patientErr.message }
         );
       }
     }
@@ -601,7 +610,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       console.error(`[cancel] ❌ ERRO CRÍTICO no Financial Guard:`, financialErr.message);
       await mongoSession.abortTransaction();
       throw createBusinessError(
-        `Erro ao processar cancelamento financeiro: ${financialErr.message}`,
+        'Não foi possível processar o cancelamento financeiro. Tente novamente ou contate o suporte.',
         500,
         'FINANCIAL_GUARD_FAILED'
       );

@@ -174,8 +174,8 @@ const GROUPS = {
       started.push('realtime');
     }
 
-    // 10. read model / dashboard (NÃO CRÍTICO — pode desligar)
-    if (isEnabled('ENABLE_WHATSAPP_CHAT_PROJECTION', false)) {
+    // 10. read model / dashboard (CRÍTICO para inbox do frontend)
+    if (isEnabled('ENABLE_WHATSAPP_CHAT_PROJECTION', true)) {
       workers.push(createChatProjectionWorker());
       started.push('chat-projection');
     }
