@@ -37,13 +37,16 @@ export function createChatProjectionWorker() {
       if (eventType === 'MESSAGE_PERSISTED') {
         // ── INBOUND ───────────────────────────────────────────────────────
         const { content, timestamp, type, from, contactId, contactName } = payload;
+        const ts = new Date(timestamp);
 
-        await ChatProjection.updateOne(
+        console.log(`[ChatProjectionWorker] UPDATING lead=${leadId} lastMessageAt=${ts.toISOString()}`);
+
+        const result = await ChatProjection.updateOne(
           { leadId },
           {
             $set: {
               lastMessage: truncate(content, 200),
-              lastMessageAt: new Date(timestamp),
+              lastMessageAt: ts,
               lastDirection: 'inbound',
               lastMessageType: type || 'text',
               phone: from || undefined,
@@ -55,6 +58,8 @@ export function createChatProjectionWorker() {
           },
           { upsert: true }
         );
+
+        console.log(`[ChatProjectionWorker] UPDATE RESULT: matched=${result.matchedCount}, modified=${result.modifiedCount}, upserted=${result.upsertedCount}`);
 
       } else if (eventType === 'WHATSAPP_MESSAGE_SENT') {
         // ── OUTBOUND ──────────────────────────────────────────────────────
