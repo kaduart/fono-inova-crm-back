@@ -22,10 +22,6 @@ import { formatWhatsAppResponse } from '../utils/whatsappFormatter.js';
 import { createContextLogger } from '../utils/logger.js';
 import { runOrchestrator } from '../services/orchestrator/runOrchestrator.js';
 
-const AUTO_TEST_NUMBERS = [
-    "5561981694922", "556292013573", "5562992013573"
-];
-
 const logger = new Logger('whatsappController');
 
 export const whatsappController = {
@@ -89,6 +85,7 @@ export const whatsappController = {
                 sentBy = 'manual',
             } = req.body;
             console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
+            console.log('✅ [sendText] VERSÃO CORRIGIDA — pausa Amanda ANTES do envio');
             if (!phone || !text) {
                 return res.status(400).json({
                     success: false,
@@ -164,27 +161,8 @@ export const whatsappController = {
                 console.log(`⚠️ [LEAD NOT FOUND] Nenhum lead encontrado para: "${to}"`);
             }
 
-            console.log('📤 Enviando mensagem via service...', {
-                to,
-                lead: resolvedLeadId,
-                contact: contact?._id,
-                text: text.substring(0, 50)
-            });
-
-            // 📤 Envia usando o service centralizado
-            const result = await sendTextMessage({
-                to,
-                text,
-                lead: resolvedLeadId,
-                contactId: contact?._id || null,
-                patientId,
-                sentBy,
-                userId
-            });
-
-            console.log('✅ Service retornou:', result);
-
             // 🔴 PAUSA AMANDA automaticamente ao enviar mensagem manual
+            // Faz ANTES do envio para evitar race condition com inbound webhooks
             if (resolvedLeadId && sentBy === 'manual') {
                 console.log(`⏸️ [SEND-TEXT] Pausando Amanda para lead ${resolvedLeadId}`);
                 await Lead.findByIdAndUpdate(resolvedLeadId, {
@@ -207,6 +185,26 @@ export const whatsappController = {
                 });
                 console.log(`📡 [SEND-TEXT] Emitido lead:manualControl para lead ${resolvedLeadId}`);
             }
+
+            console.log('📤 Enviando mensagem via service...', {
+                to,
+                lead: resolvedLeadId,
+                contact: contact?._id,
+                text: text.substring(0, 50)
+            });
+
+            // 📤 Envia usando o service centralizado
+            const result = await sendTextMessage({
+                to,
+                text,
+                lead: resolvedLeadId,
+                contactId: contact?._id || null,
+                patientId,
+                sentBy,
+                userId
+            });
+
+            console.log('✅ Service retornou:', result);
 
             // ✅ Busca a mensagem recém-salva - CORRIGIDO
             const waMessageId = result?.messages?.[0]?.id || null;

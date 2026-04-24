@@ -58,6 +58,7 @@ export function createRealtimeWorker() {
 
           const socketPayload = {
             id: messageId,
+            leadId,
             from,
             to,
             type,

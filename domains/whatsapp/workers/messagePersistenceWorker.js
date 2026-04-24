@@ -13,6 +13,7 @@
 
 import { Worker } from 'bullmq';
 import { bullMqConnection } from '../../../config/redisConnection.js';
+import { getIo } from '../../../config/socket.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { extractMessageContent } from '../../../utils/whatsappMediaExtractor.js';
 import { normalizeE164BR } from '../../../utils/phone.js';
@@ -22,9 +23,11 @@ import Message from '../../../models/Message.js';
 import logger from '../../../utils/logger.js';
 
 export function createMessagePersistenceWorker() {
+  console.log('🚀 [MessagePersistenceWorker] REGISTRADO — pronto para consumir');
   const worker = new Worker(
     'whatsapp-persistence',
     async (job) => {
+      console.log('📥 [MessagePersistenceWorker] JOB RECEBIDO:', job.id, JSON.stringify(job.data?.payload?.wamid || job.data));
       const { payload, metadata } = job.data;
       const { msg, value, combinedText } = payload;
       const wamid = msg.id;
@@ -120,6 +123,31 @@ export function createMessagePersistenceWorker() {
 
       const messageId = savedMessage._id.toString();
       const leadId = lead?._id ? String(lead._id) : null;
+      console.log('💾 [MessagePersistenceWorker] MENSAGEM SALVA:', { messageId, leadId, from, direction: 'inbound' });
+
+      // 🔔 EMITE SOCKET IMEDIATAMENTE (garante atualização da sidebar em tempo real)
+      try {
+        const io = getIo();
+        if (io) {
+          io.emit('message:new', {
+            id: messageId,
+            leadId,
+            from,
+            to,
+            type,
+            content: contentToSave,
+            text: contentToSave,
+            timestamp: timestamp.toISOString(),
+            direction: 'inbound',
+          });
+          console.log('📡 [MessagePersistenceWorker] SOCKET EMITIDO message:new para', from);
+        } else {
+          console.log('⚠️ [MessagePersistenceWorker] getIo() retornou null — socket NÃO emitido');
+        }
+      } catch (socketErr) {
+        // Socket é best-effort — não falha o worker
+        logger.warn('[MessagePersistenceWorker] Socket emit falhou (não crítico)', { error: socketErr.message });
+      }
 
       // ── 5. PUBLISH MESSAGE_PERSISTED → lead-interaction + realtime ────────
       publishEvent(EventTypes.MESSAGE_PERSISTED, {

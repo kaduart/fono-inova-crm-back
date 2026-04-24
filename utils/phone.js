@@ -1,13 +1,5 @@
 // utils/phone.js - VERSÃO CORRIGIDA E ROBUSTA
 
-// 👉 lista de números de teste (com 55 e 9 dígito)
-const AUTO_TEST_NUMBERS = [
-    "5561981694922",
-    "556181694922",
-    "556292013573",
-    "5562992013573",
-];
-
 // mantém só dígitos
 export const digitsOnly = (phone) => {
     if (!phone) return "";
@@ -152,17 +144,6 @@ export function firstName(full) {
 }
 
 /**
- * Usa "rabo" do número para entender se é número de teste
- */
-const TEST_PATTERNS = AUTO_TEST_NUMBERS.map((n) => tailPattern(n, 8, 11));
-
-export const isTestNumber = (phone) => {
-    const digits = digitsOnly(phone);
-    if (!digits) return false;
-    return TEST_PATTERNS.some((re) => re.test(digits));
-};
-
-/**
  * 🆕 NOVO: Valida se o número está no formato correto E.164 para WhatsApp
  * Retorna objeto com status e mensagem de erro
  */
@@ -272,7 +253,6 @@ export default {
     normalizePhoneForCompare,
     tailPattern,
     firstName,
-    isTestNumber,
     validateE164,
     sanitizePhoneBeforeSend,
 };

@@ -7,19 +7,10 @@
  * whatsappAutoReplyWorker → whatsappController.
  *
  * Depende de:
- *   orchestrators/WhatsAppOrchestrator.js   (FSM nova)
- *   orchestrators/AmandaOrchestrator.js     (legado — via getOptimizedAmandaResponse)
- *
- * Feature flag:
- *   USE_STATE_MACHINE=true  → WhatsAppOrchestrator (FSM)
- *   USE_STATE_MACHINE=false → AmandaOrchestrator (legado)
- *
- * Roteamento híbrido: leads com triageStep mas sem currentState (leads antigos no meio
- * de uma conversa) ainda usam o legado para não quebrar o fluxo em curso.
+ *   orchestrators/WhatsAppOrchestrator.js   (FSM V8 — única rota ativa)
  */
 
 import WhatsAppOrchestrator from '../../orchestrators/WhatsAppOrchestrator.js';
-import { getOptimizedAmandaResponse } from '../../orchestrators/AmandaOrchestrator.js';
 import { createContextLogger } from '../../utils/logger.js';
 
 const logger = createContextLogger('runOrchestrator');
@@ -127,42 +118,14 @@ export async function runOrchestrator(lead, userText, context = {}) {
         correlationId: context.correlationId,
     });
 
-    // Rota: FSM nova (USE_STATE_MACHINE=true) com fallback para legado
-    if (process.env.USE_STATE_MACHINE === 'true') {
-        // Leads antigos no meio de conversa (têm triageStep mas não currentState)
-        // ainda usam o legado para não interromper o fluxo em curso
-        const isMidConversationLegacyLead = !lead.currentState && lead.triageStep;
+    logger.info('orchestrator_fsm', { leadId, currentState: lead.currentState });
 
-        if (!isMidConversationLegacyLead) {
-            logger.info('orchestrator_fsm', { leadId, currentState: lead.currentState });
-            try {
-                const result = await fsmOrchestrator.process({
-                    lead,
-                    message: { content: userText },
-                    context: enrichedContext,
-                });
-                logger.info('orchestrator_fsm_result', { leadId, command: result?.command });
-                return result;
-            } catch (err) {
-                // FSM falhou — cai no legado como fallback
-                logger.error('fsm_error_fallback', { leadId, err: err.message, stack: err.stack });
-            }
-        } else {
-            logger.warn('orchestrator_legacy_mid_conversation', { leadId, triageStep: lead.triageStep });
-        }
-    } else {
-        logger.info('orchestrator_legacy', { leadId });
-    }
-
-    // Rota: legado (AmandaOrchestrator)
-    const text = await getOptimizedAmandaResponse({
-        content:  userText,
-        userText,
+    const result = await fsmOrchestrator.process({
         lead,
-        context:  enrichedContext,
+        message: { content: userText },
+        context: enrichedContext,
     });
 
-    return text
-        ? { command: 'SEND_MESSAGE', payload: { text } }
-        : { command: 'NO_REPLY' };
+    logger.info('orchestrator_fsm_result', { leadId, command: result?.command });
+    return result;
 }
