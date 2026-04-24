@@ -92,9 +92,20 @@ router.get('/whatsapp-health', async (req, res) => {
         let status = 'healthy';
         let statusCode = 200;
 
+        // Em desenvolvimento, não retorna 503 apenas por Redis indisponível
+        const isProduction = process.env.NODE_ENV === 'production';
+
         // CRITICAL: redis down, backlog grave, pendentes > 5min, ou workers inativos com fila cheia
-        if (!checks.redisConnected ||
-            !checks.inboundQueueOk || !checks.persistenceQueueOk ||
+        // No local (dev), Redis ausente é warning, não critical
+        if (!checks.redisConnected) {
+            if (isProduction) {
+                status = 'critical';
+                statusCode = 503;
+            } else {
+                status = 'warning';
+                statusCode = 200;
+            }
+        } else if (!checks.inboundQueueOk || !checks.persistenceQueueOk ||
             checks.pendingEventsCritical > 0 ||
             (!checks.workersEnabled && (checks.inboundCounts?.waiting || 0) > 5)) {
             status = 'critical';

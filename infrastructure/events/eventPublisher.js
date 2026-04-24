@@ -573,7 +573,7 @@ if (size > 5000) {
     }
     
     // 🛡️ VALIDAÇÃO DEFENSIVA: aggregateType deve ser válido para o EventStore
-    const VALID_AGGREGATE_TYPES = ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance'];
+    const VALID_AGGREGATE_TYPES = ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance', 'evolution'];
     if (!VALID_AGGREGATE_TYPES.includes(finalAggregateType)) {
         const err = new Error(`INVALID_AGGREGATE_TYPE: '${finalAggregateType}' não é um tipo válido. EventType=${eventType}. Use um dos valores: ${VALID_AGGREGATE_TYPES.join(', ')}`);
         log.error('invalid_aggregate_type', err.message, { eventType, aggregateType: finalAggregateType });
