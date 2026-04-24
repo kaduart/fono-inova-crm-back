@@ -360,3 +360,172 @@ E a API retorna:
 
 Só me fala: **como hoje você chama essa API v2 (endpoint real)?**
  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Perfeito, analisei toda a API v2. Aqui está o alinhamento:
+
+---
+
+## ✅ Endpoint que VOCÊ DEVE USAR (já existe)
+
+```
+GET /api/v2/balance/:patientId
+```
+
+Ele já é a **fonte de verdade V2** e retorna exatamente o que o pacote precisa:
+
+```json
+{
+  "success": true,
+  "data": {
+    "patientId": "...",
+    "currentBalance": 300,
+    "v2_financial": {
+      "totalPendentes": 300,
+      "count": 2,
+      "items": [
+        {
+          "_id": "payment_id_1",
+          "amount": 150,
+          "status": "pending",
+          "paymentDate": "2026-04-20",
+          "serviceDate": "2026-04-20",
+          "specialty": "Fonoaudiologia",
+          "doctor": { "_id": "...", "fullName": "Dra. Ana" },
+          "appointment": { "_id": "...", "date": "2026-04-20", "time": "14:00" },
+          "session": { "_id": "...", "date": "2026-04-20", "time": "14:00" }
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## 🎯 Como conectar o Pacote nesse fluxo (sem criar nada novo)
+
+### Opção A: Apenas visualização/importação no front (mais rápida)
+
+O Pacote consome `GET /api/v2/balance/:patientId` e mapeia `v2_financial.items` para sessões:
+
+```ts
+const { data } = await api.get(`/v2/balance/${patientId}`);
+const pendingItems = data.v2_financial.items;
+
+const sessionsToImport = pendingItems.map(item => ({
+  id: item._id,                    // ID do Payment (source of truth)
+  amount: item.amount,
+  date: item.serviceDate || item.paymentDate,
+  time: item.appointment?.time,
+  specialty: item.specialty,
+  doctorId: item.doctor?._id,
+  doctorName: item.doctor?.fullName,
+  source: "BALANCE_IMPORTED",      // marca pra não duplicar
+  status: "PENDING"
+}));
+```
+
+E injeta no estado do pacote:
+```ts
+setPackageSessions(prev => [...prev, ...sessionsToImport]);
+```
+
+> ⚠️ Aqui o Pacote **não quita** os débitos no backend. Ele só "visualiza/importa" como sessões pendentes.
+
+---
+
+### Opção B: Pacote quita os débitos no backend (mais completa)
+
+Se o Pacote deve **quitar** os débitos (marcar como pagos/settled), aí precisa de persistência.
+
+Hoje o `POST /api/v2/packages` já faz isso na criação via `selectedDebts` (que usa `PatientBalance` legado).
+
+Para um Pacote **existente**, precisaríamos de um novo endpoint:
+
+```
+POST /api/v2/packages/:packageId/attach-debts
+```
+
+Body:
+```json
+{
+  "debtIds": ["payment_id_1", "payment_id_2"]
+}
+```
+
+O que ele faria:
+1. Busca os `Payment` pelos IDs
+2. Cria sessões no pacote com `source: "BALANCE_IMPORTED"`
+3. Atualiza os `Payment` para `status: "settled"` e `settledByPackageId: packageId`
+4. Retorna as sessões criadas
+
+---
+
+## 🏁 Minha recomendação
+
+**Comece com a Opção A** (frontend-only usando `GET /api/v2/balance/:patientId`):
+
+- ✅ Não precisa criar endpoint novo
+- ✅ Não duplica regra financeira
+- ✅ Não recalcula nada
+- ✅ O Pacote "liga" no flow existente da v2
+- ✅ Source of truth continua sendo `Payment` (v2)
+
+Se depois vocês precisarem que o Pacote **quite** os débitos (marcar como pagos no backend), aí criamos o `POST /api/v2/packages/:packageId/attach-debts`.
+
+---
+
+## ⚠️ Atenção: inconsistência que existe hoje
+
+O `POST /api/v2/packages` (criação) usa `PatientBalance` (legado) para quitar débitos via `selectedDebts`. Mas a **fonte de verdade V2** é o `Payment`.
+
+Na prática:
+- `GET /api/v2/balance/:patientId` → retorna `Payment` (V2, correto)
+- `POST /api/v2/packages` → espera IDs do `PatientBalance.transactions` (legado)
+
+Isso significa que os `debtIds` que vêm da v2 (`Payment._id`) **não são os mesmos IDs** que o `POST /api/v2/packages` espera (`PatientBalance.transactions._id`).
+
+---
+
+## ✅ Resposta direta à sua pergunta
+
+| Pergunta | Resposta |
+|----------|----------|
+| **Qual endpoint usar?** | `GET /api/v2/balance/:patientId` |
+| **Precisa criar endpoint novo?** | NÃO, se for só importar visualmente. SIM (`POST /api/v2/packages/:id/attach-debts`), se for quitar/persistir no backend |
+| **Precisa de "package context"?** | Não obrigatório. O `GET /api/v2/balance/:patientId` já retorna tudo genérico |
+| **O Pacote recalcula algo?** | Não. Só consome `v2_financial.items` |
+
+---
+
+Quer que eu implemente a **Opção A** (frontend consumindo `GET /api/v2/balance/:patientId` e injetando no Pacote)? Ou prefere já criar o endpoint da **Opção B** (backend persistindo a quitação)?
+
+
+
+
+
+
+
+
