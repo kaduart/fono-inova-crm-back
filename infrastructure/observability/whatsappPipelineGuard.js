@@ -87,7 +87,7 @@ async function checkPendingEvents() {
         thresholdMinutes: CRITICAL_THRESHOLD_MIN,
         oldestEventAt: sampleEvents[0]?.createdAt,
         sampleWamids: sampleEvents.map(e => e.payload?.msg?.id?.substring(0, 40)),
-        action: 'Verificar ENABLE_WORKERS, Redis, e workers WhatsApp'
+        action: 'Verificar se crm-worker está ativo e consumindo filas BullMQ'
       }
     });
   } else if (warningCount > 0 && shouldAlert('pendingWarning')) {
@@ -102,7 +102,7 @@ async function checkPendingEvents() {
       details: {
         stuckCount: warningCount,
         thresholdMinutes: WARNING_THRESHOLD_MIN,
-        action: 'Monitorar workers e filas BullMQ'
+        action: 'Monitorar crm-worker e filas BullMQ'
       }
     });
   }
