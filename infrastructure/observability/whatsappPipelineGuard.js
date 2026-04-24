@@ -152,7 +152,7 @@ async function checkWorkersActive() {
   try {
     const inboundQ = getQueue('whatsapp-inbound');
     // Tenta adicionar e remover um job dummy para verificar se a fila responde
-    const dummyJob = await inboundQ.add('__healthcheck__', { test: true }, { removeOnComplete: true });
+    const dummyJob = await inboundQ.add('__healthcheck__', { test: true }, { removeOnComplete: true, removeOnFail: true });
     if (dummyJob?.id) {
       await dummyJob.remove();
     }

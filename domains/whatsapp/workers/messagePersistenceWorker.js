@@ -15,6 +15,7 @@ import { Worker } from 'bullmq';
 import { bullMqConnection } from '../../../config/redisConnection.js';
 import { emitSocketEvent } from '../../../config/socket.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { markEventProcessed, markEventFailed } from '../../../infrastructure/events/eventStoreService.js';
 import { extractMessageContent } from '../../../utils/whatsappMediaExtractor.js';
 import { normalizeE164BR } from '../../../utils/phone.js';
 import { resolveLeadByPhone } from '../../../controllers/leadController.js';
@@ -127,6 +128,14 @@ export function createMessagePersistenceWorker() {
           logger.error('[MessagePersistenceWorker] message_save_failed — HARD STOP', {
             err: err.message, wamid,
           });
+          
+          // Marca evento como falhou no EventStore
+          if (job.data?.eventId) {
+            await markEventFailed(job.data.eventId, err).catch(markErr => {
+              logger.warn('[MessagePersistenceWorker] Falha ao marcar evento como falhou:', markErr.message);
+            });
+          }
+          
           throw err; // BullMQ retentará com backoff exponencial
         }
       }
@@ -206,6 +215,13 @@ export function createMessagePersistenceWorker() {
         leadId,
         reason: 'lead_respondeu',
       }, { correlationId }).catch(() => {});
+
+      // Marca evento original como processado no EventStore
+      if (job.data?.eventId) {
+        await markEventProcessed(job.data.eventId, 'MessagePersistenceWorker').catch(err => {
+          logger.warn('[MessagePersistenceWorker] Falha ao marcar evento como processado:', err.message);
+        });
+      }
 
       logger.info('[MessagePersistenceWorker] done', { wamid, messageId, leadId, correlationId });
 
