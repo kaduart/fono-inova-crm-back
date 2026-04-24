@@ -52,7 +52,7 @@ router.get('/', auth, async (req, res) => {
             operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
             isDeleted: { $ne: true },
             patient: { $exists: true, $ne: null }
-        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').populate('package', 'paymentType').lean();
+        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').populate('package', 'paymentType sessionValue totalValue totalSessions model').lean();
 
         // ============================================================
         // 🔧 RESOLVE NOMES DE PACIENTES E FILTRA DELETADOS
@@ -306,7 +306,8 @@ router.get('/', auth, async (req, res) => {
         const pendentesCobranca = [];
 
         const transacoesProducao = appointmentsProducao.map(a => {
-            const valor = a.sessionValue || 0;
+            const pkgSessionValue = a.package?.sessionValue || (a.package?.totalValue && a.package?.totalSessions ? Math.round(a.package.totalValue / a.package.totalSessions) : 0);
+            const valor = a.sessionValue || pkgSessionValue || 0;
             totalProducao += valor;
 
             const patientId = a.patient?._id?.toString() || a.patient?.toString();
@@ -377,7 +378,10 @@ router.get('/', auth, async (req, res) => {
                 data: moment(a.date).format('DD/MM/YYYY'),
                 status: a.operationalStatus,
                 categoria,
-                professional: a.doctor?.fullName || a.professionalName || '-'
+                professional: a.doctor?.fullName || a.professionalName || '-',
+                paymentModel: isPacote
+                    ? (a.package?.model === 'prepaid' || a.package?.paymentType === 'full' ? 'prepaid' : 'per_session')
+                    : null
             };
         });
 
@@ -454,7 +458,8 @@ router.get('/', auth, async (req, res) => {
                     especialidade: t.especialidade,
                     professional: t.professional,
                     valor: t.valor,
-                    statusPagamento: t.categoria === 'recebido' ? 'Pago' : 'Pendente'
+                    statusPagamento: t.categoria === 'recebido' ? 'Pago' : 'Pendente',
+                    paymentModel: t.paymentModel
                 })),
                 conveniosAtendidos: transacoesProducao.filter(t => t.tipo === 'Convênio').map(t => ({
                     id: t.id,
