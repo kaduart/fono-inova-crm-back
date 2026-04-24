@@ -83,7 +83,7 @@ export function createChatProjectionWorker() {
             },
             // outbound NÃO altera unreadCount (agente leu ao enviar)
           },
-          { upsert: true }
+          { upsert: false } // nunca cria registro novo sem phone — backfill cria via Lead
         );
 
       } else {

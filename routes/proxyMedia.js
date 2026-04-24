@@ -130,6 +130,51 @@ router.get("/proxy-media", async (req, res) => {
             return;
         }
 
+        // Extrai mid da URL fbsbx e usa como mediaId para buscar URL fresca
+        try {
+            const parsedUrl = new URL(url);
+            const mid = parsedUrl.searchParams.get('mid');
+            if (mid) {
+                const cacheKey = `media:id:${mid}`;
+                const cached = await redis.getBuffer(cacheKey);
+                const cachedType = await redis.get(`${cacheKey}:type`);
+                if (cached && cachedType) {
+                    const etag = crypto.createHash("sha1").update(cached).digest("hex");
+                    if (req.headers["if-none-match"] === etag) return res.status(304).end();
+                    res.setHeader("Content-Type", cachedType);
+                    res.setHeader("Cache-Control", "public, max-age=86400");
+                    res.setHeader("Access-Control-Allow-Origin", "*");
+                    res.setHeader("ETag", etag);
+                    res.send(cached);
+                    console.log(`🟢 proxy-media(HIT-MID) ${mid} em ${Date.now() - startedAt}ms`);
+                    return;
+                }
+                const meta = await axios.get(
+                    `https://graph.facebook.com/v21.0/${encodeURIComponent(mid)}?fields=url,mime_type`,
+                    { headers: { Authorization: `Bearer ${token}` }, timeout: 15000, validateStatus: s => s >= 200 && s < 500 }
+                );
+                if (meta.status < 400 && meta.data?.url) {
+                    const bin = await axios.get(meta.data.url, {
+                        responseType: "arraybuffer", timeout: 20000,
+                        headers: { Authorization: `Bearer ${token}`, Accept: "*/*", "User-Agent": "FonoInovaProxy/1.0" },
+                        validateStatus: (s) => s >= 200 && s < 400,
+                    });
+                    const body = Buffer.from(bin.data);
+                    const contentType = bin.headers["content-type"] || meta.data.mime_type || "application/octet-stream";
+                    await redis.set(cacheKey, body, "EX", TTL_SECONDS);
+                    await redis.set(`${cacheKey}:type`, contentType, "EX", TTL_SECONDS);
+                    const etag = crypto.createHash("sha1").update(body).digest("hex");
+                    res.setHeader("Content-Type", contentType);
+                    res.setHeader("Cache-Control", "public, max-age=86400");
+                    res.setHeader("Access-Control-Allow-Origin", "*");
+                    res.setHeader("ETag", etag);
+                    res.send(body);
+                    console.log(`🟡 proxy-media(MISS-MID) ${mid} (${contentType}, ${body.length} bytes) em ${Date.now() - startedAt}ms`);
+                    return;
+                }
+            }
+        } catch { /* cai no download direto abaixo */ }
+
         // baixa pela URL (pode dar 404 se expirou)
         const response = await axios.get(url, {
             responseType: "arraybuffer",
