@@ -192,11 +192,9 @@ const GROUPS = {
       started.push('fsm-router');
     }
 
-    // opcional (envio direto se necessário)
-    if (process.env.ENABLE_SEND_WORKER === 'true') {
-      workers.push(createWhatsappSendWorker());
-      started.push('send');
-    }
+    // envio de mensagens (ESSENCIAL — sempre ativo)
+    workers.push(createWhatsappSendWorker());
+    started.push('send');
 
     console.log(`[Registry] whatsapp V2 ok (${started.length} workers: ${started.join(', ')})`);
   },
