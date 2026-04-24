@@ -27,10 +27,12 @@ const router = Router();
 router.get('/health', getHealthHandler);
 
 // 🛡️ Health check do WhatsApp — 3 estados: healthy | warning | critical
+// NOTA: Em arquitetura separada (web + worker), NÃO verifica ENABLE_WORKERS no web.
+// Verifica se as filas estão sendo consumidas (workers ativos no crm-worker).
 router.get('/whatsapp-health', async (req, res) => {
     try {
         const checks = {
-            workersEnabled: process.env.ENABLE_WORKERS === 'true',
+            workersEnabled: false, // detectado dinamicamente via filas
             redisConnected: false,
             inboundQueueOk: false,
             persistenceQueueOk: false,
@@ -39,7 +41,7 @@ router.get('/whatsapp-health', async (req, res) => {
             recentFailures: 0
         };
 
-        // Testar filas
+        // Testar filas e detectar workers ativos
         try {
             const inboundQ = getQueue('whatsapp-inbound');
             const persistenceQ = getQueue('whatsapp-persistence');
@@ -52,6 +54,14 @@ router.get('/whatsapp-health', async (req, res) => {
             checks.persistenceQueueOk = (persistenceCounts.waiting || 0) < 50;
             checks.inboundCounts = inboundCounts;
             checks.persistenceCounts = persistenceCounts;
+
+            // Workers estão ativos se há jobs 'active' OU 'completed' > 0 (indica que já processou)
+            const hasActiveWorkers =
+                (inboundCounts.active || 0) > 0 ||
+                (persistenceCounts.active || 0) > 0 ||
+                (inboundCounts.completed || 0) > 0 ||
+                (persistenceCounts.completed || 0) > 0;
+            checks.workersEnabled = hasActiveWorkers;
         } catch (e) {
             checks.redisError = e.message;
         }
@@ -82,17 +92,18 @@ router.get('/whatsapp-health', async (req, res) => {
         let status = 'healthy';
         let statusCode = 200;
 
-        // CRITICAL: workers off, redis down, backlog grave, ou pendentes > 5min
-        if (!checks.workersEnabled || !checks.redisConnected ||
+        // CRITICAL: redis down, backlog grave, pendentes > 5min, ou workers inativos com fila cheia
+        if (!checks.redisConnected ||
             !checks.inboundQueueOk || !checks.persistenceQueueOk ||
-            checks.pendingEventsCritical > 0) {
+            checks.pendingEventsCritical > 0 ||
+            (!checks.workersEnabled && (checks.inboundCounts?.waiting || 0) > 5)) {
             status = 'critical';
             statusCode = 503;
         }
         // WARNING: workers OK mas backlog leve ou pendentes 2-5min
         else if (checks.pendingEventsWarning > 0) {
             status = 'warning';
-            statusCode = 200; // não quebra health check, mas sinaliza
+            statusCode = 200;
         }
 
         res.status(statusCode).json({
