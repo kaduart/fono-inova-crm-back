@@ -103,7 +103,7 @@ async function runConsistencyCheck() {
         fixedViews++;
         log.info(`[${correlationId}] ✅ View órfã corrigida`, { patientId: pid, name: orphan.fullName });
       } catch (err) {
-        log.error(`[${correlationId}] ❌ Falha ao corrigir view órfã`, { patientId: orphan.patientId?.toString(), error: err.message });
+        log.error('fix_orphan_view_failed', `[${correlationId}] ❌ Falha ao corrigir view órfã`, { patientId: orphan.patientId?.toString(), error: err.message });
       }
     }
     
@@ -116,7 +116,7 @@ async function runConsistencyCheck() {
         fixedAggregates++;
         log.info(`[${correlationId}] ✅ Aggregate sem view corrigido`, { patientId: pid, name: orphan.fullName });
       } catch (err) {
-        log.error(`[${correlationId}] ❌ Falha ao corrigir aggregate sem view`, { patientId: orphan._id.toString(), error: err.message });
+        log.error('fix_orphan_aggregate_failed', `[${correlationId}] ❌ Falha ao corrigir aggregate sem view`, { patientId: orphan._id.toString(), error: err.message });
       }
     }
     
@@ -137,7 +137,7 @@ async function runConsistencyCheck() {
     };
     
   } catch (error) {
-    log.error(`[${correlationId}] 💥 Erro na verificação`, { error: error.message });
+    log.error('consistency_check_failed', `[${correlationId}] 💥 Erro na verificação`, { error: error.message });
     return { status: 'error', error: error.message };
   }
 }

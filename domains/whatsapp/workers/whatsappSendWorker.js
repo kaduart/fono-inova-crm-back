@@ -41,6 +41,7 @@ import { normalizeE164BR } from '../../../utils/phone.js';
  * }
  */
 export function createWhatsappSendWorker() {
+  console.log('🚀 [WhatsappSendWorker] REGISTRADO — pronto para consumir');
   return new Worker(
     'whatsapp-notification',
     async (job) => {
@@ -108,6 +109,12 @@ export function createWhatsappSendWorker() {
         }, { correlationId }).catch(() => {});
 
         throw sendErr; // BullMQ retry
+      }
+
+      // ── Guard: envio bloqueado por regra de negócio (ex: manual active) ───
+      if (result?.skipped) {
+        console.log(`⏸️ [WhatsappSendWorker] SKIP envio bloqueado: reason=${result?.reason}, lead=${leadId}`);
+        return { status: 'skipped', reason: result?.reason || 'BUSINESS_RULE' };
       }
 
       const waMessageId = result?.messages?.[0]?.id || null;

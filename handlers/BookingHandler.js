@@ -47,10 +47,42 @@ class BookingHandler {
         // 2) SEM SLOTS DISPONÍVEIS
         // ==========================================
         if (booking?.noSlotsAvailable) {
-            await this.escalateToHuman(lead._id, memory, 'sem_vagas');
+            // Bug 1 FIX: antes de escalar, tentar oferecer alternativas progressivas
+            const requestedPeriod = lead?.pendingPreferredPeriod || memory?.preferredPeriod;
+            const otherPeriod = requestedPeriod === 'manha' ? 'tarde' : requestedPeriod === 'tarde' ? 'manhã' : null;
+
+            // Caso 1: tem slots no outro período → oferece
+            if (booking?.slotsOtherPeriod?.length && otherPeriod) {
+                const options = buildSlotOptions({ primary: booking.slotsOtherPeriod[0], alternativesSamePeriod: booking.slotsOtherPeriod.slice(1) });
+                const optionsText = options.map(o => o.text).join('\n');
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { pendingSchedulingSlots: { primary: booking.slotsOtherPeriod[0], offeredAt: new Date() } }
+                });
+                return {
+                    text: `No período da ${requestedPeriod === 'manha' ? 'manhã' : 'tarde'} não temos vaga essa semana 😔\n\nMas tenho opções pela *${otherPeriod}*:\n\n${optionsText}\n\nAlguma funciona? 💚`
+                };
+            }
+
+            // Caso 2: sem nada essa semana → oferece semana seguinte
+            if (booking?.slotsNextWeek?.length) {
+                const options = buildSlotOptions({ primary: booking.slotsNextWeek[0], alternativesSamePeriod: booking.slotsNextWeek.slice(1) });
+                const optionsText = options.map(o => o.text).join('\n');
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { pendingSchedulingSlots: { primary: booking.slotsNextWeek[0], offeredAt: new Date() } }
+                });
+                return {
+                    text: `Nossa agenda essa semana está bem cheia 😔\n\nMas já tenho opções para a próxima semana:\n\n${optionsText}\n\nAlguma funciona? 💚`
+                };
+            }
+
+            // Caso 3: nada disponível → lista de espera (NUNCA só "não encontrei e para")
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { 'flags.waitingList': true, 'flags.waitingListAt': new Date() }
+            });
+            console.log('[BookingHandler] Bug1-fix: sem slots → lista de espera para lead', lead._id);
             return {
-                text: 'Nossa agenda está bem apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe. Tudo bem? 💚',
-                extractedInfo: { awaitingHumanContact: true, reason: 'no_slots' }
+                text: 'Nossa agenda está bem apertada no momento 😔\n\nVou te colocar na nossa *lista de espera* e te aviso assim que abrir uma vaga — normalmente em 1 a 3 dias. Tudo bem? 💚',
+                extractedInfo: { waitingList: true, reason: 'no_slots' }
             };
         }
 

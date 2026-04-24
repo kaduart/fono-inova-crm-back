@@ -553,6 +553,10 @@ if (size > 5000) {
     
     // 🛡️ VALIDAÇÃO DE CONTRACT (Event Contract Layer) — MODO WARNING
     // Nunca bloqueia o publish para garantir estabilidade total da aplicação
+    if (!global.__eventPublisherVersionLogged) {
+        global.__eventPublisherVersionLogged = true;
+        console.log('✅ [eventPublisher] VERSÃO CORRIGIDA CARREGADA — UNKNOWN_EVENT_TYPE suprimido');
+    }
     const validation = validateEvent(eventType, payload);
     const eventVersion = getEventVersion(eventType);
 
@@ -564,7 +568,10 @@ if (size > 5000) {
             warnings: validation.warnings,
             code: validation.code
         });
-        console.warn(`⚠️ [EVENT_PUBLISHER] VALIDATION_WARNING ${eventType}:`, validation.errors);
+        // Só polui stdout com warnings de schema mismatch; UNKNOWN_EVENT_TYPE é esperado enquanto contracts não estão 100% migrados
+        if (validation.code !== 'UNKNOWN_EVENT_TYPE') {
+            console.warn(`⚠️ [EVENT_PUBLISHER] VALIDATION_WARNING ${eventType}:`, validation.errors);
+        }
     } else if (validation.warnings.length > 0) {
         log.warn('event_validation_warnings', 'Evento publicado com warnings de contract', {
             eventType,

@@ -93,6 +93,13 @@ export default class WhatsAppOrchestrator {
         return { command: 'NO_REPLY' };
       }
 
+      // Bug 3 FIX: mensagem genuinamente vazia (mídia sem legenda, sticker, etc.)
+      // → não processa, não responde "Parece que não recebi"
+      if (!text) {
+        this.logger.info('V8_EMPTY_MESSAGE_SKIP', { leadId, messageType: message?.type });
+        return { command: 'NO_REPLY' };
+      }
+
       // ══ CIRCUIT BREAKERS (antes de tudo) ══
       if (this._isHardStopMessage(text)) {
         return { command: 'NO_REPLY' };
@@ -332,8 +339,36 @@ export default class WhatsAppOrchestrator {
 
       // Agradecimento — responde e permanece no estado atual
       if (flags.saysThanks && ![STATES.HANDOFF, STATES.BOOKED, STATES.REJECTED].includes(currentState)) {
-        this.logger.info('V8_THANKS', { leadId, state: currentState });
-        return this._reply('De nada! 😊 Qualquer coisa é só chamar 💚', { skipEnrichment: true });
+        // Bug 6 FIX: detectar intenção de saída disfarçada de agradecimento
+        // "obrigado vou verificar", "obrigada vou pensar", "valeu depois entro em contato"
+        const isExitIntent = /\b(vou\s+(verificar|pensar|ver|checar)|depois\s+(entro|falo|volto)|deixa\s+eu\s+(ver|pensar)|preciso\s+(pensar|verificar))\b/i.test(text);
+        if (isExitIntent) {
+          this.logger.info('V8_EXIT_INTENT_DETECTED', { leadId, state: currentState, text: text.substring(0, 80) });
+          // Bug 4 FIX: se está em triagem/agendamento, oferecer reserva em vez de encerrar
+          const isInSchedulingFlow = [STATES.COLLECT_PERIOD, STATES.COLLECT_NAME, STATES.SHOW_SLOTS, STATES.COLLECT_COMPLAINT, STATES.COLLECT_BIRTH].includes(currentState);
+          if (isInSchedulingFlow) {
+            return this._reply(
+              'Claro, sem pressa! 😊\n\nPosso já *reservar um horário no seu nome* enquanto você verifica? Se não puder, é só me avisar e a gente cancela sem problema 💚',
+              { skipEnrichment: true }
+            );
+          }
+          // Lead ainda em triagem inicial — manter abertura sem encerrar
+          return this._reply(
+            'Claro, pode verificar com calma! 😊\n\nQualquer coisa, estou por aqui 💚',
+            { skipEnrichment: true }
+          );
+        }
+
+        // Bug 4 FIX: se está em triagem_agendamento não encerrar com "De nada" — continuar o fluxo
+        const isActiveScheduling = [STATES.COLLECT_PERIOD, STATES.COLLECT_NAME, STATES.SHOW_SLOTS].includes(currentState);
+        if (isActiveScheduling) {
+          this.logger.info('V8_THANKS_IN_SCHEDULING_FLOW', { leadId, state: currentState });
+          // Não interrompe o fluxo de agendamento com "De nada"
+          // Deixa passar para o FSM processar normalmente
+        } else {
+          this.logger.info('V8_THANKS', { leadId, state: currentState });
+          return this._reply('De nada! 😊 Qualquer coisa é só chamar 💚', { skipEnrichment: true });
+        }
       }
 
       // Despedida — responde e permanece (lead pode voltar)

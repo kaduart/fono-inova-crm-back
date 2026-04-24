@@ -105,7 +105,12 @@ function checkHasData(lead, questionType) {
             return !!(lead.patientInfo?.fullName || lead.patientInfo?.name);
             
         case 'age':
-            return !!(lead.patientInfo?.age !== undefined && lead.patientInfo?.age !== null);
+            // Bug 5 FIX: aceitar ageText e patientAge como equivalente a idade numérica
+            return !!(
+                (lead.patientInfo?.age !== undefined && lead.patientInfo?.age !== null) ||
+                lead.qualificationData?.patientAge ||
+                lead.qualificationData?.ageText
+            );
             
         case 'period':
             return !!(

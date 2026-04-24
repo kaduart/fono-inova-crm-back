@@ -341,6 +341,20 @@ app.use('/api/health', healthRoutes);
 // 🚀 NOVO: Health Check de Migração V1→V2 (monitora quando pode desativar V1)
 app.use('/api/health', healthMigrationRoutes);
 
+// 🔍 DEBUG: Verificar variáveis de ambiente críticas
+app.get('/debug/env', (req, res) => {
+    res.json({
+        ENABLE_WORKERS: process.env.ENABLE_WORKERS,
+        WORKER_GROUP: process.env.WORKER_GROUP,
+        NODE_ENV: process.env.NODE_ENV,
+        REDIS_URL: process.env.REDIS_URL,
+        MONGO_URI: process.env.MONGO_URI ? '[REDACTED]' : null,
+        workersAtivos: global.workersAtivos ?? false,
+        lastWorkerError: global.lastWorkerError || null,
+        lastWorkerStack: global.lastWorkerStack ? global.lastWorkerStack.substring(0, 200) : null
+    });
+});
+
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
 });
@@ -634,16 +648,26 @@ server.listen(PORT, '0.0.0.0', () => {
       // await import("./workers/post.worker.js");
       
       if (process.env.ENABLE_WORKERS === "true") {
+        console.log(`[Server] ENABLE_WORKERS=${process.env.ENABLE_WORKERS}, iniciando workers...`);
         const { startAllWorkers, startWorkersByGroup, VALID_GROUPS } = await import("./workers/index.js");
         const workerGroup = process.env.WORKER_GROUP;
-        if (workerGroup && VALID_GROUPS.includes(workerGroup)) {
-          await startWorkersByGroup(workerGroup);
-          console.log(`🎯 Workers 4.0 iniciados (grupo: ${workerGroup})`);
-        } else {
-          await startAllWorkers();
-          console.log("🎯 Workers 4.0 iniciados (modo monolítico)");
+        try {
+          if (workerGroup && VALID_GROUPS.includes(workerGroup)) {
+            await startWorkersByGroup(workerGroup);
+            console.log(`🎯 Workers 4.0 iniciados (grupo: ${workerGroup})`);
+          } else {
+            await startAllWorkers();
+            console.log("🎯 Workers 4.0 iniciados (modo monolítico)");
+          }
+          global.workersAtivos = true;
+          console.log("✅ Workers ATIVADOS no Web Service");
+        } catch (workerStartErr) {
+          console.error("❌ [Server] ERRO FATAL ao iniciar workers:", workerStartErr);
+          console.error(workerStartErr.stack);
+          global.workersAtivos = false;
+          global.lastWorkerError = workerStartErr.message;
+          global.lastWorkerStack = workerStartErr.stack;
         }
-        console.log("✅ Workers ATIVADOS no Web Service");
 
         // 🛡️ Inicia guardião do pipeline WhatsApp (watchdog crítico)
         try {

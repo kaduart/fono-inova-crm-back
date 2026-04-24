@@ -1297,12 +1297,22 @@ async function persistExtractedData(leadId, text, lead) {
 function getMissingFields(lead, extracted = {}, userText = '') {
     const missing = [];
     const hasName = lead?.patientInfo?.fullName || extracted?.patientName;
-    const hasAge = lead?.patientInfo?.age || extracted?.patientAge;
+    // Bug 5 FIX: aceitar ageText/"X anos" em texto como equivalente a idade numérica
+    const hasAge = lead?.patientInfo?.age || extracted?.patientAge ||
+        lead?.qualificationData?.patientAge || lead?.qualificationData?.ageText ||
+        /\b\d{1,3}\s*(anos?|meses?)\b/i.test(userText || '');
 
     // Coleta dados de identificação primeiro (ordem natural de atendimento)
     if (!hasName) missing.push('nome do paciente');
     if (!hasAge) missing.push('idade');
-    if (!lead?.pendingPreferredPeriod && !extracted?.period)
+    // Bug 2 FIX: verificar todas as fontes de período antes de marcar como faltando
+    const hasPeriodAlready = lead?.pendingPreferredPeriod ||
+        lead?.qualificationData?.disponibilidade ||
+        lead?.preferredTime ||
+        lead?.autoBookingContext?.preferredPeriod ||
+        extracted?.period ||
+        /\b(manh[ãa]|tarde|noite)\b/i.test(userText || '');
+    if (!hasPeriodAlready)
         missing.push('período (manhã ou tarde)');
     if (!lead?.therapyArea && !extracted?.therapyArea)
         missing.push('área terapêutica');
@@ -6812,13 +6822,24 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
     // 🔴 CRITICAL FIX: Verificar data de nascimento
     const hasBirthDate = !!(lead?.patientInfo?.birthDate);
 
+    // Bug 5 FIX: aceitar idade em texto como equivalente a birthDate/age para fins de missing[]
+    // "meu bebê tem 1 ano e 10 meses" → hasAge e hasBirthDateEquiv ficam true
+    const hasAgeText = !!(
+        lead?.qualificationData?.ageText ||
+        lead?.qualificationData?.patientAge ||
+        enrichedContext?.ageText ||
+        /\b\d{1,3}\s*(anos?|meses?|dias?)\b/i.test(userText)
+    );
+    const hasBirthDateOrAgeEquiv = hasBirthDate || (hasAge && hasAgeText) || hasAgeText;
+    const hasAgeEffective = hasAge || hasAgeText;
+
     // 🎯 ORDEM DE TRIAGEM (prioridade = acolhimento → dados → agendamento)
     const missing = [];
     if (!hasTherapyArea && serviceStatus === 'available') missing.push('therapyArea');
     if (!hasComplaint) missing.push('complaint');        // 1️⃣ Acolhimento: queixa primeiro
     if (!hasName) missing.push(extracted.responsibleName ? 'patientName' : 'name');  // 2️⃣ Nome
-    if (!hasBirthDate) missing.push('birthDate');        // 3️⃣ Data nascimento
-    if (!hasAge) missing.push('age');                    // 4️⃣ Idade
+    if (!hasBirthDateOrAgeEquiv) missing.push('birthDate');  // 3️⃣ Data nascimento (ou idade em texto)
+    if (!hasAgeEffective) missing.push('age');           // 4️⃣ Idade (só se nem ageText existe)
     if (!hasPeriod) missing.push('period');              // 5️⃣ Período (último antes de slots)
 
     console.log('[AMANDA-SÊNIOR] Checking lead data:', {

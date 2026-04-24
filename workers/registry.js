@@ -168,13 +168,13 @@ const GROUPS = {
       started.push('lead-interaction');
     }
 
-    // 9. realtime frontend (NÃO CRÍTICO — pode desligar)
-    if (isEnabled('ENABLE_WHATSAPP_REALTIME', false)) {
+    // 9. realtime frontend (ESSENCIAL para atualizar sidebar e notificações)
+    if (isEnabled('ENABLE_WHATSAPP_REALTIME', true)) {
       workers.push(createRealtimeWorker());
       started.push('realtime');
     }
 
-    // 10. read model / dashboard (CRÍTICO para inbox do frontend)
+    // 10. read model / dashboard (NÃO CRÍTICO — pode desligar)
     if (isEnabled('ENABLE_WHATSAPP_CHAT_PROJECTION', true)) {
       workers.push(createChatProjectionWorker());
       started.push('chat-projection');
@@ -197,6 +197,7 @@ const GROUPS = {
     started.push('send');
 
     console.log(`[Registry] whatsapp V2 ok (${started.length} workers: ${started.join(', ')})`);
+    console.log(`[Registry] Workers ativos: ${JSON.stringify(started)}`);
   },
 
   // =========================

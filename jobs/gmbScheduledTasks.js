@@ -163,7 +163,7 @@ export const scheduleGmbCron = () => {
                         console.error(`❌ [GMB] Falha Make: ${err.message}`);
                     }
                 }
-                await new Promise(r => setTimeout(r, 2000));
+                await new Promise(r => setTimeout(r, 10000));
             }
         } catch (error) {
             console.error('❌ [GMB] Erro ao enviar ao Make:', error.message);

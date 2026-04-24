@@ -34,8 +34,6 @@ import { createContextLogger }    from '../../../utils/logger.js';
 
 const logger = createContextLogger('whatsappAutoReplyWorker');
 
-const AUTO_TEST_NUMBERS = ['5561981694922', '556292013573', '5562992013573'];
-
 export function createWhatsappAutoReplyWorker() {
     const worker = new Worker(
         'whatsapp-auto-reply',
@@ -84,11 +82,10 @@ export function createWhatsappAutoReplyWorker() {
                 }
 
                 // ── 3. VERIFICAÇÕES DE GUARD (sem AI call) ───────────────────
-                const fromNumeric = from.replace(/\D/g, '');
-                const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
 
-                // Guard: controle manual ativo
-                if (!isTestNumber && leadDoc.manualControl?.active) {
+                // Guard: controle manual ativo — SEMPRE respeitado, sem exceção de "número de teste"
+                console.log(`🔍 [whatsappAutoReplyWorker] manualControl check: active=${leadDoc.manualControl?.active}, takenOverAt=${leadDoc.manualControl?.takenOverAt}`);
+                if (leadDoc.manualControl?.active) {
                     const takenAt  = leadDoc.manualControl.takenOverAt
                         ? new Date(leadDoc.manualControl.takenOverAt)
                         : null;
@@ -109,7 +106,7 @@ export function createWhatsappAutoReplyWorker() {
                     // timeout === null/undefined com takenAt → modo permanente, não desativa
 
                     if (stillPaused) {
-                        logger.info('manual_control_active_skip', { leadId, correlationId });
+                        console.log(`⏸️ [whatsappAutoReplyWorker] SKIP por manualControl ativo — lead=${leadId}`);
                         return { status: 'skipped', reason: 'MANUAL_CONTROL' };
                     }
                 }
