@@ -24,7 +24,7 @@ import Message from '../../../models/Message.js';
 import Contacts from '../../../models/Contacts.js';
 import { sendTextMessage } from '../../../services/whatsappService.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
-import { getIo } from '../../../config/socket.js';
+import { emitSocketEvent } from '../../../config/socket.js';
 import { normalizeE164BR } from '../../../utils/phone.js';
 
 /**
@@ -139,12 +139,11 @@ export function createWhatsappSendWorker() {
       // ── 3. Emite socket para atualizar chat em tempo real ─────────────────
       if (savedMsg) {
         try {
-          const io = getIo();
           const contact = contactId
             ? { _id: contactId }
             : await Contacts.findOne({ phone: normalizedTo }).lean();
 
-          io.emit('message:new', {
+          const result = await emitSocketEvent('message:new', {
             id:        String(savedMsg._id),
             from:      savedMsg.from,
             to:        savedMsg.to,
@@ -162,6 +161,8 @@ export function createWhatsappSendWorker() {
           logger.info('[WhatsappSendWorker] Socket emitido', {
             messageId: String(savedMsg._id),
             leadId,
+            via: result.via,
+            clients: result.clients ?? 'redis',
           });
         } catch (socketErr) {
           // Socket é best-effort — não falha o job
