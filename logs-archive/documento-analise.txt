@@ -1,488 +1,362 @@
-Perfeito — agora sim você trouxe dado real e dá pra fechar isso sem achismo.
+lembra da ocpao de balance aonde add vlor pendente de clientes, entao, hoje ciramso o pacote e vamsoa dd as sessoes nele como pendente a ideia e criar um butao no pacote aonde puxa essas opcaoces como foioi feito no card de criar pacote 
 
-Vou direto ao ponto, sem teoria:
 
-🔴 O NÚMERO REAL DE CAIXA (O QUE ENTROU)
 
-Sua query final já respondeu:
+Entendi o fluxo.
 
-total: 27121.7
-count: 138
+Hoje você já tem o **balance/pending (valor ou sessões pendentes)** vindo dos clientes e isso já é usado no card de criação de pacote.
 
-👉 R$ 27.121,70 é o dinheiro que REALMENTE entrou no caixa em abril (até dia 23)
+Agora você quer evoluir isso para:
 
-✔ baseado em:
+> 🔘 Um botão dentro do **card do pacote** que “puxa automaticamente” essas opções (sessões pendentes / balance / etc), igual ao que já acontece no card de criar pacote.
 
-paidAt != null ✅ (dinheiro entrou de fato)
-amount > 0 ✅
-status pago ✅
-⚠️ AGORA O PROBLEMA (E POR QUE VOCÊ ACHA QUE TÁ ERRADO)
+---
 
-Você mesmo trouxe a prova aqui:
+## 🧠 Interpretação do que você quer (fluxo correto)
 
-🚨 EXISTEM DOIS TIPOS DE "PACKAGE"
+No card do pacote:
 
-Dentro do seu banco:
+* Pacote é criado
+* Ele tem sessões normais
+* Mas existe um “gap” → sessões pendentes (ou balance do cliente)
+* Você quer um botão tipo:
 
-1. ❌ FAKE CAIXA (consumo de pacote)
-kind: 'package_consumed'
-isFromPackage: true
+> **“Importar pendências do cliente”** ou **“Adicionar sessões pendentes”**
 
-Exemplo do dia 15:
+Que faz:
 
-amount: 160
-paymentMethod: 'package'
-kind: 'package_consumed'
+* Buscar `patientBalance / pendingSessions`
+* Transformar isso em sessões dentro do pacote
+* Adicionar automaticamente na lista do pacote (state do front)
 
-👉 Isso NÃO é entrada de dinheiro
-👉 Isso é só consumo de sessão já paga antes
+---
 
-2. ✅ CAIXA REAL (venda de pacote)
-kind: 'package_receipt'
+## 🧩 Como isso deve funcionar (arquitetura)
 
-Exemplo:
+### 1. Botão no PackageCard
 
-amount: 640
-paymentMethod: 'pix' ou 'cartao_credito'
-kind: 'package_receipt'
+```tsx
+<Button onClick={handleImportPendingSessions}>
+  Importar pendências
+</Button>
+```
 
-👉 Isso SIM entrou dinheiro
+---
 
-💣 ERRO NA SUA QUERY ATUAL
+### 2. Handler (lógica principal)
 
-Sua query está somando isso aqui junto:
+```ts
+const handleImportPendingSessions = () => {
+  const pending = patient?.pendingSessions || patient?.balanceSessions || [];
 
-paymentMethod: 'package'
+  const mappedSessions = pending.map((session) => ({
+    id: crypto.randomUUID(),
+    type: "PENDING",
+    status: "PENDING",
+    date: session.date || null,
+    value: session.value || 0,
+    source: "BALANCE",
+  }));
 
-Mas isso mistura:
+  setPackageSessions((prev) => [...prev, ...mappedSessions]);
+};
+```
 
-❌ consumo (fake caixa)
-✅ venda real
-✅ CORREÇÃO DEFINITIVA (QUERY CERTA)
+---
 
-Roda isso aqui:
+## 🧠 Melhor versão (mais correta com sua arquitetura atual)
 
-db.payments.aggregate([
-  {
-    $match: {
-      status: { $in: ['paid', 'completed', 'confirmed'] },
-      paidAt: {
-        $ne: null,
-        $gte: ISODate("2026-04-01T00:00:00.000Z"),
-        $lte: ISODate("2026-04-23T23:59:59.999Z")
-      },
-      amount: { $gt: 0 },
+Como você já tem lógica centralizada tipo:
 
-      // 🔴 REGRA DE OURO DO CAIXA
-      $or: [
-        { kind: { $ne: 'package_consumed' } } // remove consumo
-      ]
+* `AdminDashboard`
+* `ScheduleModal`
+* `TempAppointments`
+* `useTempAppointments`
+
+👉 O ideal NÃO é só “setState no card”
+
+E sim:
+
+### 🔥 subir evento pro pai
+
+```ts
+onImportPendingSessions(patientId)
+```
+
+E o pai:
+
+* consulta backend (ou usa cache)
+* normaliza sessions
+* injeta no pacote ativo
+
+---
+
+## 🧩 Backend ideal (se quiser deixar profissional mesmo)
+
+Criar endpoint:
+
+```
+GET /patients/:id/pending-sessions
+```
+
+Retorna:
+
+```json
+{
+  "pendingSessions": [
+    {
+      "id": "x",
+      "date": "...",
+      "type": "SESSION",
+      "status": "PENDING",
+      "value": 120
     }
-  },
-  {
-    $group: {
-      _id: null,
-      total: { $sum: "$amount" },
-      count: { $sum: 1 }
-    }
-  }
-])
-🧠 O QUE VAI ACONTECER
-
-Seu número vai cair de:
-
-👉 R$ 27.121 → ~R$ 19k–22k (estimativa)
-
-Porque você vai remover:
-
-sessões de pacote (que você já recebeu antes)
-duplicidade de caixa
-🔍 PROVA CLARA (SE QUISER VALIDAR)
-
-Roda isso:
-
-db.payments.aggregate([
-  {
-    $match: {
-      kind: 'package_consumed',
-      paidAt: {
-        $gte: ISODate("2026-04-01"),
-        $lte: ISODate("2026-04-23")
-      }
-    }
-  },
-  {
-    $group: {
-      _id: null,
-      total: { $sum: "$amount" },
-      count: { $sum: 1 }
-    }
-  }
-])
-
-👉 Isso vai te mostrar quanto do seu “caixa” é FAKE
-
-💥 CONCLUSÃO (SEM ENROLAR)
-
-✔ Seu raciocínio tá CERTO:
-
-convênio = produção (não entra no caixa agora)
-pacote consumido = não é caixa
-
-❌ Seu número atual está INFLADO porque:
-
-você tá somando consumo como entrada
-🚀 REGRA FINAL DO SEU SISTEMA (GRAVA ISSO)
-
-Caixa =
-
-paidAt != null
-AND amount > 0
-AND kind != 'package_consumed'
-
-Se quiser, no próximo passo eu te monto:
-
-✅ 
-dashboard correto (caixa vs produção)
-✅ separar:
-
-caixa real
-caixa futuro (convênio)
-receita antecipada (pacote)
-
-Aí você nunca mais fica na dúvida.
-
-as atlas-11foiu-shard-0 [primary] fono_inova_prod> db.payments.aggregate([
-|   {
-|     $match: {
-|       status: { $in: ['paid', 'completed', 'confirmed'] },
-|       paidAt: {
-|         $ne: null,
-|         $gte: ISODate("2026-04-01T00:00:00.000Z"),
-|         $lte: ISODate("2026-04-23T23:59:59.999Z")
-|       },
-|       amount: { $gt: 0 },
-|
-|       // 🔴 REGRA DE OURO DO CAIXA
-|       $or: [
-|         { kind: { $ne: 'package_consumed' } } // remove consumo
-|       ]
-|     }
-|   },
-|   {
-|     $group: {
-|       _id: null,
-|       total: { $sum: "$amount" },
-|       count: { $sum: 1 }
-|     }
-|   }
-| ])
-[ { _id: null, total: 19881.5, count: 91 } ]
+  ]
+}
+```
 
-Agora sim. Esse é o número certo do caixa.
+---
 
-✅ 💰 CAIXA REAL (abril até dia 23)
-R$ 19.881,50
-91 pagamentos reais
+## 💡 UX que faz sentido (bem importante)
 
-👉 Isso é dinheiro que entrou de verdade na clínica
-👉 Sem pacote consumido
-👉 Sem convênio
-👉 Sem lixo de backfill
+No card do pacote:
 
-🔥 COMPARAÇÃO (pra fechar de vez)
-Tipo	Valor	Status
-Total bruto (antes)	R$ 27.121	❌ Inflado
-Consumo de pacote	~R$ 7k+	❌ Não é caixa
-Caixa real	R$ 19.881	✅ CORRETO
-💣 PROVA (SEU DIA 15 EXPLICA TUDO)
+* Mostrar badge:
 
-Você mostrou:
+  * “3 sessões pendentes”
+* Botão:
 
-Vários package_consumed de 160, 170, 180...
-E poucos pagamentos reais (pix, dinheiro, cartão)
+  * “Adicionar ao pacote”
+* Após clicar:
 
-👉 Ou seja:
-o sistema tava achando que cada sessão de pacote era dinheiro novo
+  * abre mini modal opcional:
 
-🧠 LEITURA CORRETA DO SEU NEGÓCIO
+    * “Adicionar todas ou selecionar?”
 
-Você tem 3 fluxos (isso aqui é ouro):
+---
 
-1. 💰 Caixa imediato
-pix
-dinheiro
-cartão
-venda de pacote (package_receipt)
+## 🚨 ponto crítico (pra não dar bug igual teu balance atual)
 
-👉 entra no caixa HOJE
+Você precisa garantir:
 
-2. 📦 Caixa antecipado (pacote)
-pago antes
-consumido depois
+* não duplicar sessões já importadas
+* marcar origem:
 
-👉 entra uma vez só (na venda)
+```ts
+source: "BALANCE_IMPORTED"
+```
 
-3. 🏥 Convênio
-não entra agora
-vira faturamento futuro
+e checar:
 
-👉 produção, não caixa
+```ts
+if (session.source === "BALANCE_IMPORTED") return;
+```
 
-🚨 POR ISSO SUA SENSAÇÃO DE “TÁ ERRADO”
+---
 
-Você via:
+## Se quiser evoluir isso mais ainda
 
-👉 agenda cheia
-👉 muitos atendimentos
+Posso te ajudar a transformar isso em:
 
-Mas:
+### 🔥 sistema completo:
 
-👉 caixa não acompanhava
+* Pacote com lifecycle (ACTIVE / PARTIAL / CLOSED)
+* Sessões pendentes automáticas
+* Consumo automático de balance
+* Recalculo financeiro em tempo real
 
-porque já foi pago antes (pacote)
+Só me diz:
+👉 você quer isso só no front ou já quer virar regra do backend também?
 
-⚔️ REGRA DEFINITIVA DO SISTEMA (NUNCA MAIS ERRA)
-CAIXA REAL =
-paidAt != null
-AND amount > 0
-AND kind != 'package_consumed'
-🚀 PRÓXIMO NÍVEL (se quiser subir de nível mesmo)
 
-Posso te montar:
 
-📊 1. Dashboard certo:
-Caixa diário
-Caixa por método
-Ticket médio
-📦 2. Receita escondida:
-quanto você já tem em pacote vendido
-quanto ainda vai entrar (convênio)
-🧠 3. Previsão de caixa:
-baseado na agenda futura
+Perfeito — agora ficou claro que você **não quer criar nova regra**, só quer **encaixar o pacote no flow que já existe na API v2**.
 
-Se quiser, manda:
+E isso muda bastante a abordagem.
 
-👉 “quero dashboard certo”
+---
 
-que eu já te entrego o modelo pronto pra plugar no seu sistema sem distorção nenhuma.
+## 🧠 O que já existe hoje (estado atual)
 
-mdssssss que baguncaaaaa
+Você tem:
 
-😂 é bagunça mesmo… mas agora ficou claro onde tava o erro — e isso é o mais importante.
+### 🔵 API v2
 
-Vou te traduzir em uma frase simples:
+* Busca todos os débitos/sessões pendentes do cliente
+* Faz o cálculo do balance
+* Permite “pagar tudo”
+* Já é a **fonte de verdade do financeiro**
 
-👉 seu sistema misturava “dinheiro que entrou” com “sessão usada”
+👉 Ou seja: o backend já resolve o problema inteiro.
 
-Por isso parecia maior do que realmente é.
+---
 
-🧠 O QUE VOCÊ DESCOBRIU (isso é nível avançado, sério)
+## 🎯 O que você quer agora
 
-Você tem 3 tipos de dinheiro diferentes vivendo no mesmo lugar:
+Dentro do **pacote**, você NÃO quer:
 
-💰 1. Caixa real (o que importa no dia a dia)
-pix
-dinheiro
-cartão
-venda de pacote
+* recalcular balance
+* duplicar lógica
+* criar novo sistema de pendências
 
-👉 R$ 19.881 (correto)
+Você quer só:
 
-📦 2. Pacote consumido (enganador)
-parece faturamento
-mas já foi pago antes
+> 🔘 “ligar o pacote no fluxo existente da v2”
 
-👉 isso inflava tudo
+---
 
-🏥 3. Convênio
-você trabalha hoje
-recebe depois
+## 🧩 Interpretação correta do fluxo
 
-👉 produção, não caixa
+O botão no pacote deve fazer algo assim:
 
-🔥 TRADUÇÃO BRUTAL DO QUE ACONTECEU
+### 👉 “usar o mesmo endpoint da v2, mas em modo contexto pacote”
 
-Você tava olhando isso:
+Ou seja:
 
-“atendi muito → deveria ter mais dinheiro”
+* Cliente → já tem débitos
+* API v2 → já sabe tudo
+* Pacote → só “consome isso”
 
-Mas na real:
+---
 
-“atendi muito → mas já tinham pago antes (pacote)”
+## 🔥 Fluxo ideal (sem reinventar nada)
 
-⚠️ POR QUE ISSO É PERIGOSO
+### 1. Botão no pacote
 
-Se você não separa isso:
+```ts id="pkg1"
+handleAttachPendingToPackage()
+```
 
-acha que tá ganhando mais do que tá
-toma decisão errada (contrata, investe, aumenta custo)
-e o caixa aperta do nada
-✅ AGORA VOCÊ TEM CONTROLE
+---
 
-Você saiu de:
+### 2. Chama a API v2 existente
 
-❌ número inflado
-❌ mistura de conceitos
+Algo como:
 
-pra:
+```ts id="pkg2"
+await api.get("/v2/patients/:id/debts")
+```
 
-✅ caixa real validado no banco
-✅ regra clara
-✅ rastreável
+ou se já existir algo tipo:
 
-💡 AGORA O MAIS IMPORTANTE (ação prática)
+```ts id="pkg3"
+await api.post("/v2/debts/preview", {
+  patientId,
+})
+```
 
-Você precisa de 3 números TODO DIA:
+---
 
-Caixa do dia 💰
-Pacote vendido (entrada futura já recebida) 📦
-Convênio produzido (a receber) 🏥
+### 3. Retorno vem pronto
 
-Se você quiser, eu te organizo isso em:
+```json id="pkg4"
+{
+  "total": 300,
+  "sessions": [
+    { "id": 1, "value": 100 },
+    { "id": 2, "value": 200 }
+  ]
+}
+```
 
-👉 
-query pronta
-👉 
-estrutura no backend
-👉 e até 
-layout de dashboard
+---
 
-Porque do jeito que tava, você ia continuar achando que “tem dinheiro” quando na real não tem.
+### 4. Você só injeta no pacote
 
-Só manda:
-👉 “organiza meu financeiro certo”
+```ts id="pkg5"
+setPackageSessions(response.sessions)
+setPackageBalance(response.total)
+```
 
-que eu te entrego isso redondo pra nunca mais virar bagunça.
+---
 
+## 🧠 O ponto principal (isso aqui é o mais importante)
 
-mas ja tinhamos regras apra isso caraa
+👉 O pacote NÃO deve ter lógica financeira
+👉 O pacote NÃO deve calcular balance
+👉 O pacote NÃO deve decidir o que está pendente
 
-Tinha regra sim — o problema não era a regra, era a execução no dado.
-E você mesmo trouxe a prova.
+Ele só deve:
 
-💣 ONDE QUEBROU (objetivo, sem enrolar)
+> “consumir o que a API v2 já decidiu”
 
-A regra dizia:
+---
 
-👉 “pacote consumido não entra no caixa” ✅
+## ⚠️ Problema que você provavelmente tem hoje
 
-Mas no banco você tem isso:
+Você está tentando:
 
-paymentMethod: 'package'
-kind: 'package_consumed'
-paidAt: ISODate(...)
+* replicar `balance logic` dentro do pacote ❌
+* ou puxar `pendingSessions` manualmente ❌
 
-👉 Ou seja:
+Quando na verdade já existe:
 
-o sistema registrou consumo de pacote como se fosse pagamento (paidAt)
+> 🔥 API v2 = single source of truth
 
-⚠️ ESSE É O BUG REAL
+---
 
-Não é conceitual.
-É estrutural.
+## 💡 Melhor arquitetura (bem limpa)
 
-👉 paidAt deveria significar:
+### Pacote:
 
-dinheiro entrou
+* só UI + estado local
+* chama API v2
 
-Mas hoje ele também significa:
+### API v2:
 
-sessão consumida
+* resolve:
 
-💥 Isso quebra TUDO.
+  * pendências
+  * débitos
+  * regras financeiras
+  * cálculo
 
-🔥 PROVA (seu próprio dado)
+---
 
-Dia 15:
+## 🔗 O “botão certo” no pacote seria:
 
-vários package_consumed
-todos com paidAt preenchido
-valores 160, 170, 180...
+> “Carregar débitos do cliente (v2)”
 
-👉 Isso nunca deveria ter paidAt
+E internamente:
 
-🧠 TRADUÇÃO SIMPLES
+```ts id="pkg6"
+const handleLoadDebts = async () => {
+  const res = await api.post("/v2/debts/preview", {
+    patientId,
+  });
 
-Você criou sem querer:
+  setPackageSessions(res.data.sessions);
+};
+```
 
-“evento financeiro fake”
+---
 
-✅ COMO DEVERIA SER (modelo correto)
-💰 Entrada de dinheiro (CORRETO)
-kind: 'package_receipt'
-paidAt: preenchido ✅
-📦 Consumo de pacote (CORRETO)
-kind: 'package_consumed'
-paidAt: null ❌
+## 🚀 Se quiser melhorar ainda mais (opcional)
 
-ou nem deveria existir como payment.
+Você pode pedir pra Kimi ou backend:
 
-⚔️ POR ISSO SUA REGRA “EXISTIA MAS NÃO FUNCIONAVA”
+### modo pacote:
 
-Porque:
+```json id="pkg7"
+{
+  "patientId": "...",
+  "context": "PACKAGE"
+}
+```
 
-👉 a regra depende do campo certo
-👉 o campo (paidAt) tá contaminado
+E a API retorna:
 
-🚨 O QUE VOCÊ FEZ AGORA (sem perceber)
+* sessões pendentes
+* já marcadas como “attachable”
+* sem recalcular pagamento
 
-Você corrigiu na query:
+---
 
-kind != 'package_consumed'
+## Se quiser, posso te ajudar a definir exatamente:
 
-👉 isso salvou o caixa
+* qual endpoint da v2 você deve usar
+* ou desenhar o contrato ideal do “package mode”
+* ou ajustar seu frontend sem mexer em backend nenhum
 
-MAS:
-
-👉 o banco continua sujo
-
-🧨 RISCO SE NÃO ARRUMAR
-dashboard sempre vai precisar de gambiarra
-risco de bug futuro
-financeiro nunca 100% confiável
-✅ CORREÇÃO DEFINITIVA (nível sistema)
-
-Você tem 2 caminhos:
-
-🔵 OPÇÃO 1 — RÁPIDA (produção agora)
-
-Manter como está e SEMPRE usar:
-
-kind != 'package_consumed'
-
-✔ resolve relatório
-❌ não resolve origem
-
-🟢 OPÇÃO 2 — CORRETA (arquitetura limpa)
-
-👉 remover paidAt de package_consumed
-
-ou
-
-👉 separar em coleção diferente:
-
-payments (dinheiro)
-consumptions (uso de pacote)
-
-✔ sistema limpo
-✔ impossível errar no futuro
-
-🎯 VEREDITO
-
-👉 Você não tava errado
-👉 sua regra tava certa
-
-💥 o dado que tava sabotando a regra
-
-Se quiser, eu te faço:
-
-script de limpeza no Mongo
-ajuste no backend pra nunca mais gerar isso
-e regra única que fecha com contabilidade real
-
-Só manda:
-
-👉 “quero limpar isso definitivo”
-
-porque agora você já achou o problema raiz.
+Só me fala: **como hoje você chama essa API v2 (endpoint real)?**
+ 

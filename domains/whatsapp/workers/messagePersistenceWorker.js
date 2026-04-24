@@ -72,6 +72,16 @@ export function createMessagePersistenceWorker() {
             phone: from,
             name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`,
           });
+
+        // 🔄 Atualiza lastMessageAt para manter inbox ordenado no frontend
+        if (contact) {
+          await Contacts.findByIdAndUpdate(contact._id, {
+            lastMessageAt: timestamp,
+            lastMessagePreview: contentToSave?.slice(0, 120) || '',
+          });
+          contact.lastMessageAt = timestamp;
+          contact.lastMessagePreview = contentToSave?.slice(0, 120) || '';
+        }
       } catch (err) {
         logger.warn('[MessagePersistenceWorker] contact_error', { err: err.message });
       }
@@ -128,6 +138,7 @@ export function createMessagePersistenceWorker() {
       // 🔔 EMITE SOCKET IMEDIATAMENTE (garante atualização da sidebar em tempo real)
       try {
         const io = getIo();
+        const contactIdStr = contact?._id ? String(contact._id) : null;
         if (io) {
           io.emit('message:new', {
             id: messageId,
@@ -139,6 +150,8 @@ export function createMessagePersistenceWorker() {
             text: contentToSave,
             timestamp: timestamp.toISOString(),
             direction: 'inbound',
+            contactId: contactIdStr,
+            contactName: contact?.name || msg.profile?.name || undefined,
           });
           console.log('📡 [MessagePersistenceWorker] SOCKET EMITIDO message:new para', from);
         } else {
@@ -162,6 +175,8 @@ export function createMessagePersistenceWorker() {
         wamid,
         direction: 'inbound',
         source: 'whatsapp',
+        contactId: contact?._id ? String(contact._id) : null,
+        contactName: contact?.name || msg.profile?.name || null,
       }, {
         correlationId,
         aggregateType: 'system',

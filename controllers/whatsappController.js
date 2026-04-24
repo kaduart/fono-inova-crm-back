@@ -1435,6 +1435,16 @@ async function processInboundMessage(msg, value) {
                     phone: from,
                     name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
                 });
+
+            // 🔄 Atualiza lastMessageAt para manter inbox ordenado no frontend
+            if (contact) {
+                await Contacts.findByIdAndUpdate(contact._id, {
+                    lastMessageAt: timestamp,
+                    lastMessagePreview: contentToSave?.slice(0, 120) || '',
+                });
+                contact.lastMessageAt = timestamp;
+                contact.lastMessagePreview = contentToSave?.slice(0, 120) || '';
+            }
         } catch (err) {
             log.warn('contact_error', { err: err.message });
         }
@@ -1507,6 +1517,8 @@ async function processInboundMessage(msg, value) {
                 type,
                 content: contentToSave,
                 timestamp: timestamp.toISOString(),
+                contactId: contact?._id ? String(contact._id) : null,
+                contactName: contact?.name || msg.profile?.name || null,
             };
 
             io?.emit('message:new', socketPayload);
