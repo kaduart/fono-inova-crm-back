@@ -86,7 +86,7 @@ export function createMessagePersistenceWorker() {
         logger.warn('[MessagePersistenceWorker] lead_missing_fallback_mode', { from });
       }
 
-      // ── 4. SAVE MESSAGE (CRITICAL — throw para retry do BullMQ) ──────────
+      // ── 4. SAVE MESSAGE (CRITICAL — upsert para não falhar em duplicado) ─
       let savedMessage;
       try {
         savedMessage = await Message.create({
@@ -106,10 +106,16 @@ export function createMessagePersistenceWorker() {
           raw: msg,
         });
       } catch (err) {
-        logger.error('[MessagePersistenceWorker] message_save_failed — HARD STOP', {
-          err: err.message, wamid,
-        });
-        throw err; // BullMQ retentará com backoff exponencial
+        // Duplicate key → mensagem já existe, busca e continua silenciosamente
+        if (err.code === 11000 && err.message.includes('waMessageId')) {
+          savedMessage = await Message.findOne({ waMessageId: wamid });
+          logger.warn('[MessagePersistenceWorker] duplicate_wamid_ignored', { wamid, existingId: savedMessage?._id });
+        } else {
+          logger.error('[MessagePersistenceWorker] message_save_failed — HARD STOP', {
+            err: err.message, wamid,
+          });
+          throw err; // BullMQ retentará com backoff exponencial
+        }
       }
 
       const messageId = savedMessage._id.toString();
