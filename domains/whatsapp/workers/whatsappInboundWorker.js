@@ -8,6 +8,7 @@ import { Worker } from 'bullmq';
 import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
 import logger from '../../../utils/logger.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { markEventProcessed, markEventFailed } from '../../../infrastructure/events/eventStoreService.js';
 
 export function createWhatsappInboundWorker() {
   console.log('[WhatsappInboundWorker] 🚀 Criando worker...');
@@ -16,6 +17,12 @@ export function createWhatsappInboundWorker() {
     'whatsapp-inbound',
     async (job) => {
       console.log(`[WhatsappInboundWorker] 📥 Job recebido: ${job.id}`);
+      
+      // Ignora jobs de healthcheck que não têm payload válido
+      if (job.name === '__healthcheck__' || !job.data?.payload) {
+        console.log(`[WhatsappInboundWorker] ⏭️ Job ${job.id} ignorado (healthcheck ou sem payload)`);
+        return { status: 'ignored', reason: 'healthcheck_or_no_payload' };
+      }
       
       const { payload, metadata } = job.data;
       let { msg, value } = payload;
@@ -75,11 +82,26 @@ export function createWhatsappInboundWorker() {
           }
         );
 
+        // Marca evento original como processado no EventStore
+        if (job.data?.eventId) {
+          await markEventProcessed(job.data.eventId, 'WhatsappInboundWorker').catch(err => {
+            logger.warn('[WhatsappInboundWorker] Falha ao marcar evento como processado:', err.message);
+          });
+        }
+
         logger.info('[WhatsappInboundWorker] ✅ Publicado WHATSAPP_MESSAGE_PREPROCESSED', { wamid, from });
         return { status: 'dispatched', wamid };
       } catch (publishErr) {
         console.error(`[WhatsappInboundWorker] ❌ Erro ao publicar evento:`, publishErr.message);
         logger.error('[WhatsappInboundWorker] Erro ao publicar WHATSAPP_MESSAGE_PREPROCESSED:', publishErr);
+        
+        // Marca evento como falhou no EventStore
+        if (job.data?.eventId) {
+          await markEventFailed(job.data.eventId, publishErr).catch(err => {
+            logger.warn('[WhatsappInboundWorker] Falha ao marcar evento como falhou:', err.message);
+          });
+        }
+        
         throw publishErr; // Re-throw para BullMQ tentar novamente
       }
     },
