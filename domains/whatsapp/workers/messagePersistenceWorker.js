@@ -130,7 +130,7 @@ export function createMessagePersistenceWorker() {
         source: 'whatsapp',
       }, {
         correlationId,
-        aggregateType: 'message',
+        aggregateType: 'system',
         aggregateId: messageId,
       }).catch(() => {});
 
