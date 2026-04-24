@@ -97,16 +97,21 @@ export function createChatProjectionWorker() {
         .lean();
 
       if (projection) {
-        const io = getIo();
-        // Atualiza inbox de todos os atendentes conectados
-        io?.emit('chat:inbox:update', projection);
-        // Atualiza sala específica do lead (ChatWindow aberto)
-        io?.to(`chat:${leadId}`).emit('chat:new_message', {
-          leadId,
-          direction: eventType === 'MESSAGE_PERSISTED' ? 'inbound' : 'outbound',
-          lastMessage: projection.lastMessage,
-          lastMessageAt: projection.lastMessageAt,
-        });
+        try {
+          const io = getIo();
+          // Atualiza inbox de todos os atendentes conectados
+          io?.emit('chat:inbox:update', projection);
+          // Atualiza sala específica do lead (ChatWindow aberto)
+          io?.to(`chat:${leadId}`).emit('chat:new_message', {
+            leadId,
+            direction: eventType === 'MESSAGE_PERSISTED' ? 'inbound' : 'outbound',
+            lastMessage: projection.lastMessage,
+            lastMessageAt: projection.lastMessageAt,
+          });
+        } catch (socketErr) {
+          // Socket.IO só existe no web service — normal em arquitetura separada
+          logger.debug('[ChatProjectionWorker] socket emit skipped (worker mode)');
+        }
       }
 
       logger.info('[ChatProjectionWorker] done', { eventType, leadId, correlationId });
