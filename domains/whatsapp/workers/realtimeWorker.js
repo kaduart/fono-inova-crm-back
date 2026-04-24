@@ -17,7 +17,7 @@
 
 import { Worker } from 'bullmq';
 import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
-import { getIo } from '../../../config/socket.js';
+import { emitSocketEvent } from '../../../config/socket.js';
 import logger from '../../../utils/logger.js';
 import { MessagePersistedSchema } from '../events/messageEventSchema.js';
 
@@ -27,8 +27,6 @@ export function createRealtimeWorker() {
     async (job) => {
       const { eventId, payload, metadata } = job.data;
       const correlationId = metadata?.correlationId || eventId;
-      const io = getIo();
-
       // 🛡️ VALIDAÇÃO DE CONTRATO: elimina fallback silencioso que mascarava bugs
       const validation = MessagePersistedSchema.validate(payload);
       if (!validation.valid) {
@@ -69,19 +67,11 @@ export function createRealtimeWorker() {
           };
 
           // Broadcast global (compatibilidade com frontend atual)
-          io?.emit('message:new', socketPayload);
-          io?.emit('whatsapp:new_message', socketPayload);
+          await emitSocketEvent('message:new', socketPayload);
+          await emitSocketEvent('whatsapp:new_message', socketPayload);
 
-          // RN-WHATSAPP-017: Sala do lead (seletivo)
-          if (leadId) {
-            await emitToLeadRoom(io, leadId, { type: 'message_received', data: socketPayload });
-          }
-
-          // RN-WHATSAPP-018: Atendentes
-          await emitToAttendees(io, {
-            type: 'conversation_update',
-            data: { leadId, phone: from, lastMessageAt: timestamp, direction: 'inbound', correlationId },
-          });
+          // RN-WHATSAPP-017/018: Rooms e attendees só funcionam no monolítico
+          // (fallback global via bridge cobre 99% dos casos no frontend atual)
 
           // RN-WHATSAPP-020: Offline queue
           if (leadId) {
@@ -96,14 +86,6 @@ export function createRealtimeWorker() {
           const { phone, leadId, messageId, sentAt } = payload;
 
           const results = await Promise.allSettled([
-            emitToLeadRoom(io, leadId, {
-              type: 'message_sent',
-              data: { phone, messageId, sentAt, correlationId },
-            }),
-            emitToAttendees(io, {
-              type: 'conversation_update',
-              data: { leadId, phone, lastMessageAt: sentAt, direction: 'outgoing', correlationId },
-            }),
             updateDashboardStats({
               eventType: 'message_sent',
               phone,
