@@ -70,7 +70,7 @@ export function createWhatsappInboundWorker() {
           },
           {
             correlationId,
-            aggregateType: 'message',
+            aggregateType: 'system',
             aggregateId: wamid,
           }
         );

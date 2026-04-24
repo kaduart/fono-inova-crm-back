@@ -497,7 +497,12 @@ if (size > 5000) {
     const finalIdempotencyKey = idempotencyKey || generateIdempotencyKey(eventType, payload, finalAggregateId);
     
     // 🛡️ DEBOUNCE: ignora eventos do mesmo aggregate em curto prazo (evita tempestade de rebuilds)
-    if (shouldDebounce(finalAggregateId, eventType)) {
+    // ⚠️ EXCEÇÃO CRÍTICA: Eventos de WhatsApp inbound NUNCA devem ser debounced — cada mensagem é única (wamid)
+    const isWhatsAppInbound = eventType === 'WHATSAPP_MESSAGE_RECEIVED' || 
+                               eventType === 'WHATSAPP_MESSAGE_PREPROCESSED' ||
+                               eventType === 'MESSAGE_PERSISTED';
+    
+    if (!isWhatsAppInbound && shouldDebounce(finalAggregateId, eventType)) {
         console.warn(`[EVENT_DEBOUNCED] ${eventType} aggregate=${finalAggregateId} — evento legítimo pode ter sido perdido`);
         log.warn('debounced', 'Evento debounced (publicado recentemente)', { eventType, aggregateId: finalAggregateId });
         return {
@@ -567,6 +572,14 @@ if (size > 5000) {
         });
     }
     
+    // 🛡️ VALIDAÇÃO DEFENSIVA: aggregateType deve ser válido para o EventStore
+    const VALID_AGGREGATE_TYPES = ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance'];
+    if (!VALID_AGGREGATE_TYPES.includes(finalAggregateType)) {
+        const err = new Error(`INVALID_AGGREGATE_TYPE: '${finalAggregateType}' não é um tipo válido. EventType=${eventType}. Use um dos valores: ${VALID_AGGREGATE_TYPES.join(', ')}`);
+        log.error('invalid_aggregate_type', err.message, { eventType, aggregateType: finalAggregateType });
+        throw err;
+    }
+
     // ============ PASSO 1: PERSISTE NO EVENT STORE ============
     const eventStoreData = {
         eventType,
@@ -774,6 +787,9 @@ function extractAggregateId(payload) {
            payload.followupId ||
            payload.sessionId ||
            payload.entityId ||
+           payload.msg?.id ||           // WhatsApp message ID (wamid)
+           payload.messageId ||         // Generic message ID
+           payload.wamid ||             // Legacy wamid field
            'unknown';
 }
 

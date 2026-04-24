@@ -83,6 +83,12 @@ const MONITORED_QUEUES = [
   'cancel-orchestrator',
   'totals-calculation',
   'daily-closing',
+  'whatsapp-inbound',
+  'whatsapp-persistence',
+  'whatsapp-lead-interaction',
+  'whatsapp-realtime',
+  'whatsapp-chat-projection',
+  'whatsapp-auto-reply',
 ];
 
 let lastQueueStats = {};
