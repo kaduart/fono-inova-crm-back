@@ -28,6 +28,12 @@ export function startFollowupOrchestratorWorker() {
 
     const log = createContextLogger(correlationId, 'followup');
 
+    // 🛡️ Defesa: followupId é obrigatório para processar
+    if (!followupId) {
+      log.warn('skipped', 'Sem followupId no payload — ignorando (pode ser FOLLOWUP_REQUESTED sem followup específico)', { leadId, eventId });
+      return { status: 'skipped', reason: 'no_followup_id', leadId };
+    }
+
     log.info('start', 'Processando followup', {
       followupId,
       leadId,

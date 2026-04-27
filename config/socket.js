@@ -122,15 +122,20 @@ export const getIo = () => {
  */
 export const emitSocketEvent = async (event, payload) => {
   const socketIo = getIo();
+  const preview = JSON.stringify(payload).substring(0, 180);
+  
   if (socketIo) {
+    const clients = socketIo.engine?.clientsCount ?? 0;
     socketIo.emit(event, payload);
-    return { emitted: true, via: "socket.io", clients: socketIo.engine?.clientsCount ?? 0 };
+    console.log(`📡 [EMIT] ${event} → ${clients} clientes | payload: ${preview}`);
+    return { emitted: true, via: "socket.io", clients };
   }
 
   // Fallback: worker sem Socket.IO → publica no Redis
   if (redisConnection) {
     try {
       await redisConnection.publish(REDIS_SOCKET_CHANNEL, JSON.stringify({ event, payload }));
+      console.log(`📡 [EMIT REDIS] ${event} → canal socket:emit | payload: ${preview}`);
       return { emitted: true, via: "redis" };
     } catch (err) {
       console.error(`❌ emitSocketEvent Redis falhou (${event}):`, err.message);
