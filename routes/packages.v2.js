@@ -12,7 +12,7 @@
  */
 
 import express from 'express';
-import { createPackageV2, listPackagesV2, getPackageV2 } from '../controllers/packageController.v2.js';
+import { createPackageV2, listPackagesV2, getPackageV2, addLiminarCredit, cancelLiminarPackage } from '../controllers/packageController.v2.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import { createContextLogger } from '../utils/logger.js';
@@ -223,6 +223,18 @@ router.get('/', flexibleAuth, listPackagesV2);
  *         schema: { type: string }
  */
 router.get('/:id', flexibleAuth, getPackageV2);
+
+// ============================================
+// PATCH /api/v2/packages/:id/credit
+// Recarga de crédito em pacote liminar
+// ============================================
+router.patch('/:id/credit', flexibleAuth, addLiminarCredit);
+
+// ============================================
+// PATCH /api/v2/packages/:id/cancel
+// Cancelamento seguro de pacote liminar (com estorno de crédito das sessões completed)
+// ============================================
+router.patch('/:id/cancel', flexibleAuth, cancelLiminarPackage);
 
 // ============================================
 // POST /api/v2/packages/:id/consume-session

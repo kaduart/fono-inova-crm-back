@@ -47,10 +47,12 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         // operationalStatus === 'pre_agendado' (ainda não convertido)
         // NOTA: 'converted' foi removido do domínio — pré-agendamentos convertidos viram 'canceled'
         // com metadata.convertedToAppointmentId, e um novo appointment 'scheduled' é criado.
-        const isLead = apt.operationalStatus === 'pre_agendado';
+        // 🎯 FIX: Só é lead se for pré-agendamento DE UM NOVO PACIENTE (sem histórico).
+        // Pacientes existentes que fazem pré-agendamento não são leads.
+        const isLead = apt.operationalStatus === 'pre_agendado' && isFirstVisit;
 
         if (isLead) {
-            return { ...apt, isLead: true, isFirstVisit: false, isReturningAfter45Days: false };
+            return { ...apt, isLead: true, isFirstVisit: true, isReturningAfter45Days: false };
         }
 
         // isReturningAfter45Days: olhar histórico na MESMA especialidade (por date)
