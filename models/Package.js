@@ -133,6 +133,12 @@ const packageSchema = new mongoose.Schema({
     default: 0,
     description: 'Valor total do crédito liberado pela liminar'
   },
+  liminarCreditHistory: [{
+    amount: { type: Number, required: true },
+    reason: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+  }],
   // Campo para rastrear receita já reconhecida (quando usar deferred/hybrid)
   recognizedRevenue: {
     type: Number,
