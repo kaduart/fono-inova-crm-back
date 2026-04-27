@@ -46,7 +46,7 @@ export async function appendEvent(eventData) {
       eventType,
       eventVersion,
       aggregateType,
-      aggregateId: aggregateId.toString(),
+      aggregateId: aggregateId ? String(aggregateId) : 'unknown',
       payload,
       metadata: {
         correlationId,
