@@ -19,6 +19,7 @@ import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
+import Payment from '../models/Payment.js';
 import PatientsView from '../models/PatientsView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import PatientBalance from '../models/PatientBalance.js';
@@ -1214,8 +1215,295 @@ export const getPackageV2 = async (req, res) => {
   }
 };
 
+// ============================================================
+// 💰 QUITAR DÉBITOS V2 (Payment-based) EM PACOTE EXISTENTE
+// ============================================================
+export const settlePackagePayments = async (req, res) => {
+  const mongoSession = await mongoose.startSession();
+  await mongoSession.startTransaction();
+
+  try {
+    const { packageId } = req.params;
+    const { paymentIds } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(packageId)) {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({ success: false, error: 'ID do pacote inválido' });
+    }
+    if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({ success: false, error: 'Nenhum débito selecionado' });
+    }
+
+    const pkg = await Package.findById(packageId).session(mongoSession);
+    if (!pkg) {
+      await mongoSession.abortTransaction();
+      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+    }
+
+    const patientId = pkg.patient?.toString?.() || pkg.patientId;
+
+    // Busca payments pendentes selecionados
+    const Payment = mongoose.model('Payment');
+    const payments = await Payment.find({
+      _id: { $in: paymentIds },
+      patient: patientId,
+      status: 'pending'
+    }).session(mongoSession);
+
+    if (payments.length === 0) {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({ success: false, error: 'Nenhum débito pendente encontrado' });
+    }
+
+    const totalToSettle = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    // Atualiza payments para vinculados ao pacote
+    for (const payment of payments) {
+      payment.status = 'paid';
+      payment.paidAt = new Date();
+      payment.financialDate = new Date();
+      payment.package = pkg._id;
+      await payment.save({ session: mongoSession });
+    }
+
+    // Atualiza PatientBalance (crédito de quitação)
+    const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
+    if (patientBalance) {
+      patientBalance.transactions.push({
+        type: 'credit',
+        amount: totalToSettle,
+        description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
+        specialty: pkg.sessionType,
+        settledByPackageId: pkg._id,
+        registeredBy: req.user?._id,
+        transactionDate: new Date()
+      });
+      patientBalance.currentBalance -= totalToSettle;
+      patientBalance.totalCredited += totalToSettle;
+      patientBalance.lastTransactionAt = new Date();
+      await patientBalance.save({ session: mongoSession });
+    }
+
+    // Atualiza appointments vinculados
+    const appointmentIds = payments
+      .filter(p => p.appointment)
+      .map(p => p.appointment.toString());
+
+    if (appointmentIds.length > 0) {
+      await Appointment.updateMany(
+        { _id: { $in: appointmentIds } },
+        { $set: { paymentStatus: 'paid', isPaid: true } },
+        { session: mongoSession }
+      );
+    }
+
+    // Recalcula saldo do pacote
+    const totalPaid = (pkg.totalPaid || 0) + totalToSettle;
+    const balance = (pkg.totalValue || 0) - totalPaid;
+    await Package.findByIdAndUpdate(
+      packageId,
+      { totalPaid, balance },
+      { session: mongoSession }
+    );
+
+    await mongoSession.commitTransaction();
+
+    logger.info('[PackageV2] Débitos quitados', {
+      packageId,
+      settledCount: payments.length,
+      totalSettled
+    });
+
+    res.json({
+      success: true,
+      message: `${payments.length} débito(s) quitado(s)`,
+      data: {
+        settledCount: payments.length,
+        totalSettled,
+        newBalance: balance
+      }
+    });
+
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    logger.error('[PackageV2] Erro ao quitar débitos', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    mongoSession.endSession();
+  }
+};
+
+export const addLiminarCredit = async (req, res) => {
+  const logger = createContextLogger('addLiminarCredit');
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, error: 'ID de pacote inválido' });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      return res.status(400).json({ success: false, error: 'Valor deve ser maior que zero' });
+    }
+
+    const pkg = await Package.findById(id, { type: 1 }).lean();
+    if (!pkg) {
+      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+    }
+    if (pkg.type !== 'liminar') {
+      return res.status(400).json({ success: false, error: 'Apenas pacotes liminar suportam recarga de crédito' });
+    }
+
+    const updated = await Package.findByIdAndUpdate(
+      id,
+      {
+        $inc: { liminarCreditBalance: parsedAmount, liminarTotalCredit: parsedAmount },
+        $push: {
+          liminarCreditHistory: {
+            amount: parsedAmount,
+            reason: reason || 'Recarga de crédito liminar',
+            createdAt: new Date(),
+            createdBy: req.user?._id || null,
+          },
+        },
+      },
+      { new: true, select: 'liminarCreditBalance liminarTotalCredit' }
+    );
+
+    logger.info('[addLiminarCredit] Crédito adicionado', { packageId: id, amount: parsedAmount, reason });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Crédito adicionado com sucesso',
+      data: {
+        packageId: id,
+        amountAdded: parsedAmount,
+        newBalance: updated.liminarCreditBalance,
+        totalCredit: updated.liminarTotalCredit,
+      },
+    });
+  } catch (error) {
+    logger.error('[addLiminarCredit] Erro:', error);
+    return res.status(500).json({ success: false, error: 'Erro ao adicionar crédito: ' + error.message });
+  }
+};
+
+// ============================================================
+// PATCH /v2/packages/:id/cancel
+// Cancelamento seguro de pacote liminar com estorno de crédito
+// ============================================================
+export const cancelLiminarPackage = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, error: 'ID de pacote inválido' });
+  }
+
+  const mongoSession = await mongoose.startSession();
+  mongoSession.startTransaction();
+
+  try {
+    const pkg = await Package.findById(id)
+      .populate('sessions', 'status sessionValue')
+      .session(mongoSession)
+      .lean();
+
+    if (!pkg) {
+      await mongoSession.abortTransaction();
+      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+    }
+    if (pkg.type !== 'liminar') {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({ success: false, error: 'Endpoint exclusivo para pacotes liminar' });
+    }
+    if (pkg.status === 'canceled') {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({ success: false, error: 'Pacote já está cancelado' });
+    }
+
+    // Sessões que consumiram crédito
+    const completedSessions = (pkg.sessions || []).filter(s => s.status === 'completed');
+    const sessionIds = completedSessions.map(s => s._id);
+
+    // Valor a restaurar (usa sessionValue da sessão, fallback para o do pacote)
+    const totalToRestore = completedSessions.reduce(
+      (sum, s) => sum + (s.sessionValue || pkg.sessionValue || 0),
+      0
+    );
+
+    // Buscar revenue_recognition records dessas sessões
+    const revenueRecords = sessionIds.length
+      ? await Payment.find(
+          { session: { $in: sessionIds }, kind: 'revenue_recognition', status: 'recognized' },
+          { _id: 1, amount: 1 }
+        ).session(mongoSession).lean()
+      : [];
+
+    const revenueIds = revenueRecords.map(r => r._id);
+    const revenueTotal = revenueRecords.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+    // Update atômico: status + estorno de crédito + remove refs de payment
+    const packageOps = {
+      $set: { status: 'canceled', canceledAt: new Date() },
+    };
+    if (totalToRestore > 0) {
+      packageOps.$inc = {
+        liminarCreditBalance: totalToRestore,
+        recognizedRevenue: -revenueTotal,
+        totalPaid: -revenueTotal,
+      };
+    }
+    if (revenueIds.length > 0) {
+      packageOps.$pull = { payments: { $in: revenueIds } };
+    }
+
+    const updated = await Package.findByIdAndUpdate(id, packageOps, {
+      new: true,
+      session: mongoSession,
+      select: 'status liminarCreditBalance recognizedRevenue totalPaid',
+    });
+
+    if (revenueIds.length > 0) {
+      await Payment.deleteMany({ _id: { $in: revenueIds } }).session(mongoSession);
+    }
+
+    await mongoSession.commitTransaction();
+
+    logger.info('[cancelLiminarPackage] Pacote cancelado com estorno', {
+      packageId: id,
+      completedSessionsRestored: completedSessions.length,
+      creditRestored: totalToRestore,
+      revenueRecordsRemoved: revenueIds.length,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Pacote liminar cancelado com estorno de crédito',
+      data: {
+        packageId: id,
+        status: 'canceled',
+        completedSessionsRestored: completedSessions.length,
+        creditRestored: totalToRestore,
+        newCreditBalance: updated.liminarCreditBalance,
+      },
+    });
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    logger.error('[cancelLiminarPackage] Erro:', error);
+    return res.status(500).json({ success: false, error: 'Erro ao cancelar pacote: ' + error.message });
+  } finally {
+    mongoSession.endSession();
+  }
+};
+
 export default {
   createPackageV2,
   listPackagesV2,
-  getPackageV2
+  getPackageV2,
+  settlePackagePayments,
+  addLiminarCredit,
+  cancelLiminarPackage,
 };

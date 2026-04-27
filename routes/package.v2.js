@@ -27,7 +27,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import healthRoutes from './package.v2.health.js';
 
 // 🆕 NOVO: Controller síncrono para criação com agenda
-import { createPackageV2, listPackagesV2, getPackageV2 } from '../controllers/packageController.v2.js';
+import { createPackageV2, listPackagesV2, getPackageV2, settlePackagePayments } from '../controllers/packageController.v2.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageV2');
@@ -629,6 +629,13 @@ router.post('/:id/rebuild', flexibleAuth, asyncHandler(async (req, res) => {
       correlationId 
     }));
   }
+}));
+
+// ============================================================
+// 💰 QUITAR DÉBITOS V2 EM PACOTE EXISTENTE
+// ============================================================
+router.post('/:packageId/settle-payments', flexibleAuth, asyncHandler(async (req, res) => {
+  await settlePackagePayments(req, res);
 }));
 
 export default router;
