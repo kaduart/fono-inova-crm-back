@@ -476,6 +476,21 @@ router.get('/status/:eventId', auth, async (req, res) => {
             }
         }
 
+        // 🆕 Para pagamentos standalone (sem appointment), busca pelo patient + amount recente
+        if (!payment && event.payload?.patientId && mongoose.Types.ObjectId.isValid(event.payload.patientId)) {
+            try {
+                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                payment = await Payment.findOne({
+                    patient: event.payload.patientId,
+                    amount: event.payload.amount,
+                    status: 'paid',
+                    createdAt: { $gte: fiveMinutesAgo }
+                }).sort({ createdAt: -1 }).select('status amount paymentMethod paidAt');
+            } catch (err) {
+                console.log('[PaymentV2] Payment não encontrado para patient standalone:', event.payload.patientId);
+            }
+        }
+
         res.json({
             success: true,
             data: {
@@ -784,6 +799,100 @@ router.patch('/:id', auth, async (req, res) => {
             error: 'Erro ao atualizar pagamento',
             code: 'PAYMENT_UPDATE_ERROR'
         });
+    }
+});
+
+// ============================================
+// POST /api/v2/payments/bulk-settle
+// Fecha sessões pós-pagas: marca pendentes como pagas + cria 1 recibo consolidado no caixa
+// ============================================
+router.post('/bulk-settle', auth, async (req, res) => {
+    const { paymentIds, paymentMethod, totalAmount, notes } = req.body;
+
+    if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
+        return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
+    }
+
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
+    try {
+        const payments = await Payment.find({
+            _id: { $in: paymentIds },
+            status: { $in: ['pending', 'partial'] }
+        }).session(mongoSession);
+
+        if (payments.length === 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, error: 'Nenhum payment pendente encontrado' });
+        }
+
+        const now = new Date();
+        const patientId = payments[0].patient?.toString() || payments[0].patientId;
+        const clinicId = payments[0].clinicId || 'default';
+        const totalSettled = totalAmount || payments.reduce((s, p) => s + (p.amount || 0), 0);
+
+        // 1. Marca cada sessão como paga — preserva paymentDate (data da sessão)
+        for (const p of payments) {
+            p.status = 'paid';
+            p.paidAt = now;
+            // NÃO altera p.paymentDate — mantém data original da sessão
+            if (paymentMethod) p.paymentMethod = paymentMethod;
+            await p.save({ session: mongoSession });
+        }
+
+        // 2. Atualiza appointments vinculados
+        const appointmentIds = payments.filter(p => p.appointment).map(p => p.appointment.toString());
+        if (appointmentIds.length > 0) {
+            const Appointment = mongoose.model('Appointment');
+            await Appointment.updateMany(
+                { _id: { $in: appointmentIds } },
+                { $set: { paymentStatus: 'paid', isPaid: true } },
+                { session: mongoSession }
+            );
+        }
+
+        // 3. Cria 1 recibo consolidado que aparece no caixa do dia
+        const receipt = await Payment.create([{
+            patient: payments[0].patient,
+            patientId,
+            doctor: payments[0].doctor,
+            clinicId,
+            amount: totalSettled,
+            status: 'paid',
+            paymentDate: now,
+            serviceDate: now,
+            paidAt: now,
+            paymentMethod: paymentMethod || 'dinheiro',
+            billingType: payments[0].billingType || 'particular',
+            kind: 'monthly_settlement',
+            settledPaymentIds: payments.map(p => p._id),
+            notes: notes || `Fechamento de ${payments.length} sessão(ões)`,
+            createdAt: now,
+            updatedAt: now
+        }], { session: mongoSession });
+
+        await mongoSession.commitTransaction();
+
+        logger.info('[V2 bulk-settle] Fechamento realizado', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });
+
+        res.json({
+            success: true,
+            message: `${payments.length} sessão(ões) quitada(s)`,
+            data: {
+                settledCount: payments.length,
+                totalSettled,
+                paymentMethod,
+                receiptId: receipt[0]._id
+            }
+        });
+
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        logger.error('[V2 bulk-settle] Erro:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    } finally {
+        mongoSession.endSession();
     }
 });
 

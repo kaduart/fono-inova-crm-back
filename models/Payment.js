@@ -31,9 +31,10 @@ const paymentSchema = new mongoose.Schema({
     sessionType: { type: String, default: null },
     kind: {
         type: String,
-        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', null],
+        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', null],
         default: null
     },
+    settledPaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: [] }],
     billingType: {
         type: String,
         enum: ['particular', 'convenio', 'insurance', 'liminar', null],

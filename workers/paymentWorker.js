@@ -375,6 +375,89 @@ async function processStandalonePayment(payload, eventId, correlationId, log) {
         patientId,
         amount
     });
+
+    // 💰 ATUALIZA PATIENTBALANCE (crédito em conta)
+    try {
+        const PatientBalance = (await import('../models/PatientBalance.js')).default;
+        
+        // Busca ou cria o balance do paciente
+        let balance = await PatientBalance.findOne({ patient: patientId });
+        if (!balance) {
+            balance = new PatientBalance({ patient: patientId, currentBalance: 0, transactions: [] });
+        }
+        
+        // Usa o método do schema que já lida corretamente com o subdocumento
+        await balance.addCredit(amount, notes || 'Crédito de pagamento avulso', requestedBy || null);
+        
+        log.info('balance_credit_applied', `Crédito de ${amount} aplicado para ${patientId} (standalone)`);
+    } catch (balanceError) {
+        log.error('balance_error', 'Erro ao atualizar PatientBalance (não-fatal)', { error: balanceError.message });
+    }
+
+    // 🏦 REGISTRA NO LEDGER (caixa) - standalone também é entrada de caixa
+    try {
+        const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
+        await recordPaymentReceived(payment, { correlationId });
+        log.info('ledger_recorded', `Lançamento contábil registrado (standalone): ${amount}`);
+    } catch (ledgerError) {
+        log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+    }
+
+    // 🔄 ATUALIZA PROJECTIONS (Financial)
+    try {
+        const { default: FinancialProjectionHandler } = await import('../projections/financialProjection.js');
+        await FinancialProjectionHandler.updateCash({
+            amount: payment.amount,
+            billingType: 'particular',
+            paymentMethod: payment.paymentMethod,
+            paymentId: payment._id.toString()
+        });
+        log.info('projection_updated', 'Financial projection atualizada (standalone)');
+    } catch (projError) {
+        log.error('projection_error', 'Erro ao atualizar projection', { error: projError.message });
+    }
+
+    // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
+    try {
+        const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
+        await handlePaymentEvent({
+            type: 'PAYMENT_CREATED',
+            payload: { paymentId: payment._id.toString() },
+            timestamp: new Date()
+        });
+        log.info('payment_projection_updated', `PaymentsView atualizada para ${payment._id}`);
+    } catch (projError) {
+        log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
+    }
+
+    // 📊 Solicita recálculo de totais e daily closing
+    try {
+        await publishEvent(
+            EventTypes.TOTALS_RECALCULATE_REQUESTED,
+            {
+                clinicId: null,
+                date: new Date().toISOString().split('T')[0],
+                period: 'month',
+                reason: 'payment_standalone_completed',
+                triggeredBy: 'payment_worker'
+            },
+            { correlationId }
+        );
+
+        const paymentDate = new Date().toISOString().split('T')[0];
+        await publishEvent(
+            EventTypes.DAILY_CLOSING_REQUESTED,
+            {
+                clinicId: 'default',
+                date: paymentDate,
+                reason: 'payment_standalone_completed',
+                triggeredBy: 'payment_worker'
+            },
+            { correlationId }
+        );
+    } catch (recalcError) {
+        log.error('recalc_error', 'Erro ao publicar recálculos (não-fatal)', { error: recalcError.message });
+    }
     
     // Publica evento
     await publishEvent(
@@ -383,6 +466,7 @@ async function processStandalonePayment(payload, eventId, correlationId, log) {
             paymentId: payment._id.toString(),
             patientId: patientId.toString(),
             amount,
+            billingType: 'particular',
             type: 'standalone',
             paymentMethod
         },
