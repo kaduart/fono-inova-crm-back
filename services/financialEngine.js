@@ -250,7 +250,7 @@ export async function getPatientPendingPayments(patientId, { populate = true } =
     q = q
       .populate('patient', 'fullName phone email')
       .populate('doctor', 'fullName specialty')
-      .populate('appointment', 'date time operationalStatus sessionType')
+      .populate({ path: 'appointment', select: 'date time operationalStatus sessionType doctor', populate: { path: 'doctor', select: 'fullName specialty' } })
       .populate('session', 'date time status sessionType serviceType sessionValue');
   }
 
@@ -368,7 +368,12 @@ function normalizePaymentItem(p) {
       date: p.appointment.date,
       time: p.appointment.time,
       operationalStatus: p.appointment.operationalStatus,
-      sessionType: p.appointment.sessionType
+      sessionType: p.appointment.sessionType,
+      doctor: p.appointment.doctor ? {
+        _id: p.appointment.doctor._id?.toString(),
+        fullName: p.appointment.doctor.fullName,
+        specialty: p.appointment.doctor.specialty
+      } : null
     } : null,
     session: p.session ? {
       _id: p.session._id?.toString(),

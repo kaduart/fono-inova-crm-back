@@ -87,20 +87,27 @@ async function handleCancelAppointment({ payload, session }) {
   // 2. Se era per-session, estorna financeiro
   const isPerSession = paymentOrigin === 'auto_per_session';
   let amountRefunded = 0;
-  
+
   if (isPerSession && sessionValue > 0) {
     amountRefunded = Math.min(sessionValue, pkg.totalPaid || 0);
-    
+
     if (amountRefunded > 0) {
       update.$inc.totalPaid = -amountRefunded;
       update.$inc.paidSessions = -1;
-      
+
       console.log('[PackageGuard] Estornando per-session', {
         packageId,
         amountRefunded,
         sessionValue
       });
     }
+  }
+
+  // 3. Se é liminar, restaura crédito
+  const isLiminar = pkg.type === 'liminar';
+  if (isLiminar && sessionValue > 0) {
+    update.$inc.liminarCreditBalance = sessionValue;
+    console.log('[PackageGuard] Restaurando crédito liminar', { packageId, sessionValue });
   }
 
   const result = await Package.findOneAndUpdate(
