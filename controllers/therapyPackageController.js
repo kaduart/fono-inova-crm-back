@@ -1514,6 +1514,7 @@ export const packageOperations = {
                             }).session(mongoSession);
 
                             if (revenueRecord) {
+                                // Restaurar saldo de crédito
                                 await Package.findByIdAndUpdate(
                                     pkgId,
                                     {
@@ -1526,16 +1527,12 @@ export const packageOperations = {
                                     },
                                     { session: mongoSession }
                                 );
-                                await Payment.deleteOne({ _id: revenueRecord._id }).session(mongoSession);
+
+                                await Payment.deleteOne({ _id: revenueRecord._id })
+                                    .session(mongoSession);
+
                                 console.log(`⚖️ Receita liminar revertida: R$ ${sessionRevenue}`);
-                            } else {
-                                // Sem revenue_recognition — devolve crédito mesmo assim (evita inconsistência silenciosa)
-                                console.warn(`⚠️ [Liminar] revenue_recognition não encontrado para sessão ${sessionDoc._id} — restaurando crédito preventivamente`);
-                                await Package.findByIdAndUpdate(
-                                    pkgId,
-                                    { $inc: { liminarCreditBalance: sessionRevenue } },
-                                    { session: mongoSession }
-                                );
+                                console.log(`💡 Crédito restaurado! Status alterado de 'completed' para '${status}'. Não foi necessário cancelar a sessão.`);
                             }
                             
                             sessionDoc.isPaid = false;

@@ -306,7 +306,7 @@ async function linkSessionsToAppointments(sessions, mongoSession) {
   const bulkOps = sessions.map(session => ({
     updateOne: {
       filter: { _id: session.appointmentId },
-      update: { $set: { session: session._id } }
+      update: { $set: { session: session._id, packageId: session.package } }
     }
   }));
 
@@ -1224,7 +1224,7 @@ export const settlePackagePayments = async (req, res) => {
 
   try {
     const { packageId } = req.params;
-    const { paymentIds } = req.body;
+    const { paymentIds, paymentMethod } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(packageId)) {
       await mongoSession.abortTransaction();
@@ -1264,6 +1264,7 @@ export const settlePackagePayments = async (req, res) => {
       payment.paidAt = new Date();
       payment.financialDate = new Date();
       payment.package = pkg._id;
+      if (paymentMethod) payment.paymentMethod = paymentMethod;
       await payment.save({ session: mongoSession });
     }
 
