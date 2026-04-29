@@ -832,6 +832,25 @@ router.post('/bulk-settle', auth, async (req, res) => {
         const clinicId = payments[0].clinicId || 'default';
         const totalSettled = totalAmount || payments.reduce((s, p) => s + (p.amount || 0), 0);
 
+        // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
+        const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
+        try {
+            await FinancialGuard.execute({
+                context: 'SETTLE_PAYMENT',
+                billingType: 'settle',
+                payload: { paymentIds },
+                session: mongoSession
+            });
+        } catch (flowErr) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: flowErr.message,
+                code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
+                meta: flowErr.meta || undefined
+            });
+        }
+
         // 1. Marca cada sessão como paga — preserva paymentDate (data da sessão)
         for (const p of payments) {
             p.status = 'paid';
@@ -852,7 +871,36 @@ router.post('/bulk-settle', auth, async (req, res) => {
             );
         }
 
-        // 3. Cria 1 recibo consolidado que aparece no caixa do dia
+        // 3. Atualiza packages afetados: recalcula totalPaid/balance a partir das sessions pagas
+        const packageIds = [...new Set(payments.filter(p => p.package).map(p => p.package.toString()))];
+        const affectedPackageIds = [];
+        if (packageIds.length > 0) {
+            const Package = mongoose.model('Package');
+            const Session = mongoose.model('Session');
+            for (const pkgId of packageIds) {
+                const pkg = await Package.findById(pkgId).session(mongoSession).lean();
+                if (!pkg) continue;
+                
+                const paidCount = await Session.countDocuments(
+                    { package: pkgId, isPaid: true }
+                ).session(mongoSession);
+                
+                const totalPaid = paidCount * (pkg.sessionValue || 0);
+                const balance = Math.max(0, (pkg.totalValue || 0) - totalPaid);
+                let financialStatus = 'unpaid';
+                if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
+                else if (totalPaid > 0) financialStatus = 'partially_paid';
+                
+                await Package.findByIdAndUpdate(
+                    pkgId,
+                    { $set: { totalPaid, balance, financialStatus, updatedAt: now } },
+                    { session: mongoSession }
+                );
+                affectedPackageIds.push(pkgId);
+            }
+        }
+
+        // 5. Cria 1 recibo consolidado que aparece no caixa do dia
         const receipt = await Payment.create([{
             patient: payments[0].patient,
             patientId,
@@ -873,6 +921,21 @@ router.post('/bulk-settle', auth, async (req, res) => {
         }], { session: mongoSession });
 
         await mongoSession.commitTransaction();
+
+        // 6. Rebuild síncrono das packages_view para cada pacote afetado
+        //    (fora da transação para não travar, mas antes da resposta HTTP)
+        if (affectedPackageIds.length > 0) {
+            try {
+                const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
+                for (const pkgId of affectedPackageIds) {
+                    await buildPackageView(pkgId);
+                }
+                logger.info('[V2 bulk-settle] Views rebuildadas', { packageIds: affectedPackageIds });
+            } catch (viewErr) {
+                logger.error('[V2 bulk-settle] Erro ao rebuildar view (non-fatal):', viewErr.message);
+                // Não falha a requisição — o worker assíncrono pode reconstruir depois
+            }
+        }
 
         logger.info('[V2 bulk-settle] Fechamento realizado', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });
 

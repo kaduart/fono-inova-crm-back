@@ -40,6 +40,12 @@ export const FeatureFlags = {
     return false;
   },
   
+  // 💰 Feature Flag: Ledger Financial View (V1 → V2)
+  FINANCIAL: {
+    USE_LEDGER: process.env.FF_FINANCIAL_LEDGER === 'true',
+    PERCENTAGE_LEDGER: parseInt(process.env.FF_FINANCIAL_LEDGER_PERCENTAGE || '0'),
+  },
+  
   // Status atual das flags
   getStatus: function() {
     return {
@@ -47,6 +53,7 @@ export const FeatureFlags = {
       create: { useV2: this.CREATE.USE_V2, percentage: this.CREATE.PERCENTAGE_V2 },
       complete: { useV2: this.COMPLETE.USE_V2, percentage: this.COMPLETE.PERCENTAGE_V2 },
       cancel: { useV2: this.CANCEL.USE_V2, percentage: this.CANCEL.PERCENTAGE_V2 },
+      financial: { useLedger: this.FINANCIAL.USE_LEDGER, percentage: this.FINANCIAL.PERCENTAGE_LEDGER },
     };
   }
 };

@@ -3,10 +3,13 @@
 
 import packageGuard from './guards/package.guard.js';
 import particularGuard from './guards/particular.guard.js';
+import settleGuard from './guards/settle.guard.js';
+import FinancialGuardError from './FinancialGuardError.js';
 
 const guardMap = {
   package: packageGuard,
   particular: particularGuard,
+  settle: settleGuard,
   // 🔜 insurance: insuranceGuard (futuro)
   // 🔜 legal: legalGuard (futuro)
 };
@@ -39,7 +42,7 @@ class FinancialGuard {
 
     if (!guard) {
       console.warn(`[FinancialGuard] billingType não mapeado: ${billingType} (context: ${context})`);
-      return { handled: false, reason: 'BILLING_TYPE_NOT_MAPPED' };
+      throw new FinancialGuardError('BILLING_TYPE_NOT_MAPPED', { billingType, context });
     }
 
     console.log(`[FinancialGuard] Executando ${billingType} para ${context}`);

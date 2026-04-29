@@ -527,6 +527,12 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
         requestedBy
     } = payload;
 
+    // 🛡️ FLOW GUARD: payment-worker só processa particular
+    const rawMethod = payments[0]?.paymentMethod || 'cash';
+    if (['convenio', 'liminar_credit'].includes(rawMethod)) {
+        throw new Error(`PAYMENT_FLOW_BLOCKED: paymentWorker não processa billingType='${rawMethod}'. Use fluxo correto.`);
+    }
+
     // 🚀 Log simplificado (payload confiável)
     log.info('multi_payment_processing', `Processando ${debitIds.length} débitos`, {
         patientId,

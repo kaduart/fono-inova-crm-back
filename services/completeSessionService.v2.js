@@ -18,6 +18,7 @@ import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
+import LegacyFinanceWriteGuard from './financialGuard/LegacyFinanceWriteGuard.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import {
@@ -189,27 +190,26 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             
             if (billingType === 'liminar') {
                 // ⚖️ Liminar: sempre pago (crédito judicial)
-                sessionUpdate.isPaid = true;
-                sessionUpdate.paymentStatus = 'paid';
+                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
+                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'liminar_complete' });
                 sessionUpdate.paymentOrigin = 'liminar_credit';
                 sessionUpdate.paidAt = new Date();
             } else if (packageId && !['convenio', 'liminar'].includes(billingType) && !isPerSessionPkg) {
                 // 📦 Pacote pré-pago (full/prepaid): já foi pago no pacote
-                sessionUpdate.isPaid = true;
-                sessionUpdate.paymentStatus = 'package_paid';
+                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
+                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
                 sessionUpdate.paymentOrigin = 'package_prepaid';
                 sessionUpdate.paidAt = new Date();
             } else if (billingType === 'convenio') {
-                // 🏥 Convênio: pago pelo convênio (não gera dívida)
-                sessionUpdate.isPaid = true;
-                sessionUpdate.paymentStatus = 'paid';
+                // 🏥 Convênio: NÃO está pago no dia (recebimento mês subsequente)
+                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'convenio_complete' });
+                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'pending_receipt', { reason: 'convenio_complete' });
                 sessionUpdate.paymentOrigin = 'convenio';
                 sessionUpdate.paymentMethod = 'convenio';
-                sessionUpdate.paidAt = new Date();
             } else {
                 // 💰 Per-session: NÃO assumimos pagamento. Payment é fonte de verdade.
-                sessionUpdate.isPaid = false;
-                sessionUpdate.paymentStatus = isBalanceOrigin ? 'unpaid' : 'pending';
+                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
+                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, isBalanceOrigin ? 'unpaid' : 'pending', { reason: 'per_session_complete' });
                 sessionUpdate.paymentOrigin = isBalanceOrigin ? 'manual_balance' : 'auto_per_session';
             }
             
@@ -235,6 +235,22 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 mongoSession
             );
             console.log(`[CompleteSessionV2] Package ${packageId} atualizado`, packageUpdateResult);
+
+            // 2b. Marcar pacote como finished se todas as sessões ativas foram concluídas
+            if (packageUpdateResult?.modified) {
+                const allSessions = await Session.find({ package: packageId }).session(mongoSession).lean();
+                const activeSessions = allSessions.filter(s => s.status !== 'canceled');
+                const completedSessions = allSessions.filter(s => s.status === 'completed');
+
+                if (activeSessions.length > 0 && completedSessions.length >= activeSessions.length) {
+                    await Package.findByIdAndUpdate(
+                        packageId,
+                        { status: 'finished' },
+                        { session: mongoSession }
+                    );
+                    console.log(`[CompleteSessionV2] ✅ Pacote ${packageId} → finished (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
+                }
+            }
         }
 
         // 3. Atualizar Appointment (usando Session como fonte da verdade)
@@ -252,8 +268,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
         // 🎯 Fonte da verdade: Session define o pagamento, Appointment espelha
         if (sessionId && sessionUpdate) {
-            appointmentUpdate.$set.isPaid = sessionUpdate.isPaid ?? false;
-            appointmentUpdate.$set.paymentStatus = sessionUpdate.paymentStatus ?? 'unknown';
+            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
+            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
             const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
             const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
             appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
@@ -266,10 +282,11 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             });
         } else if (!sessionId) {
             // 🔄 Fallback: sem session, inferir do billingType
-            const isPaid = ['liminar'].includes(billingType) || !!packageId;
-            appointmentUpdate.$set.isPaid = isPaid;
-            appointmentUpdate.$set.paymentStatus = isPaid ? 'paid' : 'unpaid';
-            appointmentUpdate.$set.paymentMethod = billingType === 'liminar' ? 'liminar_credit' : 
+            const isPaid = billingType === 'liminar';
+            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, isPaid, { reason: 'fallback_no_session' });
+            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, isPaid ? 'paid' : 'pending', { reason: 'fallback_no_session' });
+            appointmentUpdate.$set.paymentMethod = billingType === 'liminar' ? 'liminar_credit' :
+                                                   billingType === 'convenio' ? 'convenio' :
                                                    packageId ? 'package_prepaid' : 'cash';
             appointmentUpdate.$set.balanceAmount = isPaid ? 0 : (sessionValue || 0);
             
@@ -524,11 +541,12 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
         // Sync paymentStatus from payment for service types without Session (evaluation, tongue_tie_test, etc)
         if (paymentCreated && !sessionId) {
-            appointmentUpdate.$set.paymentStatus = paymentCreated.status === 'paid' ? 'paid'
+            const derivedStatus = paymentCreated.status === 'paid' ? 'paid'
                 : paymentCreated.status === 'pending' ? 'pending'
                 : 'unpaid';
-            appointmentUpdate.$set.isPaid = paymentCreated.status === 'paid';
-            console.log(`[CompleteSessionV2] Synced paymentStatus from payment (no session):`, appointmentUpdate.$set.paymentStatus);
+            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, derivedStatus, { reason: 'sync_from_payment' });
+            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, paymentCreated.status === 'paid', { reason: 'sync_from_payment' });
+            console.log(`[CompleteSessionV2] Synced paymentStatus from payment (no session):`, derivedStatus);
         }
 
         await Appointment.updateOne(
