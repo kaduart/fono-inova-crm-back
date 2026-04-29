@@ -143,7 +143,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       paymentAmount = null,
       notes = '',
       leadId = null,
-      source = null,
+      source = req.body.metadata?.origin?.source || req.body.source || null,
       preAgendamentoId = null,
       insuranceProvider = null,
       insuranceValue = null,
@@ -171,13 +171,19 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     // Fluxo obrigatório: Lead (origem) → Patient (cadastro) → Appointment
     let resolvedPatientId = patientId;
     let resolvedLeadId = req.body.leadId || null;
+    let autoCreatedLeadId = null;      // 🧹 Para rollback em caso de erro
+    let autoCreatedPatientId = null;   // 🧹 Para rollback em caso de erro
     const parsedDate = parseDateInTimezone(date, time);
     
     if (!resolvedPatientId && isPreAgendamento && req.body.patientInfo?.fullName) {
+      let phoneNormalized = '';
+      let emailNormalized = null;
+      let fullName = '';
+      
       try {
-        const phoneNormalized = req.body.patientInfo.phone?.replace(/\D/g, '') || '';
-        const emailNormalized = req.body.patientInfo.email?.toLowerCase() || null;
-        const fullName = req.body.patientInfo.fullName.trim();
+        phoneNormalized = req.body.patientInfo.phone?.replace(/\D/g, '') || '';
+        emailNormalized = req.body.patientInfo.email?.toLowerCase() || null;
+        fullName = req.body.patientInfo.fullName.trim();
 
         // 1. BUSCAR LEAD EXISTENTE (por telefone ou email)
         let lead = await Lead.findOne({
@@ -199,6 +205,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
             stage: 'interessado_agendamento',
             status: 'agendado'
           });
+          autoCreatedLeadId = lead._id.toString();
           console.log(`[POST /v2/appointments] 🆕 Lead criado: ${lead._id} (${fullName})`);
         } else {
           console.log(`[POST /v2/appointments] 🔗 Lead existente encontrado: ${lead._id} (${fullName})`);
@@ -217,6 +224,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
           createdFromLead: lead._id
         });
         resolvedPatientId = newPatient._id.toString();
+        autoCreatedPatientId = resolvedPatientId;
         console.log(`[POST /v2/appointments] 🆕 Patient auto-criado: ${resolvedPatientId} (${fullName})`);
 
         // 4. ATUALIZAR LEAD (apenas vincula, NÃO converte ainda)
@@ -230,20 +238,86 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       } catch (patientErr) {
         console.error('[POST /v2/appointments] ❌ Falha no fluxo Lead→Patient:', patientErr);
         const isDuplicatePhone = patientErr.code === 11000 && patientErr.keyPattern?.['contact.phone'];
+        
+        // Se der duplicate key em contact.phone, é porque o lead já existe (race condition ou índice único)
+        // Busca o lead existente e continua o fluxo — uma mãe pode ter vários filhos com o mesmo telefone
         if (isDuplicatePhone) {
-          throw createBusinessError(
-            'Já existe um paciente cadastrado com este número de telefone. Verifique se o lead já foi convertido anteriormente.',
-            409,
-            'PATIENT_PHONE_DUPLICATE',
-            { phone: patientErr.keyValue?.['contact.phone'] }
-          );
+          const existingLead = await Lead.findOne({ 'contact.phone': phoneNormalized });
+          if (existingLead) {
+            resolvedLeadId = existingLead._id.toString();
+            console.log(`[POST /v2/appointments] 🔗 Lead existente recuperado após race condition: ${resolvedLeadId}`);
+          }
         }
-        throw createBusinessError(
-          'Não foi possível cadastrar o paciente para o pré-agendamento. Tente novamente ou contate o suporte.',
-          500,
-          'PATIENT_CREATE_FAILED',
-          { originalError: patientErr.message }
-        );
+        
+        // Se ainda não temos patientId, tenta criar o patient ou buscar existente
+        if (!resolvedPatientId) {
+          try {
+            const leadForPatient = resolvedLeadId 
+              ? await Lead.findById(resolvedLeadId) 
+              : await Lead.findOne({ 'contact.phone': phoneNormalized });
+              
+            const newPatient = await Patient.create({
+              fullName: fullName,
+              phone: phoneNormalized,
+              dateOfBirth: req.body.patientInfo.birthDate || null,
+              email: emailNormalized,
+              status: 'lead',
+              isLead: true,
+              createdFromLead: leadForPatient?._id || null
+            });
+            resolvedPatientId = newPatient._id.toString();
+            autoCreatedPatientId = resolvedPatientId;
+            console.log(`[POST /v2/appointments] 🆕 Patient auto-criado: ${resolvedPatientId} (${fullName})`);
+          } catch (patientCreateErr) {
+            // Se patient já existe com mesmo telefone, busca pelo nome+telefone
+            // (uma mãe pode ter vários filhos com mesmo telefone — cada um é um patient diferente)
+            if (patientCreateErr.code === 11000) {
+              const existingPatient = await Patient.findOne({ 
+                phone: phoneNormalized,
+                fullName: { $regex: new RegExp('^' + fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') }
+              });
+              if (existingPatient) {
+                resolvedPatientId = existingPatient._id.toString();
+                console.log(`[POST /v2/appointments] 🔗 Patient existente encontrado: ${resolvedPatientId} (${fullName})`);
+              } else {
+                // Se não achou pelo nome exato, cria um novo patient sem telefone para evitar conflito
+                const fallbackPatient = await Patient.create({
+                  fullName: fullName,
+                  dateOfBirth: req.body.patientInfo.birthDate || null,
+                  email: emailNormalized,
+                  status: 'lead',
+                  isLead: true
+                });
+                resolvedPatientId = fallbackPatient._id.toString();
+                autoCreatedPatientId = resolvedPatientId;
+                console.log(`[POST /v2/appointments] 🆕 Patient criado sem telefone (fallback): ${resolvedPatientId} (${fullName})`);
+              }
+            } else {
+              throw createBusinessError(
+                'Não foi possível cadastrar o paciente para o pré-agendamento. Tente novamente ou contate o suporte.',
+                500,
+                'PATIENT_CREATE_FAILED',
+                { originalError: patientCreateErr.message }
+              );
+            }
+          }
+        }
+        
+        // Atualiza o lead se temos leadId
+        if (resolvedLeadId && !transactionAborted) {
+          try {
+            const leadToUpdate = await Lead.findById(resolvedLeadId);
+            if (leadToUpdate) {
+              leadToUpdate.stage = 'triagem_agendamento';
+              leadToUpdate.status = 'agendado';
+              leadToUpdate.scheduledDate = parsedDate;
+              await leadToUpdate.save();
+              console.log(`[POST /v2/appointments] 🔗 Lead vinculado ao agendamento: ${resolvedLeadId} → Patient ${resolvedPatientId}`);
+            }
+          } catch (leadUpdateErr) {
+            console.error('[POST /v2/appointments] ⚠️ Erro ao atualizar lead (não crítico):', leadUpdateErr.message);
+          }
+        }
       }
     }
 
@@ -372,6 +446,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       specialty,
       serviceType: resolvedServiceType,
       sessionType: normalizeSessionType(sessionType || specialty),
+      visualFlag: req.body.visualFlag !== undefined ? req.body.visualFlag : 'pending',
       package: resolvedPackageId,
       insuranceGuide: insuranceGuideId,
       lead: resolvedLeadId || null,
@@ -483,9 +558,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       formatSuccess(
         {
           appointmentId: appointment._id.toString(),
-          status: 'scheduled',
-          operationalStatus: 'scheduled',
-          clinicalStatus: 'pending',
+          status: appointment.operationalStatus,
+          operationalStatus: appointment.operationalStatus,
+          clinicalStatus: appointment.clinicalStatus,
           correlationId: appointment._id.toString(),
           sessionId: session?._id?.toString() || null
         },
@@ -546,6 +621,25 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
   } catch (error) {
     console.error(`[POST /v2/appointments] ❌ Erro:`, error.message);
+    
+    // 🧹 ROLLBACK MANUAL: se criamos Lead/Patient mas o Appointment falhou,
+    // removemos os registros órfãos para não poluir o banco
+    if (autoCreatedPatientId || autoCreatedLeadId) {
+      console.log(`[POST /v2/appointments] 🧹 Iniciando rollback manual...`, { autoCreatedPatientId, autoCreatedLeadId });
+      try {
+        if (autoCreatedPatientId) {
+          await Patient.findByIdAndDelete(autoCreatedPatientId);
+          console.log(`[POST /v2/appointments] 🗑️ Patient removido no rollback: ${autoCreatedPatientId}`);
+        }
+        if (autoCreatedLeadId) {
+          await Lead.findByIdAndDelete(autoCreatedLeadId);
+          console.log(`[POST /v2/appointments] 🗑️ Lead removido no rollback: ${autoCreatedLeadId}`);
+        }
+      } catch (rollbackErr) {
+        console.error(`[POST /v2/appointments] ⚠️ Erro durante rollback (não crítico):`, rollbackErr.message);
+      }
+    }
+    
     throw error;
   }
 }));
@@ -1696,19 +1790,44 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         await mongoSession.abortTransaction();
         transactionAborted = true;
         throw createBusinessError(
-          `Não é possível editar campos de um agendamento já completado. Campos bloqueados: ${disallowedChanges.join(', ')}. Para alterar dados financeiros/operacionais, cancele e recrie o agendamento.`,
+          'Este atendimento já foi finalizado e não pode mais ser alterado.',
           409,
           'CANNOT_EDIT_COMPLETED_APPOINTMENT'
         );
       }
     }
     
+    // 🎯 FILTRA undefined — só atualiza o que foi explicitamente enviado
+    const explicitBody = Object.fromEntries(
+      Object.entries(req.body).filter(([_, v]) => v !== undefined)
+    );
+    
+    // 🎯 RECONSTRÓI a data corretamente se date/time foram enviados
+    // Evita que "2026-04-29" seja interpretado como meia-noite UTC errada
+    if (req.body.date && req.body.time) {
+      explicitBody.date = parseDateInTimezone(req.body.date, req.body.time);
+    } else if (req.body.date && !req.body.time) {
+      explicitBody.date = parseDateInTimezone(req.body.date, appointment.time);
+    }
+    
     const updateData = {
-      ...req.body,
-      patient: req.body.patientId || appointment.patient,   // 🎯 converte patientId → patient (igual ao POST)
-      doctor: req.body.doctorId || appointment.doctor,
+      ...explicitBody,
+      patient: req.body.patientId !== undefined ? req.body.patientId : appointment.patient,
+      doctor: req.body.doctorId !== undefined ? req.body.doctorId : appointment.doctor,
       updatedAt: new Date()
     };
+    
+    // 🎯 MERGE profundo de metadata (não sobrescreve tudo)
+    if (req.body.metadata) {
+      updateData.metadata = {
+        ...appointment.metadata,
+        ...req.body.metadata,
+        origin: {
+          ...appointment.metadata?.origin,
+          ...req.body.metadata?.origin
+        }
+      };
+    }
 
     // 🩹 BLINDAGEM: sessionValue 0 com paymentAmount > 0 → usa paymentAmount
     // O front (agenda externa) às vezes manda sessionValue: 0 mesmo com paymentAmount: 150

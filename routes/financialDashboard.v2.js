@@ -25,6 +25,7 @@ import financialExpenseSnapshotService from '../services/financialExpenseSnapsho
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -939,158 +940,36 @@ async function calculateRealTime(year, month) {
     const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
     const todayStart = moment.tz(TIMEZONE).startOf('day').utc().toDate();
     const todayEnd = moment.tz(TIMEZONE).endOf('day').utc().toDate();
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
 
     // ───────────────────────────────────────────────
-    // 1. TOTAIS V2 (fonte única de verdade)
+    // 🎯 Fonte única de verdade V2 (unificada)
     // ───────────────────────────────────────────────
-    const [cashV2, productionV2, todayCashV2] = await Promise.all([
-        financialMetricsService.calculateCash({ startDate: start, endDate: end }),
-        financialMetricsService.calculateProduction({ startDate: start, endDate: end }),
-        financialMetricsService.calculateCash({ startDate: todayStart, endDate: todayEnd })
+    const [cash, production, todayCash] = await Promise.all([
+        unifiedFinancialService.calculateCash(start, end),
+        unifiedFinancialService.calculateProduction(start, end),
+        unifiedFinancialService.calculateCash(todayStart, todayEnd)
     ]);
-
-    const caixaTotal = cashV2.total;
-    const caixaHoje = todayCashV2.total;
-    const producaoTotal = productionV2.total;
-
-    // ───────────────────────────────────────────────
-    // 2. Breakdown de CAIXA por método e tipo de negócio
-    //    Usa os MESMOS critérios do V2 para seleção de documentos.
-    // ───────────────────────────────────────────────
-    const [particularPayments, convenioPayments] = await Promise.all([
-        Payment.find({
-            billingType: 'particular',
-            status: 'paid',
-            paymentDate: { $gte: startStr, $lte: endStr }
-        }).select('amount paymentMethod notes description type serviceType billingType').lean(),
-
-        Payment.find({
-            billingType: 'convenio',
-            'insurance.status': { $in: ['received', 'partial'] },
-            'insurance.receivedAt': { $gte: start, $lte: end }
-        }).select('amount insurance.receivedAmount paymentMethod notes description type serviceType billingType').lean()
-    ]);
-
-    // Sessões de pacote convênio pagas (FASE 1 — proteção anti-duplicação)
-    const sessionCashResult = await Session.aggregate([
-        {
-            $match: {
-                isPaid: true,
-                paidAt: { $gte: start, $lte: end },
-                paymentMethod: 'convenio',
-                $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
-            }
-        },
-        {
-            $lookup: {
-                from: 'payments',
-                let: { sessionId: '$_id' },
-                pipeline: [
-                    {
-                        $match: {
-                            $expr: {
-                                $or: [
-                                    { $eq: ['$session', '$$sessionId'] },
-                                    { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }
-                                ]
-                            }
-                        }
-                    },
-                    { $limit: 1 }
-                ],
-                as: 'linkedPayment'
-            }
-        },
-        { $match: { linkedPayment: { $size: 0 } } },
-        {
-            $lookup: {
-                from: 'packages',
-                localField: 'package',
-                foreignField: '_id',
-                as: 'pkg'
-            }
-        },
-        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
-        {
-            $project: {
-                amount: { $ifNull: ['$sessionValue', '$pkg.insuranceGrossAmount'] },
-                paymentMethod: '$paymentMethod',
-                notes: { $literal: '' },
-                description: { $literal: '' },
-                billingType: { $literal: 'convenio' },
-                type: { $literal: '' },
-                serviceType: { $literal: 'package_session' }
-            }
-        }
-    ]);
-
-    const allCashItems = [
-        ...particularPayments.map(p => ({ ...p, amount: p.amount })),
-        ...convenioPayments.map(p => ({ ...p, amount: p.insurance?.receivedAmount || p.amount })),
-        ...sessionCashResult
-    ];
-
-    let caixaParticular = 0, caixaConvenio = 0, caixaPacote = 0, caixaLiminar = 0;
-    const caixaByMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
-
-    allCashItems.forEach(p => {
-        const method = (p.paymentMethod || '').toLowerCase();
-        if (method.includes('pix')) caixaByMethod.pix += p.amount;
-        else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) caixaByMethod.cartao += p.amount;
-        else if (method.includes('cash') || method.includes('dinheiro')) caixaByMethod.dinheiro += p.amount;
-        else caixaByMethod.outros += p.amount;
-
-        const notes = (p.notes || '').toLowerCase();
-        const desc = (p.description || '').toLowerCase();
-        const billingType = p.billingType || 'particular';
-
-        if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') caixaPacote += p.amount;
-        else if (billingType === 'convenio' || notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance') caixaConvenio += p.amount;
-        else if (billingType === 'liminar' || notes.includes('liminar')) caixaLiminar += p.amount;
-        else caixaParticular += p.amount;
-    });
-
-    // ───────────────────────────────────────────────
-    // 3. Produção: Session.status = 'completed' (V2)
-    // ───────────────────────────────────────────────
-    const sessions = await Session.find({
-        date: { $gte: start, $lte: end },
-        status: 'completed'
-    }).populate('package', 'insuranceGrossAmount type').lean();
-
-    let producaoParticular = 0, producaoConvenio = 0, producaoPacote = 0, producaoLiminar = 0;
-    let recebidoProducao = 0, aReceberProducao = 0;
-
-    sessions.forEach(s => {
-        const valor = (s.sessionValue > 0 ? s.sessionValue : null)
-          ?? s.package?.sessionValue
-          ?? s.package?.insuranceGrossAmount
-          ?? 0;
-        const paymentMethod = s.paymentMethod || 'particular';
-        const isConvenio = isConvenioSession(s);
-        const isPacote = !!s.package;
-        const isLiminar = paymentMethod === 'liminar_credit' || s.paymentOrigin === 'liminar';
-
-        if (isConvenio) producaoConvenio += valor;
-        else if (isLiminar) producaoLiminar += valor;
-        else if (isPacote) producaoPacote += valor;
-        else producaoParticular += valor;
-
-        const foiPago = s.isPaid === true || isConvenio || isLiminar;
-        if (foiPago) recebidoProducao += valor;
-        else aReceberProducao += valor;
-    });
 
     return {
-        caixa: caixaTotal,
-        caixaHoje,
-        caixaDetalhe: { particular: caixaParticular, pacote: caixaPacote, convenio: caixaConvenio, liminar: caixaLiminar },
-        caixaByMethod,
-        producao: producaoTotal,
-        producaoDetalhe: { particular: producaoParticular, pacote: producaoPacote, convenio: producaoConvenio, liminar: producaoLiminar, recebido: recebidoProducao, pendente: aReceberProducao },
-        saldo: caixaTotal
+        caixa: cash.total,
+        caixaHoje: todayCash.total,
+        caixaDetalhe: {
+            particular: cash.particular,
+            pacote: cash.pacote,
+            convenio: cash.convenio,
+            liminar: 0 // caixa não tem liminar no service unificado (se necessário, adicionamos depois)
+        },
+        caixaByMethod: cash.byMethod,
+        producao: production.total,
+        producaoDetalhe: {
+            particular: production.particular,
+            pacote: production.pacote,
+            convenio: production.convenio,
+            liminar: production.liminar,
+            recebido: production.recebido,
+            pendente: production.pendente
+        },
+        saldo: cash.total
     };
 }
 
@@ -1659,5 +1538,58 @@ async function calculatePendentes(year, month) {
         }
     };
 }
+
+// GET /v2/financial/dashboard/sanity-check
+// Retorna o resultado do sanity check financeiro para o mês solicitado
+router.get('/sanity-check', auth, async (req, res) => {
+    try {
+        const { month, year } = req.query;
+        const targetYear = year ? parseInt(year) : moment().year();
+        const targetMonth = month ? parseInt(month) : moment().month() + 1;
+
+        const start = moment.tz([targetYear, targetMonth - 1, 1], TIMEZONE).startOf('day').utc().toDate();
+        const end = moment.tz([targetYear, targetMonth - 1, 1], TIMEZONE).endOf('month').endOf('day').utc().toDate();
+
+        const [cash, production, cashByDay, productionByDay] = await Promise.all([
+            unifiedFinancialService.calculateCash(start, end),
+            unifiedFinancialService.calculateProduction(start, end),
+            unifiedFinancialService.calculateCashByDay(start, end),
+            unifiedFinancialService.calculateProductionByDay(start, end)
+        ]);
+
+        const cashSumByDay = Array.from(cashByDay.values()).reduce((s, d) => s + d.caixa, 0);
+        const prodSumByDay = Array.from(productionByDay.map.values()).reduce((s, d) => s + d.producao, 0);
+
+        const checks = [
+            { name: 'Caixa total == soma diária', pass: Math.abs(cash.total - cashSumByDay) < 0.01 },
+            { name: 'Produção total == soma diária', pass: Math.abs(production.total - prodSumByDay) < 0.01 },
+            { name: 'Caixa >= 0', pass: cash.total >= 0 },
+            { name: 'Produção >= 0', pass: production.total >= 0 },
+            { name: 'Recebido + Pendente == Produção', pass: Math.abs(production.recebido + production.pendente - production.total) < 0.01 },
+            { name: 'Zero convênio no caixa', pass: cash.convenio === 0 },
+            { name: 'Contagens coerentes', pass: production.total === 0 || production.count > 0 },
+        ];
+
+        const allPass = checks.every(c => c.pass);
+
+        res.json({
+            success: true,
+            status: allPass ? 'healthy' : 'failed',
+            period: { year: targetYear, month: targetMonth },
+            summary: {
+                caixa: cash.total,
+                producao: production.total,
+                recebido: production.recebido,
+                pendente: production.pendente,
+                transacoes: cash.count,
+                sessoes: production.count
+            },
+            checks,
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 export default router;
