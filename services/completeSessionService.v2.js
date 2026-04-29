@@ -88,8 +88,25 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     }
 
     const sessionId = appointment.session?._id;
-    const packageId = appointment.package?._id;
-    const packageData = appointment.package;
+    let packageId = appointment.package?._id;
+    let packageData = appointment.package;
+    
+    // 🛡️ FALLBACK CRÍTICO: se package não foi populado, buscar explicitamente
+    // Populate falha intermitentemente em produção (replica lag / race condition)
+    if (appointment.package && !packageData?.model && !packageData?.type && !packageData?.paymentType) {
+        const rawPkgId = appointment.package._id || appointment.package;
+        if (rawPkgId) {
+            packageData = await Package.findById(rawPkgId).lean();
+            packageId = packageData?._id;
+            console.log(`[CompleteSessionV2] 🛡️ Package carregado via fallback`, {
+                rawPkgId: rawPkgId.toString?.(),
+                packageId: packageId?.toString(),
+                model: packageData?.model,
+                type: packageData?.type,
+                paymentType: packageData?.paymentType
+            });
+        }
+    }
     
     // DEBUG: Log completo do appointment
     console.log(`[CompleteSessionV2] DEBUG Appointment:`, {
@@ -249,6 +266,27 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                         { session: mongoSession }
                     );
                     console.log(`[CompleteSessionV2] ✅ Pacote ${packageId} → finished (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
+
+                    // 🔄 Cancela appointments futuros do pacote que ainda estão pendentes
+                    const cancelResult = await Appointment.updateMany(
+                        {
+                            package: packageId,
+                            operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+                        },
+                        {
+                            $set: {
+                                operationalStatus: 'canceled',
+                                clinicalStatus: 'canceled',
+                                status: 'canceled',
+                                cancellationReason: 'Pacote finalizado - sessões esgotadas',
+                                updatedAt: new Date()
+                            }
+                        },
+                        { session: mongoSession }
+                    );
+                    if (cancelResult.modifiedCount > 0) {
+                        console.log(`[CompleteSessionV2] 🗑️ ${cancelResult.modifiedCount} appointment(s) futuro(s) cancelado(s) - pacote esgotado`);
+                    }
                 }
             }
         }
@@ -549,8 +587,9 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             console.log(`[CompleteSessionV2] Synced paymentStatus from payment (no session):`, derivedStatus);
         }
 
-        await Appointment.updateOne(
-            { _id: appointmentId },
+        // 🔄 Bypass do financialSanitizer para espelhar estado financeiro da Session
+        await Appointment.collection.updateOne(
+            { _id: new mongoose.Types.ObjectId(appointmentId) },
             appointmentUpdate,
             { session: mongoSession }
         );
@@ -899,33 +938,31 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
  * - full (legado) -> prepaid
  */
 function determineBillingType(appointment, packageData) {
-    // Prioridade 1: billingType do appointment
-    if (appointment?.billingType) {
-        return appointment.billingType;
-    }
-    
-    // Prioridade 2: model do package (V2) — TEM PRIORIDADE ABSOLUTA sobre type
+    // 🎯 PRIORIDADE 1: Package model/type (fonte de verdade do domínio billing)
+    // O pacote SEMPRE tem prioridade sobre o appointment — evita erros quando
+    // appointment foi criado com billingType errado (ex: particular em pacote convenio)
     if (packageData?.model) {
         if (packageData.model === 'convenio') return 'convenio';
         if (packageData.model === 'liminar') return 'liminar';
-        if (packageData.model === 'prepaid') return 'particular'; // 📦 pacote pré-pago → particular (controle via package)
+        if (packageData.model === 'prepaid') return 'particular'; // 📦 pacote pré-pago → particular
         if (packageData.model === 'per_session') return 'particular';
     }
-    
-    // Prioridade 3: type do package (legado, só usado se NÃO houver model)
     if (packageData?.type) {
         if (packageData.type === 'convenio') return 'convenio';
         if (packageData.type === 'liminar') return 'liminar';
         if (packageData.type === 'therapy') return 'particular';
     }
-    
-    // Prioridade 4: paymentType (legado mais antigo)
     if (packageData?.paymentType) {
         if (packageData.paymentType === 'per-session') return 'particular';
-        if (packageData.paymentType === 'full') return 'particular'; // 📦 pacote pré-pago → particular (controle via package)
+        if (packageData.paymentType === 'full') return 'particular';
     }
     
-    // Default — fallback crítico: loga alerta financeiro
+    // 🎯 PRIORIDADE 2: billingType do appointment (sem package)
+    if (appointment?.billingType) {
+        return appointment.billingType;
+    }
+    
+    // Default
     console.warn(`[CompleteSessionV2] 🚨 FALLBACK CRÍTICO: Package sem billingType, model, type ou paymentType definidos. Assumindo 'particular'. Verifique dados do package.`);
     return 'particular';
 }
