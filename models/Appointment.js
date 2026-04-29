@@ -132,6 +132,14 @@ const appointmentSchema = new mongoose.Schema({
     ],
     required: false
   },
+  sessionType: {
+    type: String,
+    enum: [
+      'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
+      'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia'
+    ],
+    default: null
+  },
   sessionValue: { type: Number, min: 0, default: 0 },
   paymentMethod: {
     type: String,

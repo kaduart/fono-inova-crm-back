@@ -1,4 +1,4 @@
-// routes/cashflow.v2.js - CAIXA REAL FECHADO PARA PRODUÇÃO
+// routes/cashflow.v2.js - CAIXA REAL FECHADO PARA PRODUÇÃO (V2 PURA)
 import express from 'express';
 import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
@@ -6,6 +6,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 
@@ -20,21 +21,12 @@ router.get('/', auth, async (req, res) => {
         const end = moment.tz(targetDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
 
         // ============================================================
-        // 🎯 BUSCA PAGAMENTOS DO DIA — FONTES ÚNICAS DE VERDADE
+        // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
-        const paymentBaseFilter = {
-            status: 'paid',
-            amount: { $gte: 1 }
-        };
-
-        const payments = await Payment.find({
-            ...paymentBaseFilter,
-            $or: [
-                { financialDate: { $gte: start, $lte: end } },
-                { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-                { financialDate: null, paymentDate: { $gte: start, $lte: end } }
-            ]
-        }).populate('patient', 'fullName').lean();
+        const [cash, production] = await Promise.all([
+            unifiedFinancialService.calculateCash(start, end),
+            unifiedFinancialService.calculateProduction(start, end)
+        ]);
 
         // ============================================================
         // 🎯 BUSCA DESPESAS DO DIA
@@ -45,72 +37,35 @@ router.get('/', auth, async (req, res) => {
         }).lean();
 
         // ============================================================
-        // 🎯 BUSCA ATENDIMENTOS DO DIA (Produção)
+        // 🔧 DADOS AUXILIARES PARA EXIBIÇÃO (transações detalhadas)
         // ============================================================
-        const appointments = await Appointment.find({
-            date: { $gte: start, $lt: end },
-            operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
-            isDeleted: { $ne: true },
-            patient: { $exists: true, $ne: null }
-        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').populate('package', 'paymentType sessionValue totalValue totalSessions model').lean();
+        const appointmentIds = cash.payments.map(p => p.appointment?.toString()).filter(Boolean);
+        const sessionApptIds = production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean);
+        const allApptIds = Array.from(new Set([...appointmentIds, ...sessionApptIds]));
 
-        // ============================================================
-        // 🔧 RESOLVE NOMES DE PACIENTES E FILTRA DELETADOS
-        // ============================================================
-        const patientIdsToFetch = [];
-        const patientMap = new Map();
-        const patientIdsDoDia = new Set();
-
-        for (const a of appointments) {
-            const patientId = a.patient?._id?.toString() || a.patient?.toString();
-            if (patientId) patientIdsDoDia.add(patientId);
-
-            if (a.patient?.fullName && a.patient.fullName !== 'N/A') {
-                patientMap.set(patientId, a.patient.fullName);
-            }
-            if ((!a.patientName || a.patientName === 'N/A') && a.patient && !patientMap.has(patientId)) {
-                patientIdsToFetch.push(patientId);
-            }
-        }
-
-        const patientIdsArray = Array.from(patientIdsDoDia);
-
-        // 💰 Mapa de pagamentos por APPOINTMENT (fonte única de verdade para "foi pago")
-        const appointmentPaymentMap = new Map();
-        for (const p of payments) {
-            const apptId = p.appointment?.toString();
-            if (apptId) {
-                appointmentPaymentMap.set(apptId, p);
-            }
-        }
-
-        // Filtra pacientes soft-deleted
-        const Patient = (await import('../models/Patient.js')).default;
-        const validPatients = await Patient.find({
-            _id: { $in: patientIdsArray },
-            isDeleted: { $ne: true }
-        }).select('_id fullName').lean();
-
-        const validPatientIdsSet = new Set(validPatients.map(p => p._id.toString()));
-        for (const p of validPatients) patientMap.set(p._id.toString(), p.fullName);
-
-        const missingValidIds = patientIdsToFetch.filter(id => validPatientIdsSet.has(id));
-        if (missingValidIds.length > 0) {
-            const patients = await Patient.find({ _id: { $in: missingValidIds } }).select('_id fullName').lean();
-            for (const p of patients) patientMap.set(p._id.toString(), p.fullName);
-        }
-
-        // Appointments válidos (paciente não deletado)
-        const validAppointments = appointments.filter(a => {
-            const pid = a.patient?._id?.toString() || a.patient?.toString();
-            return validPatientIdsSet.has(pid);
-        });
-
-        // Mapa de horário do appointment (transações de caixa mostram horário do atendimento)
-        const appointmentTimeMap = new Map();
-        for (const a of appointments) {
-            appointmentTimeMap.set(a._id.toString(), a.time);
-        }
+        const [appointmentsMap, doctorsMap, patientMap] = await Promise.all([
+            allApptIds.length > 0
+                ? Appointment.find({ _id: { $in: allApptIds } })
+                    .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod')
+                    .populate('patient', 'fullName phone')
+                    .populate('doctor', 'fullName specialty')
+                    .populate('package', 'paymentType sessionValue totalValue totalSessions model')
+                    .lean()
+                    .then(list => new Map(list.map(a => [a._id.toString(), a])))
+                : new Map(),
+            (async () => {
+                const doctorIds = Array.from(new Set(production.sessions.map(s => s.doctor?.toString()).filter(Boolean)));
+                if (doctorIds.length === 0) return new Map();
+                const docs = await (await import('../models/Doctor.js')).default.find({ _id: { $in: doctorIds } }).select('_id fullName specialty').lean();
+                return new Map(docs.map(d => [d._id.toString(), d]));
+            })(),
+            (async () => {
+                const patientIds = Array.from(new Set(production.sessions.map(s => s.patient?.toString()).filter(Boolean)));
+                if (patientIds.length === 0) return new Map();
+                const pts = await (await import('../models/Patient.js')).default.find({ _id: { $in: patientIds } }).select('_id fullName phone').lean();
+                return new Map(pts.map(p => [p._id.toString(), p]));
+            })()
+        ]);
 
         // ============================================================
         // 🎯 COMPARATIVOS: ONTEM E MÊS
@@ -118,161 +73,53 @@ router.get('/', auth, async (req, res) => {
         const yesterdayStart = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').startOf('day').utc().toDate();
         const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
 
-        const yesterdayPayments = await Payment.find({
-            ...paymentBaseFilter,
-            financialDate: { $gte: yesterdayStart, $lte: yesterdayEnd }
-        }).lean();
-        const yesterdayTotal = yesterdayPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const yesterdayCash = await unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd);
+        const yesterdayTotal = yesterdayCash.total;
 
         const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
-        const monthPayments = await Payment.find({
-            ...paymentBaseFilter,
-            createdAt: { $gte: monthStart, $lte: end }
-        }).lean();
-        const totalMes = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const monthCash = await unifiedFinancialService.calculateCash(monthStart, end);
+        const totalMes = monthCash.total;
         const dayOfMonth = moment.tz(targetDate, 'America/Sao_Paulo').date();
         const mediaDiariaMes = dayOfMonth > 0 ? totalMes / dayOfMonth : 0;
         const projecaoMes = mediaDiariaMes * 30;
 
         // ============================================================
-        // ========== CAIXA - DINHEIRO QUE ENTROU ==========
+        // ========== TRANSAÇÕES DE CAIXA ==========
         // ============================================================
-        let totalCaixa = 0;
-        let pix = 0, dinheiro = 0, cartao = 0, outros = 0;
         let qtdPix = 0, qtdDinheiro = 0, qtdCartao = 0;
-        let particularCaixa = 0, pacoteCaixa = 0, convenioCaixa = 0;
         const porEspecialidadeCaixa = {};
 
-        // 1) Filtra testes e consumo de pacote (NÃO é entrada de caixa)
-        let validPayments = payments.filter(p => {
-            const nome = (p.patient?.fullName || p.patientName || '').toLowerCase();
-            if (nome.includes('teste') || nome.includes('test ')) return false;
-            if (p.isFromPackage === true) return false; // 📦 Dinheiro já entrou na compra do pacote
-            return true;
-        });
-
-        // 2) Exclui payments cujo appointment foi deletado ou cancelado
-        //    e blindagem contra duplicidade de pacote já quitado
-        const paymentAppointmentIds = validPayments
-            .map(p => p.appointment?.toString())
-            .filter(Boolean);
-        if (paymentAppointmentIds.length > 0) {
-            const paymentAppointments = await Appointment.find({
-                _id: { $in: paymentAppointmentIds }
-            }).select('_id isDeleted operationalStatus serviceType package billingType').lean();
-            const existingAppointmentsMap = new Map(
-                paymentAppointments.map(a => [a._id.toString(), a])
-            );
-
-            validPayments = validPayments.filter(p => {
-                const apptId = p.appointment?.toString();
-                if (!apptId) return true; // Payment sem appointment (ajuste, etc.)
-                const appt = existingAppointmentsMap.get(apptId);
-                // Hard-deleted (não achou) OU soft-deleted/cancelado = exclui do caixa
-                if (!appt) return false;
-                if (appt.isDeleted === true) return false;
-                if (['canceled', 'cancelled', 'cancelado'].includes(appt.operationalStatus)) return false;
-                return true;
-            });
-
-            // 🛡️ EXCLUI CONVÊNIO DO CAIXA: recebimento só no mês subsequente
-            validPayments = validPayments.filter(p => {
-                if (p.billingType === 'convenio' || p.type === 'insurance') return false;
-                const apptId = p.appointment?.toString();
-                if (apptId) {
-                    const appt = existingAppointmentsMap.get(apptId);
-                    if (appt && appt.billingType === 'convenio') return false;
-                }
-                return true;
-            });
-
-            // 🛡️ BLINDAGEM PACOTE: exclui payments de sessões de pacote já quitado
-            const packageIdsFromAppointments = Array.from(new Set(
-                paymentAppointments
-                    .filter(a => a.package && a.serviceType === 'package_session')
-                    .map(a => a.package.toString())
-            ));
-            if (packageIdsFromAppointments.length > 0) {
-                const packages = await Package.find({
-                    _id: { $in: packageIdsFromAppointments }
-                }).select('_id sessionsDone totalPaid sessionValue paymentType').lean();
-                const packageMap = new Map(packages.map(p => [p._id.toString(), p]));
-
-                validPayments = validPayments.filter(p => {
-                    const apptId = p.appointment?.toString();
-                    const appt = existingAppointmentsMap.get(apptId);
-                    if (!appt || appt.serviceType !== 'package_session' || !appt.package) return true;
-
-                    const pkg = packageMap.get(appt.package.toString());
-                    if (!pkg) return true;
-
-                    // Pacote per-session: cada sessão é paga no dia — nunca excluir do caixa
-                    if (pkg.paymentType === 'per-session') return true;
-
-                    const dividaTotal = (pkg.sessionsDone || 0) * (pkg.sessionValue || 0);
-                    const totalPaid = pkg.totalPaid || 0;
-
-                    if (totalPaid >= dividaTotal) {
-                        console.log(`[CashflowV2] Excluindo payment ${p._id} do caixa: pacote já cobre sessões (${totalPaid} >= ${dividaTotal})`);
-                        return false;
-                    }
-                    return true;
-                });
-            }
-        }
-
-        const transacoesCaixa = validPayments.map(p => {
-            totalCaixa += p.amount;
-
-            // 💰 FONTES DA VERDADE: Payment.paymentMethod
+        const transacoesCaixa = cash.payments.map(p => {
             const method = (p.paymentMethod || '').toLowerCase();
-            if (method.includes('pix')) { pix += p.amount; qtdPix++; }
-            else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) { cartao += p.amount; qtdCartao++; }
-            else if (method.includes('cash') || method.includes('dinheiro')) { dinheiro += p.amount; qtdDinheiro++; }
-            else { outros += p.amount; }
+            if (method.includes('pix')) qtdPix++;
+            else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) qtdCartao++;
+            else if (method.includes('cash') || method.includes('dinheiro')) qtdDinheiro++;
 
-            // Por tipo
-            const notes = (p.notes || '').toLowerCase();
-            const desc = (p.description || '').toLowerCase();
-            if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') pacoteCaixa += p.amount;
-            else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') convenioCaixa += p.amount;
-            else particularCaixa += p.amount;
-
-            // Especialidade
             const esp = p.specialty || p.sessionType || 'Outra';
             if (!porEspecialidadeCaixa[esp]) porEspecialidadeCaixa[esp] = 0;
             porEspecialidadeCaixa[esp] += p.amount;
 
-            // Método padronizado para exibição
             let metodo = 'Outros';
             if (method.includes('pix')) metodo = 'Pix';
             else if (method.includes('dinheiro') || method.includes('cash')) metodo = 'Dinheiro';
             else if (method.includes('cartão') || method.includes('cartao') || method.includes('card') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) metodo = 'Cartão';
 
-            // Tipo de serviço
+            const notes = (p.notes || '').toLowerCase();
+            const desc = (p.description || '').toLowerCase();
             let tipo = 'Particular';
             let servico = 'Sessão';
-            if (notes.includes('pacote') || desc.includes('pacote') || p.serviceType === 'package_session') {
+            if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') {
                 tipo = 'Pacote';
-                servico = notes.includes('avaliação') ? 'Avaliação (Pacote)' :
-                         notes.includes('teste') ? 'Teste (Pacote)' : 'Sessão de Pacote';
+                servico = notes.includes('avaliação') ? 'Avaliação (Pacote)' : notes.includes('teste') ? 'Teste (Pacote)' : 'Sessão de Pacote';
             } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {
                 tipo = 'Convênio';
                 servico = 'Sessão Convênio';
             } else if (p.serviceType) {
-                const serviceMap = {
-                    'evaluation': 'Avaliação',
-                    'session': 'Sessão',
-                    'individual_session': 'Sessão Individual',
-                    'package_session': 'Sessão de Pacote',
-                    'tongue_tie_test': 'Teste da Linguinha',
-                    'neuropsych_evaluation': 'Avaliação Neuropsicológica',
-                    'return': 'Retorno',
-                    'meet': 'Meet',
-                    'alignment': 'Alinhamento'
-                };
+                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
                 servico = serviceMap[p.serviceType] || 'Sessão';
             }
+
+            const appt = p.appointment ? appointmentsMap.get(p.appointment.toString()) : null;
 
             return {
                 id: p._id,
@@ -282,7 +129,7 @@ router.get('/', auth, async (req, res) => {
                 tipo,
                 servico,
                 especialidade: p.specialty || p.sessionType || '-',
-                hora: (p.appointment && appointmentTimeMap.get(p.appointment.toString())) || moment(p.financialDate || p.createdAt).format('HH:mm'),
+                hora: appt?.time || moment(p.financialDate || p.createdAt).format('HH:mm'),
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
                 categoria: 'recebido'
             };
@@ -297,79 +144,54 @@ router.get('/', auth, async (req, res) => {
             if (!despesasPorCategoria[cat]) despesasPorCategoria[cat] = 0;
             despesasPorCategoria[cat] += e.amount;
         });
-        const saldoLiquido = totalCaixa - totalDespesas;
+        const saldoLiquido = cash.total - totalDespesas;
 
         // ========== PRODUÇÃO DO DIA ==========
-        // Para hoje: só conta sessões cuja hora já passou (produção real)
-        const nowBrasilia = moment.tz('America/Sao_Paulo');
-        const isToday = targetDate === nowBrasilia.format('YYYY-MM-DD');
-        const currentTimeStr = nowBrasilia.format('HH:mm');
-
-        const appointmentsProducao = isToday
-            ? validAppointments.filter(a => !a.time || a.time <= currentTimeStr)
-            : validAppointments;
-
-        let totalProducao = 0;
         let recebidoProducao = 0;
         let aReceber = 0;
-        let producaoParticular = 0, producaoConvenio = 0, producaoPacote = 0;
         const porEspecialidade = {};
         const pendentesCobranca = [];
 
-        const transacoesProducao = appointmentsProducao.map(a => {
-            const pkgSessionValue = a.package?.sessionValue || (a.package?.totalValue && a.package?.totalSessions ? Math.round(a.package.totalValue / a.package.totalSessions) : 0);
-            const valor = a.sessionValue || pkgSessionValue || 0;
-            totalProducao += valor;
+        const transacoesProducao = production.sessions.map(s => {
+            const valor = s.sessionValue > 0
+                ? s.sessionValue
+                : s.package?.sessionValue > 0
+                    ? s.package.sessionValue
+                    : (s.package?.totalValue && s.package?.totalSessions)
+                        ? Math.round(s.package.totalValue / s.package.totalSessions)
+                        : 0;
 
-            const patientId = a.patient?._id?.toString() || a.patient?.toString();
-            const patientName = a.patient?.fullName ||
-                               a.patientName ||
-                               a.patientInfo?.fullName ||
-                               patientMap.get(patientId) ||
-                               'Paciente não identificado';
+            const patient = patientMap.get(s.patient?.toString());
+            const doctor = doctorsMap.get(s.doctor?.toString());
+            const appt = s.appointmentId ? appointmentsMap.get(s.appointmentId.toString()) : null;
 
-            const billingType = a.billingType || 'particular';
-            const isConvenio = billingType === 'convenio' ||
-                              (a.insuranceProvider && a.insuranceProvider.trim() !== '') ||
-                              a.serviceType === 'convenio_session' ||
-                              a.paymentMethod === 'convenio' ||
-                              a.paymentMethod === 'plano-unimed';
-            const isPacote = a.serviceType === 'package_session';
+            const patientName = patient?.fullName || appt?.patientName || appt?.patientInfo?.fullName || 'Paciente não identificado';
+            const isConvenio = (s.paymentMethod || '').toLowerCase() === 'convenio' || s.paymentOrigin === 'convenio';
+            const isPacote = !!s.package;
 
-            if (isConvenio) producaoConvenio += valor;
-            else if (isPacote) producaoPacote += valor;
-            else producaoParticular += valor;
-
-            const esp = a.doctor?.specialty || a.specialty || 'Outra';
+            const esp = doctor?.specialty || appt?.specialty || 'Outra';
             if (!porEspecialidade[esp]) {
                 porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
             }
             porEspecialidade[esp].total += valor;
             porEspecialidade[esp].quantidade += 1;
 
-            // Verificação real de pagamento: Payment vinculado ao appointment
-            const temPaymentNoAppointment = !!appointmentPaymentMap.get(a._id.toString());
-            const packagePaymentType = a.package?.paymentType || null;
-            // per_session / per-session: cada sessão paga individualmente → não conta como pago via pacote
-            const isPerSession = packagePaymentType === 'per_session' || packagePaymentType === 'per-session';
-            const foiPagoViaPacote = a.paymentStatus === 'package_paid'
-                || (isPacote && !isPerSession);
-            const foiPago = temPaymentNoAppointment || foiPagoViaPacote;
-            const categoria = foiPago ? 'recebido' : 'a_receber';
+            const foiPago = s.isPaid === true || s.paymentStatus === 'paid' || s.paymentStatus === 'package_paid';
+            const categoria = isConvenio ? 'recebido' : (foiPago ? 'recebido' : 'a_receber');
 
-            if (!foiPago) {
+            if (!foiPago && !isConvenio) {
                 aReceber += valor;
                 porEspecialidade[esp].pendente += valor;
                 pendentesCobranca.push({
-                    id: a._id,
+                    id: s._id,
                     paciente: patientName,
-                    telefone: a.patientInfo?.phone || a.patient?.phone || '-',
+                    telefone: patient?.phone || appt?.patientInfo?.phone || '-',
                     valor,
-                    horario: a.time,
+                    horario: appt?.time || '',
                     especialidade: esp,
-                    professional: a.doctor?.fullName || a.professionalName || '-',
+                    professional: doctor?.fullName || '-',
                     tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
-                    convenio: a.insuranceProvider || null
+                    convenio: isConvenio ? 'Convênio' : null
                 });
             } else {
                 porEspecialidade[esp].recebido += valor;
@@ -377,39 +199,37 @@ router.get('/', auth, async (req, res) => {
             }
 
             return {
-                id: a._id,
+                id: s._id,
                 paciente: patientName,
                 valor,
-                metodo: a.paymentMethod || (isConvenio ? 'Convênio' : 'Pendente'),
+                metodo: s.paymentMethod || (isConvenio ? 'Convênio' : 'Pendente'),
                 tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
-                servico: a.serviceType === 'evaluation' ? 'Avaliação' :
-                        a.serviceType === 'package_session' ? 'Sessão de Pacote' :
-                        a.serviceType === 'convenio_session' ? 'Sessão Convênio' :
-                        a.serviceType === 'tongue_tie_test' ? 'Teste da Linguinha' :
-                        a.serviceType === 'neuropsych_evaluation' ? 'Avaliação Neuropsicológica' :
-                        a.serviceType === 'return' ? 'Retorno' : 'Sessão',
-                especialidade: a.doctor?.specialty || a.specialty || '-',
-                hora: a.time,
-                data: moment(a.date).format('DD/MM/YYYY'),
-                status: a.operationalStatus,
+                servico: appt?.serviceType === 'evaluation' ? 'Avaliação' :
+                        appt?.serviceType === 'package_session' ? 'Sessão de Pacote' :
+                        appt?.serviceType === 'convenio_session' ? 'Sessão Convênio' :
+                        appt?.serviceType === 'tongue_tie_test' ? 'Teste da Linguinha' :
+                        appt?.serviceType === 'neuropsych_evaluation' ? 'Avaliação Neuropsicológica' :
+                        appt?.serviceType === 'return' ? 'Retorno' : 'Sessão',
+                especialidade: esp,
+                hora: appt?.time || '',
+                data: moment(s.date).format('DD/MM/YYYY'),
+                status: appt?.operationalStatus || 'completed',
                 categoria,
-                professional: a.doctor?.fullName || a.professionalName || '-',
-                paymentModel: isPacote
-                    ? (a.package?.model === 'prepaid' || a.package?.paymentType === 'full' ? 'prepaid' : 'per_session')
-                    : null
+                professional: doctor?.fullName || '-',
+                paymentModel: isPacote ? (appt?.package?.paymentType === 'full' || appt?.package?.model === 'prepaid' ? 'prepaid' : 'per_session') : null
             };
         });
 
         // Comparativos e métricas
         const variacao = yesterdayTotal > 0
-            ? ((totalCaixa - yesterdayTotal) / yesterdayTotal * 100).toFixed(1)
-            : totalCaixa > 0 ? 100 : 0;
+            ? ((cash.total - yesterdayTotal) / yesterdayTotal * 100).toFixed(1)
+            : cash.total > 0 ? 100 : 0;
         const vsMediaMes = mediaDiariaMes > 0
-            ? ((totalCaixa - mediaDiariaMes) / mediaDiariaMes * 100).toFixed(1)
+            ? ((cash.total - mediaDiariaMes) / mediaDiariaMes * 100).toFixed(1)
             : 0;
-        const ticketMedio = validPayments.length > 0 ? (totalCaixa / validPayments.length) : 0;
-        const ticketMedioProducao = validAppointments.length > 0 ? (totalProducao / validAppointments.length) : 0;
-        const taxaEficiencia = totalProducao > 0 ? ((recebidoProducao / totalProducao) * 100).toFixed(1) : 0;
+        const ticketMedio = cash.count > 0 ? (cash.total / cash.count) : 0;
+        const ticketMedioProducao = production.count > 0 ? (production.total / production.count) : 0;
+        const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
 
         const especialidadesResumo = Object.entries(porEspecialidade).map(([nome, dados]) => ({
             nome,
@@ -425,19 +245,19 @@ router.get('/', auth, async (req, res) => {
             data: {
                 data: targetDate,
                 caixa: {
-                    total: totalCaixa,
-                    pix,
-                    dinheiro,
-                    cartao,
-                    outros,
+                    total: cash.total,
+                    pix: cash.pix,
+                    dinheiro: cash.dinheiro,
+                    cartao: cash.cartao,
+                    outros: cash.outros,
                     qtdPix,
                     qtdDinheiro,
                     qtdCartao
                 },
                 porTipo: {
-                    particular: particularCaixa,
-                    pacote: pacoteCaixa,
-                    convenio: convenioCaixa
+                    particular: cash.particular,
+                    pacote: cash.pacote,
+                    convenio: cash.convenio
                 },
                 porEspecialidade: porEspecialidadeCaixa,
                 despesas: {
@@ -446,21 +266,21 @@ router.get('/', auth, async (req, res) => {
                     quantidade: expenses.length
                 },
                 saldo: {
-                    bruto: totalCaixa,
+                    bruto: cash.total,
                     liquido: saldoLiquido,
                     despesaTotal: totalDespesas
                 },
                 producao: {
-                    total: totalProducao,
+                    total: production.total,
                     aReceber,
                     recebido: recebidoProducao,
-                    quantidadeAtendimentos: appointmentsProducao.length,
+                    quantidadeAtendimentos: production.count,
                     ticketMedio: ticketMedioProducao,
                     taxaEficiencia: parseFloat(taxaEficiencia),
                     porTipo: {
-                        particular: producaoParticular,
-                        pacote: producaoPacote,
-                        convenio: producaoConvenio
+                        particular: production.particular,
+                        pacote: production.pacote,
+                        convenio: production.convenio
                     },
                     porEspecialidade: especialidadesResumo
                 },
@@ -496,8 +316,8 @@ router.get('/', auth, async (req, res) => {
                     diasDecorridos: dayOfMonth
                 },
                 estatisticas: {
-                    quantidade: validPayments.length,
-                    quantidadeAtendimentos: appointmentsProducao.length,
+                    quantidade: cash.count,
+                    quantidadeAtendimentos: production.count,
                     ticketMedio,
                     ontem: yesterdayTotal
                 },
@@ -521,119 +341,31 @@ router.get('/month', auth, async (req, res) => {
         }
 
         const [year, monthNum] = month.split('-').map(Number);
-        const start = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day').utc().toDate();
-        const end = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day').utc().toDate();
+        const monthStart = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day');
+        const monthEnd = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day');
+        const start = monthStart.clone().utc().toDate();
+        const end = monthEnd.clone().utc().toDate();
 
-        // 1) CAIXA POR DIA: payments status=paid no período
-        const caixaByDay = await Payment.aggregate([
-            {
-                $match: {
-                    status: 'paid',
-                    amount: { $gte: 1 },
-                    billingType: { $ne: 'convenio' },
-                    $or: [
-                        { financialDate: { $gte: start, $lte: end } },
-                        { paymentDate: { $gte: start, $lte: end }, financialDate: { $exists: false } },
-                        { paymentDate: { $gte: start, $lte: end }, financialDate: null }
-                    ]
-                }
-            },
-            {
-                $project: {
-                    amount: 1,
-                    day: {
-                        $dateToString: {
-                            format: '%Y-%m-%d',
-                            date: { $ifNull: ['$financialDate', '$paymentDate'] },
-                            timezone: 'America/Sao_Paulo'
-                        }
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: '$day',
-                    caixa: { $sum: '$amount' },
-                    transacoes: { $sum: 1 }
-                }
-            }
+        // 🎯 Fonte única de verdade V2
+        const [cashMap, productionResult] = await Promise.all([
+            unifiedFinancialService.calculateCashByDay(start, end),
+            unifiedFinancialService.calculateProductionByDay(start, end)
         ]);
 
-        // 2) PRODUÇÃO POR DIA: appointments no período
-        const producaoByDay = await Appointment.aggregate([
-            {
-                $match: {
-                    date: { $gte: start, $lte: end },
-                    operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
-                    isDeleted: { $ne: true },
-                    patient: { $exists: true, $ne: null }
-                }
-            },
-            {
-                $project: {
-                    day: {
-                        $dateToString: {
-                            format: '%Y-%m-%d',
-                            date: '$date',
-                            timezone: 'America/Sao_Paulo'
-                        }
-                    },
-                    sessionValue: { $ifNull: ['$sessionValue', 0] },
-                    pkgSessionValue: {
-                        $cond: [
-                            { $and: ['$package', { $gt: [{ $ifNull: ['$package.totalValue', 0] }, 0] }, { $gt: [{ $ifNull: ['$package.totalSessions', 0] }, 0] }] },
-                            { $round: [{ $divide: [{ $ifNull: ['$package.totalValue', 0] }, { $ifNull: ['$package.totalSessions', 1] }] }, 0] },
-                            0
-                        ]
-                    }
-                }
-            },
-            {
-                $addFields: {
-                    valor: {
-                        $cond: [
-                            { $gt: ['$sessionValue', 0] },
-                            '$sessionValue',
-                            { $cond: [{ $gt: ['$pkgSessionValue', 0] }, '$pkgSessionValue', 0] }
-                        ]
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: '$day',
-                    producao: { $sum: '$valor' },
-                    atendimentos: { $sum: 1 }
-                }
-            }
-        ]);
+        const producaoMap = productionResult.map;
 
-        // 3) Juntar os resultados
-        const map = new Map();
-        for (const c of caixaByDay) {
-            map.set(c._id, { date: c._id, caixa: c.caixa, producao: 0, atendimentos: 0 });
-        }
-        for (const p of producaoByDay) {
-            const existing = map.get(p._id);
-            if (existing) {
-                existing.producao = p.producao;
-                existing.atendimentos = p.atendimentos;
-            } else {
-                map.set(p._id, { date: p._id, caixa: 0, producao: p.producao, atendimentos: p.atendimentos });
-            }
-        }
-
-        // 4) Preencher dias vazios do mês
-        const daysInMonth = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').daysInMonth();
+        // Preenche todos os dias do mês
+        const daysInMonth = monthStart.daysInMonth();
         const result = [];
         for (let d = 1; d <= daysInMonth; d++) {
             const dayStr = moment.tz([year, monthNum - 1, d], 'America/Sao_Paulo').format('YYYY-MM-DD');
-            const data = map.get(dayStr);
+            const caixaData = cashMap.get(dayStr);
+            const prodData = producaoMap.get(dayStr);
             result.push({
                 date: dayStr,
-                caixa: data?.caixa || 0,
-                producao: data?.producao || 0,
-                atendimentos: data?.atendimentos || 0
+                caixa: caixaData?.caixa || 0,
+                producao: prodData?.producao || 0,
+                atendimentos: prodData?.atendimentos || 0
             });
         }
 
