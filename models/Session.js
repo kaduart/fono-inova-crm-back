@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { syncEvent } from '../services/syncService.js';
 import provisionamentoService from '../services/provisionamentoService.js';
 import MedicalEvent from './MedicalEvent.js';
+import financialSanitizer from './plugins/financialSanitizer.js';
 
 const sessionSchema = new mongoose.Schema({
     date: {
@@ -569,6 +570,9 @@ sessionSchema.methods.softDeleteCascade = async function(reason = 'manual', dele
         session.endSession();
     }
 };
+
+// 💰 Financial Sanitizer — bloqueia writes V1 na origem
+sessionSchema.plugin(financialSanitizer, { entity: 'Session' });
 
 const Session = mongoose.model('Session', sessionSchema);
 

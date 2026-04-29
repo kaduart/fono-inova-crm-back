@@ -23,7 +23,7 @@ router.get('/', auth, async (req, res) => {
         // 🎯 BUSCA PAGAMENTOS DO DIA — FONTES ÚNICAS DE VERDADE
         // ============================================================
         const paymentBaseFilter = {
-            status: { $in: ['paid', 'completed', 'confirmed'] },
+            status: 'paid',
             amount: { $gte: 1 }
         };
 
@@ -159,7 +159,7 @@ router.get('/', auth, async (req, res) => {
         if (paymentAppointmentIds.length > 0) {
             const paymentAppointments = await Appointment.find({
                 _id: { $in: paymentAppointmentIds }
-            }).select('_id isDeleted operationalStatus serviceType package').lean();
+            }).select('_id isDeleted operationalStatus serviceType package billingType').lean();
             const existingAppointmentsMap = new Map(
                 paymentAppointments.map(a => [a._id.toString(), a])
             );
@@ -172,6 +172,17 @@ router.get('/', auth, async (req, res) => {
                 if (!appt) return false;
                 if (appt.isDeleted === true) return false;
                 if (['canceled', 'cancelled', 'cancelado'].includes(appt.operationalStatus)) return false;
+                return true;
+            });
+
+            // 🛡️ EXCLUI CONVÊNIO DO CAIXA: recebimento só no mês subsequente
+            validPayments = validPayments.filter(p => {
+                if (p.billingType === 'convenio' || p.type === 'insurance') return false;
+                const apptId = p.appointment?.toString();
+                if (apptId) {
+                    const appt = existingAppointmentsMap.get(apptId);
+                    if (appt && appt.billingType === 'convenio') return false;
+                }
                 return true;
             });
 
@@ -319,7 +330,10 @@ router.get('/', auth, async (req, res) => {
 
             const billingType = a.billingType || 'particular';
             const isConvenio = billingType === 'convenio' ||
-                              (a.insuranceProvider && a.insuranceProvider.trim() !== '');
+                              (a.insuranceProvider && a.insuranceProvider.trim() !== '') ||
+                              a.serviceType === 'convenio_session' ||
+                              a.paymentMethod === 'convenio' ||
+                              a.paymentMethod === 'plano-unimed';
             const isPacote = a.serviceType === 'package_session';
 
             if (isConvenio) producaoConvenio += valor;
@@ -370,6 +384,7 @@ router.get('/', auth, async (req, res) => {
                 tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
                 servico: a.serviceType === 'evaluation' ? 'Avaliação' :
                         a.serviceType === 'package_session' ? 'Sessão de Pacote' :
+                        a.serviceType === 'convenio_session' ? 'Sessão Convênio' :
                         a.serviceType === 'tongue_tie_test' ? 'Teste da Linguinha' :
                         a.serviceType === 'neuropsych_evaluation' ? 'Avaliação Neuropsicológica' :
                         a.serviceType === 'return' ? 'Retorno' : 'Sessão',
@@ -489,6 +504,143 @@ router.get('/', auth, async (req, res) => {
                 transacoes: transacoesCaixa,
                 transacoesProducao: transacoesProducao
             }
+        });
+
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /api/v2/cashflow/month?month=2026-04
+// Retorna resumo diário do mês inteiro em UMA requisição (substitui 30 chamadas diárias)
+router.get('/month', auth, async (req, res) => {
+    try {
+        const { month } = req.query;
+        if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+            return res.status(400).json({ success: false, error: 'Parâmetro month obrigatório (formato: YYYY-MM)' });
+        }
+
+        const [year, monthNum] = month.split('-').map(Number);
+        const start = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day').utc().toDate();
+        const end = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day').utc().toDate();
+
+        // 1) CAIXA POR DIA: payments status=paid no período
+        const caixaByDay = await Payment.aggregate([
+            {
+                $match: {
+                    status: 'paid',
+                    amount: { $gte: 1 },
+                    billingType: { $ne: 'convenio' },
+                    $or: [
+                        { financialDate: { $gte: start, $lte: end } },
+                        { paymentDate: { $gte: start, $lte: end }, financialDate: { $exists: false } },
+                        { paymentDate: { $gte: start, $lte: end }, financialDate: null }
+                    ]
+                }
+            },
+            {
+                $project: {
+                    amount: 1,
+                    day: {
+                        $dateToString: {
+                            format: '%Y-%m-%d',
+                            date: { $ifNull: ['$financialDate', '$paymentDate'] },
+                            timezone: 'America/Sao_Paulo'
+                        }
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: '$day',
+                    caixa: { $sum: '$amount' },
+                    transacoes: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 2) PRODUÇÃO POR DIA: appointments no período
+        const producaoByDay = await Appointment.aggregate([
+            {
+                $match: {
+                    date: { $gte: start, $lte: end },
+                    operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
+                    isDeleted: { $ne: true },
+                    patient: { $exists: true, $ne: null }
+                }
+            },
+            {
+                $project: {
+                    day: {
+                        $dateToString: {
+                            format: '%Y-%m-%d',
+                            date: '$date',
+                            timezone: 'America/Sao_Paulo'
+                        }
+                    },
+                    sessionValue: { $ifNull: ['$sessionValue', 0] },
+                    pkgSessionValue: {
+                        $cond: [
+                            { $and: ['$package', { $gt: [{ $ifNull: ['$package.totalValue', 0] }, 0] }, { $gt: [{ $ifNull: ['$package.totalSessions', 0] }, 0] }] },
+                            { $round: [{ $divide: [{ $ifNull: ['$package.totalValue', 0] }, { $ifNull: ['$package.totalSessions', 1] }] }, 0] },
+                            0
+                        ]
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    valor: {
+                        $cond: [
+                            { $gt: ['$sessionValue', 0] },
+                            '$sessionValue',
+                            { $cond: [{ $gt: ['$pkgSessionValue', 0] }, '$pkgSessionValue', 0] }
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: '$day',
+                    producao: { $sum: '$valor' },
+                    atendimentos: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 3) Juntar os resultados
+        const map = new Map();
+        for (const c of caixaByDay) {
+            map.set(c._id, { date: c._id, caixa: c.caixa, producao: 0, atendimentos: 0 });
+        }
+        for (const p of producaoByDay) {
+            const existing = map.get(p._id);
+            if (existing) {
+                existing.producao = p.producao;
+                existing.atendimentos = p.atendimentos;
+            } else {
+                map.set(p._id, { date: p._id, caixa: 0, producao: p.producao, atendimentos: p.atendimentos });
+            }
+        }
+
+        // 4) Preencher dias vazios do mês
+        const daysInMonth = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').daysInMonth();
+        const result = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dayStr = moment.tz([year, monthNum - 1, d], 'America/Sao_Paulo').format('YYYY-MM-DD');
+            const data = map.get(dayStr);
+            result.push({
+                date: dayStr,
+                caixa: data?.caixa || 0,
+                producao: data?.producao || 0,
+                atendimentos: data?.atendimentos || 0
+            });
+        }
+
+        res.json({
+            success: true,
+            month,
+            data: result
         });
 
     } catch (err) {

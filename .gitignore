@@ -16,11 +16,17 @@ whatsapp_export_*.txt
 debug_*.html
 *.zip
 
-# Local test scripts
+# Local test scripts / debug / investigação temporária
 mongoose-*.js
 test-sendgrid-api.js
 test-smtp.js
 testTls.js
+investiga-*.js
+debug-*.js
+diagnose-*.js
+scripts/investiga-*
+scripts/debug-*
+scripts/diagnose-*
 
 # Local certificates
 certs/

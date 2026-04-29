@@ -30,6 +30,7 @@ import { recordPackageMetric } from '../routes/package.metrics.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
+import LegacyFinanceWriteGuard from '../services/financialGuard/LegacyFinanceWriteGuard.js';
 import moment from 'moment-timezone';
 
 const logger = createContextLogger('PackageV2');
@@ -395,6 +396,36 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
+  // 🛡️ GUARD FINANCEIRO: sessionValue e totalSessions devem ser válidos
+  const parsedSessions = parseInt(totalSessions);
+  const parsedValue = parseFloat(sessionValue);
+
+  if (!parsedSessions || parsedSessions <= 0) {
+    await mongoSession.endSession();
+    return res.status(400).json({
+      success: false,
+      errorCode: 'TOTAL_SESSIONS_INVALID',
+      message: 'totalSessions deve ser um número inteiro maior que zero'
+    });
+  }
+
+  if (!parsedValue || parsedValue <= 0) {
+    await mongoSession.endSession();
+    return res.status(400).json({
+      success: false,
+      errorCode: 'SESSION_VALUE_INVALID',
+      message: 'sessionValue deve ser um número maior que zero'
+    });
+  }
+
+  if (parsedValue < 50) {
+    logger.warn('[createPackage] sessionValue muito baixo', {
+      patientId,
+      sessionValue: parsedValue,
+      specialty
+    });
+  }
+
   if (!type || !['insurance', 'package', 'legal', 'convenio', 'liminar'].includes(type)) {
     await mongoSession.endSession();
     return res.status(400).json({
@@ -679,15 +710,17 @@ export const createPackageV2 = async (req, res) => {
         // Vincular ao pacote
         reuseAppt.package = pkg._id;
         reuseAppt.serviceType = 'package_session';
-        reuseAppt.paymentStatus = pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid';
+        LegacyFinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid', { reason: 'reuse_appointment_v2' });
         reuseAppt.paymentOrigin = pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid';
         await reuseAppt.save({ session: mongoSession });
 
         // Atualizar session existente se houver
         if (reuseAppt.session) {
+          const sessionUpdate = { package: pkg._id };
+          LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, reuseAppt.paymentStatus, { reason: 'sync_from_reuse_appointment' });
           await Session.findByIdAndUpdate(
             reuseAppt.session,
-            { $set: { package: pkg._id, paymentStatus: reuseAppt.paymentStatus } },
+            { $set: sessionUpdate },
             { session: mongoSession }
           );
         }
@@ -775,7 +808,7 @@ export const createPackageV2 = async (req, res) => {
 
             for (const debit of debitsToSettle) {
               debit.settledByPackageId = pkg._id;
-              debit.isPaid = true;
+              LegacyFinanceWriteGuard.setSessionPaid(debit, true, { reason: 'package_settle_balance' });
               debit.paidAmount = debit.amount;
             }
 
@@ -1258,6 +1291,25 @@ export const settlePackagePayments = async (req, res) => {
 
     const totalToSettle = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
+    // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
+    const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
+    try {
+      await FinancialGuard.execute({
+        context: 'SETTLE_PAYMENT',
+        billingType: 'settle',
+        payload: { paymentIds, packageId },
+        session: mongoSession
+      });
+    } catch (flowErr) {
+      await mongoSession.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        error: flowErr.message,
+        code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
+        meta: flowErr.meta || undefined
+      });
+    }
+
     // Atualiza payments para vinculados ao pacote
     for (const payment of payments) {
       payment.status = 'paid';
@@ -1299,16 +1351,39 @@ export const settlePackagePayments = async (req, res) => {
       );
     }
 
+    // Atualiza sessions vinculadas (SINCRONIZAÇÃO CRÍTICA — antes faltava)
+    const sessionIds = payments.filter(p => p.session).map(p => p.session.toString());
+    if (sessionIds.length > 0) {
+      const Session = mongoose.model('Session');
+      await Session.updateMany(
+        { _id: { $in: sessionIds } },
+        { $set: { isPaid: true, paymentStatus: 'paid' } },
+        { session: mongoSession }
+      );
+    }
+
     // Recalcula saldo do pacote
     const totalPaid = (pkg.totalPaid || 0) + totalToSettle;
     const balance = (pkg.totalValue || 0) - totalPaid;
+    let financialStatus = 'unpaid';
+    if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
+    else if (totalPaid > 0) financialStatus = 'partially_paid';
     await Package.findByIdAndUpdate(
       packageId,
-      { totalPaid, balance },
+      { totalPaid, balance, financialStatus, updatedAt: new Date() },
       { session: mongoSession }
     );
 
     await mongoSession.commitTransaction();
+
+    // Rebuild síncrono da packages_view (fora da transação)
+    try {
+      const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
+      await buildPackageView(packageId);
+      logger.info('[PackageV2] View rebuildada após quitação', { packageId });
+    } catch (viewErr) {
+      logger.error('[PackageV2] Erro ao rebuildar view (non-fatal):', viewErr.message);
+    }
 
     logger.info('[PackageV2] Débitos quitados', {
       packageId,

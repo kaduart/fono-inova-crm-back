@@ -45,6 +45,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const packageId = appointment.package?._id || appointment.package;
         const patientId = appointment.patient?._id || appointment.patient;
 
+        // 🏥 Detectar convênio
+        const isConvenioSession = appointment.billingType === 'convenio' ||
+                                  appointment.insuranceProvider ||
+                                  appointment.paymentMethod === 'convenio';
+
         // ✅ Só incrementa pacote se ainda não estiver concluído
         const shouldIncrementPackage =
             appointment.package &&
@@ -73,6 +78,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
             balanceAmount: balanceAmount || appointment.sessionValue || 0,
             visualFlag: 'pending',
             updatedAt: new Date()
+        } : isConvenioSession ? {
+            status: 'completed',
+            isPaid: false,
+            paymentStatus: 'pending',
+            visualFlag: 'pending',
+            updatedAt: new Date()
         } : {
             status: 'completed',
             isPaid: true,
@@ -90,8 +101,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
             console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
         }
 
-        // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor)
-        if (!addToBalance) {
+        // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor e NÃO for convênio)
+        if (!addToBalance && !isConvenioSession) {
             let finalPaymentId = paymentId;
 
             // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
@@ -207,6 +218,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
             } else {
                 updateData.paymentStatus = 'package_paid';
             }
+        } else if (isConvenioSession) {
+            // 🏥 Convênio avulso: não recebemos ainda
+            updateData.paymentStatus = 'pending_receipt';
+            updateData.visualFlag = 'pending';
         } else {
             // 💰 NÃO assumimos pagamento — Payment é fonte de verdade
             updateData.paymentStatus = 'pending';

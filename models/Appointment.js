@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { syncEvent } from '../services/syncService.js';
 import MedicalEvent from './MedicalEvent.js';
+import financialSanitizer from './plugins/financialSanitizer.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 
 // Sub-schema: tentativas de contato (vinha do PreAgendamento)
@@ -588,6 +589,9 @@ appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', 
     session.endSession();
   }
 };
+
+// 💰 Financial Sanitizer — bloqueia writes V1 na origem
+appointmentSchema.plugin(financialSanitizer, { entity: 'Appointment' });
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 export default Appointment;

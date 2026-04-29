@@ -71,6 +71,7 @@ import patientRoutes from "./routes/patient.js";
 import patientDuplicatesRoutes from "./routes/patients/duplicates.js";
 import PaymentRoutes from "./routes/Payment.js";
 import pixRoutes from "./routes/pix.js";
+import financialAuditRoutes from "./routes/financialAudit.js";
 import proxyMediaRoutes from "./routes/proxyMedia.js";
 import reportsRoutes from "./routes/reports/index.js";
 import signupRoutes from "./routes/signup.js";
@@ -88,7 +89,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import financialDashboardRoutes from './routes/financial/dashboard.routes.js';
-import financialAuditRoutes from './routes/financial/audit.routes.js';
+import financialAuditV2Routes from './routes/financial/audit.routes.js';
 import financialSSERoutes from './routes/financial/sse.routes.js';
 import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
@@ -141,6 +142,8 @@ import calendarRoutes from './routes/calendar.js';
 
 // 🚀 ROTAS V2 - Fechamento do Dia
 import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
+
+import financialFeatureFlag from './middleware/financialFeatureFlag.js';
 
 // 🚀 ROTAS V2 - Event-Driven
 import appointmentV2Routes from './routes/appointment.v2.js';
@@ -367,6 +370,23 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// 🚩 Feature Flags middleware (disponível em todas as rotas)
+import { featureFlagMiddleware, getAllFlags } from './infrastructure/featureFlags/featureFlags.js';
+app.use(featureFlagMiddleware);
+app.use(financialFeatureFlag);
+
+// 🚩 Feature Flags status endpoint (para frontend saber qual versão usar)
+app.get('/api/feature-flags', (req, res) => {
+  res.json({
+    success: true,
+    flags: getAllFlags(),
+    context: {
+      userId: req.user?._id || null,
+      patientId: req.params?.patientId || req.query?.patientId || null,
+    }
+  });
+});
+
 // ======================================================
 // 🌐 Rotas principais (ordem importa!)
 // ======================================================
@@ -406,6 +426,7 @@ app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/packages", PackageRoutes);
+app.use("/api/financial", financialAuditRoutes);  // 📊 Audit V1 vs V2
 app.use("/api/payments", etagMiddleware({ ttl: 60 }), PaymentRoutes);
 app.use("/api/users", UserRoutes);
 app.use("/api/specialties", specialtyRouter);
@@ -423,7 +444,7 @@ app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
-app.use('/api/v2/financial/audit', financialAuditRoutes);  // 🔍 Auditoria V1 vs V2
+app.use('/api/v2/financial/audit', financialAuditV2Routes);  // 🔍 Auditoria V1 vs V2
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2

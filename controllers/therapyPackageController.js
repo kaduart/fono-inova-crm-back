@@ -1244,6 +1244,31 @@ export const packageOperations = {
 
                 const previousStatus = sessionDoc.status;
 
+                // 🔒 Guard de transição de status
+                if (status && status !== previousStatus) {
+                    // Sessão completed é imutável via PUT — só /revert-complete pode desfazer
+                    if (previousStatus === 'completed') {
+                        throw new Error(
+                            'SESSION_LOCKED: Sessão já concluída não pode ser alterada por aqui. ' +
+                            'Use a ação "Reverter conclusão" para desfazer.'
+                        );
+                    }
+
+                    const ALLOWED_TRANSITIONS = {
+                        scheduled:  ['completed', 'canceled'],
+                        pending:    ['completed', 'canceled', 'scheduled'],
+                        canceled:   ['scheduled'],
+                    };
+                    if (!previousStatus) {
+                        console.warn(`⚠️ [SESSION] Sessão sem status anterior (id=${sessionId}) — transição para '${status}' pode ser inconsistente`);
+                    } else {
+                        const allowed = ALLOWED_TRANSITIONS[previousStatus] ?? [];
+                        if (!allowed.includes(status)) {
+                            console.warn(`⚠️ [SESSION] Transição suspeita: ${previousStatus} → ${status} (sessão ${sessionId})`);
+                        }
+                    }
+                }
+
                 // Atualiza campos da sessão
                 sessionDoc.date = date;
                 sessionDoc.time = time;
@@ -1593,6 +1618,46 @@ export const packageOperations = {
                         }
                     }
 
+                    // Caso 3: Sessão foi CANCELADA (estava scheduled/pending)
+                    // sessionsDone não muda (não foi realizada), mas o pacote precisa
+                    // saber que tem uma sessão a remarcar
+                    else if (previousStatus !== 'completed' && status === 'canceled') {
+                        const allSessions = await Session.find({ package: pkgId })
+                            .session(mongoSession);
+                        const activeSessions = allSessions.filter(s => s.status !== 'canceled');
+                        const completedSessions = allSessions.filter(s => s.status === 'completed');
+
+                        // Se o pacote estava finished mas ainda há sessões ativas incompletas, volta para active
+                        const currentPkg = await Package.findById(pkgId).session(mongoSession);
+                        if (currentPkg.status === 'finished' && completedSessions.length < activeSessions.length) {
+                            await Package.findByIdAndUpdate(
+                                pkgId,
+                                { status: 'active' },
+                                { session: mongoSession }
+                            );
+                        }
+                    }
+
+                    // Caso 4: Sessão REATIVADA (estava canceled, voltou para scheduled/pending)
+                    // sessionsDone não muda (nunca foi incrementada para essa sessão)
+                    else if (previousStatus === 'canceled' && status !== 'canceled') {
+                        const allSessions = await Session.find({ package: pkgId })
+                            .session(mongoSession);
+                        const activeSessions = allSessions.filter(s => s.status !== 'canceled');
+                        const completedSessions = allSessions.filter(s => s.status === 'completed');
+
+                        // Sessão voltou para ativa → se pacote estava finished, precisa voltar para active
+                        const currentPkg = await Package.findById(pkgId).session(mongoSession);
+                        if (currentPkg.status === 'finished' && completedSessions.length < activeSessions.length) {
+                            await Package.findByIdAndUpdate(
+                                pkgId,
+                                { status: 'active' },
+                                { session: mongoSession }
+                            );
+                            console.log(`🔄 Pacote ${pkgId} voltou para active (sessão reativada de canceled)`);
+                        }
+                    }
+
                     // Recalcular balance do pacote
                     const pkg = await Package.findById(pkgId).session(mongoSession);
                     const allPkgSessions = await Session.find({ package: pkgId })
@@ -1602,6 +1667,10 @@ export const packageOperations = {
                     pkg.financialStatus =
                         pkg.balance <= 0 ? 'paid' :
                             pkg.totalPaid > 0 ? 'partially_paid' : 'unpaid';
+
+                    // Contagem de sessões restantes (útil para exibir na UI)
+                    const canceledCount = allPkgSessions.filter(s => s.status === 'canceled').length;
+                    pkg.canceledSessions = canceledCount;
 
                     await pkg.save({ session: mongoSession });
                 }
@@ -1614,6 +1683,10 @@ export const packageOperations = {
                         .session(mongoSession);
 
                     if (appointment) {
+                        const prevDate = appointment.date;
+                        const prevTime = appointment.time;
+                        const prevOpStatus = appointment.operationalStatus;
+
                         appointment.patient = sessionDoc.patient;
                         appointment.doctor = sessionDoc.doctor;
                         appointment.date = date;
@@ -1627,6 +1700,37 @@ export const packageOperations = {
                         appointment.session = sessionDoc._id;
                         // 💰 Sincroniza status financeiro com a sessão
                         appointment.paymentStatus = sessionDoc.paymentStatus;
+
+                        // 📋 Registra evento no history[] do agendamento
+                        const isReactivation = previousStatus === 'canceled' && sessionDoc.status === 'scheduled';
+                        const isReschedule = prevDate?.toISOString?.() !== new Date(date).toISOString() || prevTime !== time;
+                        const statusChanged = previousStatus !== sessionDoc.status;
+
+                        if (isReactivation) {
+                            appointment.history.push({
+                                action: 'reactivated',
+                                newStatus: 'scheduled',
+                                timestamp: new Date(),
+                                context: `Reativada após cancelamento — remarcada de ${prevDate?.toISOString?.()?.split('T')[0] ?? '?'} ${prevTime ?? ''} para ${date} ${time}`
+                            });
+                        } else if (isReschedule && prevOpStatus !== 'canceled') {
+                            appointment.history.push({
+                                action: 'rescheduled',
+                                newStatus: appointment.operationalStatus,
+                                timestamp: new Date(),
+                                context: `Remarcada de ${prevDate?.toISOString?.()?.split('T')[0] ?? '?'} ${prevTime ?? ''} para ${date} ${time}`
+                            });
+                        } else if (sessionDoc.status === 'canceled') {
+                            appointment.history.push({
+                                action: 'canceled',
+                                newStatus: 'canceled',
+                                timestamp: new Date(),
+                                context: confirmedAbsence ? 'Falta confirmada' : 'Cancelada pelo operador'
+                            });
+                        } else if (statusChanged || isReschedule) {
+                            // Silent miss: algo mudou mas nenhuma branch disparou
+                            console.warn(`⚠️ [APPOINTMENT HISTORY] Nenhum evento registrado — status: ${previousStatus}→${sessionDoc.status}, reschedule=${isReschedule}, prevOpStatus=${prevOpStatus} (appointment ${appointment._id})`);
+                        }
                         appointment.visualFlag = sessionDoc.visualFlag;
                         await appointment.save({ session: mongoSession });
                     }

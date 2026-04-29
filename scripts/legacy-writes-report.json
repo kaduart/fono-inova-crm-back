@@ -1,0 +1,1829 @@
+{
+  "summary": {
+    "total": 201,
+    "byType": {
+      "CREATE": 53,
+      "UPDATE": 93,
+      "EVENT": 1,
+      "UNKNOWN": 54
+    },
+    "byCategory": {
+      "CONTROLLER": 44,
+      "ROUTE": 88,
+      "SERVICE": 59,
+      "WORKER": 10
+    },
+    "files": 39
+  },
+  "findings": [
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 399,
+      "code": "paymentStatus: 'package_paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 413,
+      "code": "paymentStatus: 'package_paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 555,
+      "code": "isPaid: false,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 556,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 608,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 785,
+      "code": "debit.isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 818,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 820,
+      "code": "isPaid: true",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1381,
+      "code": "sessionDoc.isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1393,
+      "code": "sessionDoc.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1443,
+      "code": "sessionDoc.isPaid = true;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1444,
+      "code": "sessionDoc.paymentStatus = 'paid';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1455,
+      "code": "sessionDoc.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1456,
+      "code": "sessionDoc.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1538,
+      "code": "sessionDoc.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1539,
+      "code": "sessionDoc.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1555,
+      "code": "sessionDoc.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1556,
+      "code": "sessionDoc.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1585,
+      "code": "sessionDoc.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 1586,
+      "code": "sessionDoc.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2058,
+      "code": "isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2059,
+      "code": "paymentStatus = 'paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2078,
+      "code": "isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2079,
+      "code": "paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2090,
+      "code": "isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2095,
+      "code": "isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/therapyPackageController.js",
+      "category": "CONTROLLER",
+      "line": 2096,
+      "code": "paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "controllers/packageSessionController.js",
+      "category": "CONTROLLER",
+      "line": 79,
+      "code": "sessionDoc.isPaid = true;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/packageSessionController.js",
+      "category": "CONTROLLER",
+      "line": 80,
+      "code": "sessionDoc.paymentStatus = 'paid';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/packageSessionController.js",
+      "category": "CONTROLLER",
+      "line": 90,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/packageSessionController.js",
+      "category": "CONTROLLER",
+      "line": 217,
+      "code": "isPaid: false",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/packageController.v2.js",
+      "category": "CONTROLLER",
+      "line": 840,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/packageController.v2.js",
+      "category": "CONTROLLER",
+      "line": 842,
+      "code": "isPaid: true",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/packageController.v2.js",
+      "category": "CONTROLLER",
+      "line": 1349,
+      "code": "{ $set: { paymentStatus: 'paid', isPaid: true } },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/packageController.v2.js",
+      "category": "CONTROLLER",
+      "line": 1360,
+      "code": "{ $set: { isPaid: true, paymentStatus: 'paid' } },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/financialMetricsController.js",
+      "category": "CONTROLLER",
+      "line": 201,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }]",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/financialDashboardController.js",
+      "category": "CONTROLLER",
+      "line": 75,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }]",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/financialDashboardController.js",
+      "category": "CONTROLLER",
+      "line": 83,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }]",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/financialDashboardController.js",
+      "category": "CONTROLLER",
+      "line": 106,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }]",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/convenioPackageController.js",
+      "category": "CONTROLLER",
+      "line": 181,
+      "code": "isPaid: false, // ⚠️ Convênio NÃO está pago - só recebe 30 dias depois",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "controllers/convenioPackageController.js",
+      "category": "CONTROLLER",
+      "line": 752,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "controllers/convenioPackageController.js",
+      "category": "CONTROLLER",
+      "line": 754,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/convenioPackageController.js",
+      "category": "CONTROLLER",
+      "line": 781,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "controllers/convenioPackageController.js",
+      "category": "CONTROLLER",
+      "line": 969,
+      "code": "isPaid: false, // ⚠️ Convênio NÃO está pago - só recebe 30 dias depois",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/projections.v2.js",
+      "category": "ROUTE",
+      "line": 107,
+      "code": "{ paymentStatus: 'pending' },",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/preAgendamento.engine.js",
+      "category": "ROUTE",
+      "line": 205,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/payment.v2.js",
+      "category": "ROUTE",
+      "line": 357,
+      "code": "{ transactions: { $elemMatch: { type: 'debit', isPaid: false } } }",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/payment.v2.js",
+      "category": "ROUTE",
+      "line": 869,
+      "code": "{ $set: { paymentStatus: 'paid', isPaid: true } },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/payment.v2.js",
+      "category": "ROUTE",
+      "line": 880,
+      "code": "{ $set: { isPaid: true, paymentStatus: 'paid' } },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/payment.v2.js",
+      "category": "ROUTE",
+      "line": 896,
+      "code": "{ package: pkgId, isPaid: true }",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/patient.js",
+      "category": "ROUTE",
+      "line": 330,
+      "code": "{ isPaid: false },",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/intelligence.v2.js",
+      "category": "ROUTE",
+      "line": 97,
+      "code": "{ paymentStatus: 'pending' },",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/importFromAgenda.js",
+      "category": "ROUTE",
+      "line": 176,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/importFromAgenda.js",
+      "category": "ROUTE",
+      "line": 360,
+      "code": "isPaid: false,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/importFromAgenda.js",
+      "category": "ROUTE",
+      "line": 361,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/importFromAgenda.js",
+      "category": "ROUTE",
+      "line": 943,
+      "code": "isPaid: false,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/importFromAgenda.js",
+      "category": "ROUTE",
+      "line": 944,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/financialLedger.js",
+      "category": "ROUTE",
+      "line": 138,
+      "code": "paymentStatus: 'pending'",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/financialDashboard.v2.js",
+      "category": "ROUTE",
+      "line": 416,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/financialDashboard.v2.js",
+      "category": "ROUTE",
+      "line": 653,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/financialDashboard.v2.js",
+      "category": "ROUTE",
+      "line": 980,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/cleanup.js",
+      "category": "ROUTE",
+      "line": 19,
+      "code": "d.isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1410,
+      "code": "paymentStatus: 'pending',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1411,
+      "code": "isPaid: false",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1418,
+      "code": "appointment.paymentStatus = 'pending';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1444,
+      "code": "session.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1445,
+      "code": "session.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1451,
+      "code": "appointment.paymentStatus = 'pending';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1508,
+      "code": "session.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1509,
+      "code": "session.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 1516,
+      "code": "appointment.paymentStatus = 'pending';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2290,
+      "code": "newAppointment.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2313,
+      "code": "newAppointment.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2477,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2478,
+      "code": "paymentStatus: 'unpaid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'unpaid'"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2492,
+      "code": "appointment.isPaid = false;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.v2.js",
+      "category": "ROUTE",
+      "line": 2493,
+      "code": "appointment.paymentStatus = 'unpaid';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'unpaid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 314,
+      "code": "isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 315,
+      "code": "paymentStatus = 'paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 335,
+      "code": "isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 336,
+      "code": "paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 547,
+      "code": "isPaid: false,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 548,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 620,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 706,
+      "code": "paymentStatus: 'pending' // ✅ DEVE SER PENDING",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 732,
+      "code": "isPaid: false,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 733,
+      "code": "paymentStatus: 'pending',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1814,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1815,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1822,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1829,
+      "code": "isPaid: true,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1830,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1838,
+      "code": "isPaid: true,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1839,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 1998,
+      "code": "updateData.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 2009,
+      "code": "updateData.paymentStatus = 'package_paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 2013,
+      "code": "updateData.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 2189,
+      "code": "{ $set: { payment: revenueDoc._id, paymentStatus: 'package_paid' } }  // ← Igual pacote normal",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "routes/appointment.js",
+      "category": "ROUTE",
+      "line": 2805,
+      "code": "// appointment.paymentStatus = 'paid'; // REMOVIDO: pagamento é feito no CRM",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/appointment.integration.js",
+      "category": "ROUTE",
+      "line": 88,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 70,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 71,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 78,
+      "code": "isPaid: true,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 79,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 197,
+      "code": "updateData.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 208,
+      "code": "updateData.paymentStatus = 'package_paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "routes/appointment.complete.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 212,
+      "code": "updateData.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/Payment.payment-multi.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 218,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.payment-multi.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 219,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.payment-multi.OPTIMIZED.js",
+      "category": "ROUTE",
+      "line": 236,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.patched.js",
+      "category": "ROUTE",
+      "line": 198,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 113,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 261,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 733,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 734,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 749,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 819,
+      "code": "debitTx.isPaid = true;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 943,
+      "code": "{ $set: { isPaid: true, paymentStatus: 'paid', visualFlag: 'ok', paymentMethod: updated.paymentMethod } },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 950,
+      "code": "{ $set: { paymentStatus: 'paid', visualFlag: 'ok', paymentMethod: updated.paymentMethod } },",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 1012,
+      "code": "debitTx.isPaid = true;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 1661,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }],",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3053,
+      "code": "isPaid: false,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3054,
+      "code": "paymentStatus: 'pending',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3406,
+      "code": "{ isPaid: true, paymentStatus: 'paid' },",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3415,
+      "code": "{ paymentStatus: 'paid', visualFlag: 'ok' },",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3683,
+      "code": "$set: { isPaid: true, paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() }",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3688,
+      "code": "$set: { paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() },",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3888,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3889,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3905,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "routes/Payment.js",
+      "category": "ROUTE",
+      "line": 3988,
+      "code": "d.isPaid = true;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "routes/financial/dashboard.routes.js",
+      "category": "ROUTE",
+      "line": 281,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/reconciliationService.js",
+      "category": "SERVICE",
+      "line": 135,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/financialMetrics.service.js",
+      "category": "SERVICE",
+      "line": 223,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/financialMetrics.service.js",
+      "category": "SERVICE",
+      "line": 451,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/financialMetrics.service.js",
+      "category": "SERVICE",
+      "line": 710,
+      "code": "* Particular do mês: Session.status='completed', paymentMethod!='convenio', isPaid=false, date no período",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/financialMetrics.service.js",
+      "category": "SERVICE",
+      "line": 743,
+      "code": "$or: [{ isPaid: false }, { isPaid: { $exists: false } }],",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/distributePayments.js",
+      "category": "SERVICE",
+      "line": 49,
+      "code": "s.isPaid = true;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/distributePayments.js",
+      "category": "SERVICE",
+      "line": 51,
+      "code": "s.paymentStatus = 'paid';",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/distributePayments.js",
+      "category": "SERVICE",
+      "line": 54,
+      "code": "s.isPaid = false;",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/distributePayments.js",
+      "category": "SERVICE",
+      "line": 58,
+      "code": "s.isPaid = false;",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/distributePayments.js",
+      "category": "SERVICE",
+      "line": 59,
+      "code": "s.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 244,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 245,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 254,
+      "code": "isPaid: true,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 255,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 294,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 304,
+      "code": "update.$set.paymentStatus = 'package_paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "services/completeSessionOutboxService.js",
+      "category": "SERVICE",
+      "line": 309,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 277,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 278,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 288,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 289,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 328,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 338,
+      "code": "update.$set.paymentStatus = 'package_paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "services/completeSessionEventService.v2.js",
+      "category": "SERVICE",
+      "line": 343,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 265,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 266,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 276,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 277,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 316,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 326,
+      "code": "update.$set.paymentStatus = 'package_paid';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "services/completeSessionEventService.js",
+      "category": "SERVICE",
+      "line": 331,
+      "code": "update.$set.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/appointmentV2Service.js",
+      "category": "SERVICE",
+      "line": 46,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/appointmentHybridService.js",
+      "category": "SERVICE",
+      "line": 247,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/appointmentHybridService.js",
+      "category": "SERVICE",
+      "line": 275,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/appointmentHybridService.js",
+      "category": "SERVICE",
+      "line": 372,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 101,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 102,
+      "code": "isPaid: true,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 179,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 279,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 298,
+      "code": "isPaid: true,",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 308,
+      "code": "return { isPaid: true, paymentId: existingPayment._id, type: 'existing' };",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 322,
+      "code": "return { isPaid: true, paymentId: existingPayment._id, type: 'updated' };",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 363,
+      "code": "return { isPaid: true, paymentId: payment._id, type: 'auto_per_session' };",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 366,
+      "code": "return { isPaid: false, type: 'none', message: 'Sem valor a cobrar' };",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/appointmentCompleteService.js",
+      "category": "SERVICE",
+      "line": 400,
+      "code": "return { isPaid: false, type: 'balance', balanceId: balance._id };",
+      "type": "EVENT",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/financialGuard/auditEngine.js",
+      "category": "SERVICE",
+      "line": 147,
+      "code": "{ isPaid: true },",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/financialGuard/auditEngine.js",
+      "category": "SERVICE",
+      "line": 148,
+      "code": "{ paymentStatus: 'paid' },",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/financialGuard/auditEngine.js",
+      "category": "SERVICE",
+      "line": 149,
+      "code": "{ paymentStatus: 'package_paid' }",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "services/financial/ConvenioMetricsService.js",
+      "category": "SERVICE",
+      "line": 223,
+      "code": "* que ainda não foram pagas (isPaid = false ou paymentStatus != 'paid')",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/financial/ConvenioMetricsService.js",
+      "category": "SERVICE",
+      "line": 246,
+      "code": "{ isPaid: false },",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/financial/ConvenioMetricsService.js",
+      "category": "SERVICE",
+      "line": 694,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 120,
+      "code": "isPaid: false, // Será true quando convênio pagar",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 121,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 143,
+      "code": "paymentStatus: 'pending',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 293,
+      "code": "{ $set: { paymentStatus: 'pending' } },",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 300,
+      "code": "{ $set: { paymentStatus: 'pending' } },",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 396,
+      "code": "isPaid: true,",
+      "type": "UPDATE",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 397,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "services/billing/insuranceBilling.js",
+      "category": "SERVICE",
+      "line": 410,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "workers/preAgendamentoWorker.js",
+      "category": "WORKER",
+      "line": 101,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "workers/paymentWorker.js",
+      "category": "WORKER",
+      "line": 641,
+      "code": "paymentStatus: 'paid',",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "workers/paymentWorker.js",
+      "category": "WORKER",
+      "line": 1123,
+      "code": "paymentStatus: 'paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "workers/paymentWorker.js",
+      "category": "WORKER",
+      "line": 1327,
+      "code": "paymentStatus: 'paid'",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'paid'"
+    },
+    {
+      "file": "workers/packageValidationWorker.js",
+      "category": "WORKER",
+      "line": 163,
+      "code": "paymentStatus: 'package_paid',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "workers/packageValidationWorker.js",
+      "category": "WORKER",
+      "line": 208,
+      "code": "isPaid: true, // Pago pelo pacote",
+      "type": "UNKNOWN",
+      "field": "isPaid",
+      "value": "true"
+    },
+    {
+      "file": "workers/packageValidationWorker.js",
+      "category": "WORKER",
+      "line": 209,
+      "code": "paymentStatus: 'package_paid',",
+      "type": "UNKNOWN",
+      "field": "paymentStatus",
+      "value": "'package_paid'"
+    },
+    {
+      "file": "workers/createAppointmentWorker.js",
+      "category": "WORKER",
+      "line": 173,
+      "code": "isPaid: false,",
+      "type": "CREATE",
+      "field": "isPaid",
+      "value": "false"
+    },
+    {
+      "file": "workers/createAppointmentWorker.js",
+      "category": "WORKER",
+      "line": 174,
+      "code": "paymentStatus: 'pending',",
+      "type": "CREATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    },
+    {
+      "file": "workers/createAppointmentWorker.js",
+      "category": "WORKER",
+      "line": 186,
+      "code": "appointment.paymentStatus = 'pending';",
+      "type": "UPDATE",
+      "field": "paymentStatus",
+      "value": "'pending'"
+    }
+  ]
+}

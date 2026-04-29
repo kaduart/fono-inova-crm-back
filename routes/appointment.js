@@ -2064,7 +2064,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // ============================================================
         
         // ✅ CONFIRMAR PAYMENT (fora da transação - mantém consistência de estado)
-        if (finalPaymentId && !addToBalance) {
+        // 🛡️ NÃO confirma como paid se for convênio (recebimento só no mês subsequente)
+        if (finalPaymentId && !addToBalance && !isConvenioSession) {
             try {
                 const paymentUpdateData = {
                     status: 'paid',

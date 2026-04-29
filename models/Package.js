@@ -35,7 +35,7 @@ const packageSchema = new mongoose.Schema({
   time: { type: String },
   sessionsDone: { type: Number, default: 0 },
   payments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }],
-  status: { type: String, enum: ['active', 'in-progress', 'completed'], default: 'active' },
+  status: { type: String, enum: ['active', 'in-progress', 'completed', 'finished', 'canceled'], default: 'active' },
   balance: { type: Number, default: 0 },
   credit: { type: Number, default: 0 },
   specialty: {
@@ -55,6 +55,12 @@ const packageSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     description: 'Número total (possivelmente fracionado) de sessões quitadas'
+  },
+
+  canceledSessions: {
+    type: Number,
+    default: 0,
+    description: 'Número de sessões canceladas no pacote'
   },
 
   totalPaid: {
