@@ -409,14 +409,19 @@ class FinancialMetricsService {
       }
     ]);
 
-    // Particular recebido — usa Date objects, não strings
+    // Particular/liminar recebido — exclui apenas convênio (calculado separado) e package_consumed.
+    // Data: financialDate tem prioridade (override explícito); cai em paymentDate quando ausente.
     const particularPayments = await Payment.aggregate([
       {
         $match: {
-          billingType: 'particular',
+          billingType: { $nin: ['convenio'] }, // convênio já contado acima
           status: 'paid',
           kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
-          paymentDate: { $gte: start, $lte: end }
+          $or: [
+            { financialDate: { $gte: start, $lte: end } },
+            { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+            { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } }
+          ]
         }
       },
       {

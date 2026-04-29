@@ -37,7 +37,8 @@ const paymentSchema = new mongoose.Schema({
     settledPaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: [] }],
     billingType: {
         type: String,
-        enum: ['particular', 'convenio', 'insurance', 'liminar', null],
+        enum: ['particular', 'convenio', 'insurance', 'liminar'],
+        required: false,
         default: 'particular'
     },
     notes: { type: String, default: null },

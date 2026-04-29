@@ -427,15 +427,57 @@ router.get('/:patientId/balance/details', auth, async (req, res) => {
 router.get('/:patientId/sessions', auth, async (req, res) => {
   try {
     const { patientId } = req.params;
-    
-    // Busca pacotes/sessões do paciente
-    const packages = await Package.find({ patient: patientId })
-      .populate('sessions')
-      .populate('doctor', 'fullName specialty');
-    
-    res.json({ success: true, data: packages });
+
+    // 🔥 Financial Truth Layer — AGORA default em TODOS os endpoints de leitura
+    // V1 (session.isPaid) foi removido como fonte de UI. V2 (Payment ledger) é truth.
+    const { default: FinancialTruthLayer } = await import('../services/financialGuard/FinancialTruthLayer.js');
+    const snapshot = await FinancialTruthLayer.getPatientFinancialSnapshot(patientId, {
+      withAudit: false  // ← endpoint principal não expõe shadow audit (vai para /v2 ou /audit)
+    });
+
+    res.json({
+      success: true,
+      meta: {
+        source: 'truth_layer_v2',
+        financialModel: 'payment-based',
+        note: 'V1 legado removido como fonte de UI. Use /v2 para audit shadow.'
+      },
+      data: snapshot.packages
+    });
   } catch (err) {
     console.error('[SESSIONS] Erro:', err);
+    res.status(500).json({ error: 'Erro ao buscar sessões' });
+  }
+});
+
+// 🟢 V2 — Financial Truth Layer: V2 é default, V1 só audit shadow
+router.get('/:patientId/sessions/v2', auth, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    // 🔥 Financial Truth Layer — única fonte de leitura financeira
+    const { default: FinancialTruthLayer } = await import('../services/financialGuard/FinancialTruthLayer.js');
+    const snapshot = await FinancialTruthLayer.getPatientFinancialSnapshot(patientId, {
+      withAudit: true  // ← detecta e loga inconsistências V1, mas NUNCA usa V1 como truth
+    });
+
+    res.json({
+      success: true,
+      meta: {
+        version: 'v2',
+        source: 'truth_layer',
+        financialModel: 'payment-based',
+        audit: {
+          v1DivergenceRate: snapshot.summary.v1DivergenceRate,
+          inconsistentSessions: snapshot.summary.inconsistentSessions,
+          note: 'V1 shadow detectado mas NÃO usado como fonte de truth'
+        }
+      },
+      summary: snapshot.summary,
+      data: snapshot.packages
+    });
+  } catch (err) {
+    console.error('[SESSIONS V2] Erro:', err);
     res.status(500).json({ error: 'Erro ao buscar sessões' });
   }
 });

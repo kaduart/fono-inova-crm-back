@@ -15,14 +15,22 @@ const DEFAULT_FLAGS = {
     ENABLE_SYNC_WORKER: true,
     ENABLE_OUTBOX_WORKER: true,
     ROLLOUT_PERCENTAGE: parseInt(process.env.ROLLOUT_PERCENTAGE || '0'),
+    // 💰 Ledger Financial View (V1 → V2)
+    USE_LEDGER_FINANCIAL_VIEW: process.env.FF_FINANCIAL_LEDGER === 'true',
+    FINANCIAL_LEDGER_PERCENTAGE: parseInt(process.env.FF_FINANCIAL_LEDGER_PERCENTAGE || '0'),
 };
 
 let flags = { ...DEFAULT_FLAGS };
 
 export function isEnabled(flagName, context = {}) {
     if (flags[flagName] === true || flags[flagName] === false) {
-        if (context.userId && flags.ROLLOUT_PERCENTAGE > 0) {
-            return isInRollout(context.userId, flags.ROLLOUT_PERCENTAGE);
+        // Rollout porcentagem — suporta userId ou patientId
+        const rolloutKey = context.userId || context.patientId;
+        const rolloutPct = flagName === 'USE_LEDGER_FINANCIAL_VIEW' 
+            ? (flags.FINANCIAL_LEDGER_PERCENTAGE || 0)
+            : flags.ROLLOUT_PERCENTAGE;
+        if (rolloutKey && rolloutPct > 0) {
+            return isInRollout(rolloutKey, rolloutPct);
         }
         return flags[flagName];
     }

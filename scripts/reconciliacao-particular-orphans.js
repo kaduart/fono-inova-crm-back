@@ -109,11 +109,13 @@ async function main() {
                 if (session && session.isPaid === true) {
                     console.log(`[SESSION PAGA] Payment ${p._id} (pending R$ ${p.amount}) → session ${sessionId} isPaid=true, mas sem Payment paid vinculado`);
                     if (!DRY_RUN) {
+                        const newPaymentDate = session.paidAt ? moment(session.paidAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD');
                         await Payment.findByIdAndUpdate(p._id, {
                             $set: {
                                 status: 'paid',
                                 paidAt: session.paidAt || new Date(),
-                                paymentDate: session.paidAt ? moment(session.paidAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
+                                paymentDate: newPaymentDate,
+                                financialDate: null, // null → sistema usa paymentDate como fallback
                                 notes: `${p.notes || ''} [RECONCILIAÇÃO: atualizado para paid pois session.isPaid=true]`.trim(),
                                 updatedAt: new Date()
                             }

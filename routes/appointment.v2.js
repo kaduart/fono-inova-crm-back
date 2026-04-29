@@ -38,6 +38,37 @@ import moment from 'moment-timezone';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 import { PatientService } from '../domains/clinical/services/patientService.js';
+import { LedgerReadServiceV2 } from '../services/financialGuard/ledgerReadService.v2.js';
+
+/**
+ * 💰 Helper: aplica truth V2 em appointments formatados (DTOs)
+ * Sobrescreve paymentStatus/isPaid com ledger, nunca com V1
+ */
+async function applyFinancialTruthToAppointments(appointments) {
+  if (!appointments?.length) return appointments;
+  const appointmentIds = appointments
+    .map(a => a._id || a.id)
+    .filter(Boolean);
+
+  const v2Map = await LedgerReadServiceV2.deriveBatchAppointmentStatus(appointmentIds);
+
+  return appointments.map(appt => {
+    const id = appt._id?.toString?.() || appt.id;
+    const truth = v2Map[id];
+    if (!truth) return appt;
+
+    return {
+      ...appt,
+      isPaid: truth.isPaid,
+      paymentStatus: truth.paymentStatus,
+      _paymentId: truth.paymentId,
+      _paymentAmount: truth.paymentAmount,
+      _paymentMethod: truth.paymentMethod,
+      _paidAt: truth.paidAt,
+      _financialSource: truth.source
+    };
+  });
+}
 
 // ======================================================================
 // 🔥 CACHE RÁPIDO PARA LISTAGEM (30 segundos)
@@ -639,9 +670,35 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
         sessionDoc.canceledAt = new Date();
         sessionDoc.cancelReason = reason;
         await sessionDoc.save({ session: mongoSession });
-        console.log(`[cancel] 📋 Session ${sessionId} cancelada (status anterior: ${sessionDoc.status})`);
+        console.log(`[cancel] 📋 Session ${sessionId} cancelada`);
       } else if (sessionDoc && sessionDoc.status === 'completed') {
         console.log(`[cancel] 📋 Session ${sessionId} já completada — não cancelada para preservar histórico`);
+      }
+    }
+
+    // 🔄 ATUALIZA PACOTE dentro da transação (canceledSessions + status reversion)
+    if (appointment.package) {
+      try {
+        const pkgId = appointment.package._id || appointment.package;
+        const allSessions = await Session.find({ package: pkgId }).session(mongoSession);
+        const canceledCount = allSessions.filter(s => s.status === 'canceled').length;
+        const activeSessions = allSessions.filter(s => s.status !== 'canceled');
+        const completedSessions = allSessions.filter(s => s.status === 'completed');
+
+        const pkgUpdate = { canceledSessions: canceledCount };
+
+        const currentPkg = await Package.findById(pkgId).session(mongoSession);
+        if (currentPkg && currentPkg.status === 'finished' && completedSessions.length < activeSessions.length) {
+          pkgUpdate.status = 'active';
+          console.log(`[cancel] 📦 Pacote ${pkgId} revertido para active (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
+        }
+
+        await Package.findByIdAndUpdate(pkgId, { $set: pkgUpdate }, { session: mongoSession });
+        console.log(`[cancel] 📦 Pacote ${pkgId} atualizado: canceledSessions=${canceledCount}`);
+      } catch (pkgErr) {
+        console.error(`[cancel] ❌ Erro ao atualizar pacote:`, pkgErr.message);
+        await mongoSession.abortTransaction();
+        throw createBusinessError('Erro ao atualizar pacote no cancelamento. Tente novamente.', 500, 'PACKAGE_UPDATE_FAILED');
       }
     }
 
@@ -1198,7 +1255,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   }
   
   // 🔥 DTO único: nunca mais construir response inline
-  const formattedAppointments = appointments.map(appt => {
+  let formattedAppointments = appointments.map(appt => {
     const dto = mapAppointmentDTO(appt);
     
     // 🎯 CORREÇÃO: Garantir que o campo date reflita o horário real do agendamento (time)
@@ -1227,6 +1284,11 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       ...flags
     };
   });
+
+  // 💰 Financial Truth Layer: V2 apenas quando habilitado via feature flag
+  if (req.financialVersion === 'v2' || req.financialVersion === 'dual') {
+    formattedAppointments = await applyFinancialTruthToAppointments(formattedAppointments);
+  }
   
   const responseData = {
     appointments: formattedAppointments,
@@ -1274,7 +1336,21 @@ router.get('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   }
 
   console.log(`[GET /v2/appointments/:id] Retornando sucesso`);
-  res.json(formatSuccess({ appointment: mapAppointmentDTO(appointment) }));
+  const dto = mapAppointmentDTO(appointment);
+
+  // 💰 Financial Truth Layer: V2 apenas quando habilitado via feature flag
+  if (req.financialVersion === 'v2' || req.financialVersion === 'dual') {
+    const v2Status = await LedgerReadServiceV2.deriveAppointmentStatus(id);
+    dto.isPaid = v2Status.isPaid;
+    dto.paymentStatus = v2Status.paymentStatus;
+    dto._paymentId = v2Status.paymentId;
+    dto._paymentAmount = v2Status.paymentAmount;
+    dto._paymentMethod = v2Status.paymentMethod;
+    dto._paidAt = v2Status.paidAt;
+    dto._financialSource = v2Status.source;
+  }
+
+  res.json(formatSuccess({ appointment: dto }));
 }));
 
 /**
