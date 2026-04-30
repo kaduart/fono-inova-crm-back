@@ -57,7 +57,7 @@ services:
     rootDir: back
     buildCommand: npm install
     startCommand: node workers/entrypoints/scheduling-worker.js
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -95,7 +95,7 @@ services:
     rootDir: back
     buildCommand: npm install
     startCommand: node workers/entrypoints/billing-worker.js
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -133,7 +133,7 @@ services:
     rootDir: back
     buildCommand: npm install
     startCommand: node workers/entrypoints/clinical-worker.js
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -171,7 +171,7 @@ services:
     rootDir: back
     buildCommand: npm install
     startCommand: node workers/entrypoints/whatsapp-worker.js
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
@@ -209,7 +209,7 @@ services:
     rootDir: back
     buildCommand: npm install
     startCommand: node workers/entrypoints/reconciliation-worker.js
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
