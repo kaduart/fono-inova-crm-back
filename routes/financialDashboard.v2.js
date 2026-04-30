@@ -957,7 +957,7 @@ async function calculateRealTime(year, month) {
             particular: cash.particular,
             pacote: cash.pacote,
             convenio: cash.convenio,
-            liminar: 0 // caixa não tem liminar no service unificado (se necessário, adicionamos depois)
+            liminar: cash.liminar
         },
         caixaByMethod: cash.byMethod,
         producao: production.total,

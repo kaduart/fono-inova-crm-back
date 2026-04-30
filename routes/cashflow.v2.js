@@ -257,7 +257,8 @@ router.get('/', auth, async (req, res) => {
                 porTipo: {
                     particular: cash.particular,
                     pacote: cash.pacote,
-                    convenio: cash.convenio
+                    convenio: cash.convenio,
+                    liminar: cash.liminar
                 },
                 porEspecialidade: porEspecialidadeCaixa,
                 despesas: {

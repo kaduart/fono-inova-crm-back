@@ -40,7 +40,7 @@ const TIMEZONE = 'America/Sao_Paulo';
 async function fetchValidPayments(start, end) {
     const payments = await Payment.find({
         status: 'paid',
-        amount: { $gte: 1 },
+        amount: { $gt: 0 },
         billingType: { $ne: 'convenio' },
         $or: [
             { financialDate: { $gte: start, $lte: end } },
@@ -63,7 +63,7 @@ export async function calculateCash(start, end) {
     const total = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
     let pix = 0, dinheiro = 0, cartao = 0, outros = 0;
-    let particular = 0, pacote = 0, convenio = 0;
+    let particular = 0, pacote = 0, convenio = 0, liminar = 0;
     const byMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
 
     for (const p of payments) {
@@ -77,6 +77,7 @@ export async function calculateCash(start, end) {
         const desc = (p.description || '').toLowerCase();
         if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') pacote += p.amount;
         else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') convenio += p.amount;
+        else if (p.billingType === 'liminar') liminar += p.amount;
         else particular += p.amount;
     }
 
@@ -85,6 +86,7 @@ export async function calculateCash(start, end) {
         particular,
         pacote,
         convenio,
+        liminar,
         pix,
         dinheiro,
         cartao,
@@ -124,7 +126,7 @@ export async function calculateCashByDay(start, end) {
  */
 export async function calculateProduction(start, end) {
     const sessions = await Session.find({
-        date: { $gte: start, $lte: end },
+        completedAt: { $gte: start, $lte: end },
         status: 'completed'
     }).populate('package', 'sessionValue totalValue totalSessions insuranceGrossAmount').lean();
 
@@ -198,7 +200,7 @@ export async function calculateProductionByDay(start, end) {
                     ? Math.round(s.package.totalValue / s.package.totalSessions)
                     : 0;
         if (valor <= 0) continue;
-        const key = moment.tz(s.date, TIMEZONE).format('YYYY-MM-DD');
+        const key = moment.tz(s.completedAt || s.date, TIMEZONE).format('YYYY-MM-DD');
         const curr = map.get(key) || { producao: 0, atendimentos: 0 };
         curr.producao += valor;
         curr.atendimentos += 1;

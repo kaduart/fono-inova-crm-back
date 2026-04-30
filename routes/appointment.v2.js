@@ -1646,62 +1646,13 @@ router.get('/:id/process-manual', flexibleAuth, asyncHandler(async (req, res) =>
 }));
 
 /**
- * 🧪 DEBUG: GET /api/v2/appointments/:id/complete-manual
- * 
- * Completa o agendamento manualmente (sem worker)
+ * 🚫 REMOVIDO: complete-manual era corruptor silencioso de dados.
+ * NUNCA replicar lógica de complete fora do completeSessionV2.
+ * Se precisar de emergência, chame completeSessionV2 diretamente.
+ *
+ * Motivo: esse endpoint ignorava Payment, FinancialGuard, Ledger,
+ * Package consumption e LiminarGuard — causando prejuízo invisível.
  */
-router.get('/:id/complete-manual', flexibleAuth, asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  
-  console.log(`[DEBUG] Complete manual: ${id}`);
-  
-  const appointment = await Appointment.findById(id);
-  
-  if (!appointment) {
-    throw createBusinessError('Agendamento não encontrado', 404, ErrorCodes.NOT_FOUND);
-  }
-  
-  if (!appointment.session) {
-    throw createBusinessError('Agendamento sem sessão', 400, ErrorCodes.BUSINESS_RULE_VIOLATION);
-  }
-  
-  const Session = (await import('../models/Session.js')).default;
-  const sessionId = appointment.session._id || appointment.session;
-  const session = await Session.findById(sessionId);
-  
-  if (!session) {
-    throw createBusinessError('Sessão não encontrada', 404, ErrorCodes.NOT_FOUND);
-  }
-  
-  // Completa sessão
-  session.status = 'completed';
-  session.isPaid = false;
-  session.paymentStatus = 'pending';
-  session.visualFlag = 'pending';
-  await session.save();
-  
-  // Atualiza appointment
-  appointment.operationalStatus = 'confirmed';
-  appointment.clinicalStatus = 'completed';
-  appointment.paymentStatus = 'pending';
-  appointment.history.push({
-    action: 'complete_manual',
-    newStatus: 'confirmed',
-    timestamp: new Date(),
-    context: 'Complete manual via endpoint debug'
-  });
-  
-  await appointment.save();
-  
-  console.log(`[DEBUG] ✅ Complete manual OK`);
-  
-  res.json(formatSuccess({
-    appointmentId: id,
-    sessionId: session._id,
-    status: 'confirmed',
-    message: 'Agendamento completado manualmente (DEBUG)'
-  }));
-}));
 
 /**
  * 🧪 DEBUG: GET /api/v2/appointments/debug/queues

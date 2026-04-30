@@ -445,6 +445,20 @@ appointmentSchema.pre('save', function (next) {
       this.expiresAt = expires;
     }
   }
+
+  // 🛡️ SEGURANÇA: bloqueia marcação direta de completed fora do completeSessionService
+  // ⚠️ IMPORTANTE: operationalStatus é a FONTE DA VERDADE para controle de agendamentos.
+  //    NUNCA use clinicalStatus para decidir se uma sessão foi realizada.
+  //    Sempre verifique operationalStatus === 'completed'.
+  if (this.isModified('operationalStatus') && this.operationalStatus === 'completed' && !this._fromCompleteService) {
+    const err = new Error(
+      '[SECURITY] operationalStatus=completed só pode ser setado via completeSessionService. ' +
+      'Use PATCH /:id/complete ou chame completeSessionV2().'
+    );
+    err.code = 'FORBIDDEN_MANUAL_COMPLETE';
+    return next(err);
+  }
+
   next();
 });
 
@@ -470,6 +484,7 @@ appointmentSchema.pre('findOneAndUpdate', function (next) {
       if (!update.$set) update.$set = $set;
     }
   }
+
   next();
 });
 
