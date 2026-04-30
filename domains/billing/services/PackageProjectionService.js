@@ -94,6 +94,7 @@ async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
 
   // Resumo das sessões para a view
   const sessionsSummary = sessions.map(s => ({
+    _id: s._id,  // 🔗 Garante que _id do subdocumento = ID real da sessão
     sessionId: s._id,
     appointmentId: s.appointmentId,  // 🔗 Link para o agendamento
     date: s.date,

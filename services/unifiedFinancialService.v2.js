@@ -15,6 +15,7 @@
 import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import { FinancialTruthLayer } from './financialGuard/FinancialTruthLayer.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -127,12 +128,24 @@ export async function calculateProduction(start, end) {
         status: 'completed'
     }).populate('package', 'sessionValue totalValue totalSessions insuranceGrossAmount').lean();
 
+    // 🔒 TruthLayer V2: substitui isPaid/paymentStatus pelo ledger — nunca lê V1 cru
+    const sessionIds = sessions.map(s => s._id);
+    const truthSessions = sessionIds.length > 0
+        ? await FinancialTruthLayer.getSessions(sessionIds, { withAudit: false })
+        : [];
+    const truthMap = new Map(truthSessions.map(s => [s._id.toString(), s]));
+    const finalSessions = sessions.map(s => {
+        const truth = truthMap.get(s._id.toString());
+        if (!truth) return s;
+        return { ...s, isPaid: truth.isPaid, paymentStatus: truth.paymentStatus, _financialSource: 'ledger' };
+    });
+
     let total = 0;
     let particular = 0, convenio = 0, pacote = 0, liminar = 0;
     let recebido = 0, pendente = 0;
     let count = 0;
 
-    for (const s of sessions) {
+    for (const s of finalSessions) {
         const valor = s.sessionValue > 0
             ? s.sessionValue
             : s.package?.sessionValue > 0
@@ -169,7 +182,7 @@ export async function calculateProduction(start, end) {
         recebido,
         pendente,
         count,
-        sessions
+        sessions: finalSessions
     };
 }
 

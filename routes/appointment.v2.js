@@ -963,7 +963,7 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
       paymentStatus: updatedAppointment.paymentStatus || 'unpaid',
       balanceAmount: updatedAppointment.balanceAmount || 0,
       sessionValue: result.sessionValue || updatedAppointment.sessionValue || 0,
-      isPaid: updatedAppointment.paymentStatus === 'paid',
+      isPaid: ['paid', 'package_paid', 'pending_receipt', 'recognized'].includes(updatedAppointment.paymentStatus),
       correlationId: result.correlationId,
       idempotent: result.idempotent || false
     });

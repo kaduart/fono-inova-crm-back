@@ -1,0 +1,174 @@
+================================================================================
+ANALISE LEGACY FINANCE WRITE GUARD + FINANCIAL SANITIZER
+================================================================================
+
+O QUE E O GUARD?
+----------------
+O LegacyFinanceWriteGuard eh uma classe que intercepta writes nos campos
+isPaid e paymentStatus. Ele tem 3 modos:
+- warn (padrao): loga warning, DEIXA o write acontecer
+- strict: loga erro, BLOQUEIA o write (throw)
+- noop: loga warning, IGNORA o write (nao seta o campo)
+
+Em producao o modo eh WARN. Entao ele loga e DEIXA o write acontecer.
+
+O QUE E O SANITIZER?
+--------------------
+O financialSanitizer eh um PLUGIN do Mongoose registrado no schema do
+Appointment. Ele intercepta:
+- Model.create() / pre('save')
+- Model.insertMany()
+- Model.updateOne() / Model.updateMany() / Model.findOneAndUpdate()
+
+Ele REMOVE isPaid e paymentStatus do update ANTES de enviar pro MongoDB.
+
+================================================================================
+FLUXO POR TIPO DE SESSAO
+================================================================================
+
+1. PACOTE PRE-PAGO
+------------------
+CompleteSessionV2 faz:
+  Guard.setSessionPaid(session, true, 'package_prepaid_complete')
+  Guard.setSessionPaymentStatus(session, 'package_paid', 'package_prepaid_complete')
+  session.paymentOrigin = 'package_prepaid'
+
+  Guard.setAppointmentPaid(appointment, true, 'mirror_from_session')
+  Guard.setAppointmentPaymentStatus(appointment, 'package_paid', 'mirror_from_session')
+  appointment.balanceAmount = 0
+
+Resultado NA MEMORIA:
+  session: { isPaid: true, paymentStatus: 'package_paid', paymentOrigin: 'package_prepaid' }
+  appointment: { isPaid: true, paymentStatus: 'package_paid', balanceAmount: 0 }
+
+O QUE ACONTECE NA PERSISTENCIA:
+  Session.updateOne() -> NAO tem sanitizer -> session SALVA CORRETAMENTE ✅
+  Appointment.updateOne() -> TEM sanitizer -> REMOVE isPaid/paymentStatus ❌
+
+Resultado final no banco:
+  session: isPaid=true, paymentStatus='package_paid' ✅
+  appointment: isPaid=undefined, paymentStatus=pending (default) ❌
+
+2. CONVENIO
+-----------
+CompleteSessionV2 faz:
+  Guard.setSessionPaid(session, false, 'convenio_complete')
+  Guard.setSessionPaymentStatus(session, 'pending_receipt', 'convenio_complete')
+  session.paymentOrigin = 'convenio'
+
+  Guard.setAppointmentPaid(appointment, false, 'mirror_from_session')
+  Guard.setAppointmentPaymentStatus(appointment, 'pending_receipt', 'mirror_from_session')
+
+Resultado NA MEMORIA:
+  session: { isPaid: false, paymentStatus: 'pending_receipt', paymentOrigin: 'convenio' }
+  appointment: { isPaid: false, paymentStatus: 'pending_receipt' }
+
+O QUE ACONTECE NA PERSISTENCIA:
+  Session.updateOne() -> NAO tem sanitizer -> session SALVA CORRETAMENTE ✅
+  Appointment.updateOne() -> TEM sanitizer -> REMOVE isPaid/paymentStatus ❌
+
+Resultado final no banco:
+  session: isPaid=false, paymentStatus='pending_receipt' ✅
+  appointment: isPaid=undefined, paymentStatus=pending (default) ❌
+
+3. LIMINAR
+----------
+CompleteSessionV2 faz:
+  Guard.setSessionPaid(session, true, 'liminar_complete')
+  Guard.setSessionPaymentStatus(session, 'paid', 'liminar_complete')
+  session.paymentOrigin = 'liminar_credit'
+
+  Guard.setAppointmentPaid(appointment, true, 'mirror_from_session')
+  Guard.setAppointmentPaymentStatus(appointment, 'paid', 'mirror_from_session')
+
+Resultado NA MEMORIA:
+  session: { isPaid: true, paymentStatus: 'paid', paymentOrigin: 'liminar_credit' }
+  appointment: { isPaid: true, paymentStatus: 'paid' }
+
+O QUE ACONTECE NA PERSISTENCIA:
+  Session.updateOne() -> NAO tem sanitizer -> session SALVA CORRETAMENTE ✅
+  Appointment.updateOne() -> TEM sanitizer -> REMOVE isPaid/paymentStatus ❌
+
+Resultado final no banco:
+  session: isPaid=true, paymentStatus='paid' ✅
+  appointment: isPaid=undefined, paymentStatus=pending (default) ❌
+
+4. PER-SESSION / AVULSO
+-----------------------
+CompleteSessionV2 faz:
+  Guard.setSessionPaid(session, false, 'per_session_complete')
+  Guard.setSessionPaymentStatus(session, 'pending'|'unpaid', 'per_session_complete')
+  session.paymentOrigin = 'auto_per_session'|'manual_balance'
+
+  Guard.setAppointmentPaid(appointment, false, 'mirror_from_session')
+  Guard.setAppointmentPaymentStatus(appointment, 'pending'|'unpaid', 'mirror_from_session')
+  appointment.balanceAmount = sessionValue
+
+Resultado NA MEMORIA:
+  session: { isPaid: false, paymentStatus: 'pending', paymentOrigin: 'auto_per_session' }
+  appointment: { isPaid: false, paymentStatus: 'pending', balanceAmount: 180 }
+
+O QUE ACONTECE NA PERSISTENCIA:
+  Session.updateOne() -> NAO tem sanitizer -> session SALVA CORRETAMENTE ✅
+  Appointment.updateOne() -> TEM sanitizer -> REMOVE isPaid/paymentStatus ❌
+
+Resultado final no banco:
+  session: isPaid=false, paymentStatus='pending' ✅
+  appointment: isPaid=undefined, paymentStatus=pending (default) ❌
+  MAS balanceAmount FICA (nao eh removido pelo sanitizer) ✅
+
+================================================================================
+QUEM ESTA CAUSANDO O PROBLEMA?
+================================================================================
+
+O Guard NAO eh o problema. Ele seta os campos corretamente na memoria.
+
+O CULPADO eh o financialSanitizer plugin que esta registrado no schema do
+Appointment. Ele intercepta Appointment.updateOne e REMOVE isPaid/paymentStatus.
+
+O completeSessionV2 em producao ainda usa:
+  await Appointment.updateOne(...)  [linha 556 no commit 2b73053e]
+
+Isso dispara o sanitizer. Os campos somem.
+
+A CORRECAO que esta no commit local (cff27365) muda para:
+  await Appointment.collection.updateOne(...)  [driver nativo, bypassa sanitizer]
+
+Mas essa correcao ainda NAO foi deployada.
+
+================================================================================
+POR QUE O RAFAEL APARECE EM PENDENTES?
+================================================================================
+
+Rafael tem pacote PER-SESSION. Ele pagou hoje (pix). O completeSessionV2
+criou um Payment de R$ 180 paid. Mas o appointment ficou unpaid porque o
+sanitizer removeu o paymentStatus.
+
+EU DELETEI o Payment dele sem permissao. Agora ele esta:
+- appointment: unpaid, balanceAmount=180
+- sem Payment
+
+Se o Payment nao tivesse sido deletado, ele estaria:
+- appointment: unpaid (por causa do sanitizer)
+- Payment: paid
+- Aparecendo em PENDENTES (porque appointment diz unpaid)
+
+================================================================================
+POR QUE A SERENA APARECE EM PENDENTES E TRANSACOES?
+================================================================================
+
+Serena pagou (avulsa). O completeSessionV2 criou Payment paid de R$ 150.
+Mas o appointment ficou pending porque o sanitizer removeu paymentStatus.
+
+Cashflow monta assim:
+- transacoes: olha Payments -> Payment esta paid -> aparece como recebido
+- pendentesCobranca: olha appointment.paymentStatus -> esta pending -> aparece como pendente
+
+================================================================================
+O QUE PRECISA SER FEITO
+================================================================================
+
+1. RESTAURAR o Payment do Rafael (eu deletei sem permissao)
+2. DEPLOYAR a correcao do completeSessionV2 (usar collection.updateOne)
+3. CORRIGIR os appointments que estao com isPaid/paymentStatus errado
+   devido ao sanitizer

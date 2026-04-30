@@ -15,10 +15,12 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
+import LiminarGuard from './financialGuard/guards/liminar.guard.js';
 import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import LegacyFinanceWriteGuard from './financialGuard/LegacyFinanceWriteGuard.js';
+import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import {
@@ -59,7 +61,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     // FASE 1: BUSCAR DADOS (fora da transaction se possível)
     // ============================================================
     const appointment = await Appointment.findById(appointmentId)
-        .populate('session patient doctor package')
+        .populate('session patient doctor package liminarContract')
         .lean();
 
     if (!appointment) {
@@ -233,7 +235,11 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             await Session.findByIdAndUpdate(
                 sessionId,
                 { $set: sessionUpdate },
-                { session: mongoSession }
+                {
+                    session: mongoSession,
+                    __fromFinancialGuard: true,
+                    __guardContext: 'FINANCIAL'
+                }
             );
             console.log(`[CompleteSessionV2] Session ${sessionId} → completed (${billingType})`, {
                 isPaid: sessionUpdate.isPaid,
@@ -245,6 +251,44 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         // 2. Atualizar Package (SEMPRE que tiver package)
         let packageUpdateResult = null;
         if (packageId) {
+            // ══════════════════════════════════════════════════════════
+            // SHADOW MODE: valida package.guard vs updatePackageOnComplete
+            // Roda em sessão separada e ABORTA — não afeta dados reais.
+            // Comparar os resultados antes de remover updatePackageOnComplete (Passo 4).
+            // ══════════════════════════════════════════════════════════
+            let guardShadowResult = null;
+            const shadowSession = await mongoose.startSession();
+            try {
+                await shadowSession.startTransaction();
+                // prepaid fica como 'prepaid' para o guard (determineBillingType mapeia para 'particular')
+                const guardBillingType = packageData?.model === 'prepaid' ? 'prepaid' : billingType;
+                guardShadowResult = await FinancialGuard.execute({
+                    context: 'COMPLETE_SESSION',
+                    billingType: guardBillingType,
+                    payload: {
+                        packageId: packageId.toString(),
+                        sessionValue,
+                        paymentOrigin: sessionUpdate?.paymentOrigin || 'auto_per_session',
+                        appointmentId: appointmentId?.toString(),
+                        billingType: guardBillingType
+                    },
+                    session: shadowSession
+                });
+                console.log('[CompleteSessionV2][SHADOW] Guard executado', {
+                    packageId: packageId.toString(),
+                    sessionsRemaining: guardShadowResult.sessionsRemaining,
+                    newBalance: guardShadowResult.newBalance,
+                    financialStatus: guardShadowResult.financialStatus,
+                    isFinished: guardShadowResult.isFinished
+                });
+            } catch (shadowErr) {
+                guardShadowResult = { error: shadowErr.message };
+                console.error('[CompleteSessionV2][SHADOW] Guard erro (shadow ignorado):', shadowErr.message);
+            } finally {
+                await shadowSession.abortTransaction();
+                shadowSession.endSession();
+            }
+
             packageUpdateResult = await updatePackageOnComplete(
                 packageId,
                 sessionValue,
@@ -252,6 +296,53 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 mongoSession
             );
             console.log(`[CompleteSessionV2] Package ${packageId} atualizado`, packageUpdateResult);
+
+            // Compara guard shadow vs legacy
+            if (guardShadowResult && !guardShadowResult.error) {
+                const divergences = [];
+
+                if (guardShadowResult.sessionsRemaining !== packageUpdateResult.sessionsRemaining) {
+                    divergences.push({
+                        field: 'sessionsRemaining',
+                        guard: guardShadowResult.sessionsRemaining,
+                        legacy: packageUpdateResult.sessionsRemaining
+                    });
+                }
+
+                const legacyIsFinished = packageUpdateResult.sessionsDone >= (packageData?.totalSessions || Infinity);
+                if (guardShadowResult.isFinished !== legacyIsFinished) {
+                    divergences.push({
+                        field: 'isFinished',
+                        guard: guardShadowResult.isFinished,
+                        legacy: legacyIsFinished
+                    });
+                }
+
+                const ctx = {
+                    packageId: packageId.toString(),
+                    patientId: appointment.patient?._id?.toString(),
+                    appointmentId: appointmentId?.toString(),
+                    billingType,
+                    sessionValue,
+                    guard: {
+                        sessionsRemaining: guardShadowResult.sessionsRemaining,
+                        newBalance: guardShadowResult.newBalance,
+                        financialStatus: guardShadowResult.financialStatus,
+                        isFinished: guardShadowResult.isFinished
+                    },
+                    legacy: {
+                        sessionsRemaining: packageUpdateResult.sessionsRemaining,
+                        sessionsDone: packageUpdateResult.sessionsDone,
+                        isFinished: legacyIsFinished
+                    }
+                };
+
+                if (divergences.length > 0) {
+                    console.warn('[CompleteSessionV2][SHADOW] ⚠️ DIVERGÊNCIA DETECTADA', { ...ctx, divergences });
+                } else {
+                    console.log('[CompleteSessionV2][SHADOW] ✅ paridade confirmada', ctx);
+                }
+            }
 
             // 2b. Marcar pacote como finished se todas as sessões ativas foram concluídas
             if (packageUpdateResult?.modified) {
@@ -450,27 +541,45 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 }
             }
         } else if (billingType === 'liminar' && sessionValue > 0) {
-            // ⚖️ LIMINAR: revenue recognition no dia da execução da sessão
+            // ⚖️ LIMINAR: debita crédito e cria payment (caixa)
             const now = new Date();
+            const liminarContractId = appointment.liminarContract?._id || appointment.liminarContract;
+
+            if (liminarContractId) {
+                // 🆕 NOVO FLUXO: LiminarContract desacoplado
+                await LiminarGuard.handle({
+                    context: 'COMPLETE_SESSION',
+                    payload: {
+                        liminarContractId: liminarContractId.toString(),
+                        sessionValue,
+                        appointmentId: appointmentId?.toString()
+                    },
+                    session: mongoSession
+                });
+            }
+            // (sem liminarContractId = fluxo legado: Package.liminarCreditBalance já foi debitado em updatePackageOnComplete)
+
             const [paymentDoc] = await Payment.create([{
-                patient: appointment.patient?._id,
-                amount: sessionValue,
-                status: 'paid',
-                type: 'service',
-                serviceType: 'session',
-                paymentMethod: 'liminar_credit',
-                paymentDate: now,
-                paidAt: now,
-                financialDate: now, // 🎯 ESSENCIAL pro caixa
-                description: `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                appointment: appointmentId,
-                createdBy: userId,
-                kind: 'session_payment',
-                billingType: 'liminar'
+                patient:         appointment.patient?._id,
+                amount:          sessionValue,
+                status:          'paid',
+                type:            'service',
+                serviceType:     'session',
+                paymentMethod:   'liminar_credit',
+                paymentDate:     now,
+                paidAt:          now,
+                financialDate:   now,   // 🎯 ESSENCIAL — entra no caixa
+                isFromPackage:   false, // 🔒 NUNCA true para liminar
+                description:     `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                appointment:     appointmentId,
+                liminarContract: liminarContractId || null,
+                createdBy:       userId,
+                kind:            'session_payment',
+                billingType:     'liminar'
             }], { session: mongoSession });
             paymentCreated = paymentDoc;
             appointmentUpdate.$set.payment = paymentCreated._id;
-            console.log(`[CompleteSessionV2] 💰 Payment liminar criado: ${paymentCreated._id}`);
+            console.log(`[CompleteSessionV2] 💰 Payment liminar criado: ${paymentCreated._id}`, { liminarContractId });
         } else if (packageId && !['convenio', 'liminar'].includes(billingType) && sessionValue > 0) {
             // 📦 SESSÃO DE PACOTE: payment é registro lógico de consumo (NÃO é entrada de caixa)
             const sessionDate = sessionDoc?.date || appointment.date || new Date();
