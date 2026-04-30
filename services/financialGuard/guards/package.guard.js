@@ -2,6 +2,8 @@
 // 📦 Guard para regras financeiras de PACOTE
 
 import Package from '../../../models/Package.js';
+import Payment from '../../../models/Payment.js';
+import Appointment from '../../../models/Appointment.js';
 
 /**
  * Package Guard - Regras financeiras de pacotes
@@ -171,11 +173,12 @@ async function handleCancelAppointment({ payload, session }) {
 // COMPLETE_SESSION: Consome crédito/sessão
 // ============================================================
 async function handleCompleteSession({ payload, session }) {
-  const { packageId, sessionValue = 0, paymentOrigin, appointmentId } = payload;
+  const { packageId, sessionValue = 0, paymentOrigin, appointmentId, billingType } = payload;
 
   console.log('[FinancialGuard][PACKAGE][COMPLETE]', {
     appointmentId: appointmentId || 'unknown',
     packageId,
+    billingType,
     paymentOrigin,
     sessionValue
   });
@@ -185,54 +188,68 @@ async function handleCompleteSession({ payload, session }) {
   }
 
   const pkg = await Package.findById(packageId).session(session);
-  
+
   if (!pkg) {
     throw new Error('PACKAGE_NOT_FOUND');
   }
 
-  // Log BEFORE
   const beforeState = {
     sessionsDone: pkg.sessionsDone,
     totalSessions: pkg.totalSessions,
     paidSessions: pkg.paidSessions,
     totalPaid: pkg.totalPaid,
     balance: pkg.balance,
-    financialStatus: pkg.financialStatus
+    financialStatus: pkg.financialStatus,
+    liminarCreditBalance: pkg.liminarCreditBalance
   };
-  
+
   console.log('[FinancialGuard][PACKAGE][COMPLETE][BEFORE]', beforeState);
 
-  // 🛡️ GUARD: Verifica se tem sessões disponíveis
   if (pkg.sessionsDone >= pkg.totalSessions) {
     throw new Error('PACKAGE_NO_CREDIT_AVAILABLE');
   }
 
-  // Prepara update
+  // ============================================================
+  // GAP 1 — LIMINAR: valida e decrementa crédito judicial
+  // ============================================================
+  if (billingType === 'liminar' && sessionValue > 0) {
+    const creditAtual = pkg.liminarCreditBalance || 0;
+    if (creditAtual < sessionValue) {
+      throw new Error(
+        `LIMINAR_NO_CREDITS: Crédito insuficiente. Disponível: ${creditAtual}, Necessário: ${sessionValue}`
+      );
+    }
+    console.log('[PackageGuard][LIMINAR] Consumindo crédito judicial', {
+      packageId, before: creditAtual, after: creditAtual - sessionValue
+    });
+  }
+
+  // Prepara update principal
   const update = {
     $set: { updatedAt: new Date() },
     $inc: { sessionsDone: 1 }
   };
 
-  // Se é per-session, incrementa paidSessions
+  // Per-session: incrementa totalPaid
   const isPerSession = paymentOrigin === 'auto_per_session';
   let amountCharged = 0;
-  
+
   if (isPerSession && sessionValue > 0) {
     amountCharged = sessionValue;
     update.$inc.paidSessions = 1;
     update.$inc.totalPaid = sessionValue;
-    
-    console.log('[PackageGuard] Cobrando per-session', {
-      packageId,
-      amountCharged,
-      sessionValue
-    });
+    console.log('[PackageGuard] Cobrando per-session', { packageId, amountCharged });
+  }
+
+  // Liminar: decrementa crédito judicial
+  if (billingType === 'liminar' && sessionValue > 0) {
+    update.$inc.liminarCreditBalance = -sessionValue;
   }
 
   const result = await Package.findOneAndUpdate(
-    { 
+    {
       _id: packageId,
-      $expr: { $lt: ["$sessionsDone", "$totalSessions"] }
+      $expr: { $lt: ['$sessionsDone', '$totalSessions'] }
     },
     update,
     { session, new: true }
@@ -242,47 +259,92 @@ async function handleCompleteSession({ payload, session }) {
     throw new Error('PACKAGE_UPDATE_FAILED');
   }
 
-  // Recalcula balance
-  const newBalance = Math.max(0, result.totalValue - (result.totalPaid || 0));
-  const newFinancialStatus = calculateFinancialStatus(result.totalPaid, result.totalValue);
+  // ============================================================
+  // GAP 2 — PREPAID: recalcula balance do ledger (Payment)
+  // ============================================================
+  let newBalance;
+  let newFinancialStatus;
+
+  if (billingType === 'prepaid') {
+    // Fonte de verdade: Payment ledger (não contagem de sessão)
+    const agg = await Payment.aggregate([
+      { $match: { package: pkg._id, status: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]).session(session);
+    const totalPaidFromLedger = agg[0]?.total || 0;
+    newBalance = Math.max(0, (pkg.totalValue || 0) - totalPaidFromLedger);
+    newFinancialStatus = calculateFinancialStatus(totalPaidFromLedger, pkg.totalValue || 0);
+    console.log('[PackageGuard][PREPAID] Balance do ledger', {
+      packageId, totalPaidFromLedger, newBalance
+    });
+  } else {
+    newBalance = Math.max(0, (result.totalValue || 0) - (result.totalPaid || 0));
+    newFinancialStatus = calculateFinancialStatus(result.totalPaid, result.totalValue);
+  }
 
   await Package.findByIdAndUpdate(
     packageId,
     { $set: { balance: newBalance, financialStatus: newFinancialStatus } },
-    { session }
+    { session, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
   );
 
-  // Log AFTER
+  // ============================================================
+  // GAP 3 — FINISHED: marca pacote e cancela appointments futuros
+  // ============================================================
+  const sessionsDoneAfter = result.sessionsDone;
+  const isFinished = sessionsDoneAfter >= pkg.totalSessions;
+
+  if (isFinished) {
+    await Package.findByIdAndUpdate(
+      packageId,
+      { $set: { status: 'finished' } },
+      { session, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
+    );
+
+    const cancelResult = await Appointment.updateMany(
+      {
+        package: packageId,
+        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+      },
+      {
+        $set: {
+          operationalStatus: 'canceled',
+          clinicalStatus: 'canceled',
+          status: 'canceled',
+          cancellationReason: 'Pacote finalizado - sessões esgotadas',
+          updatedAt: new Date()
+        }
+      },
+      { session, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
+    );
+
+    console.log('[PackageGuard][FINISHED] Pacote finalizado', {
+      packageId,
+      appointmentsCanceled: cancelResult.modifiedCount
+    });
+  }
+
   const afterState = {
     sessionsDone: result.sessionsDone,
     paidSessions: result.paidSessions,
     totalPaid: result.totalPaid,
     balance: newBalance,
     financialStatus: newFinancialStatus,
-    amountCharged
+    amountCharged,
+    isFinished
   };
-  
+
   console.log('[FinancialGuard][PACKAGE][COMPLETE][AFTER]', afterState);
-  
-  console.log('[PackageGuard] Pacote atualizado (complete)', {
-    packageId,
-    appointmentId: appointmentId || 'unknown',
-    delta: {
-      sessionsDone: result.sessionsDone - beforeState.sessionsDone,
-      paidSessions: (result.paidSessions || 0) - (beforeState.paidSessions || 0),
-      totalPaid: (result.totalPaid || 0) - (beforeState.totalPaid || 0),
-      balance: newBalance - beforeState.balance
-    }
-  });
 
   return {
     handled: true,
     packageId,
     sessionsConsumed: 1,
-    sessionsRemaining: result.totalSessions - result.sessionsDone,
+    sessionsRemaining: pkg.totalSessions - sessionsDoneAfter,
     amountCharged,
     newBalance,
-    financialStatus: newFinancialStatus
+    financialStatus: newFinancialStatus,
+    isFinished
   };
 }
 

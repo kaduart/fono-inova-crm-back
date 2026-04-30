@@ -1731,7 +1731,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
                                   appointment.insuranceGuide ||
                                   (appointment.package?.type === 'convenio');
         
-        const isPerSession = packageId && appointment.package?.paymentType === 'per-session';
+        const isPerSession = packageId && (
+            appointment.package?.paymentType === 'per-session' ||
+            appointment.package?.model === 'per_session'
+        );
         
         // ============================================================
         // 1️⃣ CRIAR PAYMENT FORA DA TRANSAÇÃO (evita WriteConflict)

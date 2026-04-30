@@ -163,6 +163,9 @@ const appointmentSchema = new mongoose.Schema({
   payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: false },
   session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
   package: { type: mongoose.Schema.Types.ObjectId, ref: 'Package' },
+  liminarContract:  { type: mongoose.Schema.Types.ObjectId, ref: 'LiminarContract',  default: null },
+  therapeuticPlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'TherapeuticPlan',  default: null },
+  planVersion:      { type: Number, default: null },
   advancedSessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
   appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: false, description: 'ID do appointment real criado a partir deste pré-agendamento' },
   importedAt: { type: Date, default: null },
@@ -173,6 +176,10 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt', 'recognized', 'pending_balance', 'unpaid'],
     default: 'pending'
+  },
+  isPaid: {
+    type: Boolean,
+    default: false
   },
   visualFlag: {
     type: String,

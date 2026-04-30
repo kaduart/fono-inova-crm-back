@@ -72,6 +72,10 @@ export default function financialSanitizer(schema, options = {}) {
 
   // Pre-save: intercepta doc.save(), Model.create(), new Model()
   schema.pre('save', function(next) {
+    if (
+      this.$locals?.__fromFinancialGuard === true &&
+      this.$locals?.__guardContext === 'FINANCIAL'
+    ) return next();
     if (this.isNew) {
       sanitize(this.toObject(), 'save');
       // Re-aplicar no documento mongoose (toObject() retorna cópia)
@@ -99,6 +103,11 @@ export default function financialSanitizer(schema, options = {}) {
 
   // Pre-updateOne / pre-updateMany: intercepta updates que tentam setar V1
   schema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function(next) {
+    const opts = this.getOptions ? this.getOptions() : this.options || {};
+    if (
+      opts.__fromFinancialGuard === true &&
+      opts.__guardContext === 'FINANCIAL'
+    ) return next();
     const update = this.getUpdate();
     if (update) {
       const $set = update.$set || update;

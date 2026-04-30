@@ -12,6 +12,7 @@ const paymentSchema = new mongoose.Schema({
     appointmentId: { type: String, index: true }, // 🎯 Compatibilidade V2
     session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session', default: null },
     package: { type: mongoose.Schema.Types.ObjectId, ref: 'Package', default: null },
+    liminarContract: { type: mongoose.Schema.Types.ObjectId, ref: 'LiminarContract', default: null },
     sessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Session' }],
     advanceSessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Session' }],
     amount: { type: Number, required: true, min: 0 },

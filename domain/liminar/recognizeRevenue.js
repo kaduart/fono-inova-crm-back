@@ -1,4 +1,8 @@
 // domain/liminar/recognizeRevenue.js
+// ⚠️  DESATIVADO — nunca chamar diretamente.
+// Esta função faz double-debit: decrementa liminarCreditBalance E cria Payment separado.
+// O crédito já é debitado em completeSessionService.v2.js (LiminarGuard ou updatePackageOnComplete).
+// Se precisar de reconhecimento diferido, implemente via LiminarContract com flag explícita.
 import Package from '../../models/Package.js';
 import Payment from '../../models/Payment.js';
 
@@ -18,6 +22,11 @@ import Payment from '../../models/Payment.js';
  * @returns {Object} Resultado
  */
 export async function recognizeLiminarRevenue(packageId, data) {
+    throw new Error(
+        'recognizeLiminarRevenue está DESATIVADA. ' +
+        'Use LiminarGuard (COMPLETE_SESSION) em completeSessionService.v2.js. ' +
+        'Chamar esta função causaria double-debit no crédito.'
+    );
     const {
         sessionValue = 0,
         appointmentId,
