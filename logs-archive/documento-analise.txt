@@ -1,275 +1,171 @@
-Perfeito — agora vamos fechar isso no nível **produto + UX + integração real**, não só backend.
-
-👉 sua dúvida é:
-**“como isso aparece no dashboard do paciente e como integra com a tela de pacotes?”**
-
-Vou te dar o desenho direto, sem complicar.
-
----
-
-# 🧠 PRINCÍPIO QUE VAI GUIAR SUA UI
-
-👉 **Pacote ≠ Liminar**
-
-Então no front você também precisa separar isso visualmente.
-
----
-
-# 🖥️ COMO FICA O DASHBOARD (essa tela que você mandou)
-
-Hoje você tem:
-
-* Agendamentos
-* Atividades
-* Avaliações
-* etc
-
-👉 você vai adicionar um **novo card fixo no topo (ou logo abaixo do nome)**:
-
----
-
-## 💰 CARD: LIMINAR (CRÉDITO)
-
-Visual simples e direto:
-
-```text
-Liminar Ativa 💚
-
-Crédito Total:   R$ 10.000  
-Utilizado:       R$ 3.200  
-Disponível:      R$ 6.800  
-
-Sessões realizadas: 24
-```
-
-👉 isso vem de:
-
-* `LiminarContract`
-
----
-
-## 🔥 IMPORTANTE
-
-👉 isso NÃO fica dentro de “Pacotes”
-👉 isso NÃO depende de “Pacote”
-
-👉 é um bloco próprio no dashboard
-
----
-
-# 📦 E A TELA DE PACOTES?
-
-Aqui é onde muita gente erra — não mistura.
-
----
-
-## 👉 “Pacotes” continua existindo, MAS:
-
-Agora ele serve para:
-
-* Particular
-* Convênio
-* Outros modelos
-
----
-
-## ❌ Liminar NÃO aparece como pacote tradicional
-
-Ao invés disso:
-
-👉 você pode mostrar como:
-
-```text
-Tipo: Liminar
-Status: Ativo
-Ver detalhes →
-```
-
-E ao clicar:
-
-👉 abre a tela da liminar (detalhada)
-
----
-
-# 🔗 INTEGRAÇÃO ENTRE AS TELAS
-
-## 🧩 Fluxo completo
-
-### 1. Criar liminar
-
-* botão: “Novo” → “Criar Liminar”
-
----
-
-### 2. Criar plano terapêutico
-
-* após criar liminar → já abre:
-  👉 “Configurar Plano”
-
----
-
-### 3. Agenda usa o plano
-
-* `ScheduleModal` passa a usar:
-
-  * `plan.daysOfWeek`
-
----
-
-### 4. Sessões aparecem no dashboard
-
-* igual já aparece hoje
-
----
-
-### 5. Dashboard mostra crédito
-
-* vindo da liminar
-
----
-
-# 🔥 COMO FICA NA PRÁTICA (UX REAL)
-
-## 🟢 No Dashboard do paciente
-
-Você terá:
-
-### 🧠 Seção nova (topo):
-
-```
-[ 💚 Liminar Ativa ]
-
-R$ 6.800 disponíveis
-24 sessões realizadas
-
-[ Ver detalhes ]
-```
-
----
-
-### 📅 Seção existente:
-
-* Agendamentos (igual hoje)
-
----
-
-### 📊 Atividades:
-
-* continua igual
-
----
-
-# 📊 TELA “DETALHE DA LIMINAR”
-
-Quando clicar:
-
-```text
-Crédito Total: R$ 10.000
-Utilizado:     R$ 3.200
-Disponível:    R$ 6.800
-
-Histórico:
-✔ Sessão Fono - R$120
-✔ Sessão Psico - R$150
-✔ Sessão TO - R$130
-```
-
-👉 isso vem de:
-
-* `Payment`
-* ou `creditHistory`
-
----
-
-# ⚙️ BACKEND → FRONT (o que você precisa expor)
-
-## Endpoint:
-
-```http
-GET /patients/:id/liminar
-```
-
-Resposta:
-
-```json
-{
-  "totalCredit": 10000,
-  "usedCredit": 3200,
-  "remainingCredit": 6800,
-  "sessionsDone": 24,
-  "status": "active"
+curl 'http://localhost:5000/api/v2/liminar-contracts/69f355dc7d1820b25cfdb13f/plans/69f356bc7d1820b25cfdb152/generate-sessions' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
+  -H 'Connection: keep-alive' \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1777559836080_iy56slg1y' \
+  --data-raw '{"startDate":"2026-04-30","endDate":"2026-05-28"}'
+
+  {
+    "created": 0,
+    "skipped": 11,
+    "total": 11,
+    "totalCost": 2200,
+    "saldo": 9999.699999999999,
+    "saldoAposTudo": 7799.699999999999
 }
-```
 
----
 
-# 🔁 E OS PACOTES EXISTENTES?
 
-👉 continuam funcionando normalmente
 
-Mas:
+curl 'http://localhost:5000/api/v2/liminar-contracts?patientId=69dd3853091fb7cb471c20b4' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"442-d5g8RxaXtnRTkHPjD5yIw0YjFxA"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1777559836736_5q6uw26t4'
+  {
+    "contracts": [
+        {
+            "_id": "69f355dc7d1820b25cfdb13f",
+            "patient": "69dd3853091fb7cb471c20b4",
+            "doctor": "69d423729887d617e19a5817",
+            "processNumber": null,
+            "court": null,
+            "expirationDate": null,
+            "mode": "hybrid",
+            "authorized": true,
+            "totalCredit": 10000,
+            "creditBalance": 9999.699999999999,
+            "usedCredit": 0.30000000000000004,
+            "creditHistory": [
+                {
+                    "amount": 1,
+                    "type": "initial",
+                    "reason": "contract_created",
+                    "appointmentId": null,
+                    "createdAt": "2026-04-30T13:15:08.847Z",
+                    "createdBy": null
+                },
+                {
+                    "amount": 0.1,
+                    "type": "debit",
+                    "reason": "session_completed",
+                    "appointmentId": "69f3571f384deec9c9e85e1b",
+                    "createdAt": "2026-04-30T13:40:04.298Z",
+                    "createdBy": null
+                },
+                {
+                    "amount": 0.1,
+                    "type": "debit",
+                    "reason": "session_completed",
+                    "appointmentId": "69f3571f384deec9c9e85e1e",
+                    "createdAt": "2026-04-30T14:01:00.595Z",
+                    "createdBy": null
+                },
+                {
+                    "amount": 0.1,
+                    "type": "debit",
+                    "reason": "session_completed",
+                    "appointmentId": "69f3571f384deec9c9e85e1c",
+                    "createdAt": "2026-04-30T14:25:37.978Z",
+                    "createdBy": null
+                }
+            ],
+            "status": "active",
+            "plans": [
+                "69f356bc7d1820b25cfdb152"
+            ],
+            "idempotencyKey": null,
+            "createdAt": "2026-04-30T13:15:08.853Z",
+            "updatedAt": "2026-04-30T14:25:37.979Z",
+            "__v": 0
+        }
+    ]
+}
 
-| Tipo       | Onde aparece             |
-| ---------- | ------------------------ |
-| Liminar    | Dashboard (card próprio) |
-| Particular | Pacotes                  |
-| Convênio   | Pacotes                  |
+curl 'http://localhost:5000/api/v2/liminar-contracts/69f355dc7d1820b25cfdb13f/plans/active' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"295-Ar2S01kU9I1pwj7Ol4gsSw8YX6Q"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1777559837339_44ys92a5v'
 
----
-
-# ⚠️ ERRO QUE VOCÊ NÃO PODE COMETER
-
-❌ colocar liminar dentro da lista de pacotes
-❌ usar mesma UI de pacote
-❌ mostrar “sessões restantes” como pacote
-
-👉 liminar é dinheiro, não quantidade de sessão
-
----
-
-# 🧠 RESUMO FINAL
-
-👉 Dashboard:
-
-* ganha um **card de crédito (liminar)**
-
-👉 Pacotes:
-
-* continuam, mas sem liminar
-
-👉 Agenda:
-
-* usa plano terapêutico
-
-👉 Sessões:
-
-* continuam iguais
-
-👉 Financeiro:
-
-* continua via Payment
-
----
-
-# 🚀 DECISÃO DE PRODUTO (importante)
-
-Você está criando isso:
-
-👉 **“Crédito terapêutico dinâmico”**
-
-Não é pacote
-Não é assinatura
-Não é convênio
-
-👉 é um modelo mais avançado
-
----
-
-Se quiser, no próximo passo eu posso te entregar:
-
-* 🎨 layout exato (Tailwind) desse card de liminar
-* 🔧 hook React (`useLiminar`)
-* 🔄 integração com seu `PatientDashboard`
-
-Só me fala:
-👉 você quer mostrar também **previsão de quanto tempo dura a liminar** ou só o saldo por enquanto?
+  {
+    "plan": {
+        "_id": "69f356bc7d1820b25cfdb152",
+        "patient": "69dd3853091fb7cb471c20b4",
+        "liminarContract": "69f355dc7d1820b25cfdb13f",
+        "version": 1,
+        "startDate": "2026-04-30T13:18:51.788Z",
+        "endDate": null,
+        "status": "active",
+        "therapies": {
+            "fonoaudiologia": {
+                "slots": [
+                    {
+                        "dayOfWeek": 5,
+                        "time": "15:00"
+                    }
+                ],
+                "sessionValue": 200,
+                "sessionDurationMinutes": 40
+            },
+            "terapia_ocupacional": {
+                "slots": [
+                    {
+                        "dayOfWeek": 1,
+                        "time": "15:40"
+                    }
+                ],
+                "sessionValue": 200,
+                "sessionDurationMinutes": 40
+            },
+            "psicologia": {
+                "slots": [
+                    {
+                        "dayOfWeek": 1,
+                        "time": "16:20"
+                    }
+                ],
+                "sessionValue": 200,
+                "sessionDurationMinutes": 40
+            }
+        },
+        "notes": null,
+        "createdBy": null,
+        "createdAt": "2026-04-30T13:18:52.118Z",
+        "updatedAt": "2026-04-30T13:18:52.118Z",
+        "__v": 0
+    }
+}

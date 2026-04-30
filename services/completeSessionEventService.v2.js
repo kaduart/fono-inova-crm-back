@@ -252,8 +252,8 @@ function determineBillingType({ addToBalance, package: pkg, appointment }) {
     // 🔥 ORDEM IMPORTA: Verifica billingType explícito primeiro
     if (appointment?.billingType === 'convenio') return 'insurance';
     if (appointment?.billingType === 'insurance') return 'insurance';
-    if (appointment?.billingType === 'legal') return 'legal';
-    if (appointment?.billingType === 'liminar') return 'legal';
+    if (appointment?.billingType === 'legal') return 'liminar';
+    if (appointment?.billingType === 'liminar') return 'liminar';
     
     // Depois verifica package
     if (addToBalance) return 'particular';

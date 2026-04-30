@@ -212,12 +212,14 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
                 LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'liminar_complete' });
                 sessionUpdate.paymentOrigin = 'liminar_credit';
+                sessionUpdate.paymentMethod = 'liminar_credit';
                 sessionUpdate.paidAt = new Date();
             } else if (packageId && !['convenio', 'liminar'].includes(billingType) && !isPerSessionPkg) {
                 // 📦 Pacote pré-pago (full/prepaid): já foi pago no pacote
                 LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
                 LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
                 sessionUpdate.paymentOrigin = 'package_prepaid';
+                sessionUpdate.paymentMethod = 'package_prepaid';
                 sessionUpdate.paidAt = new Date();
             } else if (billingType === 'convenio') {
                 // 🏥 Convênio: NÃO está pago no dia (recebimento mês subsequente)
@@ -230,6 +232,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
                 LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, isBalanceOrigin ? 'unpaid' : 'pending', { reason: 'per_session_complete' });
                 sessionUpdate.paymentOrigin = isBalanceOrigin ? 'manual_balance' : 'auto_per_session';
+                sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
             }
             
             await Session.findByIdAndUpdate(
@@ -697,6 +700,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         }
 
         // 🔄 Bypass do financialSanitizer para espelhar estado financeiro da Session
+        // 🛡️ FLAG DE SEGURANÇA: prova que veio do completeSessionService autorizado
+        appointmentUpdate.$set._fromCompleteService = true;
         await Appointment.collection.updateOne(
             { _id: new mongoose.Types.ObjectId(appointmentId) },
             appointmentUpdate,

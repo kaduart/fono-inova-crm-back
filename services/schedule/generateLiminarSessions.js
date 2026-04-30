@@ -1,6 +1,10 @@
 // services/schedule/generateLiminarSessions.js
 // Gera appointments a partir de TherapeuticPlan com slots { dayOfWeek, time }.
 // Idempotente via bulkWrite upsert — chamar N vezes não duplica.
+//
+// Modos:
+//   append  → gera semanas completas a partir da semana seguinte à última sessão
+//   reset   → cancela futuras scheduled e recria do zero (nova versão de plano)
 
 import Appointment from '../../models/Appointment.js';
 import TherapeuticPlan from '../../models/TherapeuticPlan.js';
@@ -8,17 +12,35 @@ import LiminarContract from '../../models/LiminarContract.js';
 import { buildDateTime, buildDayRange } from '../../utils/datetime.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+/** Retorna o domingo da semana da data fornecida (00:00:00) */
+function getWeekStart(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=domingo
+  d.setDate(d.getDate() - day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 /**
- * Gera appointments para um plano terapêutico dentro de uma janela de datas.
+ * Gera appointments para um plano terapêutico.
  *
- * @param {string}       planId        - ID do TherapeuticPlan ativo
- * @param {string|Date}  startDate     - Início da janela (inclusive)
- * @param {string|Date}  endDate       - Fim da janela (inclusive, max 90 dias)
- * @param {boolean}      skipHolidays  - Pular feriados nacionais (default: true)
- * @returns {{ created, skipped, total, totalCost, saldo, saldoAposTudo }}
+ * @param {string}  planId        - ID do TherapeuticPlan ativo
+ * @param {string}  mode          - 'append' | 'reset'
+ * @param {number}  weeks         - Quantas semanas gerar (usado no modo append)
+ * @param {string}  startDate     - Início da janela (modo reset)
+ * @param {string}  endDate       - Fim da janela   (modo reset)
+ * @param {boolean} skipHolidays  - Pular feriados nacionais (default: true)
  */
 export async function generateLiminarSessions({
   planId,
+  mode = 'append',
+  weeks = 4,
   startDate,
   endDate,
   skipHolidays = true
@@ -32,61 +54,133 @@ export async function generateLiminarSessions({
   if (!contract)                    throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
   if (contract.status !== 'active') throw new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
 
-  // ── 2. Feriados do período ─────────────────────────────────────
-  const start = new Date(startDate); start.setHours(0,0,0,0);
-  const end   = new Date(endDate);   end.setHours(23,59,59,999);
+  // ── 2. Normaliza therapies ─────────────────────────────────────
+  const therapies = plan.therapies instanceof Map
+    ? Object.fromEntries(plan.therapies)
+    : (plan.therapies || {});
 
+  const therapyEntries = Object.entries(therapies);
+  if (therapyEntries.length === 0) {
+    return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
+  }
+
+  // ── 3. Resolve janela de geração ───────────────────────────────
+  let weekStart;
+  let globalEnd;
+
+  if (mode === 'reset') {
+    // Cancela APENAS sessões agendadas (não confirmed/completed)
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cancelRes = await Appointment.updateMany(
+      {
+        liminarContract: contract._id,
+        date: { $gte: today },
+        operationalStatus: 'scheduled'
+      },
+      {
+        $set: {
+          operationalStatus: 'canceled',
+          clinicalStatus: 'canceled',
+          updatedAt: new Date()
+        }
+      }
+    );
+    console.log('[generateLiminarSessions] 🔄 reset cancelou futuras scheduled', {
+      contractId: contract._id.toString(),
+      canceled: cancelRes.modifiedCount
+    });
+
+    weekStart = getWeekStart(startDate);
+    globalEnd = new Date(endDate); globalEnd.setHours(23, 59, 59, 999);
+  } else {
+    // append: descobre última semana com sessão e começa a seguinte
+    const lastSession = await Appointment.findOne({
+      patient: contract.patient,
+      liminarContract: contract._id,
+      operationalStatus: { $ne: 'canceled' }
+    }).sort({ date: -1 }).lean();
+
+    if (lastSession) {
+      weekStart = getWeekStart(lastSession.date);
+      weekStart.setDate(weekStart.getDate() + 7); // próxima semana completa
+    } else {
+      weekStart = getWeekStart(startDate || new Date());
+    }
+
+    globalEnd = addDays(weekStart, weeks * 7 + 6);
+    globalEnd.setHours(23, 59, 59, 999);
+  }
+
+  // ── 4. Feriados do período ─────────────────────────────────────
   const holidays = new Set();
   if (skipHolidays) {
     const years = new Set();
-    const cur = new Date(start);
-    while (cur <= end) { years.add(cur.getFullYear()); cur.setDate(cur.getDate() + 1); }
+    const cur = new Date(weekStart);
+    while (cur <= globalEnd) { years.add(cur.getFullYear()); cur.setDate(cur.getDate() + 1); }
     for (const year of years) {
       for (const h of getHolidaysWithNames(year)) holidays.add(h.date);
     }
   }
 
-  // ── 3. Normaliza therapies (Map → plain object ao usar .lean()) ─
-  const therapies = plan.therapies instanceof Map
-    ? Object.fromEntries(plan.therapies)
-    : (plan.therapies || {});
-
-  // ── 4. Gera slots iterando dia a dia ───────────────────────────
-  // Cada slot do plano: { dayOfWeek: 1, time: "14:00" }
+  // ── 5. Gera slots semana a semana ──────────────────────────────
   const slots = [];
-  const walker = new Date(start);
 
-  while (walker <= end) {
-    const dayOfWeek = walker.getDay();
-    const dateStr   = walker.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+  if (mode === 'append') {
+    // Gera N semanas completas — cada semana contém TODOS os slots do plano
+    for (let w = 0; w < weeks; w++) {
+      const currentWeekSunday = addDays(weekStart, w * 7);
 
-    if (!holidays.has(dateStr)) {
-      for (const [specialty, config] of Object.entries(therapies)) {
-        const planSlots = Array.isArray(config.slots) ? config.slots : [];
+      for (const [specialty, config] of therapyEntries) {
+        for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
+          const sessionDate = addDays(currentWeekSunday, slot.dayOfWeek);
+          const dateStr = sessionDate.toISOString().split('T')[0];
 
-        for (const slot of planSlots) {
-          if (slot.dayOfWeek === dayOfWeek) {
+          if (!holidays.has(dateStr)) {
             slots.push({
               specialty,
               dateStr,
               time:         slot.time,
               date:         buildDateTime(dateStr, slot.time),
               sessionValue: config.sessionValue,
-              duration:     config.sessionDurationMinutes || 50
+              duration:     config.sessionDurationMinutes || 40
             });
           }
         }
       }
     }
+  } else {
+    // reset: gera tudo dentro da janela fornecida
+    const walker = new Date(weekStart);
+    while (walker <= globalEnd) {
+      const dayOfWeek = walker.getDay();
+      const dateStr   = walker.toISOString().split('T')[0];
 
-    walker.setDate(walker.getDate() + 1);
+      if (!holidays.has(dateStr)) {
+        for (const [specialty, config] of therapyEntries) {
+          for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
+            if (slot.dayOfWeek === dayOfWeek) {
+              slots.push({
+                specialty,
+                dateStr,
+                time:         slot.time,
+                date:         buildDateTime(dateStr, slot.time),
+                sessionValue: config.sessionValue,
+                duration:     config.sessionDurationMinutes || 40
+              });
+            }
+          }
+        }
+      }
+
+      walker.setDate(walker.getDate() + 1);
+    }
   }
 
   if (slots.length === 0) {
     return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
   }
 
-  // ── 5. Alerta de saldo (não bloqueia) ─────────────────────────
+  // ── 6. Alerta de saldo (não bloqueia) ─────────────────────────
   const totalCost = slots.reduce((s, sl) => s + sl.sessionValue, 0);
   if (contract.creditBalance < totalCost) {
     console.warn('[generateLiminarSessions] ⚠️ Saldo insuficiente para toda a janela', {
@@ -97,10 +191,7 @@ export async function generateLiminarSessions({
     });
   }
 
-  // ── 6. bulkWrite upsert ────────────────────────────────────────
-  // Chave de unicidade: paciente + contrato + especialidade + data + horário
-  // Permite: mesma especialidade duas vezes no dia em horários diferentes (edge case válido)
-  // Impede: duplicar o mesmo slot exato
+  // ── 7. bulkWrite upsert ────────────────────────────────────────
   const bulkOps = slots.map(slot => ({
     updateOne: {
       filter: {
@@ -108,7 +199,7 @@ export async function generateLiminarSessions({
         liminarContract:   contract._id,
         specialty:         slot.specialty,
         time:              slot.time,
-        date:              buildDayRange(slot.dateStr),  // BRT-aware: -03:00
+        date:              buildDayRange(slot.dateStr),
         operationalStatus: { $ne: 'canceled' }
       },
       update: {
@@ -144,7 +235,9 @@ export async function generateLiminarSessions({
     contractId: contract._id.toString(),
     planId:     plan._id.toString(),
     version:    plan.version,
-    window:     `${startDate} → ${endDate}`,
+    mode,
+    weeks,
+    window:     `${weekStart.toISOString().split('T')[0]} → ${globalEnd.toISOString().split('T')[0]}`,
     created:    result.upsertedCount,
     skipped:    result.matchedCount,
     total:      slots.length
@@ -152,10 +245,10 @@ export async function generateLiminarSessions({
 
   return {
     created:       result.upsertedCount,
-    skipped:       result.matchedCount,      // já existiam, não duplicou
+    skipped:       result.matchedCount,
     total:         slots.length,
     totalCost,
     saldo:         contract.creditBalance,
-    saldoAposTudo: contract.creditBalance - totalCost  // estimativa antes das sessões serem completadas
+    saldoAposTudo: contract.creditBalance - totalCost
   };
 }

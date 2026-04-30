@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import LiminarContract from '../models/LiminarContract.js';
 import TherapeuticPlan from '../models/TherapeuticPlan.js';
+import Appointment from '../models/Appointment.js';
 import { generateLiminarSessions } from '../services/schedule/generateLiminarSessions.js';
 import { createContextLogger } from '../utils/logger.js';
 
@@ -244,37 +245,101 @@ export async function getActivePlan(req, res) {
 export async function generateSessions(req, res) {
   const { planId } = req.params;
   const {
+    mode         = 'append',
+    weeks        = 4,
     startDate,
     endDate,
-    defaultTime  = '09:00',
     skipHolidays = true
   } = req.body;
 
-  if (!startDate || !endDate) {
-    return res.status(400).json({ error: 'startDate e endDate são obrigatórios' });
+  if (mode === 'reset' && (!startDate || !endDate)) {
+    return res.status(400).json({ error: 'startDate e endDate são obrigatórios no modo reset' });
   }
 
-  const start = new Date(startDate);
-  const end   = new Date(endDate);
-
-  if (isNaN(start) || isNaN(end)) {
-    return res.status(400).json({ error: 'Datas inválidas' });
-  }
-
-  const diffDays = (end - start) / (1000 * 60 * 60 * 24);
-  if (diffDays > 90) {
-    return res.status(400).json({ error: 'Janela máxima de geração: 90 dias' });
+  if (mode === 'append' && (!weeks || weeks < 1 || weeks > 12)) {
+    return res.status(400).json({ error: 'weeks deve estar entre 1 e 12 no modo append' });
   }
 
   const result = await generateLiminarSessions({
     planId,
+    mode,
+    weeks,
     startDate,
     endDate,
-    defaultTime,
     skipHolidays
   });
 
-  logger.info('Sessões geradas', { planId, ...result });
+  logger.info('Sessões geradas', { planId, mode, ...result });
 
   return res.status(201).json(result);
+}
+
+// ──────────────────────────────────────────────────────────────
+// GET /api/v2/liminar-contracts/:id/committed-balance
+// Retorna saldo comprometido por sessões agendadas/confirmadas
+// ──────────────────────────────────────────────────────────────
+export async function getCommittedBalance(req, res) {
+  const { id } = req.params;
+
+  const contract = await LiminarContract.findById(id).lean();
+  if (!contract) {
+    return res.status(404).json({ error: 'Contrato não encontrado' });
+  }
+
+  const agg = await Appointment.aggregate([
+    {
+      $match: {
+        liminarContract: new mongoose.Types.ObjectId(id),
+        operationalStatus: { $in: ['scheduled', 'confirmed'] }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        committed: { $sum: '$sessionValue' }
+      }
+    }
+  ]);
+
+  const committed = agg[0]?.committed || 0;
+  const available = contract.creditBalance - committed;
+
+  return res.json({
+    creditBalance: contract.creditBalance,
+    usedCredit:    contract.usedCredit,
+    committed,
+    available
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// GET /api/v2/liminar-contracts/:id/sessions
+// Lista appointments do contrato, opcionalmente filtradas por specialty
+// ──────────────────────────────────────────────────────────────
+export async function getContractSessions(req, res) {
+  const { id } = req.params;
+  const { specialty, status, from, to } = req.query;
+
+  const contract = await LiminarContract.findById(id).lean();
+  if (!contract) {
+    return res.status(404).json({ error: 'Contrato não encontrado' });
+  }
+
+  const filter = {
+    liminarContract: new mongoose.Types.ObjectId(id)
+  };
+
+  if (specialty) filter.specialty = specialty;
+  if (status)    filter.operationalStatus = status;
+  if (from || to) {
+    filter.date = {};
+    if (from) filter.date.$gte = new Date(from);
+    if (to)   filter.date.$lte = new Date(to);
+  }
+
+  const sessions = await Appointment.find(filter)
+    .sort({ date: 1 })
+    .lean();
+
+  return res.json({ sessions });
 }
