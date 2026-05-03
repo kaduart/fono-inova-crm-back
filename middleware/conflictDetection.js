@@ -451,7 +451,8 @@ export async function calculateAvailableSlots(doctorId, date) {
     };
   });
   
-  console.log(`[calculateAvailableSlots] bookedAppointments=${bookedAppointments.length}, preAgendados=${preAgendadosAtivos.length}, packageSessions=${packageSessions.length}, total=${allAppointments.length}`);
+  const totalAppointments = bookedAppointments.length + preAgendadosAtivos.length + packageSessions.length;
+  console.log(`[calculateAvailableSlots] bookedAppointments=${bookedAppointments.length}, preAgendados=${preAgendadosAtivos.length}, packageSessions=${packageSessions.length}, total=${totalAppointments}`);
   console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
   return slotsWithMetadata;
