@@ -219,9 +219,17 @@ export const packageOperations = {
                 throw new Error(debtValidationError);
             }
 
-            // ⚖️ Log para pacotes liminar (campos opcionais)
+            // 🔒 BLOQUEIO CRÍTICO: Liminar deve usar LiminarContract (novo fluxo)
+            // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+            if (type === 'liminar' || type === 'legal') {
+                console.warn('[LEGACY BLOCKED] Tentativa de criar Package type=liminar via therapyPackageController. Use /api/v2/liminar-contracts');
+                throw new Error('Liminar deve ser criada via /api/v2/liminar-contracts. O fluxo Package type=liminar está descontinuado.');
+            }
+
+            // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+            // Esse log NUNCA mais executa (bloqueio acima). Mantido para referência.
             if (type === 'liminar') {
-                console.log('⚖️ Criando pacote LIMINAR:', {
+                console.log('⚠️ LEGADO — Criando pacote LIMINAR (nunca deve executar):', {
                     processo: liminarProcessNumber || 'Não informado',
                     vara: liminarCourt || 'Não informada',
                     modo: liminarMode

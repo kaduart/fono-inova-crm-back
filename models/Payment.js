@@ -72,7 +72,9 @@ const paymentSchema = new mongoose.Schema({
             default: 'pending'
         },
         grossAmount: { type: Number, default: 0 }
-    }
+    },
+    insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
+    insurancePlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',  default: null }
 }, { timestamps: true });
 
 // ============ SCHEMA GUARD - PROTEÇÃO CONSISTÊNCIA ============

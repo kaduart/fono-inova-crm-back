@@ -128,6 +128,7 @@ import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import insuranceV2Routes from './routes/insuranceV2.routes.js';
 import insuranceGuidesV2Routes from './routes/insuranceGuides.v2.js';
+import insurancePlansV2Routes from './routes/insurancePlans.v2.js';
 import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
 import reminderRoutes from './routes/reminder.js';
 
@@ -139,6 +140,7 @@ import medicalEventRoutes from './routes/medicalEvent.routes.js';
 import appointmentAnalyticsRoutes from './routes/appointmentAnalytics.routes.js';
 import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
 import calendarRoutes from './routes/calendar.js';
+import financialSummaryRoutes from './routes/financialSummary.js';
 
 // 🚀 ROTAS V2 - Fechamento do Dia
 import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
@@ -480,6 +482,7 @@ app.use('/api/v2', totalsWrapperRoutes);
 
 app.use('/api/v2', insuranceV2Routes);
 app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
+app.use('/api/v2/insurance-plans', insurancePlansV2Routes);
 app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
 app.use('/api/v2/financial', financialOverviewRoutes);
 app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
@@ -500,6 +503,7 @@ app.use('/api/medical-events', medicalEventRoutes);
 app.use('/api/analytics', appointmentAnalyticsRoutes);
 app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/v2/financial', financialSummaryRoutes);  // 💰 Fonte de verdade financeira (Payment-based)
 app.use('/api/observability', observabilityRoutes);  // 🚀 NOVO: Dashboard de Observabilidade
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado

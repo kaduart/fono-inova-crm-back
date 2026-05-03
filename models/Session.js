@@ -78,6 +78,7 @@ const sessionSchema = new mongoose.Schema({
             message: 'Status inválido para sessão'
         },
     },
+    completedAt: { type: Date, default: null },
     confirmedAbsence: { type: Boolean, default: null },
     notes: { type: String },
     paymentStatus: {
@@ -225,6 +226,12 @@ sessionSchema.pre('validate', function(next) {
 
 // Hook pós-save para provisionamento automático
 sessionSchema.post('findOneAndUpdate', async function (doc) {
+    // 🛡️ CRITICAL FIX: Não roda efeitos colaterais dentro de transação financeira.
+    // Se a transação abortar, esses writes NÃO são revertidos — corrompem dados.
+    if (this.getOptions().session) {
+        console.log('[SessionHook] ⏸️ Provisionamento pulado (dentro de transação)');
+        return;
+    }
     if (doc && doc.status === 'completed') {
         // Verifica se já não foi provisionado
         const foiProvisionado = doc.wasProvisioned;
@@ -268,6 +275,8 @@ sessionSchema.pre('validate', function(next) {
 });
 
 sessionSchema.post('findOneAndUpdate', async function (doc) {
+    // 🛡️ CRITICAL FIX: syncEvent escreve fora da transação — não rodar dentro de mongoSession
+    if (this.getOptions().session) return;
     if (doc) await syncEvent(doc, 'session');
 });
 
@@ -288,6 +297,11 @@ sessionSchema.post('save', async function (doc) {
 
 // 🏥 Hook para consumir guia de convênio quando sessão for concluída
 sessionSchema.post('findOneAndUpdate', async function (doc) {
+    // 🛡️ CRITICAL FIX: Consumo de guia fora da transação = guia perdida em rollback.
+    if (this.getOptions().session) {
+        console.log('[SessionHook] ⏸️ Consumo de guia pulado (dentro de transação)');
+        return;
+    }
     if (!doc) return;
 
     // Só prossegue se há guia vinculada

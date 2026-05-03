@@ -2182,6 +2182,7 @@ router.get("/daily-closing", async (req, res) => {
             const doctorName = appt.doctor?.fullName || "Não informado";
             const patientName = appt.patient?.fullName || appt.patientInfo?.fullName || "Não informado";
             const isPackage = appt.serviceType === "package_session";
+            // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
             const isLiminar = isPackage && appt.package?.type === 'liminar';
             
             // 🔗 Buscar pagamentos relacionados (3 vias)
@@ -2999,8 +3000,17 @@ router.post('/add', async (req, res) => {
 // ============================================================
 
 /**
- * POST /api/payments/insurance
- * Registra atendimento de convênio (amount = 0 no dia)
+ * ⚠️ LEGADO — NÃO UTILIZAR
+ *
+ * 🚫 Endpoint antigo de criação manual de atendimento convênio
+ * 🚫 NÃO garante consistência com completeSession → ConvenioHandler
+ * 🚫 Pode gerar duplicidade de Payment e quebrar rastreabilidade
+ *
+ * ✅ Fluxo correto:
+ * completeSession → ConvenioHandler → cria Payment automaticamente
+ *
+ * Mantido apenas para compatibilidade temporária.
+ * TODO: remover após migração completa do frontend.
  */
 router.post('/insurance', auth, async (req, res) => {
     try {
@@ -3071,6 +3081,19 @@ router.post('/insurance', auth, async (req, res) => {
     }
 });
 
+/**
+ * ⚠️ LEGADO — NÃO UTILIZAR
+ *
+ * 🚫 Endpoint antigo de listagem de recebíveis de convênio
+ * 🚫 Usa aggregate complexo sobre Payment + Session + Package
+ * 🚫 Pode divergir do V2 por não usar populate consistente
+ *
+ * ✅ Substituído por:
+ * GET /api/v2/payments/insurance/receivables
+ *
+ * Mantido apenas para compatibilidade temporária.
+ * TODO: remover após migração completa do frontend.
+ */
 /**
  * GET /api/payments/insurance/receivables
  * Lista contas a receber de convênios - AGRUPADO POR PACIENTE
@@ -3345,6 +3368,19 @@ router.get('/insurance/audit', auth, async (req, res) => {
 });
 
 /**
+ * ⚠️ LEGADO — NÃO UTILIZAR
+ *
+ * 🚫 Endpoint antigo de recebimento individual de convênio
+ * 🚫 NÃO garante atualização de FinancialLedger
+ * 🚫 NÃO segue fluxo V2 (session-first)
+ *
+ * ✅ Substituído por:
+ * PATCH /api/v2/insurance/session/:sessionId/receive
+ *
+ * Mantido apenas para compatibilidade temporária.
+ * TODO: remover após migração completa do frontend.
+ */
+/**
  * PATCH /api/payments/insurance/:id/receive
  * Marca convênio como recebido (entra no caixa)
  */
@@ -3455,6 +3491,19 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
     }
 });
 
+/**
+ * ⚠️ LEGADO — NÃO UTILIZAR
+ *
+ * 🚫 Endpoint antigo de faturamento individual de convênio
+ * 🚫 NÃO garante atualização de FinancialLedger
+ * 🚫 NÃO segue fluxo V2 (session-first)
+ *
+ * ✅ Substituído por:
+ * PATCH /api/v2/insurance/session/:sessionId/bill
+ *
+ * Mantido apenas para compatibilidade temporária.
+ * TODO: remover após migração completa do frontend.
+ */
 /**
  * PATCH /api/payments/insurance/:id/bill
  * Marca como faturado (enviado pro convênio)

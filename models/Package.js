@@ -10,9 +10,26 @@ const packageSchema = new mongoose.Schema({
   paymentType: { type: String },
   sessionType: {
     type: String,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia', 'neuropediatria', 'neuroped'],
+    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia', 'neuropediatria', 'neuroped', 'pediatria'],
     required: true
   },
+
+  /**
+   * ⚠️ LEGADO — NÃO UTILIZAR
+   *
+   * O campo 'type' aceitava 'convenio' e 'liminar' no fluxo antigo.
+   * Hoje esses domínios têm seus próprios models:
+   * - InsuranceGuide (convênio)
+   * - LiminarContract (liminar)
+   *
+   * 🚫 NÃO criar novos packages com type='convenio' ou 'liminar'
+   * 🚫 NÃO usar Package como fonte de verdade para convênio/liminar
+   *
+   * ✅ type válido para dados novos: 'package' apenas
+   * ✅ model válido para dados novos: 'prepaid' | 'per_session'
+   *
+   * TODO: remover 'convenio' e 'liminar' do enum após backfill.
+   */
   sessionValue: {
     type: Number,
     default: 200,
@@ -91,14 +108,21 @@ const packageSchema = new mongoose.Schema({
   // ========================================
   type: {
     type: String,
+    // ⚠️ LEGADO: 'convenio' e 'liminar' são dados antigos. NÃO usar em novos fluxos.
     enum: ['therapy', 'convenio', 'liminar'],
     default: 'therapy',
-    description: 'Tipo de pacote: therapy (particular), convenio (plano de saúde) ou liminar (judicial)'
+    description: 'Tipo de pacote: therapy (particular), convenio (plano de saude) ou liminar (judicial)'
   },
   
   // ========================================
   // ⚖️ CAMPOS ESPECÍFICOS PARA PACOTES LIMINAR
   // ========================================
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // Todos os campos abaixo são de packages antigos de tipo 'liminar'.
+  // Liminar agora usa o modelo LiminarContract.
+  // NÃO adicionar novos dados nestes campos.
+  // TODO: remover após backfill completo dos dados legados.
+  //
   // NOTA: Todos os campos são OPCIONAIS. O sistema não exige processo ou vara.
   // O crédito é consumido quando a sessão é marcada como 'completed'.
   // Se alterar o status de 'completed' para outro, o crédito VOLTA automaticamente.
@@ -183,9 +207,10 @@ const packageSchema = new mongoose.Schema({
   // 🎯 MODELO DO PACOTE (V2) - determina comportamento financeiro
   model: {
     type: String,
+    // ⚠️ LEGADO: 'convenio' e 'liminar' são dados antigos. NÃO usar em novos fluxos.
     enum: ['prepaid', 'per_session', 'convenio', 'liminar', null],
     default: null,
-    description: 'Modelo do pacote: prepaid (pago antecipado), per_session (pagar por sessão), convenio (plano de saúde), liminar (judicial)'
+    description: 'Modelo do pacote: prepaid (pago antecipado), per_session (pagar por sessao), convenio (plano de saude), liminar (judicial)'
   },
   
   // 🔑 IDEMPOTÊNCIA - proteção contra duplicação (V2)

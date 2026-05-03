@@ -26,6 +26,7 @@ import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMe
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
 // 🔒 LOCK V2: Não usar appointmentCompleteService (legado)
 import { completeSessionEventDrivenV2 } from '../services/completeSessionEventService.v2.js';
+import { generateSuggestedSlots } from '../services/agenda/suggestionEngine.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { completeSessionDtoMapper } from '../middleware/dtoMiddleware.js';
 import FinancialGuard from '../services/financialGuard/index.js';
@@ -990,6 +991,36 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 
 /**
+ * 🧠 POST /api/v2/appointments/agenda/suggestions
+ * Smart Agenda v1 — Sugestão inteligente de horários
+ * Sistema sugere, secretaria confirma em 1 clique.
+ */
+router.post('/agenda/suggestions', flexibleAuth, asyncHandler(async (req, res) => {
+  try {
+    const { doctorId, specialty, patientId, serviceType, dateFrom, dateTo, maxResults } = req.body;
+
+    if (!doctorId && !specialty) {
+      return res.status(400).json(formatError('doctorId ou specialty é obrigatório', 400, 'MISSING_PARAMS'));
+    }
+
+    const suggestions = await generateSuggestedSlots({
+      doctorId,
+      specialty,
+      patientId,
+      serviceType,
+      dateFrom,
+      dateTo,
+      maxResults: maxResults || 5
+    });
+
+    return res.json(formatSuccess({ suggestions }, 'Sugestões de horários geradas'));
+  } catch (err) {
+    console.error('[SmartAgenda] Erro ao gerar sugestões:', err.message);
+    return res.status(500).json(formatError(err.message, 500, 'SUGGESTION_ENGINE_ERROR'));
+  }
+}));
+
+/**
  * 🗓️ GET /api/v2/appointments/weekly-availability
  * Disponibilidade semanal por especialidade — substitui /api/agenda-externa/disponibilidade
  * 
@@ -1252,8 +1283,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🔥 OTIMIZAÇÃO: Query base com populate essencial
   let queryBuilder = Appointment.find(filter)
     .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment liminarContract'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract'
     )
     .populate('payment', 'status amount paymentMethod')
     .sort({ date: 1, time: 1 })
@@ -1264,7 +1295,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🎯 SEMPRE popula nomes (essencial para o frontend identificar agendamentos)
   queryBuilder = queryBuilder
     .populate('patient', 'fullName phone dateOfBirth email')
-    .populate('doctor', 'fullName specialty');
+    .populate('doctor', 'fullName specialty')
+    .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status');
   
   // 🔥 OTIMIZAÇÃO: Roda query e count em PARALELO
   const queries = [queryBuilder];
@@ -1419,6 +1451,7 @@ router.get('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     .populate('doctor', 'fullName specialty email phoneNumber commissionRules')
     .populate('session')
     .populate('package', 'totalSessions sessionsDone totalPaid totalValue financialStatus sessionValue type')
+    .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
     .populate('payment', 'status amount paymentMethod billingType kind insuranceValue');
 
   console.log(`[GET /v2/appointments/:id] Resultado:`, appointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
@@ -1934,7 +1967,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         await appointment.save({ session: mongoSession });
       }
     } else if (appointment.package && updateData.billingType !== 'convenio') {
-      // Sessão de pacote: permite registrar/atualizar valor se não for convênio
+      // ✅ V2 ATIVO: Sessão de pacote — permite atualizar valor no PUT se não for convênio
       const existingPayment = appointment.payment
         ? await Payment.findById(appointment.payment).session(mongoSession).lean()
         : null;
@@ -1943,7 +1976,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         // Já pago: não altera nada financeiro
         console.log(`[PUT /appointments/${id}] Package session já paga — ignorando alterações financeiras`);
       } else if (existingPayment && existingPayment.status !== 'paid') {
-        // Payment pendente existente: atualiza valor
+        // ✅ V2 ATIVO: Payment já existe (pre-criado no schedule ou em edição anterior). Apenas atualiza.
         const paymentUpdate = Payment.findByIdAndUpdate(
           appointment.payment,
           {

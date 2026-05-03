@@ -35,6 +35,13 @@ import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
  * }
  */
 export const createConvenioPackage = async (req, res) => {
+  return res.status(410).json({
+    success: false,
+    errorCode: 'DEPRECATED',
+    message: 'Fluxo de pacote de convênio descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.'
+  });
+
+  // LEGADO — código abaixo mantido para referência, mas nunca executa
   const mongoSession = await mongoose.startSession();
   let transactionCommitted = false;
 

@@ -1,0 +1,185 @@
+═══════════════════════════════════════════════════════════════════════════════
+ANÁLISE — FLUXO PARTICULAR: ONDE AINDA EXISTE ACOPLAMENTO COM CONVÊNIO/LIMINAR
+Data: 2026-05-01 | Contexto: Após refatoração de convênio e liminar
+═══════════════════════════════════════════════════════════════════════════════
+
+RESUMO EXECUTIVO
+────────────────
+Convênio e liminar já foram extraídos para handlers separados
+(ConvenioHandler, LiminarHandler, ParticularHandler) no completeSession.
+Isso está DESACOPLADO ✅
+
+MAS o modelo Package.js e o packageController.v2.js ainda carregam
+lógica de convênio/liminar que NUNCA MAIS EXECUTA no fluxo V2
+(porque a criação é bloqueada na entrada). É código morto que polui
+o domínio particular.
+
+═══════════════════════════════════════════════════════════════════════════════
+1. O QUE JÁ ESTÁ DESACOPLADO (NÃO MEXER)
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ completeSessionService.v2.js — handlers separados:
+   • particular  → ParticularHandler.buildPayment
+   • liminar     → LiminarHandler.buildPayment
+   • convenio    → ConvenioHandler.buildPayment
+   • legado package → fallback inline (comentado como LEGACY)
+
+✅ Rotas separadas:
+   • /api/v2/liminar-contracts  → liminarContractController.js
+   • /api/v2/insurance-guides   → insuranceGuides.v2.js
+   • /api/v2/packages           → packageController.v2.js (SÓ particular)
+
+═══════════════════════════════════════════════════════════════════════════════
+2. O QUE AINDA ESTÁ ACOPLADO (CÓDIGO MORTO NO FLUXO PARTICULAR)
+═══════════════════════════════════════════════════════════════════════════════
+
+2.1  packageController.v2.js — createAppointmentsBatch (linha 258-259)
+───────────────────────────────────────────────────────────────────────────────
+billingType: pkg.type === 'convenio' ? 'convenio' : 
+             pkg.type === 'liminar' ? 'liminar' : 'particular',
+
+⚠️  PROBLEMA: No fluxo V2, pkg.type SEMPRE será 'therapy' (particular).
+   As verificações de convenio/liminar são código morto.
+   
+   PERIGO: Se remover sem garantir que NENHUM package legado type='convenio'
+   ou 'liminar' passa por aqui, pode quebrar. Mas a criação é bloqueada
+   na linha 429-435 — então nenhum package novo desses tipos entra.
+   Packages legados criados por therapyPackageController.js NÃO passam
+   por este controller (são rotas diferentes).
+
+   → SEGURO REMOVER ou simplificar para: billingType: 'particular'
+
+2.2  packageController.v2.js — createSessionsBatch (linha 289-297)
+───────────────────────────────────────────────────────────────────────────────
+isPaid: ['prepaid', 'liminar', 'convenio'].includes(pkg.model),
+paymentMethod: pkg.model === 'liminar' ? 'liminar_credit' : pkg.paymentMethod
+
+⚠️  PROBLEMA: Mesmo caso. pkg.model no fluxo V2 particular é 'prepaid' ou
+   'per_session'. 'liminar' e 'convenio' nunca ocorrem.
+
+   → SEGURO SIMPLIFICAR para:
+   isPaid: pkg.model === 'prepaid'
+   paymentMethod: pkg.paymentMethod
+
+2.3  packageController.v2.js — createPackageData (linhas 175-216)
+───────────────────────────────────────────────────────────────────────────────
+A função createPackageData() ainda tem blocos inteiros para:
+   • type === 'insurance' || type === 'convenio'  (linha 176-190)
+   • type === 'legal' || type === 'liminar'        (linha 194-216)
+
+⚠️  PROBLEMA: Esses blocos NUNCA SÃO CHAMADOS porque o controller bloqueia
+   na linha 429-435 (type deve ser 'package').
+
+   → SEGURO REMOVER esses blocos e manter só o bloco particular.
+   → O controller já retorna erro 400 instruindo usar as rotas corretas.
+
+2.4  Package.js — schema compartilhado
+───────────────────────────────────────────────────────────────────────────────
+• enum type: ['therapy', 'convenio', 'liminar']
+• Campos liminarProcessNumber, liminarCourt, liminarCreditBalance, etc.
+• Campos insuranceGuide, insuranceProvider, insuranceGrossAmount, etc.
+• enum model: ['prepaid', 'per_session', 'convenio', 'liminar', null]
+
+⚠️  PROBLEMA: O schema de Package carrega campos de 3 domínios diferentes.
+   Para particular, todos os campos liminar e convênio são lixo estrutural.
+
+   → REMOVER do enum: 'convenio' e 'liminar' de `type` e `model`
+     (dados legados no banco continuam existindo, mas novos não podem ser
+      criados com esses valores porque a criação já é bloqueada)
+   → MANTER os campos no schema por enquanto (dados legados)
+   → REMOVER validações que mencionam liminar/convenio (ex: sessionValue
+     validator linha 22-27 que trata convenio diferente)
+
+2.5  determineBillingType (completeSessionService.v2.js, linha 906-932)
+───────────────────────────────────────────────────────────────────────────────
+Ainda verifica:
+   if (packageData.model === 'liminar') return 'liminar';
+   if (packageData.type === 'liminar') return 'liminar';
+
+⚠️  PROBLEMA: Para dados V2, packageData nunca será liminar. Mas para dados
+   legados (packages antigos type='liminar'), ainda precisa funcionar.
+   
+   → PODE SIMPLIFICAR: Se o appointment já tem billingType preenchido
+     (linha 925-927), usar diretamente. O fallback para particular (linha 931)
+     já cobre 99% dos casos V2.
+   → MANTER as verificações de liminar/convenio por enquanto (segurança
+     para dados legados não migrados).
+
+2.6  PackageProjectionService.js (linhas 186-203)
+───────────────────────────────────────────────────────────────────────────────
+Ainda projeta campos liminar e convenio no PackagesView:
+   ...(pkg.type === 'liminar' ? { liminarTotalCredit, ... } : {})
+   ...(pkg.type === 'convenio' ? { insuranceGrossAmount, ... } : {})
+
+⚠️  PROBLEMA: Para packages particulares, essas projeções retornam {}.
+   Não quebra, mas é código morto se não há packages liminar/convenio ativos.
+
+   → SEGURO REMOVER se a migração foi rodada. Se não foi, manter.
+
+2.7  package.guard.js (financialGuard)
+───────────────────────────────────────────────────────────────────────────────
+Ainda tem lógica específica para liminar:
+   const isLiminar = pkg.type === 'liminar';
+   update.$inc.liminarCreditBalance = sessionValue;
+
+⚠️  PROBLEMA: O package.guard só é chamado pelo FinancialGuard em contexto
+   COMPLETE_SESSION quando existe packageId e não há liminarContractId.
+   Para dados novos, nunca acontece. Para dados legados, ainda pode acontecer.
+
+   → MANTER por enquanto (dados legados). Marcar como LEGACY.
+
+═══════════════════════════════════════════════════════════════════════════════
+3. DECISÃO: O QUE REMOVER AGORA (SEGURO)
+═══════════════════════════════════════════════════════════════════════════════
+
+Com base na análise, se a migração de liminar JÁ FOI RODADA e convênio
+já usa InsuranceGuide (não Package), podemos remover com segurança:
+
+┌───┬────────────────────────────────────────────────────────────────────┐
+│ # │ AÇÃO                                                               │
+├───┼────────────────────────────────────────────────────────────────────┤
+│ 1 │ packageController.v2.js: simplificar createAppointmentsBatch      │
+│   │    billingType: 'particular' (sem ternário)                        │
+│ 2 │ packageController.v2.js: simplificar createSessionsBatch          │
+│   │    isPaid: pkg.model === 'prepaid'                                 │
+│   │    paymentMethod: pkg.paymentMethod (sem ternário)                 │
+│ 3 │ packageController.v2.js: remover blocos convenio/liminar de       │
+│   │    createPackageData() (manter só particular)                      │
+│ 4 │ Package.js: remover 'convenio' e 'liminar' do enum de `type`      │
+│   │    e `model` (novos dados nunca mais usam)                         │
+│ 5 │ Package.js: remover validação de sessionValue que menciona        │
+│   │    convenio/liminar (linha 22-27)                                  │
+│ 6 │ PackageProjectionService.js: remover projeções liminar/convenio   │
+│   │    (se migração foi rodada)                                        │
+└───┴────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+4. O QUE NÃO REMOVER (RISCO DE DADOS LEGADOS)
+═══════════════════════════════════════════════════════════════════════════════
+
+• therapyPackageController.js — rota legada ainda ativa, pode ter dados
+  legados não migrados. NÃO remover código liminar/convenio daqui.
+  (Já bloqueamos criação de liminar na Fase 0)
+
+• determineBillingType — ainda necessário para packages legados
+  type='liminar' ou 'convenio' que não foram migrados.
+
+• package.guard.js — ainda necessário para completar sessões de packages
+  legados que não foram migrados.
+
+• Campos no schema Package.js (liminarProcessNumber, insuranceGuide, etc.)
+  — dados legados ainda existem no MongoDB. Remover do schema quebra
+  leitura desses documentos.
+
+═══════════════════════════════════════════════════════════════════════════════
+5. PRÓXIMO PASSO
+═══════════════════════════════════════════════════════════════════════════════
+
+AGUARDANDO CONFIRMAÇÃO do usuário para executar a limpeza dos 6 itens
+listados na seção 3.
+
+Requisito prévio: confirmar que:
+  ✓ Migração de liminar (migrate-liminar-packages.js) foi rodada
+  ✓ Convênio já não cria mais Package type='convenio' (usa InsuranceGuide)
+  ✓ Não existem packages ativos type='convenio' ou 'liminar' em produção
+═══════════════════════════════════════════════════════════════════════════════

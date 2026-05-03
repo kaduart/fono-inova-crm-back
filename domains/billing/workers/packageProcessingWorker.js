@@ -190,9 +190,10 @@ export async function handlePackageCreate(payload, correlationId) {
       throw new Error('Nenhum horário selecionado (selectedSlots está vazio)');
     }
 
-    // ⚖️ Log para pacotes liminar
+    // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+    // Log mantido para compatibilidade. NÃO criar novos packages liminar.
     if (type === 'liminar') {
-      logger.info('⚖️ Criando pacote LIMINAR', {
+      logger.info('⚠️ LEGADO — Criando pacote LIMINAR (dados antigos)', {
         processo: liminarProcessNumber || 'Não informado',
         vara: liminarCourt || 'Não informada',
         modo: liminarMode
@@ -335,6 +336,8 @@ export async function handlePackageCreate(payload, correlationId) {
       }
     };
 
+    // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+    // Esses campos são de packages antigos. NÃO preencher em novos.
     if (type === 'liminar') {
       packageData.liminarProcessNumber = liminarProcessNumber;
       packageData.liminarCourt = liminarCourt;

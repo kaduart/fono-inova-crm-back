@@ -7,10 +7,12 @@
 //   reset   → cancela futuras scheduled e recria do zero (nova versão de plano)
 
 import Appointment from '../../models/Appointment.js';
+import Session from '../../models/Session.js';
 import TherapeuticPlan from '../../models/TherapeuticPlan.js';
 import LiminarContract from '../../models/LiminarContract.js';
 import { buildDateTime, buildDayRange } from '../../utils/datetime.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
+import { buildLiminarSession } from '../../domain/session/sessionFactory.js';
 
 function addDays(date, days) {
   const d = new Date(date);
@@ -104,7 +106,10 @@ export async function generateLiminarSessions({
       weekStart = getWeekStart(lastSession.date);
       weekStart.setDate(weekStart.getDate() + 7); // próxima semana completa
     } else {
-      weekStart = getWeekStart(startDate || new Date());
+      // Usa plan.startDate como âncora (igual ao convenio) — nunca gera no passado
+      const anchor = new Date(plan.startDate);
+      anchor.setHours(0, 0, 0, 0);
+      weekStart = getWeekStart(anchor);
     }
 
     globalEnd = addDays(weekStart, weeks * 7 + 6);
@@ -126,6 +131,11 @@ export async function generateLiminarSessions({
   const slots = [];
 
   if (mode === 'append') {
+    const anchorDate = new Date(plan.startDate);
+    anchorDate.setHours(0, 0, 0, 0);
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
     // Gera N semanas completas — cada semana contém TODOS os slots do plano
     for (let w = 0; w < weeks; w++) {
       const currentWeekSunday = addDays(weekStart, w * 7);
@@ -134,6 +144,12 @@ export async function generateLiminarSessions({
         for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
           const sessionDate = addDays(currentWeekSunday, slot.dayOfWeek);
           const dateStr = sessionDate.toISOString().split('T')[0];
+
+          // Pula datas antes do startDate do plano (igual ao convenio)
+          if (sessionDate < anchorDate) continue;
+
+          // Proteção extra: nunca gera slot no passado
+          if (sessionDate < today) continue;
 
           if (!holidays.has(dateStr)) {
             slots.push({
@@ -231,6 +247,29 @@ export async function generateLiminarSessions({
 
   const result = await Appointment.bulkWrite(bulkOps, { ordered: false });
 
+  // ── 8. Cria Sessions para appointments recém-inseridos ─────────
+  const upsertedIds = Object.values(result.upsertedIds || {});
+  let createdSessionsCount = 0;
+
+  if (upsertedIds.length > 0) {
+    const newAppointments = await Appointment.find(
+      { _id: { $in: upsertedIds } }
+    ).lean();
+
+    const sessionDocs = newAppointments.map(a => buildLiminarSession(a));
+
+    const createdSessions = await Session.insertMany(sessionDocs);
+    createdSessionsCount = createdSessions.length;
+
+    const sessionLinkOps = createdSessions.map((s, i) => ({
+      updateOne: {
+        filter: { _id: newAppointments[i]._id },
+        update: { $set: { session: s._id } }
+      }
+    }));
+    await Appointment.bulkWrite(sessionLinkOps, { ordered: false });
+  }
+
   console.log('[generateLiminarSessions] ✅ Concluído', {
     contractId: contract._id.toString(),
     planId:     plan._id.toString(),
@@ -238,9 +277,10 @@ export async function generateLiminarSessions({
     mode,
     weeks,
     window:     `${weekStart.toISOString().split('T')[0]} → ${globalEnd.toISOString().split('T')[0]}`,
-    created:    result.upsertedCount,
-    skipped:    result.matchedCount,
-    total:      slots.length
+    created:         result.upsertedCount,
+    skipped:         result.matchedCount,
+    total:           slots.length,
+    sessionsCreated: createdSessionsCount
   });
 
   return {

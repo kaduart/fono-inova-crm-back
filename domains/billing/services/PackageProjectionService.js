@@ -182,7 +182,10 @@ export async function buildPackageView(packageId, options = {}) {
       financialStatus: pkg.financialStatus,
       payments: pkg.payments || [], // array de IDs — frontend usa length para checar se há pagamentos
       
-      // ⚖️ Campos específicos de Liminar
+      // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+      // Esses campos são de packages antigos. Liminar agora usa LiminarContract.
+      // Mantido apenas para compatibilidade de leitura até backfill completo.
+      // TODO: remover após migração dos dados legados.
       ...(pkg.type === 'liminar' ? {
         liminarTotalCredit: pkg.liminarTotalCredit || 0,
         liminarCreditBalance: pkg.liminarCreditBalance || 0,
