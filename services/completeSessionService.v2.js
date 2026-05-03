@@ -16,10 +16,12 @@ import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import LiminarGuard from './financialGuard/guards/liminar.guard.js';
+import InsuranceGuide from '../models/InsuranceGuide.js';
 import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import LegacyFinanceWriteGuard from './financialGuard/LegacyFinanceWriteGuard.js';
+import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
 import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
@@ -153,11 +155,11 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         willUpdatePackage: !!packageId
     });
 
-    // 🚨 VALIDAÇÃO: Não permitir addToBalance em pacotes pré-pagos (prepaid/full/convenio/liminar)
+    // 🚨 VALIDAÇÃO: Não permitir addToBalance em pacotes pré-pagos (prepaid/full/liminar)
     // per-session: paga individualmente por sessão → PERMITE addToBalance
     const pkgPaymentType = packageData?.paymentType;
     const isPerSessionPkg = pkgPaymentType === 'per-session' || pkgPaymentType === 'per_session';
-    const isPaidPackage = ['convenio', 'liminar'].includes(billingType)
+    const isPaidPackage = ['liminar'].includes(billingType)
         || (!!packageId && !isPerSessionPkg);
 
     console.log(`[CompleteSessionV2] Validação addToBalance:`, { billingType, addToBalance, isPaidPackage, pkgPaymentType });
@@ -176,7 +178,56 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     // 🎯 Variável para compartilhar estado entre Session e Appointment
     let sessionUpdate = null;
     let sessionDoc = null;
+
+    // Contexto imutável passado aos handlers de billingType
+    // sessionDoc começa null e é preenchido após Session.findById abaixo
+    const ctx = buildCompleteContext({
+        appointment, appointmentId, sessionId, sessionDoc: null,
+        packageId, packageData, billingType, sessionValue,
+        mongoSession, userId, correlationId,
+        isBalanceOrigin, isPerSessionPkg, addToBalance, balanceAmount
+    });
     
+    // 🔒 IDEMPOTÊNCIA + LOCK (FORA da transação para evitar WriteConflict)
+    // 0a. Check rápido de idempotência (sem transação)
+    if (appointment.operationalStatus === 'completed') {
+        console.log(`[CompleteSessionV2] ✅ Idempotente — já completado (${appointmentId})`);
+        return {
+            success: true,
+            idempotent: true,
+            message: 'Sessão já estava completada',
+            data: {
+                appointmentId,
+                clinicalStatus: appointment.clinicalStatus,
+                operationalStatus: appointment.operationalStatus,
+                paymentStatus: appointment.paymentStatus,
+                balanceAmount: appointment.balanceAmount,
+                sessionValue,
+                isPaid: appointment.isPaid,
+                completedAt: appointment.completedAt
+            },
+            meta: { version: 'v2', correlationId, timestamp: new Date().toISOString() }
+        };
+    }
+
+    // 0b. Adquirir lock atômico FORA da transação
+    const lockResult = await Appointment.findOneAndUpdate(
+        { _id: appointmentId, isProcessing: { $ne: true } },
+        { $set: { isProcessing: true, processingStartedAt: new Date() } },
+        { new: true }
+    );
+    if (!lockResult) {
+        const lockedAppt = await Appointment.findById(appointmentId).lean();
+        const lockAge = lockedAppt?.processingStartedAt
+            ? Date.now() - new Date(lockedAppt.processingStartedAt).getTime()
+            : Infinity;
+        if (lockAge < 2 * 60 * 1000) {
+            console.warn(`[CompleteSessionV2] ⏸️ Appointment ${appointmentId} já está processando (lock de ${Math.round(lockAge/1000)}s)`);
+            throw new Error('APPOINTMENT_ALREADY_PROCESSING: Agendamento já está sendo processado. Aguarde.');
+        }
+        console.warn(`[CompleteSessionV2] 🔓 Lock expirado de ${Math.round(lockAge/1000)}s — recuperando appointment ${appointmentId}`);
+    }
+
     try {
         if (!externalSession) {
             await mongoSession.startTransaction();
@@ -185,6 +236,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         // 1. Verificar e atualizar Session (se existir)
         if (sessionId) {
             sessionDoc = await Session.findById(sessionId).session(mongoSession);
+            ctx.sessionDoc = sessionDoc; // disponibiliza para handlers verificarem estado anterior
             if (!sessionDoc) {
                 throw new Error('SESSION_NOT_FOUND: Sessão não encontrada');
             }
@@ -208,31 +260,12 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const paidNow = !isBalanceOrigin;
             
             if (billingType === 'liminar') {
-                // ⚖️ Liminar: sempre pago (crédito judicial)
-                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
-                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'liminar_complete' });
-                sessionUpdate.paymentOrigin = 'liminar_credit';
-                sessionUpdate.paymentMethod = 'liminar_credit';
-                sessionUpdate.paidAt = new Date();
-            } else if (packageId && !['convenio', 'liminar'].includes(billingType) && !isPerSessionPkg) {
-                // 📦 Pacote pré-pago (full/prepaid): já foi pago no pacote
-                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
-                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
-                sessionUpdate.paymentOrigin = 'package_prepaid';
-                sessionUpdate.paymentMethod = 'package_prepaid';
-                sessionUpdate.paidAt = new Date();
+                LiminarHandler.buildSessionUpdate(sessionUpdate, ctx);
             } else if (billingType === 'convenio') {
-                // 🏥 Convênio: NÃO está pago no dia (recebimento mês subsequente)
-                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'convenio_complete' });
-                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'pending_receipt', { reason: 'convenio_complete' });
-                sessionUpdate.paymentOrigin = 'convenio';
-                sessionUpdate.paymentMethod = 'convenio';
+                ConvenioHandler.buildSessionUpdate(sessionUpdate, ctx);
             } else {
-                // 💰 Per-session: NÃO assumimos pagamento. Payment é fonte de verdade.
-                LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
-                LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, isBalanceOrigin ? 'unpaid' : 'pending', { reason: 'per_session_complete' });
-                sessionUpdate.paymentOrigin = isBalanceOrigin ? 'manual_balance' : 'auto_per_session';
-                sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+                // TODOS os casos de particular: prepaid, per-session, avulso, fiado
+                ParticularHandler.buildSessionUpdate(sessionUpdate, ctx);
             }
             
             await Session.findByIdAndUpdate(
@@ -255,132 +288,144 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         let packageUpdateResult = null;
         if (packageId) {
             // ══════════════════════════════════════════════════════════
-            // SHADOW MODE: valida package.guard vs updatePackageOnComplete
-            // Roda em sessão separada e ABORTA — não afeta dados reais.
-            // Comparar os resultados antes de remover updatePackageOnComplete (Passo 4).
+            // LEGACY PACKAGE UPDATE — DESATIVADO PARA 'particular' E 'liminar'
+            // ParticularHandler.buildPayment é a única fonte de verdade para particular.
+            // LiminarHandler debita LiminarContract diretamente — NÃO toca Package.
+            // ConvenioHandler tem branch 'no_charge' — não altera Package balance.
+            // Mantido APENAS para convenio até remoção total.
             // ══════════════════════════════════════════════════════════
-            let guardShadowResult = null;
-            const shadowSession = await mongoose.startSession();
-            try {
-                await shadowSession.startTransaction();
-                // prepaid fica como 'prepaid' para o guard (determineBillingType mapeia para 'particular')
-                const guardBillingType = packageData?.model === 'prepaid' ? 'prepaid' : billingType;
-                guardShadowResult = await FinancialGuard.execute({
-                    context: 'COMPLETE_SESSION',
-                    billingType: guardBillingType,
-                    payload: {
+            if (billingType === 'convenio') {
+                // ══════════════════════════════════════════════════════════
+                // SHADOW MODE: valida package.guard vs updatePackageOnComplete
+                // Roda em sessão separada e ABORTA — não afeta dados reais.
+                // Comparar os resultados antes de remover updatePackageOnComplete (Passo 4).
+                // ══════════════════════════════════════════════════════════
+                let guardShadowResult = null;
+                const shadowSession = await mongoose.startSession();
+                try {
+                    await shadowSession.startTransaction();
+                    // prepaid fica como 'prepaid' para o guard (determineBillingType mapeia para 'particular')
+                    const guardBillingType = packageData?.model === 'prepaid' ? 'prepaid' : billingType;
+                    guardShadowResult = await FinancialGuard.execute({
+                        context: 'COMPLETE_SESSION',
+                        billingType: guardBillingType,
+                        payload: {
+                            packageId: packageId.toString(),
+                            sessionValue,
+                            paymentOrigin: sessionUpdate?.paymentOrigin || 'auto_per_session',
+                            appointmentId: appointmentId?.toString(),
+                            billingType: guardBillingType
+                        },
+                        session: shadowSession
+                    });
+                    console.log('[CompleteSessionV2][SHADOW] Guard executado', {
                         packageId: packageId.toString(),
-                        sessionValue,
-                        paymentOrigin: sessionUpdate?.paymentOrigin || 'auto_per_session',
-                        appointmentId: appointmentId?.toString(),
-                        billingType: guardBillingType
-                    },
-                    session: shadowSession
-                });
-                console.log('[CompleteSessionV2][SHADOW] Guard executado', {
-                    packageId: packageId.toString(),
-                    sessionsRemaining: guardShadowResult.sessionsRemaining,
-                    newBalance: guardShadowResult.newBalance,
-                    financialStatus: guardShadowResult.financialStatus,
-                    isFinished: guardShadowResult.isFinished
-                });
-            } catch (shadowErr) {
-                guardShadowResult = { error: shadowErr.message };
-                console.error('[CompleteSessionV2][SHADOW] Guard erro (shadow ignorado):', shadowErr.message);
-            } finally {
-                await shadowSession.abortTransaction();
-                shadowSession.endSession();
-            }
-
-            packageUpdateResult = await updatePackageOnComplete(
-                packageId,
-                sessionValue,
-                billingType,
-                mongoSession
-            );
-            console.log(`[CompleteSessionV2] Package ${packageId} atualizado`, packageUpdateResult);
-
-            // Compara guard shadow vs legacy
-            if (guardShadowResult && !guardShadowResult.error) {
-                const divergences = [];
-
-                if (guardShadowResult.sessionsRemaining !== packageUpdateResult.sessionsRemaining) {
-                    divergences.push({
-                        field: 'sessionsRemaining',
-                        guard: guardShadowResult.sessionsRemaining,
-                        legacy: packageUpdateResult.sessionsRemaining
-                    });
-                }
-
-                const legacyIsFinished = packageUpdateResult.sessionsDone >= (packageData?.totalSessions || Infinity);
-                if (guardShadowResult.isFinished !== legacyIsFinished) {
-                    divergences.push({
-                        field: 'isFinished',
-                        guard: guardShadowResult.isFinished,
-                        legacy: legacyIsFinished
-                    });
-                }
-
-                const ctx = {
-                    packageId: packageId.toString(),
-                    patientId: appointment.patient?._id?.toString(),
-                    appointmentId: appointmentId?.toString(),
-                    billingType,
-                    sessionValue,
-                    guard: {
                         sessionsRemaining: guardShadowResult.sessionsRemaining,
                         newBalance: guardShadowResult.newBalance,
                         financialStatus: guardShadowResult.financialStatus,
                         isFinished: guardShadowResult.isFinished
-                    },
-                    legacy: {
-                        sessionsRemaining: packageUpdateResult.sessionsRemaining,
-                        sessionsDone: packageUpdateResult.sessionsDone,
-                        isFinished: legacyIsFinished
-                    }
-                };
-
-                if (divergences.length > 0) {
-                    console.warn('[CompleteSessionV2][SHADOW] ⚠️ DIVERGÊNCIA DETECTADA', { ...ctx, divergences });
-                } else {
-                    console.log('[CompleteSessionV2][SHADOW] ✅ paridade confirmada', ctx);
+                    });
+                } catch (shadowErr) {
+                    guardShadowResult = { error: shadowErr.message };
+                    console.error('[CompleteSessionV2][SHADOW] Guard erro (shadow ignorado):', shadowErr.message);
+                } finally {
+                    await shadowSession.abortTransaction();
+                    shadowSession.endSession();
                 }
+
+                packageUpdateResult = await updatePackageOnComplete(
+                    packageId,
+                    sessionValue,
+                    billingType,
+                    mongoSession
+                );
+                console.log(`[CompleteSessionV2] Package ${packageId} atualizado`, packageUpdateResult);
+
+                // Compara guard shadow vs legacy
+                if (guardShadowResult && !guardShadowResult.error) {
+                    const divergences = [];
+
+                    if (guardShadowResult.sessionsRemaining !== packageUpdateResult.sessionsRemaining) {
+                        divergences.push({
+                            field: 'sessionsRemaining',
+                            guard: guardShadowResult.sessionsRemaining,
+                            legacy: packageUpdateResult.sessionsRemaining
+                        });
+                    }
+
+                    const legacyIsFinished = packageUpdateResult.sessionsDone >= (packageData?.totalSessions || Infinity);
+                    if (guardShadowResult.isFinished !== legacyIsFinished) {
+                        divergences.push({
+                            field: 'isFinished',
+                            guard: guardShadowResult.isFinished,
+                            legacy: legacyIsFinished
+                        });
+                    }
+
+                    const ctx = {
+                        packageId: packageId.toString(),
+                        patientId: appointment.patient?._id?.toString(),
+                        appointmentId: appointmentId?.toString(),
+                        billingType,
+                        sessionValue,
+                        guard: {
+                            sessionsRemaining: guardShadowResult.sessionsRemaining,
+                            newBalance: guardShadowResult.newBalance,
+                            financialStatus: guardShadowResult.financialStatus,
+                            isFinished: guardShadowResult.isFinished
+                        },
+                        legacy: {
+                            sessionsRemaining: packageUpdateResult.sessionsRemaining,
+                            sessionsDone: packageUpdateResult.sessionsDone,
+                            isFinished: legacyIsFinished
+                        }
+                    };
+
+                    if (divergences.length > 0) {
+                        console.warn('[CompleteSessionV2][SHADOW] ⚠️ DIVERGÊNCIA DETECTADA', { ...ctx, divergences });
+                    } else {
+                        console.log('[CompleteSessionV2][SHADOW] ✅ paridade confirmada', ctx);
+                    }
+                }
+            } else {
+                console.log('[CompleteSessionV2] Package update pulado — ParticularHandler é fonte de verdade');
             }
 
             // 2b. Marcar pacote como finished se todas as sessões ativas foram concluídas
-            if (packageUpdateResult?.modified) {
-                const allSessions = await Session.find({ package: packageId }).session(mongoSession).lean();
-                const activeSessions = allSessions.filter(s => s.status !== 'canceled');
-                const completedSessions = allSessions.filter(s => s.status === 'completed');
+            // Roda para TODOS os billingTypes (inclusive particular), pois ParticularHandler
+            // não gerencia lifecycle de status do Package.
+            const pkgAtualParaFinished = await Package.findById(packageId).session(mongoSession).lean();
+            const allSessions = await Session.find({ package: packageId }).session(mongoSession).lean();
+            const activeSessions = allSessions.filter(s => s.status !== 'canceled');
+            const completedSessions = allSessions.filter(s => s.status === 'completed');
 
-                if (activeSessions.length > 0 && completedSessions.length >= activeSessions.length) {
-                    await Package.findByIdAndUpdate(
-                        packageId,
-                        { status: 'finished' },
-                        { session: mongoSession }
-                    );
-                    console.log(`[CompleteSessionV2] ✅ Pacote ${packageId} → finished (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
+            if (activeSessions.length > 0 && completedSessions.length >= activeSessions.length) {
+                await Package.findByIdAndUpdate(
+                    packageId,
+                    { status: 'finished' },
+                    { session: mongoSession }
+                );
+                console.log(`[CompleteSessionV2] ✅ Pacote ${packageId} → finished (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
 
-                    // 🔄 Cancela appointments futuros do pacote que ainda estão pendentes
-                    const cancelResult = await Appointment.updateMany(
-                        {
-                            package: packageId,
-                            operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
-                        },
-                        {
-                            $set: {
-                                operationalStatus: 'canceled',
-                                clinicalStatus: 'canceled',
-                                status: 'canceled',
-                                cancellationReason: 'Pacote finalizado - sessões esgotadas',
-                                updatedAt: new Date()
-                            }
-                        },
-                        { session: mongoSession }
-                    );
-                    if (cancelResult.modifiedCount > 0) {
-                        console.log(`[CompleteSessionV2] 🗑️ ${cancelResult.modifiedCount} appointment(s) futuro(s) cancelado(s) - pacote esgotado`);
-                    }
+                // 🔄 Cancela appointments futuros do pacote que ainda estão pendentes
+                const cancelResult = await Appointment.updateMany(
+                    {
+                        package: packageId,
+                        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+                    },
+                    {
+                        $set: {
+                            operationalStatus: 'canceled',
+                            clinicalStatus: 'canceled',
+                            status: 'canceled',
+                            cancellationReason: 'Pacote finalizado - sessões esgotadas',
+                            updatedAt: new Date()
+                        }
+                    },
+                    { session: mongoSession }
+                );
+                if (cancelResult.modifiedCount > 0) {
+                    console.log(`[CompleteSessionV2] 🗑️ ${cancelResult.modifiedCount} appointment(s) futuro(s) cancelado(s) - pacote esgotado`);
                 }
             }
         }
@@ -405,7 +450,9 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
             const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
             appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
-            appointmentUpdate.$set.balanceAmount = (sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
+            // convenio e liminar: paciente nunca deve balance (paga pelo plano/crédito)
+            const patientOwesBalance = !['convenio', 'liminar'].includes(billingType);
+            appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
             
             console.log(`[CompleteSessionV2] Appointment espelhando Session:`, {
                 isPaid: appointmentUpdate.$set.isPaid,
@@ -413,7 +460,20 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 paymentMethod: appointmentUpdate.$set.paymentMethod
             });
         } else if (!sessionId) {
-            // 🔄 Fallback: sem session, inferir do billingType
+            /**
+             * ⚠️ LEGADO — NÃO UTILIZAR
+             *
+             * Fallback para appointments criados antes da trinidade Session-first.
+             * Hoje TODOS os appointments novos têm Session vinculada.
+             *
+             * 🚫 NÃO USAR para novos fluxos
+             * 🚫 NÃO ALTERAR sem entender o histórico
+             *
+             * ✅ Substituído por: arquitetura Session-first (Appointment + Session + Payment)
+             *
+             * Mantido temporariamente para compatibilidade com dados antigos.
+             * TODO: remover após backfill completo de Session em todos os appointments.
+             */
             const isPaid = billingType === 'liminar';
             LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, isPaid, { reason: 'fallback_no_session' });
             LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, isPaid ? 'paid' : 'pending', { reason: 'fallback_no_session' });
@@ -429,162 +489,31 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             });
         }
 
-        // 💰 CRIAR OU ATUALIZAR PAYMENT — TODA session completed GERA Payment
+        // 💰 CRIAR OU ATUALIZAR PAYMENT — Handler dispatch (novo modelo)
         let paymentCreated = null;
         if (billingType === 'particular' && sessionValue > 0) {
-            const now = new Date();
-
-            // Determinar se é pacote pré-pago já quitado (coberto por crédito)
-            let isPrepaidCovered = false;
-            if (packageId) {
-                const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
-                if (pkgAtual) {
-                    const sessionsDone = pkgAtual.sessionsDone || 0;
-                    const totalPaid = pkgAtual.totalPaid || 0;
-                    const dividaTotal = sessionsDone * sessionValue;
-                    isPrepaidCovered = totalPaid >= dividaTotal;
-                }
-            }
-
-            if (isPrepaidCovered) {
-                // 🟢 PACOTE PRÉ-PAGO QUITADO: não cria Payment (evita duplicação de caixa)
-                // O dinheiro já entrou no momento da compra do pacote (package_receipt).
-                // O ledger package_consumed será registrado abaixo para reconhecimento contábil.
-                console.log(`[CompleteSessionV2] 💳 Sessão coberta por pagamento antecipado — Payment não criado (evita duplicação de caixa)`);
-            } else if (isBalanceOrigin) {
-                // 🟠 ADD TO BALANCE / MANUAL BALANCE: cria Payment pending (dívida do paciente)
-                const [paymentDoc] = await Payment.create([{
-                    patient: appointment.patient?._id,
-                    amount: sessionValue,
-                    status: 'pending',
-                    type: 'service',
-                    serviceType: 'session',
-                    paymentMethod: appointment.paymentMethod || 'cash',
-                    paymentDate: now,
-                    financialDate: now,
-                    description: `Sessão particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment: appointmentId,
-                    session: sessionId,
-                    createdBy: userId,
-                    kind: 'session_payment',
-                    billingType: 'particular'
-                }], { session: mongoSession });
-                paymentCreated = paymentDoc;
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[CompleteSessionV2] 💰 Payment pending criado (addToBalance): ${paymentCreated._id}`);
-            } else {
-                // 🔵 PAGO NO ATO: avulso ou per-session não quitado
-                if (appointment.payment) {
-                    const existingPaymentId = appointment.payment._id || appointment.payment;
-                    paymentCreated = await Payment.findByIdAndUpdate(
-                        existingPaymentId,
-                        {
-                            $set: {
-                                status: 'paid',
-                                paidAt: now,
-                                paymentDate: now,
-                                financialDate: now,
-                                amount: sessionValue,
-                                paymentMethod: appointment.paymentMethod || 'cash',
-                                kind: 'session_payment',
-                                billingType: 'particular',
-                                updatedAt: now
-                            }
-                        },
-                        { session: mongoSession, new: true }
-                    );
-                    console.log(`[CompleteSessionV2] 💰 Payment existente atualizado: ${paymentCreated._id}`);
-                } else {
-                    const [paymentDoc] = await Payment.create([{
-                        patient: appointment.patient?._id,
-                        amount: sessionValue,
-                        status: 'paid',
-                        type: 'service',
-                        serviceType: 'session',
-                        paymentMethod: appointment.paymentMethod || 'cash',
-                        paymentDate: now,
-                        paidAt: now,
-                        financialDate: now,
-                        description: `Sessão realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                        appointment: appointmentId,
-                        session: sessionId,
-                        createdBy: userId,
-                        kind: 'session_payment',
-                        billingType: 'particular'
-                    }], { session: mongoSession });
-                    paymentCreated = paymentDoc;
-                    appointmentUpdate.$set.payment = paymentCreated._id;
-                    console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
-                }
-
-                // 🏦 PACOTE PER-SESSION: atualiza totalPaid e recalcula balance
-                if (packageId && paymentCreated) {
-                    const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
-                    if (pkgAtual && (pkgAtual.model === 'per_session' || pkgAtual.paymentType === 'per-session')) {
-                        const novoTotalPaid = (pkgAtual.totalPaid || 0) + sessionValue;
-                        const novoPaidSessions = (pkgAtual.paidSessions || 0) + 1;
-                        const sessionsDone = pkgAtual.sessionsDone || 0;
-                        const totalSessionDebt = sessionsDone * sessionValue;
-                        const currentBalance = totalSessionDebt - novoTotalPaid;
-                        await Package.findByIdAndUpdate(
-                            packageId,
-                            {
-                                $set: {
-                                    totalPaid: novoTotalPaid,
-                                    paidSessions: novoPaidSessions,
-                                    balance: currentBalance,
-                                    financialStatus: currentBalance > 0.001 ? 'unpaid' : 'paid',
-                                    updatedAt: new Date()
-                                }
-                            },
-                            { session: mongoSession }
-                        );
-                        console.log(`[CompleteSessionV2] 📦 Package per-session atualizado: totalPaid=${novoTotalPaid}, balance=${currentBalance}`);
-                    }
-                }
-            }
+            paymentCreated = await ParticularHandler.buildPayment(appointmentUpdate, ctx);
         } else if (billingType === 'liminar' && sessionValue > 0) {
-            // ⚖️ LIMINAR: debita crédito e cria payment (caixa)
-            const now = new Date();
-            const liminarContractId = appointment.liminarContract?._id || appointment.liminarContract;
-
-            if (liminarContractId) {
-                // 🆕 NOVO FLUXO: LiminarContract desacoplado
-                await LiminarGuard.handle({
-                    context: 'COMPLETE_SESSION',
-                    payload: {
-                        liminarContractId: liminarContractId.toString(),
-                        sessionValue,
-                        appointmentId: appointmentId?.toString()
-                    },
-                    session: mongoSession
-                });
-            }
-            // (sem liminarContractId = fluxo legado: Package.liminarCreditBalance já foi debitado em updatePackageOnComplete)
-
-            const [paymentDoc] = await Payment.create([{
-                patient:         appointment.patient?._id,
-                amount:          sessionValue,
-                status:          'paid',
-                type:            'service',
-                serviceType:     'session',
-                paymentMethod:   'liminar_credit',
-                paymentDate:     now,
-                paidAt:          now,
-                financialDate:   now,   // 🎯 ESSENCIAL — entra no caixa
-                isFromPackage:   false, // 🔒 NUNCA true para liminar
-                description:     `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                appointment:     appointmentId,
-                liminarContract: liminarContractId || null,
-                createdBy:       userId,
-                kind:            'session_payment',
-                billingType:     'liminar'
-            }], { session: mongoSession });
-            paymentCreated = paymentDoc;
-            appointmentUpdate.$set.payment = paymentCreated._id;
-            console.log(`[CompleteSessionV2] 💰 Payment liminar criado: ${paymentCreated._id}`, { liminarContractId });
+            paymentCreated = await LiminarHandler.buildPayment(appointmentUpdate, ctx);
         } else if (packageId && !['convenio', 'liminar'].includes(billingType) && sessionValue > 0) {
-            // 📦 SESSÃO DE PACOTE: payment é registro lógico de consumo (NÃO é entrada de caixa)
+            // ═══════════════════════════════════════════════════════════════
+            // LEGACY PACKAGE FALLBACK — NÃO EVOLUIR
+            //
+            // Este bloco existe apenas para suportar appointments antigos onde:
+            //   - billingType não é 'particular' (ex: 'prepaid', 'therapy', undefined)
+            //   - mas existe packageId
+            //
+            // Em dados novos, billingType é sempre 'particular' e cai no ParticularHandler.
+            // Pacote NÃO é um tipo financeiro — é forma de consumo dentro do particular.
+            //
+            // TODO: remover após backfill completo de billingType nos dados legados.
+            // ═══════════════════════════════════════════════════════════════
+            console.warn('[LEGACY_PACKAGE_FLOW_TRIGGERED] Appointment com packageId mas billingType legado', {
+                appointmentId,
+                billingType,
+                packageId
+            });
+
             const sessionDate = sessionDoc?.date || appointment.date || new Date();
 
             if (appointment.payment) {
@@ -607,86 +536,33 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     },
                     { session: mongoSession, new: true }
                 );
-                console.log(`[CompleteSessionV2] 💰 Payment de pacote atualizado: ${paymentCreated._id}`);
             } else {
                 const [paymentDoc] = await Payment.create([{
-                    patient: appointment.patient?._id,
-                    amount: sessionValue,
-                    status: 'paid',
-                    type: 'service',
-                    serviceType: 'session',
+                    patient:       appointment.patient?._id,
+                    amount:        sessionValue,
+                    status:        'paid',
+                    type:          'service',
+                    serviceType:   'session',
                     paymentMethod: 'package',
-                    paymentDate: sessionDate,
-                    paidAt: new Date(),
-                    billingType: 'particular',
-                    serviceDate: sessionDate,
-                    description: `Sessão de pacote realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment: appointmentId,
-                    session: sessionId,
-                    createdBy: userId,
-                    kind: 'session_payment',
+                    paymentDate:   sessionDate,
+                    paidAt:        new Date(),
+                    billingType:   'particular',
+                    serviceDate:   sessionDate,
+                    description:   `Sessão de pacote realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment:   appointmentId,
+                    session:       sessionId,
+                    createdBy:     userId,
+                    kind:          'session_payment',
                     isFromPackage: true
-                    // 🚫 financialDate omitido — isFromPackage:true impede auto-preenchimento no schema
                 }], { session: mongoSession });
                 paymentCreated = paymentDoc;
                 appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[CompleteSessionV2] 💰 Payment de pacote criado: ${paymentCreated._id}`);
             }
         } else if (billingType === 'convenio') {
-            // 🏥 CONVÊNIO: cria Payment pending para faturamento posterior
-            const now = new Date();
-            const insuranceValue = appointment.insuranceValue || sessionValue || 0;
-
-            if (appointment.payment) {
-                // 🔄 Reutiliza payment existente
-                const existingPaymentId = appointment.payment._id || appointment.payment;
-                paymentCreated = await Payment.findByIdAndUpdate(
-                    existingPaymentId,
-                    {
-                        $set: {
-                            status: 'pending',
-                            billingType: 'convenio',
-                            paymentMethod: 'convenio',
-                            amount: insuranceValue,
-                            serviceDate: now,
-                            'insurance.provider': appointment.insuranceProvider || 'Convênio',
-                            'insurance.authorizationCode': appointment.authorizationCode || '',
-                            'insurance.status': 'pending_billing',
-                            'insurance.grossAmount': insuranceValue,
-                            updatedAt: now
-                        }
-                    },
-                    { session: mongoSession, new: true }
-                );
-                console.log(`[CompleteSessionV2] 💰 Payment convênio atualizado: ${paymentCreated._id}`);
-            } else {
-                // 🆕 Cria novo payment
-                const [paymentDoc] = await Payment.create([{
-                    patient: appointment.patient?._id,
-                    amount: insuranceValue,
-                    status: 'pending',
-                    type: 'service',
-                    serviceType: 'session',
-                    paymentMethod: 'convenio',
-                    paymentDate: now,
-                    billingType: 'convenio',
-                    insurance: {
-                        provider: appointment.insuranceProvider || 'Convênio',
-                        authorizationCode: appointment.authorizationCode || '',
-                        status: 'pending_billing',
-                        grossAmount: insuranceValue
-                    },
-                    serviceDate: now,
-                    description: `Sessão convênio realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment: appointmentId,
-                    session: sessionId,
-                    createdBy: userId,
-                    kind: 'session_payment'
-                }], { session: mongoSession });
-                paymentCreated = paymentDoc;
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[CompleteSessionV2] 💰 Payment convênio criado: ${paymentCreated._id}`);
-            }
+            // REPLACED BY: ConvenioHandler.buildPayment — PHASE: payment resolution
+            // LEGACY (kept for reference — ver handlers/convenioHandler.js para lógica completa):
+            // guia search, consumeSession, paymentData build, Payment.create/findByIdAndUpdate
+            paymentCreated = await ConvenioHandler.buildPayment(appointmentUpdate, ctx);
         }
 
         // Sync paymentStatus from payment for service types without Session (evaluation, tongue_tie_test, etc)
@@ -917,6 +793,17 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         }
         throw error;
     } finally {
+        // 🔓 Libera lock (sempre, mesmo em caso de erro)
+        if (appointmentId) {
+            try {
+                await Appointment.updateOne(
+                    { _id: appointmentId },
+                    { $set: { isProcessing: false }, $unset: { processingStartedAt: 1 } }
+                );
+            } catch (unlockErr) {
+                console.error(`[CompleteSessionV2] ⚠️ Erro ao liberar lock (não crítico):`, unlockErr.message);
+            }
+        }
         if (!externalSession) {
             mongoSession.endSession();
         }
@@ -924,12 +811,19 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 }
 
 /**
- * Atualiza package na completação de sessão
- * 
- * Regras:
- * - sessionsDone++
- * - sessionsRemaining-- 
- * - balance: depende do tipo (particular += value, outros: sem mudança imediata)
+ * ⚠️ LEGADO — NÃO UTILIZAR
+ *
+ * Esta função fazia parte do fluxo antigo de atualização de Package no complete.
+ * Hoje substituída pelos handlers:
+ * - ParticularHandler (prepaid, per-session, avulso, fiado)
+ * - LiminarHandler
+ * - ConvenioHandler
+ *
+ * 🚫 NÃO USAR para novos fluxos
+ * 🚫 NÃO ALTERAR sem entender o histórico
+ *
+ * Mantida temporariamente para billingType !== 'particular' (dados legados).
+ * TODO: remover após backfill completo de billingType nos dados legados.
  */
 async function updatePackageOnComplete(packageId, sessionValue, billingType, session) {
     console.log(`[updatePackageOnComplete] Iniciando`, {
@@ -1052,30 +946,35 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
  * - full (legado) -> prepaid
  */
 function determineBillingType(appointment, packageData) {
-    // 🎯 PRIORIDADE 1: Package model/type (fonte de verdade do domínio billing)
-    // O pacote SEMPRE tem prioridade sobre o appointment — evita erros quando
-    // appointment foi criado com billingType errado (ex: particular em pacote convenio)
+    // 🎯 PRIORIDADE 0: LiminarContract vinculado diretamente (NOVO MODELO)
+    // Sempre vence sobre packageData e billingType — é a fonte de verdade real.
+    if (appointment?.liminarContract) {
+        return 'liminar';
+    }
+
+    // 🎯 PRIORIDADE 1: Package model/type (fallback legado)
+    // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+    // Esses fallbacks só existem para dados antigos (backfill pendente).
+    // Fonte de verdade: appointment.liminarContract
     if (packageData?.model) {
-        if (packageData.model === 'convenio') return 'convenio';
-        if (packageData.model === 'liminar') return 'liminar';
+        if (packageData.model === 'liminar') return 'liminar'; // ⚠️ LEGADO
         if (packageData.model === 'prepaid') return 'particular'; // 📦 pacote pré-pago → particular
         if (packageData.model === 'per_session') return 'particular';
     }
     if (packageData?.type) {
-        if (packageData.type === 'convenio') return 'convenio';
-        if (packageData.type === 'liminar') return 'liminar';
+        if (packageData.type === 'liminar') return 'liminar'; // ⚠️ LEGADO
         if (packageData.type === 'therapy') return 'particular';
     }
     if (packageData?.paymentType) {
         if (packageData.paymentType === 'per-session') return 'particular';
         if (packageData.paymentType === 'full') return 'particular';
     }
-    
+
     // 🎯 PRIORIDADE 2: billingType do appointment (sem package)
     if (appointment?.billingType) {
         return appointment.billingType;
     }
-    
+
     // Default
     console.warn(`[CompleteSessionV2] 🚨 FALLBACK CRÍTICO: Package sem billingType, model, type ou paymentType definidos. Assumindo 'particular'. Verifique dados do package.`);
     return 'particular';

@@ -158,6 +158,7 @@ export async function getInsuranceReceivables(req, res) {
         // Adicionar payment
         patientGroup.payments.push({
           paymentId: payment?._id?.toString() || sessionIdStr,
+          sessionId: sessionIdStr,
           grossAmount: grossAmount,
           status: payment?.insurance?.status || 'pending_billing',
           paymentDate: session.date,
@@ -239,6 +240,7 @@ async function _processPaymentsLegacy(res, payments, provider) {
     
     patientGroup.payments.push({
       paymentId: payment._id.toString(),
+      sessionId: payment.session?._id?.toString() || payment.session?.toString(),
       grossAmount: grossAmount,
       status: payment.insurance?.status || 'pending_billing',
       paymentDate: payment.paymentDate,

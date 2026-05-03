@@ -112,6 +112,17 @@ export function mapAppointmentDTO(appointment) {
         payment: appointment.payment || null,
         session: appointment.session || null,
         appointmentId: appointment.appointmentId || null,
+        liminarContract: appointment.liminarContract && typeof appointment.liminarContract === 'object'
+            ? {
+                  _id: appointment.liminarContract._id?.toString?.(),
+                  processNumber: appointment.liminarContract.processNumber || null,
+                  court: appointment.liminarContract.court || null,
+                  totalCredit: appointment.liminarContract.totalCredit ?? null,
+                  creditBalance: appointment.liminarContract.creditBalance ?? null,
+                  usedCredit: appointment.liminarContract.usedCredit ?? null,
+                  status: appointment.liminarContract.status || null,
+              }
+            : null,
 
         // Textos
         notes: appointment.notes || appointment.observations || '',

@@ -478,6 +478,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 }
             }
 
+            // ⚠️ V1 LEGADO — Cria Payment no agendamento (V2 NÃO faz isso)
             // 🔹 amount > 0 → fluxo financeiro de pagamento de pacote (mantido)
             const mongoSession = await mongoose.startSession();
             mongoSession.startTransaction();
@@ -492,6 +493,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                     });
                 }
 
+                // ⚠️ V1 LEGADO: Pre-cria Payment no agendamento. V2 deixa para o handler no complete.
                 const parentPayment = await Payment.create(
                     [
                         {
@@ -678,6 +680,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             };
 
 
+            // ⚠️ V1 LEGADO: Pre-cria Payment no agendamento. V2 deixa para o handler no complete.
             console.log('[POST APPOINTMENT] Criando pagamento com dados:', paymentData);
             const payment = await Payment.create(paymentData);
             createdPaymentId = payment._id;
@@ -751,6 +754,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 updatedAt: currentDate,
             };
 
+            // ⚠️ V1 LEGADO: Pre-cria Payment no agendamento. V2 deixa para o handler no complete.
             const payment = await Payment.create(paymentData);
             createdPaymentId = payment._id;
 
@@ -959,6 +963,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type liminarProcessNumber liminarCourt' })
+            .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
             .sort({ date: -1, time: 1 }) // Mais recentes primeiro, depois por hora
@@ -1046,6 +1051,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             .populate('patient', 'fullName phone email dateOfBirth')
             .populate('doctor', 'fullName specialty')
             .populate('package', 'totalSessions sessionsUsed')
+            .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
             .populate('session', 'status paymentStatus')
             .populate('payment', 'status amount paymentMethod');
 
@@ -1953,6 +1959,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             console.log(`[complete] 📦 Package carregado:`, {
                 type: packageDoc?.type,
                 sessionValue: packageDoc?.sessionValue,
+                // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
                 isLiminar: packageDoc?.type === 'liminar'
             });
 
@@ -2146,8 +2153,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
         // ============================================================
 
-        // ⚖️ RECONHECER RECEITA LIMINAR (se for pacote liminar)
-        console.log(`[complete] 🔍 Verificando liminar: packageId=${packageId}, type=${packageDoc?.type}, shouldIncrement=${shouldIncrementPackage}`);
+        // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+        // Reconhecimento de receita via Package está desativado.
+        // Liminar agora usa LiminarContract + Payment.
+        // TODO: remover após backfill completo.
+        console.log(`[complete] 🔍 Verificando liminar (LEGADO): packageId=${packageId}, type=${packageDoc?.type}, shouldIncrement=${shouldIncrementPackage}`);
         if (packageId && packageDoc?.type === 'liminar' && shouldIncrementPackage) {
             try {
                 console.log(`[complete] ⚖️ Reconhecendo receita liminar... (${Date.now() - startTime}ms)`);

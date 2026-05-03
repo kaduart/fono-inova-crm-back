@@ -158,6 +158,7 @@ const appointmentSchema = new mongoose.Schema({
   insuranceProvider: { type: String, default: null },
   insuranceValue: { type: Number, min: 0, default: 0 },
   authorizationCode: { type: String, default: null },
+  insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
 
   // ─── REFERÊNCIAS ───────────────────────────────────────────
   payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: false },
@@ -165,6 +166,7 @@ const appointmentSchema = new mongoose.Schema({
   package: { type: mongoose.Schema.Types.ObjectId, ref: 'Package' },
   liminarContract:  { type: mongoose.Schema.Types.ObjectId, ref: 'LiminarContract',  default: null },
   therapeuticPlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'TherapeuticPlan',  default: null },
+  insurancePlan:    { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',    default: null },
   planVersion:      { type: Number, default: null },
   advancedSessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
   appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: false, description: 'ID do appointment real criado a partir deste pré-agendamento' },
@@ -278,6 +280,18 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     index: true,
     description: 'ID de correlação para rastreamento da transação de conclusão'
+  },
+
+  // 🔒 LOCK de processamento (anti duplo clique / retry)
+  isProcessing: {
+    type: Boolean,
+    default: false,
+    description: 'Bloqueio temporal durante execução do complete'
+  },
+  processingStartedAt: {
+    type: Date,
+    default: null,
+    description: 'Timestamp do início do processamento para timeout de recovery'
   },
   
   // Campos para saldo devedor (manual_balance)

@@ -172,12 +172,28 @@ function createPackageData(data) {
     date: date ? new Date(date) : new Date()
   };
 
-  // 1️⃣ CONVÊNIO
+  /**
+   * ⚠️ LEGADO — NÃO UTILIZAR
+   *
+   * Blocos de convênio e liminar via Package nunca executam em dados novos.
+   * O entry block (linha ~429) rejeita type !== 'package' com 400.
+   *
+   * 🚫 NÃO USAR para novos fluxos
+   * 🚫 NÃO ALTERAR sem entender o histórico
+   *
+   * ✅ Substituído por:
+   * - /api/v2/insurance-guides (convênio)
+   * - /api/v2/liminar-contracts (liminar)
+   *
+   * Mantido temporariamente para compatibilidade com dados legados.
+   * TODO: remover após backfill completo.
+   */
+  // 1️⃣ CONVÊNIO (legado)
   if (type === 'insurance' || type === 'convenio') {
     return {
       ...baseData,
       type: 'convenio',
-      model: 'convenio',  // 🎯 CAMPO V2 OBRIGATÓRIO
+      model: 'convenio',
       insuranceGuide: insuranceGuideId,
       insuranceProvider,
       sessionValue: sessionValue || 0,
@@ -190,13 +206,15 @@ function createPackageData(data) {
     };
   }
 
-  // 4️⃣ LIMINAR
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // Mantido apenas para compatibilidade de dados antigos.
+  // TODO: remover após backfill completo.
   if (type === 'legal' || type === 'liminar') {
     const calculatedTotal = totalValue || (sessionValue * totalSessions);
     return {
       ...baseData,
       type: 'liminar',
-      model: 'liminar',  // 🎯 CAMPO V2 OBRIGATÓRIO
+      model: 'liminar',
       liminarProcessNumber,
       liminarCourt,
       liminarExpirationDate: liminarExpirationDate || null,
@@ -205,13 +223,13 @@ function createPackageData(data) {
       liminarTotalCredit: calculatedTotal,
       liminarCreditBalance: calculatedTotal,
       recognizedRevenue: 0,
-      sessionValue: sessionValue || 150, // ⚖️ Liminar precisa de valor para calcular crédito por sessão!
+      sessionValue: sessionValue || 150,
       totalValue: calculatedTotal,
       totalPaid: 0,
       balance: 0,
       financialStatus: 'unpaid',
       paymentType: 'full',
-      paymentMethod: 'liminar_credit'  // ⚖️ Forma de pagamento para liminar (não é 'liminar')
+      paymentMethod: 'liminar_credit'
     };
   }
 
@@ -255,7 +273,8 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     clinicalStatus: 'pending',
     paymentStatus: pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid',
     paymentOrigin: pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid',
-    billingType: pkg.type === 'convenio' ? 'convenio' : 
+    // ⚠️ LEGADO: pkg.type 'convenio'|'liminar' nunca ocorre em dados novos
+    billingType: pkg.type === 'convenio' ? 'convenio' :
                  pkg.type === 'liminar' ? 'liminar' : 'particular',
     sessionValue: pkg.sessionValue || 0,
     isFirstAppointment: index === 0
@@ -285,13 +304,14 @@ async function createSessionsBatch(pkg, appointments, mongoSession) {
     specialty: pkg.specialty,
     status: 'scheduled',
     // 🎯 V2: Usar model (prepaid vs per_session) em vez de paymentType
-    // ⚖️ Liminar e Prepaid = já pagos | Per_session = pendente
+    // ⚠️ LEGADO: 'liminar' e 'convenio' em pkg.model são dados antigos.
+    // Em dados novos, model é sempre 'prepaid' ou 'per_session'.
     isPaid: ['prepaid', 'liminar', 'convenio'].includes(pkg.model),
     paymentStatus: pkg.model === 'per_session' ? 'unpaid' : 'package_paid',
-    paymentOrigin: pkg.model === 'per_session' 
-      ? 'auto_per_session' 
-      : pkg.model === 'liminar' 
-        ? 'liminar_credit' 
+    paymentOrigin: pkg.model === 'per_session'
+      ? 'auto_per_session'
+      : pkg.model === 'liminar'
+        ? 'liminar_credit'
         : 'package_prepaid',
     visualFlag: pkg.model === 'per_session' ? 'pending' : 'ok',
     paymentMethod: pkg.model === 'liminar' ? 'liminar_credit' : pkg.paymentMethod
@@ -426,12 +446,12 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
-  if (!type || !['insurance', 'package', 'legal', 'convenio', 'liminar'].includes(type)) {
+  if (!type || !['package'].includes(type)) {
     await mongoSession.endSession();
     return res.status(400).json({
       success: false,
       errorCode: 'INVALID_TYPE',
-      message: 'type deve ser: insurance, package, legal, convenio, ou liminar'
+      message: 'type=package é o único suportado. Use /api/v2/insurance-guides para convênio ou /api/v2/liminar-contracts para liminar.'
     });
   }
 
@@ -466,6 +486,8 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // Essa validação só existe para compatibilidade. Não criar novos packages liminar.
   if ((type === 'legal' || type === 'liminar') && !req.body.liminarProcessNumber) {
     await mongoSession.endSession();
     return res.status(400).json({

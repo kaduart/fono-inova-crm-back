@@ -252,6 +252,7 @@ export async function completeSessionEventDriven(appointmentId, options = {}) {
 function determinePaymentOrigin({ addToBalance, package: pkg, appointment }) {
     if (addToBalance) return 'manual_balance';
     if (pkg?.type === 'convenio') return 'convenio';
+    // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
     if (pkg?.type === 'liminar') return 'liminar';
     if (pkg?.paymentType === 'per-session') return 'auto_per_session';
     if (pkg) return 'package_prepaid';

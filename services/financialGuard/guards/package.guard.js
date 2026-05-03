@@ -105,12 +105,13 @@ async function handleCancelAppointment({ payload, session }) {
     }
   }
 
-  // 3. Se é liminar, restaura crédito
-  const isLiminar = pkg.type === 'liminar';
-  if (isLiminar && sessionValue > 0) {
-    update.$inc.liminarCreditBalance = sessionValue;
-    console.log('[PackageGuard] Restaurando crédito liminar', { packageId, sessionValue });
-  }
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // O crédito liminar é gerenciado pelo LiminarContract + LiminarGuard.
+  // Package.liminarCreditBalance está congelado.
+  // const isLiminar = pkg.type === 'liminar';
+  // if (isLiminar && sessionValue > 0) {
+  //   update.$inc.liminarCreditBalance = sessionValue;
+  // }
 
   const result = await Package.findOneAndUpdate(
     { 
@@ -209,20 +210,15 @@ async function handleCompleteSession({ payload, session }) {
     throw new Error('PACKAGE_NO_CREDIT_AVAILABLE');
   }
 
-  // ============================================================
-  // GAP 1 — LIMINAR: valida e decrementa crédito judicial
-  // ============================================================
-  if (billingType === 'liminar' && sessionValue > 0) {
-    const creditAtual = pkg.liminarCreditBalance || 0;
-    if (creditAtual < sessionValue) {
-      throw new Error(
-        `LIMINAR_NO_CREDITS: Crédito insuficiente. Disponível: ${creditAtual}, Necessário: ${sessionValue}`
-      );
-    }
-    console.log('[PackageGuard][LIMINAR] Consumindo crédito judicial', {
-      packageId, before: creditAtual, after: creditAtual - sessionValue
-    });
-  }
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // Validação de crédito liminar está no LiminarGuard.
+  // Package não deve rejeitar complete por falta de crédito liminar.
+  // if (billingType === 'liminar' && sessionValue > 0) {
+  //   const creditAtual = pkg.liminarCreditBalance || 0;
+  //   if (creditAtual < sessionValue) {
+  //     throw new Error(`LIMINAR_NO_CREDITS: ...`);
+  //   }
+  // }
 
   // Prepara update principal
   const update = {
@@ -241,10 +237,11 @@ async function handleCompleteSession({ payload, session }) {
     console.log('[PackageGuard] Cobrando per-session', { packageId, amountCharged });
   }
 
-  // Liminar: decrementa crédito judicial
-  if (billingType === 'liminar' && sessionValue > 0) {
-    update.$inc.liminarCreditBalance = -sessionValue;
-  }
+  // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+  // Crédito é debitado do LiminarContract, não do Package.
+  // if (billingType === 'liminar' && sessionValue > 0) {
+  //   update.$inc.liminarCreditBalance = -sessionValue;
+  // }
 
   const result = await Package.findOneAndUpdate(
     {

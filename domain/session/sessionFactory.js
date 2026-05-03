@@ -117,9 +117,24 @@ export function buildInsuranceSession(appointment, options = {}) {
     });
 }
 
+/**
+ * Cria uma Session para liminar (crédito judicial)
+ */
+export function buildLiminarSession(appointment, options = {}) {
+    return buildSessionFromAppointment(appointment, {
+        status: options.status || 'scheduled',
+        isPaid: false,
+        paymentStatus: 'pending',
+        paymentOrigin: 'liminar_credit',
+        visualFlag: 'pending',
+        ...options
+    });
+}
+
 export default {
     buildSessionFromAppointment,
     buildPackageSession,
     buildIndividualSession,
-    buildInsuranceSession
+    buildInsuranceSession,
+    buildLiminarSession
 };

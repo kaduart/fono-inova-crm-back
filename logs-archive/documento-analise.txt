@@ -1,171 +1,686 @@
-curl 'http://localhost:5000/api/v2/liminar-contracts/69f355dc7d1820b25cfdb13f/plans/69f356bc7d1820b25cfdb152/generate-sessions' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
-  -H 'Connection: keep-alive' \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1777559836080_iy56slg1y' \
-  --data-raw '{"startDate":"2026-04-30","endDate":"2026-05-28"}'
+Perfeito — agora sim você saiu do modo “infra em chamas” e entrou no modo **produto de verdade**.
 
-  {
-    "created": 0,
-    "skipped": 11,
-    "total": 11,
-    "totalCost": 2200,
-    "saldo": 9999.699999999999,
-    "saldoAposTudo": 7799.699999999999
+E aqui é importante ser bem direto:
+
+> 🔥 “produto” não é mais mexer no backend core
+> é **transformar esse sistema estável em fluxo de operação clínica mais eficiente**
+
+---
+
+# 🧭 O QUE É “PRODUTO” NO SEU CASO
+
+No seu sistema, produto = **reduzir trabalho humano + aumentar conversão + melhorar operação da clínica**
+
+Não é arquitetura. Não é refactor. É impacto no dia a dia.
+
+---
+
+# 🚀 3 FRENTES DE PRODUTO (ORDEM REAL DE VALOR)
+
+Vou te colocar do mais impactante pro mais “nice to have”:
+
+---
+
+# 🟢 1. UX DE AGENDAMENTO (MAIOR IMPACTO)
+
+Isso aqui é onde você ganha dinheiro e eficiência.
+
+## O que entra aqui:
+
+### ✔ fluxo de agenda inteligente
+
+* sugerir horários automaticamente
+* evitar conflito visual/operacional
+* mostrar disponibilidade real do médico
+
+### ✔ agendamento em 1 clique
+
+* secretaria não “monta” agenda
+* só confirma sugestão do sistema
+
+### ✔ contexto do paciente no modal
+
+* dívida
+* pacote ativo
+* convênio
+* sessões restantes
+
+👉 isso reduz erro humano direto
+
+---
+
+# 🟡 2. AUTOMAÇÕES (ESCALA OPERACIONAL)
+
+Aqui você reduz custo de operação.
+
+## Exemplos reais:
+
+### 💬 WhatsApp automático
+
+* lembrete de sessão
+* confirmação de presença
+* cobrança de faltas
+* alerta de fim de pacote
+
+### 🔔 inteligência de follow-up
+
+* paciente não voltou em X dias → dispara mensagem
+* pacote quase acabando → alerta automático
+
+### 📊 alertas internos
+
+* “convênio com guia quase vencendo”
+* “paciente sem sessão há X dias”
+
+---
+
+# 🔵 3. INTELIGÊNCIA FINANCEIRA (EVOLUÇÃO DO CASHFLOW)
+
+Agora que o core está estável:
+
+### 📈 insights reais
+
+* receita por profissional
+* taxa de comparecimento
+* eficiência de pacote
+* conversão convênio → retorno
+
+### 📊 visão administrativa
+
+* “quanto dinheiro está preso em convênio”
+* “quanto falta receber por guia”
+
+---
+
+# 🧠 RESUMO SIMPLES (SEM ENFEITE)
+
+## ❌ não é mais:
+
+* Session
+* Payment
+* completeSession
+* desacoplamento
+
+## ✔ agora é:
+
+* agendar melhor
+* operar melhor
+* cobrar melhor
+* reter melhor
+
+---
+
+# 💡 O MELHOR PRÓXIMO PASSO PRA VOCÊ (REALMENTE)
+
+Se eu fosse você, eu escolheria isso:
+
+## 🟢 COMEÇAR PELO UX DE AGENDAMENTO
+
+Porque:
+
+* já usa seu core estável
+* gera impacto imediato na clínica
+* reduz erro humano
+* aumenta eficiência da secretaria
+* é visível pro cliente final
+
+---
+
+# ⚡ FRASE-CHAVE DO MOMENTO
+
+> “O sistema já está correto. Agora ele precisa ficar rápido, intuitivo e automático.”
+
+---
+
+Se quiser, no próximo passo eu posso te desenhar:
+
+## 🔥 “Agenda inteligente versão 1”
+
+* fluxo ideal de clique
+* modal perfeito de agendamento
+* regras automáticas de sugestão de horário
+* integração com convênio/pacote sem esforço da secretária
+
+Só me fala: **UX de agenda primeiro ou automações?**
+
+
+
+
+Fechado — agora você vai entrar na parte que realmente muda operação de clínica: **agenda inteligente de verdade**, não só calendário com CRUD.
+
+Vou te desenhar isso de forma objetiva, já pensando no seu sistema atual (Appointments + Session + Payment já resolvidos).
+
+---
+
+# 🧭 🟢 AGENDA INTELIGENTE v1 (PRODUTO)
+
+## 🎯 OBJETIVO
+
+Transformar a secretaria de:
+
+> “preencher agenda manualmente”
+
+para
+
+> “confirmar sugestões do sistema em 1 clique”
+
+---
+
+# 🧠 1. NOVO CONCEITO CENTRAL
+
+## Hoje (ruim)
+
+* usuário escolhe médico
+* escolhe dia
+* escolhe horário manualmente
+* valida conflito depois
+
+---
+
+## Amanhã (certo)
+
+* usuário escolhe **paciente**
+* sistema sugere horários válidos
+* secretaria só confirma
+
+---
+
+# ⚙️ 2. MOTOR DE SUGESTÃO DE HORÁRIOS
+
+Esse é o coração da agenda inteligente.
+
+## Entrada:
+
+```txt
+patientId
+doctorId
+serviceType
+dateRange (opcional)
+```
+
+---
+
+## Saída:
+
+```ts
+SuggestedSlot {
+  date: string
+  time: string
+  doctorId: string
+  score: number
+  reason: string
 }
+```
+
+---
+
+## 🧠 Score (inteligência simples v1):
+
+### +100 → horário livre real
+
+### +50 → dentro do horário preferido do médico
+
+### +30 → paciente já veio nesse horário antes
+
+### -100 → conflito
+
+### -20 → horário fora do padrão da clínica
+
+---
+
+# 📊 3. REGRAS REAIS DO SEU SISTEMA
+
+Você já tem dados suficientes:
+
+## ✔ Session
+
+* duração real
+* histórico de comparecimento
+
+## ✔ Appointment
+
+* horários ocupados
+
+## ✔ Patient
+
+* padrão de retorno
+
+## ✔ Doctor availability
+
+* agenda base
+
+---
+
+# 🧩 4. FLUXO NOVO DE AGENDAMENTO
+
+## PASSO 1 — selecionar paciente
+
+abre painel lateral com:
+
+* convênio ativo
+* pacote ativo
+* sessões restantes
+* última consulta
+
+---
+
+## PASSO 2 — sistema sugere slots
+
+Exemplo:
+
+```
+🟢 09:00 - Hoje (alta chance de comparecimento)
+🟢 14:00 - Hoje (horário padrão paciente)
+🟡 16:30 - Amanhã (alternativo)
+```
+
+---
+
+## PASSO 3 — clique único
+
+Secretaria só clica:
+
+> “Agendar este horário”
+
+---
+
+## PASSO 4 — backend já resolve tudo
+
+Seu core atual entra aqui:
+
+* Appointment criado
+* Session criada
+* Payment criado
+* tudo linkado
+
+✔ você NÃO muda core
+✔ só muda UX + orquestração
+
+---
+
+# 🧠 5. COMPONENTES FRONTEND NOVOS
+
+## 🟦 1. SmartAgendaPanel
+
+* aparece ao selecionar paciente
+* mostra contexto + sugestões
+
+---
+
+## 🟦 2. SlotSuggestionCard
+
+Cada slot:
+
+```
+09:00
+Alta chance de comparecimento
+[ Agendar ]
+```
+
+---
+
+## 🟦 3. AvailabilityHeatmap (opcional v2)
+
+* dia com cores:
+
+  * verde = livre
+  * amarelo = quase cheio
+  * vermelho = cheio
+
+---
+
+# ⚙️ 6. BACKEND NOVO (MÍNIMO NECESSÁRIO)
+
+## Endpoint:
+
+```http
+POST /api/v2/agenda/suggestions
+```
+
+---
+
+## Service:
+
+```ts
+generateSuggestedSlots(patientId, doctorId)
+```
+
+---
+
+## lógica:
+
+1. buscar disponibilidade do médico
+2. remover horários com conflito (Appointment existente)
+3. calcular score
+4. ordenar
+5. retornar top N (ex: 5 slots)
+
+---
+
+# 🔥 7. O “GANHO REAL” DISSO
+
+## Hoje:
+
+* secretaria pensa
+* sistema executa
+
+---
+
+## Depois:
+
+* sistema pensa
+* secretaria aprova
+
+---
+
+# 💰 IMPACTO DIRETO NA CLÍNICA
+
+✔ menos erro de agendamento
+✔ menos buraco na agenda
+✔ mais ocupação do médico
+✔ menos cancelamento
+✔ mais previsibilidade financeira
+
+---
+
+# 🧭 8. ORDEM DE IMPLEMENTAÇÃO (SEM OVERENGINEERING)
+
+## Fase 1 (rápida)
+
+* endpoint de sugestão
+* UI simples de slots
+
+## Fase 2
+
+* score inteligente
+* histórico de paciente
+
+## Fase 3
+
+* IA leve de otimização de agenda
+
+---
+
+# ⚡ RESUMO FINAL
+
+Você já resolveu:
+
+> 🧱 infraestrutura financeira (Session / Payment / Cashflow)
+
+Agora você vai construir:
+
+> 🧠 inteligência operacional (agenda que pensa)
+
+---
+
+Se quiser, no próximo passo eu posso te entregar:
+
+## 👉 o endpoint completo `/agenda/suggestions`
+
+com lógica já adaptada pro teu schema real (Appointment + DoctorAgendaCalendar + availability)
+
+Só me fala: **“backend first” ou “frontend first”**
 
 
 
 
-curl 'http://localhost:5000/api/v2/liminar-contracts?patientId=69dd3853091fb7cb471c20b4' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"442-d5g8RxaXtnRTkHPjD5yIw0YjFxA"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1777559836736_5q6uw26t4'
-  {
-    "contracts": [
-        {
-            "_id": "69f355dc7d1820b25cfdb13f",
-            "patient": "69dd3853091fb7cb471c20b4",
-            "doctor": "69d423729887d617e19a5817",
-            "processNumber": null,
-            "court": null,
-            "expirationDate": null,
-            "mode": "hybrid",
-            "authorized": true,
-            "totalCredit": 10000,
-            "creditBalance": 9999.699999999999,
-            "usedCredit": 0.30000000000000004,
-            "creditHistory": [
-                {
-                    "amount": 1,
-                    "type": "initial",
-                    "reason": "contract_created",
-                    "appointmentId": null,
-                    "createdAt": "2026-04-30T13:15:08.847Z",
-                    "createdBy": null
-                },
-                {
-                    "amount": 0.1,
-                    "type": "debit",
-                    "reason": "session_completed",
-                    "appointmentId": "69f3571f384deec9c9e85e1b",
-                    "createdAt": "2026-04-30T13:40:04.298Z",
-                    "createdBy": null
-                },
-                {
-                    "amount": 0.1,
-                    "type": "debit",
-                    "reason": "session_completed",
-                    "appointmentId": "69f3571f384deec9c9e85e1e",
-                    "createdAt": "2026-04-30T14:01:00.595Z",
-                    "createdBy": null
-                },
-                {
-                    "amount": 0.1,
-                    "type": "debit",
-                    "reason": "session_completed",
-                    "appointmentId": "69f3571f384deec9c9e85e1c",
-                    "createdAt": "2026-04-30T14:25:37.978Z",
-                    "createdBy": null
-                }
-            ],
-            "status": "active",
-            "plans": [
-                "69f356bc7d1820b25cfdb152"
-            ],
-            "idempotencyKey": null,
-            "createdAt": "2026-04-30T13:15:08.853Z",
-            "updatedAt": "2026-04-30T14:25:37.979Z",
-            "__v": 0
-        }
-    ]
+Perfeito — vou te entregar isso **direto no formato implementável**, sem teoria.
+
+Vamos começar pelo **BACKEND FIRST (base do produto)** porque sem isso o frontend vira só UI bonita sem inteligência.
+
+---
+
+# 🧠 🟢 SMART AGENDA v1 — BACKEND (CORE)
+
+## 🎯 OBJETIVO
+
+Gerar sugestões reais de horários baseadas em:
+
+* disponibilidade do médico
+* conflitos de Appointment
+* padrão operacional da clínica
+* contexto do paciente
+
+---
+
+# 📡 1. ENDPOINT
+
+```http
+POST /api/v2/agenda/suggestions
+```
+
+---
+
+## 📥 INPUT
+
+```ts id="req1"
+{
+  doctorId: string,
+  patientId: string,
+  serviceType?: string,
+  dateFrom?: string,
+  dateTo?: string
 }
+```
 
-curl 'http://localhost:5000/api/v2/liminar-contracts/69f355dc7d1820b25cfdb13f/plans/active' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU1ODYxMSwiZXhwIjoxNzc3NTYyMjExfQ.AUIOAQurDE6sVTAA1AAo2kw4CKkdHiCq4o-1xVHem04' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"295-Ar2S01kU9I1pwj7Ol4gsSw8YX6Q"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
-  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1777559837339_44ys92a5v'
+---
 
-  {
-    "plan": {
-        "_id": "69f356bc7d1820b25cfdb152",
-        "patient": "69dd3853091fb7cb471c20b4",
-        "liminarContract": "69f355dc7d1820b25cfdb13f",
-        "version": 1,
-        "startDate": "2026-04-30T13:18:51.788Z",
-        "endDate": null,
-        "status": "active",
-        "therapies": {
-            "fonoaudiologia": {
-                "slots": [
-                    {
-                        "dayOfWeek": 5,
-                        "time": "15:00"
-                    }
-                ],
-                "sessionValue": 200,
-                "sessionDurationMinutes": 40
-            },
-            "terapia_ocupacional": {
-                "slots": [
-                    {
-                        "dayOfWeek": 1,
-                        "time": "15:40"
-                    }
-                ],
-                "sessionValue": 200,
-                "sessionDurationMinutes": 40
-            },
-            "psicologia": {
-                "slots": [
-                    {
-                        "dayOfWeek": 1,
-                        "time": "16:20"
-                    }
-                ],
-                "sessionValue": 200,
-                "sessionDurationMinutes": 40
-            }
-        },
-        "notes": null,
-        "createdBy": null,
-        "createdAt": "2026-04-30T13:18:52.118Z",
-        "updatedAt": "2026-04-30T13:18:52.118Z",
-        "__v": 0
+## 📤 OUTPUT
+
+```ts id="res1"
+{
+  success: true,
+  data: [
+    {
+      date: "2026-05-01",
+      time: "09:00",
+      doctorId: "...",
+      score: 92,
+      reason: "Slot livre + histórico positivo do paciente"
     }
+  ]
 }
+```
+
+---
+
+# ⚙️ 2. SERVICE PRINCIPAL
+
+## `generateSuggestedSlots.js`
+
+```js id="svc1"
+const Appointment = require('../models/Appointment');
+const Doctor = require('../models/Doctor');
+const dayjs = require('dayjs');
+
+async function generateSuggestedSlots({
+  doctorId,
+  patientId,
+  dateFrom,
+  dateTo
+}) {
+  const doctor = await Doctor.findById(doctorId);
+  if (!doctor) throw new Error('Doctor not found');
+
+  const start = dateFrom ? dayjs(dateFrom) : dayjs();
+  const end = dateTo ? dayjs(dateTo).add(7, 'day') : dayjs().add(7, 'day');
+
+  const appointments = await Appointment.find({
+    doctor: doctorId,
+    date: { $gte: start.toDate(), $lte: end.toDate() },
+    operationalStatus: { $ne: 'canceled' }
+  });
+
+  const occupied = new Set(
+    appointments.map(a => `${a.date.toISOString().slice(0,10)}_${a.time}`)
+  );
+
+  const slots = [];
+
+  // horários padrão da clínica (pode vir do doctor depois)
+  const workingHours = [
+    "08:00","09:00","10:00","11:00",
+    "14:00","15:00","16:00","17:00"
+  ];
+
+  let cursor = start.clone();
+
+  while (cursor.isBefore(end)) {
+    const dateStr = cursor.format('YYYY-MM-DD');
+
+    for (const time of workingHours) {
+      const key = `${dateStr}_${time}`;
+
+      if (occupied.has(key)) continue;
+
+      const score = calculateScore({
+        doctor,
+        patientId,
+        date: dateStr,
+        time
+      });
+
+      slots.push({
+        date: dateStr,
+        time,
+        doctorId,
+        score,
+        reason: score >= 80
+          ? "Alta prioridade (slot ideal)"
+          : "Slot alternativo disponível"
+      });
+    }
+
+    cursor = cursor.add(1, 'day');
+  }
+
+  return slots
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+module.exports = generateSuggestedSlots;
+```
+
+---
+
+# 🧠 3. MOTOR DE SCORE (SIMPLIFICADO V1)
+
+```js id="score1"
+function calculateScore({ doctor, patientId, date, time }) {
+  let score = 70; // base: slot livre
+
+  // horário preferido do médico
+  if (doctor.preferredHours?.includes(time)) {
+    score += 20;
+  }
+
+  // bônus simples (pode evoluir depois)
+  const hour = parseInt(time.split(':')[0]);
+
+  if (hour >= 9 && hour <= 11) score += 10;   // manhã boa adesão
+  if (hour >= 14 && hour <= 16) score += 5;   // tarde ok
+
+  return Math.min(score, 100);
+}
+```
+
+---
+
+# 📦 4. CONTROLLER
+
+```js id="ctrl1"
+const generateSuggestedSlots = require('../services/generateSuggestedSlots');
+
+async function agendaSuggestions(req, res) {
+  try {
+    const { doctorId, patientId, dateFrom, dateTo } = req.body;
+
+    const suggestions = await generateSuggestedSlots({
+      doctorId,
+      patientId,
+      dateFrom,
+      dateTo
+    });
+
+    return res.json({
+      success: true,
+      data: suggestions
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+}
+
+module.exports = { agendaSuggestions };
+```
+
+---
+
+# 🔌 5. ROUTE
+
+```js id="route1"
+router.post(
+  '/agenda/suggestions',
+  agendaSuggestions
+);
+```
+
+---
+
+# 🧠 6. O QUE ISSO JÁ TE DÁ (IMPORTANTE)
+
+Com isso funcionando você já tem:
+
+## ✔ agenda inteligente base
+
+## ✔ sugestão automática de horários
+
+## ✔ eliminação de conflito manual
+
+## ✔ base para UX de 1 clique
+
+---
+
+# 🚀 7. PRÓXIMO PASSO (FRONTEND)
+
+Depois disso você vai ter:
+
+## 🟢 SmartAgendaPanel
+
+* chama endpoint
+* mostra slots ordenados por score
+* botão “Agendar”
+
+---
+
+# 💡 8. EVOLUÇÃO NATURAL (DEPOIS)
+
+Quando isso estiver rodando:
+
+### v2
+
+* histórico do paciente influencia score
+* taxa de presença por horário
+
+### v3
+
+* IA leve de previsão de falta
+
+---
+
+# ⚡ RESUMO FINAL
+
+Você acabou de criar o primeiro módulo de:
+
+> 🧠 “sistema que agenda sozinho”
+
+sem tocar no core financeiro que você estabilizou.
+
+---
+
+Se quiser, próximo passo eu te entrego o **SmartAgendaPanel pronto no React integrado com seu DoctorAgendaCalendar atual**.

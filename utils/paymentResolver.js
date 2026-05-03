@@ -42,7 +42,9 @@ export function resolvePaymentType({ addToBalance, packageData, appointmentData,
         };
     }
     
-    // Prioridade 3: Liminar
+    // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
+    // Fallback para dados antigos. Fonte de verdade: LiminarContract.
+    // TODO: remover após backfill completo.
     if (packageData?.type === 'liminar') {
         return {
             type: 'liminar',

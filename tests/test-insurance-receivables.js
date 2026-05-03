@@ -1,4 +1,5 @@
-// Script de teste para o endpoint /api/payments/insurance/receivables
+// Script de teste/diagnóstico para recebíveis de convênio
+// Testa diretamente o modelo Payment (SSOT), não o endpoint legado.
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 

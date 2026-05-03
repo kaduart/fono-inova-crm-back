@@ -211,8 +211,8 @@ router.get('/', auth, async (req, res) => {
           insurance: g.insurance,
           specialty: g.specialty,
           totalSessions: g.totalSessions,
-          sessionsUsed: g.sessionsUsed,
-          sessionsRemaining: g.sessionsRemaining,
+          usedSessions: g.usedSessions || 0,
+          sessionsRemaining: (g.totalSessions || 0) - (g.usedSessions || 0),
           status: g.status,
           expiresAt: g.expiresAt
         })),
@@ -272,8 +272,8 @@ router.get('/:id', auth, async (req, res) => {
         insurance: guide.insurance,
         specialty: guide.specialty,
         totalSessions: guide.totalSessions,
-        sessionsUsed: guide.sessionsUsed,
-        sessionsRemaining: guide.sessionsRemaining,
+        usedSessions: guide.usedSessions || 0,
+        sessionsRemaining: (guide.totalSessions || 0) - (guide.usedSessions || 0),
         status: guide.status,
         expiresAt: guide.expiresAt,
         valor: guide.valor,
@@ -330,6 +330,54 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
       success: false,
       errorCode: 'INTERNAL_ERROR',
       message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/v2/insurance-guides/:id
+ * Cancela guia (soft delete)
+ */
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const guide = await InsuranceGuide.findById(id);
+    if (!guide) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'NOT_FOUND',
+        message: 'Guia não encontrada'
+      });
+    }
+
+    if (guide.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'ALREADY_CANCELLED',
+        message: 'Esta guia já está cancelada'
+      });
+    }
+
+    guide.status = 'cancelled';
+    await guide.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Guia cancelada com sucesso',
+      data: {
+        id: guide._id,
+        number: guide.number,
+        status: guide.status
+      }
+    });
+
+  } catch (error) {
+    console.error('[InsuranceGuidesV2] Erro ao cancelar guia:', error);
+    return res.status(500).json({
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      message: 'Erro ao cancelar guia. Tente novamente em alguns instantes.'
     });
   }
 });
