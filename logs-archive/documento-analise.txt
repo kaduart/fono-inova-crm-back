@@ -1,686 +1,329 @@
-Perfeito — agora sim você saiu do modo “infra em chamas” e entrou no modo **produto de verdade**.
-
-E aqui é importante ser bem direto:
-
-> 🔥 “produto” não é mais mexer no backend core
-> é **transformar esse sistema estável em fluxo de operação clínica mais eficiente**
-
----
-
-# 🧭 O QUE É “PRODUTO” NO SEU CASO
-
-No seu sistema, produto = **reduzir trabalho humano + aumentar conversão + melhorar operação da clínica**
-
-Não é arquitetura. Não é refactor. É impacto no dia a dia.
-
----
-
-# 🚀 3 FRENTES DE PRODUTO (ORDEM REAL DE VALOR)
-
-Vou te colocar do mais impactante pro mais “nice to have”:
-
----
-
-# 🟢 1. UX DE AGENDAMENTO (MAIOR IMPACTO)
-
-Isso aqui é onde você ganha dinheiro e eficiência.
-
-## O que entra aqui:
-
-### ✔ fluxo de agenda inteligente
-
-* sugerir horários automaticamente
-* evitar conflito visual/operacional
-* mostrar disponibilidade real do médico
-
-### ✔ agendamento em 1 clique
-
-* secretaria não “monta” agenda
-* só confirma sugestão do sistema
-
-### ✔ contexto do paciente no modal
-
-* dívida
-* pacote ativo
-* convênio
-* sessões restantes
-
-👉 isso reduz erro humano direto
-
----
-
-# 🟡 2. AUTOMAÇÕES (ESCALA OPERACIONAL)
-
-Aqui você reduz custo de operação.
-
-## Exemplos reais:
-
-### 💬 WhatsApp automático
-
-* lembrete de sessão
-* confirmação de presença
-* cobrança de faltas
-* alerta de fim de pacote
-
-### 🔔 inteligência de follow-up
-
-* paciente não voltou em X dias → dispara mensagem
-* pacote quase acabando → alerta automático
-
-### 📊 alertas internos
-
-* “convênio com guia quase vencendo”
-* “paciente sem sessão há X dias”
-
----
-
-# 🔵 3. INTELIGÊNCIA FINANCEIRA (EVOLUÇÃO DO CASHFLOW)
-
-Agora que o core está estável:
-
-### 📈 insights reais
-
-* receita por profissional
-* taxa de comparecimento
-* eficiência de pacote
-* conversão convênio → retorno
-
-### 📊 visão administrativa
-
-* “quanto dinheiro está preso em convênio”
-* “quanto falta receber por guia”
-
----
-
-# 🧠 RESUMO SIMPLES (SEM ENFEITE)
-
-## ❌ não é mais:
-
-* Session
-* Payment
-* completeSession
-* desacoplamento
-
-## ✔ agora é:
-
-* agendar melhor
-* operar melhor
-* cobrar melhor
-* reter melhor
-
----
-
-# 💡 O MELHOR PRÓXIMO PASSO PRA VOCÊ (REALMENTE)
-
-Se eu fosse você, eu escolheria isso:
-
-## 🟢 COMEÇAR PELO UX DE AGENDAMENTO
-
-Porque:
-
-* já usa seu core estável
-* gera impacto imediato na clínica
-* reduz erro humano
-* aumenta eficiência da secretaria
-* é visível pro cliente final
-
----
-
-# ⚡ FRASE-CHAVE DO MOMENTO
-
-> “O sistema já está correto. Agora ele precisa ficar rápido, intuitivo e automático.”
-
----
-
-Se quiser, no próximo passo eu posso te desenhar:
-
-## 🔥 “Agenda inteligente versão 1”
-
-* fluxo ideal de clique
-* modal perfeito de agendamento
-* regras automáticas de sugestão de horário
-* integração com convênio/pacote sem esforço da secretária
-
-Só me fala: **UX de agenda primeiro ou automações?**
-
-
-
-
-Fechado — agora você vai entrar na parte que realmente muda operação de clínica: **agenda inteligente de verdade**, não só calendário com CRUD.
-
-Vou te desenhar isso de forma objetiva, já pensando no seu sistema atual (Appointments + Session + Payment já resolvidos).
-
----
-
-# 🧭 🟢 AGENDA INTELIGENTE v1 (PRODUTO)
-
-## 🎯 OBJETIVO
-
-Transformar a secretaria de:
-
-> “preencher agenda manualmente”
-
-para
-
-> “confirmar sugestões do sistema em 1 clique”
-
----
-
-# 🧠 1. NOVO CONCEITO CENTRAL
-
-## Hoje (ruim)
-
-* usuário escolhe médico
-* escolhe dia
-* escolhe horário manualmente
-* valida conflito depois
-
----
-
-## Amanhã (certo)
-
-* usuário escolhe **paciente**
-* sistema sugere horários válidos
-* secretaria só confirma
-
----
-
-# ⚙️ 2. MOTOR DE SUGESTÃO DE HORÁRIOS
-
-Esse é o coração da agenda inteligente.
-
-## Entrada:
-
-```txt
-patientId
-doctorId
-serviceType
-dateRange (opcional)
-```
-
----
-
-## Saída:
-
-```ts
-SuggestedSlot {
-  date: string
-  time: string
-  doctorId: string
-  score: number
-  reason: string
-}
-```
-
----
-
-## 🧠 Score (inteligência simples v1):
-
-### +100 → horário livre real
-
-### +50 → dentro do horário preferido do médico
-
-### +30 → paciente já veio nesse horário antes
-
-### -100 → conflito
-
-### -20 → horário fora do padrão da clínica
-
----
-
-# 📊 3. REGRAS REAIS DO SEU SISTEMA
-
-Você já tem dados suficientes:
-
-## ✔ Session
-
-* duração real
-* histórico de comparecimento
-
-## ✔ Appointment
-
-* horários ocupados
-
-## ✔ Patient
-
-* padrão de retorno
-
-## ✔ Doctor availability
-
-* agenda base
-
----
-
-# 🧩 4. FLUXO NOVO DE AGENDAMENTO
-
-## PASSO 1 — selecionar paciente
-
-abre painel lateral com:
-
-* convênio ativo
-* pacote ativo
-* sessões restantes
-* última consulta
-
----
-
-## PASSO 2 — sistema sugere slots
-
-Exemplo:
-
-```
-🟢 09:00 - Hoje (alta chance de comparecimento)
-🟢 14:00 - Hoje (horário padrão paciente)
-🟡 16:30 - Amanhã (alternativo)
-```
-
----
-
-## PASSO 3 — clique único
-
-Secretaria só clica:
-
-> “Agendar este horário”
-
----
-
-## PASSO 4 — backend já resolve tudo
-
-Seu core atual entra aqui:
-
-* Appointment criado
-* Session criada
-* Payment criado
-* tudo linkado
-
-✔ você NÃO muda core
-✔ só muda UX + orquestração
-
----
-
-# 🧠 5. COMPONENTES FRONTEND NOVOS
-
-## 🟦 1. SmartAgendaPanel
-
-* aparece ao selecionar paciente
-* mostra contexto + sugestões
-
----
-
-## 🟦 2. SlotSuggestionCard
-
-Cada slot:
-
-```
-09:00
-Alta chance de comparecimento
-[ Agendar ]
-```
-
----
-
-## 🟦 3. AvailabilityHeatmap (opcional v2)
-
-* dia com cores:
-
-  * verde = livre
-  * amarelo = quase cheio
-  * vermelho = cheio
-
----
-
-# ⚙️ 6. BACKEND NOVO (MÍNIMO NECESSÁRIO)
-
-## Endpoint:
-
-```http
-POST /api/v2/agenda/suggestions
-```
-
----
-
-## Service:
-
-```ts
-generateSuggestedSlots(patientId, doctorId)
-```
-
----
-
-## lógica:
-
-1. buscar disponibilidade do médico
-2. remover horários com conflito (Appointment existente)
-3. calcular score
-4. ordenar
-5. retornar top N (ex: 5 slots)
-
----
-
-# 🔥 7. O “GANHO REAL” DISSO
-
-## Hoje:
-
-* secretaria pensa
-* sistema executa
-
----
-
-## Depois:
-
-* sistema pensa
-* secretaria aprova
-
----
-
-# 💰 IMPACTO DIRETO NA CLÍNICA
-
-✔ menos erro de agendamento
-✔ menos buraco na agenda
-✔ mais ocupação do médico
-✔ menos cancelamento
-✔ mais previsibilidade financeira
-
----
-
-# 🧭 8. ORDEM DE IMPLEMENTAÇÃO (SEM OVERENGINEERING)
-
-## Fase 1 (rápida)
-
-* endpoint de sugestão
-* UI simples de slots
-
-## Fase 2
-
-* score inteligente
-* histórico de paciente
-
-## Fase 3
-
-* IA leve de otimização de agenda
-
----
-
-# ⚡ RESUMO FINAL
-
-Você já resolveu:
-
-> 🧱 infraestrutura financeira (Session / Payment / Cashflow)
-
-Agora você vai construir:
-
-> 🧠 inteligência operacional (agenda que pensa)
-
----
-
-Se quiser, no próximo passo eu posso te entregar:
-
-## 👉 o endpoint completo `/agenda/suggestions`
-
-com lógica já adaptada pro teu schema real (Appointment + DoctorAgendaCalendar + availability)
-
-Só me fala: **“backend first” ou “frontend first”**
-
-
-
-
-Perfeito — vou te entregar isso **direto no formato implementável**, sem teoria.
-
-Vamos começar pelo **BACKEND FIRST (base do produto)** porque sem isso o frontend vira só UI bonita sem inteligência.
-
----
-
-# 🧠 🟢 SMART AGENDA v1 — BACKEND (CORE)
-
-## 🎯 OBJETIVO
-
-Gerar sugestões reais de horários baseadas em:
-
-* disponibilidade do médico
-* conflitos de Appointment
-* padrão operacional da clínica
-* contexto do paciente
-
----
-
-# 📡 1. ENDPOINT
-
-```http
-POST /api/v2/agenda/suggestions
-```
-
----
-
-## 📥 INPUT
-
-```ts id="req1"
 {
-  doctorId: string,
-  patientId: string,
-  serviceType?: string,
-  dateFrom?: string,
-  dateTo?: string
-}
-```
-
----
-
-## 📤 OUTPUT
-
-```ts id="res1"
-{
-  success: true,
-  data: [
-    {
-      date: "2026-05-01",
-      time: "09:00",
-      doctorId: "...",
-      score: 92,
-      reason: "Slot livre + histórico positivo do paciente"
+    "success": true,
+    "data": {
+        "data": "2026-05-05",
+        "caixa": {
+            "total": 1310,
+            "pix": 560,
+            "dinheiro": 400,
+            "cartao": 350,
+            "outros": 0,
+            "qtdPix": 3,
+            "qtdDinheiro": 2,
+            "qtdCartao": 1
+        },
+        "porTipo": {
+            "particular": 1160,
+            "pacote": 0,
+            "convenio": 0,
+            "liminar": 150
+        },
+        "porEspecialidade": {
+            "Outra": 1160
+        },
+        "despesas": {
+            "total": 0,
+            "porCategoria": {},
+            "quantidade": 0
+        },
+        "saldo": {
+            "bruto": 1310,
+            "liquido": 1310,
+            "despesaTotal": 0
+        },
+        "producao": {
+            "total": 1620,
+            "aReceber": 0,
+            "recebido": 1620,
+            "quantidadeAtendimentos": 9,
+            "ticketMedio": 180,
+            "taxaEficiencia": 100,
+            "porTipo": {
+                "particular": 1160,
+                "pacote": 310,
+                "convenio": 0
+            },
+            "porEspecialidade": [
+                {
+                    "nome": "fonoaudiologia",
+                    "total": 1470,
+                    "quantidade": 8,
+                    "recebido": 1470,
+                    "pendente": 0,
+                    "ticketMedio": "183.75"
+                },
+                {
+                    "nome": "psicologia",
+                    "total": 150,
+                    "quantidade": 1,
+                    "recebido": 150,
+                    "pendente": 0,
+                    "ticketMedio": "150.00"
+                }
+            ]
+        },
+        "pendentesCobranca": [],
+        "pacotesAtendidos": [
+            {
+                "id": "69c14529c19d35b8454a27f1",
+                "horario": "16:20",
+                "paciente": "Enthony Kauan Mesias Oliveira",
+                "servico": "Sessão de Pacote",
+                "especialidade": "psicologia",
+                "professional": "Tatiana Celuta Peres",
+                "valor": 150,
+                "statusPagamento": "Pago",
+                "paymentModel": "prepaid"
+            },
+            {
+                "id": "69d8f7207bd82bc9e85e138f",
+                "horario": "08:40",
+                "paciente": "Issac Moreira Ribeiro",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 160,
+                "statusPagamento": "Pago",
+                "paymentModel": "prepaid"
+            },
+            {
+                "id": "69f1227600e59de10bf92dda",
+                "horario": "16:20",
+                "paciente": "Bento Cabral Cândido",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Mikaelly da Silva Sousa",
+                "valor": 150,
+                "statusPagamento": "Pago",
+                "paymentModel": "prepaid"
+            }
+        ],
+        "conveniosAtendidos": [],
+        "comparativos": {
+            "ontem": 760,
+            "variacaoVsOntem": 72.4,
+            "mediaDiariaMes": 414,
+            "vsMediaMes": 216.4,
+            "totalAcumuladoMes": 2070,
+            "projecaoMes": 12420,
+            "diasDecorridos": 5
+        },
+        "estatisticas": {
+            "quantidade": 7,
+            "quantidadeAtendimentos": 9,
+            "ticketMedio": 187.14285714285714,
+            "ontem": 760
+        },
+        "transacoes": [
+            {
+                "id": "69fa2392a5580aeea035f31a",
+                "paciente": "Antonella Souza Eneas",
+                "valor": 180,
+                "metodo": "Pix",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "09:20",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            },
+            {
+                "id": "69fa27e3003164e56ab85ecf",
+                "paciente": "Davi Miguel Sousa Bailoni",
+                "valor": 200,
+                "metodo": "Cartão",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "10:40",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            },
+            {
+                "id": "69fa281e003164e56ab85fb0",
+                "paciente": "Eliza Barbosa rabelo",
+                "valor": 200,
+                "metodo": "Dinheiro",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "14:00",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            },
+            {
+                "id": "69fa2839003164e56ab86037",
+                "paciente": "Daniel Rodrigues dos Santos de Oliveira",
+                "valor": 180,
+                "metodo": "Pix",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "14:00",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            },
+            {
+                "id": "69fa41e5003164e56ab88940",
+                "paciente": "Helloisa Alcântara natalino",
+                "valor": 200,
+                "metodo": "Dinheiro",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "15:20",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            },
+            {
+                "id": "69fa4246003164e56ab88afc",
+                "paciente": "Miguel Viana Batista",
+                "valor": 200,
+                "metodo": "Pix",
+                "tipo": "Particular",
+                "servico": "Sessão",
+                "especialidade": "-",
+                "hora": "16:00",
+                "data": "05/05/2026",
+                "categoria": "recebido"
+            }
+        ],
+        "transacoesProducao": [
+            {
+                "id": "69c14529c19d35b8454a27f1",
+                "paciente": "Enthony Kauan Mesias Oliveira",
+                "valor": 150,
+                "metodo": "liminar_credit",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "psicologia",
+                "hora": "16:20",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Tatiana Celuta Peres",
+                "paymentModel": "prepaid"
+            },
+            {
+                "id": "69d8f7207bd82bc9e85e138f",
+                "paciente": "Issac Moreira Ribeiro",
+                "valor": 160,
+                "metodo": "pix",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "08:40",
+                "data": "05/05/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": "prepaid"
+            },
+            {
+                "id": "69ea802e103e48f6af1e2ed6",
+                "paciente": "Antonella Souza Eneas",
+                "valor": 180,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "09:20",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null
+            },
+            {
+                "id": "69ef921c80f633378a207727",
+                "paciente": "Davi Miguel Sousa Bailoni",
+                "valor": 200,
+                "metodo": "credito",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "10:40",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null
+            },
+            {
+                "id": "69efaba380f633378a207f49",
+                "paciente": "Eliza Barbosa rabelo",
+                "valor": 200,
+                "metodo": "dinheiro",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "14:00",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null
+            },
+            {
+                "id": "69f9e88ac83a33f73695eb5c",
+                "paciente": "Daniel Rodrigues dos Santos de Oliveira",
+                "valor": 180,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "14:00",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Mayra Magda Mendes Oliveira",
+                "paymentModel": null
+            },
+            {
+                "id": "69f0c76500e59de10bf8e58e",
+                "paciente": "Helloisa Alcântara natalino",
+                "valor": 200,
+                "metodo": "dinheiro",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "15:20",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null
+            },
+            {
+                "id": "69f1fba500e59de10bf956e4",
+                "paciente": "Miguel Viana Batista",
+                "valor": 200,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Avaliação",
+                "especialidade": "fonoaudiologia",
+                "hora": "16:00",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null
+            },
+            {
+                "id": "69f1227600e59de10bf92dda",
+                "paciente": "Bento Cabral Cândido",
+                "valor": 150,
+                "metodo": "package_prepaid",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "16:20",
+                "data": "05/05/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Mikaelly da Silva Sousa",
+                "paymentModel": "prepaid"
+            }
+        ]
     }
-  ]
 }
-```
-
----
-
-# ⚙️ 2. SERVICE PRINCIPAL
-
-## `generateSuggestedSlots.js`
-
-```js id="svc1"
-const Appointment = require('../models/Appointment');
-const Doctor = require('../models/Doctor');
-const dayjs = require('dayjs');
-
-async function generateSuggestedSlots({
-  doctorId,
-  patientId,
-  dateFrom,
-  dateTo
-}) {
-  const doctor = await Doctor.findById(doctorId);
-  if (!doctor) throw new Error('Doctor not found');
-
-  const start = dateFrom ? dayjs(dateFrom) : dayjs();
-  const end = dateTo ? dayjs(dateTo).add(7, 'day') : dayjs().add(7, 'day');
-
-  const appointments = await Appointment.find({
-    doctor: doctorId,
-    date: { $gte: start.toDate(), $lte: end.toDate() },
-    operationalStatus: { $ne: 'canceled' }
-  });
-
-  const occupied = new Set(
-    appointments.map(a => `${a.date.toISOString().slice(0,10)}_${a.time}`)
-  );
-
-  const slots = [];
-
-  // horários padrão da clínica (pode vir do doctor depois)
-  const workingHours = [
-    "08:00","09:00","10:00","11:00",
-    "14:00","15:00","16:00","17:00"
-  ];
-
-  let cursor = start.clone();
-
-  while (cursor.isBefore(end)) {
-    const dateStr = cursor.format('YYYY-MM-DD');
-
-    for (const time of workingHours) {
-      const key = `${dateStr}_${time}`;
-
-      if (occupied.has(key)) continue;
-
-      const score = calculateScore({
-        doctor,
-        patientId,
-        date: dateStr,
-        time
-      });
-
-      slots.push({
-        date: dateStr,
-        time,
-        doctorId,
-        score,
-        reason: score >= 80
-          ? "Alta prioridade (slot ideal)"
-          : "Slot alternativo disponível"
-      });
-    }
-
-    cursor = cursor.add(1, 'day');
-  }
-
-  return slots
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-}
-
-module.exports = generateSuggestedSlots;
-```
-
----
-
-# 🧠 3. MOTOR DE SCORE (SIMPLIFICADO V1)
-
-```js id="score1"
-function calculateScore({ doctor, patientId, date, time }) {
-  let score = 70; // base: slot livre
-
-  // horário preferido do médico
-  if (doctor.preferredHours?.includes(time)) {
-    score += 20;
-  }
-
-  // bônus simples (pode evoluir depois)
-  const hour = parseInt(time.split(':')[0]);
-
-  if (hour >= 9 && hour <= 11) score += 10;   // manhã boa adesão
-  if (hour >= 14 && hour <= 16) score += 5;   // tarde ok
-
-  return Math.min(score, 100);
-}
-```
-
----
-
-# 📦 4. CONTROLLER
-
-```js id="ctrl1"
-const generateSuggestedSlots = require('../services/generateSuggestedSlots');
-
-async function agendaSuggestions(req, res) {
-  try {
-    const { doctorId, patientId, dateFrom, dateTo } = req.body;
-
-    const suggestions = await generateSuggestedSlots({
-      doctorId,
-      patientId,
-      dateFrom,
-      dateTo
-    });
-
-    return res.json({
-      success: true,
-      data: suggestions
-    });
-
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message
-    });
-  }
-}
-
-module.exports = { agendaSuggestions };
-```
-
----
-
-# 🔌 5. ROUTE
-
-```js id="route1"
-router.post(
-  '/agenda/suggestions',
-  agendaSuggestions
-);
-```
-
----
-
-# 🧠 6. O QUE ISSO JÁ TE DÁ (IMPORTANTE)
-
-Com isso funcionando você já tem:
-
-## ✔ agenda inteligente base
-
-## ✔ sugestão automática de horários
-
-## ✔ eliminação de conflito manual
-
-## ✔ base para UX de 1 clique
-
----
-
-# 🚀 7. PRÓXIMO PASSO (FRONTEND)
-
-Depois disso você vai ter:
-
-## 🟢 SmartAgendaPanel
-
-* chama endpoint
-* mostra slots ordenados por score
-* botão “Agendar”
-
----
-
-# 💡 8. EVOLUÇÃO NATURAL (DEPOIS)
-
-Quando isso estiver rodando:
-
-### v2
-
-* histórico do paciente influencia score
-* taxa de presença por horário
-
-### v3
-
-* IA leve de previsão de falta
-
----
-
-# ⚡ RESUMO FINAL
-
-Você acabou de criar o primeiro módulo de:
-
-> 🧠 “sistema que agenda sozinho”
-
-sem tocar no core financeiro que você estabilizou.
-
----
-
-Se quiser, próximo passo eu te entrego o **SmartAgendaPanel pronto no React integrado com seu DoctorAgendaCalendar atual**.
