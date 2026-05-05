@@ -78,8 +78,8 @@ async function runConsistencyCheck() {
     }
     
     log.info(`[${correlationId}] 📊 Resumo`, {
-      totalViews: views.length,
-      totalAggregates: patients.length,
+      totalViews: viewPatientIds.size,
+      totalAggregates: patientIds.size,
       orphanViews: orphanViews.length,
       orphanAggregates: orphanAggregates.length
     });

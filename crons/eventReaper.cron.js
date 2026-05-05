@@ -51,7 +51,11 @@ async function reapStuckEvents() {
                 {
                     $set: {
                         status: newStatus,
-                        'error.message': `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`
+                        error: {
+                            message: `Auto-recovered from stuck processing after ${STUCK_THRESHOLD_MINUTES}min`,
+                            recoveredAt: new Date(),
+                            recoveredBy: 'eventReaper'
+                        }
                     }
                 }
             );

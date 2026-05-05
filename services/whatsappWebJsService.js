@@ -36,6 +36,7 @@ let isProcessingQueue = false;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function resolveChromePath() {
+  // 1️⃣ Tenta o path oficial do Puppeteer (quando build/runtime estão alinhados)
   try {
     const puppeteerPath = puppeteer.executablePath();
     if (fs.existsSync(puppeteerPath)) {
@@ -44,6 +45,29 @@ function resolveChromePath() {
     }
   } catch { /* ignora */ }
 
+  // 2️⃣ 🔥 Busca dinâmica no cache do Puppeteer (Render / VPS / serverless)
+  //    Ex: /opt/render/.cache/puppeteer/chrome/linux-147.0.7727.57/chrome-linux64/chrome
+  const puppeteerCachePaths = [
+    '/opt/render/.cache/puppeteer/chrome',
+    '/home/render/.cache/puppeteer/chrome',
+    path.join(process.env.HOME || '', '.cache/puppeteer/chrome'),
+  ];
+
+  for (const base of puppeteerCachePaths) {
+    if (!fs.existsSync(base)) continue;
+    try {
+      const versions = fs.readdirSync(base);
+      for (const v of versions) {
+        const candidate = path.join(base, v, 'chrome-linux64', 'chrome');
+        if (fs.existsSync(candidate)) {
+          console.log('[WhatsAppWeb] Chrome encontrado no cache dinâmico:', candidate);
+          return candidate;
+        }
+      }
+    } catch { /* ignora */ }
+  }
+
+  // 3️⃣ Fallback em paths do sistema operacional
   const systemPaths = [
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
