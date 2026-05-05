@@ -67,6 +67,28 @@ router.get('/', auth, async (req, res) => {
             })()
         ]);
 
+        // sessionId → appointmentId — fallback para payments sem p.appointment direto
+        const sessionToApptIdMap = new Map(
+            production.sessions
+                .filter(s => s._id && s.appointmentId)
+                .map(s => [s._id.toString(), s.appointmentId.toString()])
+        );
+
+        // patientId → serviceType — via sessions de produção (não depende de populate)
+        const patientIdToServiceType = new Map();
+        for (const s of production.sessions) {
+            if (!s.patient || !s.appointmentId) continue;
+            const appt = appointmentsMap.get(s.appointmentId.toString());
+            if (appt?.serviceType) {
+                patientIdToServiceType.set(s.patient.toString(), appt.serviceType);
+            }
+        }
+
+        // DEBUG TEMPORÁRIO
+        console.log('[cashflow debug] sessions:', production.sessions.length, '| apptMap:', appointmentsMap.size, '| patientServiceMap:', patientIdToServiceType.size);
+        console.log('[cashflow debug] patientServiceMap entries:', [...patientIdToServiceType.entries()].map(([k,v]) => `${k}=${v}`));
+        console.log('[cashflow debug] payments patientIds:', cash.payments.map(p => p.patient?._id?.toString() || p.patient?.toString()));
+
         // ============================================================
         // 🎯 COMPARATIVOS: ONTEM E MÊS
         // ============================================================
@@ -104,8 +126,11 @@ router.get('/', auth, async (req, res) => {
         const transacoesCaixa = cash.payments.map(p => {
             const method = (p.paymentMethod || '').toLowerCase();
 
-            // Busca appt antes da determinação do tipo (necessário para detectar pacote)
-            const appt = p.appointment ? appointmentsMap.get(p.appointment.toString()) : null;
+            // Busca appt: direto → via session → via paciente (payments sem link explícito)
+            const apptId = p.appointment?.toString()
+                || (p.session ? sessionToApptIdMap.get(p.session.toString()) : null);
+            const appt = apptId ? appointmentsMap.get(apptId) : null;
+            const patientId = p.patient?._id?.toString() || p.patient?.toString();
 
             const notes = (p.notes || '').toLowerCase();
             const desc = (p.description || '').toLowerCase();
@@ -133,16 +158,21 @@ router.get('/', auth, async (req, res) => {
             } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {
                 tipo = 'Convênio';
                 servico = 'Sessão Convênio';
-            } else if (p.serviceType) {
-                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
-                servico = serviceMap[p.serviceType] || 'Sessão';
+            } else {
+                // 🎯 Fonte de verdade: Appointment > Payment > fallback por paciente
+                const serviceType = appt?.serviceType || p.serviceType || patientIdToServiceType.get(patientId);
+                if (serviceType) {
+                    const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
+                    servico = serviceMap[serviceType] || 'Sessão';
+                }
             }
 
             if (method.includes('pix')) qtdPix++;
             else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) qtdCartao++;
             else if (method.includes('cash') || method.includes('dinheiro')) qtdDinheiro++;
 
-            const esp = p.specialty || p.sessionType || 'Outra';
+            // 🎯 Fonte de verdade: Appointment (doctor/specialty/sessionType) > Payment > 'Outra'
+            const esp = appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra';
             if (!porEspecialidadeCaixa[esp]) porEspecialidadeCaixa[esp] = 0;
             porEspecialidadeCaixa[esp] += p.amount;
 
@@ -158,7 +188,7 @@ router.get('/', auth, async (req, res) => {
                 metodo,
                 tipo,
                 servico,
-                especialidade: p.specialty || p.sessionType || '-',
+                especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
                 hora: appt?.time || moment(p.financialDate || p.createdAt).format('HH:mm'),
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
                 categoria: 'recebido'
