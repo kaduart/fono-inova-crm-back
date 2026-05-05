@@ -4,8 +4,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "postinstall": "npx puppeteer browsers install chrome || true",
-    "build": "npx puppeteer browsers install chrome || true",
+    "postinstall": "node installChrome.js",
+    "build": "node installChrome.js",
     "start": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node -r dotenv/config server.js",
     "dev": "npx kill-port 5000 && NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' nodemon server.js",
     "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",

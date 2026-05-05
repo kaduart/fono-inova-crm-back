@@ -18,13 +18,15 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node server.js
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: PORT
         value: "10000"
       - key: ENABLE_WORKERS
@@ -55,12 +57,14 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node workers/entrypoints/scheduling-worker.js
     autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: ENABLE_WORKERS
         value: "true"
       - key: WORKER_GROUP
@@ -93,12 +97,14 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node workers/entrypoints/billing-worker.js
     autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: ENABLE_WORKERS
         value: "true"
       - key: WORKER_GROUP
@@ -131,12 +137,14 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node workers/entrypoints/clinical-worker.js
     autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: ENABLE_WORKERS
         value: "true"
       - key: WORKER_GROUP
@@ -169,7 +177,7 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node workers/entrypoints/whatsapp-worker.js
     autoDeploy: false
     envVars:
@@ -207,12 +215,14 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install
+    buildCommand: npm ci --omit=optional && npm cache clean --force
     startCommand: node workers/entrypoints/reconciliation-worker.js
     autoDeploy: false
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
       - key: ENABLE_WORKERS
         value: "true"
       - key: WORKER_GROUP
