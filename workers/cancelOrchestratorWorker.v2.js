@@ -170,8 +170,11 @@ async function processCancelJobV2({ job, eventId, correlationId, idempotencyKey,
             // 1. Busca appointment
             appointment = await Appointment.findById(appointmentId).session(mongoSession);
             
+            // Guard: appointment deletado em bulk (ex: inativação de guia) — ignora silenciosamente
             if (!appointment) {
-                throw new Error('APPOINTMENT_NOT_FOUND');
+                console.log(`[CancelOrchestratorV2] ⏭️ Appointment ${appointmentId} não existe (provavelmente deletado em bulk). Ignorando.`);
+                await mongoSession.commitTransaction();
+                return { status: 'appointment_not_found', appointmentId, reason: 'bulk_deleted_or_not_exists', idempotent: true };
             }
 
             // Guard: já cancelado
