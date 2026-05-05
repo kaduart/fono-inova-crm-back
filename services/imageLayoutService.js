@@ -175,8 +175,11 @@ export async function composeInstagramPost({
     // 6. Upload Cloudinary
     const base64 = `data:image/jpeg;base64,${composed.toString('base64')}`;
     const result = await cloudinary.uploader.upload(base64, {
-      folder: 'fono-inova/instagram',
-      public_id: `ig_${especialidadeId}_${Date.now()}`,
+      folder:       'fono-inova/instagram',
+      public_id:    `ig_${especialidadeId}_${Date.now()}`,
+      resource_type: 'image',
+      type:          'upload',
+      access_mode:   'public',
     });
 
     console.log('✅ Layout composto:', result.secure_url);

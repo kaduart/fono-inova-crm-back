@@ -80,6 +80,8 @@ import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import whatsappVPSRoutes from "./routes/whatsappVPS.js";
+import whatsappWebJsRoutes from "./routes/whatsappWebJs.js";
+import { initWhatsAppClient } from "./services/whatsappWebJsService.js";
 import chatV2Routes from "./routes/chat/index.js";
 import aiRoutes from "./routes/ai.js";
 import diagnosticRouter from './routes/whatsapp/diagnostic.js';
@@ -511,6 +513,7 @@ app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/whatsapp-vps", whatsappVPSRoutes);
+app.use("/api/whatsapp-web", whatsappWebJsRoutes);
 app.use("/api/v2/chat", auth, chatV2Routes);
 
 app.use("/api/followups", followupRoutes);
@@ -662,6 +665,14 @@ server.listen(PORT, '0.0.0.0', () => {
           console.warn("⚠️ Redis indisponível após todas as tentativas - sistema continua em modo degradado");
         }
       }
+    }
+
+    // 🟢 Inicializa WhatsApp Web (chip comum / Business)
+    try {
+      initWhatsAppClient();
+      console.log("🟢 WhatsApp Web inicializado (aguardando QR code se necessário)");
+    } catch (wppErr) {
+      console.warn("⚠️ Falha ao inicializar WhatsApp Web:", wppErr.message);
     }
 
     // 🏥 Monitor de runtime (memória + filas) - DESABILITADO TEMPORARIAMENTE

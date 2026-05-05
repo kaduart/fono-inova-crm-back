@@ -5,6 +5,7 @@ import { auth, authorize } from '../../middleware/auth.js';
 import Doctor from '../../models/Doctor.js';
 import Expense from '../../models/Expense.js';
 import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
+import { manualCommissionTrigger } from '../../jobs/scheduledTasks.js';
 
 const router = express.Router();
 
@@ -372,5 +373,8 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
         });
     }
 });
+
+// POST /api/expenses/generate-commissions
+router.post('/generate-commissions', auth, authorize(['admin']), manualCommissionTrigger);
 
 export default router;

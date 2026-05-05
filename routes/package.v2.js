@@ -367,6 +367,84 @@ router.put('/:id', flexibleAuth, async (req, res) => {
 });
 
 // ============================================
+// POST /api/v2/packages/:id/inactivate
+// Inativa pacote: cancela pendências, mantém histórico
+// ============================================
+router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
+  const correlationId = `pkg_inactivate_${Date.now()}`;
+  const { id } = req.params;
+
+  try {
+    const view = await PackagesView.findById(new mongoose.Types.ObjectId(id)).lean();
+    if (!view) return res.status(404).json(formatError('Pacote não encontrado'));
+
+    const realPackageId = view.packageId || id;
+    const pkgObjectId = new mongoose.Types.ObjectId(realPackageId);
+
+    const pkg = await Package.findById(pkgObjectId).lean();
+    if (!pkg) return res.status(404).json(formatError('Pacote não encontrado'));
+    if (pkg.status === 'cancelled' || pkg.status === 'inactive') {
+      return res.status(400).json(formatError('Pacote já está inativo'));
+    }
+
+    // Sessões em aberto (não completadas e não canceladas)
+    const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
+    const pendingSessions = await Session.find({
+      package: pkgObjectId,
+      status: { $in: pendingStatuses }
+    }).lean();
+    const pendingSessionIds = pendingSessions.map(s => s._id);
+
+    // Appointments vinculados a essas sessões
+    const appointmentIds = pendingSessions
+      .map(s => s.appointmentId)
+      .filter(Boolean);
+
+    const [sessionsResult, appointmentsResult, paymentsResult] = await Promise.all([
+      Session.updateMany(
+        { _id: { $in: pendingSessionIds } },
+        { status: 'canceled', updatedAt: new Date() }
+      ),
+      appointmentIds.length > 0
+        ? Appointment.updateMany(
+            { _id: { $in: appointmentIds }, status: { $nin: ['completed', 'canceled', 'cancelled'] } },
+            { status: 'canceled', updatedAt: new Date() }
+          )
+        : Promise.resolve({ modifiedCount: 0 }),
+      Payment.updateMany(
+        { package: pkgObjectId, status: { $in: ['pending', 'scheduled'] } },
+        { status: 'canceled', updatedAt: new Date() }
+      )
+    ]);
+
+    // Inativa o pacote
+    await Package.findByIdAndUpdate(pkgObjectId, { status: 'cancelled', updatedAt: new Date() });
+
+    // Reconstrói a view
+    await buildPackageView(realPackageId.toString(), { correlationId, force: true });
+
+    logger.info('[PackageV2] Package inactivated', {
+      correlationId,
+      packageId: id,
+      sessionsCanceled: sessionsResult.modifiedCount,
+      appointmentsCanceled: appointmentsResult.modifiedCount,
+      paymentsCanceled: paymentsResult.modifiedCount
+    });
+
+    return res.json(formatSuccess({
+      packageId: id,
+      sessionsCanceled: sessionsResult.modifiedCount,
+      appointmentsCanceled: appointmentsResult.modifiedCount,
+      paymentsCanceled: paymentsResult.modifiedCount
+    }));
+
+  } catch (err) {
+    logger.error('[PackageV2] Error inactivating package', { correlationId, error: err.message });
+    return res.status(500).json(formatError(err.message));
+  }
+});
+
+// ============================================
 // DELETE /api/v2/packages/:id
 // Cancela/deleta pacote (event-driven)
 // ============================================
