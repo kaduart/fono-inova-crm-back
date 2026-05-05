@@ -431,9 +431,17 @@ app.use("/api/v2/liminar-contracts", liminarContractRoutes);  // ⚖️ NOVO: Li
 app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 
 app.use("/api/evolutions", evolutionRoutes);
-app.use("/api/packages", PackageRoutes);
+// 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
+app.use('/api/packages', (req, res) => {
+  console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/packages`);
+  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/packages' });
+});
 app.use("/api/financial", financialAuditRoutes);  // 📊 Audit V1 vs V2
-app.use("/api/payments", etagMiddleware({ ttl: 60 }), PaymentRoutes);
+// 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
+app.use('/api/payments', (req, res) => {
+  console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/payments`);
+  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/payments' });
+});
 app.use("/api/users", UserRoutes);
 app.use("/api/specialties", specialtyRouter);
 app.use("/api/analytics", analitycsRoutes);
@@ -474,7 +482,11 @@ app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
 app.use('/api/v2/analytics/operational', operationalAnalyticsRoutes);
 app.use('/api/v2/analytics/roi', roiAnalyticsRoutes);
-app.use('/api/insurance-guides', insuranceGuidesRoutes);
+// 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
+app.use('/api/insurance-guides', (req, res) => {
+  console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/insurance-guides`);
+  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/insurance-guides' });
+});
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
 
