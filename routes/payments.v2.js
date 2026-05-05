@@ -9,8 +9,10 @@
 
 import express from 'express';
 import moment from 'moment-timezone';
+import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import PaymentsView from '../models/PaymentsView.js';
+import Session from '../models/Session.js';
 import { rebuildPaymentsProjection } from '../projections/paymentsProjection.js';
 import { getSnapshotsForRange, getSnapshotsForMonth, reducePaymentStats } from '../services/financialSnapshot.service.js';
 
@@ -383,6 +385,39 @@ router.get('/stats/summary', auth, async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+
+/**
+ * GET /api/v2/payments/future-sessions/:patientId
+ * Retorna sessões avulsas agendadas (antecipadas) de um paciente
+ */
+router.get('/future-sessions/:patientId', auth, async (req, res) => {
+    try {
+        let { patientId } = req.params;
+
+        // Verifica se é um ID de view ou ID real
+        const PatientsView = mongoose.model('PatientsView');
+        const patientView = await PatientsView.findById(patientId).lean();
+
+        if (patientView) {
+            console.log(`[future-sessions] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+            patientId = patientView.patientId;
+        }
+
+        const sessions = await Session.find({
+            patient: patientId,
+            isAdvance: true,
+            status: 'scheduled'
+        })
+            .populate('doctor', 'fullName specialty')
+            .select('date time sessionType specialty')
+            .sort({ date: 1 });
+
+        res.json(sessions);
+    } catch (error) {
+        console.error('[PaymentsV2] Erro ao buscar future-sessions:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

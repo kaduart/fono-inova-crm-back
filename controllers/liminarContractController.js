@@ -30,36 +30,57 @@ export async function createLiminarContract(req, res) {
     return res.status(400).json({ error: 'totalCredit deve ser maior que zero' });
   }
 
-  // Idempotência
-  if (idempotencyKey) {
-    const existing = await LiminarContract.findOne({ idempotencyKey });
-    if (existing) {
-      return res.status(200).json({ contract: existing, idempotent: true });
+  try {
+    // Idempotência
+    if (idempotencyKey) {
+      const existing = await LiminarContract.findOne({ idempotencyKey });
+      if (existing) {
+        logger.info('Contrato liminar retornado por idempotência', { idempotencyKey, contractId: existing._id.toString() });
+        return res.status(200).json({ contract: existing, idempotent: true });
+      }
     }
+
+    const contractData = {
+      patient:       patientId,
+      doctor:        doctorId,
+      totalCredit,
+      creditBalance: totalCredit,
+      usedCredit:    0,
+      processNumber: processNumber || null,
+      court:         court || null,
+      expirationDate: expirationDate || null,
+      mode,
+      creditHistory: [{
+        amount:    totalCredit,
+        type:      'initial',
+        reason:    'contract_created',
+        createdAt: new Date()
+      }],
+    };
+
+    // Só inclui idempotencyKey se foi fornecido — evita null no índice sparse/unique
+    if (idempotencyKey) contractData.idempotencyKey = idempotencyKey;
+
+    const contract = await LiminarContract.create(contractData);
+
+    logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit });
+
+    return res.status(201).json({ contract });
+  } catch (err) {
+    logger.error('Erro ao criar contrato liminar', {
+      err: err.message,
+      code: err.code,
+      patientId,
+      doctorId,
+      totalCredit
+    });
+
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'Contrato com este idempotencyKey já existe' });
+    }
+
+    return res.status(500).json({ error: err.message });
   }
-
-  const contract = await LiminarContract.create({
-    patient:       patientId,
-    doctor:        doctorId,
-    totalCredit,
-    creditBalance: totalCredit,
-    usedCredit:    0,
-    processNumber: processNumber || null,
-    court:         court || null,
-    expirationDate: expirationDate || null,
-    mode,
-    creditHistory: [{
-      amount:    totalCredit,
-      type:      'initial',
-      reason:    'contract_created',
-      createdAt: new Date()
-    }],
-    idempotencyKey: idempotencyKey || null
-  });
-
-  logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit });
-
-  return res.status(201).json({ contract });
 }
 
 // ──────────────────────────────────────────────────────────────
