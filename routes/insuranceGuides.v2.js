@@ -13,6 +13,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
+import InsurancePlan from '../models/InsurancePlan.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 
@@ -495,15 +496,20 @@ router.post('/:id/inactivate', auth, async (req, res) => {
       ...(packageIds.length > 0 ? [{ package: { $in: packageIds } }] : [])
     ];
 
-    // ── 2. Cancela appointments futuros diretamente ──
-    const appointmentsResult = await Appointment.updateMany(
-      {
-        $or: guideOrPackageQuery,
-        operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] },
-        date: { $gte: today }
-      },
-      { operationalStatus: 'canceled', clinicalStatus: 'missed', updatedAt: new Date() }
-    );
+    // ── 2. Deleta appointments futuros + sessions/payments vinculados ──
+    // Busca IDs primeiro para deletar filhos de forma consistente
+    const apptsToDelete = await Appointment.find({
+      $or: guideOrPackageQuery,
+      operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] },
+      date: { $gte: today }
+    }).select('_id').lean();
+    const apptIdsToDelete = apptsToDelete.map(a => a._id);
+
+    if (apptIdsToDelete.length > 0) {
+      await Session.deleteMany({ appointment: { $in: apptIdsToDelete } });
+      await Payment.deleteMany({ appointment: { $in: apptIdsToDelete } });
+    }
+    const appointmentsDeletedResult = await Appointment.deleteMany({ _id: { $in: apptIdsToDelete } });
 
     // ── 3. Cancela sessions pendentes diretamente ──
     const sessionsResult = await Session.updateMany(
@@ -523,7 +529,42 @@ router.post('/:id/inactivate', auth, async (req, res) => {
       { status: 'canceled', updatedAt: new Date() }
     );
 
-    // ── 4. Inativa a guia ──
+    // ── 5. Cancela InsurancePlan e DELETA seus appointments/sessions/payments futuros ──
+    let planCanceled = false;
+    let planAppointmentsDeleted = 0;
+    const linkedPlan = await InsurancePlan.findOne({ guide: guideObjId }).lean();
+    if (linkedPlan) {
+      const planApptsToDelete = await Appointment.find({
+        insurancePlan: linkedPlan._id, date: { $gte: today }, operationalStatus: 'scheduled'
+      }).select('_id').lean();
+      const planApptIds = planApptsToDelete.map(a => a._id);
+
+      if (planApptIds.length > 0) {
+        await Session.deleteMany({ appointment: { $in: planApptIds } });
+        await Payment.deleteMany({ appointment: { $in: planApptIds } });
+      }
+      const planApptResult = await Appointment.deleteMany({ _id: { $in: planApptIds } });
+
+      await Payment.updateMany(
+        { insurancePlan: linkedPlan._id, status: { $in: ['pending', 'scheduled', 'unpaid'] } },
+        { status: 'canceled', updatedAt: new Date() }
+      );
+      await InsurancePlan.findByIdAndUpdate(linkedPlan._id, { status: 'cancelled', updatedAt: new Date() });
+      planCanceled = true;
+      planAppointmentsDeleted = planApptResult.deletedCount;
+    }
+
+    // ── 6. Marca Package vinculado como cancelled (para aparecer na aba Inativas) ──
+    let packageCanceled = false;
+    if (linkedPackages.length > 0) {
+      await Package.updateMany(
+        { _id: { $in: packageIds } },
+        { status: 'cancelled', updatedAt: new Date() }
+      );
+      packageCanceled = true;
+    }
+
+    // ── 7. Inativa a guia ──
     await InsuranceGuide.findByIdAndUpdate(
       guideObjId,
       { status: 'cancelled', updatedAt: new Date() }
@@ -533,8 +574,11 @@ router.post('/:id/inactivate', auth, async (req, res) => {
       correlationId,
       guideId: id,
       sessionsCanceled: sessionsResult.modifiedCount,
-      appointmentsCanceled: appointmentsResult.modifiedCount,
-      paymentsCanceled: paymentsResult.modifiedCount
+      appointmentsDeleted: appointmentsDeletedResult.deletedCount,
+      paymentsCanceled: paymentsResult.modifiedCount,
+      planCanceled,
+      planAppointmentsDeleted,
+      packageCanceled
     });
 
     return res.json({
@@ -542,8 +586,11 @@ router.post('/:id/inactivate', auth, async (req, res) => {
       data: {
         guideId: id,
         sessionsCanceled: sessionsResult.modifiedCount,
-        appointmentsCanceled: appointmentsResult.modifiedCount,
-        paymentsCanceled: paymentsResult.modifiedCount
+        appointmentsDeleted: appointmentsDeletedResult.deletedCount,
+        paymentsCanceled: paymentsResult.modifiedCount,
+        planCanceled,
+        planAppointmentsDeleted,
+        packageCanceled
       }
     });
 

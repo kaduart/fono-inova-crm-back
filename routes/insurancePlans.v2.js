@@ -159,9 +159,14 @@ router.post('/', auth, async (req, res) => {
 
     if (error.code === 11000 || error.message?.includes('E11000')) {
       // Duplicate key — unique index violado
+      const indexMatch = error.message?.match(/index:\s+(\S+)/);
+      const indexName = indexMatch ? indexMatch[1].trim() : '';
       const fieldMatch = error.message?.match(/dup key:\s*\{\s*([^:]+)/);
       const field = fieldMatch ? fieldMatch[1].trim() : 'registro';
-      if (field.includes('guide')) {
+
+      if (indexName.includes('unique_appointment_slot') || (field.includes('doctor') && error.message?.includes('date'))) {
+        message = 'Conflito de horário: esta profissional já possui um agendamento em um dos dias/horários selecionados. Escolha outros horários ou datas.';
+      } else if (field.includes('guide')) {
         message = 'Já existe um plano para esta guia. Cancele o plano anterior antes de criar um novo.';
       } else {
         message = `Este ${field} já está em uso. Escolha outro valor.`;
