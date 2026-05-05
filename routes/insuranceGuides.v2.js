@@ -10,6 +10,8 @@ import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import InsuranceGuideView from '../models/InsuranceGuideView.js';
 import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
+import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
@@ -207,16 +209,16 @@ router.get('/', auth, async (req, res) => {
       data: {
         guides: guides.map(g => ({
           _id: g._id.toString(),
-          guideId: g._id.toString(),
           number: g.number,
-          patientId: g.patientId,
+          patientId: g.patientId?._id?.toString?.() || g.patientId?.toString?.() || g.patientId,
           insurance: g.insurance,
           specialty: g.specialty,
           totalSessions: g.totalSessions,
           usedSessions: g.usedSessions || 0,
-          sessionsRemaining: (g.totalSessions || 0) - (g.usedSessions || 0),
+          remaining: Math.max(0, (g.totalSessions || 0) - (g.usedSessions || 0)),
           status: g.status,
-          expiresAt: g.expiresAt
+          expiresAt: g.expiresAt,
+          createdAt: g.createdAt
         })),
         pagination: {
           total,
@@ -279,7 +281,8 @@ router.get('/:id', auth, async (req, res) => {
         status: guide.status,
         expiresAt: guide.expiresAt,
         valor: guide.valor,
-        notes: guide.notes
+        notes: guide.notes,
+        createdAt: guide.createdAt
       },
       meta: { version: '2.0' }
     });
@@ -451,6 +454,101 @@ router.get('/:id/appointments', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao buscar agendamentos da guia:', error);
+    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  }
+});
+
+/**
+ * POST /api/v2/insurance-guides/:id/inactivate
+ * Inativa guia de convênio: cancela pendências, mantém histórico.
+ * Mesmo padrão do pacote (POST /v2/packages/:id/inactivate).
+ */
+router.post('/:id/inactivate', auth, async (req, res) => {
+  const correlationId = `ig_inactivate_${Date.now()}`;
+  const { id } = req.params;
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    }
+
+    const guideObjId = new mongoose.Types.ObjectId(id);
+
+    const guide = await InsuranceGuide.findById(guideObjId).lean();
+    if (!guide) {
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada' });
+    }
+    if (guide.status === 'cancelled') {
+      return res.status(400).json({ success: false, errorCode: 'ALREADY_CANCELLED', message: 'Guia já está inativa' });
+    }
+
+    const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
+    const today = new Date().toISOString().split('T')[0];
+
+    // ── 1. Packages vinculados à guia ──
+    const linkedPackages = await Package.find({ insuranceGuide: guideObjId }).select('_id').lean();
+    const packageIds = linkedPackages.map(p => p._id);
+
+    // Monta query de $or para guia direta + packages vinculados
+    const guideOrPackageQuery = [
+      { insuranceGuide: guideObjId },
+      ...(packageIds.length > 0 ? [{ package: { $in: packageIds } }] : [])
+    ];
+
+    // ── 2. Cancela appointments futuros diretamente ──
+    const appointmentsResult = await Appointment.updateMany(
+      {
+        $or: guideOrPackageQuery,
+        operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] },
+        date: { $gte: today }
+      },
+      { operationalStatus: 'canceled', clinicalStatus: 'missed', updatedAt: new Date() }
+    );
+
+    // ── 3. Cancela sessions pendentes diretamente ──
+    const sessionsResult = await Session.updateMany(
+      {
+        $or: guideOrPackageQuery,
+        status: { $in: pendingStatuses }
+      },
+      { status: 'canceled', updatedAt: new Date() }
+    );
+
+    // ── 4. Cancela payments pendentes ──
+    const paymentsResult = await Payment.updateMany(
+      {
+        $or: guideOrPackageQuery,
+        status: { $in: ['pending', 'scheduled', 'unpaid'] }
+      },
+      { status: 'canceled', updatedAt: new Date() }
+    );
+
+    // ── 4. Inativa a guia ──
+    await InsuranceGuide.findByIdAndUpdate(
+      guideObjId,
+      { status: 'cancelled', updatedAt: new Date() }
+    );
+
+    console.log('[InsuranceGuidesV2] Guia inativada', {
+      correlationId,
+      guideId: id,
+      sessionsCanceled: sessionsResult.modifiedCount,
+      appointmentsCanceled: appointmentsResult.modifiedCount,
+      paymentsCanceled: paymentsResult.modifiedCount
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        guideId: id,
+        sessionsCanceled: sessionsResult.modifiedCount,
+        appointmentsCanceled: appointmentsResult.modifiedCount,
+        paymentsCanceled: paymentsResult.modifiedCount
+      }
+    });
+
+  } catch (error) {
+    console.error('[InsuranceGuidesV2] Erro ao inativar guia:', error);
     return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
