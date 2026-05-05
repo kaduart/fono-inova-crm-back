@@ -679,14 +679,6 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     }
 
-    // 🟢 Inicializa WhatsApp Web (chip comum / Business)
-    try {
-      initWhatsAppClient();
-      console.log("🟢 WhatsApp Web inicializado (aguardando QR code se necessário)");
-    } catch (wppErr) {
-      console.warn("⚠️ Falha ao inicializar WhatsApp Web:", wppErr.message);
-    }
-
     // 🏥 Monitor de runtime (memória + filas) - DESABILITADO TEMPORARIAMENTE
     // startRuntimeMonitor();
 
@@ -771,6 +763,14 @@ server.listen(PORT, '0.0.0.0', () => {
         }
         await new Promise(resolve => setTimeout(resolve, mongoRetries * 2000));
       }
+    }
+
+    // 🟢 Inicializa WhatsApp Web (RemoteAuth + MongoDB — só depois do Mongo conectar)
+    try {
+      initWhatsAppClient();
+      console.log("🟢 WhatsApp Web inicializado (aguardando QR code se necessário)");
+    } catch (wppErr) {
+      console.warn("⚠️ Falha ao inicializar WhatsApp Web:", wppErr.message);
     }
 
     // 👉 CRONS CRÍTICOS HABILITADOS
