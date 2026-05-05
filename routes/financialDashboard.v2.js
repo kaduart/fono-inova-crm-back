@@ -497,8 +497,9 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const now = moment.tz(TIMEZONE);
     const endOfMonth = moment.tz([year, month - 1], TIMEZONE).endOf('month');
     const daysInMonth = endOfMonth.date();
-    const daysPassed = Math.min(now.date(), daysInMonth);
-    const daysRemaining = Math.max(daysInMonth - daysPassed, 1);
+    const isMonthClosed = now.isAfter(endOfMonth);
+    const daysPassed = isMonthClosed ? daysInMonth : Math.min(now.date(), daysInMonth);
+    const daysRemaining = isMonthClosed ? 0 : Math.max(daysInMonth - daysPassed, 1);
 
     const goal = await loadGoal(year, month, clinicId);
     const metaMensal = goal.metaMensal;
@@ -509,10 +510,10 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const realizadoDia = data.caixaHoje || 0;
 
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
-    const projecaoFinal = mediaDiariaAtual * daysInMonth;
+    const projecaoFinal = isMonthClosed ? realizadoMes : mediaDiariaAtual * daysInMonth;
 
-    const gapValor = Math.max(metaMensal - realizadoMes, 0);
-    const gapPorDia = gapValor / daysRemaining;
+    const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
+    const gapPorDia = daysRemaining > 0 ? gapValor / daysRemaining : 0;
 
     const ritmoEsperado = (daysPassed / diasUteis) * metaMensal;
     const diferencaRitmo = realizadoMes - ritmoEsperado;
@@ -952,6 +953,8 @@ async function calculateRealTime(year, month) {
 
     return {
         caixa: cash.total,
+        receitaReal: cash.receitaReal,
+        receitaDiferida: cash.receitaDiferida,
         caixaHoje: todayCash.total,
         caixaDetalhe: {
             particular: cash.particular,

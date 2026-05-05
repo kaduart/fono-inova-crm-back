@@ -13,8 +13,10 @@
  */
 
 import moment from 'moment-timezone';
+import mongoose from 'mongoose';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import Package from '../models/Package.js';
 import { FinancialTruthLayer } from './financialGuard/FinancialTruthLayer.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -73,16 +75,20 @@ export async function calculateCash(start, end) {
         else if (method.includes('cash') || method.includes('dinheiro')) { dinheiro += p.amount; byMethod.dinheiro += p.amount; }
         else { outros += p.amount; byMethod.outros += p.amount; }
 
-        const notes = (p.notes || '').toLowerCase();
-        const desc = (p.description || '').toLowerCase();
-        if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') pacote += p.amount;
-        else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') convenio += p.amount;
+        // Fonte única: campo estrutural — sem heurística de texto
+        if (p.package || p.serviceType === 'package_session' || p.type === 'package') pacote += p.amount;
+        else if (p.type === 'insurance' || p.billingType === 'convenio') convenio += p.amount;
         else if (p.billingType === 'liminar') liminar += p.amount;
         else particular += p.amount;
     }
 
+    // Receita Real: desconta pacotes full cujas sessões ainda não foram entregues
+    const { receitaReal, receitaDiferida } = await _calcReceitaReal(payments);
+
     return {
         total,
+        receitaReal,
+        receitaDiferida,
         particular,
         pacote,
         convenio,
@@ -95,6 +101,44 @@ export async function calculateCash(start, end) {
         count: payments.length,
         payments
     };
+}
+
+/**
+ * Calcula receita real vs diferida para pacotes full pré-pagos.
+ * Receita diferida = valor pago por sessões ainda não realizadas.
+ */
+async function _calcReceitaReal(payments) {
+    const fullPkgPayments = payments.filter(p => p.package && !p.session && !p.appointment);
+    if (fullPkgPayments.length === 0) {
+        return { receitaReal: payments.reduce((s, p) => s + p.amount, 0), receitaDiferida: 0 };
+    }
+
+    const pkgIds = [...new Set(fullPkgPayments.map(p => p.package.toString()))];
+    const [pacotes, sessionCounts] = await Promise.all([
+        Package.find({ _id: { $in: pkgIds } }, 'sessionValue totalValue totalSessions').lean(),
+        Session.aggregate([
+            { $match: { package: { $in: pkgIds.map(id => new mongoose.Types.ObjectId(id)) }, status: 'completed' } },
+            { $group: { _id: '$package', count: { $sum: 1 } } }
+        ])
+    ]);
+
+    const pkgMap = new Map(pacotes.map(p => [p._id.toString(), p]));
+    const countMap = new Map(sessionCounts.map(s => [s._id.toString(), s.count]));
+
+    let receitaDiferida = 0;
+    for (const p of fullPkgPayments) {
+        const pkg = pkgMap.get(p.package.toString());
+        if (!pkg) continue;
+        const sessVal = pkg.sessionValue > 0 ? pkg.sessionValue
+            : pkg.totalValue && pkg.totalSessions ? pkg.totalValue / pkg.totalSessions : 0;
+        if (sessVal <= 0) continue;
+        const feitas = countMap.get(p.package.toString()) || 0;
+        const ganho = feitas * sessVal;
+        receitaDiferida += Math.max(0, p.amount - ganho);
+    }
+
+    const totalCaixa = payments.reduce((s, p) => s + p.amount, 0);
+    return { receitaReal: totalCaixa - receitaDiferida, receitaDiferida };
 }
 
 export async function calculateCashByDay(start, end) {
@@ -126,7 +170,7 @@ export async function calculateCashByDay(start, end) {
  */
 export async function calculateProduction(start, end) {
     const sessions = await Session.find({
-        completedAt: { $gte: start, $lte: end },
+        date: { $gte: start, $lte: end },
         status: 'completed'
     }).populate('package', 'sessionValue totalValue totalSessions insuranceGrossAmount').lean();
 
@@ -139,6 +183,11 @@ export async function calculateProduction(start, end) {
     const finalSessions = sessions.map(s => {
         const truth = truthMap.get(s._id.toString());
         if (!truth) return s;
+        // Sessões de pacote pré-pago: pagamento é no pacote, não por sessão individual.
+        // TruthLayer retorna isPaid:false por não encontrar payment — preservar DB.
+        if (s.paymentStatus === 'package_paid' || (s.package && s.isPaid === true && !truth.isPaid)) {
+            return s;
+        }
         return { ...s, isPaid: truth.isPaid, paymentStatus: truth.paymentStatus, _financialSource: 'ledger' };
     });
 

@@ -1379,8 +1379,11 @@ export async function generateImageForEspecialidade(especialidade, postContent =
       console.log(`📤 Upload Cloudinary: ${(fotoBuf.length/1024).toFixed(1)}KB...`);
       const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
       const result = await cloudinary.uploader.upload(base64, {
-        folder:    'fono-inova/gmb',
-        public_id: `${especialidade.id}_gmb_${Date.now()}`,
+        folder:       'fono-inova/gmb',
+        public_id:    `${especialidade.id}_gmb_${Date.now()}`,
+        resource_type: 'image',
+        type:          'upload',
+        access_mode:   'public',
       });
       console.log('✅ Upload OK:', result.secure_url.substring(0, 60) + '...');
       return result.secure_url;

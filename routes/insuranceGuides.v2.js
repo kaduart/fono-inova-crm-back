@@ -9,6 +9,8 @@ import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import InsuranceGuideView from '../models/InsuranceGuideView.js';
+import Appointment from '../models/Appointment.js';
+import Package from '../models/Package.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 
@@ -379,6 +381,77 @@ router.delete('/:id', auth, async (req, res) => {
       errorCode: 'INTERNAL_ERROR',
       message: 'Erro ao cancelar guia. Tente novamente em alguns instantes.'
     });
+  }
+});
+
+/**
+ * GET /api/v2/insurance-guides/:id/appointments
+ * Retorna todos os agendamentos atrelados a uma guia (usado pela secretaria).
+ * Cobre dois caminhos:
+ *   1. Appointment.insuranceGuide = guideId (criados via appointment.v2)
+ *   2. Appointment.package em pacotes convênio cujo Package.insuranceGuide = guideId
+ */
+router.get('/:id/appointments', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    }
+
+    const guideObjId = new mongoose.Types.ObjectId(id);
+
+    // Busca a guia para obter o patientId (necessário para fallback legado)
+    const guide = await InsuranceGuide.findById(guideObjId).select('patientId').lean();
+    if (!guide) {
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada' });
+    }
+
+    // Caminho 1: appointments com insuranceGuide direto
+    // Caminho 2: appointments via pacotes convênio linkados a esta guia
+    const linkedPackages = await Package.find({ insuranceGuide: guideObjId }).select('_id').lean();
+    const packageIds = linkedPackages.map(p => p._id);
+
+    const query = packageIds.length > 0
+      ? { $or: [{ insuranceGuide: guideObjId }, { package: { $in: packageIds } }] }
+      : { insuranceGuide: guideObjId };
+
+    let appointments = await Appointment.find(query)
+      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt')
+      .populate('doctor', 'fullName')
+      .sort({ date: -1 })
+      .lean();
+
+    // Caminho 3 — fallback legado: pacotes convênio do paciente sem insuranceGuide vinculado
+    // (dados criados antes do campo existir no schema)
+    let isLegacyFallback = false;
+    if (appointments.length === 0) {
+      const legacyPackages = await Package.find({
+        patient: guide.patientId,
+        type: 'convenio',
+        $or: [{ insuranceGuide: null }, { insuranceGuide: { $exists: false } }]
+      }).select('_id').lean();
+
+      if (legacyPackages.length > 0) {
+        const legacyPackageIds = legacyPackages.map(p => p._id);
+        appointments = await Appointment.find({ package: { $in: legacyPackageIds } })
+          .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt')
+          .populate('doctor', 'fullName')
+          .sort({ date: -1 })
+          .lean();
+        if (appointments.length > 0) isLegacyFallback = true;
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: { appointments, total: appointments.length, isLegacyFallback },
+      meta: { version: '2.0' }
+    });
+
+  } catch (error) {
+    console.error('[InsuranceGuidesV2] Erro ao buscar agendamentos da guia:', error);
+    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
 

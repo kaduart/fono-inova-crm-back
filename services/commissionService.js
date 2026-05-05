@@ -221,8 +221,9 @@ export const generateMonthlyCommissions = async () => {
           },
           paymentMethod: 'transferencia_bancaria',
           status: 'pending',
-          notes: JSON.stringify(notes, null, 2),
-          createdBy: new mongoose.Types.ObjectId('000000000000000000000000')
+          notes: `Comissão ${monthRef} | Sessões: ${commission.breakdown.standardSessions.count} | Aval: ${commission.breakdown.evaluations.count} | Total: R$${commission.totalCommission.toFixed(2)}`.slice(0, 500),
+          createdBy: new mongoose.Types.ObjectId('000000000000000000000000'),
+          createdByRole: 'system'
         }], { session });
 
         results.push({

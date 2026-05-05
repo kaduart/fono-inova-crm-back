@@ -89,8 +89,55 @@ router.get('/', auth, async (req, res) => {
         let qtdPix = 0, qtdDinheiro = 0, qtdCartao = 0;
         const porEspecialidadeCaixa = {};
 
+        // Mapa: sessionId → isPrepaid (true=pré-pago, false=por sessão)
+        // Usado para detectar consumo de sessão pré-paga que escapou dos filtros padrão
+        const pkgSessionPrepaidMap = new Map(
+            production.sessions
+                .filter(s => !!s.package)
+                .map(s => {
+                    const apptS = s.appointmentId ? appointmentsMap.get(s.appointmentId.toString()) : null;
+                    const pt = apptS?.package?.paymentType || apptS?.package?.model;
+                    return [s._id.toString(), pt === 'full' || pt === 'prepaid'];
+                })
+        );
+
         const transacoesCaixa = cash.payments.map(p => {
             const method = (p.paymentMethod || '').toLowerCase();
+
+            // Busca appt antes da determinação do tipo (necessário para detectar pacote)
+            const appt = p.appointment ? appointmentsMap.get(p.appointment.toString()) : null;
+
+            const notes = (p.notes || '').toLowerCase();
+            const desc = (p.description || '').toLowerCase();
+            let tipo = 'Particular';
+            let servico = 'Sessão';
+
+            const isPackagePayment =
+                notes.includes('pacote') || desc.includes('pacote') ||
+                p.type === 'package' || p.serviceType === 'package_session' ||
+                p.package || appt?.package ||
+                (p.session && pkgSessionPrepaidMap.has(p.session.toString()));
+
+            if (isPackagePayment) {
+                tipo = 'Pacote';
+                servico = 'Sessão de Pacote';
+
+                // Pacote pré-pago sendo CONSUMIDO (não é compra do dia nem per-session)
+                // → NÃO entra em TRANSAÇÕES (dinheiro entrou quando o pacote foi comprado)
+                const isCompraHoje = !!p.package; // pagamento tem ref direta ao pacote = é a compra
+                const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
+                const isSessionPrepaid = p.session ? pkgSessionPrepaidMap.get(p.session.toString()) : false;
+                const isPrepaidConsumo = !isCompraHoje && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
+
+                if (isPrepaidConsumo) return null;
+            } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {
+                tipo = 'Convênio';
+                servico = 'Sessão Convênio';
+            } else if (p.serviceType) {
+                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
+                servico = serviceMap[p.serviceType] || 'Sessão';
+            }
+
             if (method.includes('pix')) qtdPix++;
             else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) qtdCartao++;
             else if (method.includes('cash') || method.includes('dinheiro')) qtdDinheiro++;
@@ -104,23 +151,6 @@ router.get('/', auth, async (req, res) => {
             else if (method.includes('dinheiro') || method.includes('cash')) metodo = 'Dinheiro';
             else if (method.includes('cartão') || method.includes('cartao') || method.includes('card') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) metodo = 'Cartão';
 
-            const notes = (p.notes || '').toLowerCase();
-            const desc = (p.description || '').toLowerCase();
-            let tipo = 'Particular';
-            let servico = 'Sessão';
-            if (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session') {
-                tipo = 'Pacote';
-                servico = notes.includes('avaliação') ? 'Avaliação (Pacote)' : notes.includes('teste') ? 'Teste (Pacote)' : 'Sessão de Pacote';
-            } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {
-                tipo = 'Convênio';
-                servico = 'Sessão Convênio';
-            } else if (p.serviceType) {
-                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
-                servico = serviceMap[p.serviceType] || 'Sessão';
-            }
-
-            const appt = p.appointment ? appointmentsMap.get(p.appointment.toString()) : null;
-
             return {
                 id: p._id,
                 paciente: p.patient?.fullName || p.patientName || 'Paciente não identificado',
@@ -133,7 +163,7 @@ router.get('/', auth, async (req, res) => {
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
                 categoria: 'recebido'
             };
-        });
+        }).filter(Boolean);
 
         // ========== DESPESAS DO DIA ==========
         let totalDespesas = 0;
@@ -169,6 +199,10 @@ router.get('/', auth, async (req, res) => {
             const isConvenio = (s.paymentMethod || '').toLowerCase() === 'convenio' || s.paymentOrigin === 'convenio';
             const isPacote = !!s.package;
 
+            // Detecta pacote pré-pago: dinheiro entrou na compra, sessão consumida = receita realizada
+            const pkgPayType = appt?.package?.paymentType || appt?.package?.model;
+            const isPrepaidPkg = isPacote && (pkgPayType === 'full' || pkgPayType === 'prepaid');
+
             const esp = doctor?.specialty || appt?.specialty || 'Outra';
             if (!porEspecialidade[esp]) {
                 porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
@@ -176,7 +210,8 @@ router.get('/', auth, async (req, res) => {
             porEspecialidade[esp].total += valor;
             porEspecialidade[esp].quantidade += 1;
 
-            const foiPago = s.isPaid === true || s.paymentStatus === 'paid' || s.paymentStatus === 'package_paid';
+            // Pacote pré-pago: sessão consumida = "paga" (money came in at package purchase)
+            const foiPago = s.isPaid === true || s.paymentStatus === 'paid' || s.paymentStatus === 'package_paid' || isPrepaidPkg;
             const categoria = isConvenio ? 'recebido' : (foiPago ? 'recebido' : 'a_receber');
 
             if (!foiPago && !isConvenio) {
@@ -216,7 +251,7 @@ router.get('/', auth, async (req, res) => {
                 status: appt?.operationalStatus || 'completed',
                 categoria,
                 professional: doctor?.fullName || '-',
-                paymentModel: isPacote ? (appt?.package?.paymentType === 'full' || appt?.package?.model === 'prepaid' ? 'prepaid' : 'per_session') : null
+                paymentModel: isPacote ? (isPrepaidPkg ? 'prepaid' : 'per_session') : null
             };
         });
 

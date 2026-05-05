@@ -447,6 +447,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       specialty,
       serviceType: resolvedServiceType,
       sessionType: normalizeSessionType(sessionType || specialty),
+      duration: req.body.duration || 40,
+      professionalName: req.body.professionalName || '',
       visualFlag: req.body.visualFlag !== undefined ? req.body.visualFlag : 'pending',
       package: resolvedPackageId,
       insuranceGuide: insuranceGuideId,
@@ -472,6 +474,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       ...(authorizationCode && { authorizationCode }),
 
       notes,
+      responsible: req.body.responsible || '',
       createdBy: req.user?._id,
 
       patientInfo: req.body.patientInfo ? {
@@ -1283,8 +1286,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🔥 OTIMIZAÇÃO: Query base com populate essencial
   let queryBuilder = Appointment.find(filter)
     .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment liminarContract'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment liminarContract responsible'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract responsible'
     )
     .populate('payment', 'status amount paymentMethod')
     .sort({ date: 1, time: 1 })
