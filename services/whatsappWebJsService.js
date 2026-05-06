@@ -102,6 +102,15 @@ function buildPuppeteerOptions() {
       '--no-zygote',
       '--single-process',
       '--disable-gpu',
+      '--disable-extensions',
+      '--disable-default-apps',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-update',
+      '--disable-features=site-per-process',
+      '--max_old_space_size=128', // limita memória do V8
     ],
   };
   if (chromePath) opts.executablePath = chromePath;

@@ -765,9 +765,17 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     }
 
-    // 🟢 WhatsApp Web agora roda no worker dedicado (crm-worker-whatsapp)
-    // NÃO inicializa aqui para não pesar a API principal
-    console.log("🟢 WhatsApp Web desativado no API server — rodando no worker dedicado");
+    // 🟢 Inicializa WhatsApp Web (só na API web, não no worker)
+    if (!process.env.WORKER_GROUP) {
+      try {
+        initWhatsAppClient();
+        console.log("🟢 WhatsApp Web inicializado (aguardando QR code se necessário)");
+      } catch (wppErr) {
+        console.warn("⚠️ Falha ao inicializar WhatsApp Web:", wppErr.message);
+      }
+    } else {
+      console.log("🟢 WhatsApp Web desativado no worker — rodando na API web");
+    }
 
     // 👉 CRONS CRÍTICOS HABILITADOS
     const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
