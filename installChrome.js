@@ -1,12 +1,11 @@
 import { execSync } from 'child_process';
-import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
 
 // 🔥 CRÍTICO: No Render, /opt/render/.cache NÃO persiste entre build e runtime.
 // O Chrome DEVE ficar dentro do diretório do projeto para sobreviver ao deploy.
 const projectCache = path.join(process.cwd(), '.cache', 'puppeteer');
-process.env.PUPPETEER_CACHE_DIR = projectCache; // FORÇA, sem fallback
+process.env.PUPPETEER_CACHE_DIR = projectCache;
 
 if (process.env.PUPPETEER_SKIP_DOWNLOAD === 'true') {
   console.log('[installChrome] PUPPETEER_SKIP_DOWNLOAD=true — Chrome ignorado.');
@@ -14,9 +13,17 @@ if (process.env.PUPPETEER_SKIP_DOWNLOAD === 'true') {
 }
 
 // Descobre qual versão o Puppeteer instalado espera
+// ⚠️ Usamos subprocesso para garantir que a env var já esteja setada quando o puppeteer for carregado
 let expectedPath;
 try {
-  expectedPath = puppeteer.executablePath();
+  expectedPath = execSync(
+    "node -e \"const p = require('puppeteer'); console.log(p.executablePath())\"",
+    {
+      encoding: 'utf8',
+      env: { ...process.env, PUPPETEER_CACHE_DIR: projectCache },
+      stdio: ['pipe', 'pipe', 'ignore']
+    }
+  ).trim();
 } catch (err) {
   console.log('[installChrome] Puppeteer ainda sem cache, prosseguindo com instalação...');
   expectedPath = null;
@@ -28,7 +35,7 @@ if (expectedPath && fs.existsSync(expectedPath)) {
 }
 
 // Extrai buildId do path esperado
-// Ex: /opt/render/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome
+// Ex: /opt/render/project/src/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome
 let buildId = 'stable';
 if (expectedPath) {
   const match = expectedPath.match(/chrome\/linux-([\d.]+)\//);
