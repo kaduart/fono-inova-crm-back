@@ -17,6 +17,7 @@ import puppeteer from 'puppeteer';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
 // ─── Singleton & Estado ─────────────────────────────────────────────────────
 let client = null;
@@ -27,6 +28,25 @@ let connectionStatus = 'waiting_mongo'; // waiting_mongo, initializing, qr, read
 let reconnectRetries = 0;
 let mongoStore = null;
 let initRequested = false;
+
+// ─── Persistência de estado no MongoDB (compartilhado entre API e worker) ──
+async function saveState() {
+  try {
+    await WhatsAppWebState.findOneAndUpdate(
+      { instanceId: 'main' },
+      {
+        status: connectionStatus,
+        ready: isReady,
+        qrCode: qrCodeDataUrl,
+        error: lastError,
+        updatedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.error('[WhatsAppWeb] Erro ao salvar estado:', err.message);
+  }
+}
 
 // ─── Fila de mensagens (anti-ban) ───────────────────────────────────────────
 const messageQueue = [];
@@ -143,31 +163,35 @@ function createClient() {
     connectionStatus = 'qr';
     try {
       qrCodeDataUrl = await qrcode.toDataURL(qr);
+      await saveState();
     } catch (err) {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
     }
   });
 
   // Ready
-  newClient.on('ready', () => {
+  newClient.on('ready', async () => {
     console.log('[WhatsAppWeb] ✅ Cliente pronto!');
     isReady = true;
     reconnectRetries = 0;
     qrCodeDataUrl = null;
     connectionStatus = 'ready';
     lastError = null;
+    await saveState();
   });
 
   // Authenticated
-  newClient.on('authenticated', () => {
+  newClient.on('authenticated', async () => {
     console.log('[WhatsAppWeb] 🔐 Autenticado — sessão salva no MongoDB');
+    await saveState();
   });
 
   // Auth Failure
-  newClient.on('auth_failure', (msg) => {
+  newClient.on('auth_failure', async (msg) => {
     console.error('[WhatsAppWeb] ❌ Falha na autenticação:', msg);
     lastError = msg;
     connectionStatus = 'error';
+    await saveState();
   });
 
   // Disconnected → reconexão com backoff
@@ -175,6 +199,7 @@ function createClient() {
     console.log('[WhatsAppWeb] 🔌 Desconectado:', reason);
     isReady = false;
     connectionStatus = 'disconnected';
+    await saveState();
 
     const delay = Math.min(60_000, 5_000 * (reconnectRetries + 1));
     reconnectRetries++;
@@ -192,10 +217,11 @@ function createClient() {
   });
 
   // Error
-  newClient.on('error', (err) => {
+  newClient.on('error', async (err) => {
     console.error('[WhatsAppWeb] Erro:', err.message);
     lastError = err.message;
     if (connectionStatus !== 'ready') connectionStatus = 'error';
+    await saveState();
   });
 
   return newClient;
@@ -234,12 +260,37 @@ export function initWhatsAppClient() {
 }
 
 // ─── Status ─────────────────────────────────────────────────────────────────
-export function getStatus() {
+export async function getStatus() {
+  // Se estiver rodando no mesmo processo (worker ou API local), retorna estado local
+  if (client || connectionStatus !== 'waiting_mongo') {
+    return {
+      status: connectionStatus,
+      ready: isReady,
+      qrCode: qrCodeDataUrl,
+      error: lastError,
+    };
+  }
+
+  // Se estiver na API web (sem Chrome), lê do MongoDB
+  try {
+    const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
+    if (state) {
+      return {
+        status: state.status,
+        ready: state.ready,
+        qrCode: state.qrCode,
+        error: state.error,
+      };
+    }
+  } catch (err) {
+    console.error('[WhatsAppWeb] Erro ao ler estado do MongoDB:', err.message);
+  }
+
   return {
-    status: connectionStatus,
-    ready: isReady,
-    qrCode: qrCodeDataUrl,
-    error: lastError,
+    status: 'waiting_mongo',
+    ready: false,
+    qrCode: null,
+    error: null,
   };
 }
 
