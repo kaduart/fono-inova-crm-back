@@ -482,7 +482,7 @@ export async function sendTemplateMessage({
 /** 💬 Envia texto */
 /** 💬 Envia texto COM TIMEOUT E RETRY */
 async function sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId }) {
-    const webStatus = getWebStatus();
+    const webStatus = await getWebStatus();
     if (!webStatus.ready) {
         throw new Error('WhatsApp Web não está conectado. Escaneie o QR code primeiro.');
     }
@@ -546,7 +546,7 @@ export async function sendTextMessage({
     const phone = sanitized.phone;
 
     // 🎯 ROTEAMENTO AUTOMÁTICO: Web primeiro (se conectado), depois Meta API
-    const webStatus = getWebStatus();
+    const webStatus = await getWebStatus();
     if (webStatus.ready) {
         try {
             return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
