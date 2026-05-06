@@ -340,8 +340,8 @@ const seedProtocols = async () => {
 
     console.log('\n🎯 Próximos passos:');
     console.log('   1. Testar: GET /api/protocols');
-    console.log('   2. Criar evolução: POST /api/evolutions (com protocolCode)');
-    console.log('   3. Ver progresso: GET /api/evolutions/patient/:id/progress');
+    console.log('   2. Criar evolução: POST /api/v2/evolutions (com protocolCode)');
+    console.log('   3. Ver progresso: GET /api/v2/evolutions/patient/:id/progress');
     
     console.log('\n⚠️  IMPORTANTE:');
     console.log(`   Certifique-se que sua aplicação usa o mesmo banco: "${dbName}"`);

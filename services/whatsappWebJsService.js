@@ -227,15 +227,19 @@ function createClient() {
   return newClient;
 }
 
-function doInitialize() {
+async function doInitialize() {
   if (client) return;
   console.log('[WhatsAppWeb] Inicializando cliente (RemoteAuth + MongoDB)...');
   connectionStatus = 'initializing';
+  await saveState();
   client = createClient();
-  client.initialize().catch((err) => {
+  client.initialize().catch(async (err) => {
     console.error('[WhatsAppWeb] Falha ao inicializar:', err.message);
     lastError = err.message;
     connectionStatus = 'error';
+    client = null;
+    initRequested = false;
+    await saveState();
   });
 }
 

@@ -2,62 +2,31 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-// 🔥 CRÍTICO: No Render, /opt/render/.cache NÃO persiste entre build e runtime.
-// O Chrome DEVE ficar dentro do diretório do projeto para sobreviver ao deploy.
-const projectCache = path.join(process.cwd(), '.cache', 'puppeteer');
-process.env.PUPPETEER_CACHE_DIR = projectCache;
-
 if (process.env.PUPPETEER_SKIP_DOWNLOAD === 'true') {
   console.log('[installChrome] PUPPETEER_SKIP_DOWNLOAD=true — Chrome ignorado.');
   process.exit(0);
 }
 
-// Descobre qual versão o Puppeteer instalado espera
-// ⚠️ Usamos subprocesso para garantir que a env var já esteja setada quando o puppeteer for carregado
-let expectedPath;
-try {
-  expectedPath = execSync(
-    "node -e \"const p = require('puppeteer'); console.log(p.executablePath())\"",
-    {
-      encoding: 'utf8',
-      env: { ...process.env, PUPPETEER_CACHE_DIR: projectCache },
-      stdio: ['pipe', 'pipe', 'ignore']
+// .puppeteerrc.cjs define cacheDirectory = <project>/.cache/puppeteer
+// npx puppeteer browsers install lê esse arquivo automaticamente
+const projectCache = path.join(process.cwd(), '.cache', 'puppeteer', 'chrome');
+
+if (fs.existsSync(projectCache)) {
+  const versions = fs.readdirSync(projectCache).filter(v => v.startsWith('linux-'));
+  if (versions.length > 0) {
+    const candidate = path.join(projectCache, versions[0], 'chrome-linux64', 'chrome');
+    if (fs.existsSync(candidate)) {
+      console.log('[installChrome] ✅ Chrome já instalado:', candidate);
+      process.exit(0);
     }
-  ).trim();
-} catch (err) {
-  console.log('[installChrome] Puppeteer ainda sem cache, prosseguindo com instalação...');
-  expectedPath = null;
-}
-
-if (expectedPath && fs.existsSync(expectedPath)) {
-  console.log('[installChrome] ✅ Chrome já instalado:', expectedPath);
-  process.exit(0);
-}
-
-// Extrai buildId do path esperado
-// Ex: /opt/render/project/src/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome
-let buildId = 'stable';
-if (expectedPath) {
-  const match = expectedPath.match(/chrome\/linux-([\d.]+)\//);
-  if (match) {
-    buildId = match[1];
   }
 }
 
-console.log(`[installChrome] Chrome não encontrado.`);
-console.log(`[installChrome] Path esperado: ${expectedPath || 'desconhecido'}`);
-console.log(`[installChrome] Tentando instalar versão: ${buildId}`);
-
+console.log('[installChrome] Instalando Chrome via Puppeteer...');
 try {
-  execSync(`npx puppeteer browsers install chrome@${buildId}`, { stdio: 'inherit' });
-  console.log('[installChrome] ✅ Instalação concluída.');
+  execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
+  console.log('[installChrome] ✅ Chrome instalado com sucesso.');
 } catch (err) {
-  console.warn(`[installChrome] ⚠️ Falha ao instalar chrome@${buildId}, tentando stable...`);
-  try {
-    execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
-    console.log('[installChrome] ✅ Instalação stable concluída.');
-  } catch (err2) {
-    console.error('[installChrome] ❌ Falha total na instalação do Chrome:', err2.message);
-    process.exit(1);
-  }
+  console.error('[installChrome] ❌ Falha na instalação:', err.message);
+  process.exit(1);
 }

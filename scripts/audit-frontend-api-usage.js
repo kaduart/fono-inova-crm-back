@@ -27,7 +27,7 @@ const V1_ROUTES = [
     '/api/financial/dashboard',
     '/api/insurance-guides',
     '/api/pre-agendamento',
-    '/api/evolutions',
+    // '/api/evolutions',  // 🗑️ V1 REMOVIDO (usar /api/v2/evolutions)
     '/api/leads',
     '/api/sales',
     '/api/provisionamento',

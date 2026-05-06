@@ -84,11 +84,6 @@ router.get('/', auth, async (req, res) => {
             }
         }
 
-        // DEBUG TEMPORÁRIO
-        console.log('[cashflow debug] sessions:', production.sessions.length, '| apptMap:', appointmentsMap.size, '| patientServiceMap:', patientIdToServiceType.size);
-        console.log('[cashflow debug] patientServiceMap entries:', [...patientIdToServiceType.entries()].map(([k,v]) => `${k}=${v}`));
-        console.log('[cashflow debug] payments patientIds:', cash.payments.map(p => p.patient?._id?.toString() || p.patient?.toString()));
-
         // ============================================================
         // 🎯 COMPARATIVOS: ONTEM E MÊS
         // ============================================================

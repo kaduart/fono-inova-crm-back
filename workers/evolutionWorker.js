@@ -1,18 +1,19 @@
 /**
- * 🧬 Evolution Worker — V2 (Production-Grade)
+ * 🧬 Evolution Worker — V2 (Side-Effects Only)
  *
- * Princípio: Writes via eventos com idempotência garantida.
- * At-most-once logicamente, mesmo com fila at-least-once.
- *
- * Eventos suportados:
- * - EVOLUTION_CREATE_REQUESTED → salva no MongoDB → emite EVOLUTION_CREATED
- * - EVOLUTION_UPDATE_REQUESTED → atualiza no MongoDB → emite EVOLUTION_UPDATED
- * - EVOLUTION_DELETE_REQUESTED → deleta no MongoDB → emite EVOLUTION_DELETED
+ * Princípio: A criação/atualização/deleção principal agora é SÍNCRONA na rota.
+ * Este worker processa:
+ *  1. Eventos REQUESTED (legado/fallback) — idempotente
+ *  2. Eventos de RESULTADO (CREATED/UPDATED/DELETED) — side-effects:
+ *     - Histórico de auditoria
+ *     - Atualização de projeções
+ *     - Notificações (futuro)
  */
 
 import { Worker } from 'bullmq';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import Evolution from '../models/Evolution.js';
+import EvolutionHistory from '../models/EvolutionHistory.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import { eventExists, processWithGuarantees, appendEvent } from '../infrastructure/events/eventStoreService.js';
@@ -29,14 +30,13 @@ export function startEvolutionWorker() {
             attempt: job.attemptsMade + 1
         });
 
-        // 🛡️ IDEMPOTÊNCIA: verifica se evento já foi processado
+        // 🛡️ IDEMPOTÊNCIA
         const existingEvent = await EventStore.findOne({ eventId });
         if (existingEvent && existingEvent.status === 'processed') {
             log.info('already_processed', `Evento já processado: ${eventId}`);
             return { status: 'already_processed', eventId };
         }
 
-        // 🛡️ IDEMPOTÊNCIA: verifica idempotencyKey se disponível
         const idempotencyKey = job.data.idempotencyKey || eventId;
         if (idempotencyKey && await eventExists(idempotencyKey)) {
             log.info('already_processed', `Evento com idempotencyKey já processado: ${idempotencyKey}`);
@@ -44,7 +44,6 @@ export function startEvolutionWorker() {
         }
 
         try {
-            // Registra evento no Event Store
             await appendEvent({
                 eventType,
                 aggregateType: 'evolution',
@@ -52,24 +51,34 @@ export function startEvolutionWorker() {
                 payload: job.data,
                 idempotencyKey,
                 correlationId,
-                metadata: {
-                    source: 'evolution_worker',
-                    workerJobId: job.id
-                }
+                metadata: { source: 'evolution_worker', workerJobId: job.id }
             });
 
             const result = await processWithGuarantees(
                 { eventId, eventType, correlationId, payload },
                 async (event) => {
+                    // ─── Eventos de REQUEST (legado / fallback idempotente) ───
                     if (eventType === EventTypes.EVOLUTION_CREATE_REQUESTED) {
-                        return await handleCreate(payload, eventId, correlationId, log);
+                        return await handleCreateFallback(payload, eventId, correlationId, log);
                     }
                     if (eventType === EventTypes.EVOLUTION_UPDATE_REQUESTED) {
-                        return await handleUpdate(payload, eventId, correlationId, log);
+                        return await handleUpdateFallback(payload, eventId, correlationId, log);
                     }
                     if (eventType === EventTypes.EVOLUTION_DELETE_REQUESTED) {
-                        return await handleDelete(payload, eventId, correlationId, log);
+                        return await handleDeleteFallback(payload, eventId, correlationId, log);
                     }
+
+                    // ─── Eventos de RESULTADO (side-effects principais) ───
+                    if (eventType === EventTypes.EVOLUTION_CREATED) {
+                        return await handleCreatedSideEffect(payload, log);
+                    }
+                    if (eventType === EventTypes.EVOLUTION_UPDATED) {
+                        return await handleUpdatedSideEffect(payload, log);
+                    }
+                    if (eventType === EventTypes.EVOLUTION_DELETED) {
+                        return await handleDeletedSideEffect(payload, log);
+                    }
+
                     return { status: 'ignored', reason: 'unknown_event_type' };
                 }
             );
@@ -100,10 +109,13 @@ export function startEvolutionWorker() {
     return worker;
 }
 
-async function handleCreate(payload, eventId, correlationId, log) {
+// ═══════════════════════════════════════════════════════════════════════
+// FALLBACK IDEMPOTENTE (REQUESTED) — mantido para compatibilidade
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleCreateFallback(payload, eventId, correlationId, log) {
     const { patientId, doctorId, date, appointmentId } = payload;
 
-    // 🛡️ DEDUPE DE NEGÓCIO: se já existe evolution para esse appointment, skip
     if (appointmentId) {
         const existing = await Evolution.findOne({ appointmentId }).lean();
         if (existing) {
@@ -114,7 +126,6 @@ async function handleCreate(payload, eventId, correlationId, log) {
         }
     }
 
-    // 🛡️ DEDUPE DE NEGÓCIO: se já existe evolution para patient+date+doctor, skip
     const dupQuery = { patient: patientId, date: new Date(date), doctor: doctorId };
     const existingDup = await Evolution.findOne(dupQuery).lean();
     if (existingDup) {
@@ -138,11 +149,13 @@ async function handleCreate(payload, eventId, correlationId, log) {
         metrics: payload.metrics,
         evaluationAreas: payload.evaluationAreas,
         notes: payload.notes,
+        specialty: payload.specialty || 'geral',
+        createdBy: doctorId,
         createdAt: new Date()
     });
 
     await evolution.save();
-    log.info('evolution_created', `Evolução criada: ${evolution._id}`);
+    log.info('evolution_created', `Evolução criada (fallback): ${evolution._id}`);
 
     await publishEvent(EventTypes.EVOLUTION_CREATED, {
         evolutionId: evolution._id.toString(),
@@ -155,48 +168,111 @@ async function handleCreate(payload, eventId, correlationId, log) {
     return { status: 'completed', evolutionId: evolution._id.toString() };
 }
 
-async function handleUpdate(payload, eventId, correlationId, log) {
+async function handleUpdateFallback(payload, eventId, correlationId, log) {
     const { evolutionId, ...updateData } = payload;
-
     const evolution = await Evolution.findByIdAndUpdate(
         evolutionId,
         { $set: { ...updateData, updatedAt: new Date() } },
         { new: true }
     );
-
     if (!evolution) {
         log.warn('evolution_not_found', `Evolução não encontrada: ${evolutionId}`);
         return { status: 'failed', reason: 'EVOLUTION_NOT_FOUND' };
     }
-
-    log.info('evolution_updated', `Evolução atualizada: ${evolutionId}`);
-
-    await publishEvent(EventTypes.EVOLUTION_UPDATED, {
-        evolutionId: evolution._id.toString(),
-        patientId: evolution.patient?.toString?.(),
-        doctorId: evolution.doctor?.toString?.()
-    }, { correlationId: correlationId || `evo_update_${evolutionId}` });
-
+    log.info('evolution_updated', `Evolução atualizada (fallback): ${evolutionId}`);
     return { status: 'completed', evolutionId: evolution._id.toString() };
 }
 
-async function handleDelete(payload, eventId, correlationId, log) {
+async function handleDeleteFallback(payload, eventId, correlationId, log) {
     const { evolutionId } = payload;
-
     const evolution = await Evolution.findByIdAndDelete(evolutionId);
-
     if (!evolution) {
         log.warn('evolution_not_found', `Evolução não encontrada: ${evolutionId}`);
         return { status: 'failed', reason: 'EVOLUTION_NOT_FOUND' };
     }
+    log.info('evolution_deleted', `Evolução deletada (fallback): ${evolutionId}`);
+    return { status: 'completed', evolutionId };
+}
 
-    log.info('evolution_deleted', `Evolução deletada: ${evolutionId}`);
+// ═══════════════════════════════════════════════════════════════════════
+// SIDE-EFFECTS (RESULTADO) — o que realmente importa na nova arquitetura
+// ═══════════════════════════════════════════════════════════════════════
 
-    await publishEvent(EventTypes.EVOLUTION_DELETED, {
-        evolutionId,
-        patientId: evolution.patient?.toString?.(),
-        doctorId: evolution.doctor?.toString?.()
-    }, { correlationId: correlationId || `evo_delete_${evolutionId}` });
+async function handleCreatedSideEffect(payload, log) {
+    const { evolutionId, patientId, doctorId } = payload;
+
+    // 1. Auditoria: salvar histórico de criação
+    try {
+        const evolution = await Evolution.findById(evolutionId).lean();
+        if (evolution) {
+            const history = new EvolutionHistory({
+                evolutionId,
+                changedBy: doctorId,
+                action: 'CREATE',
+                previousData: null,
+                newData: evolution,
+                changes: [],
+                reason: 'Criação via API síncrona'
+            });
+            await history.save();
+            log.info('history_saved', `Histórico de criação salvo: ${evolutionId}`);
+        }
+    } catch (err) {
+        log.error('history_create_failed', err.message, { evolutionId });
+    }
+
+    // 2. Futuro: atualizar projeção de paciente, notificar família, etc.
+    log.info('side_effect_complete', `Side-effects de criação concluídos: ${evolutionId}`);
+    return { status: 'completed', evolutionId };
+}
+
+async function handleUpdatedSideEffect(payload, log) {
+    const { evolutionId, doctorId } = payload;
+
+    try {
+        const evolution = await Evolution.findById(evolutionId).lean();
+        if (evolution) {
+            const previous = await EvolutionHistory.findOne({ evolutionId })
+                .sort({ createdAt: -1 })
+                .lean();
+
+            const history = new EvolutionHistory({
+                evolutionId,
+                changedBy: doctorId,
+                action: 'UPDATE',
+                previousData: previous?.newData || null,
+                newData: evolution,
+                changes: payload.changes || [],
+                reason: payload.reason || 'Atualização via API síncrona'
+            });
+            await history.save();
+            log.info('history_saved', `Histórico de atualização salvo: ${evolutionId}`);
+        }
+    } catch (err) {
+        log.error('history_update_failed', err.message, { evolutionId });
+    }
+
+    return { status: 'completed', evolutionId };
+}
+
+async function handleDeletedSideEffect(payload, log) {
+    const { evolutionId, doctorId } = payload;
+
+    try {
+        const history = new EvolutionHistory({
+            evolutionId,
+            changedBy: doctorId,
+            action: 'DELETE',
+            previousData: payload.previousData || null,
+            newData: null,
+            changes: [],
+            reason: 'Exclusão via API síncrona'
+        });
+        await history.save();
+        log.info('history_saved', `Histórico de exclusão salvo: ${evolutionId}`);
+    } catch (err) {
+        log.error('history_delete_failed', err.message, { evolutionId });
+    }
 
     return { status: 'completed', evolutionId };
 }
