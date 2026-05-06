@@ -1,10 +1,13 @@
 import { execSync } from 'child_process';
 import puppeteer from 'puppeteer';
 import fs from 'fs';
+import path from 'path';
 
-// Alinha cache de build com runtime (Render/VPS)
+// 🔥 CRÍTICO: No Render, /opt/render/.cache NÃO persiste entre build e runtime.
+// O Chrome DEVE ficar dentro do diretório do projeto para sobreviver ao deploy.
+const projectCache = path.join(process.cwd(), '.cache', 'puppeteer');
 process.env.PUPPETEER_CACHE_DIR =
-  process.env.PUPPETEER_CACHE_DIR || '/opt/render/.cache/puppeteer';
+  process.env.PUPPETEER_CACHE_DIR || projectCache;
 
 if (process.env.PUPPETEER_SKIP_DOWNLOAD === 'true') {
   console.log('[installChrome] PUPPETEER_SKIP_DOWNLOAD=true — Chrome ignorado.');
