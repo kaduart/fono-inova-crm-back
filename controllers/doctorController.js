@@ -397,6 +397,7 @@ export const getDoctorById = async (req, res) => {
 export const getDoctorPatients = async (req, res) => {
   try {
     const doctorId = req.user?.id;
+    const { page = '1', limit = '50', search = '' } = req.query;
 
     if (!doctorId) {
       return res.status(400).json({ code: 'MISSING_ID', message: 'ID do médico não fornecido' });
@@ -411,6 +412,8 @@ export const getDoctorPatients = async (req, res) => {
     }
 
     const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
 
     // Passo 1: buscar os appointments do médico (ignora cancelados)
     const appointments = await Appointment.find({
@@ -419,20 +422,36 @@ export const getDoctorPatients = async (req, res) => {
     }).select('patient date time operationalStatus').lean();
 
     if (!appointments.length) {
-      return res.json([]);
+      return res.json({
+        success: true,
+        data: [],
+        meta: { total: 0, page: pageNum, totalPages: 0, limit: limitNum }
+      });
     }
 
     // Passo 2: pegar IDs únicos dos pacientes
     const patientIds = [...new Set(appointments
-      .filter(a => a.patient)  // Filtra appointments sem paciente
+      .filter(a => a.patient)
       .map(a => a.patient.toString()))];
 
-    // Passo 3: buscar os pacientes
-    const patients = await Patient.find({ _id: { $in: patientIds } })
-      .select('fullName phone email imageAuthorization')
-      .lean();
+    // Passo 3: construir filtro de pacientes
+    const patientFilter = { _id: { $in: patientIds } };
+    if (search && search.trim()) {
+      patientFilter.fullName = { $regex: search.trim(), $options: 'i' };
+    }
 
-    // Passo 4: enriquecer pacientes com last/next appointment
+    // Passo 4: buscar os pacientes (com paginação)
+    const skip = (pageNum - 1) * limitNum;
+    const [patients, total] = await Promise.all([
+      Patient.find(patientFilter)
+        .select('fullName phone email imageAuthorization')
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Patient.countDocuments(patientFilter)
+    ]);
+
+    // Passo 5: enriquecer pacientes com last/next appointment
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const enriched = patients.map(p => {
@@ -450,7 +469,16 @@ export const getDoctorPatients = async (req, res) => {
       };
     });
 
-    return res.json(enriched);
+    return res.json({
+      success: true,
+      data: enriched,
+      meta: {
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+        limit: limitNum
+      }
+    });
 
   } catch (error) {
     console.error('Erro no getDoctorPatients:', error);

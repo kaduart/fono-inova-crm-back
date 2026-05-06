@@ -1,8 +1,11 @@
 /**
- * 🧬 Evolution Routes — V2
+ * 🧬 Evolution Routes — V2 (Clinical-First)
  *
- * Princípio: Writes via eventos (EVOLUTION_*_REQUESTED), reads diretos no MongoDB.
- * Endpoints drop-in replacement para /api/evolutions (V1).
+ * Princípio: Tudo que impacta atendimento = síncrono.
+ *
+ * - Writes (POST/PUT/DELETE): salvam direto no MongoDB, retornam documento populado.
+ *   Eventos são publicados DEPOIS do sucesso para side-effects (analytics, notificações).
+ * - Reads: diretos no MongoDB com escopo de profissional (doctor) para não-admins.
  */
 
 import express from 'express';
@@ -15,37 +18,109 @@ import { generatePdfFromEvolution } from '../services/generatePDF.js';
 
 const router = express.Router();
 
-// ========== WRITES (via eventos) ==========
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+const isAdmin = (user) => ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
+
+const getEvolutionScope = (req) => {
+    if (isAdmin(req.user)) return {};
+    return { doctor: new mongoose.Types.ObjectId(req.user.id) };
+};
+
+// Escopo para leitura de evoluções DE UM PACIENTE — visibilidade compartilhada
+// entre profissionais da clínica para coordenação de cuidado
+const getPatientReadScope = (_req) => ({});
+
+const success = (data, meta = {}) => ({
+    success: true,
+    data,
+    meta: { version: 'v2', timestamp: new Date().toISOString(), ...meta }
+});
+
+const failure = (code, message, details) => ({
+    success: false,
+    error: { code, message, details },
+    meta: { version: 'v2', timestamp: new Date().toISOString() }
+});
+
+// ─── WRITES (síncronos — feedback imediato ao profissional) ───────────
 
 router.post('/', flexibleAuth, async (req, res) => {
     try {
         const payload = req.body;
-        const correlationId = `evo_create_${Date.now()}`;
+        const doctorId = req.user?.id;
 
-        await publishEvent(EventTypes.EVOLUTION_CREATE_REQUESTED, {
-            patientId: payload.patient,
-            doctorId: payload.doctor,
-            date: payload.date,
+        // 🛡️ Validação de campos obrigatórios
+        if (!payload.patient || !mongoose.Types.ObjectId.isValid(payload.patient)) {
+            return res.status(400).json(failure('INVALID_PATIENT', 'Paciente inválido'));
+        }
+        if (!payload.date) {
+            return res.status(400).json(failure('MISSING_DATE', 'Data é obrigatória'));
+        }
+        if (!payload.specialty?.trim()) {
+            return res.status(400).json(failure('MISSING_SPECIALTY', 'Especialidade é obrigatória'));
+        }
+        if (!doctorId) {
+            return res.status(401).json(failure('UNAUTHORIZED', 'Usuário não autenticado'));
+        }
+
+        const doc = new Evolution({
+            patient: payload.patient,
+            doctor: doctorId,
+            date: new Date(payload.date),
             time: payload.time,
-            valuePaid: payload.valuePaid,
-            sessionType: payload.sessionType,
-            paymentType: payload.paymentType,
-            appointmentId: payload.appointmentId,
-            plan: payload.plan,
-            evaluationTypes: payload.evaluationTypes,
-            metrics: payload.metrics,
-            evaluationAreas: payload.evaluationAreas,
-            notes: payload.notes
-        }, { correlationId });
-
-        res.status(202).json({
-            success: true,
-            message: 'Evolução em processamento',
-            correlationId
+            specialty: payload.specialty.trim(),
+            content: payload.content || '',
+            observations: payload.observations || '',
+            metrics: payload.metrics || [],
+            evaluationAreas: payload.evaluationAreas || [],
+            evaluationTypes: payload.evaluationTypes || [],
+            plan: payload.plan || '',
+            treatmentStatus: payload.treatmentStatus || 'in_progress',
+            therapeuticPlan: payload.therapeuticPlan || null,
+            protocolCode: payload.protocolCode || null,
+            activeProtocols: payload.protocolCode ? [payload.protocolCode] : [],
+            appointmentId: payload.appointmentId || null,
+            createdBy: doctorId,
         });
+
+        // Calcula progresso dos objetivos se houver plano terapêutico
+        if (doc.therapeuticPlan?.objectives) {
+            doc.calculateObjectivesProgress();
+        }
+
+        await doc.save();
+
+        const populated = await Evolution.findById(doc._id)
+            .populate('doctor', 'fullName specialty')
+            .populate('patient', 'fullName dateOfBirth');
+
+        // 🔔 Publica evento para side-effects (analytics, notificações, etc.)
+        try {
+            await publishEvent(EventTypes.EVOLUTION_CREATED, {
+                evolutionId: doc._id.toString(),
+                patientId: payload.patient,
+                doctorId,
+                appointmentId: payload.appointmentId,
+                date: payload.date,
+            }, { correlationId: `evo_create_${doc._id}` });
+        } catch (evtErr) {
+            console.warn('[EvolutionV2] Evento de side-effect falhou (não crítico):', evtErr.message);
+        }
+
+        res.status(201).json(success(populated));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao criar:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+        if (error.name === 'ValidationError') {
+            const errors = Object.values(error.errors).map(e => e.message);
+            return res.status(400).json(failure('VALIDATION_ERROR', 'Erro de validação', errors));
+        }
+        if (error.code === 11000) {
+            return res.status(409).json(failure('DUPLICATE_EVOLUTION', 'Já existe uma evolução com esses dados'));
+        }
+
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -53,24 +128,48 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
         }
 
-        const correlationId = `evo_update_${id}_${Date.now()}`;
+        const evolution = await Evolution.findById(id);
+        if (!evolution) {
+            return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        }
 
-        await publishEvent(EventTypes.EVOLUTION_UPDATE_REQUESTED, {
-            evolutionId: id,
-            ...req.body
-        }, { correlationId });
+        // Verifica permissão
+        const isOwner = evolution.doctor?.toString() === req.user?.id;
+        if (!isAdmin(req.user) && !isOwner) {
+            return res.status(403).json(failure('FORBIDDEN', 'Sem permissão para editar'));
+        }
 
-        res.status(202).json({
-            success: true,
-            message: 'Atualização em processamento',
-            correlationId
-        });
+        const previousData = evolution.toObject();
+        Object.assign(evolution, req.body);
+
+        if (evolution.therapeuticPlan?.objectives) {
+            evolution.calculateObjectivesProgress();
+        }
+
+        await evolution.save();
+
+        const populated = await Evolution.findById(evolution._id)
+            .populate('doctor', 'fullName specialty')
+            .populate('patient', 'fullName dateOfBirth');
+
+        // Side-effect event
+        try {
+            await publishEvent(EventTypes.EVOLUTION_UPDATED, {
+                evolutionId: id,
+                patientId: evolution.patient?.toString?.(),
+                doctorId: evolution.doctor?.toString?.(),
+            }, { correlationId: `evo_update_${id}` });
+        } catch (evtErr) {
+            console.warn('[EvolutionV2] Evento de side-effect falhou:', evtErr.message);
+        }
+
+        res.json(success(populated));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao atualizar:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -78,33 +177,48 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
         }
 
-        const correlationId = `evo_delete_${id}_${Date.now()}`;
+        const evolution = await Evolution.findById(id);
+        if (!evolution) {
+            return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        }
 
-        await publishEvent(EventTypes.EVOLUTION_DELETE_REQUESTED, {
-            evolutionId: id
-        }, { correlationId });
+        const isOwner = evolution.doctor?.toString() === req.user?.id;
+        if (!isAdmin(req.user) && !isOwner) {
+            return res.status(403).json(failure('FORBIDDEN', 'Sem permissão para excluir'));
+        }
 
-        res.status(202).json({
-            success: true,
-            message: 'Exclusão em processamento',
-            correlationId
-        });
+        const patientId = evolution.patient?.toString?.();
+        const doctorId = evolution.doctor?.toString?.();
+        await evolution.deleteOne();
+
+        // Side-effect event
+        try {
+            await publishEvent(EventTypes.EVOLUTION_DELETED, {
+                evolutionId: id,
+                patientId,
+                doctorId,
+            }, { correlationId: `evo_delete_${id}` });
+        } catch (evtErr) {
+            console.warn('[EvolutionV2] Evento de side-effect falhou:', evtErr.message);
+        }
+
+        res.json(success({ deleted: true, evolutionId: id }));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao deletar:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
-// ========== READS (diretos no MongoDB) ==========
+// ─── READS (diretos no MongoDB + escopo de profissional) ──────────────
 
 router.get('/patient/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
         const evolutions = await Evolution.find({ patient: patientId })
@@ -112,10 +226,33 @@ router.get('/patient/:patientId', flexibleAuth, async (req, res) => {
             .populate('patient', 'fullName dateOfBirth')
             .sort({ date: -1 });
 
-        res.json({ success: true, data: evolutions });
+        res.json(success(evolutions));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao listar:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
+    }
+});
+
+// Última evolução do paciente (para continuidade clínica)
+router.get('/patient/:patientId/last', flexibleAuth, async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+            return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
+        }
+
+        const lastEvolution = await Evolution.findOne({ patient: patientId })
+            .populate('doctor', 'fullName specialty')
+            .sort({ date: -1 });
+
+        if (!lastEvolution) {
+            return res.status(404).json(failure('NOT_FOUND', 'Nenhuma evolução encontrada para este paciente'));
+        }
+
+        res.json(success(lastEvolution));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao buscar última evolução:', error);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -123,24 +260,55 @@ router.get('/chart/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
-        const evolutions = await Evolution.find({ patient: patientId })
-            .select('date metrics evaluationAreas')
-            .sort({ date: 1 });
+        const evolutions = await Evolution.find({
+            patient: patientId,
+            metrics: { $exists: true, $not: { $size: 0 } }
+        }).sort({ date: 1 });
 
-        // Formata dados para gráfico
-        const chartData = evolutions.map(evo => ({
-            date: evo.date,
-            metrics: evo.metrics || [],
-            evaluationAreas: evo.evaluationAreas || []
-        }));
+        const allMetrics = await Metric.find();
+        const metricConfig = allMetrics.reduce((acc, metric) => {
+            acc[metric.name] = metric;
+            return acc;
+        }, {});
 
-        res.json({ success: true, data: chartData });
+        const chartData = { dates: [], metrics: {}, evaluationTypes: {} };
+
+        evolutions.forEach(evo => {
+            const dateStr = evo.date.toISOString().split('T')[0];
+            chartData.dates.push(dateStr);
+
+            if (evo.metrics && Array.isArray(evo.metrics)) {
+                evo.metrics.forEach(metric => {
+                    if (!metric.name) return;
+                    const metricName = metric.name;
+                    const value = metric.value;
+                    if (!chartData.metrics[metricName]) {
+                        chartData.metrics[metricName] = {
+                            values: [],
+                            config: metricConfig[metricName] || {}
+                        };
+                    }
+                    chartData.metrics[metricName].values.push(value);
+                });
+            }
+
+            if (evo.evaluationTypes && Array.isArray(evo.evaluationTypes)) {
+                evo.evaluationTypes.forEach(type => {
+                    if (!chartData.evaluationTypes[type]) {
+                        chartData.evaluationTypes[type] = [];
+                    }
+                    chartData.evaluationTypes[type].push(1);
+                });
+            }
+        });
+
+        res.json(success(chartData));
     } catch (error) {
         console.error('[EvolutionV2] Erro no chart:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -148,49 +316,105 @@ router.get('/patient/:patientId/progress', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
-        const evolutions = await Evolution.find({ patient: patientId })
-            .select('date metrics plan')
+        const evolutions = await Evolution.find({
+            patient: patientId,
+            'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } }
+        })
+            .select('date metrics plan therapeuticPlan evaluationAreas treatmentStatus')
             .sort({ date: 1 });
 
-        // Calcula progresso simples: média de scores das métricas ao longo do tempo
-        const progress = evolutions.map(evo => {
-            const metrics = evo.metrics || [];
-            const avgScore = metrics.length
-                ? metrics.reduce((sum, m) => sum + (m.value || 0), 0) / metrics.length
-                : 0;
+        if (!evolutions.length) {
+            return res.json(success({
+                message: 'Nenhum plano terapêutico encontrado',
+                objectives: []
+            }));
+        }
+
+        const latest = evolutions[evolutions.length - 1];
+        const currentPlan = latest.therapeuticPlan;
+
+        const objectivesProgress = currentPlan.objectives.map(objective => {
+            const areaHistory = evolutions
+                .filter(ev => ev.evaluationAreas?.some(area => area.id === objective.area))
+                .map(ev => ({
+                    date: ev.date,
+                    score: ev.evaluationAreas.find(area => area.id === objective.area)?.score || 0
+                }));
+
+            let trend = 'stable';
+            if (areaHistory.length >= 2) {
+                const recent = areaHistory.slice(-3).map(h => h.score);
+                const diff = recent[recent.length - 1] - recent[0];
+                if (diff > 0.5) trend = 'improving';
+                else if (diff < -0.5) trend = 'regressing';
+            }
+
+            let projectedCompletion = null;
+            if (objective.targetScore && areaHistory.length >= 2) {
+                const firstScore = areaHistory[0].score;
+                const lastScore = areaHistory[areaHistory.length - 1].score;
+                const progress = lastScore - firstScore;
+                const remaining = objective.targetScore - lastScore;
+                if (progress > 0) {
+                    const daysElapsed = (areaHistory[areaHistory.length - 1].date - areaHistory[0].date) / (1000 * 60 * 60 * 24);
+                    const daysPerPoint = daysElapsed / progress;
+                    const daysRemaining = daysPerPoint * remaining;
+                    projectedCompletion = new Date(Date.now() + daysRemaining * 24 * 60 * 60 * 1000);
+                }
+            }
+
             return {
-                date: evo.date,
-                avgScore: Math.round(avgScore * 100) / 100,
-                metricCount: metrics.length
+                area: objective.area,
+                description: objective.description,
+                target: objective.targetScore,
+                current: objective.currentScore,
+                progress: objective.progress,
+                achieved: objective.achieved,
+                trend,
+                history: areaHistory,
+                projectedCompletion,
+                targetDate: objective.targetDate
             };
         });
 
-        res.json({ success: true, data: progress });
+        res.json(success({
+            patient: latest.patient,
+            currentPlan: {
+                protocol: currentPlan.protocol,
+                version: currentPlan.planVersion,
+                reviewDate: currentPlan.reviewDate
+            },
+            objectives: objectivesProgress,
+            totalSessions: evolutions.length,
+            treatmentStatus: latest.treatmentStatus
+        }));
     } catch (error) {
         console.error('[EvolutionV2] Erro no progress:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
 router.get('/patient/:patientId/history', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
+        const { limit = 50 } = req.query;
+
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
         const evolutions = await Evolution.find({ patient: patientId })
-            .populate('doctor', 'fullName specialty')
-            .select('date time sessionType plan notes createdAt')
-            .sort({ date: -1 });
+            .select('_id date')
+            .sort({ date: -1 })
+            .limit(parseInt(limit));
 
-        res.json({ success: true, data: evolutions });
+        res.json(success(evolutions));
     } catch (error) {
         console.error('[EvolutionV2] Erro no history:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -203,39 +427,40 @@ router.get('/search', flexibleAuth, async (req, res) => {
         if (endDate) filter.date = { ...filter.date, $lte: new Date(endDate) };
         if (type) filter.sessionType = type;
         if (doctor) filter.doctor = doctor;
-        if (protocol) filter.plan = protocol;
+        if (protocol) filter.activeProtocols = protocol;
 
-        const evolutions = await Evolution.find(filter)
+        const scope = getEvolutionScope(req);
+        const evolutions = await Evolution.find({ ...filter, ...scope })
             .populate('doctor', 'fullName specialty')
             .populate('patient', 'fullName')
             .sort({ date: -1 });
 
-        res.json({ success: true, data: evolutions });
+        res.json(success(evolutions));
     } catch (error) {
         console.error('[EvolutionV2] Erro na busca:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
-// ========== MÉTRICAS ==========
+// ─── MÉTRICAS ─────────────────────────────────────────────────────────
 
 router.get('/metrics', flexibleAuth, async (req, res) => {
     try {
         const metrics = await Metric.find();
-        res.json({ success: true, data: metrics });
+        res.json(success(metrics));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao buscar métricas:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
-// ========== PDF (síncrono) ==========
+// ─── PDF (síncrono) ───────────────────────────────────────────────────
 
 router.get('/:id/pdf', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
         }
 
         const evolution = await Evolution.findById(id)
@@ -243,7 +468,7 @@ router.get('/:id/pdf', flexibleAuth, async (req, res) => {
             .populate('doctor', 'fullName specialty');
 
         if (!evolution) {
-            return res.status(404).json({ success: false, error: 'Evolução não encontrada' });
+            return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
         }
 
         const pdfBuffer = await generatePdfFromEvolution(evolution);
@@ -254,7 +479,7 @@ router.get('/:id/pdf', flexibleAuth, async (req, res) => {
         res.send(pdfBuffer);
     } catch (error) {
         console.error('[EvolutionV2] Erro ao gerar PDF:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 

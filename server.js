@@ -59,7 +59,8 @@ import analitycsRoutes from "./routes/analytics.js";
 // import appointmentRoutes from "./routes/appointment.js";
 import authRoutes from "./routes/auth.js";
 import doctorRoutes from "./routes/doctor.js";
-import evolutionRoutes from "./routes/evolution.js";
+// 🗑️ V1 REMOVIDO: evolutionRoutes desativado (usar apenas /api/v2/evolutions)
+// import evolutionRoutes from "./routes/evolution.js";
 import followupRoutes from "./routes/followup.js";
 import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
@@ -430,8 +431,8 @@ app.use("/api/v2/convenio", convenioV2Routes);  // 🚀 NOVO: Convênio V2
 app.use("/api/v2/liminar-contracts", liminarContractRoutes);  // ⚖️ NOVO: Liminar desacoplado
 app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 
-app.use("/api/evolutions", evolutionRoutes);
-// 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
+// 🗑️ V1 REMOVIDO: /api/evolutions desativado (usar apenas /api/v2/evolutions)
+// app.use("/api/evolutions", evolutionRoutes);
 app.use('/api/packages', (req, res) => {
   console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/packages`);
   return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/packages' });
