@@ -18,7 +18,6 @@ import { sendViaVPS } from "./whatsappVPSService.js";
 
 dotenv.config();
 
-const WHATSAPP_PROVIDER = process.env.WHATSAPP_PROVIDER || 'meta'; // meta | web | vps
 
 // Configurar ffmpeg static
 if (ffmpegStatic) {
@@ -546,36 +545,16 @@ export async function sendTextMessage({
     
     const phone = sanitized.phone;
 
-    // 🎯 ROTEAMENTO POR PROVEDOR
-    if (WHATSAPP_PROVIDER === 'web') {
+    // 🎯 ROTEAMENTO AUTOMÁTICO: Web primeiro (se conectado), depois Meta API
+    const webStatus = getWebStatus();
+    if (webStatus.ready) {
         try {
             return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
         } catch (err) {
             console.warn(`[WhatsApp] Web falhou (${err.message}), caindo para Meta API...`);
         }
-    }
-
-    if (WHATSAPP_PROVIDER === 'vps') {
-        try {
-            const result = await sendViaVPS(phone, text);
-            await registerMessage({
-                leadId: lead,
-                contactId,
-                patientId,
-                direction: "outbound",
-                text,
-                type: "text",
-                status: "sent",
-                waMessageId: `vps_${Date.now()}`,
-                timestamp: new Date(),
-                to: phone,
-                from: PHONE_ID,
-                metadata: { sentBy, userId, provider: 'vps' },
-            });
-            return { ...result, _provider: "vps" };
-        } catch (err) {
-            console.warn(`[WhatsApp] VPS falhou (${err.message}), caindo para Meta API...`);
-        }
+    } else {
+        console.log(`[WhatsApp] Web não está pronto (${webStatus.status}), usando Meta API...`);
     }
 
     const token = await requireToken();
