@@ -993,7 +993,13 @@ function determineBillingType(appointment, packageData) {
         return 'liminar';
     }
 
-    // 🎯 PRIORIDADE 1: Package model/type (fallback legado)
+    // 🎯 PRIORIDADE 1: Convênio explícito no appointment — nunca sobrescrito por packageData.
+    // Pacote de convênio com paymentType='full' não é particular — é convênio faturado em batch.
+    if (appointment?.billingType === 'convenio') {
+        return 'convenio';
+    }
+
+    // 🎯 PRIORIDADE 2: Package model/type (fallback legado — apenas para particular)
     // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
     // Esses fallbacks só existem para dados antigos (backfill pendente).
     // Fonte de verdade: appointment.liminarContract
@@ -1011,7 +1017,7 @@ function determineBillingType(appointment, packageData) {
         if (packageData.paymentType === 'full') return 'particular';
     }
 
-    // 🎯 PRIORIDADE 2: billingType do appointment (sem package)
+    // 🎯 PRIORIDADE 3: billingType do appointment (sem package)
     if (appointment?.billingType) {
         return appointment.billingType;
     }
