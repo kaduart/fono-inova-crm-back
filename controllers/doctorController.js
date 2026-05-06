@@ -465,7 +465,7 @@ export const getDoctorPatients = async (req, res) => {
       return {
         ...p,
         nextAppointment: future[0] || null,
-        lastAppointment: past[0] || null
+        lastAppointment: past[0]?.date || null
       };
     });
 
