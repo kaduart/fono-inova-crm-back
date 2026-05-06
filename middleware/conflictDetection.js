@@ -5,6 +5,8 @@ import Doctor from "../models/Doctor.js";
 import Session from "../models/Session.js";
 import { isNationalHoliday, getHolidayName, isTimeBlockedByHoliday } from "../config/feriadosBR-dynamic.js";
 import { buildDayRange, buildDateTime } from "../utils/datetime.js";
+import { ShadowPatternService } from "../domains/appointment/services/ShadowPatternService.js";
+import { ShadowLockService } from "../domains/appointment/services/ShadowLockService.js";
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -356,7 +358,7 @@ export async function calculateAvailableSlots(doctorId, date) {
   console.log(`[calculateAvailableSlots] Buscando agendamentos entre ${dayRange.$gte.toISOString()} e ${dayRange.$lte.toISOString()}`);
 
   // 🚨 FIX: Buscar agendamentos COM startDateTime/endDateTime (novo padrão Date-based)
-  const [bookedAppointments, preAgendadosAtivos, packageSessions] = await Promise.all([
+  const [bookedAppointments, preAgendadosAtivos, packageSessions, rawShadowPatterns, rawShadowLocks] = await Promise.all([
     Appointment.find({
       doctor: toObjectId(doctorId),
       date: dayRange,
@@ -385,7 +387,22 @@ export async function calculateAvailableSlots(doctorId, date) {
     })
       .select("date time duration -_id")
       .lean(),
+
+    // 🧠 NOVO: Shadow patterns (recorrência inteligente) — cache + fallback on-the-fly
+    ShadowPatternService.findPatternsForDoctorDay(doctorId, date).catch(err => {
+      console.error('[calculateAvailableSlots] Erro ao buscar shadow patterns:', err.message);
+      return new Map();
+    }),
+
+    // 🔒 NOVO: Shadow locks (reservas reais criadas pela secretária)
+    ShadowLockService.findActiveLocksForDoctorDay(doctorId, date).catch(err => {
+      console.error('[calculateAvailableSlots] Erro ao buscar shadow locks:', err.message);
+      return new Map();
+    })
   ]);
+
+  const shadowMap = rawShadowPatterns instanceof Map ? rawShadowPatterns : new Map();
+  const lockMap = rawShadowLocks instanceof Map ? rawShadowLocks : new Map();
 
   // 🕐 Helper: converte documento (Appointment/Session) para intervalo Date
   function docToInterval(doc) {
@@ -444,7 +461,38 @@ export async function calculateAvailableSlots(doctorId, date) {
       };
     }
 
-    // Disponível
+    // 🔒 Prioridade 3: Shadow lock (reserva real criada pela secretária)
+    const activeLock = lockMap.get(slotTime);
+    if (activeLock) {
+      return {
+        time: slotTime,
+        available: false,
+        reason: 'shadow_lock',
+        label: `Reservado: ${activeLock.patientName}`
+      };
+    }
+
+    // Disponível — verificar shadow patterns (recorrência inteligente)
+    const shadowPatterns = shadowMap.get(slotTime) || [];
+    if (shadowPatterns.length > 0) {
+      const topPattern = shadowPatterns.sort((a, b) => b.confidence - a.confidence)[0];
+      return {
+        time: slotTime,
+        available: true,
+        signals: {
+          isShadow: true,
+          isPreferredTime: false
+        },
+        shadow: {
+          patientId: topPattern.patientId,
+          patientName: topPattern.patientName,
+          occurrences: topPattern.occurrences,
+          lastDates: topPattern.lastDates,
+          confidence: topPattern.confidence
+        }
+      };
+    }
+
     return {
       time: slotTime,
       available: true

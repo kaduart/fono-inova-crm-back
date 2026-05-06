@@ -182,7 +182,8 @@ function createClient() {
 
   // Authenticated
   newClient.on('authenticated', async () => {
-    console.log('[WhatsAppWeb] 🔐 Autenticado — sessão salva no MongoDB');
+    console.log('[WhatsAppWeb] 🔐 Autenticado — aguardando ready...');
+    connectionStatus = 'connecting';
     await saveState();
   });
 

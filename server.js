@@ -777,6 +777,8 @@ server.listen(PORT, '0.0.0.0', () => {
     startCron('eventReaper', () => initEventReaperCron());
     startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
     startCron('patientConsistency', () => schedulePatientConsistency());
+    const { schedulePreAgendamentoExpiration } = await import("./crons/preAgendamentoExpiration.cron.js");
+    startCron('preAgendamentoExpiration', () => schedulePreAgendamentoExpiration());
 
     // Crons opcionais desligados (modo memória otimizada)
     // startCron('learning', () => startLearningCron());

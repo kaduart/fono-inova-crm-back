@@ -62,7 +62,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     // ============================================================
     // FASE 1: BUSCAR DADOS (fora da transaction se possível)
     // ============================================================
-    const appointment = await Appointment.findById(appointmentId)
+    let appointment = await Appointment.findById(appointmentId)
         .populate('session patient doctor package liminarContract')
         .lean();
 
@@ -87,8 +87,19 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         status && ['canceled', 'cancelled', 'cancelado', 'processing_cancel'].includes(status.toLowerCase());
     
     // 🎯 CRM: operationalStatus é a fonte da verdade para controle de agendamentos
+    // 🔄 REVERTE CANCELAMENTO do appointment: se foi cancelado mas agora vai ser completado,
+    // primeiro reverte para scheduled (equivale a "reativar")
     if (isCancelledStatus(appointment.operationalStatus)) {
-        throw new Error('SESSION_CANCELLED: Esta sessão foi cancelada e não pode ser completada');
+        console.log(`[completeSessionV2] 🔄 Revertendo cancelamento do appointment ${appointmentId} antes de completar`);
+        await Appointment.findByIdAndUpdate(appointmentId, {
+            $set: {
+                operationalStatus: 'scheduled',
+                clinicalStatus: 'pending',
+                updatedAt: new Date()
+            }
+        });
+        // Recarrega appointment após reversão
+        appointment = await Appointment.findById(appointmentId).populate('session payment package');
     }
 
     const sessionId = appointment.session?._id;
@@ -109,6 +120,22 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 type: packageData?.type,
                 paymentType: packageData?.paymentType
             });
+        }
+    }
+
+    // 🛡️ FALLBACK SESSÃO: appointment.package pode ser null por desvinculação/bug
+    // Se session ainda tem o package, usa ele como fonte de verdade
+    if (!packageId && appointment.session?.package) {
+        const rawPkgId = appointment.session.package._id || appointment.session.package;
+        if (rawPkgId) {
+            packageData = await Package.findById(rawPkgId).lean();
+            packageId = packageData?._id;
+            console.log(`[CompleteSessionV2] 🛡️ Package resgatado via session.package (appointment.package era null)`, {
+                rawPkgId: rawPkgId.toString?.(),
+                packageId: packageId?.toString()
+            });
+            // Reconecta appointment ao package para consistência futura
+            await Appointment.findByIdAndUpdate(appointmentId, { $set: { package: packageId } });
         }
     }
     
@@ -243,8 +270,22 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const isCancelledStatus = (status) => 
                 status && ['canceled', 'cancelled', 'cancelado', 'processing_cancel'].includes(status.toLowerCase());
             
+            // 🔄 REVERTE CANCELAMENTO: se sessão foi cancelada mas agora vai ser completada,
+            // primeiro reverte para scheduled (equivale a "reativar" a sessão)
             if (isCancelledStatus(sessionDoc.status)) {
-                throw new Error('SESSION_CANCELLED: Esta sessão foi cancelada e não pode ser completada');
+                console.log(`[completeSessionV2] 🔄 Revertendo cancelamento da sessão ${sessionId} antes de completar`);
+                await Session.findByIdAndUpdate(sessionId, {
+                    $set: {
+                        status: 'scheduled',
+                        canceledAt: null,
+                        cancelReason: null,
+                        confirmedAbsence: null,
+                        updatedAt: new Date()
+                    }
+                }, { session: mongoSession });
+                // Recarrega sessionDoc após reversão
+                sessionDoc = await Session.findById(sessionId).session(mongoSession);
+                ctx.sessionDoc = sessionDoc;
             }
             
             // 🎯 Atualiza Session com dados de pagamento baseado no tipo

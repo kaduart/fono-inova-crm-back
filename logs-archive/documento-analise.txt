@@ -1,329 +1,205 @@
+vamos la hjoe tenho uma doir relevnte ara a secretaria, qdo ela vai criar um pacote /agendamento...pois se tiver na ultima sessao do apctoe de um pacietne recorrente, eemplo o pacote do joaiznho acanbou dia 05/05 e o atendeimtno dele e recorrente toda terca as 14horas... dessa form como acabou o apcte o slot dele para a proxima sexta nao ta ocupado, concorda?? logo aparece outor pacitne e a secretaria ta marcadno erronemate pois ele ira renovar o pacote na proxima sessao... entoa preciamso ficar anlsiadno se tem ou nao ape as veses falahmos e marcamos como podemos criar uma forma inbteligente que ao tentar criar pacote agendmnrot de qqr coisa fazer uma anlsie no bd e ver se existe... eu ja ate criei alog que se tiver recorrencia nos ultimos 30 dias abrir um modal infiormatndo que no em ultimos 30 ndias o apcitge tal teve recorretnic ade apcone no mesmos dia e hora...pensei em se nos 30 uitlomos dias qlgum pacite tiver duas tercas 14h com sessao ja dispara
+Você está no caminho certo — **o problema não é técnico, é de modelo mental do sistema**. Hoje seu sistema enxerga “ocupado = tem sessão” e “livre = não tem sessão”.
+Mas na prática da clínica existe um terceiro estado:
+
+👉 **“HORÁRIO PROVAVELMENTE RESERVADO (recorrência ativa / paciente fiel)”**
+
+Se você não tratar isso, a secretária sempre vai errar — porque o sistema está “cego” pra intenção.
+
+---
+
+## 💥 Problema real (do jeitinho que acontece)
+
+* Pacote do João acabou dia 05/05
+* Ele sempre vem terça 14h
+* Próxima terça → **slot aparece livre**
+* Secretária agenda outro paciente
+* João chega → conflito / perda / retrabalho
+
+👉 Isso não é exceção. Isso é padrão de clínica.
+
+---
+
+## 🧠 O que você já fez (e está MUITO bom)
+
+> Detectar recorrência nos últimos 30 dias
+
+Isso aqui já resolve **70% do problema**.
+Mas hoje você só está **avisando** — e não **protegendo decisão**.
+
+---
+
+## 🚀 Agora vamos subir o nível (solução inteligente de verdade)
+
+### 🔶 1. Criar um novo conceito no sistema
+
+Chama isso aqui de:
+
+👉 **“Shadow Booking”** ou **“Reserva Inteligente”**
+
+Basicamente:
+
+> Mesmo sem sessão futura, o sistema considera o horário como “quase ocupado”.
+
+---
+
+### 🔍 2. Regra de detecção (melhorada)
+
+Sua ideia:
+
+> 2 sessões no mesmo dia/horário nos últimos 30 dias
+
+Eu ajustaria pra algo mais forte:
+
+**Critério ideal:**
+
+* Últimos 30 dias
+* Mesmo paciente
+* Mesmo profissional
+* Mesmo dia da semana
+* Mesmo horário
+* **>= 2 ou 3 ocorrências**
+
+👉 Isso evita falso positivo
+
+---
+
+### 🧠 3. Classificação do slot
+
+Quando for montar os slots:
+
+```ts
+slot.status =
+  - "occupied" (tem sessão)
+  - "shadow" (provavelmente recorrente)
+  - "free"
+```
+
+---
+
+### 🎯 4. Comportamento na UI (isso muda o jogo)
+
+#### 🟡 Slot “shadow”:
+
+* Cor diferente (amarelo / laranja)
+* Tooltip:
+
+> “Paciente recorrente: João (últimas 3 sessões neste horário)”
+
+---
+
+### 🚨 5. Ao tentar agendar em slot shadow
+
+Aqui está o OURO:
+
+Abre um modal assim:
+
+---
+
+**⚠️ Atenção — Horário recorrente detectado**
+
+Esse horário costuma ser ocupado por:
+
+👤 Joãozinho
+📅 Últimas sessões: 3 terças às 14:00
+
+📌 Ele pode renovar o pacote na próxima sessão.
+
+---
+
+**O que deseja fazer?**
+
+* 🔵 Manter para João (bloquear horário)
+* 🟡 Agendar mesmo assim
+* 🔍 Ver histórico
+
+---
+
+👉 Isso tira o erro da secretária
+👉 E transforma em decisão consciente
+
+---
+
+### 🔒 6. Evolução (nível avançado — MUITO forte)
+
+Você pode dar um passo além:
+
+#### Criar “pré-reserva automática”
+
+Quando detectar recorrência:
+
+* Criar um registro invisível tipo:
+
+```json
 {
-    "success": true,
-    "data": {
-        "data": "2026-05-05",
-        "caixa": {
-            "total": 1310,
-            "pix": 560,
-            "dinheiro": 400,
-            "cartao": 350,
-            "outros": 0,
-            "qtdPix": 3,
-            "qtdDinheiro": 2,
-            "qtdCartao": 1
-        },
-        "porTipo": {
-            "particular": 1160,
-            "pacote": 0,
-            "convenio": 0,
-            "liminar": 150
-        },
-        "porEspecialidade": {
-            "Outra": 1160
-        },
-        "despesas": {
-            "total": 0,
-            "porCategoria": {},
-            "quantidade": 0
-        },
-        "saldo": {
-            "bruto": 1310,
-            "liquido": 1310,
-            "despesaTotal": 0
-        },
-        "producao": {
-            "total": 1620,
-            "aReceber": 0,
-            "recebido": 1620,
-            "quantidadeAtendimentos": 9,
-            "ticketMedio": 180,
-            "taxaEficiencia": 100,
-            "porTipo": {
-                "particular": 1160,
-                "pacote": 310,
-                "convenio": 0
-            },
-            "porEspecialidade": [
-                {
-                    "nome": "fonoaudiologia",
-                    "total": 1470,
-                    "quantidade": 8,
-                    "recebido": 1470,
-                    "pendente": 0,
-                    "ticketMedio": "183.75"
-                },
-                {
-                    "nome": "psicologia",
-                    "total": 150,
-                    "quantidade": 1,
-                    "recebido": 150,
-                    "pendente": 0,
-                    "ticketMedio": "150.00"
-                }
-            ]
-        },
-        "pendentesCobranca": [],
-        "pacotesAtendidos": [
-            {
-                "id": "69c14529c19d35b8454a27f1",
-                "horario": "16:20",
-                "paciente": "Enthony Kauan Mesias Oliveira",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "valor": 150,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69d8f7207bd82bc9e85e138f",
-                "horario": "08:40",
-                "paciente": "Issac Moreira Ribeiro",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "professional": "Lorrany Siqueira Marques",
-                "valor": 160,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69f1227600e59de10bf92dda",
-                "horario": "16:20",
-                "paciente": "Bento Cabral Cândido",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "professional": "Mikaelly da Silva Sousa",
-                "valor": 150,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            }
-        ],
-        "conveniosAtendidos": [],
-        "comparativos": {
-            "ontem": 760,
-            "variacaoVsOntem": 72.4,
-            "mediaDiariaMes": 414,
-            "vsMediaMes": 216.4,
-            "totalAcumuladoMes": 2070,
-            "projecaoMes": 12420,
-            "diasDecorridos": 5
-        },
-        "estatisticas": {
-            "quantidade": 7,
-            "quantidadeAtendimentos": 9,
-            "ticketMedio": 187.14285714285714,
-            "ontem": 760
-        },
-        "transacoes": [
-            {
-                "id": "69fa2392a5580aeea035f31a",
-                "paciente": "Antonella Souza Eneas",
-                "valor": 180,
-                "metodo": "Pix",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "09:20",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            },
-            {
-                "id": "69fa27e3003164e56ab85ecf",
-                "paciente": "Davi Miguel Sousa Bailoni",
-                "valor": 200,
-                "metodo": "Cartão",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "10:40",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            },
-            {
-                "id": "69fa281e003164e56ab85fb0",
-                "paciente": "Eliza Barbosa rabelo",
-                "valor": 200,
-                "metodo": "Dinheiro",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "14:00",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            },
-            {
-                "id": "69fa2839003164e56ab86037",
-                "paciente": "Daniel Rodrigues dos Santos de Oliveira",
-                "valor": 180,
-                "metodo": "Pix",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "14:00",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            },
-            {
-                "id": "69fa41e5003164e56ab88940",
-                "paciente": "Helloisa Alcântara natalino",
-                "valor": 200,
-                "metodo": "Dinheiro",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "15:20",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            },
-            {
-                "id": "69fa4246003164e56ab88afc",
-                "paciente": "Miguel Viana Batista",
-                "valor": 200,
-                "metodo": "Pix",
-                "tipo": "Particular",
-                "servico": "Sessão",
-                "especialidade": "-",
-                "hora": "16:00",
-                "data": "05/05/2026",
-                "categoria": "recebido"
-            }
-        ],
-        "transacoesProducao": [
-            {
-                "id": "69c14529c19d35b8454a27f1",
-                "paciente": "Enthony Kauan Mesias Oliveira",
-                "valor": 150,
-                "metodo": "liminar_credit",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "16:20",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Tatiana Celuta Peres",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69d8f7207bd82bc9e85e138f",
-                "paciente": "Issac Moreira Ribeiro",
-                "valor": 160,
-                "metodo": "pix",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "hora": "08:40",
-                "data": "05/05/2026",
-                "status": "confirmed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69ea802e103e48f6af1e2ed6",
-                "paciente": "Antonella Souza Eneas",
-                "valor": 180,
-                "metodo": "pix",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "09:20",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": null
-            },
-            {
-                "id": "69ef921c80f633378a207727",
-                "paciente": "Davi Miguel Sousa Bailoni",
-                "valor": 200,
-                "metodo": "credito",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "10:40",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": null
-            },
-            {
-                "id": "69efaba380f633378a207f49",
-                "paciente": "Eliza Barbosa rabelo",
-                "valor": 200,
-                "metodo": "dinheiro",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "14:00",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": null
-            },
-            {
-                "id": "69f9e88ac83a33f73695eb5c",
-                "paciente": "Daniel Rodrigues dos Santos de Oliveira",
-                "valor": 180,
-                "metodo": "pix",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "14:00",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Mayra Magda Mendes Oliveira",
-                "paymentModel": null
-            },
-            {
-                "id": "69f0c76500e59de10bf8e58e",
-                "paciente": "Helloisa Alcântara natalino",
-                "valor": 200,
-                "metodo": "dinheiro",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "15:20",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": null
-            },
-            {
-                "id": "69f1fba500e59de10bf956e4",
-                "paciente": "Miguel Viana Batista",
-                "valor": 200,
-                "metodo": "pix",
-                "tipo": "Particular",
-                "servico": "Avaliação",
-                "especialidade": "fonoaudiologia",
-                "hora": "16:00",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": null
-            },
-            {
-                "id": "69f1227600e59de10bf92dda",
-                "paciente": "Bento Cabral Cândido",
-                "valor": 150,
-                "metodo": "package_prepaid",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "hora": "16:20",
-                "data": "05/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Mikaelly da Silva Sousa",
-                "paymentModel": "prepaid"
-            }
-        ]
-    }
+  "type": "shadow_booking",
+  "patientId": "...",
+  "dayOfWeek": 2,
+  "time": "14:00",
+  "confidence": 0.85
 }
+```
+
+👉 Isso permite:
+
+* Ranking de prioridade
+* Previsão de agenda
+* Automação futura (WhatsApp inclusive)
+
+---
+
+### 🤖 7. Integração com WhatsApp (se quiser explodir conversão)
+
+Quando detectar que o pacote acabou:
+
+Mensagem automática:
+
+> “Oi, notei que seu horário de terça às 14h está reservado pra você.
+> Deseja renovar seu pacote?”
+
+🔥 Isso aqui é dinheiro direto
+
+---
+
+## ⚠️ Onde você precisa tomar cuidado
+
+* Não travar o sistema (tem que permitir override)
+* Não gerar falso positivo (por isso >= 2 sessões)
+* Não esconder o slot → só sinalizar
+
+---
+
+## 💡 Resumo estratégico
+
+Você saiu de:
+
+❌ Sistema burro (slot livre vs ocupado)
+
+Para:
+
+✅ Sistema inteligente com **previsão de comportamento**
+
+---
+
+## 💬 Minha leitura direta
+
+Sua ideia já está:
+👉 **acima de 90% das clínicas**
+
+Mas falta o passo final:
+
+> parar de “avisar” e começar a “influenciar decisão”
+
+---
+
+Se quiser, posso te montar:
+
+* 🔧 Query Mongo exata pra detectar isso
+* 🧠 Função `detectRecurringPattern()` pronta
+* 🎨 Como plugar isso no `DoctorAgendaCalendar` (no seu fluxo atual)
+
+Só me fala:
+👉 você quer isso mais no backend (API já retorna shadow) ou frontend (hook calcula)?
+
+
+preciso qeu analsie pois criamos algo do tipo no legado nao sei aonde mas tem regra similar se der apra reaprovitear ou enteder e trrazer para nossa nova arqui tca le pau,,,, analsie somente ee hien 

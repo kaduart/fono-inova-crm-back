@@ -55,12 +55,36 @@ export const ParticularHandler = {
 
         // Incrementa sessionsDone apenas se sessao NAO estava completed antes
         // (protecao contra retry/idempotencia)
+        let pkgAtual = null;
         if (packageId && sessionDoc?.status !== 'completed') {
             await Package.findByIdAndUpdate(
                 packageId,
                 { $inc: { sessionsDone: 1 } },
                 { session: mongoSession }
             );
+
+            // 🔥 RECALCULA BALANCE para pacotes prepaid/full
+            pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
+            if (pkgAtual && (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full')) {
+                const sessionsDone = pkgAtual.sessionsDone || 0;
+                const usedValue = sessionsDone * sessionValue;
+                const remainingCredit = (pkgAtual.totalValue || 0) - usedValue;
+                const newBalance = remainingCredit;
+                const newFinancialStatus = newBalance > 0.001 ? 'paid_with_credit' : 'paid';
+
+                await Package.findByIdAndUpdate(
+                    packageId,
+                    {
+                        $set: {
+                            balance: newBalance,
+                            financialStatus: newFinancialStatus,
+                            updatedAt: new Date()
+                        }
+                    },
+                    { session: mongoSession }
+                );
+                console.log(`[ParticularHandler] [PREPAID] Package recalculado: sessionsDone=${sessionsDone}, balance=${newBalance}, status=${newFinancialStatus}`);
+            }
         }
 
         if (!sessionValue || sessionValue <= 0) return null;
@@ -70,7 +94,9 @@ export const ParticularHandler = {
         // Sub-caso 1: pacote pre-pago quitado
         // ⚠️ Só aplica a pacotes prepaid (model='prepaid' ou paymentType='full')
         if (packageId) {
-            const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
+            if (!pkgAtual) {
+                pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
+            }
             if (pkgAtual && (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full')) {
                 const sessionsDone = pkgAtual.sessionsDone || 0;
                 const totalPaid    = pkgAtual.totalPaid || 0;

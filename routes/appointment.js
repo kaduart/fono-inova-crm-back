@@ -1388,11 +1388,21 @@ function determineActionType(updateData) {
 // Deleta um agendamento
 router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
     try {
-        const appt = await Appointment.findByIdAndDelete(req.params.id);
+        const appt = await Appointment.findById(req.params.id);
 
         if (!appt) {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
+
+        // 🔒 BLOQUEIO V2: Não permitir deletar agendamentos de pacotes (evita corrupção de caixa/pacote)
+        if (appt.package) {
+            return res.status(400).json({
+                error: 'Não é possível excluir agendamentos vinculados a pacotes. Use CANCELAR para manter integridade financeira.',
+                code: 'PACKAGE_APPOINTMENT_DELETE_BLOCKED'
+            });
+        }
+
+        await Appointment.findByIdAndDelete(req.params.id);
 
         // 🔔 Emitir evento socket para atualizar agenda externa
         try {
