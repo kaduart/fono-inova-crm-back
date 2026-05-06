@@ -765,13 +765,9 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     }
 
-    // 🟢 Inicializa WhatsApp Web (RemoteAuth + MongoDB — só depois do Mongo conectar)
-    try {
-      initWhatsAppClient();
-      console.log("🟢 WhatsApp Web inicializado (aguardando QR code se necessário)");
-    } catch (wppErr) {
-      console.warn("⚠️ Falha ao inicializar WhatsApp Web:", wppErr.message);
-    }
+    // 🟢 WhatsApp Web agora roda no worker dedicado (crm-worker-whatsapp)
+    // NÃO inicializa aqui para não pesar a API principal
+    console.log("🟢 WhatsApp Web desativado no API server — rodando no worker dedicado");
 
     // 👉 CRONS CRÍTICOS HABILITADOS
     const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
