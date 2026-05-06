@@ -524,175 +524,27 @@ export async function sendTextMessage({
     userId = null,
     formatMode = "preserve",
 }) {
-    // 🔒 Validação de controle manual (já existe, mantenha)
     if (lead && sentBy !== "manual") {
-        const leadDoc = await Lead.findById(lead)
-            .select("manualControl.active")
-            .lean();
+        const leadDoc = await Lead.findById(lead).select("manualControl.active").lean();
         if (leadDoc?.manualControl?.active) {
             console.log(`⏸️ Envio bloqueado (manual ativo). sentBy=${sentBy} lead=${lead}`);
             return { skipped: true, reason: "manual_control_active" };
         }
     }
 
-    // 🔧 CORREÇÃO: Sanitização completa do telefone antes de enviar
-    const originalTo = to;
     const sanitized = sanitizePhoneBeforeSend(to);
-    
     if (!sanitized.success) {
-        throw new Error(`Número de telefone inválido: ${sanitized.error} (recebido: ${originalTo})`);
+        throw new Error(`Número de telefone inválido: ${sanitized.error} (recebido: ${to})`);
     }
-    
     const phone = sanitized.phone;
 
-    // 🎯 ROTEAMENTO: WhatsApp Web (chip) para mensagens de confirmação/lembrete
-    // Só cai para Meta API se o Web não estiver conectado
+    // Mensagens de texto sempre via WhatsApp Web (chip)
     const webStatus = await getWebStatus();
-    if (webStatus.ready) {
-        return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
+    if (!webStatus.ready) {
+        throw new Error(`WhatsApp Web não está conectado (status: ${webStatus.status}). Escaneie o QR code.`);
     }
 
-    console.log(`[WhatsApp] Web não está pronto (${webStatus.status}), usando Meta API...`);
-
-    const token = await requireToken();
-    if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
-
-    // Sanitização já foi feita no início da função (antes do roteamento por provedor)
-    
-    const url = `${META_URL}/${PHONE_ID}/messages`;
-    const formattedText = formatWhatsAppText(text, { mode: formatMode });
-
-    const body = {
-        messaging_product: "whatsapp",
-        to: phone,
-        type: "text",
-        text: { body: formattedText },
-    };
-
-    // ✅ NOVO: Timeout de 5 segundos + Retry 3 vezes
-    const MAX_RETRIES = 3;
-    const TIMEOUT_MS = 5000;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-        try {
-            console.log(`📤 [WhatsApp] Tentativa ${attempt}/${MAX_RETRIES} para ${phone}`);
-
-            const res = await fetch(url, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(body),
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            const data = await res.json();
-            const waMessageId = data?.messages?.[0]?.id || null;
-
-            // ✅ SUCESSO: Registra como PENDING (aguardando confirmação do webhook)
-            if (res.ok) {
-                await registerMessage({
-                    leadId: lead,
-                    contactId,
-                    patientId,
-                    direction: "outbound",
-                    text,
-                    type: "text",
-                    status: "pending", // ← ALTERADO: começa como pending
-                    waMessageId,
-                    timestamp: new Date(),
-                    to: phone,
-                    from: PHONE_ID,
-                    metadata: { sentBy, userId },
-                });
-
-                console.log(`✅ Mensagem aceita pela API, aguardando webhook (tentativa ${attempt})`);
-                return data;
-            }
-
-            // ❌ ERRO 401: Token expirado - Limpa cache e tenta gerar novo
-            if (res.status === 401 && attempt === 1) {
-                console.warn(`⚠️ Token expirado (401). Limpando cache e tentando gerar novo...`);
-                clearMetaTokenCache();
-                continue; // Vai tentar novamente com novo token
-            }
-
-            // ❌ ERRO RECUPERÁVEL: Rate limit, servidor ocupado
-            const isRetryable = [429, 500, 503, 504].includes(res.status);
-            if (isRetryable && attempt < MAX_RETRIES) {
-                console.warn(`⚠️ Erro ${res.status} (recuperável). Tentando novamente...`);
-                await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // Backoff
-                continue;
-            }
-
-            // ❌ ERRO FATAL: Registra falha e lança
-            await registerMessage({
-                leadId: lead,
-                contactId,
-                patientId,
-                direction: "outbound",
-                text,
-                type: "text",
-                status: "failed",
-                waMessageId: null,
-                timestamp: new Date(),
-                to: phone,
-                from: PHONE_ID,
-                metadata: {
-                    sentBy,
-                    userId,
-                    error: data.error,
-                    attempt
-                },
-            });
-
-            throw new Error(`WhatsApp API error: ${res.status} - ${JSON.stringify(data.error)}`);
-
-        } catch (error) {
-            clearTimeout(timeoutId);
-
-            // Timeout ou erro de rede
-            if (error.name === 'AbortError') {
-                console.error(`⏱️ Timeout na tentativa ${attempt}`);
-            } else {
-                console.error(`❌ Erro na tentativa ${attempt}:`, error.message);
-            }
-
-            // Última tentativa: registra falha e re-lança
-            if (attempt === MAX_RETRIES) {
-                await registerMessage({
-                    leadId: lead,
-                    contactId,
-                    patientId,
-                    direction: "outbound",
-                    text,
-                    type: "text",
-                    status: "failed",
-                    waMessageId: null,
-                    timestamp: new Date(),
-                    to: phone,
-                    from: PHONE_ID,
-                    metadata: {
-                        sentBy,
-                        userId,
-                        error: error.message,
-                        attempt: MAX_RETRIES
-                    },
-                });
-
-                throw error;
-            }
-
-            // Aguarda antes de tentar novamente (backoff exponencial)
-            await new Promise(resolve => setTimeout(resolve, attempt * 1500));
-        }
-    }
+    return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
 }
 
 /**
