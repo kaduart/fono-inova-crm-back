@@ -158,7 +158,8 @@ export async function generateLiminarSessions({
               time:         slot.time,
               date:         buildDateTime(dateStr, slot.time),
               sessionValue: config.sessionValue,
-              duration:     config.sessionDurationMinutes || 40
+              duration:     config.sessionDurationMinutes || 40,
+              doctor:       config.doctor || contract.doctor
             });
           }
         }
@@ -181,7 +182,8 @@ export async function generateLiminarSessions({
                 time:         slot.time,
                 date:         buildDateTime(dateStr, slot.time),
                 sessionValue: config.sessionValue,
-                duration:     config.sessionDurationMinutes || 40
+                duration:     config.sessionDurationMinutes || 40,
+                doctor:       config.doctor || contract.doctor
               });
             }
           }
@@ -221,7 +223,7 @@ export async function generateLiminarSessions({
       update: {
         $setOnInsert: {
           patient:           contract.patient,
-          doctor:            contract.doctor,
+          doctor:            slot.doctor || contract.doctor,
           date:              slot.date,
           time:              slot.time,
           duration:          slot.duration,
@@ -245,10 +247,67 @@ export async function generateLiminarSessions({
     }
   }));
 
-  const result = await Appointment.bulkWrite(bulkOps, { ordered: false });
+  let result;
+  let rawConflicts = [];
+  try {
+    result = await Appointment.bulkWrite(bulkOps, { ordered: false });
+  } catch (err) {
+    if (err.code === 11000 || err.name === 'MongoBulkWriteError') {
+      result = err.result;
+      rawConflicts = (err.writeErrors || []).map(we => slots[we.index]).filter(Boolean);
+      console.warn('[generateLiminarSessions] ⚠️ Slots já ocupados:', rawConflicts.length);
+    } else {
+      throw err;
+    }
+  }
+
+  // ── Enriquece conflitos: busca quem ocupa cada slot ────────────
+  let conflictSlots = [];
+  if (rawConflicts.length > 0) {
+    const Patient = (await import('../models/Patient.js')).default;
+    const Doctor  = (await import('../models/Doctor.js')).default;
+
+    const conflictDocs = await Promise.all(rawConflicts.map(async slot => {
+      const existing = await Appointment.findOne({
+        doctor: slot.doctor,
+        date:   slot.date,
+        time:   slot.time,
+        operationalStatus: { $ne: 'canceled' }
+      }).select('patient doctor patientName').lean();
+
+      let patientName = existing?.patientName || null;
+      let doctorName  = null;
+
+      if (existing?.patient) {
+        const pt = await Patient.findById(existing.patient).select('fullName').lean();
+        patientName = pt?.fullName ?? patientName;
+      }
+      if (slot.doctor) {
+        const doc = await Doctor.findById(slot.doctor).select('fullName').lean();
+        doctorName = doc?.fullName ?? null;
+      }
+
+      const dateLabel = new Date(slot.date).toLocaleDateString('pt-BR', {
+        weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo'
+      });
+
+      return {
+        date:        slot.date,
+        time:        slot.time,
+        specialty:   slot.specialty,
+        doctorId:    slot.doctor?.toString(),
+        doctorName,
+        patientName,
+        message:     `${dateLabel} às ${slot.time} — Dr(a). ${doctorName ?? 'desconhecido'} está indisponível${patientName ? ` (ocupado com ${patientName})` : ''}`
+      };
+    }));
+
+    conflictSlots = conflictDocs;
+    console.warn('[generateLiminarSessions] ⚠️ Conflitos detalhados:', conflictSlots.map(c => c.message));
+  }
 
   // ── 8. Cria Sessions para appointments recém-inseridos ─────────
-  const upsertedIds = Object.values(result.upsertedIds || {});
+  const upsertedIds = Object.values((result?.upsertedIds) || {});
   let createdSessionsCount = 0;
 
   if (upsertedIds.length > 0) {
@@ -256,18 +315,28 @@ export async function generateLiminarSessions({
       { _id: { $in: upsertedIds } }
     ).lean();
 
-    const sessionDocs = newAppointments.map(a => buildLiminarSession(a));
+    let createdSessions = [];
+    try {
+      const sessionDocs = newAppointments.map(a => buildLiminarSession(a));
+      createdSessions = await Session.insertMany(sessionDocs);
+      createdSessionsCount = createdSessions.length;
 
-    const createdSessions = await Session.insertMany(sessionDocs);
-    createdSessionsCount = createdSessions.length;
-
-    const sessionLinkOps = createdSessions.map((s, i) => ({
-      updateOne: {
-        filter: { _id: newAppointments[i]._id },
-        update: { $set: { session: s._id } }
+      const sessionLinkOps = createdSessions.map((s, i) => ({
+        updateOne: {
+          filter: { _id: newAppointments[i]._id },
+          update: { $set: { session: s._id } }
+        }
+      }));
+      await Appointment.bulkWrite(sessionLinkOps, { ordered: false });
+    } catch (sessionErr) {
+      // Rollback: remove appointments órfãos e sessions criadas parcialmente
+      console.error('[generateLiminarSessions] ❌ Erro ao criar sessions — revertendo appointments:', sessionErr.message);
+      await Appointment.deleteMany({ _id: { $in: upsertedIds } });
+      if (createdSessions.length > 0) {
+        await Session.deleteMany({ _id: { $in: createdSessions.map(s => s._id) } });
       }
-    }));
-    await Appointment.bulkWrite(sessionLinkOps, { ordered: false });
+      throw new Error(`Falha ao criar sessões para os agendamentos liminar. Os agendamentos foram revertidos. Tente novamente. Detalhe: ${sessionErr.message}`);
+    }
   }
 
   console.log('[generateLiminarSessions] ✅ Concluído', {
@@ -287,6 +356,8 @@ export async function generateLiminarSessions({
     created:       result.upsertedCount,
     skipped:       result.matchedCount,
     total:         slots.length,
+    conflicts:     conflictSlots.length,
+    conflictSlots,
     totalCost,
     saldo:         contract.creditBalance,
     saldoAposTudo: contract.creditBalance - totalCost
