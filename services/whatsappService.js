@@ -13,8 +13,12 @@ import Message from "../models/Message.js";
 import { getMetaToken, clearMetaTokenCache } from "../utils/metaToken.js";
 import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 import { getIo } from "../config/socket.js";
+import { sendMessage as sendViaWeb, getStatus as getWebStatus } from "./whatsappWebJsService.js";
+import { sendViaVPS } from "./whatsappVPSService.js";
 
 dotenv.config();
+
+const WHATSAPP_PROVIDER = process.env.WHATSAPP_PROVIDER || 'meta'; // meta | web | vps
 
 // Configurar ffmpeg static
 if (ffmpegStatic) {
@@ -478,6 +482,39 @@ export async function sendTemplateMessage({
 
 /** 💬 Envia texto */
 /** 💬 Envia texto COM TIMEOUT E RETRY */
+async function sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId }) {
+    const webStatus = getWebStatus();
+    if (!webStatus.ready) {
+        throw new Error('WhatsApp Web não está conectado. Escaneie o QR code primeiro.');
+    }
+
+    const result = await sendViaWeb(phone, text);
+    const waMessageId = result?.messageId || `web_${Date.now()}`;
+
+    await registerMessage({
+        leadId: lead,
+        contactId,
+        patientId,
+        direction: "outbound",
+        text,
+        type: "text",
+        status: "sent",
+        waMessageId,
+        timestamp: new Date(),
+        to: phone,
+        from: PHONE_ID,
+        metadata: { sentBy, userId, provider: 'web' },
+    });
+
+    console.log(`✅ Mensagem enviada via WhatsApp Web: ${phone}`);
+    return {
+        messaging_product: "whatsapp",
+        contacts: [{ input: phone, wa_id: phone }],
+        messages: [{ id: waMessageId }],
+        _provider: "web",
+    };
+}
+
 export async function sendTextMessage({
     to,
     text,
@@ -499,9 +536,6 @@ export async function sendTextMessage({
         }
     }
 
-    const token = await requireToken();
-    if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
-
     // 🔧 CORREÇÃO: Sanitização completa do telefone antes de enviar
     const originalTo = to;
     const sanitized = sanitizePhoneBeforeSend(to);
@@ -511,15 +545,43 @@ export async function sendTextMessage({
     }
     
     const phone = sanitized.phone;
-    
-    // 🆕 LOG DEBUG: Mostrar transformação do número
-    console.log("📞 [SEND PHONE] Sanitização:", {
-        originalTo,
-        phoneNormalized: phone,
-        originalLength: originalTo?.length,
-        normalizedLength: phone?.length,
-        error: sanitized.error
-    });
+
+    // 🎯 ROTEAMENTO POR PROVEDOR
+    if (WHATSAPP_PROVIDER === 'web') {
+        try {
+            return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
+        } catch (err) {
+            console.warn(`[WhatsApp] Web falhou (${err.message}), caindo para Meta API...`);
+        }
+    }
+
+    if (WHATSAPP_PROVIDER === 'vps') {
+        try {
+            const result = await sendViaVPS(phone, text);
+            await registerMessage({
+                leadId: lead,
+                contactId,
+                patientId,
+                direction: "outbound",
+                text,
+                type: "text",
+                status: "sent",
+                waMessageId: `vps_${Date.now()}`,
+                timestamp: new Date(),
+                to: phone,
+                from: PHONE_ID,
+                metadata: { sentBy, userId, provider: 'vps' },
+            });
+            return { ...result, _provider: "vps" };
+        } catch (err) {
+            console.warn(`[WhatsApp] VPS falhou (${err.message}), caindo para Meta API...`);
+        }
+    }
+
+    const token = await requireToken();
+    if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
+
+    // Sanitização já foi feita no início da função (antes do roteamento por provedor)
     
     const url = `${META_URL}/${PHONE_ID}/messages`;
     const formattedText = formatWhatsAppText(text, { mode: formatMode });
