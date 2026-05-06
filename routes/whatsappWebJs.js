@@ -8,6 +8,11 @@ const router = express.Router();
  * Retorna status da conexão e QR code (se necessário)
  */
 router.get('/status', async (req, res) => {
+  // Impede 304: desabilita comparação de ETag e proíbe cache
+  delete req.headers['if-none-match'];
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   const status = await getStatus();
   res.json(status);
 });
