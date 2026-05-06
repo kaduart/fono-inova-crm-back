@@ -545,17 +545,14 @@ export async function sendTextMessage({
     
     const phone = sanitized.phone;
 
-    // 🎯 ROTEAMENTO AUTOMÁTICO: Web primeiro (se conectado), depois Meta API
+    // 🎯 ROTEAMENTO: WhatsApp Web (chip) para mensagens de confirmação/lembrete
+    // Só cai para Meta API se o Web não estiver conectado
     const webStatus = await getWebStatus();
     if (webStatus.ready) {
-        try {
-            return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
-        } catch (err) {
-            console.warn(`[WhatsApp] Web falhou (${err.message}), caindo para Meta API...`);
-        }
-    } else {
-        console.log(`[WhatsApp] Web não está pronto (${webStatus.status}), usando Meta API...`);
+        return await sendViaWhatsAppWeb({ phone, text, lead, contactId, patientId, sentBy, userId });
     }
+
+    console.log(`[WhatsApp] Web não está pronto (${webStatus.status}), usando Meta API...`);
 
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");

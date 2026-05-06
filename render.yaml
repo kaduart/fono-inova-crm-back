@@ -175,7 +175,7 @@ services:
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm ci && node installChrome.js
+    buildCommand: npm install && node installChrome.js
     startCommand: node workers/entrypoints/whatsapp-worker.js
     autoDeploy: false
     envVars:
