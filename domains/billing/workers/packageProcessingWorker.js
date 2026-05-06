@@ -381,6 +381,21 @@ export async function handlePackageCreate(payload, correlationId) {
         },
         { session: mongoSession }
       );
+
+      // Atualiza a session vinculada e o appointment correspondente
+      await Session.findByIdAndUpdate(
+        replacedSessionId,
+        { $set: { package: newPackage._id } },
+        { session: mongoSession }
+      );
+      const replacedSession = await Session.findById(replacedSessionId).select('appointmentId').lean().session(mongoSession);
+      if (replacedSession?.appointmentId) {
+        await Appointment.findByIdAndUpdate(
+          replacedSession.appointmentId,
+          { $set: { serviceType: 'package_session', package: newPackage._id } },
+          { session: mongoSession }
+        );
+      }
     }
 
     if (replacedAppointmentId) {
@@ -409,6 +424,13 @@ export async function handlePackageCreate(payload, correlationId) {
           },
           $unset: { appointment: '' }
         },
+        { session: mongoSession }
+      );
+
+      // Atualiza o appointment vinculado para refletir o pacote corretamente
+      await Appointment.findByIdAndUpdate(
+        replacedAppointmentId,
+        { $set: { serviceType: 'package_session', package: newPackage._id } },
         { session: mongoSession }
       );
     }
