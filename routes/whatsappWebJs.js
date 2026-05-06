@@ -7,8 +7,8 @@ const router = express.Router();
  * GET /api/whatsapp-web/status
  * Retorna status da conexão e QR code (se necessário)
  */
-router.get('/status', (req, res) => {
-  const status = getStatus();
+router.get('/status', async (req, res) => {
+  const status = await getStatus();
   res.json(status);
 });
 
