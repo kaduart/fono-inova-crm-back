@@ -13,6 +13,7 @@ import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { checkAppointmentConflicts, getAvailableTimeSlots, checkSlotOverlap } from '../middleware/conflictDetection.js';
+import { ShadowLockService } from '../domains/appointment/services/ShadowLockService.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -994,6 +995,55 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 
 /**
+ * 🔒 POST /api/v2/appointments/shadow-lock
+ * Cria uma pré-reserva real (shadow lock) para manter horário de paciente recorrente
+ */
+router.post('/shadow-lock', flexibleAuth, asyncHandler(async (req, res) => {
+  try {
+    const { patientId, doctorId, date, time, createdBy, notes } = req.body;
+
+    if (!patientId || !doctorId || !date || !time) {
+      return res.status(400).json(formatError('patientId, doctorId, date e time são obrigatórios', 400, 'MISSING_PARAMS'));
+    }
+
+    const lock = await ShadowLockService.createLock({ patientId, doctorId, date, time, createdBy, notes });
+
+    return res.status(201).json(formatSuccess({
+      lockId: lock._id,
+      patientId: lock.patientId,
+      doctorId: lock.doctorId,
+      date: lock.date,
+      time: lock.time,
+      status: lock.status,
+      expiresAt: lock.expiresAt
+    }, 'Pré-reserva criada com sucesso'));
+  } catch (error) {
+    console.error('[POST /shadow-lock] Erro:', error);
+    return res.status(500).json(formatError(error.message, 500, 'SHADOW_LOCK_ERROR'));
+  }
+}));
+
+/**
+ * 🔒 DELETE /api/v2/appointments/shadow-lock/:id
+ * Cancela uma pré-reserva real (shadow lock)
+ */
+router.delete('/shadow-lock/:id', flexibleAuth, asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await ShadowLockService.cancelLock(id);
+
+    if (!updated) {
+      return res.status(404).json(formatError('Pré-reserva não encontrada', 404, 'NOT_FOUND'));
+    }
+
+    return res.status(200).json(formatSuccess({ lockId: updated._id, status: updated.status }, 'Pré-reserva cancelada'));
+  } catch (error) {
+    console.error('[DELETE /shadow-lock] Erro:', error);
+    return res.status(500).json(formatError(error.message, 500, 'SHADOW_LOCK_ERROR'));
+  }
+}));
+
+/**
  * 🧠 POST /api/v2/appointments/agenda/suggestions
  * Smart Agenda v1 — Sugestão inteligente de horários
  * Sistema sugere, secretaria confirma em 1 clique.
@@ -1885,21 +1935,26 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       updatePromises.push(sessionUpdate);
     }
     
-    // Atualizar ou Criar Pagamento (somente se NÃO for pacote)
-    if (!appointment.package && appointment.payment) {
-      // 🔒 Verifica se payment já está pago - se sim, não atualiza campos financeiros
-      const existingPayment = await Payment.findById(appointment.payment).session(mongoSession).lean();
-      
-      if (existingPayment?.status === 'paid') {
-        // Payment já pago: só atualiza campos não-financeiros (doctor, serviceDate, serviceType)
-        console.log(`[PUT /appointments/${id}] Payment já pago (${existingPayment._id}), ignorando alterações financeiras`);
+    // 💰 Atualizar Payment vinculado (appointment.payment OU package.payments)
+    let paymentToUpdate = appointment.payment ? await Payment.findById(appointment.payment).session(mongoSession).lean() : null;
+    
+    // Se não tem payment direto mas tem pacote, busca payment pelo package
+    if (!paymentToUpdate && appointment.package) {
+      paymentToUpdate = await Payment.findOne({ package: appointment.package }).session(mongoSession).lean();
+    }
+    
+    if (paymentToUpdate) {
+      const paymentId = paymentToUpdate._id;
+      if (paymentToUpdate.status === 'paid') {
+        // Payment já pago: só atualiza campos não-financeiros
+        console.log(`[PUT /appointments/${id}] Payment já pago (${paymentId}), ignorando alterações financeiras`);
         const paymentUpdate = Payment.findByIdAndUpdate(
-          appointment.payment,
+          paymentId,
           {
             $set: {
               doctor: updateData.doctor || appointment.doctor,
               serviceDate: updateData.date || appointment.date,
-              serviceType: updateData.serviceType || appointment.serviceType,
+              serviceType: updateData.sessionType || appointment.sessionType,
               updatedAt: new Date()
             }
           },
@@ -1907,17 +1962,17 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         );
         updatePromises.push(paymentUpdate);
       } else {
-        // Payment pendente: pode atualizar tudo
+        // Payment pendente: pode atualizar tudo incluindo amount/method
         const paymentUpdate = Payment.findByIdAndUpdate(
-          appointment.payment,
+          paymentId,
           {
             $set: {
               doctor: updateData.doctor || appointment.doctor,
-              amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
-              paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
+              amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount ?? paymentToUpdate.amount),
+              paymentMethod: updateData.paymentMethod || appointment.paymentMethod || paymentToUpdate.paymentMethod,
               serviceDate: updateData.date || appointment.date,
-              serviceType: updateData.serviceType || appointment.serviceType,
-              billingType: updateData.billingType || appointment.billingType || 'particular',
+              serviceType: updateData.sessionType || appointment.sessionType,
+              billingType: updateData.billingType || appointment.billingType || paymentToUpdate.billingType || 'particular',
               insuranceProvider: updateData.insuranceProvider || appointment.insuranceProvider,
               insuranceValue: updateData.insuranceValue || appointment.insuranceValue,
               authorizationCode: updateData.authorizationCode || appointment.authorizationCode,
@@ -2164,6 +2219,15 @@ router.delete('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   // Verificar permissões
   if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
     throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+  }
+  
+  // 🔒 BLOQUEIO V2: Não permitir deletar agendamentos de pacotes (evita corrupção de caixa/pacote)
+  if (appointment.package) {
+    throw createBusinessError(
+      'Não é possível excluir agendamentos vinculados a pacotes. Use CANCELAR para manter integridade financeira.',
+      400,
+      'PACKAGE_APPOINTMENT_DELETE_BLOCKED'
+    );
   }
   
   // Deletar

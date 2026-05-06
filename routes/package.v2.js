@@ -25,6 +25,7 @@ import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import PatientBalance from '../models/PatientBalance.js';
 import healthRoutes from './package.v2.health.js';
+import { rebuildPackageFromSource, auditPackage } from '../domain/package/rebuildPackageFromSource.js';
 
 // 🆕 NOVO: Controller síncrono para criação com agenda
 import { createPackageV2, listPackagesV2, getPackageV2, settlePackagePayments } from '../controllers/packageController.v2.js';
