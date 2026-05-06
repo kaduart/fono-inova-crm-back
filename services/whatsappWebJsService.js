@@ -7,6 +7,8 @@
  * Reconexão automática com backoff exponencial.
  */
 
+import './setPuppeteerCache.js'; // ⚠️ DEVE vir antes de 'puppeteer'
+
 import pkg from 'whatsapp-web.js';
 const { Client, RemoteAuth } = pkg;
 import { MongoStore } from 'wwebjs-mongo';
@@ -15,12 +17,6 @@ import puppeteer from 'puppeteer';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
-
-// 🔒 Blindagem Render: garante que o Puppeteer saiba onde está o cache do Chrome
-// No Render Native, apenas o diretório do projeto persiste entre build e runtime.
-const projectCache = path.join(process.cwd(), '.cache', 'puppeteer');
-process.env.PUPPETEER_CACHE_DIR =
-  process.env.PUPPETEER_CACHE_DIR || projectCache;
 
 // ─── Singleton & Estado ─────────────────────────────────────────────────────
 let client = null;
