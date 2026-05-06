@@ -17,6 +17,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../models/index.js';
 import { startAllWorkers, startWorkersByGroup, VALID_GROUPS } from './index.js';
+import { initWhatsAppClient } from '../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -61,6 +62,12 @@ async function main() {
             console.error(`❌ Grupo inválido: ${WORKER_GROUP}`);
             console.error(`✅ Grupos válidos: all, ${VALID_GROUPS.join(', ')}`);
             process.exit(1);
+        }
+
+        // 3. WhatsApp Web (Chrome) — só quando grupo inclui whatsapp
+        if (WORKER_GROUP === 'all' || WORKER_GROUP === 'whatsapp') {
+            console.log('🟢 Inicializando WhatsApp Web...');
+            initWhatsAppClient();
         }
 
         console.log('\n🎉 Workers iniciados com sucesso!');
