@@ -33,14 +33,6 @@ async function main() {
         });
         console.log('✅ MongoDB conectado\n');
 
-        // 🟢 Inicializa WhatsApp Web (Chrome/Puppeteer) — só no worker dedicado
-        try {
-            initWhatsAppClient();
-            console.log('🟢 WhatsApp Web inicializado (aguardando QR code se necessário)');
-        } catch (wppErr) {
-            console.warn('⚠️ Falha ao inicializar WhatsApp Web:', wppErr.message);
-        }
-
         await startWorkersByGroup('whatsapp');
 
         console.log('\n🎉 WhatsApp Worker pronto!');
