@@ -56,7 +56,7 @@ router.post('/send', async (req, res) => {
  */
 router.post('/reconnect', async (req, res) => {
   try {
-    const result = await reconnect();
+    const result = await reconnect(true); // Limpa sessão ao reconectar manualmente
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
