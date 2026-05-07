@@ -26,6 +26,9 @@ let isReady = false;
 let qrCodeDataUrl = null;
 let connectionStatus = 'waiting_mongo';
 let isInitializing = false;
+let retryTimeout = null;
+let initAttempts = 0;
+const MAX_INIT_ATTEMPTS = 10;
 
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
 async function saveState() {
@@ -115,6 +118,11 @@ function createClient() {
     isReady = true;
     qrCodeDataUrl = null;
     connectionStatus = 'ready';
+    initAttempts = 0; // zera contador de tentativas
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      retryTimeout = null;
+    }
     await saveState();
   });
 
@@ -149,8 +157,15 @@ export async function initWhatsAppClient() {
     console.log('[WhatsAppWeb] Inicialização já em andamento — aguardando.');
     return;
   }
+  if (initAttempts >= MAX_INIT_ATTEMPTS) {
+    console.log('[WhatsAppWeb] 🚫 Limite de tentativas atingido. Pare o serviço e verifique.');
+    connectionStatus = 'max_retries_reached';
+    await saveState();
+    return;
+  }
   isInitializing = true;
-  console.log('[WhatsAppWeb] 🚀 Inicializando...');
+  initAttempts++;
+  console.log(`[WhatsAppWeb] 🚀 Inicializando... (tentativa ${initAttempts}/${MAX_INIT_ATTEMPTS})`);
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
@@ -160,9 +175,27 @@ export async function initWhatsAppClient() {
     console.error('[WhatsAppWeb] Falha na inicialização:', err.message || err);
     connectionStatus = 'error';
     await saveState();
+    // Destrói client e agenda retry em 30s
+    await safeDestroyClient();
+    if (retryTimeout) clearTimeout(retryTimeout);
+    retryTimeout = setTimeout(() => {
+      console.log('[WhatsAppWeb] 🔁 Retry agendado após erro...');
+      initWhatsAppClient();
+    }, 30_000);
   } finally {
     isInitializing = false;
   }
+}
+
+async function safeDestroyClient() {
+  if (!client) return;
+  try {
+    await client.destroy();
+    console.log('[WhatsAppWeb] Cliente destruído para retry.');
+  } catch (e) {
+    // ignora erro ao destruir
+  }
+  client = null;
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────────
@@ -230,6 +263,11 @@ export async function reconnect() {
   isReady = false;
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
+  initAttempts = 0;
+  if (retryTimeout) {
+    clearTimeout(retryTimeout);
+    retryTimeout = null;
+  }
 
   if (client) {
     try { await client.destroy(); } catch {}
