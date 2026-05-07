@@ -13,11 +13,12 @@
  *   # node workers/entrypoints/billing-worker.js
  */
 
+import http from 'http';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../models/index.js';
 import { startAllWorkers, startWorkersByGroup, VALID_GROUPS } from './index.js';
-import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../services/whatsappWebJsService.js';
+import { initWhatsAppClient, gracefulShutdownWhatsApp, getStatus } from '../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -72,10 +73,29 @@ async function main() {
         }
 
         console.log('\n🎉 Workers iniciados com sucesso!');
-        console.log('📊 Health Check: GET /api/health');
-        console.log('🔍 Stuck Events: GET /api/health/stuck-events\n');
 
-        // 3. Keep alive
+        // 4. Servidor HTTP mínimo para health check do Render
+        const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
+        const server = http.createServer(async (req, res) => {
+            if (req.url === '/api/health') {
+                const waStatus = await getStatus().catch(() => ({ status: 'unknown' }));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    status: 'ok',
+                    workers: WORKER_GROUP,
+                    whatsapp: waStatus.status,
+                    timestamp: new Date().toISOString()
+                }));
+                return;
+            }
+            res.writeHead(404);
+            res.end('Not found');
+        });
+        server.listen(PORT, () => {
+            console.log(`📊 Health Check: GET http://localhost:${PORT}/api/health`);
+        });
+
+        // 5. Keep alive
         setInterval(() => {
             console.log(`[${new Date().toISOString()}] 💓 Workers rodando... (grupo: ${WORKER_GROUP})`);
         }, 60000);
