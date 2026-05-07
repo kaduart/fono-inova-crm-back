@@ -132,10 +132,10 @@ export async function generateInsurancePlanSessions({
           insurancePlan: plan._id,
           sessionValue,
           insuranceValue: sessionValue,
-          operationalStatus: 'scheduled',
+          operationalStatus: 'pre_agendado',
           clinicalStatus: 'pending',
           paymentStatus: 'pending',
-          status: 'scheduled',
+          status: 'pre_agendado',
           notes: 'Sessão de convênio gerada pelo plano',
           createdAt: new Date()
         }
@@ -150,7 +150,7 @@ export async function generateInsurancePlanSessions({
   const createdAppointments = await Appointment.find({
     patient: plan.patient,
     insurancePlan: plan._id,
-    operationalStatus: 'scheduled'
+    operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
   }).session(mongoSession).lean();
 
   // ── 7. Cria payments pendentes (apenas para novos) ─────────────

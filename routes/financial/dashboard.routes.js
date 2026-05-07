@@ -507,7 +507,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     // ========================================
     const agendadosTodos = await Appointment.find({
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
-      operationalStatus: { $in: ['confirmed', 'scheduled'] },
+      operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
       clinicalStatus: { $nin: ['completed', 'cancelled'] }
     }).select('date time sessionValue package patient operationalStatus clinicalStatus')
       .populate('patient', 'fullName')

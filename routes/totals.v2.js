@@ -111,7 +111,7 @@ router.get('/', async (req, res) => {
             PatientBalance.aggregate([{ $group: { _id: null, totalDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, '$currentBalance', 0] } }, totalCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, { $multiply: ['$currentBalance', -1] }, 0] } }, totalDebited: { $sum: '$totalDebited' }, totalCredited: { $sum: '$totalCredited' }, patientsWithDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, 1, 0] } }, patientsWithCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, 1, 0] } } } }]),
             Appointment.find({
                 date: { $gte: rangeStart, $lt: rangeEnd },
-                operationalStatus: { $in: ['confirmed', 'completed', 'scheduled'] },
+                operationalStatus: { $in: ['confirmed', 'completed', 'scheduled', 'pre_agendado'] },
                 isDeleted: { $ne: true },
                 patient: { $exists: true, $ne: null }
             }).select('_id sessionValue billingType insuranceProvider serviceType paymentStatus').lean()

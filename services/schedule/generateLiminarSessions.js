@@ -77,7 +77,7 @@ export async function generateLiminarSessions({
       {
         liminarContract: contract._id,
         date: { $gte: today },
-        operationalStatus: 'scheduled'
+        operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
       },
       {
         $set: {
@@ -234,7 +234,7 @@ export async function generateLiminarSessions({
           paymentOrigin:     'liminar_credit',
           paymentMethod:     'liminar_credit',
           paymentStatus:     'pending',
-          operationalStatus: 'scheduled',
+          operationalStatus: 'pre_agendado',
           clinicalStatus:    'pending',
           sessionValue:      slot.sessionValue,
           liminarContract:   contract._id,

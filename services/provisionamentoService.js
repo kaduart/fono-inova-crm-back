@@ -246,7 +246,7 @@ const calcularAgendadoConfirmado = async (periodo) => {
   // 2a. Appointments particulares confirmados (não pagos ainda)
   const agendamentosParticular = await Appointment.find({
     date: { $gte: periodo.inicio, $lte: periodo.fim },
-    operationalStatus: { $in: ['confirmed', 'scheduled'] },
+    operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
     clinicalStatus: { $nin: ['completed', 'cancelled'] },
     paymentMethod: { $ne: 'convenio' },
     paymentStatus: { $nin: ['paid', 'package_paid'] }
@@ -255,7 +255,7 @@ const calcularAgendadoConfirmado = async (periodo) => {
   // 2b. Appointments de convênio (avulso ou pacote) - sempre contam para produção
   const agendamentosConvenio = await Appointment.find({
     date: { $gte: periodo.inicio, $lte: periodo.fim },
-    operationalStatus: { $in: ['confirmed', 'scheduled'] },
+    operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
     clinicalStatus: { $nin: ['completed', 'cancelled'] },
     paymentMethod: 'convenio'
   }).select('sessionValue specialty serviceType');
@@ -424,7 +424,7 @@ const calcularMetricasHistoricas = async () => {
   });
 
   const confirmedTotal = await Appointment.countDocuments({
-    operationalStatus: { $in: ['confirmed', 'scheduled'] },
+    operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
     createdAt: { $gte: dataCorte }
   });
 
@@ -434,7 +434,7 @@ const calcularMetricasHistoricas = async () => {
 
   // Taxa de presença (confirmed/scheduled → completed)
   const agendadosTotal = await Appointment.countDocuments({
-    operationalStatus: { $in: ['confirmed', 'scheduled'] },
+    operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
     date: { $gte: moment().subtract(30, 'days').format('YYYY-MM-DD') }
   });
 
