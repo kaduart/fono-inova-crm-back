@@ -147,6 +147,7 @@ function buildPuppeteerOptions() {
   const chromePath = resolveChromePath();
   const opts = {
     headless: true,
+    timeout: 120_000, // Chrome pode demorar >30s pra subir no container lento
     protocolTimeout: 120_000, // evita ProtocolError quando a página congela
     dumpio: false,
     args: [
