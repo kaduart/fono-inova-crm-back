@@ -147,8 +147,8 @@ function buildPuppeteerOptions() {
   const chromePath = resolveChromePath();
   const opts = {
     headless: true,
-    timeout: 120_000, // Chrome pode demorar >30s pra subir no container lento
-    protocolTimeout: 120_000, // evita ProtocolError quando a página congela
+    timeout: 180_000, // Chrome pode demorar 2-3min pra subir no container lento
+    protocolTimeout: 180_000, // evita ProtocolError quando a página congela
     dumpio: false,
     args: [
       '--no-sandbox',
@@ -600,7 +600,7 @@ export async function gracefulShutdownWhatsApp() {
 }
 
 // ─── Reconexão manual ───────────────────────────────────────────────────────
-export async function reconnect() {
+export async function reconnect(clearSession = false) {
   isReady = false;
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
@@ -615,20 +615,23 @@ export async function reconnect() {
     client = null;
   }
 
-  // Limpa sessão local do filesystem (força novo QR)
-  try {
-    const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
-    if (fs.existsSync(authPath)) {
-      fs.rmSync(authPath, { recursive: true, force: true });
-      console.log('[WhatsAppWeb] Sessão local removida do filesystem.');
+  // ⚠️ SÓ limpa sessão quando explicitamente pedido (ex: botão "Gerar novo QR")
+  // O stuck detection NUNCA deve limpar sessão — destrói progresso do sync
+  if (clearSession) {
+    try {
+      const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+      if (fs.existsSync(authPath)) {
+        fs.rmSync(authPath, { recursive: true, force: true });
+        console.log('[WhatsAppWeb] Sessão local removida do filesystem.');
+      }
+    } catch (e) {
+      console.warn('[WhatsAppWeb] Não foi possível remover sessão local:', e.message);
     }
-  } catch (e) {
-    console.warn('[WhatsAppWeb] Não foi possível remover sessão local:', e.message);
   }
 
   initRequested = false; // permite nova inicialização
   doInitialize();
-  return { success: true, message: 'Reconectando... Escaneie o novo QR code.' };
+  return { success: true, message: 'Reconectando...' };
 }
 
 // ─── Default export ─────────────────────────────────────────────────────────
