@@ -21,7 +21,7 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
-// 🛡️ ProtocolError não mata o processo — NÃO destrói cliente, deixa continuar
+// 🛡️ Erros não tratados não matam o processo
 process.on('uncaughtException', (err) => {
   console.error('[FATAL]', err.message);
   if (err.message && err.message.includes('ProtocolError')) {
@@ -29,6 +29,11 @@ process.on('uncaughtException', (err) => {
     return;
   }
   process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED]', typeof reason === 'string' ? reason : (reason?.message || reason));
+  // NÃO sai do processo — deixa o WhatsApp tentar se recuperar
 });
 
 async function main() {
