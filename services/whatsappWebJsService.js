@@ -147,6 +147,8 @@ function buildPuppeteerOptions() {
   const chromePath = resolveChromePath();
   const opts = {
     headless: true,
+    protocolTimeout: 120_000, // evita ProtocolError quando a página congela
+    dumpio: false,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -161,6 +163,7 @@ function buildPuppeteerOptions() {
       '--disable-background-networking',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       '--disable-breakpad',
       '--disable-component-update',
       '--disable-features=site-per-process',
