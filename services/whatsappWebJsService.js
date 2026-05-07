@@ -190,8 +190,9 @@ function createClient() {
           lastError = null;
           await saveState();
         }
-        if (qrScanTimestamp && Date.now() - qrScanTimestamp > 120_000 && !client.info && connectionStatus === 'qr') {
-          logEvent('qr_timeout', '120s desde QR scan sem client.info — QR não foi escaneado ou falhou');
+        // WhatsApp moderno demora bastante no primeiro sync — dá 5 minutos
+        if (qrScanTimestamp && Date.now() - qrScanTimestamp > 300_000 && !client.info && connectionStatus === 'qr') {
+          logEvent('qr_timeout', '300s desde QR scan sem client.info — QR não foi escaneado ou falhou');
         }
       } catch (err) {
         console.error('[WhatsAppWeb] Erro no forceReadyInterval:', err.message);
