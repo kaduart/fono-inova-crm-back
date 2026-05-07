@@ -25,6 +25,7 @@ let client = null;
 let isReady = false;
 let qrCodeDataUrl = null;
 let connectionStatus = 'waiting_mongo';
+let isInitializing = false;
 
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
 async function saveState() {
@@ -144,6 +145,11 @@ export async function initWhatsAppClient() {
     console.log('[WhatsAppWeb] Cliente já existe — não criando outro.');
     return;
   }
+  if (isInitializing) {
+    console.log('[WhatsAppWeb] Inicialização já em andamento — aguardando.');
+    return;
+  }
+  isInitializing = true;
   console.log('[WhatsAppWeb] 🚀 Inicializando...');
   connectionStatus = 'initializing';
   await saveState();
@@ -151,9 +157,11 @@ export async function initWhatsAppClient() {
   try {
     await client.initialize();
   } catch (err) {
-    console.error('[WhatsAppWeb] Falha na inicialização:', err.message);
+    console.error('[WhatsAppWeb] Falha na inicialização:', err.message || err);
     connectionStatus = 'error';
     await saveState();
+  } finally {
+    isInitializing = false;
   }
 }
 
