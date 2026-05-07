@@ -54,7 +54,9 @@ function createClient() {
     puppeteer: {
       headless: true,
       protocolTimeout: 300_000, // 5 min — protocolo CDP
-      timeout: 300_000,         // 5 min — navegação/página
+      handleSIGINT: false,      // NÃO deixa Puppeteer capturar sinais
+      handleSIGTERM: false,     // Render mata o processo naturalmente
+      handleSIGHUP: false,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -62,7 +64,7 @@ function createClient() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
+        '--single-process',          // 🔥 essencial pra 512MB
         '--disable-gpu',
         '--disable-extensions',
         '--disable-default-apps',
@@ -72,8 +74,13 @@ function createClient() {
         '--disable-renderer-backgrounding',
         '--disable-breakpad',
         '--disable-component-update',
-        '--disable-features=site-per-process',
-        '--max_old_space_size=128',
+        '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess,InterestFeedContentSuggestions,MediaRouter,TranslateUI',
+        '--disable-site-isolation-trials',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--no-default-browser-check',
+        '--password-store=basic',
+        '--use-mock-keychain',
       ],
     },
   });
