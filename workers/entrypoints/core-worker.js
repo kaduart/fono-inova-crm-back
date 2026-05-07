@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * 💬 WhatsApp Worker
- * Processa: lead-orchestrator, inbound, outbound, auto-reply, context-builder, conversation-state
+ * 🏥 Core Worker — Todos os workers exceto WhatsApp
+ * Responsável: scheduling, billing, clinical, reconciliation
+ * Sem Puppeteer/Chromium — leve em memória
  */
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { startWorkersByGroup, stopAllWorkers } from '../index.js';
+import { startWorkerGroup, stopAllWorkers } from '../index.js';
 import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
-import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 bootstrapEventContracts();
@@ -21,9 +21,11 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
+const CORE_GROUPS = ['scheduling', 'billing', 'clinical', 'reconciliation'];
+
 async function main() {
     try {
-        console.log('🚀 Iniciando WhatsApp Worker...\n');
+        console.log('🚀 Iniciando Core Worker (sem WhatsApp)...\n');
 
         console.log('🟢 Conectando ao MongoDB...');
         await mongoose.connect(MONGO_URI, {
@@ -33,20 +35,16 @@ async function main() {
         });
         console.log('✅ MongoDB conectado\n');
 
-        // 🟢 Inicializa WhatsApp Web (Chrome/Puppeteer) — só neste worker dedicado
-        try {
-            await initWhatsAppClient();
-            console.log('🟢 WhatsApp Web inicializado (aguardando QR code se necessário)');
-        } catch (wppErr) {
-            console.warn('⚠️ Falha ao inicializar WhatsApp Web:', wppErr.message);
+        const workers = [];
+        for (const group of CORE_GROUPS) {
+            await startWorkerGroup(group, workers);
         }
 
-        await startWorkersByGroup('whatsapp');
-
-        console.log('\n🎉 WhatsApp Worker pronto!');
+        console.log('\n🎉 Core Worker pronto!');
+        console.log('📦 Grupos ativos:', CORE_GROUPS.join(', '));
 
         setInterval(() => {
-            console.log(`[${new Date().toISOString()}] 💓 WhatsApp Worker rodando...`);
+            console.log(`[${new Date().toISOString()}] 💓 Core Worker rodando...`);
         }, 60000);
 
     } catch (error) {
@@ -58,17 +56,17 @@ async function main() {
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 SIGTERM recebido...');
-    await gracefulShutdownWhatsApp();
     await stopAllWorkers();
     await mongoose.disconnect();
+    console.log('✅ Core Worker parado');
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
     console.log('\n🛑 SIGINT recebido...');
-    await gracefulShutdownWhatsApp();
     await stopAllWorkers();
     await mongoose.disconnect();
+    console.log('✅ Core Worker parado');
     process.exit(0);
 });
 
