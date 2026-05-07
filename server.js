@@ -364,6 +364,28 @@ app.get('/debug/env', (req, res) => {
     });
 });
 
+// 🚨 Endpoint crítico: diagnostica se este processo está competindo pelo WhatsApp
+app.get('/debug/whatsapp-diagnostic', async (req, res) => {
+    const { getStatus } = await import('./services/whatsappWebJsService.js');
+    const { safeRedis } = await import('./config/redisConnection.js');
+    const status = await getStatus();
+    const lockOwner = await safeRedis.get('lock:whatsapp:init');
+    res.json({
+        pid: process.pid,
+        ppid: process.ppid,
+        nodeAppInstance: process.env.NODE_APP_INSTANCE || null,
+        pmId: process.env.pm_id || null,
+        enableWorkers: process.env.ENABLE_WORKERS,
+        workerGroup: process.env.WORKER_GROUP,
+        whatsappLockOwner: lockOwner,
+        thisProcessHasLock: lockOwner === String(process.pid),
+        whatsappStatus: status,
+        warning: process.env.ENABLE_WORKERS === 'true' && !process.env.WORKER_GROUP
+            ? 'CRITICAL: este processo roda WORKER_GROUP=all (ou default all). Se houver outro worker whatsapp dedicado, haverá competição.'
+            : null,
+    });
+});
+
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
 });

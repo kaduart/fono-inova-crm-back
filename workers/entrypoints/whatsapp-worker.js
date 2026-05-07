@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
-import { initWhatsAppClient } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 bootstrapEventContracts();
@@ -35,7 +35,7 @@ async function main() {
 
         // 🟢 Inicializa WhatsApp Web (Chrome/Puppeteer) — só no worker dedicado
         try {
-            initWhatsAppClient();
+            await initWhatsAppClient();
             console.log('🟢 WhatsApp Web inicializado (aguardando QR code se necessário)');
         } catch (wppErr) {
             console.warn('⚠️ Falha ao inicializar WhatsApp Web:', wppErr.message);
@@ -58,6 +58,7 @@ async function main() {
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 SIGTERM recebido...');
+    await gracefulShutdownWhatsApp();
     await stopAllWorkers();
     await mongoose.disconnect();
     process.exit(0);
@@ -65,6 +66,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     console.log('\n🛑 SIGINT recebido...');
+    await gracefulShutdownWhatsApp();
     await stopAllWorkers();
     await mongoose.disconnect();
     process.exit(0);

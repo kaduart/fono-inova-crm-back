@@ -18,6 +18,7 @@ import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
+import { safeRedis } from '../config/redisConnection.js';
 
 // ─── Singleton & Estado ─────────────────────────────────────────────────────
 let client = null;
@@ -28,6 +29,9 @@ let connectionStatus = 'waiting_mongo'; // waiting_mongo, initializing, qr, read
 let reconnectRetries = 0;
 let mongoStore = null;
 let initRequested = false;
+let isReconnecting = false;
+const WHATSAPP_LOCK_KEY = 'lock:whatsapp:init';
+const WHATSAPP_LOCK_TTL_SECONDS = 30;
 
 // ─── Persistência de estado no MongoDB (compartilhado entre API e worker) ──
 async function saveState() {
@@ -152,6 +156,7 @@ function createClient() {
   const newClient = new Client({
     authStrategy: new RemoteAuth({
       store: mongoStore,
+      clientId: 'fono-inova-main',
       backupSyncIntervalMs: 300_000, // salva sessão a cada 5 min
     }),
     puppeteer: buildPuppeteerOptions(),
@@ -202,6 +207,12 @@ function createClient() {
     connectionStatus = 'disconnected';
     await saveState();
 
+    if (isReconnecting) {
+      console.log('[WhatsAppWeb] ⏳ Reconexão já em andamento. Ignorando evento duplicado.');
+      return;
+    }
+    isReconnecting = true;
+
     const delay = Math.min(60_000, 5_000 * (reconnectRetries + 1));
     reconnectRetries++;
 
@@ -212,8 +223,9 @@ function createClient() {
         await newClient.destroy();
       } catch { /* ignora */ }
       client = null;
+      isReconnecting = false;
       initRequested = false; // permite nova inicialização
-      initWhatsAppClient();
+      await initWhatsAppClient();
     }, delay);
   });
 
@@ -248,8 +260,28 @@ async function doInitialize() {
  * Inicializa o cliente WhatsApp Web.
  * Se o MongoDB ainda não estiver conectado, aguarda automaticamente.
  */
-export function initWhatsAppClient() {
+export async function initWhatsAppClient() {
   if (initRequested) return;
+
+  // 🔒 Lock distribuído: garante 1 único processo inicializando WhatsApp no cluster
+  try {
+    const lockAcquired = await safeRedis.set(
+      WHATSAPP_LOCK_KEY,
+      process.pid?.toString() || '1',
+      'NX',
+      'EX',
+      WHATSAPP_LOCK_TTL_SECONDS
+    );
+    if (!lockAcquired) {
+      console.log('[WhatsAppWeb] 🔒 Lock já adquirido por outro processo. WhatsApp será inicializado pelo owner do lock.');
+      initRequested = true; // impede tentativas repetidas neste processo
+      return;
+    }
+    console.log('[WhatsAppWeb] 🔒 Lock adquirido. Este processo será responsável pelo WhatsApp Web.');
+  } catch (err) {
+    console.warn('[WhatsAppWeb] ⚠️ Não foi possível verificar lock Redis. Continuando mesmo assim:', err.message);
+  }
+
   initRequested = true;
 
   if (mongoose.connection.readyState === 1) {
@@ -378,6 +410,33 @@ async function sendMessageImmediate(phone, message) {
   };
 }
 
+// ─── Graceful Shutdown ──────────────────────────────────────────────────────
+export async function gracefulShutdownWhatsApp() {
+  if (!client) {
+    console.log('[WhatsAppWeb] 🛑 Sem cliente ativo para desligar.');
+  } else {
+    console.log('[WhatsAppWeb] 🛑 Graceful shutdown iniciado...');
+    try {
+      await client.destroy();
+      console.log('[WhatsAppWeb] ✅ Cliente destruído gracefully.');
+    } catch (err) {
+      console.warn('[WhatsAppWeb] ⚠️ Erro ao destruir cliente:', err.message);
+    }
+  }
+  client = null;
+  isReady = false;
+  initRequested = false;
+  isReconnecting = false;
+
+  // 🔓 Libera lock distribuído para permitir que outro processo assuma se necessário
+  try {
+    await safeRedis.del(WHATSAPP_LOCK_KEY);
+    console.log('[WhatsAppWeb] 🔓 Lock liberado.');
+  } catch (err) {
+    console.warn('[WhatsAppWeb] ⚠️ Erro ao liberar lock:', err.message);
+  }
+}
+
 // ─── Reconexão manual ───────────────────────────────────────────────────────
 export async function reconnect() {
   isReady = false;
@@ -397,7 +456,7 @@ export async function reconnect() {
   // Limpa sessão remota no MongoDB (força novo QR)
   if (mongoStore) {
     try {
-      await mongoStore.delete({ session: 'RemoteAuth' });
+      await mongoStore.delete({ session: 'fono-inova-main' });
       console.log('[WhatsAppWeb] Sessão remota removida do MongoDB.');
     } catch (e) {
       console.warn('[WhatsAppWeb] Não foi possível remover sessão remota:', e.message);
