@@ -21,11 +21,18 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
+// 🔒 Garante que nunca carrega WhatsApp neste processo
+delete process.env.WORKER_GROUP;
+process.env.WORKER_GROUP = 'core';
+
 const CORE_GROUPS = ['scheduling', 'billing', 'clinical', 'reconciliation'];
 
 async function main() {
     try {
-        console.log('🚀 Iniciando Core Worker (sem WhatsApp)...\n');
+        console.log('🚀 Iniciando Core Worker (sem WhatsApp)...');
+        console.log('🔒 WORKER_GROUP forçado para: core');
+        console.log('🔒 Grupos ativos:', CORE_GROUPS.join(', '));
+        console.log('🚫 WhatsApp Web NÃO será iniciado neste processo\n');
 
         console.log('🟢 Conectando ao MongoDB...');
         await mongoose.connect(MONGO_URI, {
@@ -43,9 +50,12 @@ async function main() {
         console.log('\n🎉 Core Worker pronto!');
         console.log('📦 Grupos ativos:', CORE_GROUPS.join(', '));
 
+        // 🧠 Log de memória a cada 30s
         setInterval(() => {
+            const mem = process.memoryUsage();
             console.log(`[${new Date().toISOString()}] 💓 Core Worker rodando...`);
-        }, 60000);
+            console.log(`[MEMORY] RSS: ${Math.round(mem.rss / 1024 / 1024)}MB | Heap: ${Math.round(mem.heapUsed / 1024 / 1024)}MB | External: ${Math.round(mem.external / 1024 / 1024)}MB`);
+        }, 30000);
 
     } catch (error) {
         console.error('❌ Erro fatal:', error.message);
