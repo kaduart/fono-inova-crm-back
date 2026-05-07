@@ -90,6 +90,9 @@ export function startAppointmentIntegrationWorker() {
               insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
               authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
               status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
+              // financialDate = data real do atendimento, não hoje
+              financialDate: updateData.billingType !== 'convenio' ? (updateData.serviceDate || null) : null,
+              paidAt: updateData.billingType !== 'convenio' ? (updateData.serviceDate || null) : null,
               kind: 'manual',
               notes: `Criado via integration worker - ${new Date().toLocaleString('pt-BR')}`
             });
