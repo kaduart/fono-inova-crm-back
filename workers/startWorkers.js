@@ -68,8 +68,14 @@ async function main() {
         // 3. WhatsApp Web (Chrome) — quando grupo inclui whatsapp
         // 🔒 Lock Redis distribuído protege contra concorrência se houver múltiplos processos
         if (WORKER_GROUP === 'all' || WORKER_GROUP === 'whatsapp') {
-            console.log('🟢 Inicializando WhatsApp Web...');
+            console.log('🟢 [LIFECYCLE] Inicializando WhatsApp Web...');
+            console.log('🟢 [LIFECYCLE] WORKER_GROUP=' + WORKER_GROUP);
+            console.log('🟢 [LIFECYCLE] PID=' + process.pid);
+            console.log('🟢 [LIFECYCLE] Chamando initWhatsAppClient()...');
             await initWhatsAppClient();
+            console.log('🟢 [LIFECYCLE] initWhatsAppClient() retornou.');
+        } else {
+            console.log('🟡 [LIFECYCLE] Pulando WhatsApp Web — WORKER_GROUP=' + WORKER_GROUP);
         }
 
         console.log('\n🎉 Workers iniciados com sucesso!');
