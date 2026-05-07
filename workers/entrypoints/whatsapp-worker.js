@@ -4,12 +4,13 @@
  * Processa: lead-orchestrator, inbound, outbound, auto-reply, context-builder, conversation-state
  */
 
+import http from 'http';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
-import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, gracefulShutdownWhatsApp, getStatus } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 bootstrapEventContracts();
@@ -46,6 +47,36 @@ async function main() {
         console.log('\n🎉 WhatsApp Worker pronto!');
 
         // 🧠 Log de memória a cada 30s — essencial para debug de OOM
+        // 🏥 Healthcheck HTTP dedicado
+        const PORT = process.env.PORT || process.env.WORKER_PORT || 10001;
+        const server = http.createServer(async (req, res) => {
+            if (req.url === '/api/health') {
+                const waStatus = await getStatus().catch(() => ({ status: 'unknown', ready: false }));
+                const mem = process.memoryUsage();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    status: 'ok',
+                    worker: 'whatsapp',
+                    whatsapp: {
+                        status: waStatus.status,
+                        ready: waStatus.ready,
+                    },
+                    memory: {
+                        rss: Math.round(mem.rss / 1024 / 1024) + 'MB',
+                        heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + 'MB',
+                    },
+                    timestamp: new Date().toISOString()
+                }));
+                return;
+            }
+            res.writeHead(404);
+            res.end('Not found');
+        });
+        server.listen(PORT, () => {
+            console.log(`📊 Health Check: GET http://localhost:${PORT}/api/health`);
+        });
+
+        // 🧠 Log de memória a cada 30s
         setInterval(() => {
             const mem = process.memoryUsage();
             console.log(`[${new Date().toISOString()}] 💓 WhatsApp Worker rodando...`);

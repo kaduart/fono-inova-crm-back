@@ -255,6 +255,13 @@ function createClient() {
     if (forceReadyInterval) clearInterval(forceReadyInterval);
     await saveState();
 
+    // 🛡️ Durante estabilização inicial, desabilita reconnect automático
+    if (process.env.WHATSAPP_AUTO_RECONNECT === 'false') {
+      console.log('[WhatsAppWeb] 🚫 Reconnect automático desabilitado (WHATSAPP_AUTO_RECONNECT=false)');
+      console.log('[WhatsAppWeb] 🚫 Para reconectar manualmente, chame POST /api/whatsapp-web/reconnect');
+      return;
+    }
+
     if (isReconnecting) {
       console.log('[WhatsAppWeb] ⏳ Reconexão já em andamento. Ignorando evento duplicado.');
       return;
