@@ -119,12 +119,19 @@ function createClient() {
     await saveState();
 
     // Só uma reinicialização suave após 30s — SEM apagar sessão
-    setTimeout(() => {
+    // Trava simples para evitar múltiplos initialize() simultâneos
+    setTimeout(async () => {
       if (!client || connectionStatus === 'ready') return;
+      if (client.__reconnecting) return;
+      client.__reconnecting = true;
       console.log('[WhatsAppWeb] 🔁 Reinicializando após disconnected...');
-      client.initialize().catch(err => {
+      try {
+        await client.initialize();
+      } catch (err) {
         console.error('[WhatsAppWeb] Falha ao reinicializar:', err.message);
-      });
+      } finally {
+        client.__reconnecting = false;
+      }
     }, 30_000);
   });
 
