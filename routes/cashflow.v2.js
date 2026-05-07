@@ -127,6 +127,12 @@ router.get('/', auth, async (req, res) => {
             const appt = apptId ? appointmentsMap.get(apptId) : null;
             const patientId = p.patient?._id?.toString() || p.patient?.toString();
 
+            // Pagamentos de sessão de pacote só entram no caixa se a sessão foi concluída
+            if (appt && appt.operationalStatus !== 'completed' &&
+                (p.type === 'package' || p.serviceType === 'package_session' || p.package || appt.package)) {
+                return null;
+            }
+
             const notes = (p.notes || '').toLowerCase();
             const desc = (p.description || '').toLowerCase();
             let tipo = 'Particular';
@@ -140,7 +146,12 @@ router.get('/', auth, async (req, res) => {
 
             if (isPackagePayment) {
                 tipo = 'Pacote';
-                servico = 'Sessão de Pacote';
+                // Usa serviceType real do agendamento; fallback para 'Sessão de Pacote'
+                const pkgServiceType = appt?.serviceType || p.serviceType || patientIdToServiceType.get(patientId);
+                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
+                servico = (pkgServiceType && pkgServiceType !== 'package_session')
+                    ? (serviceMap[pkgServiceType] || 'Sessão de Pacote')
+                    : 'Sessão de Pacote';
 
                 // Pacote pré-pago sendo CONSUMIDO (não é compra do dia nem per-session)
                 // → NÃO entra em TRANSAÇÕES (dinheiro entrou quando o pacote foi comprado)
@@ -190,6 +201,14 @@ router.get('/', auth, async (req, res) => {
             };
         }).filter(Boolean);
 
+        // Recalcula totais do caixa a partir das transações já filtradas
+        const totalCaixaFiltrado = transacoesCaixa.reduce((s, t) => s + t.valor, 0);
+        const pixFiltrado = transacoesCaixa.filter(t => t.metodo === 'Pix').reduce((s, t) => s + t.valor, 0);
+        const dinheiroFiltrado = transacoesCaixa.filter(t => t.metodo === 'Dinheiro').reduce((s, t) => s + t.valor, 0);
+        const cartaoFiltrado = transacoesCaixa.filter(t => t.metodo === 'Cartão').reduce((s, t) => s + t.valor, 0);
+        const outrosFiltrado = transacoesCaixa.filter(t => !['Pix', 'Dinheiro', 'Cartão'].includes(t.metodo)).reduce((s, t) => s + t.valor, 0);
+        const countCaixaFiltrado = transacoesCaixa.length;
+
         // ========== DESPESAS DO DIA ==========
         let totalDespesas = 0;
         const despesasPorCategoria = {};
@@ -199,7 +218,7 @@ router.get('/', auth, async (req, res) => {
             if (!despesasPorCategoria[cat]) despesasPorCategoria[cat] = 0;
             despesasPorCategoria[cat] += e.amount;
         });
-        const saldoLiquido = cash.total - totalDespesas;
+        const saldoLiquido = totalCaixaFiltrado - totalDespesas;
 
         // ========== PRODUÇÃO DO DIA ==========
         let recebidoProducao = 0;
@@ -282,12 +301,12 @@ router.get('/', auth, async (req, res) => {
 
         // Comparativos e métricas
         const variacao = yesterdayTotal > 0
-            ? ((cash.total - yesterdayTotal) / yesterdayTotal * 100).toFixed(1)
-            : cash.total > 0 ? 100 : 0;
+            ? ((totalCaixaFiltrado - yesterdayTotal) / yesterdayTotal * 100).toFixed(1)
+            : totalCaixaFiltrado > 0 ? 100 : 0;
         const vsMediaMes = mediaDiariaMes > 0
-            ? ((cash.total - mediaDiariaMes) / mediaDiariaMes * 100).toFixed(1)
+            ? ((totalCaixaFiltrado - mediaDiariaMes) / mediaDiariaMes * 100).toFixed(1)
             : 0;
-        const ticketMedio = cash.count > 0 ? (cash.total / cash.count) : 0;
+        const ticketMedio = countCaixaFiltrado > 0 ? (totalCaixaFiltrado / countCaixaFiltrado) : 0;
         const ticketMedioProducao = production.count > 0 ? (production.total / production.count) : 0;
         const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
 
@@ -305,11 +324,11 @@ router.get('/', auth, async (req, res) => {
             data: {
                 data: targetDate,
                 caixa: {
-                    total: cash.total,
-                    pix: cash.pix,
-                    dinheiro: cash.dinheiro,
-                    cartao: cash.cartao,
-                    outros: cash.outros,
+                    total: totalCaixaFiltrado,
+                    pix: pixFiltrado,
+                    dinheiro: dinheiroFiltrado,
+                    cartao: cartaoFiltrado,
+                    outros: outrosFiltrado,
                     qtdPix,
                     qtdDinheiro,
                     qtdCartao
@@ -327,7 +346,7 @@ router.get('/', auth, async (req, res) => {
                     quantidade: expenses.length
                 },
                 saldo: {
-                    bruto: cash.total,
+                    bruto: totalCaixaFiltrado,
                     liquido: saldoLiquido,
                     despesaTotal: totalDespesas
                 },
@@ -377,7 +396,7 @@ router.get('/', auth, async (req, res) => {
                     diasDecorridos: dayOfMonth
                 },
                 estatisticas: {
-                    quantidade: cash.count,
+                    quantidade: countCaixaFiltrado,
                     quantidadeAtendimentos: production.count,
                     ticketMedio,
                     ontem: yesterdayTotal
