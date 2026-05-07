@@ -155,9 +155,18 @@ function createClient() {
     puppeteer: buildPuppeteerOptions(),
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // EVENTOS DETALHADOS — LOG EM TUDO PARA DEBUG
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const logEvent = (name, data = '') => {
+    const ts = new Date().toISOString();
+    console.log(`[WhatsAppWeb][${ts}] 📡 EVENTO: ${name}`, data);
+  };
+
   // QR
   newClient.on('qr', async (qr) => {
-    console.log('[WhatsAppWeb] QR Code gerado. Escaneie com o celular.');
+    logEvent('qr', 'QR Code gerado — escaneie com o celular');
     connectionStatus = 'qr';
     qrScanTimestamp = Date.now();
     try {
@@ -167,19 +176,13 @@ function createClient() {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
     }
 
-    // 🚨 WORKAROUND: Força verificação de ready após 60s do QR scan
-    // Bug do RemoteAuth em headless: ready/authenticated não disparam
+    // WORKAROUND: verifica se client.info aparece após scan
     if (forceReadyInterval) clearInterval(forceReadyInterval);
     forceReadyInterval = setInterval(async () => {
       try {
         if (!client) return;
-        // Se o celular já escaneou, client.info existe mas isReady pode ser false
         if (client.info && !isReady) {
-          console.log('[WhatsAppWeb] ⚡ WORKAROUND: client.info detectado, forçando ready!');
-          console.log('[WhatsAppWeb] ⚡ client.info:', {
-            wid: client.info?.wid?._serialized,
-            platform: client.info?.platform,
-          });
+          logEvent('force_ready', `client.info detectado! wid=${client.info?.wid?._serialized}`);
           isReady = true;
           reconnectRetries = 0;
           qrCodeDataUrl = null;
@@ -187,19 +190,43 @@ function createClient() {
           lastError = null;
           await saveState();
         }
-        // Se já passou 120s desde o QR e ainda não tem client.info, loga pra debug
         if (qrScanTimestamp && Date.now() - qrScanTimestamp > 120_000 && !client.info && connectionStatus === 'qr') {
-          console.log('[WhatsAppWeb] ⏱️ 120s desde QR scan, client.info ainda indisponível. QR provavelmente não foi escaneado ou falhou.');
+          logEvent('qr_timeout', '120s desde QR scan sem client.info — QR não foi escaneado ou falhou');
         }
       } catch (err) {
         console.error('[WhatsAppWeb] Erro no forceReadyInterval:', err.message);
       }
-    }, 10_000); // verifica a cada 10s
+    }, 10_000);
+  });
+
+  // Authenticated
+  newClient.on('authenticated', async () => {
+    logEvent('authenticated', 'Celular escaneou o QR! Aguardando ready...');
+    connectionStatus = 'connecting';
+    qrScanTimestamp = Date.now();
+    await saveState();
+  });
+
+  // Auth Failure
+  newClient.on('auth_failure', async (msg) => {
+    logEvent('auth_failure', `Falha: ${msg}`);
+    lastError = msg;
+    connectionStatus = 'error';
+    await saveState();
+  });
+
+  // Loading Screen
+  newClient.on('loading_screen', (percent, message) => {
+    logEvent('loading_screen', `${percent}% — ${message}`);
   });
 
   // Ready
   newClient.on('ready', async () => {
-    console.log('[WhatsAppWeb] ✅ Cliente pronto! (evento ready disparado)');
+    logEvent('ready', `Cliente pronto! info=${JSON.stringify({
+      wid: client.info?.wid?._serialized,
+      platform: client.info?.platform,
+      name: client.info?.pushname,
+    })}`);
     isReady = true;
     reconnectRetries = 0;
     qrCodeDataUrl = null;
@@ -209,30 +236,19 @@ function createClient() {
     await saveState();
   });
 
-  // Authenticated
-  newClient.on('authenticated', async () => {
-    console.log('[WhatsAppWeb] 🔐 Autenticado — aguardando ready...');
-    connectionStatus = 'connecting';
-    qrScanTimestamp = Date.now();
-    await saveState();
+  // Change State
+  newClient.on('change_state', (state) => {
+    logEvent('change_state', `Novo estado: ${state}`);
   });
 
-  // Auth Failure
-  newClient.on('auth_failure', async (msg) => {
-    console.error('[WhatsAppWeb] ❌ Falha na autenticação:', msg);
-    lastError = msg;
-    connectionStatus = 'error';
-    await saveState();
+  // Change Battery
+  newClient.on('change_battery', (batteryInfo) => {
+    logEvent('change_battery', `${batteryInfo.battery}% (plugged: ${batteryInfo.plugged})`);
   });
 
-  // Loading Screen
-  newClient.on('loading_screen', (percent, message) => {
-    console.log(`[WhatsAppWeb] ⏳ Loading screen: ${percent}% - ${message}`);
-  });
-
-  // Disconnected → reconexão com backoff
+  // Disconnected
   newClient.on('disconnected', async (reason) => {
-    console.log('[WhatsAppWeb] 🔌 Desconectado:', reason);
+    logEvent('disconnected', `Razão: ${reason}`);
     isReady = false;
     connectionStatus = 'disconnected';
     if (forceReadyInterval) clearInterval(forceReadyInterval);
@@ -255,17 +271,29 @@ function createClient() {
       } catch { /* ignora */ }
       client = null;
       isReconnecting = false;
-      initRequested = false; // permite nova inicialização
+      initRequested = false;
       await initWhatsAppClient();
     }, delay);
   });
 
   // Error
   newClient.on('error', async (err) => {
-    console.error('[WhatsAppWeb] Erro:', err.message);
+    logEvent('error', err.message);
     lastError = err.message;
     if (connectionStatus !== 'ready') connectionStatus = 'error';
     await saveState();
+  });
+
+  // Message received
+  newClient.on('message', (msg) => {
+    logEvent('message_received', `De: ${msg.from} | Tipo: ${msg.type} | Body: ${msg.body?.substring(0, 50)}`);
+  });
+
+  // Message create
+  newClient.on('message_create', (msg) => {
+    if (msg.fromMe) {
+      logEvent('message_sent', `Para: ${msg.to} | Body: ${msg.body?.substring(0, 50)}`);
+    }
   });
 
   return newClient;
