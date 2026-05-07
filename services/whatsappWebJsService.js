@@ -29,6 +29,7 @@ let connectionStatus = 'waiting_mongo'; // waiting_mongo, initializing, qr, read
 let reconnectRetries = 0;
 let initRequested = false;
 let isReconnecting = false;
+let isInitializing = false;
 let forceReadyInterval = null;
 let qrScanTimestamp = null;
 let lastEventTimestamp = null;
@@ -48,6 +49,8 @@ function updateLastEvent(label) {
     }
   }
 }
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function getSessionPersistenceInfo() {
   try {
@@ -199,27 +202,28 @@ function createClient() {
   };
 
   // STUCK DETECTION: detecta se o Chrome/Puppeteer congelou
+  // ⚠️ NUNCA apaga sessão LocalAuth — só reinicia o client/browser
   function startStuckDetection() {
     if (stuckCheckInterval) clearInterval(stuckCheckInterval);
     stuckCheckInterval = setInterval(async () => {
       try {
-        if (!client || isReady) return;
+        if (!client || isReady || isInitializing) return;
         const now = Date.now();
         const sinceLastEvent = lastEventTimestamp ? now - lastEventTimestamp : Infinity;
         const sinceLoading = lastLoadingScreenTimestamp ? now - lastLoadingScreenTimestamp : Infinity;
 
-        // Se não houve evento por 60s e não está pronto, provavelmente congelou
+        // Se não houve evento por 3min e não está pronto, provavelmente congelou
         // MAS: se já está em loading_screen >= 90%, pode ser sync pesado — não mata sessão
-        if (sinceLastEvent > 60_000 && connectionStatus !== 'waiting_mongo' && lastLoadingScreenPercent < 90) {
-          logEvent('stuck_detected', `Nenhum evento por ${Math.floor(sinceLastEvent / 1000)}s — forçando reconexão`);
-          await reconnect();
+        if (sinceLastEvent > 180_000 && connectionStatus !== 'waiting_mongo' && lastLoadingScreenPercent < 90) {
+          logEvent('stuck_detected', `Nenhum evento por ${Math.floor(sinceLastEvent / 1000)}s — reiniciando browser SEM apagar sessão`);
+          await softReconnect(); // reinicia browser, mantém sessão
           return;
         }
 
-        // Se travou no loading_screen >= 90% por mais de 5min, pode ser sync pesado
-        // NÃO reconecta — apenas loga. O sync pode demorar vários minutos.
-        if (lastLoadingScreenPercent >= 90 && sinceLoading > 300_000) {
-          logEvent('stuck_warning', `Loading_screen em ${lastLoadingScreenPercent}% por ${Math.floor(sinceLoading / 1000)}s — sync pode estar finalizando, NÃO reconectando`);
+        // Se travou no loading_screen >= 90% por mais de 10min, loga warning
+        // NÃO reconecta — apenas observa. O sync pode demorar MUITO.
+        if (lastLoadingScreenPercent >= 90 && sinceLoading > 600_000) {
+          logEvent('stuck_warning', `Loading_screen em ${lastLoadingScreenPercent}% por ${Math.floor(sinceLoading / 1000)}s — sync demorando mais que o esperado`);
         }
       } catch (err) {
         console.error('[WhatsAppWeb] Erro no stuckCheckInterval:', err.message);
@@ -383,21 +387,54 @@ function createClient() {
   return newClient;
 }
 
+// 🔒 Mutex: garante que nunca existem 2 clients simultâneos
 async function doInitialize() {
-  if (client) return;
-  console.log('[WhatsAppWeb] Inicializando cliente (LocalAuth + Disk)...');
-  console.log('[WhatsAppWeb] AUTH STRATEGY: LocalAuth');
-  connectionStatus = 'initializing';
-  await saveState();
-  client = createClient();
-  client.initialize().catch(async (err) => {
+  if (isInitializing) {
+    console.log('[WhatsAppWeb] ⏳ Inicialização já em andamento. Ignorando chamada duplicada.');
+    return;
+  }
+  if (client) {
+    console.log('[WhatsAppWeb] ⚠️ Cliente já existe. Não criando outro.');
+    return;
+  }
+  isInitializing = true;
+  try {
+    console.log('[WhatsAppWeb] Inicializando cliente (LocalAuth + Disk)...');
+    console.log('[WhatsAppWeb] AUTH STRATEGY: LocalAuth');
+    connectionStatus = 'initializing';
+    await saveState();
+    client = createClient();
+    await client.initialize();
+  } catch (err) {
     console.error('[WhatsAppWeb] Falha ao inicializar:', err.message);
     lastError = err.message;
     connectionStatus = 'error';
     client = null;
     initRequested = false;
     await saveState();
-  });
+  } finally {
+    isInitializing = false;
+  }
+}
+
+// 🟢 Soft reconnect: reinicia browser SEM apagar sessão LocalAuth
+async function softReconnect() {
+  if (isReconnecting) return;
+  isReconnecting = true;
+  console.log('[WhatsAppWeb] 🔁 Soft reconnect — reiniciando browser, mantendo sessão...');
+  try {
+    if (client) {
+      try { await client.destroy(); } catch {}
+      client = null;
+    }
+    await sleep(2000);
+    initRequested = false;
+    await initWhatsAppClient();
+  } catch (err) {
+    console.error('[WhatsAppWeb] Erro no soft reconnect:', err.message);
+  } finally {
+    isReconnecting = false;
+  }
 }
 
 /**
@@ -601,37 +638,43 @@ export async function gracefulShutdownWhatsApp() {
 
 // ─── Reconexão manual ───────────────────────────────────────────────────────
 export async function reconnect(clearSession = false) {
-  isReady = false;
-  qrCodeDataUrl = null;
-  connectionStatus = 'initializing';
-  lastError = null;
-  reconnectRetries = 0;
+  if (isReconnecting) return { success: false, message: 'Reconexão já em andamento' };
+  isReconnecting = true;
+  try {
+    isReady = false;
+    qrCodeDataUrl = null;
+    connectionStatus = 'initializing';
+    lastError = null;
+    reconnectRetries = 0;
 
-  if (client) {
-    try {
-      await client.logout();
-      await client.destroy();
-    } catch { /* ignora */ }
-    client = null;
-  }
-
-  // ⚠️ SÓ limpa sessão quando explicitamente pedido (ex: botão "Gerar novo QR")
-  // O stuck detection NUNCA deve limpar sessão — destrói progresso do sync
-  if (clearSession) {
-    try {
-      const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
-      if (fs.existsSync(authPath)) {
-        fs.rmSync(authPath, { recursive: true, force: true });
-        console.log('[WhatsAppWeb] Sessão local removida do filesystem.');
-      }
-    } catch (e) {
-      console.warn('[WhatsAppWeb] Não foi possível remover sessão local:', e.message);
+    if (client) {
+      try {
+        if (clearSession) await client.logout();
+        await client.destroy();
+      } catch { /* ignora */ }
+      client = null;
     }
-  }
 
-  initRequested = false; // permite nova inicialização
-  doInitialize();
-  return { success: true, message: 'Reconectando...' };
+    // ⚠️ SÓ limpa sessão quando explicitamente pedido (ex: botão "Gerar novo QR")
+    // O stuck detection NUNCA deve limpar sessão — destrói progresso do sync
+    if (clearSession) {
+      try {
+        const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+        if (fs.existsSync(authPath)) {
+          fs.rmSync(authPath, { recursive: true, force: true });
+          console.log('[WhatsAppWeb] Sessão local removida do filesystem.');
+        }
+      } catch (e) {
+        console.warn('[WhatsAppWeb] Não foi possível remover sessão local:', e.message);
+      }
+    }
+
+    initRequested = false;
+    await doInitialize();
+    return { success: true, message: 'Reconectando...' };
+  } finally {
+    isReconnecting = false;
+  }
 }
 
 // ─── Default export ─────────────────────────────────────────────────────────
