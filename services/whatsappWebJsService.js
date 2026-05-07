@@ -1,8 +1,9 @@
 /**
- * 🟢 Serviço WhatsApp Web.js (produção — RemoteAuth + MongoDB)
+ * 🟢 Serviço WhatsApp Web.js (produção — LocalAuth + Disk)
  *
  * Conecta diretamente ao WhatsApp Web usando o chip/celular do usuário.
- * Persiste sessão no MongoDB (GridFS) via RemoteAuth → sobrevive restart/deploy.
+ * Usa LocalAuth para persistir sessão no filesystem (.wwebjs_auth/).
+ * Em produção (Render), montar um Disk em .wwebjs_auth/ para sobreviver restart/deploy.
  * Fila de envio com delay humano (anti-ban).
  * Reconexão automática com backoff exponencial.
  */
@@ -10,8 +11,7 @@
 import './setPuppeteerCache.js'; // ⚠️ DEVE vir antes de 'puppeteer'
 
 import pkg from 'whatsapp-web.js';
-const { Client, RemoteAuth } = pkg;
-import { MongoStore } from 'wwebjs-mongo';
+const { Client, LocalAuth } = pkg;
 import mongoose from 'mongoose';
 import puppeteer from 'puppeteer';
 import qrcode from 'qrcode';
@@ -27,7 +27,6 @@ let qrCodeDataUrl = null;
 let lastError = null;
 let connectionStatus = 'waiting_mongo'; // waiting_mongo, initializing, qr, ready, error, disconnected
 let reconnectRetries = 0;
-let mongoStore = null;
 let initRequested = false;
 let isReconnecting = false;
 let forceReadyInterval = null;
@@ -145,22 +144,14 @@ function buildPuppeteerOptions() {
 
 // ─── Inicialização do Cliente ───────────────────────────────────────────────
 function createClient() {
-  if (!mongoStore) {
-    mongoStore = new MongoStore({ mongoose });
-  }
-
-  // RemoteAuth extrai o zip para o filesystem antes de carregar — garante pasta
+  // LocalAuth salva sessão em .wwebjs_auth/ — montar Disk no Render
   const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
   if (!fs.existsSync(authPath)) {
     fs.mkdirSync(authPath, { recursive: true });
   }
 
   const newClient = new Client({
-    authStrategy: new RemoteAuth({
-      store: mongoStore,
-      clientId: 'fono-inova-main',
-      backupSyncIntervalMs: 300_000, // salva sessão a cada 5 min
-    }),
+    authStrategy: new LocalAuth({ dataPath: authPath }),
     puppeteer: buildPuppeteerOptions(),
   });
 
@@ -234,6 +225,11 @@ function createClient() {
     await saveState();
   });
 
+  // Loading Screen
+  newClient.on('loading_screen', (percent, message) => {
+    console.log(`[WhatsAppWeb] ⏳ Loading screen: ${percent}% - ${message}`);
+  });
+
   // Disconnected → reconexão com backoff
   newClient.on('disconnected', async (reason) => {
     console.log('[WhatsAppWeb] 🔌 Desconectado:', reason);
@@ -277,7 +273,8 @@ function createClient() {
 
 async function doInitialize() {
   if (client) return;
-  console.log('[WhatsAppWeb] Inicializando cliente (RemoteAuth + MongoDB)...');
+  console.log('[WhatsAppWeb] Inicializando cliente (LocalAuth + Disk)...');
+  console.log('[WhatsAppWeb] AUTH STRATEGY: LocalAuth');
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
@@ -492,14 +489,15 @@ export async function reconnect() {
     client = null;
   }
 
-  // Limpa sessão remota no MongoDB (força novo QR)
-  if (mongoStore) {
-    try {
-      await mongoStore.delete({ session: 'fono-inova-main' });
-      console.log('[WhatsAppWeb] Sessão remota removida do MongoDB.');
-    } catch (e) {
-      console.warn('[WhatsAppWeb] Não foi possível remover sessão remota:', e.message);
+  // Limpa sessão local do filesystem (força novo QR)
+  try {
+    const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+    if (fs.existsSync(authPath)) {
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log('[WhatsAppWeb] Sessão local removida do filesystem.');
     }
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível remover sessão local:', e.message);
   }
 
   initRequested = false; // permite nova inicialização
