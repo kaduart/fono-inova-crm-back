@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
-import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
+import { gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 bootstrapEventContracts();
@@ -33,13 +33,9 @@ async function main() {
         });
         console.log('✅ MongoDB conectado\n');
 
-        // 🟢 Inicializa WhatsApp Web (Chrome/Puppeteer) — só no worker dedicado
-        try {
-            await initWhatsAppClient();
-            console.log('🟢 WhatsApp Web inicializado (aguardando QR code se necessário)');
-        } catch (wppErr) {
-            console.warn('⚠️ Falha ao inicializar WhatsApp Web:', wppErr.message);
-        }
+        // 🟢 WhatsApp Web é inicializado pelo startWorkers.js (WORKER_GROUP=all)
+        // Este entrypoint NÃO inicializa WhatsApp para evitar duplicação
+        console.log('🟢 WhatsApp Worker (entrypoint) — WhatsApp é gerenciado pelo startWorkers.js');
 
         await startWorkersByGroup('whatsapp');
 
