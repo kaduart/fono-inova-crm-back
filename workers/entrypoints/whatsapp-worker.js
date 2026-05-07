@@ -45,9 +45,12 @@ async function main() {
 
         console.log('\n🎉 WhatsApp Worker pronto!');
 
+        // 🧠 Log de memória a cada 30s — essencial para debug de OOM
         setInterval(() => {
+            const mem = process.memoryUsage();
             console.log(`[${new Date().toISOString()}] 💓 WhatsApp Worker rodando...`);
-        }, 60000);
+            console.log(`[MEMORY] RSS: ${Math.round(mem.rss / 1024 / 1024)}MB | Heap: ${Math.round(mem.heapUsed / 1024 / 1024)}MB | External: ${Math.round(mem.external / 1024 / 1024)}MB`);
+        }, 30000);
 
     } catch (error) {
         console.error('❌ Erro fatal:', error.message);
