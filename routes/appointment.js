@@ -1146,8 +1146,24 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 body: req.body
             });
 
+            // Strip fields that must never overwrite the document (_id imutável no Mongoose)
+            // e campos de UI que o backend não conhece
+            const {
+                _id: _bodyId,
+                id: _bodyStringId,
+                __v: _bodyV,
+                isNewPatient: _isNewPatient,
+                patientInfo: _patientInfo,
+                ...safeBody
+            } = req.body;
+
+            // package pode chegar como objeto populado — extrai apenas o ObjectId
+            if (safeBody.package && typeof safeBody.package === 'object') {
+                safeBody.package = safeBody.package._id || safeBody.package.id || null;
+            }
+
             const updateData = {
-                ...req.body,
+                ...safeBody,
                 doctor: req.body.doctorId || appointment.doctor,
                 updatedAt: currentDate
             };
