@@ -6,6 +6,7 @@
  */
 
 import http from 'http';
+import path from 'path';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
@@ -33,6 +34,8 @@ process.on('uncaughtException', (err) => {
 async function main() {
     try {
         console.log('🆘 MODO EMERGÊNCIA: WhatsApp ONLY\n');
+        console.log(`📂 CWD: ${process.cwd()}`);
+        console.log(`📂 Sessão path: ${path.resolve(process.cwd(), '.wwebjs_auth')}\n`);
 
         await mongoose.connect(MONGO_URI, {
             maxPoolSize: 5,
