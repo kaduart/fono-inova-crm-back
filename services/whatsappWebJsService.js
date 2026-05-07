@@ -31,8 +31,36 @@ let initRequested = false;
 let isReconnecting = false;
 let forceReadyInterval = null;
 let qrScanTimestamp = null;
+let lastEventTimestamp = null;
+let lastLoadingScreenPercent = 0;
+let lastLoadingScreenTimestamp = null;
+let stuckCheckInterval = null;
 const WHATSAPP_LOCK_KEY = 'lock:whatsapp:init';
 const WHATSAPP_LOCK_TTL_SECONDS = 30;
+
+function updateLastEvent(label) {
+  lastEventTimestamp = Date.now();
+  if (label && label.includes('loading_screen')) {
+    const match = label.match(/(\d+)%/);
+    if (match) {
+      lastLoadingScreenPercent = parseInt(match[1], 10);
+      lastLoadingScreenTimestamp = Date.now();
+    }
+  }
+}
+
+function getSessionPersistenceInfo() {
+  try {
+    const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+    if (!fs.existsSync(authPath)) {
+      return { exists: false, count: 0, path: authPath };
+    }
+    const items = fs.readdirSync(authPath);
+    return { exists: true, count: items.length, path: authPath, items: items.slice(0, 10) };
+  } catch (err) {
+    return { exists: false, count: 0, error: err.message };
+  }
+}
 
 // ─── Persistência de estado no MongoDB (compartilhado entre API e worker) ──
 async function saveState() {
@@ -44,6 +72,7 @@ async function saveState() {
         ready: isReady,
         qrCode: qrCodeDataUrl,
         error: lastError,
+        qrTimestamp: qrScanTimestamp,
         updatedAt: new Date(),
       },
       { upsert: true, new: true }
@@ -162,13 +191,49 @@ function createClient() {
   const logEvent = (name, data = '') => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 📡 EVENTO: ${name}`, data);
+    updateLastEvent(`${name} ${data}`);
   };
+
+  // STUCK DETECTION: detecta se o Chrome/Puppeteer congelou
+  function startStuckDetection() {
+    if (stuckCheckInterval) clearInterval(stuckCheckInterval);
+    stuckCheckInterval = setInterval(async () => {
+      try {
+        if (!client || isReady) return;
+        const now = Date.now();
+        const sinceLastEvent = lastEventTimestamp ? now - lastEventTimestamp : Infinity;
+        const sinceLoading = lastLoadingScreenTimestamp ? now - lastLoadingScreenTimestamp : Infinity;
+
+        // Se não houve evento por 60s e não está pronto, provavelmente congelou
+        if (sinceLastEvent > 60_000 && connectionStatus !== 'waiting_mongo') {
+          logEvent('stuck_detected', `Nenhum evento por ${Math.floor(sinceLastEvent / 1000)}s — forçando reconexão`);
+          await reconnect();
+          return;
+        }
+
+        // Se travou no loading_screen >= 95% por mais de 60s, congelou
+        if (lastLoadingScreenPercent >= 95 && sinceLoading > 60_000) {
+          logEvent('stuck_detected', `Loading_screen travado em ${lastLoadingScreenPercent}% por ${Math.floor(sinceLoading / 1000)}s — forçando reconexão`);
+          await reconnect();
+        }
+      } catch (err) {
+        console.error('[WhatsAppWeb] Erro no stuckCheckInterval:', err.message);
+      }
+    }, 30_000);
+  }
+
+  function clearStuckDetection() {
+    if (stuckCheckInterval) clearInterval(stuckCheckInterval);
+    stuckCheckInterval = null;
+  }
 
   // QR
   newClient.on('qr', async (qr) => {
     logEvent('qr', 'QR Code gerado — escaneie com o celular');
     connectionStatus = 'qr';
     qrScanTimestamp = Date.now();
+    lastLoadingScreenPercent = 0;
+    lastLoadingScreenTimestamp = null;
     try {
       qrCodeDataUrl = await qrcode.toDataURL(qr);
       await saveState();
@@ -188,6 +253,7 @@ function createClient() {
           qrCodeDataUrl = null;
           connectionStatus = 'ready';
           lastError = null;
+          clearStuckDetection();
           await saveState();
         }
         // WhatsApp moderno demora bastante no primeiro sync — dá 5 minutos
@@ -198,6 +264,8 @@ function createClient() {
         console.error('[WhatsAppWeb] Erro no forceReadyInterval:', err.message);
       }
     }, 10_000);
+
+    startStuckDetection();
   });
 
   // Authenticated
@@ -213,6 +281,7 @@ function createClient() {
     logEvent('auth_failure', `Falha: ${msg}`);
     lastError = msg;
     connectionStatus = 'error';
+    clearStuckDetection();
     await saveState();
   });
 
@@ -234,6 +303,7 @@ function createClient() {
     connectionStatus = 'ready';
     lastError = null;
     if (forceReadyInterval) clearInterval(forceReadyInterval);
+    clearStuckDetection();
     await saveState();
   });
 
@@ -253,6 +323,7 @@ function createClient() {
     isReady = false;
     connectionStatus = 'disconnected';
     if (forceReadyInterval) clearInterval(forceReadyInterval);
+    clearStuckDetection();
     await saveState();
 
     // 🛡️ Durante estabilização inicial, desabilita reconnect automático
@@ -368,11 +439,17 @@ export async function initWhatsAppClient() {
 export async function getStatus() {
   // Se estiver rodando no mesmo processo (worker ou API local), retorna estado local
   if (client || connectionStatus !== 'waiting_mongo') {
+    const persist = getSessionPersistenceInfo();
     return {
       status: connectionStatus,
       ready: isReady,
       qrCode: qrCodeDataUrl,
+      qrTimestamp: qrScanTimestamp,
       error: lastError,
+      sessionPersisted: persist.exists && persist.count > 0,
+      sessionFiles: persist.count,
+      pid: process.pid,
+      uptime: process.uptime(),
     };
   }
 
@@ -384,7 +461,11 @@ export async function getStatus() {
         status: state.status,
         ready: state.ready,
         qrCode: state.qrCode,
+        qrTimestamp: state.qrTimestamp,
         error: state.error,
+        sessionPersisted: null,
+        pid: null,
+        uptime: null,
       };
     }
   } catch (err) {
@@ -483,6 +564,10 @@ export async function gracefulShutdownWhatsApp() {
   if (forceReadyInterval) {
     clearInterval(forceReadyInterval);
     forceReadyInterval = null;
+  }
+  if (stuckCheckInterval) {
+    clearInterval(stuckCheckInterval);
+    stuckCheckInterval = null;
   }
   if (!client) {
     console.log('[WhatsAppWeb] 🛑 Sem cliente ativo para desligar.');
