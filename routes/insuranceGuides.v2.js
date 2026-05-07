@@ -535,7 +535,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
     const linkedPlan = await InsurancePlan.findOne({ guide: guideObjId }).lean();
     if (linkedPlan) {
       const planApptsToDelete = await Appointment.find({
-        insurancePlan: linkedPlan._id, date: { $gte: today }, operationalStatus: 'scheduled'
+        insurancePlan: linkedPlan._id, date: { $gte: today }, operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
       }).select('_id').lean();
       const planApptIds = planApptsToDelete.map(a => a._id);
 

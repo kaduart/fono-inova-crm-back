@@ -455,7 +455,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       insuranceGuide: insuranceGuideId,
       lead: resolvedLeadId || null,
 
-      operationalStatus: isPreAgendamento ? 'pre_agendado' : (req.body.operationalStatus || 'scheduled'),
+      operationalStatus: req.body.operationalStatus || 'pre_agendado',
       clinicalStatus: 'pending',
       paymentStatus: req.body.paymentStatus || 'pending',
 
@@ -1133,7 +1133,7 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
     const appointments = await Appointment.find({
       date: { $gte: dateRangeStart, $lte: dateRangeEnd },
       doctor: { $in: doctorIds },
-      operationalStatus: { $nin: [...CANCELED_STATUSES, 'no_show', 'missed', ...PRE_APPOINTMENT_STATUSES] },
+      operationalStatus: { $nin: [...CANCELED_STATUSES, 'no_show', 'missed'] },
       appointmentId: { $exists: false },
       isDeleted: { $ne: true }
     }).select('doctor date time duration startDateTime endDateTime').lean();
@@ -2462,7 +2462,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
       date,
       time,
       duration: existing.duration || 40,
-      operationalStatus: 'scheduled',
+      operationalStatus: 'pre_agendado',
       status: 'Agendado',
       notes: existing.notes || '',
       observations: existing.observations || '',

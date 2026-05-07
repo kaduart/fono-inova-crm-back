@@ -73,7 +73,7 @@ router.get('/agenda-temporaria', authorize(['admin', 'secretary']), async (req, 
     // Buscar agendamentos confirmados do período
     const agendamentos = await Appointment.find({
       date: { $gte: inicio, $lte: fim },
-      operationalStatus: { $in: ['confirmed', 'scheduled'] },
+      operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
       clinicalStatus: 'pending'
     })
       .populate('patient', 'fullName phoneNumber')
@@ -469,7 +469,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       // MÊS PASSADO: Buscar o que foi agendado e realizado na época (histórico)
       agendados = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
-        operationalStatus: { $in: ['confirmed', 'scheduled'] },
+        operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
         clinicalStatus: 'completed',
         ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
@@ -488,7 +488,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       // MÊS ATUAL: Projeção normal (restante do mês)
       agendados = await Appointment.find({
         date: { $gt: hoje, $lte: fimMes },
-        operationalStatus: { $in: ['confirmed', 'scheduled'] },
+        operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
         clinicalStatus: { $nin: ['completed', 'cancelled'] },
         ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
@@ -508,7 +508,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       // MÊS FUTURO: Tudo é projeção
       agendados = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
-        operationalStatus: { $in: ['confirmed', 'scheduled'] },
+        operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
         ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
@@ -526,7 +526,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     // Calcular taxa de conversão histórica (últimos 90 dias) — paralelo
     const dataCorte = moment().subtract(90, 'days').format('YYYY-MM-DD');
     const [totalHistorico, convertidosHistorico] = await Promise.all([
-      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, operationalStatus: { $in: ['confirmed', 'scheduled'] } }),
+      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] } }),
       Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, clinicalStatus: 'completed' })
     ]);
     const taxaConversao = totalHistorico > 0 ? convertidosHistorico / totalHistorico : 0.85;

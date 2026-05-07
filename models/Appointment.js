@@ -136,7 +136,8 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     enum: [
       'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
-      'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia'
+      'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia',
+      'neuropsych_evaluation'
     ],
     default: null
   },
@@ -146,7 +147,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'dinheiro', 'pix', 'cartao_credito', 'credito',
       'cartao_debito', 'debito', 'cartão', 'transferencia_bancaria', 'transferencia',
-      'plano-unimed', 'convenio', 'outro', null
+      'plano-unimed', 'convenio', 'liminar_credit', 'outro', null
     ],
     default: 'dinheiro'
   },
@@ -270,7 +271,7 @@ const appointmentSchema = new mongoose.Schema({
   // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
   paymentOrigin: {
     type: String,
-    enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual', 'unknown', 'direct', 'pending', 'updated', 'existing'],
+    enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'liminar_credit', 'individual', 'unknown', 'direct', 'pending', 'updated', 'existing'],
     default: null,
     index: true,
     description: 'Origem do pagamento quando o agendamento for completado'
