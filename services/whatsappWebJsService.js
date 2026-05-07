@@ -51,6 +51,9 @@ function createClient() {
 
   const newClient = new Client({
     authStrategy: new LocalAuth({ dataPath: authPath }),
+    authTimeoutMs: 300_000, // 5 min — QR pode demorar pra escanear no Render
+    takeoverOnConflict: true, // Se houver outra sessão ativa, toma controle
+    takeoverTimeoutMs: 30_000,
     puppeteer: {
       headless: true,
       protocolTimeout: 300_000, // 5 min — protocolo CDP
