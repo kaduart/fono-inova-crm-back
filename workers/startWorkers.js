@@ -17,7 +17,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../models/index.js';
 import { startAllWorkers, startWorkersByGroup, VALID_GROUPS } from './index.js';
-import { initWhatsAppClient } from '../services/whatsappWebJsService.js';
+import { initWhatsAppClient, gracefulShutdownWhatsApp } from '../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -64,10 +64,14 @@ async function main() {
             process.exit(1);
         }
 
-        // 3. WhatsApp Web (Chrome) — só quando grupo inclui whatsapp
-        if (WORKER_GROUP === 'all' || WORKER_GROUP === 'whatsapp') {
+        // 3. WhatsApp Web (Chrome) — NUNCA no startWorkers.js genérico
+        // WhatsApp só deve ser inicializado pelo worker dedicado: whatsapp-worker.js
+        // Isso evita competição de sessão quando WORKER_GROUP=all roda em paralelo com crm-worker-whatsapp
+        if (WORKER_GROUP === 'whatsapp') {
             console.log('🟢 Inicializando WhatsApp Web...');
-            initWhatsAppClient();
+            await initWhatsAppClient();
+        } else if (WORKER_GROUP === 'all') {
+            console.log('⏭️ WhatsApp Web ignorado no modo all — use o worker dedicado crm-worker-whatsapp');
         }
 
         console.log('\n🎉 Workers iniciados com sucesso!');
@@ -89,6 +93,7 @@ async function main() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     console.log('\n🛑 SIGTERM recebido, parando workers...');
+    await gracefulShutdownWhatsApp();
     await mongoose.disconnect();
     console.log('✅ Workers parados');
     process.exit(0);
@@ -96,6 +101,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     console.log('\n🛑 SIGINT recebido, parando workers...');
+    await gracefulShutdownWhatsApp();
     await mongoose.disconnect();
     console.log('✅ Workers parados');
     process.exit(0);

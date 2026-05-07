@@ -541,6 +541,38 @@ export async function sendTextMessage({
     // Mensagens de texto sempre via WhatsApp Web (chip)
     const webStatus = await getWebStatus();
     if (!webStatus.ready) {
+        // 🔄 Fallback VPS se configurado
+        if (process.env.VPS_WHATSAPP_URL && process.env.VPS_WHATSAPP_TOKEN) {
+            console.log(`📤 [Fallback] WhatsApp Web offline (status: ${webStatus.status}). Tentando VPS...`);
+            try {
+                const vpsResult = await sendViaVPS(phone, text);
+                const waMessageId = vpsResult?.messageId || `vps_${Date.now()}`;
+                await registerMessage({
+                    leadId: lead,
+                    contactId,
+                    patientId,
+                    direction: 'outbound',
+                    text,
+                    type: 'text',
+                    status: 'sent',
+                    waMessageId,
+                    timestamp: new Date(),
+                    to: phone,
+                    from: process.env.CLINIC_PHONE_E164 || phone,
+                    metadata: { sentBy, userId, provider: 'vps' },
+                });
+                console.log(`✅ Mensagem enviada via VPS fallback: ${phone}`);
+                return {
+                    messaging_product: 'whatsapp',
+                    contacts: [{ input: phone, wa_id: phone }],
+                    messages: [{ id: waMessageId }],
+                    _provider: 'vps',
+                };
+            } catch (vpsErr) {
+                console.error(`❌ [Fallback] VPS também falhou: ${vpsErr.message}`);
+                throw new Error(`WhatsApp Web não está conectado (status: ${webStatus.status}) e VPS fallback falhou: ${vpsErr.message}`);
+            }
+        }
         throw new Error(`WhatsApp Web não está conectado (status: ${webStatus.status}). Escaneie o QR code.`);
     }
 
