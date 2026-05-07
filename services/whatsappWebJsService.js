@@ -209,16 +209,17 @@ function createClient() {
         const sinceLoading = lastLoadingScreenTimestamp ? now - lastLoadingScreenTimestamp : Infinity;
 
         // Se não houve evento por 60s e não está pronto, provavelmente congelou
-        if (sinceLastEvent > 60_000 && connectionStatus !== 'waiting_mongo') {
+        // MAS: se já está em loading_screen >= 90%, pode ser sync pesado — não mata sessão
+        if (sinceLastEvent > 60_000 && connectionStatus !== 'waiting_mongo' && lastLoadingScreenPercent < 90) {
           logEvent('stuck_detected', `Nenhum evento por ${Math.floor(sinceLastEvent / 1000)}s — forçando reconexão`);
           await reconnect();
           return;
         }
 
-        // Se travou no loading_screen >= 95% por mais de 60s, congelou
-        if (lastLoadingScreenPercent >= 95 && sinceLoading > 60_000) {
-          logEvent('stuck_detected', `Loading_screen travado em ${lastLoadingScreenPercent}% por ${Math.floor(sinceLoading / 1000)}s — forçando reconexão`);
-          await reconnect();
+        // Se travou no loading_screen >= 90% por mais de 5min, pode ser sync pesado
+        // NÃO reconecta — apenas loga. O sync pode demorar vários minutos.
+        if (lastLoadingScreenPercent >= 90 && sinceLoading > 300_000) {
+          logEvent('stuck_warning', `Loading_screen em ${lastLoadingScreenPercent}% por ${Math.floor(sinceLoading / 1000)}s — sync pode estar finalizando, NÃO reconectando`);
         }
       } catch (err) {
         console.error('[WhatsAppWeb] Erro no stuckCheckInterval:', err.message);
