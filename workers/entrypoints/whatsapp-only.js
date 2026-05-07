@@ -9,7 +9,7 @@ import http from 'http';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, gracefulShutdownWhatsApp, getStatus } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -20,12 +20,11 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
-// 🛡️ ProtocolError não mata o processo
-process.on('uncaughtException', async (err) => {
+// 🛡️ ProtocolError não mata o processo — NÃO destrói cliente, deixa continuar
+process.on('uncaughtException', (err) => {
   console.error('[FATAL]', err.message);
   if (err.message && err.message.includes('ProtocolError')) {
-    try { await gracefulShutdownWhatsApp(); } catch (e) {}
-    console.log('[FATAL] WhatsApp destruído. Aguardando...');
+    console.log('[FATAL] ProtocolError ignorado. Aguardando estabilizar...');
     return;
   }
   process.exit(1);
@@ -42,15 +41,12 @@ async function main() {
         });
         console.log('✅ MongoDB conectado\n');
 
-        await initWhatsAppClient();
-        console.log('🟢 WhatsApp Web inicializado\n');
-
-        // Health check
+        // Health check SOBE PRIMEIRO — antes de bloquear no WhatsApp sync
         const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
         // Health check SÍNCRONO — responde imediatamente, mesmo durante sync pesado
         let lastKnownStatus = 'initializing';
         const server = http.createServer((req, res) => {
-            if (req.url === '/api/health') {
+            if (req.url === '/api/health' || req.url === '/') {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     status: 'ok',
@@ -74,6 +70,10 @@ async function main() {
             console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
         });
 
+        // Agora sim inicializa o WhatsApp — o health check já está respondendo
+        await initWhatsAppClient();
+        console.log('🟢 WhatsApp Web inicializado\n');
+
         // Log de memória a cada 30s
         setInterval(() => {
             const mem = process.memoryUsage();
@@ -86,17 +86,13 @@ async function main() {
     }
 }
 
-process.on('SIGTERM', async () => {
-    console.log('\n🛑 SIGTERM...');
-    await gracefulShutdownWhatsApp();
-    await mongoose.disconnect();
+process.on('SIGTERM', () => {
+    console.log('\n🛑 SIGTERM recebido. Deixando Render matar o processo naturalmente.');
     process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-    console.log('\n🛑 SIGINT...');
-    await gracefulShutdownWhatsApp();
-    await mongoose.disconnect();
+process.on('SIGINT', () => {
+    console.log('\n🛑 SIGINT recebido. Saindo sem tocar no cliente.');
     process.exit(0);
 });
 
