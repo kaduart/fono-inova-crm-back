@@ -47,20 +47,29 @@ async function main() {
 
         // Health check
         const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
-        const server = http.createServer(async (req, res) => {
+        // Health check SÍNCRONO — responde imediatamente, mesmo durante sync pesado
+        let lastKnownStatus = 'initializing';
+        const server = http.createServer((req, res) => {
             if (req.url === '/api/health') {
-                const wa = await getStatus().catch(() => ({ status: 'unknown' }));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     status: 'ok',
                     mode: 'whatsapp-only',
-                    whatsapp: wa.status,
+                    whatsapp: lastKnownStatus,
                     timestamp: new Date().toISOString()
                 }));
                 return;
             }
             res.writeHead(404); res.end();
         });
+
+        // Atualiza status conhecido a cada 10s sem bloquear o health check
+        setInterval(async () => {
+            try {
+                const wa = await getStatus().catch(() => ({ status: 'unknown' }));
+                lastKnownStatus = wa.status;
+            } catch {}
+        }, 10000);
         server.listen(PORT, () => {
             console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
         });
