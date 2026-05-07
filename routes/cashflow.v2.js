@@ -127,12 +127,6 @@ router.get('/', auth, async (req, res) => {
             const appt = apptId ? appointmentsMap.get(apptId) : null;
             const patientId = p.patient?._id?.toString() || p.patient?.toString();
 
-            // Pagamentos de sessão de pacote só entram no caixa se a sessão foi concluída
-            if (appt && appt.operationalStatus !== 'completed' &&
-                (p.type === 'package' || p.serviceType === 'package_session' || p.package || appt.package)) {
-                return null;
-            }
-
             const notes = (p.notes || '').toLowerCase();
             const desc = (p.description || '').toLowerCase();
             let tipo = 'Particular';
@@ -143,6 +137,11 @@ router.get('/', auth, async (req, res) => {
                 p.type === 'package' || p.serviceType === 'package_session' ||
                 p.package || appt?.package ||
                 (p.session && pkgSessionPrepaidMap.has(p.session.toString()));
+
+            // Pagamentos de pacote só entram no caixa se o appointment foi concluído
+            if (isPackagePayment && appt && appt.operationalStatus !== 'completed') {
+                return null;
+            }
 
             if (isPackagePayment) {
                 tipo = 'Pacote';

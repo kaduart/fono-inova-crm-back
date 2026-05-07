@@ -2105,9 +2105,9 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     const sideEffectsPayload = {
       // Payment update data
       payment: {
-        shouldUpdate: !appointment.package && !!appointment.payment,
+        shouldUpdate: !appointment.package && !!appointment.payment && updatedAppointment.operationalStatus === 'completed',
         paymentId: appointment.payment,
-        isNewPayment: !appointment.package && (updateData.billingType || updateData.paymentAmount > 0) && !appointment.payment,
+        isNewPayment: !appointment.package && (updateData.billingType || updateData.paymentAmount > 0) && !appointment.payment && updatedAppointment.operationalStatus === 'completed',
         updateData: {
           doctor: updateData.doctor || appointment.doctor,
           amount: updateData.paymentAmount || updateData.amount,
