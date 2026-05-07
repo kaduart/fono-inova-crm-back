@@ -712,6 +712,11 @@ server.listen(PORT, '0.0.0.0', () => {
       // await import("./workers/video.worker.js");
       // await import("./workers/post.worker.js");
       
+      // 🚨 DEBUG: valores RAW das env vars de workers
+      console.log('[Server] ENABLE_WORKERS RAW:', JSON.stringify(process.env.ENABLE_WORKERS));
+      console.log('[Server] WORKER_GROUP RAW:', JSON.stringify(process.env.WORKER_GROUP));
+      console.log('[Server] ENABLE_WORKERS === "true" ?', process.env.ENABLE_WORKERS === "true");
+
       if (process.env.ENABLE_WORKERS === "true") {
         console.log(`[Server] ENABLE_WORKERS=${process.env.ENABLE_WORKERS}, iniciando workers...`);
         const { startAllWorkers, startWorkersByGroup, VALID_GROUPS } = await import("./workers/index.js");
