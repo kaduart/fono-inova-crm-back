@@ -53,7 +53,8 @@ function createClient() {
     authStrategy: new LocalAuth({ dataPath: authPath }),
     puppeteer: {
       headless: true,
-      protocolTimeout: 300_000, // 5 min — WhatsApp sync pode ser MUITO lento
+      protocolTimeout: 300_000, // 5 min — protocolo CDP
+      timeout: 300_000,         // 5 min — navegação/página
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -117,22 +118,7 @@ function createClient() {
     isReady = false;
     connectionStatus = 'disconnected';
     await saveState();
-
-    // Só uma reinicialização suave após 30s — SEM apagar sessão
-    // Trava simples para evitar múltiplos initialize() simultâneos
-    setTimeout(async () => {
-      if (!client || connectionStatus === 'ready') return;
-      if (client.__reconnecting) return;
-      client.__reconnecting = true;
-      console.log('[WhatsAppWeb] 🔁 Reinicializando após disconnected...');
-      try {
-        await client.initialize();
-      } catch (err) {
-        console.error('[WhatsAppWeb] Falha ao reinicializar:', err.message);
-      } finally {
-        client.__reconnecting = false;
-      }
-    }, 30_000);
+    // NÃO reinicializa aqui. Deixa o processo morrer e o Render reiniciar.
   });
 
   newClient.on('error', (err) => {
@@ -228,7 +214,6 @@ export async function reconnect() {
   connectionStatus = 'initializing';
 
   if (client) {
-    try { await client.logout(); } catch {}
     try { await client.destroy(); } catch {}
     client = null;
   }
