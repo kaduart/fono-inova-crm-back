@@ -64,14 +64,11 @@ async function main() {
             process.exit(1);
         }
 
-        // 3. WhatsApp Web (Chrome) — NUNCA no startWorkers.js genérico
-        // WhatsApp só deve ser inicializado pelo worker dedicado: whatsapp-worker.js
-        // Isso evita competição de sessão quando WORKER_GROUP=all roda em paralelo com crm-worker-whatsapp
-        if (WORKER_GROUP === 'whatsapp') {
+        // 3. WhatsApp Web (Chrome) — quando grupo inclui whatsapp
+        // 🔒 Lock Redis distribuído protege contra concorrência se houver múltiplos processos
+        if (WORKER_GROUP === 'all' || WORKER_GROUP === 'whatsapp') {
             console.log('🟢 Inicializando WhatsApp Web...');
             await initWhatsAppClient();
-        } else if (WORKER_GROUP === 'all') {
-            console.log('⏭️ WhatsApp Web ignorado no modo all — use o worker dedicado crm-worker-whatsapp');
         }
 
         console.log('\n🎉 Workers iniciados com sucesso!');
