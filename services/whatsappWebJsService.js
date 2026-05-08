@@ -48,23 +48,33 @@ async function saveState() {
   }
 }
 
+// ─── Resolve caminho do Chrome ───────────────────────────────────────────────
+function resolveChromePath() {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function createClient() {
   const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
-  const newClient = new Client({
-    authStrategy: new LocalAuth({ dataPath: authPath }),
-    authTimeoutMs: 300_000, // 5 min — QR pode demorar pra escanear no Render
-    takeoverOnConflict: true, // Se houver outra sessão ativa, toma controle
-    takeoverTimeoutMs: 30_000,
-    puppeteer: {
-      headless: true,
-      protocolTimeout: 300_000, // 5 min — protocolo CDP
-      handleSIGINT: false,      // NÃO deixa Puppeteer capturar sinais
-      handleSIGTERM: false,     // Render mata o processo naturalmente
-      handleSIGHUP: false,
-      args: [
+  const puppeteerOpts = {
+    headless: true,
+    protocolTimeout: 300_000, // 5 min — protocolo CDP
+    handleSIGINT: false,      // NÃO deixa Puppeteer capturar sinais
+    handleSIGTERM: false,     // Render mata o processo naturalmente
+    handleSIGHUP: false,
+    args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -89,7 +99,20 @@ function createClient() {
         '--password-store=basic',
         '--use-mock-keychain',
       ],
-    },
+  };
+
+  const chromePath = resolveChromePath();
+  if (chromePath) {
+    puppeteerOpts.executablePath = chromePath;
+    console.log(`[WhatsAppWeb] Usando Chrome: ${chromePath}`);
+  }
+
+  const newClient = new Client({
+    authStrategy: new LocalAuth({ dataPath: authPath }),
+    authTimeoutMs: 300_000, // 5 min — QR pode demorar pra escanear no Render
+    takeoverOnConflict: true, // Se houver outra sessão ativa, toma controle
+    takeoverTimeoutMs: 30_000,
+    puppeteer: puppeteerOpts,
   });
 
   // ─── Eventos básicos ─────────────────────────────────────────────────────
