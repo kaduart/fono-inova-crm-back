@@ -100,7 +100,7 @@ function createClient() {
 
   const puppeteerOpts = {
     headless: true,
-    protocolTimeout: 300_000, // 5 min — protocolo CDP
+    protocolTimeout: 600_000, // 10 min — protocolo CDP (Render precisa de mais tempo)
     handleSIGINT: false,      // NÃO deixa Puppeteer capturar sinais
     handleSIGTERM: false,     // Render mata o processo naturalmente
     handleSIGHUP: false,
@@ -137,7 +137,7 @@ function createClient() {
 
   const newClient = new Client({
     authStrategy: new LocalAuth({ dataPath: authPath }),
-    authTimeoutMs: 300_000, // 5 min — QR pode demorar pra escanear no Render
+    authTimeoutMs: 600_000, // 10 min — QR + loading no Render precisa de mais tempo
     takeoverOnConflict: true, // Se houver outra sessão ativa, toma controle
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false, // NÃO reinicia sozinho em falha de auth
@@ -261,13 +261,21 @@ export async function initWhatsAppClient() {
       return;
     }
 
+    // Runtime.callFunctionOn timed out durante init = Chromium lento, não morto.
+    // Dá 60s de respiro e tenta de novo em vez de matar o processo.
+    if (msg.includes('Runtime.callFunctionOn timed out') || msg.includes('Protocol timeout')) {
+      console.log('[WhatsAppWeb] ⏳ Chromium lento no Render — aguardando 60s antes de retry...');
+      if (retryTimeout) clearTimeout(retryTimeout);
+      retryTimeout = setTimeout(() => initWhatsAppClient(), 60_000);
+      isInitializing = false;
+      return;
+    }
+
     // Browser realmente morreu (target fechado, protocol error, etc.)
     // Sai para o parent respawnar um processo completamente limpo.
     const isFatal = msg.includes('Target closed') ||
                     msg.includes('Protocol error') ||
-                    msg.includes('Session closed') ||
-                    msg.includes('Runtime.callFunctionOn timed out') ||
-                    msg.includes('Protocol timeout');
+                    msg.includes('Session closed');
     if (isFatal && process.send) {
       console.error('[WhatsAppWeb] 💥 Browser fatal durante init — saindo para respawn limpo.');
       process.exit(1);
