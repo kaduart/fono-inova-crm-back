@@ -1,107 +1,130 @@
 #!/usr/bin/env node
 /**
- * 🆘 WhatsApp ONLY — Modo emergência
- * Sobe APENAS o WhatsApp Web. Zero workers. Zero concorrência.
- * Use quando precisar conectar o QR com o mínimo de RAM possível.
+ * 🆘 WhatsApp ONLY — Processo principal
+ * Sobe APENAS health check. WhatsApp roda em child process isolado.
+ * Se o WhatsApp morrer (OOM, crash), reinicia automaticamente.
  */
 
 import http from 'http';
 import path from 'path';
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import '../../models/index.js';
-import { initWhatsAppClient, getStatus } from '../../services/whatsappWebJsService.js';
+import { fork } from 'child_process';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
 
-if (!MONGO_URI) {
-    console.error('❌ MONGODB_URI não configurada');
-    process.exit(1);
+console.log('🆘 MODO EMERGÊNCIA: WhatsApp ONLY (com child process isolado)\n');
+console.log(`📂 CWD: ${process.cwd()}`);
+console.log(`📂 Sessão path: ${path.resolve(process.cwd(), '.wwebjs_auth')}\n`);
+
+// ─── Estado do WhatsApp (atualizado via IPC do child) ──────────────────────
+let childStatus = 'initializing';
+let childReady = false;
+let childPid = null;
+let childRestartCount = 0;
+const MAX_RESTARTS = 20;
+
+// ─── Health check SOBE IMEDIATAMENTE ───────────────────────────────────────
+const server = http.createServer((req, res) => {
+    if (req.url === '/api/health' || req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            status: 'ok',
+            mode: 'whatsapp-only',
+            whatsapp: childStatus,
+            whatsappReady: childReady,
+            childPid: childPid,
+            childRestarts: childRestartCount,
+            timestamp: new Date().toISOString()
+        }));
+        return;
+    }
+    res.writeHead(404); res.end();
+});
+
+server.listen(PORT, () => {
+    console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
+    console.log('🟢 Processo principal estável — WhatsApp vai subir em child process\n');
+});
+
+// ─── Gerenciador do child process ──────────────────────────────────────────
+function spawnWhatsAppChild() {
+    if (childRestartCount >= MAX_RESTARTS) {
+        console.log('[PARENT] 🚫 Limite de reinicializações do child atingido.');
+        childStatus = 'max_restarts';
+        return;
+    }
+
+    childRestartCount++;
+    console.log(`[PARENT] 👶 Spawnando WhatsApp child (tentativa ${childRestartCount}/${MAX_RESTARTS})...`);
+
+    const childPath = path.join(__dirname, 'whatsapp-child.js');
+    const child = fork(childPath, [], {
+        silent: false,
+        env: process.env,
+        execArgv: ['--max-old-space-size=192']
+    });
+
+    childPid = child.pid;
+
+    child.on('message', (msg) => {
+        if (msg && msg.type === 'ready_to_init') {
+            childStatus = 'initializing';
+        }
+    });
+
+    child.on('exit', (code, signal) => {
+        childPid = null;
+        childReady = false;
+        const reason = signal ? `sinal ${signal}` : `código ${code}`;
+        console.log(`[PARENT] 💀 Child morreu (${reason}). Reiniciando em 10s...`);
+        childStatus = 'restarting';
+        setTimeout(spawnWhatsAppChild, 10_000);
+    });
+
+    child.on('error', (err) => {
+        console.error('[PARENT] ❌ Erro no child:', err.message);
+    });
+
+    // Monitora status pelo MongoDB (fallback)
+    monitorStatusFromMongo();
 }
 
-// 🛡️ Erros não tratados não matam o processo
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL]', err.message);
-  if (err.message && err.message.includes('ProtocolError')) {
-    console.log('[FATAL] ProtocolError ignorado. Aguardando estabilizar...');
-    return;
-  }
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[UNHANDLED]', typeof reason === 'string' ? reason : (reason?.message || reason));
-  // NÃO sai do processo — deixa o WhatsApp tentar se recuperar
-});
-
-async function main() {
+async function monitorStatusFromMongo() {
     try {
-        console.log('🆘 MODO EMERGÊNCIA: WhatsApp ONLY\n');
-        console.log(`📂 CWD: ${process.cwd()}`);
-        console.log(`📂 Sessão path: ${path.resolve(process.cwd(), '.wwebjs_auth')}\n`);
+        const { default: mongoose } = await import('mongoose');
+        const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+        if (!MONGO_URI) return;
 
-        await mongoose.connect(MONGO_URI, {
-            maxPoolSize: 5,
-            minPoolSize: 1,
-            serverSelectionTimeoutMS: 30000
-        });
-        console.log('✅ MongoDB conectado\n');
+        await mongoose.connect(MONGO_URI, { maxPoolSize: 2 });
+        const WhatsAppWebState = mongoose.model('WhatsAppWebState');
 
-        // Health check SOBE PRIMEIRO — antes de bloquear no WhatsApp sync
-        const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
-        // Health check SÍNCRONO — responde imediatamente, mesmo durante sync pesado
-        let lastKnownStatus = 'initializing';
-        const server = http.createServer((req, res) => {
-            if (req.url === '/api/health' || req.url === '/') {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'ok',
-                    mode: 'whatsapp-only',
-                    whatsapp: lastKnownStatus,
-                    timestamp: new Date().toISOString()
-                }));
-                return;
-            }
-            res.writeHead(404); res.end();
-        });
-
-        // Atualiza status conhecido a cada 10s sem bloquear o health check
         setInterval(async () => {
             try {
-                const wa = await getStatus().catch(() => ({ status: 'unknown' }));
-                lastKnownStatus = wa.status;
+                const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
+                if (state) {
+                    childStatus = state.status;
+                    childReady = state.ready;
+                }
             } catch {}
-        }, 10000);
-        server.listen(PORT, () => {
-            console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
-        });
-
-        // Agora sim inicializa o WhatsApp — o health check já está respondendo
-        await initWhatsAppClient();
-        console.log('🟢 WhatsApp Web inicializado\n');
-
-        // Log de memória a cada 30s
-        setInterval(() => {
-            const mem = process.memoryUsage();
-            console.log(`[MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB`);
-        }, 30000);
-
-    } catch (error) {
-        console.error('❌ Erro fatal:', error.message);
-        process.exit(1);
+        }, 5000);
+    } catch (e) {
+        console.error('[PARENT] Mongo monitor erro:', e.message);
     }
 }
 
+// ─── Sinais ────────────────────────────────────────────────────────────────
 process.on('SIGTERM', () => {
-    console.log('\n🛑 SIGTERM recebido. Deixando Render matar o processo naturalmente.');
+    console.log('\n🛑 SIGTERM no processo principal. Saindo.');
     process.exit(0);
 });
 
 process.on('SIGINT', () => {
-    console.log('\n🛑 SIGINT recebido. Saindo sem tocar no cliente.');
+    console.log('\n🛑 SIGINT no processo principal. Saindo.');
     process.exit(0);
 });
 
-main();
+// ─── Inicia ────────────────────────────────────────────────────────────────
+spawnWhatsAppChild();
