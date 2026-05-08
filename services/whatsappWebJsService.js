@@ -132,7 +132,6 @@ function createClient() {
     restartOnAuthFail: false, // NÃO reinicia sozinho em falha de auth
     qrMaxRetries: 0,          // SEM retry de QR (evita loop)
     puppeteer: puppeteerOpts,
-    webVersionCache: { type: 'remote' }, // Sempre usa versão web atual
   });
 
   // ─── Eventos básicos ─────────────────────────────────────────────────────
@@ -208,11 +207,39 @@ export async function initWhatsAppClient() {
     console.log('[WhatsAppWeb] Inicialização já em andamento — aguardando.');
     return;
   }
+
+  // Se atingiu limite, reseta contador para tentar de novo
   if (initAttempts >= MAX_INIT_ATTEMPTS) {
-    console.log('[WhatsAppWeb] 🚫 Limite de tentativas atingido. Pare o serviço e verifique.');
-    connectionStatus = 'max_retries_reached';
-    await saveState();
-    return;
+    console.log('[WhatsAppWeb] 🔁 Resetando contador de tentativas.');
+    initAttempts = 0;
+  }
+
+  // Limpa locks do Chromium de sessões anteriores que morreram sem cleanup
+  const authPath = '/var/data/wwebjs_auth';
+  try {
+    if (fs.existsSync(authPath)) {
+      let hasLock = false;
+      // Busca recursiva por arquivos de lock
+      function scan(dir) {
+        for (const entry of fs.readdirSync(dir)) {
+          const full = path.join(dir, entry);
+          const stat = fs.statSync(full);
+          if (stat.isDirectory()) {
+            scan(full);
+          } else if (['SingletonLock', 'SingletonSocket', 'SingletonCookie'].includes(entry)) {
+            hasLock = true;
+            fs.rmSync(full, { force: true });
+            console.log(`[WhatsAppWeb] Lock removido: ${full}`);
+          }
+        }
+      }
+      scan(authPath);
+      if (hasLock) {
+        console.log('[WhatsAppWeb] Locks antigos limpos — sessão preservada.');
+      }
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível limpar locks:', e.message);
   }
   isInitializing = true;
   initAttempts++;
