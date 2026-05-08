@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(404); res.end();
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
     console.log('🟢 Processo principal estável — WhatsApp vai subir em child process\n');
 });

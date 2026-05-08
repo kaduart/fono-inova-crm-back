@@ -43,29 +43,18 @@ function checkInterruptedBoot() {
             return;
         }
 
-        // Fallback: crash log — se 3+ tentativas em 2 minutos
-        const now = Date.now();
-        let log = [];
-        if (fs.existsSync(CRASH_LOG)) {
-            log = JSON.parse(fs.readFileSync(CRASH_LOG, 'utf-8'));
-        }
-        log.push(now);
-        log = log.filter(t => now - t < 180_000);
-        fs.writeFileSync(CRASH_LOG, JSON.stringify(log));
-
-        const recent = log.filter(t => now - t < 120_000);
-        if (recent.length >= 3) {
-            console.log('[CHILD] ⚠️ 3+ tentativas em 2 min — limpando sessão...');
-            try {
-                if (fs.existsSync(SESSION_DIR)) {
-                    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-                    console.log('[CHILD] 🧹 Sessão limpa. Novo QR será gerado.');
-                }
-                fs.writeFileSync(CRASH_LOG, JSON.stringify([]));
-            } catch (e) {
-                console.error('[CHILD] Erro ao limpar sessão:', e.message);
+        // Fallback: crash log — só registra, NUNCA limpa sessão automaticamente.
+        // Limpar sessão por restart do Render cria loop infinito de QR.
+        try {
+            const now = Date.now();
+            let log = [];
+            if (fs.existsSync(CRASH_LOG)) {
+                log = JSON.parse(fs.readFileSync(CRASH_LOG, 'utf-8'));
             }
-        }
+            log.push(now);
+            log = log.filter(t => now - t < 180_000);
+            fs.writeFileSync(CRASH_LOG, JSON.stringify(log));
+        } catch {}
     } catch (e) {
         // ignora
     }
