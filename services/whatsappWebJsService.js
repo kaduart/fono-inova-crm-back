@@ -347,13 +347,17 @@ export async function sendMessage(phone, message) {
     throw new Error('WhatsApp não está conectado');
   }
   const chatId = phone.replace(/\D/g, '') + '@c.us';
+  console.log(`[WhatsAppWeb] 📤 Enviando para ${chatId}...`);
   try {
-    const result = await client.sendMessage(chatId, message);
+    // Timeout de 45s para evitar travamento indefinido
+    const result = await Promise.race([
+      client.sendMessage(chatId, message),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ao enviar mensagem')), 45_000))
+    ]);
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${chatId} — ID: ${result?.id?._serialized || 'unknown'}`);
     return { success: true, messageId: result.id._serialized };
   } catch (err) {
-    console.error('[WhatsAppWeb] Erro ao enviar:', err.message);
-    // ❌ NUNCA reinicia/reconnecta WhatsApp por erro de envio.
-    // Lifecycle é responsabilidade do child process (crash/restart).
+    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${chatId}:`, err.message);
     throw err;
   }
 }
