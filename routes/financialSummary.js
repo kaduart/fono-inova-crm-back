@@ -55,7 +55,7 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
     ]);
 
     const pendingAgg = await Payment.aggregate([
-        { $match: { ...match, status: 'pending' } },
+        { $match: { ...match, status: 'pending', billingType: { $nin: ['convenio', 'liminar'] } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]);
 

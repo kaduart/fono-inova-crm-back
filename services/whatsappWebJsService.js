@@ -307,7 +307,8 @@ export async function getStatus() {
       }
     })();
 
-    if (client || connectionStatus !== 'waiting_mongo') {
+    // Se tem client local ativo, retorna estado ao vivo
+    if (client && isReady) {
       return {
         status: connectionStatus,
         ready: isReady,
@@ -320,6 +321,7 @@ export async function getStatus() {
       };
     }
 
+    // Sem client local (API web ou worker não inicializado): lê do MongoDB
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
     if (state) {
       return {
@@ -327,7 +329,8 @@ export async function getStatus() {
         ready: state.ready,
         qrCode: state.qrCode,
         error: state.error,
-        sessionPersisted: null,
+        sessionPersisted: persist.exists && persist.count > 0,
+        sessionFiles: persist.count,
         pid: state.pid ?? null,
         uptime: state.uptime ?? null,
       };
