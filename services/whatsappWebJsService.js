@@ -18,6 +18,7 @@ import mongoose from 'mongoose';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
 // ─── Estado simples ──────────────────────────────────────────────────────────
@@ -66,24 +67,35 @@ function resolveChromePath() {
   return null;
 }
 
+// ─── Remove locks do Chromium (SingletonLock é symlink — precisa de lstat) ──
+function clearChromiumLocks(authPath) {
+  try {
+    if (!fs.existsSync(authPath)) return;
+    const locks = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+    function scan(dir) {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          scan(full);
+        } else if (locks.includes(entry.name)) {
+          try { fs.rmSync(full, { force: true }); } catch {}
+          console.log(`[WhatsAppWeb] Lock removido: ${full}`);
+        }
+      }
+    }
+    scan(authPath);
+    console.log('[WhatsAppWeb] Locks do Chromium removidos.');
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível limpar locks:', e.message);
+  }
+}
+
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function createClient() {
   const authPath = '/var/data/wwebjs_auth';
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
-  // Limpa locks do Chromium de sessões anteriores que morreram sem cleanup
-  const locks = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
-  for (const lock of locks) {
-    const lockPath = path.join(authPath, lock);
-    try {
-      if (fs.existsSync(lockPath)) {
-        fs.rmSync(lockPath, { recursive: true, force: true });
-        console.log(`[WhatsAppWeb] Lock removido: ${lock}`);
-      }
-    } catch (e) {
-      // ignora erro ao remover lock
-    }
-  }
+  clearChromiumLocks(authPath);
 
   const puppeteerOpts = {
     headless: true,
@@ -217,33 +229,7 @@ export async function initWhatsAppClient() {
     initAttempts = 0;
   }
 
-  // Limpa locks do Chromium de sessões anteriores que morreram sem cleanup
-  const authPath = '/var/data/wwebjs_auth';
-  try {
-    if (fs.existsSync(authPath)) {
-      let hasLock = false;
-      // Busca recursiva por arquivos de lock
-      function scan(dir) {
-        for (const entry of fs.readdirSync(dir)) {
-          const full = path.join(dir, entry);
-          const stat = fs.statSync(full);
-          if (stat.isDirectory()) {
-            scan(full);
-          } else if (['SingletonLock', 'SingletonSocket', 'SingletonCookie'].includes(entry)) {
-            hasLock = true;
-            fs.rmSync(full, { force: true });
-            console.log(`[WhatsAppWeb] Lock removido: ${full}`);
-          }
-        }
-      }
-      scan(authPath);
-      if (hasLock) {
-        console.log('[WhatsAppWeb] Locks antigos limpos — sessão preservada.');
-      }
-    }
-  } catch (e) {
-    console.warn('[WhatsAppWeb] Não foi possível limpar locks:', e.message);
-  }
+  // Locks são limpos em createClient() via clearChromiumLocks()
   isInitializing = true;
   initAttempts++;
   console.log(`[WhatsAppWeb] 🚀 Inicializando... (tentativa ${initAttempts}/${MAX_INIT_ATTEMPTS})`);

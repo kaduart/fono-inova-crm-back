@@ -27,6 +27,8 @@ let childRestartCount = 0;
 const MAX_RESTARTS = 20;
 let lastRestartTime = 0;
 let lastChildHeartbeat = 0;
+let childProcess = null;
+let isShuttingDown = false;
 
 // ─── Health check MINIMALISTA (nunca falha, nunca consulta Mongo) ──────────
 const server = http.createServer((req, res) => {
@@ -87,14 +89,20 @@ function spawnWhatsAppChild() {
         }
     });
 
+    childProcess = child;
+
     child.on('exit', (code, signal) => {
+        childProcess = null;
         const oldPid = childPid;
         childPid = null;
         childReady = false;
         const reason = signal ? `sinal ${signal}` : `código ${code}`;
-        console.log(`[PARENT] 💀 Child ${oldPid} morreu (${reason}). Reiniciando em 10s...`);
-        childStatus = 'restarting';
-        setTimeout(spawnWhatsAppChild, 10_000);
+        console.log(`[PARENT] 💀 Child ${oldPid} morreu (${reason}).`);
+        if (!isShuttingDown) {
+            console.log('[PARENT] Reiniciando em 10s...');
+            childStatus = 'restarting';
+            setTimeout(spawnWhatsAppChild, 10_000);
+        }
     });
 
     child.on('error', (err) => {
@@ -102,16 +110,30 @@ function spawnWhatsAppChild() {
     });
 }
 
-// ─── Sinais ────────────────────────────────────────────────────────────────
-process.on('SIGTERM', () => {
-    console.log('\n🛑 SIGTERM no processo principal. Saindo.');
-    process.exit(0);
-});
+// ─── Graceful shutdown ─────────────────────────────────────────────────────
+function shutdown(signal) {
+    console.log(`\n🛑 ${signal} no processo principal. Aguardando child...`);
+    isShuttingDown = true;
+    server.close();
+    if (childProcess) {
+        childProcess.kill('SIGTERM');
+        const timeout = setTimeout(() => {
+            console.log('[PARENT] Child não respondeu — forçando kill.');
+            childProcess.kill('SIGKILL');
+            process.exit(0);
+        }, 8000);
+        childProcess.on('exit', () => {
+            clearTimeout(timeout);
+            console.log('[PARENT] Child encerrado. Saindo.');
+            process.exit(0);
+        });
+    } else {
+        process.exit(0);
+    }
+}
 
-process.on('SIGINT', () => {
-    console.log('\n🛑 SIGINT no processo principal. Saindo.');
-    process.exit(0);
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // ─── Inicia ────────────────────────────────────────────────────────────────
 spawnWhatsAppChild();
