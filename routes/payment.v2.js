@@ -748,6 +748,8 @@ router.patch('/:id', auth, async (req, res) => {
             ...(serviceType !== undefined && { serviceType }),
             ...(specialty !== undefined && { specialty }),
             ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
+            // financialDate é a fonte de verdade do caixa — segue paymentDate quando informado
+            ...(paymentDate !== undefined && !payment.isFromPackage && { financialDate: new Date(paymentDate) }),
             updatedAt: new Date()
         };
 

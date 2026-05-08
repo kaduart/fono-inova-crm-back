@@ -28,20 +28,11 @@ const MAX_RESTARTS = 20;
 let lastRestartTime = 0;
 let lastChildHeartbeat = 0;
 
-// ─── Health check SOBE IMEDIATAMENTE ───────────────────────────────────────
+// ─── Health check MINIMALISTA (nunca falha, nunca consulta Mongo) ──────────
 const server = http.createServer((req, res) => {
     if (req.url === '/api/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'ok',
-            mode: 'whatsapp-only',
-            whatsapp: childStatus,
-            whatsappReady: childReady,
-            childPid: childPid,
-            childUptime: lastChildHeartbeat > 0 ? Math.round((Date.now() - lastChildHeartbeat) / 1000) : null,
-            childRestarts: childRestartCount,
-            timestamp: new Date().toISOString()
-        }));
+        res.end(JSON.stringify({ status: 'ok', mode: 'whatsapp-only' }));
         return;
     }
     res.writeHead(404); res.end();
@@ -109,32 +100,6 @@ function spawnWhatsAppChild() {
     child.on('error', (err) => {
         console.error('[PARENT] ❌ Erro no child:', err.message);
     });
-
-    // Monitora status pelo MongoDB (fallback)
-    monitorStatusFromMongo();
-}
-
-async function monitorStatusFromMongo() {
-    try {
-        const { default: mongoose } = await import('mongoose');
-        const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
-        if (!MONGO_URI) return;
-
-        await mongoose.connect(MONGO_URI, { maxPoolSize: 2 });
-        const WhatsAppWebState = mongoose.model('WhatsAppWebState');
-
-        setInterval(async () => {
-            try {
-                const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
-                if (state) {
-                    childStatus = state.status;
-                    childReady = state.ready;
-                }
-            } catch {}
-        }, 5000);
-    } catch (e) {
-        console.error('[PARENT] Mongo monitor erro:', e.message);
-    }
 }
 
 // ─── Sinais ────────────────────────────────────────────────────────────────
