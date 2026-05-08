@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, softReconnect, getStatus } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -24,24 +24,21 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
 });
 
-process.on('unhandledRejection', async (reason) => {
-    const msg = typeof reason === 'string' ? reason : (reason?.message || reason);
+process.on('unhandledRejection', (reason) => {
+    const msg = typeof reason === 'string' ? reason : (reason?.message || String(reason));
     console.error('[CHILD UNHANDLED]', msg);
 
-    // Se for erro de Puppeteer/contexto destruído, tenta recuperação suave (preserva sessão)
+    // Browser morreu — NÃO tenta recuperar. Sai limpo para o parent respawnar.
     if (msg && (
         msg.includes('Execution context was destroyed') ||
         msg.includes('Protocol error') ||
         msg.includes('Target closed') ||
-        msg.includes('Session closed')
+        msg.includes('Session closed') ||
+        msg.includes('Target closed') ||
+        msg.includes('detached')
     )) {
-        console.error('[CHILD] Puppeteer inconsistente — soft reconnect (sessão preservada)...');
-        try {
-            await softReconnect();
-        } catch (e) {
-            console.error('[CHILD] Falha no soft reconnect:', e.message);
-            process.exit(1);
-        }
+        console.error('[CHILD] 💥 Browser fatal — saindo para o parent respawnar limpo.');
+        process.exit(1);
     }
 });
 
