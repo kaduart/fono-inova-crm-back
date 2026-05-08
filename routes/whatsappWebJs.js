@@ -1,5 +1,6 @@
 import express from 'express';
-import { getStatus, sendMessage, reconnect } from '../services/whatsappWebJsService.js';
+import { getStatus, reconnect } from '../services/whatsappWebJsService.js';
+import { whatsappSendQueue } from '../config/bullConfig.js';
 
 const router = express.Router();
 
@@ -33,17 +34,14 @@ router.post('/send', async (req, res) => {
       });
     }
 
-    // Normaliza quebras de linha: converte \\n (escapado) para quebra real
-    const originalMessage = message;
+    // Normaliza quebras de linha
     message = message
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '\r');
 
-    console.log('[WhatsAppWeb Route] Mensagem normalizada:', JSON.stringify(message));
-    console.log('[WhatsAppWeb Route] Contém \\n?', message.includes('\n'));
-
-    const result = await sendMessage(phone, message);
-    res.json({ success: true, ...result });
+    const job = await whatsappSendQueue.add('send-message', { phone, message });
+    console.log('[WhatsAppWeb Route] Mensagem enfileirada:', job.id);
+    res.json({ success: true, message: 'Mensagem enfileirada para envio', jobId: job.id });
   } catch (err) {
     console.error('[WhatsAppWeb Route] Erro:', err.message);
     res.status(500).json({ success: false, error: err.message });

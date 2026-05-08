@@ -8,9 +8,11 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
+import { Worker } from 'bullmq';
+import { bullMqConnection } from '../../config/redisConnection.js';
 
 dotenv.config();
 
@@ -124,6 +126,19 @@ async function main() {
         const mem = process.memoryUsage();
         console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB`);
     }, 30000);
+
+    // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
+    const whatsappWorker = new Worker('whatsapp-send', async (job) => {
+        const { phone, message } = job.data;
+        console.log(`[CHILD WORKER] Enviando mensagem para ${phone} (job ${job.id})`);
+        const result = await sendMessage(phone, message);
+        console.log(`[CHILD WORKER] Mensagem enviada para ${phone}`);
+        return result;
+    }, { connection: bullMqConnection });
+
+    whatsappWorker.on('failed', (job, err) => {
+        console.error(`[CHILD WORKER] Falha no job ${job?.id}:`, err.message);
+    });
 }
 
 // Graceful shutdown: destrói o client antes de sair para não deixar lock no profile

@@ -85,3 +85,18 @@ export const doctorQueue = new Queue("doctor-processing", {
 export const doctorEvents = new QueueEvents("doctor-processing", { 
     connection: bullMqConnection 
 });
+
+// 💬 Fila de envio de mensagens WhatsApp (API web enfileira, worker consome)
+export const whatsappSendQueue = new Queue("whatsapp-send", {
+    connection: bullMqConnection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 200,
+        removeOnFail: 100
+    }
+});
+
+export const whatsappSendEvents = new QueueEvents("whatsapp-send", {
+    connection: bullMqConnection
+});

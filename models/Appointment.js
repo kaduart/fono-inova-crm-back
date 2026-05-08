@@ -128,7 +128,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'evaluation', 'session', 'package_session',
       'individual_session', 'meet', 'alignment', 'return',
-      'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session'
+      'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session', 'liminar_session'
     ],
     required: false
   },
