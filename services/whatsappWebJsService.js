@@ -30,6 +30,7 @@ let isInitializing = false;
 let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
+const BOOTING_FLAG = '/var/data/wwebjs_auth/.booting';
 let clientInstanceId = 0; // incremental para detectar client stale
 
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ function createClient() {
       clearTimeout(retryTimeout);
       retryTimeout = null;
     }
+    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
     await saveState();
   });
 
@@ -192,6 +194,7 @@ function createClient() {
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
     isReady = false;
     connectionStatus = 'disconnected';
+    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
     await saveState();
     // LOGOUT = sessão invalidada pelo celular. Sai para o parent spawnar child limpo com novo QR.
     if (reason === 'LOGOUT') {
@@ -237,22 +240,35 @@ export async function initWhatsAppClient() {
   await saveState();
   client = createClient();
   try {
+    fs.writeFileSync(BOOTING_FLAG, String(Date.now()));
     await client.initialize();
+    // Bootstrap completou com sucesso — remove flag
+    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
   } catch (err) {
     const msg = err?.message || String(err);
     console.error('[WhatsAppWeb] Falha na inicialização:', msg);
     connectionStatus = 'error';
     await saveState();
     await safeDestroyClient();
+    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
 
-    // Erros fatais do browser (contexto destruído, target fechado, etc.)
-    // NUNCA tentam retry no mesmo processo — saem para o parent respawnar limpo.
-    const isFatal = msg.includes('Execution context was destroyed') ||
-                    msg.includes('Target closed') ||
+    // Execution context was destroyed durante init pode ser navegação interna do WhatsApp.
+    // NÃO sai do processo — apenas aguarda 60s e tenta de novo.
+    if (msg.includes('Execution context was destroyed')) {
+      console.log('[WhatsAppWeb] ⚠️ Navegação interna do WhatsApp em andamento — retry em 60s.');
+      if (retryTimeout) clearTimeout(retryTimeout);
+      retryTimeout = setTimeout(() => initWhatsAppClient(), 60_000);
+      isInitializing = false;
+      return;
+    }
+
+    // Browser realmente morreu (target fechado, protocol error, etc.)
+    // Sai para o parent respawnar um processo completamente limpo.
+    const isFatal = msg.includes('Target closed') ||
                     msg.includes('Protocol error') ||
                     msg.includes('Session closed');
     if (isFatal && process.send) {
-      console.error('[WhatsAppWeb] 💥 Erro fatal do browser durante init — saindo para respawn limpo.');
+      console.error('[WhatsAppWeb] 💥 Browser fatal durante init — saindo para respawn limpo.');
       process.exit(1);
     }
 
