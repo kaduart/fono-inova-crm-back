@@ -358,14 +358,20 @@ export async function sendMessage(phone, message) {
   if (!isReady || !client) {
     throw new Error('WhatsApp não está conectado');
   }
-  const chatId = phone.replace(/\D/g, '') + '@c.us';
+  let clean = phone.replace(/\D/g, '');
+  // Adiciona 55 se não tiver código de país
+  if (!clean.startsWith('55') && clean.length === 11) {
+    clean = '55' + clean;
+  }
+  const chatId = clean + '@c.us';
   console.log(`[WhatsAppWeb] 📤 Enviando para ${chatId}...`);
   try {
-    // Timeout de 45s para evitar travamento indefinido
-    const result = await Promise.race([
-      client.sendMessage(chatId, message),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ao enviar mensagem')), 45_000))
-    ]);
+    // Valida se número existe no WhatsApp
+    const numberId = await client.getNumberId(clean);
+    if (!numberId) {
+      throw new Error(`Número ${clean} não possui WhatsApp`);
+    }
+    const result = await client.sendMessage(numberId._serialized, message);
     console.log(`[WhatsAppWeb] ✅ Enviado para ${chatId} — ID: ${result?.id?._serialized || 'unknown'}`);
     return { success: true, messageId: result.id._serialized };
   } catch (err) {
