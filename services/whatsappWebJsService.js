@@ -122,6 +122,9 @@ function createClient() {
     connectionStatus = 'qr';
     try {
       qrCodeDataUrl = await qrcode.toDataURL(qr);
+      // Salva QR como PNG local para facilitar scan
+      const base64Data = qrCodeDataUrl.replace(/^data:image\/png;base64,/, '');
+      fs.writeFileSync(path.resolve(process.cwd(), 'qr-code.png'), Buffer.from(base64Data, 'base64'));
       await saveState();
     } catch (err) {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
