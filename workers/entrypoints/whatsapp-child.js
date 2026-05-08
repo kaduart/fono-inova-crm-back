@@ -130,14 +130,22 @@ async function main() {
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
     const whatsappWorker = new Worker('whatsapp-send', async (job) => {
         const { phone, message } = job.data;
-        console.log(`[CHILD WORKER] Enviando mensagem para ${phone} (job ${job.id})`);
+        console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
+        console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
         const result = await sendMessage(phone, message);
-        console.log(`[CHILD WORKER] Mensagem enviada para ${phone}`);
+        console.log(`[CHILD WORKER] ✅ Job ${job.id} — enviado com sucesso`);
         return result;
-    }, { connection: bullMqConnection });
+    }, {
+        connection: bullMqConnection,
+        limiter: { max: 5, duration: 1000 },
+    });
+
+    whatsappWorker.on('completed', (job) => {
+        console.log(`[CHILD WORKER] ✅ Job ${job.id} completado`);
+    });
 
     whatsappWorker.on('failed', (job, err) => {
-        console.error(`[CHILD WORKER] Falha no job ${job?.id}:`, err.message);
+        console.error(`[CHILD WORKER] ❌ Job ${job?.id} falhou:`, err.message);
     });
 }
 
