@@ -7,6 +7,8 @@ const schema = new mongoose.Schema({
   qrCode: { type: String, default: null },
   error: { type: String, default: null },
   qrTimestamp: { type: Number, default: null },
+  pid: { type: Number, default: null },
+  uptime: { type: Number, default: null },
   updatedAt: { type: Date, default: Date.now },
 });
 
