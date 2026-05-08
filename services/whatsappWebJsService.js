@@ -68,7 +68,7 @@ function resolveChromePath() {
 
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function createClient() {
-  const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+  const authPath = '/var/data/wwebjs_auth';
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
   const puppeteerOpts = {
@@ -237,7 +237,7 @@ export async function getStatus() {
   try {
     const persist = (() => {
       try {
-        const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+        const authPath = '/var/data/wwebjs_auth';
         if (!fs.existsSync(authPath)) return { exists: false, count: 0 };
         return { exists: true, count: fs.readdirSync(authPath).length };
       } catch (e) {
@@ -308,7 +308,7 @@ export async function softReconnect() {
   }
 
   await saveState();
-  // NÃO limpa .wwebjs_auth — sessão é preservada
+  // NÃO limpa /var/data/wwebjs_auth — sessão é preservada
   await initWhatsAppClient();
 }
 
@@ -331,7 +331,7 @@ export async function reconnect() {
 
   // Limpa sessão local
   try {
-    const authPath = path.resolve(process.cwd(), '.wwebjs_auth');
+    const authPath = '/var/data/wwebjs_auth';
     if (fs.existsSync(authPath)) {
       fs.rmSync(authPath, { recursive: true, force: true });
       console.log('[WhatsAppWeb] Sessão local removida.');
