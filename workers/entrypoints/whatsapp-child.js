@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, softReconnect, getStatus } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -24,8 +24,25 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
 });
 
-process.on('unhandledRejection', (reason) => {
-    console.error('[CHILD UNHANDLED]', typeof reason === 'string' ? reason : (reason?.message || reason));
+process.on('unhandledRejection', async (reason) => {
+    const msg = typeof reason === 'string' ? reason : (reason?.message || reason);
+    console.error('[CHILD UNHANDLED]', msg);
+
+    // Se for erro de Puppeteer/contexto destruído, tenta recuperação suave (preserva sessão)
+    if (msg && (
+        msg.includes('Execution context was destroyed') ||
+        msg.includes('Protocol error') ||
+        msg.includes('Target closed') ||
+        msg.includes('Session closed')
+    )) {
+        console.error('[CHILD] Puppeteer inconsistente — soft reconnect (sessão preservada)...');
+        try {
+            await softReconnect();
+        } catch (e) {
+            console.error('[CHILD] Falha no soft reconnect:', e.message);
+            process.exit(1);
+        }
+    }
 });
 
 async function main() {
@@ -43,6 +60,22 @@ async function main() {
     // Inicializa WhatsApp
     await initWhatsAppClient();
     console.log('[CHILD] 🟢 WhatsApp inicializado');
+
+    // Heartbeat: envia status para o pai a cada 5s
+    setInterval(async () => {
+        try {
+            const status = await getStatus();
+            if (process.send) {
+                process.send({
+                    type: 'whatsapp_status',
+                    pid: process.pid,
+                    uptime: process.uptime(),
+                    status: status.status,
+                    ready: status.ready,
+                });
+            }
+        } catch {}
+    }, 5000);
 
     // Log de memória a cada 30s
     setInterval(() => {

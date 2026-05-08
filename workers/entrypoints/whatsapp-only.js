@@ -25,6 +25,8 @@ let childReady = false;
 let childPid = null;
 let childRestartCount = 0;
 const MAX_RESTARTS = 20;
+let lastRestartTime = 0;
+let lastChildHeartbeat = 0;
 
 // ─── Health check SOBE IMEDIATAMENTE ───────────────────────────────────────
 const server = http.createServer((req, res) => {
@@ -36,6 +38,7 @@ const server = http.createServer((req, res) => {
             whatsapp: childStatus,
             whatsappReady: childReady,
             childPid: childPid,
+            childUptime: lastChildHeartbeat > 0 ? Math.round((Date.now() - lastChildHeartbeat) / 1000) : null,
             childRestarts: childRestartCount,
             timestamp: new Date().toISOString()
         }));
@@ -57,6 +60,17 @@ function spawnWhatsAppChild() {
         return;
     }
 
+    // Backoff exponencial: se houve muitos restarts recentes, espera mais
+    const now = Date.now();
+    const timeSinceLastRestart = now - lastRestartTime;
+    if (childRestartCount > 0 && timeSinceLastRestart < 60000 && childRestartCount % 5 === 0) {
+        const waitSeconds = 60;
+        console.log(`[PARENT] ⚠️ Muitas reinicializações recentes — aguardando ${waitSeconds}s antes de tentar novamente...`);
+        setTimeout(spawnWhatsAppChild, waitSeconds * 1000);
+        return;
+    }
+
+    lastRestartTime = now;
     childRestartCount++;
     console.log(`[PARENT] 👶 Spawnando WhatsApp child (tentativa ${childRestartCount}/${MAX_RESTARTS})...`);
 
@@ -70,16 +84,24 @@ function spawnWhatsAppChild() {
     childPid = child.pid;
 
     child.on('message', (msg) => {
-        if (msg && msg.type === 'ready_to_init') {
+        if (!msg) return;
+        if (msg.type === 'ready_to_init') {
             childStatus = 'initializing';
+        }
+        if (msg.type === 'whatsapp_status') {
+            childStatus = msg.status || childStatus;
+            childReady = msg.ready ?? childReady;
+            childPid = msg.pid ?? childPid;
+            lastChildHeartbeat = Date.now();
         }
     });
 
     child.on('exit', (code, signal) => {
+        const oldPid = childPid;
         childPid = null;
         childReady = false;
         const reason = signal ? `sinal ${signal}` : `código ${code}`;
-        console.log(`[PARENT] 💀 Child morreu (${reason}). Reiniciando em 10s...`);
+        console.log(`[PARENT] 💀 Child ${oldPid} morreu (${reason}). Reiniciando em 10s...`);
         childStatus = 'restarting';
         setTimeout(spawnWhatsAppChild, 10_000);
     });

@@ -29,6 +29,7 @@ let isInitializing = false;
 let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
+let clientInstanceId = 0; // incremental para detectar client stale
 
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
 async function saveState() {
@@ -39,6 +40,8 @@ async function saveState() {
         status: connectionStatus,
         ready: isReady,
         qrCode: qrCodeDataUrl,
+        pid: process.pid,
+        uptime: process.uptime(),
         updatedAt: new Date(),
       },
       { upsert: true }
@@ -81,7 +84,7 @@ function createClient() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',          // 🔥 essencial pra 512MB
+        // '--single-process',          // REMOVIDO: causa crashes "Execution context was destroyed"
         '--disable-gpu',
         '--disable-extensions',
         '--disable-default-apps',
@@ -175,6 +178,11 @@ function createClient() {
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
 export async function initWhatsAppClient() {
+  // BLOQUEIO FORTE: se já está ready e com client válido, NUNCA re-inicializa
+  if (isReady && client) {
+    console.log('[WhatsAppWeb] Já está ready — ignorando init.');
+    return;
+  }
   if (client) {
     console.log('[WhatsAppWeb] Cliente já existe — não criando outro.');
     return;
@@ -258,8 +266,8 @@ export async function getStatus() {
         qrCode: state.qrCode,
         error: state.error,
         sessionPersisted: null,
-        pid: null,
-        uptime: null,
+        pid: state.pid ?? null,
+        uptime: state.uptime ?? null,
       };
     }
     return { status: 'unknown', ready: false, qrCode: null, error: null };
@@ -279,8 +287,29 @@ export async function sendMessage(phone, message) {
     return { success: true, messageId: result.id._serialized };
   } catch (err) {
     console.error('[WhatsAppWeb] Erro ao enviar:', err.message);
+    // ❌ NUNCA reinicia/reconnecta WhatsApp por erro de envio.
+    // Lifecycle é responsabilidade do child process (crash/restart).
     throw err;
   }
+}
+
+// ─── Soft reconnect (recovery automático — NÃO limpa sessão) ─────────────────
+export async function softReconnect() {
+  console.log('[WhatsAppWeb] 🔄 Soft reconnect — preservando sessão...');
+  isReady = false;
+  if (retryTimeout) {
+    clearTimeout(retryTimeout);
+    retryTimeout = null;
+  }
+
+  if (client) {
+    try { await client.destroy(); } catch {}
+    client = null;
+  }
+
+  await saveState();
+  // NÃO limpa .wwebjs_auth — sessão é preservada
+  await initWhatsAppClient();
 }
 
 // ─── Reconectar manual (botão "Gerar novo QR") ───────────────────────────────
@@ -334,5 +363,6 @@ export default {
   getStatus,
   sendMessage,
   reconnect,
+  softReconnect,
   gracefulShutdownWhatsApp,
 };
