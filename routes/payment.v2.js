@@ -18,6 +18,7 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
@@ -702,7 +703,7 @@ router.get('/queue/status', auth, async (req, res) => {
 // ============================================
 router.patch('/:id', auth, async (req, res) => {
     const { id } = req.params;
-    const { amount, paymentMethod, status, serviceType, specialty, paymentDate } = req.body;
+    const { amount, paymentMethod, status, serviceType, specialty, paymentDate, notes, doctor } = req.body;
 
     // 1. Fail fast: ID válido?
     if (!isValidObjectId(id)) {
@@ -719,7 +720,9 @@ router.patch('/:id', auth, async (req, res) => {
                        status !== undefined ||
                        serviceType !== undefined ||
                        specialty !== undefined ||
-                       paymentDate !== undefined;
+                       paymentDate !== undefined ||
+                       notes !== undefined ||
+                       doctor !== undefined;
 
     if (!hasChanges) {
         return res.status(400).json({
@@ -747,9 +750,13 @@ router.patch('/:id', auth, async (req, res) => {
             ...(status !== undefined && { status }),
             ...(serviceType !== undefined && { serviceType }),
             ...(specialty !== undefined && { specialty }),
+            ...(notes !== undefined && { notes }),
+            ...(doctor !== undefined && isValidObjectId(doctor) && { doctor }),
             ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
-            // financialDate é a fonte de verdade do caixa — segue paymentDate quando informado
-            ...(paymentDate !== undefined && !payment.isFromPackage && { financialDate: new Date(paymentDate) }),
+            // financialDate: usa startOf('day') em Brasília para alinhar com o range do cashflow
+            ...(paymentDate !== undefined && !payment.isFromPackage && {
+                financialDate: moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
+            }),
             updatedAt: new Date()
         };
 
