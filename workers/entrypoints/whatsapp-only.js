@@ -71,7 +71,7 @@ function spawnWhatsAppChild() {
     const child = fork(childPath, [], {
         silent: false,
         env: process.env,
-        execArgv: ['--max-old-space-size=192']
+        execArgv: ['--max-old-space-size=768']
     });
 
     childPid = child.pid;
