@@ -265,7 +265,9 @@ export async function initWhatsAppClient() {
     // Sai para o parent respawnar um processo completamente limpo.
     const isFatal = msg.includes('Target closed') ||
                     msg.includes('Protocol error') ||
-                    msg.includes('Session closed');
+                    msg.includes('Session closed') ||
+                    msg.includes('Runtime.callFunctionOn timed out') ||
+                    msg.includes('Protocol timeout');
     if (isFatal && process.send) {
       console.error('[WhatsAppWeb] 💥 Browser fatal durante init — saindo para respawn limpo.');
       process.exit(1);

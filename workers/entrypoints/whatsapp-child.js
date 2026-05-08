@@ -75,8 +75,9 @@ process.on('unhandledRejection', (reason) => {
         msg.includes('Protocol error') ||
         msg.includes('Target closed') ||
         msg.includes('Session closed') ||
-        msg.includes('Target closed') ||
-        msg.includes('detached')
+        msg.includes('detached') ||
+        msg.includes('Runtime.callFunctionOn timed out') ||
+        msg.includes('Protocol timeout')
     )) {
         console.error('[CHILD] 💥 Browser fatal — saindo para o parent respawnar limpo.');
         process.exit(1);
