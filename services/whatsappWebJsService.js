@@ -98,7 +98,6 @@ function createClient() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',          // 🔥 ESSENCIAL pro plano Starter (512MB RAM)
         '--disable-gpu',
         '--disable-extensions',
         '--disable-default-apps',
@@ -182,7 +181,11 @@ function createClient() {
     isReady = false;
     connectionStatus = 'disconnected';
     await saveState();
-    // NÃO reinicializa aqui. Deixa o processo morrer e o Render reiniciar.
+    // LOGOUT = sessão invalidada pelo celular. Sai para o parent spawnar child limpo com novo QR.
+    if (reason === 'LOGOUT') {
+      console.log('[WhatsAppWeb] LOGOUT detectado — saindo para respawn limpo.');
+      process.exit(1);
+    }
   });
 
   newClient.on('error', (err) => {
