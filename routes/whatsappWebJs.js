@@ -1,5 +1,5 @@
 import express from 'express';
-import { getStatus, sendMessage, clearSession } from '../services/whatsappWebJsService.js';
+import { getStatus, sendMessage, reconnect } from '../services/whatsappWebJsService.js';
 
 const router = express.Router();
 
@@ -56,7 +56,7 @@ router.post('/send', async (req, res) => {
  */
 router.post('/reconnect', async (req, res) => {
   try {
-    const result = await clearSession();
+    const result = await reconnect();
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
