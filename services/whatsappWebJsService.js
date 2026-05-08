@@ -18,6 +18,7 @@ import mongoose from 'mongoose';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import { normalizeE164BR } from './utils/phone.js';
 import { execSync } from 'child_process';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
@@ -358,13 +359,11 @@ export async function sendMessage(phone, message) {
   if (!isReady || !client) {
     throw new Error('WhatsApp não está conectado');
   }
-  let clean = phone.replace(/\D/g, '');
-  // Adiciona 55 se não tiver código de país
-  if (!clean.startsWith('55') && clean.length === 11) {
-    clean = '55' + clean;
+  const clean = normalizeE164BR(phone);
+  if (!clean) {
+    throw new Error(`Número inválido: ${phone}`);
   }
-  const chatId = clean + '@c.us';
-  console.log(`[WhatsAppWeb] 📤 Enviando para ${chatId}...`);
+  console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
   try {
     // Valida se número existe no WhatsApp
     const numberId = await client.getNumberId(clean);
@@ -372,10 +371,10 @@ export async function sendMessage(phone, message) {
       throw new Error(`Número ${clean} não possui WhatsApp`);
     }
     const result = await client.sendMessage(numberId._serialized, message);
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${chatId} — ID: ${result?.id?._serialized || 'unknown'}`);
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${result?.id?._serialized || 'unknown'}`);
     return { success: true, messageId: result.id._serialized };
   } catch (err) {
-    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${chatId}:`, err.message);
+    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);
     throw err;
   }
 }
