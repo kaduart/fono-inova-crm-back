@@ -17,7 +17,7 @@ const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
 
 console.log('🆘 MODO EMERGÊNCIA: WhatsApp ONLY (com child process isolado)\n');
 console.log(`📂 CWD: ${process.cwd()}`);
-console.log(`📂 Sessão path: ${path.resolve(process.cwd(), '.wwebjs_auth')}\n`);
+console.log(`📂 Sessão path: /var/data/wwebjs_auth\n`);
 
 // ─── Estado do WhatsApp (atualizado via IPC do child) ──────────────────────
 let childStatus = 'initializing';

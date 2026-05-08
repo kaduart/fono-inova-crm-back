@@ -1257,10 +1257,11 @@ router.get('/weekly-availability', flexibleAuth, asyncHandler(async (req, res) =
 
 router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const startTime = Date.now();
-  const { 
-    startDate, 
-    endDate, 
-    patientId, 
+  const {
+    startDate,
+    endDate,
+    patientId,
+    patientName,
     doctorId,
     status,
     page = 1,
@@ -1305,6 +1306,15 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     }
   }
   
+  if (patientName && patientName.trim().length >= 2) {
+    const matchingPatients = await Patient.find(
+      { fullName: { $regex: patientName.trim(), $options: 'i' } },
+      { _id: 1 }
+    ).lean();
+    const ids = matchingPatients.map(p => p._id);
+    filter.patient = { $in: ids };
+  }
+
   if (doctorId) filter.doctor = new mongoose.Types.ObjectId(doctorId);
   
   // Status filter
