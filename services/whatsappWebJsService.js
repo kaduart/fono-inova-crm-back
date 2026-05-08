@@ -239,11 +239,23 @@ export async function initWhatsAppClient() {
   try {
     await client.initialize();
   } catch (err) {
-    console.error('[WhatsAppWeb] Falha na inicialização:', err.message || err);
+    const msg = err?.message || String(err);
+    console.error('[WhatsAppWeb] Falha na inicialização:', msg);
     connectionStatus = 'error';
     await saveState();
-    // Destrói client e agenda retry em 30s
     await safeDestroyClient();
+
+    // Erros fatais do browser (contexto destruído, target fechado, etc.)
+    // NUNCA tentam retry no mesmo processo — saem para o parent respawnar limpo.
+    const isFatal = msg.includes('Execution context was destroyed') ||
+                    msg.includes('Target closed') ||
+                    msg.includes('Protocol error') ||
+                    msg.includes('Session closed');
+    if (isFatal && process.send) {
+      console.error('[WhatsAppWeb] 💥 Erro fatal do browser durante init — saindo para respawn limpo.');
+      process.exit(1);
+    }
+
     if (retryTimeout) clearTimeout(retryTimeout);
     retryTimeout = setTimeout(() => {
       console.log('[WhatsAppWeb] 🔁 Retry agendado após erro...');
