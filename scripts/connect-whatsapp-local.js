@@ -64,16 +64,37 @@ initWhatsAppClient();
 // Monitora o MongoDB pelo status ready
 const WhatsAppWebState = mongoose.model('WhatsAppWebState');
 
+let qrSaved = false;
+
 const checkInterval = setInterval(async () => {
   try {
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
-    if (state && state.status === 'ready') {
+    if (!state) return;
+
+    // Salva QR como imagem quando aparecer
+    if (state.qrCode && !qrSaved) {
+      qrSaved = true;
+      const base64Data = state.qrCode.replace(/^data:image\/png;base64,/, '');
+      const qrPath = path.resolve(process.cwd(), 'qr-code.png');
+      fs.writeFileSync(qrPath, Buffer.from(base64Data, 'base64'));
+      console.log(`\n📷 QR CODE SALVO: ${qrPath}`);
+      console.log('👉 Abra essa imagem e escaneie com o WhatsApp no celular\n');
+    }
+
+    // Mostra status atual
+    if (state.status === 'qr') {
+      process.stdout.write(`⏳ Aguardando scan... (status: ${state.status})\r`);
+    } else if (state.status === 'connecting') {
+      process.stdout.write(`🔄 Sincronizando... (status: ${state.status})     \r`);
+    }
+
+    // Quando ready, exporta
+    if (state.status === 'ready') {
       console.log('\n🎉 WhatsApp conectado! Aguardando 5s para estabilizar...');
       clearInterval(checkInterval);
 
       setTimeout(() => {
         try {
-          // Compacta a sessão
           if (fs.existsSync(SESSION_DIR)) {
             execSync(`tar -czf "${EXPORT_FILE}" -C "${AUTH_DIR}" session`, { stdio: 'inherit' });
             console.log('\n✅✅✅ SESSÃO EXPORTADA! ✅✅✅');
