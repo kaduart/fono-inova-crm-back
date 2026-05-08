@@ -17,30 +17,45 @@ dotenv.config();
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const CRASH_LOG = '/var/data/wwebjs_auth/.crash-log.json';
 const SESSION_DIR = '/var/data/wwebjs_auth/session';
+const BOOTING_FLAG = '/var/data/wwebjs_auth/.booting';
 
 if (!MONGO_URI) {
     console.error('[CHILD] ❌ MONGODB_URI não configurada');
     process.exit(1);
 }
 
-// ─── Crash log: se morreu 3x em 2 minutos, sessão provavelmente está corrompida ──
-function checkAndClearCorruptedSession() {
+// ─── Se o bootstrap anterior foi interrompido (Render reiniciou durante init),
+//     a sessão fica corrompida. Limpa imediatamente. ──────────────────────────
+function checkInterruptedBoot() {
     try {
+        if (fs.existsSync(BOOTING_FLAG)) {
+            console.log('[CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Limpando sessão corrompida...');
+            try {
+                if (fs.existsSync(SESSION_DIR)) {
+                    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+                    console.log('[CHILD] 🧹 Sessão corrompida removida. Novo QR será gerado.');
+                }
+            } catch (e) {
+                console.error('[CHILD] Erro ao limpar sessão:', e.message);
+            } finally {
+                fs.rmSync(BOOTING_FLAG, { force: true });
+            }
+            return;
+        }
+
+        // Fallback: crash log — se 3+ tentativas em 2 minutos
         const now = Date.now();
         let log = [];
         if (fs.existsSync(CRASH_LOG)) {
             log = JSON.parse(fs.readFileSync(CRASH_LOG, 'utf-8'));
         }
-        // Registra esta inicialização como uma tentativa
         log.push(now);
-        // Mantém só os últimos 3 minutos
         log = log.filter(t => now - t < 180_000);
         fs.writeFileSync(CRASH_LOG, JSON.stringify(log));
 
-        // Se 3+ tentativas em 2 minutos, limpa a sessão
         const recent = log.filter(t => now - t < 120_000);
         if (recent.length >= 3) {
-            console.log('[CHILD] ⚠️ 3+ tentativas em 2 min — sessão provavelmente corrompida. Limpando...');
+            console.log('[CHILD] ⚠️ 3+ tentativas em 2 min — limpando sessão...');
             try {
                 if (fs.existsSync(SESSION_DIR)) {
                     fs.rmSync(SESSION_DIR, { recursive: true, force: true });
@@ -52,7 +67,7 @@ function checkAndClearCorruptedSession() {
             }
         }
     } catch (e) {
-        // ignora erro no crash log
+        // ignora
     }
 }
 
@@ -91,8 +106,8 @@ async function main() {
     // Avisa o pai que está pronto
     if (process.send) process.send({ type: 'ready_to_init' });
 
-    // Se houve muitas mortes recentes, limpa sessão corrompida antes de tentar de novo
-    checkAndClearCorruptedSession();
+    // Se bootstrap anterior foi interrompido (Render restart), limpa sessão corrompida
+    checkInterruptedBoot();
 
     // Inicializa WhatsApp
     await initWhatsAppClient();
