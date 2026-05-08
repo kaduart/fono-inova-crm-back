@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp } from '../../services/whatsappWebJsService.js';
 
 dotenv.config();
 
@@ -80,6 +80,15 @@ async function main() {
         console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB`);
     }, 30000);
 }
+
+// Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
+async function shutdown(signal) {
+    console.log(`[CHILD] ${signal} recebido — destruindo client...`);
+    await gracefulShutdownWhatsApp();
+    process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 main().catch(err => {
     console.error('[CHILD] Erro fatal:', err.message);

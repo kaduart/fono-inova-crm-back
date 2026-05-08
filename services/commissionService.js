@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
 import Expense from '../models/Expense.js';
 import Session from '../models/Session.js';
+import { expenseCache } from '../routes/expenses.v2.js';
 
 /**
  * Calcula comissão personalizada por profissional
@@ -248,6 +249,9 @@ export const generateMonthlyCommissions = async () => {
     }
 
     await session.commitTransaction();
+
+    // Invalida cache de despesas para que a listagem reflita as novas comissões
+    expenseCache.flushAll();
 
     console.log(`\n🎉 Comissões geradas: ${results.length}/${doctors.length} profissionais\n`);
 
