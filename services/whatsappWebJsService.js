@@ -84,7 +84,7 @@ function createClient() {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        // '--single-process',          // REMOVIDO: causa crashes "Execution context was destroyed"
+        '--single-process',          // 🔥 ESSENCIAL pro plano Starter (512MB RAM)
         '--disable-gpu',
         '--disable-extensions',
         '--disable-default-apps',

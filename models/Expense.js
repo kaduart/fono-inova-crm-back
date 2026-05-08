@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { CREATED_BY_ROLES } from '../constants/roles.js';
 
 const expenseSchema = new mongoose.Schema({
   description: {
@@ -132,7 +133,7 @@ const expenseSchema = new mongoose.Schema({
   },
   createdByRole: {
     type: String,
-    enum: ['admin', 'secretary', 'doctor'],
+    enum: CREATED_BY_ROLES,
     required: true
   },
   createdByName: {

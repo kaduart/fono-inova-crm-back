@@ -1,11 +1,12 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
+import { USER_ROLES } from '../constants/roles.js';
 
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, required: true, default: 'patient' },
+  role: { type: String, required: true, enum: USER_ROLES, default: 'patient' },
   specialty: String,
   licenseNumber: String,
   phoneNumber: String,
