@@ -18,7 +18,7 @@ import mongoose from 'mongoose';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
-import { normalizeE164BR } from './utils/phone.js';
+import { normalizeE164BR } from '../utils/phone.js';
 import { execSync } from 'child_process';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
