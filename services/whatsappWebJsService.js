@@ -36,6 +36,8 @@ let clientInstanceId = 0; // incremental para detectar client stale
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
 async function saveState() {
   try {
+    const authPath = '/var/data/wwebjs_auth';
+    const persist = fs.existsSync(authPath) ? { exists: true, count: fs.readdirSync(authPath).length } : { exists: false, count: 0 };
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
       {
@@ -44,6 +46,8 @@ async function saveState() {
         qrCode: qrCodeDataUrl,
         pid: process.pid,
         uptime: process.uptime(),
+        sessionPersisted: persist.exists && persist.count > 0,
+        sessionFiles: persist.count,
         updatedAt: new Date(),
       },
       { upsert: true }
@@ -337,8 +341,8 @@ export async function getStatus() {
         ready: state.ready,
         qrCode: state.qrCode,
         error: state.error,
-        sessionPersisted: persist.exists && persist.count > 0,
-        sessionFiles: persist.count,
+        sessionPersisted: state.sessionPersisted ?? false,
+        sessionFiles: state.sessionFiles ?? 0,
         pid: state.pid ?? null,
         uptime: state.uptime ?? null,
       };

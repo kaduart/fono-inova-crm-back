@@ -9,6 +9,8 @@ const schema = new mongoose.Schema({
   qrTimestamp: { type: Number, default: null },
   pid: { type: Number, default: null },
   uptime: { type: Number, default: null },
+  sessionPersisted: { type: Boolean, default: false },
+  sessionFiles: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now },
 });
 
