@@ -135,5 +135,10 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// ─── Heartbeat: evita que o Render mate o container por "inatividade" ──────
+setInterval(() => {
+    console.log(`[PARENT] 💓 heartbeat | childReady=${childReady} | childPid=${childPid} | uptime=${Math.round(process.uptime())}s`);
+}, 15_000);
+
 // ─── Inicia ────────────────────────────────────────────────────────────────
 spawnWhatsAppChild();
