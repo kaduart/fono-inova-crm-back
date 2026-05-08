@@ -71,6 +71,20 @@ function createClient() {
   const authPath = '/var/data/wwebjs_auth';
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 
+  // Limpa locks do Chromium de sessões anteriores que morreram sem cleanup
+  const locks = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+  for (const lock of locks) {
+    const lockPath = path.join(authPath, lock);
+    try {
+      if (fs.existsSync(lockPath)) {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+        console.log(`[WhatsAppWeb] Lock removido: ${lock}`);
+      }
+    } catch (e) {
+      // ignora erro ao remover lock
+    }
+  }
+
   const puppeteerOpts = {
     headless: true,
     protocolTimeout: 300_000, // 5 min — protocolo CDP
@@ -315,6 +329,36 @@ export async function softReconnect() {
   await initWhatsAppClient();
 }
 
+// ─── Limpa sessão (usado pela API web — NÃO toca no client) ──────────────────
+export async function clearSession() {
+  console.log('[WhatsAppWeb] 🧹 Limpando sessão (API web)...');
+
+  // Limpa estado no MongoDB
+  try {
+    await WhatsAppWebState.findOneAndUpdate(
+      { instanceId: 'main' },
+      { status: 'disconnected', ready: false, qrCode: null, pid: null, uptime: null, updatedAt: new Date() },
+      { upsert: true }
+    );
+    console.log('[WhatsAppWeb] Estado limpo no MongoDB.');
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Erro ao limpar MongoDB:', e.message);
+  }
+
+  // Limpa sessão local
+  try {
+    const authPath = '/var/data/wwebjs_auth';
+    if (fs.existsSync(authPath)) {
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log('[WhatsAppWeb] Sessão local removida.');
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível remover sessão:', e.message);
+  }
+
+  return { success: true, message: 'Sessão limpa. Reinicie o worker do WhatsApp para gerar novo QR.' };
+}
+
 // ─── Reconectar manual (botão "Gerar novo QR") ───────────────────────────────
 export async function reconnect() {
   console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão...');
@@ -367,5 +411,6 @@ export default {
   sendMessage,
   reconnect,
   softReconnect,
+  clearSession,
   gracefulShutdownWhatsApp,
 };
