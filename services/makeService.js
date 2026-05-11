@@ -61,7 +61,7 @@ export function isMakeConfigured() {
  * @returns {Promise<object>} Resposta do Make
  */
 // Valida se uma URL de imagem é acessível antes de enviar ao Make
-// Faz HEAD request real — inclusive para Cloudinary (imagens deletadas/privadas falham silenciosamente)
+// Faz GET request real — captura URL final após redirects (o GMB não segue redirects corretamente)
 async function validateMediaUrl(url) {
   if (!url) {
     console.log('[Make] URL da imagem é null/undefined');
@@ -73,23 +73,28 @@ async function validateMediaUrl(url) {
   }
 
   try {
+    // Usa redirect: 'manual' para detectar redirects, depois faz follow
     const res = await fetch(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(5000),
+      method: 'GET',
+      signal: AbortSignal.timeout(8000),
+      redirect: 'follow',
     });
+
+    // Pega a URL final após redirects
+    const finalUrl = res.url || url;
 
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
       const isImage = contentType.startsWith('image/');
       if (!isImage) {
-        console.warn(`[Make] ⚠️ URL retornou content-type inválido: ${contentType} — ${url.substring(0, 60)}`);
+        console.warn(`[Make] ⚠️ URL retornou content-type inválido: ${contentType} — ${finalUrl.substring(0, 60)}`);
         return null;
       }
-      console.log(`[Make] ✅ URL validada (${contentType}): ${url.substring(0, 60)}...`);
-      return url;
+      console.log(`[Make] ✅ URL validada (${contentType}): ${finalUrl.substring(0, 60)}...`);
+      return finalUrl;
     }
 
-    console.warn(`[Make] ❌ URL retornou HTTP ${res.status}: ${url.substring(0, 60)}`);
+    console.warn(`[Make] ❌ URL retornou HTTP ${res.status}: ${finalUrl.substring(0, 60)}`);
     return null;
   } catch (err) {
     console.warn(`[Make] ❌ Falha ao validar URL (${err.message}): ${url.substring(0, 60)}`);
