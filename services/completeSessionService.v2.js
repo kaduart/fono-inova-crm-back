@@ -51,7 +51,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     } = options;
 
     const startTime = Date.now();
-    
+
     console.log(`[CompleteSessionV2] Iniciando`, {
         appointmentId,
         correlationId,
@@ -60,7 +60,65 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     });
 
     // ============================================================
-    // FASE 1: BUSCAR DADOS (fora da transaction se possível)
+    // 🔒 LOCK ATÔMICO — PRIMEIRA OPERAÇÃO, antes de qualquer leitura
+    // Condição única: não está completado E não está processando.
+    // Dois requests simultâneos (double-click): só um passa aqui.
+    // Elimina TOCTOU — sem leitura prévia, sem stale check.
+    // ============================================================
+    const _lockCandidate = await Appointment.findOneAndUpdate(
+        {
+            _id: appointmentId,
+            isProcessing: { $ne: true },
+            operationalStatus: { $ne: 'completed' }
+        },
+        { $set: { isProcessing: true, processingStartedAt: new Date() } },
+        { new: false }
+    );
+
+    if (!_lockCandidate) {
+        const _current = await Appointment.findById(appointmentId)
+            .select('operationalStatus isProcessing processingStartedAt clinicalStatus paymentStatus balanceAmount isPaid completedAt')
+            .lean();
+
+        if (!_current) throw new Error('Agendamento não encontrado');
+
+        if (_current.operationalStatus === 'completed') {
+            console.log(`[CompleteSessionV2] ✅ Idempotente — já completado (${appointmentId})`);
+            return {
+                success: true,
+                idempotent: true,
+                message: 'Sessão já estava completada',
+                data: {
+                    appointmentId,
+                    clinicalStatus: _current.clinicalStatus,
+                    operationalStatus: _current.operationalStatus,
+                    paymentStatus: _current.paymentStatus,
+                    balanceAmount: _current.balanceAmount,
+                    isPaid: _current.isPaid,
+                    completedAt: _current.completedAt
+                },
+                meta: { version: 'v2', correlationId, timestamp: new Date().toISOString() }
+            };
+        }
+
+        const _lockAge = _current.processingStartedAt
+            ? Date.now() - new Date(_current.processingStartedAt).getTime()
+            : Infinity;
+
+        if (_lockAge < 2 * 60 * 1000) {
+            console.warn(`[CompleteSessionV2] ⏸️ Appointment ${appointmentId} já está processando (lock de ${Math.round(_lockAge / 1000)}s)`);
+            throw new Error('APPOINTMENT_ALREADY_PROCESSING: Agendamento já está sendo processado. Aguarde.');
+        }
+
+        console.warn(`[CompleteSessionV2] 🔓 Lock expirado de ${Math.round(_lockAge / 1000)}s — recuperando ${appointmentId}`);
+        await Appointment.updateOne(
+            { _id: appointmentId },
+            { $set: { isProcessing: true, processingStartedAt: new Date() } }
+        );
+    }
+
+    // ============================================================
+    // FASE 1: BUSCAR DADOS (lock garantido acima)
     // ============================================================
     let appointment = await Appointment.findById(appointmentId)
         .populate('session patient doctor package liminarContract')
@@ -70,25 +128,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         throw new Error('Agendamento não encontrado');
     }
 
-    // 🛡️ IDEMPOTÊNCIA: Já completado? (CRM usa operationalStatus como fonte da verdade)
-    if (appointment.operationalStatus === 'completed') {
-        console.log(`[CompleteSessionV2] Sessão ${appointmentId} já completada (idempotência)`);
-        return {
-            success: true,
-            idempotent: true,
-            appointmentId,
-            correlationId,
-            message: 'Sessão já estava completada'
-        };
-    }
-
-    // 🚫 Validações de segurança - CRM sempre usa operationalStatus
-    const isCancelledStatus = (status) => 
+    const isCancelledStatus = (status) =>
         status && ['canceled', 'cancelled', 'cancelado', 'processing_cancel'].includes(status.toLowerCase());
-    
-    // 🎯 CRM: operationalStatus é a fonte da verdade para controle de agendamentos
-    // 🔄 REVERTE CANCELAMENTO do appointment: se foi cancelado mas agora vai ser completado,
-    // primeiro reverte para scheduled (equivale a "reativar")
+
+    // 🔄 REVERTE CANCELAMENTO (com lock ativo — sem race condition)
     if (isCancelledStatus(appointment.operationalStatus)) {
         console.log(`[completeSessionV2] 🔄 Revertendo cancelamento do appointment ${appointmentId} antes de completar`);
         await Appointment.findByIdAndUpdate(appointmentId, {
@@ -98,7 +141,6 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 updatedAt: new Date()
             }
         });
-        // Recarrega appointment após reversão
         appointment = await Appointment.findById(appointmentId).populate('session payment package');
     }
 
@@ -215,46 +257,6 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         isBalanceOrigin, isPerSessionPkg, addToBalance, balanceAmount
     });
     
-    // 🔒 IDEMPOTÊNCIA + LOCK (FORA da transação para evitar WriteConflict)
-    // 0a. Check rápido de idempotência (sem transação)
-    if (appointment.operationalStatus === 'completed') {
-        console.log(`[CompleteSessionV2] ✅ Idempotente — já completado (${appointmentId})`);
-        return {
-            success: true,
-            idempotent: true,
-            message: 'Sessão já estava completada',
-            data: {
-                appointmentId,
-                clinicalStatus: appointment.clinicalStatus,
-                operationalStatus: appointment.operationalStatus,
-                paymentStatus: appointment.paymentStatus,
-                balanceAmount: appointment.balanceAmount,
-                sessionValue,
-                isPaid: appointment.isPaid,
-                completedAt: appointment.completedAt
-            },
-            meta: { version: 'v2', correlationId, timestamp: new Date().toISOString() }
-        };
-    }
-
-    // 0b. Adquirir lock atômico FORA da transação
-    const lockResult = await Appointment.findOneAndUpdate(
-        { _id: appointmentId, isProcessing: { $ne: true } },
-        { $set: { isProcessing: true, processingStartedAt: new Date() } },
-        { new: true }
-    );
-    if (!lockResult) {
-        const lockedAppt = await Appointment.findById(appointmentId).lean();
-        const lockAge = lockedAppt?.processingStartedAt
-            ? Date.now() - new Date(lockedAppt.processingStartedAt).getTime()
-            : Infinity;
-        if (lockAge < 2 * 60 * 1000) {
-            console.warn(`[CompleteSessionV2] ⏸️ Appointment ${appointmentId} já está processando (lock de ${Math.round(lockAge/1000)}s)`);
-            throw new Error('APPOINTMENT_ALREADY_PROCESSING: Agendamento já está sendo processado. Aguarde.');
-        }
-        console.warn(`[CompleteSessionV2] 🔓 Lock expirado de ${Math.round(lockAge/1000)}s — recuperando appointment ${appointmentId}`);
-    }
-
     try {
         if (!externalSession) {
             await mongoSession.startTransaction();
