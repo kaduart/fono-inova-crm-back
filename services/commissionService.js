@@ -171,17 +171,19 @@ function getInsuranceName(session) {
 /**
  * Gera despesas de comissão para todos os profissionais ativos
  */
-export const generateMonthlyCommissions = async () => {
+export const generateMonthlyCommissions = async (month, year) => {
   const session = await mongoose.startSession();
 
   try {
     await session.startTransaction();
 
     const now = moment.tz('America/Sao_Paulo');
-    const lastMonth = now.clone().subtract(1, 'month');
-    const startDate = lastMonth.startOf('month').toDate();
-    const endDate = lastMonth.endOf('month').toDate();
-    const monthRef = lastMonth.format('MMM/YYYY');
+    const target = (month && year)
+      ? moment.tz({ year, month: month - 1 }, 'America/Sao_Paulo')
+      : now.clone().subtract(1, 'month');
+    const startDate = target.clone().startOf('month').toDate();
+    const endDate = target.clone().endOf('month').toDate();
+    const monthRef = target.format('MMM/YYYY');
 
     console.log(`\n💰 Gerando comissões para ${monthRef}`);
     console.log(`📅 Período: ${startDate} até ${endDate}\n`);
@@ -201,7 +203,19 @@ export const generateMonthlyCommissions = async () => {
       const commission = await calculateDoctorCommission(doctor._id, startDate, endDate);
 
       if (commission.totalCommission > 0) {
-        // Criar notas detalhadas incluindo breakdown por convênio
+        // 🛡️ Idempotência: não gera duplicata se já existe comissão para este médico/mês
+        const existing = await Expense.findOne({
+          category: 'commission',
+          relatedDoctor: doctor._id,
+          description: `Comissão ${doctor.fullName} - ${monthRef}`
+        }).session(session);
+
+        if (existing) {
+          console.log(`⚠️ Comissão já existe para ${doctor.fullName} - ${monthRef}, ignorando`);
+          results.push({ doctor: doctor.fullName, skipped: true, existingId: existing._id });
+          continue;
+        }
+
         const notes = {
           ...commission.breakdown,
           byInsurance: commission.breakdown.standardSessions.byInsurance
@@ -212,7 +226,7 @@ export const generateMonthlyCommissions = async () => {
           category: 'commission',
           subcategory: 'salary',
           amount: commission.totalCommission,
-          date: now.format('YYYY-MM-DD'),
+          date: target.clone().endOf('month').format('YYYY-MM-DD'),
           relatedDoctor: doctor._id,
           workPeriod: {
             start: startDate,

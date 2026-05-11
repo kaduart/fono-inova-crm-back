@@ -46,7 +46,8 @@ export const scheduleMonthlyCommissions = () => {
  */
 export const manualCommissionTrigger = async (req, res) => {
     try {
-        const result = await generateMonthlyCommissions();
+        const { month, year } = req.body || {};
+        const result = await generateMonthlyCommissions(month ? Number(month) : undefined, year ? Number(year) : undefined);
         res.json({
             success: true,
             message: 'Comissões geradas manualmente',
