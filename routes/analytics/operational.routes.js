@@ -220,4 +220,130 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     }
 });
 
+/**
+ * @route   GET /api/v2/analytics/operational/recent-ops
+ * @desc    Monitor de operações recentes: cancelamentos, deleções, edições
+ * @access  Admin
+ */
+router.get('/recent-ops', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { days = 7 } = req.query;
+        const since = moment.tz(TIMEZONE).subtract(Number(days), 'days').toDate();
+
+        // ── Appointments cancelados recentemente ───────────────────────────
+        const canceled = await Appointment.find({
+            operationalStatus: 'canceled',
+            canceledAt: { $gte: since }
+        })
+        .sort({ canceledAt: -1 })
+        .limit(50)
+        .populate('patient', 'fullName phone')
+        .populate('doctor', 'fullName specialty')
+        .lean();
+
+        // ── Appointments soft-deletados (isDeleted pode ser campo ad-hoc) ──
+        const deleted = await Appointment.find({
+            isDeleted: true,
+            updatedAt: { $gte: since }
+        })
+        .sort({ updatedAt: -1 })
+        .limit(30)
+        .populate('patient', 'fullName phone')
+        .populate('doctor', 'fullName specialty')
+        .populate('deletedBy', 'name email')
+        .lean();
+
+        // ── Histórico de mudanças recentes (changedBy populado) ────────────
+        const recentChanges = await Appointment.aggregate([
+            { $match: { updatedAt: { $gte: since } } },
+            { $unwind: '$history' },
+            { $match: { 'history.timestamp': { $gte: since } } },
+            { $sort: { 'history.timestamp': -1 } },
+            { $limit: 50 },
+            {
+                $lookup: {
+                    from: 'patients',
+                    localField: 'patient',
+                    foreignField: '_id',
+                    as: 'patientDoc'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'doctors',
+                    localField: 'doctor',
+                    foreignField: '_id',
+                    as: 'doctorDoc'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'history.changedBy',
+                    foreignField: '_id',
+                    as: 'changedByDoc'
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    date: 1,
+                    time: 1,
+                    'history.action': 1,
+                    'history.newStatus': 1,
+                    'history.timestamp': 1,
+                    'history.context': 1,
+                    patientName: { $arrayElemAt: ['$patientDoc.fullName', 0] },
+                    doctorName: { $arrayElemAt: ['$doctorDoc.fullName', 0] },
+                    changedByName: { $arrayElemAt: ['$changedByDoc.name', 0] },
+                    changedByEmail: { $arrayElemAt: ['$changedByDoc.email', 0] }
+                }
+            }
+        ]);
+
+        // ── Formata saída unificada ────────────────────────────────────────
+        const ops = [
+            ...deleted.map(a => ({
+                type: 'deleted',
+                appointmentId: a._id,
+                patientName: a.patient?.fullName || a.patientInfo?.fullName || '—',
+                doctorName: a.doctor?.fullName || '—',
+                date: a.date,
+                time: a.time,
+                operatorName: a.deletedBy?.name || a.deletedBy?.email || 'Sistema',
+                at: a.updatedAt,
+                detail: null
+            })),
+            ...canceled.map(a => ({
+                type: 'canceled',
+                appointmentId: a._id,
+                patientName: a.patient?.fullName || a.patientInfo?.fullName || '—',
+                doctorName: a.doctor?.fullName || '—',
+                date: a.date,
+                time: a.time,
+                operatorName: null,
+                at: a.canceledAt,
+                detail: a.cancelReason || null
+            })),
+            ...recentChanges.map(c => ({
+                type: 'changed',
+                appointmentId: c._id,
+                patientName: c.patientName || '—',
+                doctorName: c.doctorName || '—',
+                date: c.date,
+                time: c.time,
+                operatorName: c.changedByName || c.changedByEmail || 'Sistema',
+                at: c.history.timestamp,
+                detail: `${c.history.action || ''} → ${c.history.newStatus || ''}`.trim()
+            }))
+        ].sort((a, b) => new Date(b.at) - new Date(a.at));
+
+        res.json({ success: true, data: ops, since, days: Number(days) });
+
+    } catch (error) {
+        console.error('[OperationalAnalytics] Erro recent-ops:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 export default router;

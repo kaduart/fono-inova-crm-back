@@ -128,6 +128,28 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         throw new Error('Agendamento não encontrado');
     }
 
+    // Retorno: completa sem nenhum processamento financeiro
+    if (appointment.serviceType === 'return') {
+        await Appointment.findByIdAndUpdate(appointmentId, {
+            $set: {
+                operationalStatus: 'completed',
+                clinicalStatus: 'completed',
+                paymentStatus: 'not_applicable',
+                sessionValue: 0,
+                isProcessing: false,
+                completedAt: new Date(),
+                updatedAt: new Date()
+            }
+        });
+        console.log(`[CompleteSessionV2] ✅ Retorno completado sem caixa: ${appointmentId}`);
+        return {
+            success: true,
+            appointmentId,
+            correlationId,
+            note: 'return - no financial processing'
+        };
+    }
+
     const isCancelledStatus = (status) =>
         status && ['canceled', 'cancelled', 'cancelado', 'processing_cancel'].includes(status.toLowerCase());
 

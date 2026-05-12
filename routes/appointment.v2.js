@@ -457,10 +457,14 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
 
       operationalStatus: req.body.operationalStatus || 'pre_agendado',
       clinicalStatus: 'pending',
-      paymentStatus: req.body.paymentStatus || 'pending',
+      paymentStatus: (() => {
+        if (req.body.serviceType === 'return') return 'not_applicable';
+        const s = req.body.paymentStatus || 'pending';
+        return s === 'not_applicable' ? 'pending' : s; // sanitiza: só retorno pode ter not_applicable
+      })(),
 
-      // 🩹 GUARD DEFINITIVO: sessionValue nunca pode ser 0 quando há paymentAmount
       sessionValue: (() => {
+        if (req.body.serviceType === 'return') return 0;
         const sv = Number(req.body.sessionValue ?? 0);
         if (sv === 0 && finalAmount > 0) {
           console.warn(`[POST /v2/appointments] 🩹 sessionValue corrigido automaticamente`, { original: req.body.sessionValue, paymentAmount: finalAmount });
@@ -537,7 +541,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     // Pacotes: Session é criada pelo packageController ou worker (lógica complexa de crédito)
     // Pré-agendamentos (sem patientId): session é criada depois, na confirmação
     let session = null;
-    if (!packageId && resolvedPatientId) {
+    if (!packageId && resolvedPatientId && resolvedServiceType !== 'return') {
       try {
         const sessionData = (billingType === 'convenio' || insuranceGuideId)
           ? buildInsuranceSession(appointment)
@@ -1948,12 +1952,34 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     // 💰 Atualizar Payment vinculado (appointment.payment OU package.payments)
     let paymentToUpdate = appointment.payment ? await Payment.findById(appointment.payment).session(mongoSession).lean() : null;
-    
+
     // Se não tem payment direto mas tem pacote, busca payment pelo package
     if (!paymentToUpdate && appointment.package) {
       paymentToUpdate = await Payment.findOne({ package: appointment.package }).session(mongoSession).lean();
     }
-    
+
+    // Retorno: cancela payment e session existentes — não gera cobrança
+    if (updateData.serviceType === 'return') {
+      if (paymentToUpdate && paymentToUpdate.status !== 'paid') {
+        await Payment.findByIdAndUpdate(
+          paymentToUpdate._id,
+          { $set: { status: 'canceled', canceledAt: new Date(), canceledReason: 'Convertido para retorno', updatedAt: new Date() } },
+          { session: mongoSession }
+        );
+        updateData.payment = null;
+        updateData.sessionValue = 0;
+        updateData.paymentStatus = 'not_applicable';
+      }
+      if (appointment.session) {
+        await Session.findByIdAndUpdate(
+          appointment.session,
+          { $set: { paymentStatus: 'canceled', updatedAt: new Date() } },
+          { session: mongoSession }
+        );
+      }
+      paymentToUpdate = null; // pula bloco de update abaixo
+    }
+
     if (paymentToUpdate) {
       const paymentId = paymentToUpdate._id;
       if (paymentToUpdate.status === 'paid') {
