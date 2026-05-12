@@ -1344,12 +1344,19 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   if (!options.forceNew && (provider === 'auto' || provider === 'imagebank')) {
     try {
       console.log('🔍 [0/3] Verificando ImageBank...');
+      const { findExistingImage: findImg } = await import('./imageBankService.js');
       const tema = postContent.split('\n')[0].substring(0, 50);
-      
-      // Busca imagem diferente da última usada (pula a última usada)
-      const existingImages = await (await import('./imageBankService.js')).findExistingImage(especialidade.id, tema, { limit: 5 });
-      
-      if (existingImages && existingImages.reuseCount < 3) {
+
+      // Tenta primeiro por tema específico (limite alto de reúso)
+      let existingImages = await findImg(especialidade.id, tema, { limit: 10, maxUsage: 50 });
+
+      // Fallback: qualquer imagem da especialidade se não achou por tema
+      if (!existingImages) {
+        console.log('🔄 [ImageBank] Sem match de tema — buscando qualquer imagem da especialidade...');
+        existingImages = await findImg(especialidade.id, '', { limit: 10, maxUsage: 50 });
+      }
+
+      if (existingImages) {
         console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImages.reuseCount}x)`);
         return {
           url: existingImages.url,
@@ -1357,7 +1364,7 @@ export async function generateImageForEspecialidade(especialidade, postContent =
           reused: true
         };
       }
-      console.log('⚠️ [ImageBank] Imagem já usada muitas vezes, gerando nova...');
+      console.log('⚠️ [ImageBank] Banco vazio para esta especialidade — gerando nova...');
     } catch (e) {
       console.warn('⚠️ ImageBank falhou:', e.message);
     }
@@ -1882,59 +1889,6 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
       console.warn('⚠️ HF retornou erro:', response.status);
     } catch (e) {
       console.warn('⚠️ HF falhou:', e.message);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 4: Pollinations com FLUX (sempre gratuito) + retry
-  const delay = ms => new Promise(r => setTimeout(r, ms));
-  
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      console.log(`🔄 [Fallback] Pollinations (tentativa ${attempt}/3)...`);
-      const encoded = encodeURIComponent(prompt);
-      const seed = Math.floor(Math.random() * 999999);
-      const model = attempt === 1 ? 'flux-realism' : attempt === 2 ? 'turbo' : 'default';
-      
-      const res = await fetch(
-        `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=${model}&enhance=true`,
-        { signal: AbortSignal.timeout(90000), headers: { 'Accept': 'image/*' } }
-      );
-
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('image')) {
-          console.warn('⚠️ Resposta não é imagem:', contentType);
-          throw new Error(`Invalid content-type: ${contentType}`);
-        }
-        
-        const fotoBuf = Buffer.from(await res.arrayBuffer());
-        if (fotoBuf.length < 1024) {
-          console.warn('⚠️ Imagem muito pequena');
-          throw new Error('Image too small');
-        }
-        
-        console.log(`✅ Pollinations → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        const url = await uploadFoto(fotoBuf);
-        if (url) {
-          console.log(`✅ Pollinations OK: ${url.substring(0, 60)}...`);
-          return { url, provider: `pollinations-${model}` };
-        }
-        console.warn(`⚠️ Pollinations: Upload Cloudinary falhou, tentando próximo...`);
-      } else {
-        const status = res.status;
-        console.warn(`⚠️ Pollinations HTTP ${status}`);
-        if ((status >= 500 || status === 429) && attempt < 3) {
-          const wait = attempt * 2000;
-          console.log(`   ⏳ Retry em ${wait}ms...`);
-          await delay(wait);
-          continue;
-        }
-        throw new Error(`HTTP ${status}`);
-      }
-    } catch (e) {
-      console.warn(`⚠️ Pollinations erro:`, e.message);
-      if (attempt < 3) await delay(attempt * 2000);
     }
   }
 

@@ -2,7 +2,7 @@
 
 > **Versão:** 2.0  
 > **Atualizado:** 19/03/2024  
-> **WhatsApp:** (62) 99337-7726
+> **WhatsApp:** (62) 99201-3573
 
 ---
 
@@ -26,7 +26,7 @@ Isso pode ser fala tardia — e quanto antes a avaliação, melhores os resultad
 
 ---
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 🌐 fonoinova.com.br/fala-tardia
 
 #FalaTardia #DesenvolvimentoInfantil #Fonoaudiologia #Anápolis #FonoInova #CriançaNãoFala
@@ -56,7 +56,7 @@ STICKERS:
 - "🔗 Link na bio para agendar"
 - "💬 Me chame no WhatsApp com a palavra AVALIAÇÃO"
 - "👇 Clique no link dos stories"
-- "📞 Ligue (62) 99337-7726"
+- "📞 Ligue (62) 99201-3573"
 
 ---
 
@@ -82,7 +82,7 @@ A dislexia é mais comum do que você imagina — e tem TRATAMENTO!
 
 ---
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 🌐 fonoinova.com.br/dislexia-infantil
 
 #DislexiaInfantil #DislexiaTemCura #DificuldadeEscolar #Psicopedagogia #Anápolis #FonoInova
@@ -128,7 +128,7 @@ Isso pode ser TDAH — e tem tratamento!
 
 ---
 📍 Anápolis - GO  
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 🌐 fonoinova.com.br/tdah-infantil
 
 #TDAH #TDAHInfantil #Hiperatividade #Desatenção #Neuropsicologia #Anápolis #FonoInova
@@ -169,7 +169,7 @@ Slide 7: Link + WhatsApp
 
 ---
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 🌐 fonoinova.com.br/avaliacao-autismo-infantil
 
 #AutismoInfantil #TEA #DiagnósticoPrecoce #Autismo #Anápolis #FonoInova
@@ -198,7 +198,7 @@ Esquece o que acabou de aprender...
 • Orientação para escola
 
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 
 #DificuldadeEscolar #Dislexia #TDAH #AvaliaçãoNeuropsicológica #Anápolis
 ```
@@ -228,7 +228,7 @@ Sinais de freio lingual:
 💚 Atendimento especializado para bebês
 
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 
 #FreioLingual #LínguaPresa #Amamentação #Bebê #Anápolis #FonoInova
 ```
@@ -257,7 +257,7 @@ Você tem:
 💚 Agende sua avaliação!
 
 📍 Anápolis - GO
-📲 (62) 99337-7726
+📲 (62) 99201-3573
 
 #FonoaudiologiaAdulto #ProblemasDeVoz #Gagueira #Voz #Anápolis
 ```
@@ -347,7 +347,7 @@ Você tem:
 - "Agende sua avaliação GRATUITA"
 - "Apenas 5 vagas esta semana"
 - "WhatsApp na bio — chame AGORA"
-- "Não perca tempo: (62) 99337-7726"
+- "Não perca tempo: (62) 99201-3573"
 
 ---
 
@@ -367,5 +367,5 @@ Você tem:
 
 **Fono Inova - Centro de Desenvolvimento Infantil**  
 📍 Anápolis - GO  
-📲 (62) 99337-7726  
+📲 (62) 99201-3573  
 🌐 www.clinicafonoinova.com.br

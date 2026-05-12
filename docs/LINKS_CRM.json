@@ -3,7 +3,7 @@
     "versao": "2.0",
     "data_atualizacao": "2024-03-19",
     "clinica": "Fono Inova - Centro de Desenvolvimento Infantil",
-    "whatsapp": "(62) 99337-7726",
+    "whatsapp": "(62) 99201-3573",
     "cidade": "Anápolis - GO",
     "total_lps": 7
   },
@@ -253,7 +253,7 @@
   ],
   "whatsapp_padrao": {
     "numero": "5562993377726",
-    "formatado": "(62) 99337-7726",
+    "formatado": "(62) 99201-3573",
     "mensagem_base": "Oi, vi no site sobre {tema} e gostaria de agendar uma avaliação."
   }
 }

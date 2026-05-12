@@ -162,4 +162,4 @@ Sábados com agendamento prévio 😊"
 ---
 
 **Fono Inova - Centro de Desenvolvimento Infantil**  
-📍 Anápolis - GO | 📲 (62) 99337-7726
+📍 Anápolis - GO | 📲 (62) 99201-3573

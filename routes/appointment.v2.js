@@ -41,6 +41,7 @@ import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appoin
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 import { PatientService } from '../domains/clinical/services/patientService.js';
 import { LedgerReadServiceV2 } from '../services/financialGuard/ledgerReadService.v2.js';
+import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 
 /**
  * 💰 Helper: aplica truth V2 em appointments formatados (DTOs)
@@ -811,8 +812,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
     let viewRebuilt = false;
     if (appointment.package) {
       try {
-        const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
-        await buildPackageView(appointment.package.toString(), { correlationId: id });
+        await syncAffectedViews({ event: 'appointment.cancelled', packageId: appointment.package, correlationId: id });
         console.log(`[cancel] 🔄 View do pacote ${appointment.package} reconstruída (síncrono)`);
         viewRebuilt = true;
       } catch (viewErr) {
@@ -978,6 +978,7 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
     });
     
     clearCache();
+    await syncAffectedViews({ event: 'appointment.completed', packageId: result.packageId, correlationId: id });
     res.status(200).json(responseDto);
 
   } catch (error) {
@@ -1867,7 +1868,13 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       doctor: req.body.doctorId !== undefined ? req.body.doctorId : appointment.doctor,
       updatedAt: new Date()
     };
-    
+
+    // Ignora paymentMethod vazio — mantém o valor existente no appointment
+    // (pacotes pré-pagos não têm método de pagamento relevante no PUT)
+    if (updateData.paymentMethod === '') {
+      delete updateData.paymentMethod;
+    }
+
     // 🎯 MERGE profundo de metadata (não sobrescreve tudo)
     if (req.body.metadata) {
       updateData.metadata = {
@@ -2134,7 +2141,13 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     await Promise.all(updatePromises);
     await mongoSession.commitTransaction();
     transactionCommitted = true;  // ✅ Marca como commitado
-    
+
+    // Invalida PackagesView se appointment tem pacote e mudou data/hora
+    if (appointment.package && (updateData.date || updateData.time)) {
+      const pkgId = appointment.package?._id?.toString() || appointment.package?.toString();
+      await syncAffectedViews({ event: 'appointment.updated', packageId: pkgId, correlationId: id });
+    }
+
     // 🚀 EVENT ENRICHED: Inclui dados para side effects async
     // FASE 1: Enriquecer evento (preparação para extração)
     // FASE 2: Mover side effects para worker (próximo passo)
@@ -2220,6 +2233,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     clearCache();
     await updatedAppointment.populate('patient', 'fullName name phone dateOfBirth email');
+    await updatedAppointment.populate('session');
     res.json(formatSuccess({
       appointment: mapAppointmentDTO(updatedAppointment),
       message: 'Agendamento atualizado com sucesso'
@@ -2283,6 +2297,7 @@ router.delete('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   });
   
   clearCache();
+  await syncAffectedViews({ event: 'appointment.deleted', packageId: appointment.package, correlationId: id });
   res.json(formatSuccess({
     message: 'Agendamento deletado com sucesso',
     appointmentId: id
@@ -2368,11 +2383,12 @@ router.patch('/:id/confirm', flexibleAuth, asyncHandler(async (req, res) => {
     });
     
     clearCache();
+    await syncAffectedViews({ event: 'appointment.confirmed', packageId: appointment.package, correlationId: id });
     res.json(formatSuccess({
       appointment: updatedAppointment,
       message: 'Agendamento confirmado com sucesso'
     }));
-    
+
   } catch (error) {
     await mongoSession.abortTransaction();
     throw error;
@@ -2626,6 +2642,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
     });
 
     clearCache();
+    await syncAffectedViews({ event: 'appointment.rescheduled', packageId: existing.package, correlationId: id });
     res.json({
       success: true,
       data: {
@@ -2875,8 +2892,7 @@ router.post('/:id/revert-complete', flexibleAuth, asyncHandler(async (req, res) 
     let viewRebuilt = false;
     if (appointment.package) {
       try {
-        const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
-        await buildPackageView(appointment.package.toString(), { correlationId: id });
+        await syncAffectedViews({ event: 'appointment.reverted', packageId: appointment.package, correlationId: id });
         viewRebuilt = true;
       } catch (viewErr) {
         console.warn(`[revert-complete] ⚠️ Erro ao reconstruir view:`, viewErr.message);
