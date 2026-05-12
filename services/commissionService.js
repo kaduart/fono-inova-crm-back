@@ -37,18 +37,15 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
     const sessions = allSessions.filter(s => {
       // Excluir se tem canceledAt preenchido
       if (s.canceledAt && s.canceledAt !== null) {
-        console.log(`[Commission] EXCLUÍDA (canceledAt): ${s.date} | ${s._id}`);
         return false;
       }
       // Excluir se status for canceled (redundante mas seguro)
       if (s.status === 'canceled') {
-        console.log(`[Commission] EXCLUÍDA (status canceled): ${s.date} | ${s._id}`);
         return false;
       }
       return true;
     });
     
-    console.log(`[Commission] Dr. ${doctorId}: ${sessions.length}/${allSessions.length} sessões válidas (após filtro)`);
     sessions.forEach(s => {
       const insurance = s.insuranceGuide?.insurance || s.package?.insuranceProvider || 'particular';
       console.log(`  ✓ ${s.date} | ${insurance} | Valor: ${s.sessionValue || 60}`);

@@ -41,16 +41,21 @@ const PROJECTION_HANDLERS = {
 // ─── REGISTRY (evento → lista de handlers) ───────────────────────────────────
 
 const PROJECTION_REGISTRY = {
-  'appointment.updated':    ['packages'],
-  'appointment.cancelled':  ['packages'],
-  'appointment.completed':  ['packages'],
-  'appointment.confirmed':  ['packages'],
-  'appointment.rescheduled':['packages'],
-  'appointment.deleted':    ['packages'],
-  'appointment.reverted':   ['packages'],
-  'payment.created':        ['packages'],
-  'payment.updated':        ['packages'],
-  'payment.settled':        ['packages'],
+  // Domínio: Scheduling × TherapyPackage
+  'appointment.updated':              ['packages'],
+  'appointment.cancelled':            ['packages'],
+  'appointment.completed':            ['packages'],
+  'appointment.confirmed':            ['packages'],
+  'appointment.rescheduled':          ['packages'],
+  'appointment.deleted':              ['packages'],
+  'appointment.reverted':             ['packages'],
+
+  // Domínio: Financial × TherapyPackage (fechamento de sessões pós-pagas de pacote)
+  'therapy_package.payment_settled':  ['packages'],
+
+  // NÃO adicionar eventos genéricos de payment aqui.
+  // 'payment.updated' pertence ao domínio Financial, não ao TherapyPackage.
+  // Ver: docs/architecture/bounded-contexts.md
 };
 
 // ─── FUNÇÃO PÚBLICA ───────────────────────────────────────────────────────────

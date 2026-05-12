@@ -2142,8 +2142,9 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     await mongoSession.commitTransaction();
     transactionCommitted = true;  // ✅ Marca como commitado
 
-    // Invalida PackagesView se appointment tem pacote e mudou data/hora
-    if (appointment.package && (updateData.date || updateData.time)) {
+    // Invalida PackagesView para qualquer mudança em appointment de pacote
+    // (PackagesView mostra date, time, status, isPaid, paymentMethod — qualquer campo pode ter mudado)
+    if (appointment.package) {
       const pkgId = appointment.package?._id?.toString() || appointment.package?.toString();
       await syncAffectedViews({ event: 'appointment.updated', packageId: pkgId, correlationId: id });
     }

@@ -311,7 +311,7 @@ export async function getCommittedBalance(req, res) {
     {
       $match: {
         liminarContract: new mongoose.Types.ObjectId(id),
-        operationalStatus: { $in: ['scheduled', 'confirmed'] }
+        operationalStatus: { $in: ['scheduled', 'confirmed', 'pre_agendado'] }
       }
     },
     {
@@ -351,7 +351,12 @@ export async function getContractSessions(req, res) {
   };
 
   if (specialty) filter.specialty = specialty;
-  if (status)    filter.operationalStatus = status;
+  if (status) {
+    // 'scheduled' inclui pre_agendado (migração 2026-05-07: novos appointments nascem como pre_agendado)
+    filter.operationalStatus = status === 'scheduled'
+      ? { $in: ['scheduled', 'pre_agendado'] }
+      : status;
+  }
   if (from || to) {
     filter.date = {};
     if (from) filter.date.$gte = new Date(from);

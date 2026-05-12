@@ -26,6 +26,7 @@ import Payment from '../models/Payment.js';
 import { recordPaymentReceived } from '../services/financialLedgerService.js';
 import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 
 const router = express.Router();
 
@@ -1092,19 +1093,18 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
-        // 6. Rebuild síncrono das packages_view para cada pacote afetado
-        //    (fora da transação para não travar, mas antes da resposta HTTP)
+        // 6. Rebuild síncrono das PackagesView para cada pacote afetado
+        //    Domínio: Financial × TherapyPackage — fechamento de sessões pós-pagas
         if (affectedPackageIds.length > 0) {
-            try {
-                const { buildPackageView } = await import('../domains/billing/services/PackageProjectionService.js');
-                for (const pkgId of affectedPackageIds) {
-                    await buildPackageView(pkgId);
-                }
-                logger.info('[V2 bulk-settle] Views rebuildadas', { packageIds: affectedPackageIds });
-            } catch (viewErr) {
-                logger.error('[V2 bulk-settle] Erro ao rebuildar view (non-fatal):', viewErr.message);
-                // Não falha a requisição — o worker assíncrono pode reconstruir depois
-            }
+            await Promise.allSettled(
+                affectedPackageIds.map(pkgId =>
+                    syncAffectedViews({
+                        event: 'therapy_package.payment_settled',
+                        packageId: pkgId,
+                        correlationId: `bulk_settle_${pkgId}`
+                    })
+                )
+            );
         }
 
         logger.info('[V2 bulk-settle] Fechamento realizado', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });

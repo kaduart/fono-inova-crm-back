@@ -53,10 +53,19 @@ export const updatePlanningProgress = async (planningId) => {
         const productionResult = await financialMetricsService.calculateProduction({ startDate, endDate });
         const cashResult = await financialMetricsService.calculateCash({ startDate, endDate });
 
-        const actualRevenueParticular = cashResult.breakdown?.particular || 0;
-        const actualRevenueConvenio = productionResult.byPaymentMethod?.['convenio']?.total || 0;
-        const actualRevenueConvenioAReceber = 0;
-        const actualRevenue = actualRevenueParticular + actualRevenueConvenio;
+        // 🎯 RESULTADO ECONÔMICO DO MÊS
+        // = caixa recebido + produção não recebida (convênio pendente)
+        // Evita duplicar particular/pacote/liminar já recebidos.
+        const convenioProduzido = productionResult.byPaymentMethod?.['convenio']?.total || 0;
+        const convenioRecebido = (cashResult.breakdown?.convenioAvulso || 0) + (cashResult.breakdown?.convenioPacote || 0);
+        const convenioNaoRecebido = Math.max(0, convenioProduzido - convenioRecebido);
+
+        const actualRevenue = (cashResult.total || 0) + convenioNaoRecebido;
+        const actualRevenueParticular = productionResult.byPaymentMethod?.['particular']?.total || 0;
+        const actualRevenuePacote = productionResult.byPaymentMethod?.['package']?.total || productionResult.byPaymentMethod?.['pacote']?.total || 0;
+        const actualRevenueConvenio = convenioProduzido;
+        const actualRevenueLiminar = productionResult.byPaymentMethod?.['liminar']?.total || productionResult.byPaymentMethod?.['liminar_credit']?.total || 0;
+        const actualRevenueConvenioAReceber = convenioNaoRecebido;
         
         // Calcular horas trabalhadas (baseado na duração dos agendamentos ou 40min padrão)
         const workedHours = appointments.length > 0 
@@ -74,10 +83,16 @@ export const updatePlanningProgress = async (planningId) => {
 
         console.log(`[Planning Update] ✅ Dados atualizados:`);
         console.log(`[Planning Update]    - Sessões: ${completedSessions}`);
-        console.log(`[Planning Update]    - Receita Total: R$ ${actualRevenue}`);
-        console.log(`[Planning Update]      ├─ Particular (caixa): R$ ${actualRevenueParticular}`);
-        console.log(`[Planning Update]      └─ Convênio (produção): R$ ${actualRevenueConvenio}`);
+        console.log(`[Planning Update]    - RESULTADO ECONÔMICO: R$ ${actualRevenue}`);
+        console.log(`[Planning Update]      ├─ Caixa Recebido:      R$ ${cashResult.total || 0}`);
+        console.log(`[Planning Update]      ├─ Convênio Produzido:  R$ ${convenioProduzido}`);
+        console.log(`[Planning Update]      ├─ Convênio Recebido:   R$ ${convenioRecebido}`);
+        console.log(`[Planning Update]      ├─ Convênio Não Receb:  R$ ${convenioNaoRecebido}`);
+        console.log(`[Planning Update]      ├─ Particular:          R$ ${actualRevenueParticular}`);
+        console.log(`[Planning Update]      ├─ Pacote:              R$ ${actualRevenuePacote}`);
+        console.log(`[Planning Update]      └─ Liminar:             R$ ${actualRevenueLiminar}`);
         console.log(`[Planning Update]    - Horas: ${workedHours.toFixed(2)}h`);
+        console.log(`[Planning Update]    - Breakdown raw:`, JSON.stringify(productionResult.byPaymentMethod, null, 2));
 
         await planning.save(); // Middleware calcula progresso automaticamente
 
