@@ -138,14 +138,20 @@ export const ParticularHandler = {
 
         if (appointment.payment) {
             const existingPaymentId = appointment.payment._id || appointment.payment;
+            const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+
+            // 🛡️ Preserva paymentDate/financialDate originais se o pagamento já foi registrado em outra data
+            const preservePaymentDate = existingPayment?.paymentDate || now;
+            const preserveFinancialDate = existingPayment?.financialDate || now;
+
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,
                 {
                     $set: {
                         status:        'paid',
                         paidAt:        now,
-                        paymentDate:   now,
-                        financialDate: now,
+                        paymentDate:   preservePaymentDate,
+                        financialDate: preserveFinancialDate,
                         amount:        sessionValue,
                         paymentMethod: appointment.paymentMethod || 'cash',
                         kind:          'session_payment',
@@ -155,7 +161,7 @@ export const ParticularHandler = {
                 },
                 { session: mongoSession, new: true }
             );
-            console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id}`);
+            console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id} (paymentDate preservado: ${preservePaymentDate})`);
         } else {
             const [paymentDoc] = await Payment.create([{
                 patient:       appointment.patient?._id,

@@ -23,6 +23,7 @@ import { auth } from '../middleware/auth.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
+import { recordPaymentReceived } from '../services/financialLedgerService.js';
 import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
 
@@ -524,6 +525,134 @@ router.get('/status/:eventId', auth, async (req, res) => {
 });
 
 // ============================================
+// POST /api/v2/payments/create-sync
+// Cria payment SÍNCRONO (para mark-as-paid de appointment sem payment)
+// ============================================
+router.post('/create-sync', auth, async (req, res) => {
+    const {
+        patientId,
+        doctorId,
+        amount,
+        paymentMethod = 'dinheiro',
+        paymentDate,
+        appointmentId,
+        serviceType = 'session',
+        notes,
+        status = 'pending'
+    } = req.body;
+
+    // 🛡️ Validação
+    if (!patientId) {
+        return res.status(400).json({
+            success: false,
+            error: 'patientId é obrigatório',
+            code: 'MISSING_PATIENT_ID'
+        });
+    }
+    if (!amount || amount <= 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'O valor do pagamento deve ser maior que zero. Edite o agendamento, defina um valor maior que zero e salve antes de marcar como pago.',
+            code: 'INVALID_AMOUNT'
+        });
+    }
+    if (appointmentId && !isValidObjectId(appointmentId)) {
+        return res.status(400).json({
+            success: false,
+            error: 'appointmentId inválido',
+            code: 'INVALID_APPOINTMENT_ID'
+        });
+    }
+
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
+    try {
+        const now = new Date();
+        const paymentData = {
+            patient: patientId,
+            patientId: patientId.toString(),
+            doctor: doctorId || null,
+            amount,
+            paymentMethod,
+            paymentDate: paymentDate ? new Date(paymentDate) : now,
+            status,
+            serviceType,
+            notes: notes || '',
+            kind: appointmentId ? 'appointment_payment' : 'session_payment',
+            billingType: 'particular',
+            createdAt: now,
+            updatedAt: now,
+            ...(appointmentId && {
+                appointment: appointmentId,
+                appointmentId: appointmentId.toString()
+            })
+        };
+
+        if (['paid', 'completed', 'confirmed'].includes(status)) {
+            paymentData.paidAt = now;
+        }
+
+        const [paymentDoc] = await Payment.create([paymentData], { session: mongoSession });
+
+        // Vincula ao appointment
+        if (appointmentId) {
+            await Appointment.findByIdAndUpdate(
+                appointmentId,
+                {
+                    $set: {
+                        payment: paymentDoc._id,
+                        paymentStatus: status,
+                        isPaid: status === 'paid',
+                        updatedAt: now
+                    }
+                },
+                { session: mongoSession }
+            );
+        }
+
+        // 🏦 LEDGER: registra payment_received se status é pago
+        if (['paid', 'completed', 'confirmed'].includes(status)) {
+            try {
+                await recordPaymentReceived(
+                    paymentDoc,
+                    {
+                        userId: req.user?._id?.toString(),
+                        userName: req.user?.name,
+                        correlationId: `create_sync_${paymentDoc._id}_${Date.now()}`
+                    },
+                    mongoSession
+                );
+            } catch (ledgerErr) {
+                if (ledgerErr.code === 11000 || ledgerErr.message?.includes('duplicate key')) {
+                    console.log(`[create-sync] Ledger entry já existe para payment ${paymentDoc._id}`);
+                } else {
+                    throw ledgerErr;
+                }
+            }
+        }
+
+        await mongoSession.commitTransaction();
+
+        return res.status(201).json({
+            success: true,
+            data: paymentDoc.toObject(),
+            message: 'Pagamento criado com sucesso'
+        });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        logger.error(`[V2 create-sync] ❌ Erro: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: 'Erro ao criar pagamento',
+            code: 'PAYMENT_CREATE_ERROR'
+        });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// ============================================
 // POST /api/v2/payments/webhook
 // Webhook para confirmação externa (Sicoob, etc)
 // ============================================
@@ -732,14 +861,40 @@ router.patch('/:id', auth, async (req, res) => {
         });
     }
 
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
     try {
-        // 3. Buscar payment
-        const payment = await Payment.findById(id).lean();
+        // 3. Buscar payment (dentro da transação para consistência)
+        const payment = await Payment.findById(id).session(mongoSession).lean();
+        
         if (!payment) {
+            await mongoSession.abortTransaction();
             return res.status(404).json({
                 success: false,
                 error: 'Pagamento não encontrado',
                 code: 'PAYMENT_NOT_FOUND'
+            });
+        }
+
+        // 🛡️ BLOQUEIO: não permite quitar manualmente convênio, liminar ou pré-pago
+        const blockedTypes = ['convenio', 'liminar'];
+        if (blockedTypes.includes(payment.billingType)) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: `Pagamentos de ${payment.billingType} não podem ser quitados manualmente. O lançamento é automático pelo sistema.`,
+                code: 'PAYMENT_TYPE_BLOCKED',
+                billingType: payment.billingType
+            });
+        }
+        if (payment.isFromPackage || payment.kind === 'package_consumed') {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: 'Pagamentos pré-pagos (pacote) não podem ser quitados manualmente. O consumo é automático pelo sistema.',
+                code: 'PAYMENT_TYPE_BLOCKED',
+                kind: payment.kind
             });
         }
 
@@ -765,9 +920,12 @@ router.patch('/:id', auth, async (req, res) => {
             updateData.paidAt = new Date();
         }
 
-        await Payment.findByIdAndUpdate(id, { $set: updateData });
+        await Payment.findByIdAndUpdate(id, { $set: updateData }, { session: mongoSession });
 
-        // 5. Publicar evento PAYMENT_UPDATED
+        // Commit antes de side-effects (evento + populate de retorno)
+        await mongoSession.commitTransaction();
+
+        // 5. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
         try {
             await publishEvent(
                 EventTypes.PAYMENT_UPDATED,
@@ -802,12 +960,15 @@ router.patch('/:id', auth, async (req, res) => {
         });
 
     } catch (error) {
+        await mongoSession.abortTransaction();
         logger.error(`[V2 PATCH ${id}] ❌ Erro: ${error.message}`);
         return res.status(500).json({
             success: false,
             error: 'Erro ao atualizar pagamento',
             code: 'PAYMENT_UPDATE_ERROR'
         });
+    } finally {
+        await mongoSession.endSession();
     }
 });
 
