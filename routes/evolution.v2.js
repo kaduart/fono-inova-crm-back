@@ -274,36 +274,66 @@ router.get('/chart/:patientId', flexibleAuth, async (req, res) => {
             return acc;
         }, {});
 
-        const chartData = { dates: [], metrics: {}, evaluationTypes: {} };
+        // 🎯 Monta datas únicas ordenadas
+        const dates = evolutions.map(evo => evo.date.toISOString().split('T')[0]);
+        const uniqueDates = [...new Set(dates)];
 
-        evolutions.forEach(evo => {
-            const dateStr = evo.date.toISOString().split('T')[0];
-            chartData.dates.push(dateStr);
+        // 🎯 Inicializa métricas com arrays alinhados às datas (null = não avaliado)
+        const metricsMap = {};
+        const evaluationAreasMap = {};
 
-            if (evo.metrics && Array.isArray(evo.metrics)) {
-                evo.metrics.forEach(metric => {
-                    if (!metric.name) return;
-                    const metricName = metric.name;
-                    const value = metric.value;
-                    if (!chartData.metrics[metricName]) {
-                        chartData.metrics[metricName] = {
-                            values: [],
-                            config: metricConfig[metricName] || {}
-                        };
-                    }
-                    chartData.metrics[metricName].values.push(value);
-                });
-            }
+        uniqueDates.forEach((dateStr, dateIdx) => {
+            // Pega todas as evoluções desta data (geralmente 1, mas pode haver mais)
+            const dayEvolutions = evolutions.filter(evo =>
+                evo.date.toISOString().split('T')[0] === dateStr
+            );
 
-            if (evo.evaluationTypes && Array.isArray(evo.evaluationTypes)) {
-                evo.evaluationTypes.forEach(type => {
-                    if (!chartData.evaluationTypes[type]) {
-                        chartData.evaluationTypes[type] = [];
-                    }
-                    chartData.evaluationTypes[type].push(1);
-                });
-            }
+            dayEvolutions.forEach(evo => {
+                // Métricas numéricas
+                if (evo.metrics && Array.isArray(evo.metrics)) {
+                    evo.metrics.forEach(metric => {
+                        if (!metric.name) return;
+                        const metricName = metric.name;
+                        if (!metricsMap[metricName]) {
+                            metricsMap[metricName] = {
+                                values: new Array(uniqueDates.length).fill(null),
+                                config: metricConfig[metricName] || {}
+                            };
+                        }
+                        // Se houver múltiplas evoluções no mesmo dia, usa a última
+                        metricsMap[metricName].values[dateIdx] = metric.value;
+                    });
+                }
+
+                // Áreas de avaliação com score (gráfico de barras/áreas)
+                if (evo.evaluationAreas && Array.isArray(evo.evaluationAreas)) {
+                    evo.evaluationAreas.forEach(area => {
+                        const areaId = area.id || area.name;
+                        if (!areaId) return;
+                        if (!evaluationAreasMap[areaId]) {
+                            evaluationAreasMap[areaId] = {
+                                values: new Array(uniqueDates.length).fill(null),
+                                label: area.name || areaId,
+                                config: { color: metricConfig[areaId]?.color || null }
+                            };
+                        }
+                        evaluationAreasMap[areaId].values[dateIdx] = area.score;
+                    });
+                }
+            });
         });
+
+        // Converte evaluationAreasMap para o formato que o frontend espera (evaluationTypes)
+        const evaluationTypes = {};
+        Object.entries(evaluationAreasMap).forEach(([key, data]) => {
+            evaluationTypes[key] = data.values;
+        });
+
+        const chartData = {
+            dates: uniqueDates,
+            metrics: metricsMap,
+            evaluationTypes
+        };
 
         res.json(success(chartData));
     } catch (error) {

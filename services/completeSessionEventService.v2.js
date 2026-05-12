@@ -55,6 +55,21 @@ export async function completeSessionEventDrivenV2(appointmentId, options = {}) 
             correlationId
         };
     }
+
+    // Retorno: completa sem processar financeiro
+    if (appointment.serviceType === 'return') {
+        await Appointment.findByIdAndUpdate(appointmentId, {
+            $set: {
+                operationalStatus: 'completed',
+                clinicalStatus: 'completed',
+                paymentStatus: 'not_applicable',
+                sessionValue: 0,
+                updatedAt: new Date()
+            }
+        });
+        console.log(`[CompleteSessionV2] ✅ Retorno completado sem processamento financeiro: ${appointmentId}`);
+        return { success: true, appointmentId, correlationId, note: 'return - no financial processing' };
+    }
     
     const sessionId = appointment.session?._id;
     const packageId = appointment.package?._id;

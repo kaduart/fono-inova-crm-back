@@ -5,6 +5,9 @@ import moment from 'moment-timezone';
  */
 export const resolveVisualFlag = (appt) => {
     if (appt === 'pre') return 'pending';
+    // Retorno não gera cobrança — exibe como ok sem badge financeiro
+    if (appt.paymentStatus === 'not_applicable') return 'ok';
+
     // Prioridade 1: Pagamento vinculado diretamente
     const pStatus = appt.payment?.status || appt.paymentStatus;
     if (pStatus === 'paid') return 'ok';
@@ -12,7 +15,7 @@ export const resolveVisualFlag = (appt) => {
     if (pStatus === 'pending') return 'pending';
 
     // Prioridade 2: Status consolidado no Appointment
-    if (['paid', 'package_paid', 'advanced'].includes(appt.paymentStatus)) return 'ok';
+    if (['paid', 'package_paid', 'advanced', 'not_applicable'].includes(appt.paymentStatus)) return 'ok';
     if (['partial', 'pending_receipt'].includes(appt.paymentStatus)) return 'partial';
 
     // Prioridade 3: Se o visualFlag no banco for algo explícito e NÃO for o default 'pending'
