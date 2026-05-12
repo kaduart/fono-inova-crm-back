@@ -27,7 +27,8 @@ router.post('/', async (req, res) => {
         status, notes, packageId,
         paymentDate, sessionType,
         sessionId, isAdvancePayment = false,
-        advanceSessions = []
+        advanceSessions = [],
+        appointmentId
     } = req.body;
 
     try {
@@ -156,7 +157,35 @@ router.post('/', async (req, res) => {
             paymentData.package = packageId;
         }
 
+        // 🏥 Vincula a appointment existente se fornecido
+        if (appointmentId) {
+            paymentData.appointment = appointmentId;
+            paymentData.appointmentId = appointmentId;
+            paymentData.kind = 'appointment_payment';
+        }
+
         const payment = await Payment.create(paymentData);
+
+        // 🏥 Atualiza o appointment com a referência ao payment (bidirecional)
+        if (appointmentId) {
+            try {
+                await mongoose.model('Appointment').findByIdAndUpdate(
+                    appointmentId,
+                    {
+                        $set: {
+                            payment: payment._id,
+                            paymentStatus: payment.status,
+                            isPaid: payment.status === 'paid',
+                            updatedAt: new Date()
+                        }
+                    }
+                );
+                console.log(`[Payment POST] 🏥 Appointment ${appointmentId} vinculado ao payment ${payment._id}`);
+            } catch (apptErr) {
+                console.error(`[Payment POST] ⚠️ Falha ao vincular appointment ${appointmentId}:`, apptErr.message);
+                // Não falha a requisição — payment já foi criado
+            }
+        }
 
         // Publica evento PAYMENT_CREATED para projeções e workers reativos
         try {

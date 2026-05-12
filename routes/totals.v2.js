@@ -5,6 +5,7 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import TotalsSnapshot from '../models/TotalsSnapshot.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
 import Expense from '../models/Expense.js';
 import PackagesView from '../models/PackagesView.js';
 import PatientBalance from '../models/PatientBalance.js';
@@ -89,19 +90,38 @@ router.get('/', async (req, res) => {
         };
         if (clinicId) matchStage.clinicId = clinicId;
 
-        const [paymentResult, expenseResult, packageResult, balanceResult, appointments] = await Promise.all([
+        const [paymentResult, sessionProductionResult, expenseResult, packageResult, balanceResult, appointments] = await Promise.all([
             Payment.aggregate([
                 { $match: matchStage },
                 { $group: {
                     _id: null,
                     totalReceived: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-                    totalProduction: { $sum: '$amount' },
                     totalPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
                     countReceived: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
                     countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-                    particularReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, '$amount', 0] } },
-                    particularCountReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, 1, 0] } }
+                    particularReceived: { $sum: { $cond: [{ $and: [
+                        { $eq: ['$status', 'paid'] },
+                        { $ne: ['$billingType', 'convenio'] },
+                        { $ne: ['$kind', 'package_receipt'] }
+                    ] }, '$amount', 0] } },
+                    particularCountReceived: { $sum: { $cond: [{ $and: [
+                        { $eq: ['$status', 'paid'] },
+                        { $ne: ['$billingType', 'convenio'] },
+                        { $ne: ['$kind', 'package_receipt'] }
+                    ] }, 1, 0] } },
+                    packageSalesReceived: { $sum: { $cond: [{ $and: [
+                        { $eq: ['$status', 'paid'] },
+                        { $eq: ['$kind', 'package_receipt'] }
+                    ] }, '$amount', 0] } },
+                    packageSalesCount: { $sum: { $cond: [{ $and: [
+                        { $eq: ['$status', 'paid'] },
+                        { $eq: ['$kind', 'package_receipt'] }
+                    ] }, 1, 0] } }
                 }}
+            ]),
+            Session.aggregate([
+                { $match: { status: 'completed', date: { $gte: rangeStart, $lte: rangeEnd } } },
+                { $group: { _id: null, totalProduction: { $sum: '$sessionValue' }, countProduction: { $sum: 1 } } }
             ]),
             Expense.aggregate([
                 { $match: { status: { $ne: 'canceled' }, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
@@ -118,6 +138,7 @@ router.get('/', async (req, res) => {
         ]);
 
         const p = paymentResult[0] || {};
+        const sessProd = sessionProductionResult[0] || {};
         const exp = expenseResult[0] || {};
         const pkg = packageResult[0] || {};
         const bal = balanceResult[0] || {};
@@ -171,7 +192,7 @@ router.get('/', async (req, res) => {
 
         const totals = {
             totalReceived,
-            totalProduction: (p.totalProduction || 0) + appointmentPendingTotal, // produção = recebido + a receber
+            totalProduction: sessProd.totalProduction || 0, // 🏭 Produção = Session.completed (sessionValue)
             totalPending: appointmentPendingTotal, // 💰 a receber real do período
             totalPartial,
             countReceived: p.countReceived || 0,
@@ -181,6 +202,10 @@ router.get('/', async (req, res) => {
             particularPending: particularPendingTotal,
             particularCountReceived: p.particularCountReceived || 0,
             particularCountPending: particularPendingCount,
+            packageSales: {
+                received: p.packageSalesReceived || 0,
+                count: p.packageSalesCount || 0
+            },
             totalInsuranceProduction,
             totalInsuranceReceived: 0, // caixa real de convênio é 0 nesse endpoint (vem do insurance)
             totalInsurancePending,

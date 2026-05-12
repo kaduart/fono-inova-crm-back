@@ -194,9 +194,15 @@ router.get('/', auth, async (req, res) => {
                 tipo,
                 servico,
                 especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
-                hora: appt?.time || moment(p.financialDate || p.createdAt).format('HH:mm'),
+                profissional: appt?.doctor?.fullName || appt?.professionalName || '-',
+                hora: appt?.time || moment(p.createdAt || p.financialDate).format('HH:mm'),
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
-                categoria: 'recebido'
+                categoria: 'recebido',
+                observacao: p.notes || p.description || '-',
+                billingType: p.billingType || '-',
+                kind: p.kind || '-',
+                package: !!p.package || !!appt?.package,
+                appointmentStatus: appt?.operationalStatus || '-'
             };
         }).filter(Boolean);
 
@@ -332,12 +338,16 @@ router.get('/', auth, async (req, res) => {
                     qtdDinheiro,
                     qtdCartao
                 },
-                porTipo: {
-                    particular: cash.particular,
-                    pacote: cash.pacote,
-                    convenio: cash.convenio,
-                    liminar: cash.liminar
-                },
+                porTipo: (() => {
+                    const acc = { particular: 0, pacote: 0, convenio: 0, liminar: 0 };
+                    for (const t of transacoesCaixa) {
+                        if (t.tipo === 'Particular') acc.particular += t.valor;
+                        else if (t.tipo === 'Pacote') acc.pacote += t.valor;
+                        else if (t.tipo === 'Convênio') acc.convenio += t.valor;
+                        else if (t.tipo === 'Liminar') acc.liminar += t.valor;
+                    }
+                    return acc;
+                })(),
                 porEspecialidade: porEspecialidadeCaixa,
                 despesas: {
                     total: totalDespesas,

@@ -945,11 +945,26 @@ async function calculateRealTime(year, month) {
     // ───────────────────────────────────────────────
     // 🎯 Fonte única de verdade V2 (unificada)
     // ───────────────────────────────────────────────
-    const [cash, production, todayCash] = await Promise.all([
+    const [cash, production, todayCash, packageSalesAgg] = await Promise.all([
         unifiedFinancialService.calculateCash(start, end),
         unifiedFinancialService.calculateProduction(start, end),
-        unifiedFinancialService.calculateCash(todayStart, todayEnd)
+        unifiedFinancialService.calculateCash(todayStart, todayEnd),
+        Payment.aggregate([
+            { $match: {
+                status: 'paid',
+                kind: 'package_receipt',
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+                ]
+            }},
+            { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        ])
     ]);
+
+    const packageSalesTotal = packageSalesAgg[0]?.total || 0;
+    const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
     return {
         caixa: cash.total,
@@ -960,7 +975,10 @@ async function calculateRealTime(year, month) {
             particular: cash.particular,
             pacote: cash.pacote,
             convenio: cash.convenio,
-            liminar: cash.liminar
+            liminar: cash.liminar,
+            packageSales: packageSalesTotal,
+            packageSalesCount: packageSalesCount,
+            particularNet: Math.max(0, cash.particular - packageSalesTotal)
         },
         caixaByMethod: cash.byMethod,
         producao: production.total,

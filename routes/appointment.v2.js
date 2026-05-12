@@ -1926,15 +1926,16 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     // Atualizar Session se existir
     if (appointment.session) {
+      const sessionId = appointment.session?._id || appointment.session;
       const sessionUpdate = Session.findByIdAndUpdate(
-        appointment.session,
+        sessionId,
         {
           $set: {
             date: updateData.date || appointment.date,
             time: updateData.time || appointment.time,
             doctor: updateData.doctor || appointment.doctor,
             sessionType: updateData.sessionType || appointment.sessionType,
-            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
+            sessionValue: updateData.sessionValue || updateData.paymentAmount || appointment.paymentAmount || appointment.sessionValue,
             notes: updateData.notes || appointment.notes,
             status: updateData.sessionStatus || updateData.operationalStatus || appointment.operationalStatus,
             updatedAt: new Date()

@@ -561,6 +561,12 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
             if (appointment.payment) {
                 const existingPaymentId = appointment.payment._id || appointment.payment;
+                const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+
+                // 🛡️ Preserva paymentDate/financialDate originais se o pagamento já foi registrado em outra data
+                const preservePaymentDate = existingPayment?.paymentDate || sessionDate;
+                const preserveFinancialDate = existingPayment?.financialDate || sessionDate;
+
                 paymentCreated = await Payment.findByIdAndUpdate(
                     existingPaymentId,
                     {
@@ -570,12 +576,13 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             paymentMethod: 'package',
                             amount: sessionValue,
                             paidAt: new Date(),
-                            paymentDate: sessionDate,
+                            paymentDate: preservePaymentDate,
+                            financialDate: preserveFinancialDate,
                             serviceDate: sessionDate,
                             isFromPackage: true,
                             updatedAt: new Date()
                         },
-                        $unset: { financialDate: '', 'insurance.status': '' }
+                        $unset: { 'insurance.status': '' }
                     },
                     { session: mongoSession, new: true }
                 );
