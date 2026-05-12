@@ -107,7 +107,11 @@ router.get('/', auth, async (req, res) => {
         const snapshotReady = await financialSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
         let data, profissionais, source = 'real-time';
 
-        if (snapshotReady) {
+        // HOTFIX: mês atual sempre real-time (evita divergência silenciosa de snapshot desatualizado)
+        const now = moment.tz(TIMEZONE);
+        const isCurrentMonth = targetMonth === (now.month() + 1) && targetYear === now.year();
+
+        if (snapshotReady && !isCurrentMonth) {
             console.log(`[DashboardV3] Usando snapshot: ${monthKey}`);
             source = 'snapshot';
             const snap = await financialSnapshotService.getMonthlyAggregate(targetYear, targetMonth);
@@ -213,8 +217,6 @@ router.get('/', auth, async (req, res) => {
                 metadata: { projection: true }
             });
         }
-
-        console.log(`[DashboardV3] Calculando real-time: ${monthKey}`);
 
         // Fase 1: queries independentes em paralelo
         const [dataRt, aReceber, despesas, comparativos, pendentes] = await Promise.all([
@@ -506,7 +508,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    const realizadoMes = data.caixa;
+    const realizadoMes = data.resultadoEconomico || data.producao;
     const realizadoDia = data.caixaHoje || 0;
 
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
@@ -990,6 +992,7 @@ async function calculateRealTime(year, month) {
             recebido: production.recebido,
             pendente: production.pendente
         },
+        resultadoEconomico: cash.total + Math.max(0, (production.convenio || 0) - (cash.convenio || 0)),
         saldo: cash.total
     };
 }
@@ -1365,7 +1368,6 @@ async function calculatePendentes(year, month) {
         .lean();
     
     const allPendingTotal = allPendingRaw.reduce((s, p) => s + (p.amount || 0), 0);
-    console.log(`[DashboardV3][AUDIT] Todos os payments pending no BD: ${allPendingRaw.length} items, total: ${allPendingTotal}`);
 
     // 🆕 Fonte de verdade: Payment (V1) — BUSCA AMPLA para não perder dados
     // Problema: payments criados em meses anteriores para sessões deste mês
@@ -1431,19 +1433,13 @@ async function calculatePendentes(year, month) {
         }
     }
 
-    if (skippedAudit.length > 0) {
-        console.log(`[DashboardV3][AUDIT] ${skippedAudit.length} payments pending FORA do mês ${startStr}~${endStr}:`, skippedAudit.slice(0, 10));
-    }
-
     const total = convenioTotal + particularTotal;
-    console.log(`[DashboardV3][AUDIT] No mês ${startStr}~${endStr}: particular=${particularItems.length} convenio=${convenioItems.length} total=${total}`);
 
     // ── 🆕 DÉBITOS VENCIDOS: apenas data <= hoje (sessões que já deveriam ter sido pagas) ──
     const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
     const convenioVencidos = convenioItems.filter(i => i.data && i.data <= hoje);
     const particularVencidos = particularItems.filter(i => i.data && i.data <= hoje);
     const vencidosTotal = convenioVencidos.reduce((s, i) => s + i.valor, 0) + particularVencidos.reduce((s, i) => s + i.valor, 0);
-    console.log(`[DashboardV3][AUDIT] Vencidos até ${hoje}: particular=${particularVencidos.length} convenio=${convenioVencidos.length} total=${vencidosTotal}`);
 
     // ── 🆕 V2 FINANCIAL ENGINE: agrupamento por paciente + especialidade correta ──
     // Passa todos os pending do mês para o engine (sem filtro de data, pois já filtramos)

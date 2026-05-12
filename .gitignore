@@ -69,3 +69,7 @@ ENV_VARS_FOR_WORKER.md
 # WhatsApp Web.js session/cache
 .wwebjs_auth/
 .wwebjs_cache/
+
+# Build do frontend (não versionar)
+dist/
+dist/*

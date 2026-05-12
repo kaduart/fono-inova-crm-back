@@ -98,6 +98,20 @@ export function mapAppointmentDTO(appointment) {
         serviceType: appointment.serviceType || null,
         sessionType: appointment.sessionType || null,
         sessionValue: appointment.sessionValue ?? 0,
+        serviceTypeLabel: (() => {
+            const map = {
+                evaluation: 'Avaliação',
+                session: 'Sessão',
+                individual_session: 'Sessão Individual',
+                package_session: 'Sessão de Pacote',
+                tongue_tie_test: 'Teste da Linguinha',
+                neuropsych_evaluation: 'Avaliação Neuropsicológica',
+                return: 'Retorno',
+                meet: 'Meet',
+                alignment: 'Alinhamento'
+            };
+            return map[appointment.serviceType] || appointment.serviceType || 'Sessão';
+        })(),
 
         // Pagamento
         paymentStatus: appointment.paymentStatus || 'pending',

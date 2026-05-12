@@ -6,6 +6,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
+import Session from '../models/Session.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
@@ -91,7 +92,52 @@ router.get('/', auth, async (req, res) => {
         const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
 
         const yesterdayCash = await unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd);
-        const yesterdayTotal = yesterdayCash.total;
+        // 🎯 O caixa de ontem deve usar os MESMOS filtros do caixa de hoje
+        // Busca appointments/sessions de ontem para aplicar filtros consistentes
+        const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
+        const yesterdaySessions = await Session.find({
+            date: { $gte: yesterdayStart, $lte: yesterdayEnd }
+        }).select('_id appointmentId package').lean();
+        const yesterdaySessionApptIds = yesterdaySessions.map(s => s.appointmentId?.toString()).filter(Boolean);
+        const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
+        const yesterdayAppointmentsMap = yesterdayAllApptIds.length > 0
+            ? await Appointment.find({ _id: { $in: yesterdayAllApptIds } })
+                .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod')
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName specialty')
+                .populate('package', 'paymentType sessionValue totalValue totalSessions model')
+                .lean()
+                .then(list => new Map(list.map(a => [a._id.toString(), a])))
+            : new Map();
+        const yesterdaySessionToApptIdMap = new Map(
+            yesterdaySessions.filter(s => s._id && s.appointmentId).map(s => [s._id.toString(), s.appointmentId.toString()])
+        );
+        const yesterdayPkgSessionPrepaidMap = new Map(
+            yesterdaySessions.filter(s => !!s.package).map(s => {
+                const apptS = s.appointmentId ? yesterdayAppointmentsMap.get(s.appointmentId.toString()) : null;
+                const pt = apptS?.package?.paymentType || apptS?.package?.model;
+                return [s._id.toString(), pt === 'full' || pt === 'prepaid'];
+            })
+        );
+
+        const yesterdayTransacoes = yesterdayCash.payments.map(p => {
+            const apptId = p.appointment?.toString() || (p.session ? yesterdaySessionToApptIdMap.get(p.session.toString()) : null);
+            const appt = apptId ? yesterdayAppointmentsMap.get(apptId) : null;
+            const notes = (p.notes || '').toLowerCase();
+            const desc = (p.description || '').toLowerCase();
+            const isLiminarY = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
+            const isPackagePayment = !isLiminarY && (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session' || p.package || appt?.package || (p.session && yesterdayPkgSessionPrepaidMap.has(p.session.toString())));
+            if (isPackagePayment && appt && appt.operationalStatus !== 'completed') return null;
+            if (isPackagePayment) {
+                const isCompraHoje = !!p.package;
+                const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
+                const isSessionPrepaid = p.session ? yesterdayPkgSessionPrepaidMap.get(p.session.toString()) : false;
+                const isPrepaidConsumo = !isCompraHoje && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
+                if (isPrepaidConsumo) return null;
+            }
+            return { valor: p.amount };
+        }).filter(Boolean);
+        const yesterdayTotal = yesterdayTransacoes.reduce((s, t) => s + t.valor, 0);
 
         const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
         const monthCash = await unifiedFinancialService.calculateCash(monthStart, end);
@@ -132,18 +178,25 @@ router.get('/', auth, async (req, res) => {
             let tipo = 'Particular';
             let servico = 'Sessão';
 
-            const isPackagePayment =
+            // Liminar: crédito judicial consumido — SEMPRE entra no caixa, nunca é filtrado como prepaid
+            const isLiminar = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
+
+            const isPackagePayment = !isLiminar && (
                 notes.includes('pacote') || desc.includes('pacote') ||
                 p.type === 'package' || p.serviceType === 'package_session' ||
                 p.package || appt?.package ||
-                (p.session && pkgSessionPrepaidMap.has(p.session.toString()));
+                (p.session && pkgSessionPrepaidMap.has(p.session.toString()))
+            );
 
             // Pagamentos de pacote só entram no caixa se o appointment foi concluído
             if (isPackagePayment && appt && appt.operationalStatus !== 'completed') {
                 return null;
             }
 
-            if (isPackagePayment) {
+            if (isLiminar) {
+                tipo = 'Liminar';
+                servico = 'Sessão Liminar';
+            } else if (isPackagePayment) {
                 tipo = 'Pacote';
                 // Usa serviceType real do agendamento; fallback para 'Sessão de Pacote'
                 const pkgServiceType = appt?.serviceType || p.serviceType || patientIdToServiceType.get(patientId);
