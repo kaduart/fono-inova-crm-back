@@ -1445,7 +1445,7 @@ export async function generatePostContent(slug) {
   const seoTitle = lp.seo?.title || lp.title;
   const seoDescription = lp.seo?.description || lp.subheadline;
   const keywords = lp.keywords?.slice(0, 3).join(', ') || '';
-  const whatsappNumber = '(62) 99337-7726'; // Número correto da clínica
+  const whatsappNumber = '(62) 99201-3573'; // Número correto da clínica
   
   const postTemplates = [
     {

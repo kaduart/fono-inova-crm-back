@@ -2,7 +2,7 @@
 
 > **Versão:** 2.0  
 > **Atualizado:** 19/03/2024  
-> **WhatsApp:** (62) 99337-7726
+> **WhatsApp:** (62) 99201-3573
 
 ---
 
@@ -152,7 +152,7 @@ https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e go
 ## 📝 Notas Importantes
 
 ### WhatsApp Padrão
-- **Número:** (62) 99337-7726
+- **Número:** (62) 99201-3573
 - **Formato API:** 5562993377726
 - **Mensagem base:** "Oi, vi no site sobre {tema} e gostaria de agendar uma avaliação."
 
@@ -175,5 +175,5 @@ https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e go
 
 **Fono Inova - Centro de Desenvolvimento Infantil**  
 📍 Anápolis - GO  
-📲 (62) 99337-7726  
+📲 (62) 99201-3573  
 🌐 www.clinicafonoinova.com.br

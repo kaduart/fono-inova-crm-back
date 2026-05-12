@@ -114,6 +114,23 @@ export const scheduleGmbCron = () => {
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
 
     // ═══════════════════════════════════════════════════════════════
+    // RESET MENSAL — dia 1 às 00:05 → apaga todos os posts e reinicia
+    // ═══════════════════════════════════════════════════════════════
+    cron.schedule('5 0 1 * *', async () => {
+        try {
+            console.log('🗑️ [GMB] Reset mensal — apagando todos os posts...');
+            const result = await GmbPost.deleteMany({});
+            console.log(`✅ [GMB] Reset mensal: ${result.deletedCount} posts removidos. Novo ciclo iniciado.`);
+
+            // Recria posts do dia logo em seguida
+            await gmbService.createPostsForAllEspecialidades();
+            console.log('✅ [GMB] Posts do novo mês criados.');
+        } catch (error) {
+            console.error('❌ [GMB] Erro no reset mensal:', error.message);
+        }
+    }, { scheduled: true, timezone: 'America/Sao_Paulo' });
+
+    // ═══════════════════════════════════════════════════════════════
     // ENVIO AO MAKE - Checks frequentes para publicação imediata
     // ═══════════════════════════════════════════════════════════════
     

@@ -73,7 +73,7 @@ Isso pode ser fala tardia — e quanto antes a avaliação, melhores os resultad
 
 💚 Agende uma avaliação gratuita: [LINK]
 
-📍 Anápolis - GO | 📲 (62) 99337-7726
+📍 Anápolis - GO | 📲 (62) 99201-3573
 ```
 
 ### Dislexia
@@ -93,7 +93,7 @@ A dislexia é mais comum do que você imagina — e tem TRATAMENTO!
 
 💚 [CTA]
 
-📍 Anápolis - GO | 📲 (62) 99337-7726
+📍 Anápolis - GO | 📲 (62) 99201-3573
 ```
 
 ### TDAH
@@ -111,7 +111,7 @@ A dislexia é mais comum do que você imagina — e tem TRATAMENTO!
 
 💚 [CTA]
 
-📍 Anápolis - GO | 📲 (62) 99337-7726
+📍 Anápolis - GO | 📲 (62) 99201-3573
 ```
 
 ---
@@ -211,4 +211,4 @@ HUGGINGFACE_API_KEY=...
 ---
 
 **Fono Inova - Centro de Desenvolvimento Infantil**  
-📍 Anápolis - GO | 📲 (62) 99337-7726
+📍 Anápolis - GO | 📲 (62) 99201-3573
