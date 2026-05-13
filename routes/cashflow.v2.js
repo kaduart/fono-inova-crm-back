@@ -200,7 +200,7 @@ router.get('/', auth, async (req, res) => {
                 tipo = 'Pacote';
                 // Usa serviceType real do agendamento; fallback para 'Sessão de Pacote'
                 const pkgServiceType = appt?.serviceType || p.serviceType || patientIdToServiceType.get(patientId);
-                const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
+                const serviceMap = { 'evaluation': 'Avaliação', 'consultation': 'Consulta', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
                 servico = (pkgServiceType && pkgServiceType !== 'package_session')
                     ? (serviceMap[pkgServiceType] || 'Sessão de Pacote')
                     : 'Sessão de Pacote';
@@ -220,7 +220,7 @@ router.get('/', auth, async (req, res) => {
                 // 🎯 Fonte de verdade: Appointment > Payment > fallback por paciente
                 const serviceType = appt?.serviceType || p.serviceType || patientIdToServiceType.get(patientId);
                 if (serviceType) {
-                    const serviceMap = { 'evaluation': 'Avaliação', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
+                    const serviceMap = { 'evaluation': 'Avaliação', 'consultation': 'Consulta', 'session': 'Sessão', 'individual_session': 'Sessão Individual', 'package_session': 'Sessão de Pacote', 'tongue_tie_test': 'Teste da Linguinha', 'neuropsych_evaluation': 'Avaliação Neuropsicológica', 'return': 'Retorno', 'meet': 'Meet', 'alignment': 'Alinhamento' };
                     servico = serviceMap[serviceType] || 'Sessão';
                 }
             }
@@ -342,6 +342,7 @@ router.get('/', auth, async (req, res) => {
                 metodo: s.paymentMethod || (isConvenio ? 'Convênio' : 'Pendente'),
                 tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
                 servico: appt?.serviceType === 'evaluation' ? 'Avaliação' :
+                        appt?.serviceType === 'consultation' ? 'Consulta' :
                         appt?.serviceType === 'package_session' ? 'Sessão de Pacote' :
                         appt?.serviceType === 'convenio_session' ? 'Sessão Convênio' :
                         appt?.serviceType === 'tongue_tie_test' ? 'Teste da Linguinha' :

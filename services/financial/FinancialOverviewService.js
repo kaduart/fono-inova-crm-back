@@ -470,13 +470,13 @@ class FinancialOverviewService {
                 Appointment.countDocuments({
                     date: { $gte: start, $lte: end },
                     operationalStatus: { $nin: ['canceled'] },
-                    serviceType: 'evaluation'
+                    serviceType: { $in: ['evaluation', 'consultation'] }
                 }),
 
                 // 3. Avaliações realizadas
                 Appointment.countDocuments({
                     date: { $gte: start, $lte: end },
-                    serviceType: 'evaluation',
+                    serviceType: { $in: ['evaluation', 'consultation'] },
                     operationalStatus: { $nin: ['canceled', 'missed'] }
                 }),
 
@@ -489,7 +489,7 @@ class FinancialOverviewService {
                 Appointment.countDocuments({
                     date: { $gte: start, $lte: end },
                     operationalStatus: { $nin: ['canceled', 'missed'] },
-                    serviceType: { $in: ['session', 'package_session', 'individual_session', 'return', 'convenio_session'] }
+                    serviceType: { $in: ['session', 'package_session', 'individual_session', 'return', 'convenio_session', 'consultation'] }
                 }),
 
                 // 🆕 6. Leads por origem

@@ -37,16 +37,18 @@ function buildDateTime(date, time) {
   return d.toDate();
 }
 
+const MARGIN_MINUTES = 15; // Margem de tolerância após o horário do appointment
+
 async function expirePreAgendamentos() {
   const startTime = Date.now();
   const correlationId = `preag_exp_${Date.now()}`;
   const now = moment().tz(TIMEZONE);
 
-  log.info(`[${correlationId}] ⏰ Iniciando expiração de pré-agendamentos vencidos`);
+  log.info(`[${correlationId}] ⏰ Iniciando expiração de pré-agendamentos vencidos (margem: ${MARGIN_MINUTES}min)`);
 
   try {
     // Busca pré-agendamentos que ainda não foram convertidos (sem appointmentId)
-    // e cujo horário já passou
+    // e cujo horário já passou com margem de tolerância
     const candidates = await Appointment.find({
       operationalStatus: 'pre_agendado',
       appointmentId: { $exists: false } // ainda não convertido
@@ -58,8 +60,9 @@ async function expirePreAgendamentos() {
       const aptDateTime = buildDateTime(apt.date, apt.time);
       if (!aptDateTime) continue;
 
-      // Se o datetime do appointment é menor que agora → venceu
-      if (moment(aptDateTime).isBefore(now)) {
+      // Só expira se o horário do appointment + margem já passou
+      const expirationThreshold = moment(aptDateTime).add(MARGIN_MINUTES, 'minutes');
+      if (now.isAfter(expirationThreshold)) {
         expired.push(apt);
       }
     }
@@ -74,21 +77,31 @@ async function expirePreAgendamentos() {
     let processed = 0;
     for (const apt of expired) {
       try {
-        // Atualiza o appointment
-        await Appointment.findByIdAndUpdate(apt._id, {
-          operationalStatus: 'missed',
-          clinicalStatus: 'missed',
-          $push: {
-            history: {
-              action: 'auto_expired',
-              previousStatus: apt.operationalStatus,
-              newStatus: 'missed',
-              timestamp: new Date(),
-              context: 'Pré-agendamento expirado automaticamente — horário não convertido',
-              correlationId
+        // 🔒 IDEMPOTÊNCIA ATÔMICA: só expira se ainda estiver pre_agendado
+        // Evita race condition quando múltiplas instâncias do cron rodam simultaneamente
+        const updated = await Appointment.findOneAndUpdate(
+          { _id: apt._id, operationalStatus: 'pre_agendado' },
+          {
+            operationalStatus: 'missed',
+            clinicalStatus: 'missed',
+            $push: {
+              history: {
+                action: 'auto_expired',
+                previousStatus: apt.operationalStatus,
+                newStatus: 'missed',
+                timestamp: new Date(),
+                context: `Pré-agendamento expirado automaticamente — horário não convertido (margem: ${MARGIN_MINUTES}min)`,
+                correlationId
+              }
             }
-          }
-        });
+          },
+          { new: true }
+        );
+
+        if (!updated) {
+          log.warn(`[${correlationId}] ⏭️ Appointment ${apt._id} já foi processado por outra instância`);
+          continue;
+        }
 
         // Se houver Session vinculada, atualiza também
         if (apt.session) {

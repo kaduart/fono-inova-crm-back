@@ -7,7 +7,9 @@ const baseSchema = Joi.object({
     date: Joi.date().iso().required(),
     time: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).required(),
     serviceType: Joi.string().valid(
-        'individual_session', 'package_session', 'evaluation'
+        'individual_session', 'package_session', 'evaluation',
+        'consultation', 'return', 'meet', 'alignment',
+        'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session'
     ).required(),
     // ... outros campos
 });

@@ -927,7 +927,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         ? paymentMethod
         : paymentMethod.startsWith('cartao') ? 'cartão' : null;
       // Payment.serviceType enum não inclui 'return','convenio_session' etc → mapa seguro
-      const PAYMENT_SERVICE_TYPES = ['evaluation', 'session', 'package_session', 'tongue_tie_test', 'neuropsych_evaluation', 'individual_session', 'meet', 'alignment'];
+      const PAYMENT_SERVICE_TYPES = ['evaluation', 'session', 'package_session', 'tongue_tie_test', 'neuropsych_evaluation', 'individual_session', 'meet', 'alignment', 'consultation'];
       const rawServiceType = crm.serviceType === 'session' ? 'individual_session' : (crm.serviceType || appointment.serviceType || 'evaluation');
       const serviceType = PAYMENT_SERVICE_TYPES.includes(rawServiceType) ? rawServiceType : 'individual_session';
       const resolvedSpecialty = normalizeSessionType(crm.sessionType || appointment.specialty || serviceType);
