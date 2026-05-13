@@ -22,7 +22,8 @@ export const SERVICE_TO_SPECIALTY = {
     'tongue_tie_test': 'fonoaudiologia',
     'tongue_tie_evaluation': 'fonoaudiologia',  // Teste da linguinha → fonoaudiologia
     'avaliacao': 'fonoaudiologia',  // Mapeia pt → fonoaudiologia
-    'sessao': 'fonoaudiologia'
+    'sessao': 'fonoaudiologia',
+    'consultation': 'fonoaudiologia'  // Consulta médica → fallback fonoaudiologia (specialty do appointment tem prioridade)
 };
 
 /**

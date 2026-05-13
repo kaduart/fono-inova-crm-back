@@ -174,6 +174,7 @@ paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
         'package_session': 'Sessão de Pacote',
         'tongue_tie_test': 'Teste da Linguinha',
         'neuropsych_evaluation': 'Avaliação Neuropsicológica',
+        'consultation': 'Consulta',
         'individual_session': 'Sessão Individual',
         'meet': 'Meet',
         'alignment': 'Alinhamento'

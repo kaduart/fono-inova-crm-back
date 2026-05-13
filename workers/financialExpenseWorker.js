@@ -140,8 +140,8 @@ async function calculateSessionCommission(session) {
 
   const sessionType = session.sessionType || session.package?.sessionType;
 
-  // Avaliação regular
-  if (sessionType === 'evaluation' || session.serviceType === 'evaluation') {
+  // Avaliação regular ou consulta médica (ticket maior)
+  if (sessionType === 'evaluation' || session.serviceType === 'evaluation' || session.serviceType === 'consultation') {
     return doctor.commissionRules.evaluationSession || doctor.commissionRules.standardSession || 60;
   }
 

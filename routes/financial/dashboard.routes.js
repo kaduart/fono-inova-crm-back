@@ -166,6 +166,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
     // Chave de cache baseada nos parâmetros
     const cacheKey = `dashboard_${viewType}_${mes}_${ano}_${startDate || ''}_${endDate || ''}_${weekOffset}`;
+    console.log(`[Dashboard] REQ ${mes}/${ano} forceRefresh=${!!forceRefresh}`);
     
     // Verifica cache (a menos que forceRefresh seja true)
     if (!forceRefresh) {
@@ -222,202 +223,121 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const producaoParticular = overview.production.byPaymentMethod?.particular?.total || 0;
     const producaoPacotes = producaoTotal - producaoConvenio - producaoParticular;
 
-    // ========================================
-    // 2. CAIXA (Pagamentos recebidos) — Cálculo manual correto
-    // ========================================
-    // Parte 1: Particular (Payment model)
-    // Particular: status paid + billingType particular + paymentDate no período
-    // paymentDate é string 'YYYY-MM-DD'
-    const particularPayments = await Payment.aggregate([
-      {
-        $match: {
-          billingType: 'particular',
-          status: 'paid',
-          paymentDate: { $gte: inicioPeriodo, $lte: fimPeriodo }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    const particularTotal = particularPayments[0]?.total || 0;
-
-    // Parte 2: Convênio (Payment model)
-    // Convênio: insurance.receivedAt no período (data que o dinheiro chegou)
-    // Converte inicioPeriodo/fimPeriodo para Date
+    // ─── Datas para queries ───────────────────────────────────────────────────
     const inicioDate = new Date(inicioPeriodo);
     const fimDate = new Date(fimPeriodo);
-    // Ajusta fimDate para o final do dia
     fimDate.setHours(23, 59, 59, 999);
 
-    const convenioPayments = await Payment.aggregate([
-      {
-        $match: {
-          billingType: 'convenio',
-          'insurance.status': { $in: ['received', 'partial'] },
-          'insurance.receivedAt': { $gte: inicioDate, $lte: fimDate }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$insurance.receivedAmount' },
-          count: { $sum: 1 }
-        }
-      }
+    // ─── Todas as queries independentes em paralelo ───────────────────────────
+    const _t = (label, p) => {
+      const t0 = Date.now();
+      return Promise.resolve(p).then(r => {
+        console.log(`[Dashboard] ${label}: ${Date.now() - t0}ms`);
+        return r;
+      });
+    };
+    const _t0 = Date.now();
+    const [
+      particularPayments,
+      convenioPayments,
+      sessoesResult,
+      sessoesDoMes,
+      realizadasNaoPagasRaw,
+      pacotesCredito,
+      sessoesConvenioAgendadas,
+      agendadosTodos,
+      pendentesTodos,
+      rates,
+      planningDoMes
+    ] = await Promise.all([
+      _t('1-particularPayments', Payment.aggregate([
+        { $match: { billingType: 'particular', status: 'paid', paymentDate: { $gte: inicioPeriodo, $lte: fimPeriodo } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ])),
+      _t('2-convenioPayments', Payment.aggregate([
+        { $match: { billingType: 'convenio', 'insurance.status': { $in: ['received', 'partial'] }, 'insurance.receivedAt': { $gte: inicioDate, $lte: fimDate } } },
+        { $group: { _id: null, total: { $sum: '$insurance.receivedAmount' }, count: { $sum: 1 } } }
+      ])),
+      _t('3-sessoesConvenioLookup', Session.aggregate([
+        { $match: { isPaid: true, paidAt: { $gte: inicioDate, $lte: fimDate }, paymentMethod: 'convenio', $or: [{ paymentId: { $exists: false } }, { paymentId: null }] } },
+        { $lookup: { from: 'payments', let: { sessionId: '$_id' }, pipeline: [{ $match: { $expr: { $or: [{ $eq: ['$session', '$$sessionId'] }, { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }] } } }, { $limit: 1 }], as: 'linkedPayment' } },
+        { $match: { linkedPayment: { $size: 0 } } },
+        { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+        { $group: { _id: null, total: { $sum: { $cond: [{ $gt: ['$sessionValue', 0] }, '$sessionValue', { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }] } }, count: { $sum: 1 } } }
+      ])),
+      _t('4-sessoesDoMes', Appointment.find({
+        operationalStatus: { $in: ['completed', 'confirmed'] },
+        paymentStatus: { $in: ['paid', 'package_paid'] },
+        date: { $gte: inicioPeriodo, $lte: fimPeriodo }
+      })
+        .select('date time sessionValue package doctor patient patientName sessionType paymentMethod operationalStatus paymentStatus')
+        .populate('package', 'insuranceGrossAmount type sessionValue')
+        .populate('doctor', 'fullName specialty')
+        .populate('patient', 'fullName')
+        .lean()),
+      _t('5-realizadasNaoPagas', Appointment.aggregate([
+        { $match: { operationalStatus: 'completed', paymentStatus: { $nin: ['paid', 'package_paid', 'canceled'] }, date: { $gte: inicioPeriodo, $lte: fimPeriodo } } },
+        { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', pipeline: [{ $project: { sessionValue: 1, insuranceGrossAmount: 1 } }], as: 'pkg' } },
+        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', pipeline: [{ $project: { fullName: 1 } }], as: 'pat' } },
+        { $unwind: { path: '$pat', preserveNullAndEmptyArrays: true } },
+        { $project: { _id: 1, date: 1, time: 1, paymentStatus: 1, paciente: { $ifNull: ['$pat.fullName', '$patientName'] }, valor: { $cond: [{ $gt: ['$sessionValue', 0] }, '$sessionValue', { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }] } } }
+      ])),
+      _t('6-pacotesCredito', Package.find({ type: { $ne: 'convenio' }, financialStatus: { $in: ['paid', 'partially_paid'] }, status: { $in: ['active', 'in-progress'] } })
+        .populate('patient', 'fullName').select('_id patient totalPaid paidSessions sessionValue')),
+      _t('7-sessoesConvenioAgendadas', Session.find({ date: { $gte: inicioPeriodo, $lte: fimPeriodo }, status: { $in: ['scheduled', 'confirmed'] }, paymentMethod: 'convenio' })
+        .populate('package', 'insuranceGrossAmount insuranceProvider').populate('patient', 'fullName')),
+      _t('8-agendadosTodos', Appointment.find({ date: { $gte: inicioPeriodo, $lte: fimPeriodo }, operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] }, clinicalStatus: { $nin: ['completed', 'cancelled'] } })
+        .select('date time sessionValue package patient operationalStatus clinicalStatus')
+        .populate('patient', 'fullName').populate('package', 'sessionValue insuranceGrossAmount type').lean()),
+      _t('9-pendentesTodos', Appointment.find({ date: { $gte: inicioPeriodo, $lte: fimPeriodo }, $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }], clinicalStatus: { $ne: 'completed' } })
+        .select('date time sessionValue package patient operationalStatus clinicalStatus')
+        .populate('patient', 'fullName').populate('package', 'sessionValue insuranceGrossAmount type').lean()),
+      _t('10-historicalRates', historicalRatesService.getHistoricalRates(90)),
+      _t('11-planning', Planning.findOne({ type: 'monthly', 'period.start': { $lte: fimPeriodo }, 'period.end': { $gte: inicioPeriodo } }))
     ]);
-    const convenioTotal = convenioPayments[0]?.total || 0;
 
-    // Parte 3: Sessões de pacote convênio (Session model)
-    // Sessões pagas sem Payment associado (FASE 1 híbrido)
-    // Proteção anti-duplicação: lookup em payments verificando se existe Payment vinculado
-    const sessoesResult = await Session.aggregate([
-      {
-        $match: {
-          isPaid: true,
-          paidAt: { $gte: inicioDate, $lte: fimDate },
-          paymentMethod: 'convenio',
-          $or: [
-            { paymentId: { $exists: false } },
-            { paymentId: null }
-          ]
-        }
-      },
-      {
-        // 🛡️ PROTEÇÃO: Lookup em Payment para garantir não existe
-        $lookup: {
-          from: 'payments',
-          let: { sessionId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $or: [
-                    { $eq: ['$session', '$$sessionId'] },
-                    { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }
-                  ]
-                }
-              }
-            },
-            { $limit: 1 }
-          ],
-          as: 'linkedPayment'
-        }
-      },
-      {
-        // Só inclui se NÃO existe Payment vinculado
-        $match: {
-          linkedPayment: { $size: 0 }
-        }
-      },
-      {
-        $lookup: {
-          from: 'packages',
-          localField: 'package',
-          foreignField: '_id',
-          as: 'pkg'
-        }
-      },
-      {
-        $unwind: {
-          path: '$pkg',
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        // Usa sessionValue (histórico imutável) ou fallback para package.sessionValue / insuranceGrossAmount
-        $group: {
-          _id: null,
-          total: {
-            $sum: {
-              $cond: [
-                { $gt: ['$sessionValue', 0] },
-                '$sessionValue',
-                { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }
-              ]
-            }
-          },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    const sessoesTotal = sessoesResult[0]?.total || 0;
+    // sessoesPorPacote: único passo sequencial (depende de pacotesCredito)
+    const pacoteIds = pacotesCredito.map(p => p._id);
+    const sessoesPorPacote = pacoteIds.length > 0
+      ? await Session.aggregate([
+          { $match: { package: { $in: pacoteIds }, status: { $nin: ['canceled'] } } },
+          { $group: { _id: '$package', total: { $sum: 1 }, feitas: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } }, agendadas: { $sum: { $cond: [{ $in: ['$status', ['scheduled', 'confirmed']] }, 1, 0] } } } }
+        ])
+      : [];
+    const sessoesMap = new Map(sessoesPorPacote.map(s => [s._id.toString(), s]));
 
-    // Resultado final: caixaTotal
-    const caixaTotal = particularTotal + convenioTotal + sessoesTotal;
+    // ─── Derivadas ────────────────────────────────────────────────────────────
+    const particularTotal    = particularPayments[0]?.total || 0;
+    const convenioTotal      = convenioPayments[0]?.total   || 0;
+    const sessoesTotal       = sessoesResult[0]?.total      || 0;
+    const caixaTotal         = particularTotal + convenioTotal + sessoesTotal;
 
-    const aReceberTotal = overview.receivable.total;
-    const aReceberConvenio = overview.receivable.convenio?.total || 0;
+    const aReceberTotal      = overview.receivable.total;
+    const aReceberConvenio   = overview.receivable.convenio?.total || 0;
     const aReceberParticular = overview.receivable.particular?.doMes?.total || 0;
 
-    // Sessões do mês — apenas para analytics/detalhes (V2: dados em Appointment)
-    const sessoesDoMes = await Appointment.find({
-      operationalStatus: { $in: ['completed', 'confirmed'] },
-      paymentStatus: { $in: ['paid', 'package_paid'] },
-      date: { $gte: inicioPeriodo, $lte: fimPeriodo }
-    })
-    .select('date time sessionValue package doctor patient patientName sessionType paymentMethod operationalStatus paymentStatus')
-    .populate('package', 'insuranceGrossAmount type sessionValue')
-    .populate('doctor', 'fullName specialty')
-    .populate('patient', 'fullName')
-    .lean();
-
-    const valorSessao = (s) => s.sessionValue || s.package?.sessionValue || s.package?.insuranceGrossAmount || 0;
-
-    // ─── Realizadas mas NÃO pagas (pending_balance, unpaid, pending, partial…) ─
-    // Sessões completed que o dashboard ignorava antes (ex: Isis Caldas)
-    const realizadasNaoPagasRaw = await Appointment.aggregate([
-      {
-        $match: {
-          operationalStatus: 'completed',
-          paymentStatus: { $nin: ['paid', 'package_paid', 'canceled'] },
-          date: { $gte: inicioPeriodo, $lte: fimPeriodo }
-        }
-      },
-      {
-        $lookup: {
-          from: 'packages',
-          localField: 'package',
-          foreignField: '_id',
-          pipeline: [{ $project: { sessionValue: 1, insuranceGrossAmount: 1 } }],
-          as: 'pkg'
-        }
-      },
-      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'patients',
-          localField: 'patient',
-          foreignField: '_id',
-          pipeline: [{ $project: { fullName: 1 } }],
-          as: 'pat'
-        }
-      },
-      { $unwind: { path: '$pat', preserveNullAndEmptyArrays: true } },
-      {
-        $project: {
-          _id: 1,
-          date: 1,
-          time: 1,
-          paymentStatus: 1,
-          paciente: { $ifNull: ['$pat.fullName', '$patientName'] },
-          valor: {
-            $cond: [
-              { $gt: ['$sessionValue', 0] },
-              '$sessionValue',
-              { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }
-            ]
-          }
-        }
-      }
-    ]);
     const realizadasNaoPagasTotal = realizadasNaoPagasRaw.reduce((s, a) => s + (a.valor || 0), 0);
+    const valorSessao = (s) => s.sessionValue || s.package?.sessionValue || s.package?.insuranceGrossAmount || 0;
+    const valorAppt   = (a) => a.sessionValue || a.package?.sessionValue || a.package?.insuranceGrossAmount || 0;
 
-    // Detalhes por especialidade
+    const convenioAgendadoValor = sessoesConvenioAgendadas.reduce((sum, s) => sum + (s.sessionValue || s.package?.insuranceGrossAmount || 0), 0);
+    const convenioAgendadoDetalhes = sessoesConvenioAgendadas.map(s => ({
+      sessaoId: s._id,
+      data: s.date,
+      hora: s.time,
+      paciente: s.patient?.fullName || 'Paciente',
+      convenio: s.package?.insuranceProvider || 'N/A',
+      valor: s.sessionValue || s.package?.insuranceGrossAmount || 0
+    }));
+
+    const agendadosValor       = agendadosTodos.reduce((sum, a) => sum + valorAppt(a), 0);
+    const pendentesValor       = pendentesTodos.reduce((sum, a) => sum + valorAppt(a), 0);
+    const agendadosAvulsoValor = agendadosTodos.filter(a => !a.package).reduce((sum, a) => sum + valorAppt(a), 0);
+    const pendentesAvulsoValor = pendentesTodos.filter(a => !a.package).reduce((sum, a) => sum + valorAppt(a), 0);
+
+    // ─── Detalhes por especialidade ───────────────────────────────────────────
     const porEspecialidade = {};
     sessoesDoMes.forEach(s => {
       const esp = s.sessionType || 'nao_informada';
@@ -429,171 +349,41 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       if (s.patient) porEspecialidade[esp].pacientesUnicos.add(s.patient.toString());
     });
 
-    // ========================================
-    // 3. CRÉDITO PACOTES (Sessões pagas não utilizadas)
-    // ========================================
-    const pacotesCredito = await Package.find({
-      type: { $ne: 'convenio' },
-      financialStatus: { $in: ['paid', 'partially_paid'] },
-      status: { $in: ['active', 'in-progress'] }
-    }).populate('patient', 'fullName').select('_id patient totalPaid paidSessions sessionValue');
-
-    // Otimização: aggregate único para evitar N+1
-    const pacoteIds = pacotesCredito.map(p => p._id);
-    const sessoesPorPacote = pacoteIds.length > 0
-      ? await Session.aggregate([
-          { $match: { package: { $in: pacoteIds }, status: { $nin: ['canceled'] } } },
-          {
-            $group: {
-              _id: '$package',
-              total: { $sum: 1 },
-              feitas: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
-              agendadas: { $sum: { $cond: [{ $in: ['$status', ['scheduled', 'confirmed']] }, 1, 0] } }
-            }
-          }
-        ])
-      : [];
-    const sessoesMap = new Map(sessoesPorPacote.map(s => [s._id.toString(), s]));
-
+    // ─── Crédito em pacotes ────────────────────────────────────────────────────
     let creditoPacotesValor = 0;
     const creditoPacotesDetalhes = [];
-
     for (const pkg of pacotesCredito) {
-      const stats = sessoesMap.get(pkg._id.toString());
-      const sessoesFeitas = stats?.feitas || 0;
+      const stats           = sessoesMap.get(pkg._id.toString());
+      const sessoesFeitas   = stats?.feitas    || 0;
       const sessoesAgendadas = stats?.agendadas || 0;
-
-      const sessoesPagas = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
+      const sessoesPagas    = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
       const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
       const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
       const valor = sessoesRemanescentes * (pkg.sessionValue || 0);
-
       if (valor > 0) {
         creditoPacotesValor += valor;
-        creditoPacotesDetalhes.push({
-          pacoteId: pkg._id,
-          paciente: pkg.patient?.fullName || 'N/A',
-          sessoesRemanescentes,
-          valorPorSessao: pkg.sessionValue,
-          valorTotal: valor
-        });
+        creditoPacotesDetalhes.push({ pacoteId: pkg._id, paciente: pkg.patient?.fullName || 'N/A', sessoesRemanescentes, valorPorSessao: pkg.sessionValue, valorTotal: valor });
       }
     }
 
-    // ========================================
-    // 4. CONVÊNIO AGENDADO
-    // ========================================
-    const sessoesConvenioAgendadas = await Session.find({
-      date: { $gte: inicioPeriodo, $lte: fimPeriodo },
-      status: { $in: ['scheduled', 'confirmed'] },
-      paymentMethod: 'convenio'
-    }).populate('package', 'insuranceGrossAmount insuranceProvider').populate('patient', 'fullName');
-
-    const convenioAgendadoValor = sessoesConvenioAgendadas.reduce((sum, s) => {
-      return sum + (s.sessionValue || s.package?.insuranceGrossAmount || 0);
-    }, 0);
-
-    const convenioAgendadoDetalhes = sessoesConvenioAgendadas.map(s => ({
-      sessaoId: s._id,
-      data: s.date,
-      hora: s.time,
-      paciente: s.patient?.fullName || 'Paciente',
-      convenio: s.package?.insuranceProvider || 'N/A',
-      valor: s.sessionValue || s.package?.insuranceGrossAmount || 0
-    }));
-
-    // ========================================
-    // 5. AGENDADOS E PENDENTES (todos os tipos: avulso, pacote, avaliação, etc.)
-    // ========================================
-    const agendadosTodos = await Appointment.find({
-      date: { $gte: inicioPeriodo, $lte: fimPeriodo },
-      operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
-      clinicalStatus: { $nin: ['completed', 'cancelled'] }
-    }).select('date time sessionValue package patient operationalStatus clinicalStatus')
-      .populate('patient', 'fullName')
-      .populate('package', 'sessionValue insuranceGrossAmount type')
-      .lean();
-
-    const pendentesTodos = await Appointment.find({
-      date: { $gte: inicioPeriodo, $lte: fimPeriodo },
-      $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
-      clinicalStatus: { $ne: 'completed' }
-    }).select('date time sessionValue package patient operationalStatus clinicalStatus')
-      .populate('patient', 'fullName')
-      .populate('package', 'sessionValue insuranceGrossAmount type')
-      .lean();
-
-    const valorAppt = (a) => a.sessionValue || a.package?.sessionValue || a.package?.insuranceGrossAmount || 0;
-
-    // Total (todos os tipos) — usado no Provisionamento
-    const agendadosValor = agendadosTodos.reduce((sum, a) => sum + valorAppt(a), 0);
-    const pendentesValor = pendentesTodos.reduce((sum, a) => sum + valorAppt(a), 0);
-
-    // Avulso (sem pacote) — usado nos Cenários: sessões de pacote não geram novo caixa
-    const agendadosAvulsoValor = agendadosTodos
-      .filter(a => !a.package)
-      .reduce((sum, a) => sum + valorAppt(a), 0);
-    const pendentesAvulsoValor = pendentesTodos
-      .filter(a => !a.package)
-      .reduce((sum, a) => sum + valorAppt(a), 0);
-
-    // ========================================
-    // 6. CENÁRIOS DE PROJEÇÃO (taxas históricas reais)
-    // ========================================
-
-    // Busca taxas históricas dos últimos 90 dias (cache 1h)
-    const rates = await historicalRatesService.getHistoricalRates(90);
+    // ─── Cenários de projeção ─────────────────────────────────────────────────
     const { attendanceRate, paymentRate, conversionRate } = rates;
-
-    // Variações por cenário (cap em 1.0 para evitar > 100%)
     const cap = (v) => Math.min(v, 1);
-
-    // Base garantida = caixa já recebido + a receber do mês (trabalho feito, dinheiro pendente)
-    // Cenários só adicionam probabilidade sobre o futuro (avulso + convênio agendado + pendentes)
-    // Sessões de pacote não entram nos cenários: cash já foi recebido no pacote
     const baseGarantida = caixaTotal + aReceberTotal;
-
     const cenarios = {
       pessimista: {
-        // Taxas reduzidas: -15% comparecimento, -10% pagamento, -20% conversão
-        valor: Math.round(
-          baseGarantida
-          + (agendadosAvulsoValor  * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90))
-          + (pendentesAvulsoValor  * cap(conversionRate * 0.80) * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90))
-          + (convenioAgendadoValor * cap(attendanceRate * 0.85))
-        ),
+        valor: Math.round(baseGarantida + (agendadosAvulsoValor * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90)) + (pendentesAvulsoValor * cap(conversionRate * 0.80) * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90)) + (convenioAgendadoValor * cap(attendanceRate * 0.85))),
         probabilidade: ehPeriodoPassado ? 'Realizado' : 'Baixa'
       },
       realista: {
-        // Taxas históricas reais sem ajuste
-        valor: Math.round(
-          baseGarantida
-          + (agendadosAvulsoValor  * attendanceRate * paymentRate)
-          + (pendentesAvulsoValor  * conversionRate * attendanceRate * paymentRate)
-          + (convenioAgendadoValor * attendanceRate)
-        ),
+        valor: Math.round(baseGarantida + (agendadosAvulsoValor * attendanceRate * paymentRate) + (pendentesAvulsoValor * conversionRate * attendanceRate * paymentRate) + (convenioAgendadoValor * attendanceRate)),
         probabilidade: ehPeriodoPassado ? 'Realizado' : 'Alta'
       },
       otimista: {
-        // Taxas aumentadas: +5% comparecimento, +2% pagamento, +10% conversão
-        valor: Math.round(
-          baseGarantida
-          + (agendadosAvulsoValor  * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02))
-          + (pendentesAvulsoValor  * cap(conversionRate * 1.10) * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02))
-          + (convenioAgendadoValor * cap(attendanceRate * 1.05))
-        ),
+        valor: Math.round(baseGarantida + (agendadosAvulsoValor * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02)) + (pendentesAvulsoValor * cap(conversionRate * 1.10) * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02)) + (convenioAgendadoValor * cap(attendanceRate * 1.05))),
         probabilidade: ehPeriodoPassado ? 'Potencial' : 'Média'
       }
     };
-
-    // ========================================
-    // 7. META DO PLANNING
-    // ========================================
-    const planningDoMes = await Planning.findOne({
-      type: 'monthly',
-      'period.start': { $lte: fimPeriodo },
-      'period.end': { $gte: inicioPeriodo }
-    });
 
     const metaMensal = planningDoMes?.targets?.expectedRevenue || 0;
     const percentualMeta = metaMensal > 0 ? (caixaTotal / metaMensal) * 100 : 0;
@@ -780,7 +570,8 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
     // Salva no cache
     dashboardCache.set(cacheKey, response);
-    console.log(`[Dashboard] Cache set: ${cacheKey}`);
+    const payloadKb = Math.round(JSON.stringify(response).length / 1024);
+    console.log(`[Dashboard] total=${Date.now() - _t0}ms payload=${payloadKb}kb cache=${cacheKey}`);
 
     res.json(response);
 

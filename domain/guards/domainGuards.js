@@ -29,7 +29,7 @@ export function validateServiceType(serviceType, allowedTypes = []) {
     const defaultAllowed = [
         'individual_session', 'package_session', 'evaluation',
         'neuropsych_evaluation', 'return', 'convenio_session',
-        'alignment', 'meet', 'tongue_tie_test'
+        'alignment', 'meet', 'tongue_tie_test', 'consultation'
     ];
     
     const validTypes = allowedTypes.length > 0 ? allowedTypes : defaultAllowed;
