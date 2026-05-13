@@ -205,9 +205,9 @@ export async function calculateProduction(start, end) {
                     ? Math.round(s.package.totalValue / s.package.totalSessions)
                     : 0;
 
+        count += 1;
         if (valor <= 0) continue;
         total += valor;
-        count += 1;
 
         const method = (s.paymentMethod || '').toLowerCase();
         const isConvenio = method === 'convenio' || s.paymentOrigin === 'convenio';
