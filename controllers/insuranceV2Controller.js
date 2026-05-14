@@ -270,27 +270,48 @@ export async function faturarLote(req, res) {
       return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
     }
     
-    // Buscar payments para determinar provider e período
+    // Buscar payments reais (paymentIds que são de Payment documents)
     const payments = await Payment.find({
       _id: { $in: paymentIds },
       billingType: 'convenio'
     }).populate('session');
-    
-    if (payments.length === 0) {
-      return res.status(404).json({ success: false, error: 'Nenhum payment encontrado' });
+
+    // IDs não encontrados como Payment podem ser sessionIds (fallback do getInsuranceReceivables)
+    const foundPaymentIds = new Set(payments.map(p => p._id.toString()));
+    const unmatchedIds = paymentIds.filter(id => !foundPaymentIds.has(id));
+
+    // Resolve IDs órfãos como sessions diretas
+    const orphanSessions = unmatchedIds.length > 0
+      ? await Session.find({ _id: { $in: unmatchedIds }, status: 'completed' }).lean()
+      : [];
+
+    if (payments.length === 0 && orphanSessions.length === 0) {
+      return res.status(404).json({ success: false, error: 'Nenhum payment ou sessão encontrada' });
     }
-    
-    const provider = payments[0].insurance?.provider || 'convenio';
-    const dates = payments.map(p => p.session?.date).filter(Boolean).sort();
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
-    
-    // Extrair sessionIds dos payments selecionados
-    const sessionIds = payments
-      .map(p => p.session?._id)
-      .filter(Boolean)
-      .map(id => id.toString());
-    
+
+    const provider = payments[0]?.insurance?.provider || orphanSessions[0]?.insuranceProvider || 'convenio';
+
+    // Junta sessionIds: via payment + via session direta
+    const sessionIdsFromPayments = payments
+      .filter(p => p.session?._id)
+      .map(p => p.session._id.toString());
+
+    const sessionIdsFromOrphans = orphanSessions.map(s => s._id.toString());
+    const sessionIds = [...new Set([...sessionIdsFromPayments, ...sessionIdsFromOrphans])];
+
+    const paymentsSemSession = payments.filter(p => !p.session?._id);
+
+    const allDates = [
+      ...payments.map(p => p.session?.date),
+      ...orphanSessions.map(s => s.date)
+    ].filter(Boolean).sort();
+    const startDate = allDates[0];
+    const endDate = allDates[allDates.length - 1];
+
+    if (sessionIds.length === 0) {
+      return res.status(422).json({ success: false, error: 'Nenhum payment possui sessão vinculada para faturar' });
+    }
+
     // 1. Criar batch V2 com sessions específicas
     const batch = await createBatch({
       insuranceProvider: provider,
@@ -299,14 +320,20 @@ export async function faturarLote(req, res) {
       userId,
       sessionIds
     });
-    
+
     // 2. Enviar batch V2
     await sendBatch(batch._id, userId);
-    
+
+    const ignorados = paymentsSemSession.length;
     res.json({
       success: true,
-      message: `${payments.length} atendimentos faturados`,
-      data: { batchId: batch._id, faturados: payments.length }
+      message: `${sessionIds.length} atendimentos faturados${ignorados > 0 ? ` (${ignorados} sem sessão vinculada ignorados)` : ''}`,
+      data: {
+        batchId: batch._id,
+        faturados: sessionIds.length,
+        ignorados,
+        ignoradosIds: paymentsSemSession.map(p => p._id.toString())
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
