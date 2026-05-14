@@ -21,6 +21,28 @@ const MAKE_TIMEOUT_MS = 15000; // 15s
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000; // 2s inicial
 
+// Sanitiza URL de mídia: retorna null se não for Cloudinary (fail soft)
+function sanitizePermanentMedia(mediaUrl, postId) {
+  if (!mediaUrl) return null;
+
+  const allowedHosts = ['res.cloudinary.com'];
+
+  let hostname = '';
+  try {
+    hostname = new URL(mediaUrl).hostname;
+  } catch {
+    console.warn(`[Make] ⚠️ URL de mídia inválida bloqueada (post ${postId}): ${mediaUrl?.substring(0, 60)}`);
+    return null;
+  }
+
+  if (!allowedHosts.some(h => hostname.includes(h))) {
+    console.warn(`[Make] ⚠️ URL temporária/externa bloqueada: ${hostname} (post ${postId}) — publicando sem mídia`);
+    return null;
+  }
+
+  return mediaUrl;
+}
+
 // Erro especial para fila cheia — permite tratamento diferenciado no caller
 export class MakeQueueFullError extends Error {
   constructor() {
@@ -162,6 +184,9 @@ export async function sendPostToMake(post, attempt = 1) {
     console.error(`[Make] Gere uma imagem primeiro antes de publicar.`);
     throw new Error(`Post não tem imagem válida. Gere uma imagem primeiro.`);
   }
+
+  // 🔒 Sanitiza: URL fora do Cloudinary vira null (publica sem mídia, não quebra fluxo)
+  safeMediaUrl = sanitizePermanentMedia(safeMediaUrl, post._id);
 
   const payload = {
     postId: post._id.toString(),

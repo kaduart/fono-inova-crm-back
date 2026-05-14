@@ -1892,77 +1892,9 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // FALLBACK FINAL: Unsplash Source (imagens reais de qualidade)
-  // ═══════════════════════════════════════════════════════════
-  console.log('🔄 Fallback Final: Unsplash Source...');
-  
-  const UNSPLASH_IMAGES = {
-    'fonoaudiologia': [
-      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1516302752625-fcc3c50ae61f?w=1024&h=1024&fit=crop'
-    ],
-    'psicologia': [
-      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=1024&h=1024&fit=crop'
-    ],
-    'terapia_ocupacional': [
-      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1544776193-352d25ca82cd?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=1024&h=1024&fit=crop'
-    ],
-    'fisioterapia': [
-      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1574680096141-1cddd32e042a?w=1024&h=1024&fit=crop'
-    ],
-    'psicomotricidade': [
-      'https://images.unsplash.com/photo-1596908181055-e10301e29561?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=1024&h=1024&fit=crop'
-    ],
-    'neuropsicologia': [
-      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=1024&h=1024&fit=crop'
-    ],
-    'musicoterapia': [
-      'https://images.unsplash.com/photo-1516280440614-6697288d5d38?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1465847899078-b413929f7120?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=1024&h=1024&fit=crop'
-    ],
-    'psicopedagogia': [
-      'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1588072432836-e10032774350?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1024&h=1024&fit=crop'
-    ],
-    'default': [
-      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
-      'https://images.unsplash.com/photo-1596908181055-e10301e29561?w=1024&h=1024&fit=crop'
-    ]
-  };
-  
-  try {
-    // Seleciona imagem aleatória da especialidade ou default
-    const images = UNSPLASH_IMAGES[especialidade.id] || UNSPLASH_IMAGES['default'];
-    const randomImage = images[Math.floor(Math.random() * images.length)];
-    
-    console.log('✅ Usando imagem Unsplash:', randomImage.substring(0, 60) + '...');
-    return { url: randomImage, provider: 'unsplash-fallback' };
-  } catch (e) {
-    console.error('❌ Fallback Unsplash falhou:', e.message);
-  }
-
-  // ÚLTIMO RECURSO: URL direta Pollinations (nunca deve chegar aqui)
-  console.log('🔄 Último recurso: Pollinations direto...');
-  const encoded = encodeURIComponent(prompt);
-  const seed = Math.floor(Math.random() * 999999);
-  const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
-  
-  return { url: directUrl, provider: 'pollinations-last-resort' };
+  // Todos os providers falharam — não retorna URL temporária
+  console.error('❌ [GMB] Todos os providers de imagem falharam. Post ficará sem imagem.');
+  return null;
 }
 
 

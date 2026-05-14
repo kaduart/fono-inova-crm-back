@@ -140,9 +140,10 @@ export const ParticularHandler = {
             const existingPaymentId = appointment.payment._id || appointment.payment;
             const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
-            // 🛡️ Preserva paymentDate/financialDate originais se o pagamento já foi registrado em outra data
-            const preservePaymentDate = existingPayment?.paymentDate || now;
-            const preserveFinancialDate = existingPayment?.financialDate || now;
+            // Re-complete é impossível: completeSessionV2 faz early return se já completed.
+            // financialDate = now sempre (data real do recebimento = hoje)
+            const preservePaymentDate = now;
+            const preserveFinancialDate = now;
 
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,

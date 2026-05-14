@@ -585,9 +585,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 const existingPaymentId = appointment.payment._id || appointment.payment;
                 const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
-                // 🛡️ Preserva paymentDate/financialDate originais se o pagamento já foi registrado em outra data
-                const preservePaymentDate = existingPayment?.paymentDate || sessionDate;
-                const preserveFinancialDate = existingPayment?.financialDate || sessionDate;
+                // 🛡️ Preserva datas apenas se payment já estava 'paid' (idempotência em re-complete)
+                const legacyAlreadyPaid = existingPayment?.status === 'paid';
+                const preservePaymentDate = legacyAlreadyPaid ? (existingPayment?.paymentDate || sessionDate) : sessionDate;
+                const preserveFinancialDate = legacyAlreadyPaid ? (existingPayment?.financialDate || sessionDate) : sessionDate;
 
                 paymentCreated = await Payment.findByIdAndUpdate(
                     existingPaymentId,
