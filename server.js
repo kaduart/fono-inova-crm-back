@@ -108,7 +108,7 @@ import instagramRoutes from './routes/instagram.routes.js';
 import facebookRoutes from './routes/facebook.routes.js';
 import videoRoutes from './routes/video.routes.js';
 import spyRoutes from './routes/spy.routes.js';
-import metaAdsRoutes from './routes/meta-ads.js';
+import metaAdsRoutes from './routes/metaAds.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoEngineRoutes from './routes/preAgendamento.engine.js';
@@ -531,7 +531,7 @@ app.use('/api/instagram', instagramRoutes);
 app.use('/api/facebook', facebookRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/spy', spyRoutes);
-app.use('/api/meta-ads', metaAdsRoutes);
+app.use('/api/meta', metaAdsRoutes);
 app.use('/api/imagebank', imageBankRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/journey', journeyRoutes);

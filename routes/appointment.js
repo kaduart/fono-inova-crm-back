@@ -664,12 +664,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 appointmentId: createdAppointmentId
             });
 
-            // 🔹 SEGUNDO cria o PAGAMENTO INDIVIDUAL (PENDENTE)
+            // 🔹 SEGUNDO cria o PAGAMENTO DE PROVISIONING (PENDENTE)
             const paymentData = {
-                patientId: safeId(patientId),
-                sessionId: safeId(individualSessionId),
-                packageId: safeId(packageId) || undefined,
-                appointmentId: safeId(createdAppointmentId),
+                patient:     safeId(patientId),
+                session:     safeId(individualSessionId),
+                package:     safeId(packageId) || undefined,
+                appointment: safeId(createdAppointmentId),
+                kind:        'session_payment',
                 amount,
                 paymentMethod,
                 description: notes || serviceType,
@@ -680,7 +681,6 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             };
 
 
-            // ⚠️ V1 LEGADO: Pre-cria Payment no agendamento. V2 deixa para o handler no complete.
             console.log('[POST APPOINTMENT] Criando pagamento com dados:', paymentData);
             const payment = await Payment.create(paymentData);
             createdPaymentId = payment._id;

@@ -5,7 +5,7 @@
  */
 
 import cron from 'node-cron';
-import * as adsService from '../services/meta/adsService.js';
+import * as adsService from '../services/metaAdsService.js';
 import logger from '../utils/logger.js';
 
 // Flag para evitar execuções simultâneas
