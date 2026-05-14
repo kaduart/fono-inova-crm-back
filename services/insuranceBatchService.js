@@ -25,13 +25,21 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
   console.log(`[InsuranceBatch] Criando lote para ${insuranceProvider}`, { startDate, endDate, sessionIds: sessionIds?.length });
   
   // 1. Buscar sessões elegíveis (apenas NÃO vinculadas a lote)
+  // Mesma lógica de isConvenioSession: qualquer sinal de convênio
   const query = {
-    paymentMethod: 'convenio',
     status: 'completed',
     $or: [
       { billingBatchId: { $exists: false } },
       { billingBatchId: null }
-    ]
+    ],
+    $and: [{
+      $or: [
+        { billingType: 'convenio' },
+        { paymentMethod: 'convenio' },
+        { insuranceGuide: { $exists: true, $ne: null } },
+        { packageType: 'convenio' }
+      ]
+    }]
   };
   
   // Se sessionIds fornecido, usar explicitamente (faturamento seletivo)

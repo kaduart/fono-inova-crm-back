@@ -178,7 +178,7 @@ router.get('/', auth, async (req, res) => {
                     caixa: data.caixa,
                     caixaDetalhe: data.caixaDetalhe,
                     producao: data.producao,
-                    producaoDetalhe: { ...data.producaoDetalhe, pendente: pendentesSnap.total },
+                    producaoDetalhe: data.producaoDetalhe,
                     aReceber: aReceberSnap,
                     pendentes: pendentesSnap,
                     saldo: data.saldo,
@@ -196,7 +196,7 @@ router.get('/', auth, async (req, res) => {
                     },
                     revenue: {
                         total: data.producao,
-                        byMethod: { ...data.producaoDetalhe, pendente: pendentesSnap.total }
+                        byMethod: data.producaoDetalhe
                     },
                     pendentes: pendentesSnap,
                     expenses: {
@@ -248,7 +248,7 @@ router.get('/', auth, async (req, res) => {
                 caixa: data.caixa,
                 caixaDetalhe: data.caixaDetalhe,
                 producao: data.producao,
-                producaoDetalhe: { ...data.producaoDetalhe, pendente: pendentes.total },
+                producaoDetalhe: data.producaoDetalhe,
                 aReceber,
                 pendentes,
                 saldo: data.saldo,
@@ -266,7 +266,7 @@ router.get('/', auth, async (req, res) => {
                 },
                 revenue: {
                     total: data.producao,
-                    byMethod: { ...data.producaoDetalhe, pendente: pendentes.total }
+                    byMethod: data.producaoDetalhe
                 },
                 pendentes,
                 expenses: {
