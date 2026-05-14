@@ -1518,15 +1518,34 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     }
     
     const flags = computeFlags(appt);
+    const resolvedPaymentStatus = appt.package
+      ? (appt.paymentStatus || 'package_paid')
+      : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending');
+
+    const statusFinanceiro = (() => {
+      if (appt.operationalStatus === 'canceled') return 'Cancelado';
+      if (appt.billingType === 'convenio') return 'Convênio';
+      if (appt.billingType === 'liminar') return 'Liminar';
+      if (appt.package) {
+        const isPrepaid = appt.paymentOrigin === 'package_prepaid' || resolvedPaymentStatus === 'package_paid';
+        if (isPrepaid) return 'Pré-pago';
+        if (resolvedPaymentStatus === 'paid' || appt.isPaid === true) return 'Pago na Sessão';
+        if (resolvedPaymentStatus === 'partial') return 'Pago Parcial';
+        return 'Pacote Pendente';
+      }
+      if (resolvedPaymentStatus === 'paid') {
+        return appt.serviceType === 'evaluation' ? 'Avaliação Paga' : 'Pago na Sessão';
+      }
+      if (resolvedPaymentStatus === 'partial') return 'Pago Parcial';
+      return 'Pendente';
+    })();
+
     return {
       ...dto,
-      // 🎯 Adicionar balance se existir (para pacotes)
       balance: appt.balance || 0,
-      paymentStatus: appt.package
-        ? (appt.paymentStatus || 'package_paid')
-        : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
+      paymentStatus: resolvedPaymentStatus,
+      statusFinanceiro,
       source: appt.package ? 'package' : (appt.metadata?.origin?.source || 'individual'),
-      // 🆕 Lifecycle flags
       ...flags
     };
   });
