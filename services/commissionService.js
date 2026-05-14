@@ -59,6 +59,39 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       custom: []
     };
 
+    // 🔹 NEUROPEDIATRIA: modelo percentual — clínica retém 20%, profissional recebe 80%
+    const isNeuropediatria = ['neuroped', 'neuropediatria'].includes(
+      (doctor.specialty || '').toLowerCase().trim()
+    );
+
+    if (isNeuropediatria) {
+      for (const s of sessions) {
+        const valor = s.sessionValue || 0;
+        if (valor <= 0) continue;
+        const doctorShare = Math.round(valor * 0.80 * 100) / 100;
+        breakdown.standardSessions.count++;
+        breakdown.standardSessions.value += doctorShare;
+        totalCommission += doctorShare;
+
+        const insuranceKey = getInsuranceName(s) || 'particular';
+        if (!breakdown.standardSessions.byInsurance[insuranceKey]) {
+          breakdown.standardSessions.byInsurance[insuranceKey] = { count: 0, value: 0, rate: '80%' };
+        }
+        breakdown.standardSessions.byInsurance[insuranceKey].count++;
+        breakdown.standardSessions.byInsurance[insuranceKey].value += doctorShare;
+      }
+
+      return {
+        doctorId,
+        doctorName: doctor.fullName,
+        totalCommission,
+        totalSessions: sessions.length,
+        breakdown,
+        period: { startDate, endDate },
+        commissionModel: 'neuropediatria_percentage'
+      };
+    }
+
     // Agrupar avaliações neuropsicológicas por pacote (para contar 10 sessões)
     const neuropsychPackages = new Map();
 
@@ -233,7 +266,10 @@ export const generateMonthlyCommissions = async (month, year) => {
           },
           paymentMethod: 'transferencia_bancaria',
           status: 'pending',
-          notes: `Comissão ${monthRef} | Sessões: ${commission.breakdown.standardSessions.count} | Aval: ${commission.breakdown.evaluations.count} | Total: R$${commission.totalCommission.toFixed(2)}`.slice(0, 500),
+          notes: (commission.commissionModel === 'neuropediatria_percentage'
+            ? `Comissão ${monthRef} [Neuropediatria 80%] | Sessões: ${commission.breakdown.standardSessions.count} | Clínica retém 20% | Total profissional: R$${commission.totalCommission.toFixed(2)}`
+            : `Comissão ${monthRef} | Sessões: ${commission.breakdown.standardSessions.count} | Aval: ${commission.breakdown.evaluations.count} | Total: R$${commission.totalCommission.toFixed(2)}`
+          ).slice(0, 500),
           createdBy: new mongoose.Types.ObjectId('000000000000000000000000'),
           createdByRole: 'system'
         }], { session });

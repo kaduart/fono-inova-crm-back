@@ -50,7 +50,7 @@ export const errorHandler = (err, req, res, next) => {
 
     // Outros tipos de erro...
 
-    res.status(statusCode).json({
+    res.status(err.statusCode || 500).json({
         success: false,
         error: error.message || 'Erro interno do servidor',
         code: error.code || 'INTERNAL_ERROR',

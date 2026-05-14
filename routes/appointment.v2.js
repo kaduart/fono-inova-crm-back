@@ -690,9 +690,35 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
     }
 
     if (appointment.operationalStatus === 'canceled') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.ALREADY_CANCELED, 409, ErrorCodes.CONFLICT_STATE
-      );
+      // Cleanup defensivo: appointment cancelado mas payment/session podem ter ficado pendentes
+      const orphanPayment = appointment.payment
+        ? await Payment.findById(appointment.payment).session(mongoSession)
+        : await Payment.findOne({ appointment: id, status: { $ne: 'canceled' } }).session(mongoSession);
+      if (orphanPayment && orphanPayment.status !== 'canceled') {
+        orphanPayment.status = 'canceled';
+        orphanPayment.canceledAt = new Date();
+        orphanPayment.canceledReason = reason || 'cleanup_on_already_canceled';
+        orphanPayment.updatedAt = new Date();
+        await orphanPayment.save({ session: mongoSession });
+        console.log(`[cancel] 🔧 Orphan payment ${orphanPayment._id} cancelado no cleanup`);
+      }
+      const orphanSession = appointment.session
+        ? await Session.findById(appointment.session).session(mongoSession)
+        : await Session.findOne({ appointmentId: id, status: { $nin: ['canceled', 'completed'] } }).session(mongoSession);
+      if (orphanSession && orphanSession.status !== 'canceled' && orphanSession.status !== 'completed') {
+        orphanSession.status = 'canceled';
+        orphanSession.canceledAt = new Date();
+        orphanSession.cancelReason = reason || 'cleanup_on_already_canceled';
+        await orphanSession.save({ session: mongoSession });
+        console.log(`[cancel] 🔧 Orphan session ${orphanSession._id} cancelada no cleanup`);
+      }
+      // Garante paymentStatus sincronizado
+      if (appointment.paymentStatus !== 'canceled') {
+        appointment.paymentStatus = 'canceled';
+        await appointment.save({ session: mongoSession });
+      }
+      await mongoSession.commitTransaction();
+      throw createBusinessError(Messages.BUSINESS.ALREADY_CANCELED, 409, ErrorCodes.CONFLICT_STATE);
     }
 
     // 🎯 CRM: operationalStatus é a fonte da verdade
@@ -705,6 +731,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
     // 🎯 V2 SÍNCRONO: Cancela imediatamente
     appointment.operationalStatus = 'canceled';
     appointment.status = 'canceled';
+    appointment.paymentStatus = 'canceled';
     appointment.canceledAt = new Date();
     appointment.cancellationReason = reason;
     appointment.history.push({
@@ -751,33 +778,58 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       );
     }
 
-    // 🔄 CANCELA PAYMENT se existir (independentemente do tipo de billing)
-    if (appointment.payment) {
-      const paymentId = appointment.payment._id || appointment.payment;
-      const payment = await Payment.findById(paymentId).session(mongoSession);
-      if (payment && payment.status !== 'canceled') {
-        payment.status = 'canceled';
-        payment.canceledAt = new Date();
-        payment.canceledReason = reason;
-        payment.updatedAt = new Date();
-        await payment.save({ session: mongoSession });
-        console.log(`[cancel] 💰 Payment ${paymentId} cancelado`);
+    // 🔄 CANCELA PAYMENT + self-healing de vínculo
+    let needsAppointmentResave = false;
+    {
+      const paymentId = appointment.payment?._id || appointment.payment;
+      const payment = paymentId
+        ? await Payment.findById(paymentId).session(mongoSession)
+        : await Payment.findOne({ appointment: id, status: { $ne: 'canceled' } }).session(mongoSession);
+
+      if (payment) {
+        if (!appointment.payment) {
+          appointment.payment = payment._id;
+          needsAppointmentResave = true;
+          console.log(`[cancel] 🔧 Self-healing: appointment.payment restaurado → ${payment._id}`);
+        }
+        if (payment.status !== 'canceled') {
+          payment.status = 'canceled';
+          payment.canceledAt = new Date();
+          payment.canceledReason = reason;
+          payment.updatedAt = new Date();
+          await payment.save({ session: mongoSession });
+          console.log(`[cancel] 💰 Payment ${payment._id} cancelado`);
+        }
       }
     }
 
-    // 🔄 CANCELA SESSION associada se existir e não estiver completada
-    if (appointment.session) {
-      const sessionId = appointment.session._id || appointment.session;
-      const sessionDoc = await Session.findById(sessionId).session(mongoSession);
-      if (sessionDoc && sessionDoc.status !== 'completed') {
-        sessionDoc.status = 'canceled';
-        sessionDoc.canceledAt = new Date();
-        sessionDoc.cancelReason = reason;
-        await sessionDoc.save({ session: mongoSession });
-        console.log(`[cancel] 📋 Session ${sessionId} cancelada`);
-      } else if (sessionDoc && sessionDoc.status === 'completed') {
-        console.log(`[cancel] 📋 Session ${sessionId} já completada — não cancelada para preservar histórico`);
+    // 🔄 CANCELA SESSION + self-healing de vínculo
+    {
+      const sessionId = appointment.session?._id || appointment.session;
+      const sessionDoc = sessionId
+        ? await Session.findById(sessionId).session(mongoSession)
+        : await Session.findOne({ appointmentId: id }).session(mongoSession);
+
+      if (sessionDoc) {
+        if (!appointment.session) {
+          appointment.session = sessionDoc._id;
+          needsAppointmentResave = true;
+          console.log(`[cancel] 🔧 Self-healing: appointment.session restaurado → ${sessionDoc._id}`);
+        }
+        if (sessionDoc.status === 'completed') {
+          console.log(`[cancel] 📋 Session ${sessionDoc._id} já completada — não cancelada para preservar histórico`);
+        } else if (sessionDoc.status !== 'canceled') {
+          sessionDoc.status = 'canceled';
+          sessionDoc.canceledAt = new Date();
+          sessionDoc.cancelReason = reason;
+          await sessionDoc.save({ session: mongoSession });
+          console.log(`[cancel] 📋 Session ${sessionDoc._id} cancelada`);
+        }
       }
+    }
+
+    if (needsAppointmentResave) {
+      await appointment.save({ session: mongoSession });
     }
 
     // 🔄 ATUALIZA PACOTE dentro da transação (canceledSessions + status reversion)
