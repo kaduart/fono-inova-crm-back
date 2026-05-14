@@ -54,7 +54,8 @@ async function fetchValidPayments(start, end) {
     return payments.filter(p => {
         const nome = (p.patient?.fullName || p.patientName || '').toLowerCase();
         if (nome.includes('teste') || nome.includes('test ')) return false;
-        if (p.isFromPackage === true) return false;
+        // per_session (kind='session_payment') é caixa real — só exclui pré-pago
+        if (p.isFromPackage === true && p.kind !== 'session_payment') return false;
         if (p.kind === 'package_consumed') return false;
         return true;
     });
