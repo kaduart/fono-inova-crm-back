@@ -1418,6 +1418,10 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     .populate('doctor', 'fullName specialty')
     .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status');
   
+  // 💰 POPULA PACKAGE para valor dinâmico (sessionValue vem do package, não do appointment)
+  queryBuilder = queryBuilder
+    .populate('package', 'sessionValue type insuranceGrossAmount insuranceProvider status');
+  
   // 🔥 OTIMIZAÇÃO: Roda query e count em PARALELO
   const queries = [queryBuilder];
   

@@ -97,7 +97,18 @@ export function mapAppointmentDTO(appointment) {
         specialty: appointment.specialty || appointment.sessionType || '',
         serviceType: appointment.serviceType || null,
         sessionType: appointment.sessionType || null,
-        sessionValue: appointment.sessionValue ?? 0,
+        sessionValue: (() => {
+            // 🎯 Fonte de verdade: package populado > appointment hardcoded
+            const pkg = appointment.package && typeof appointment.package === 'object' ? appointment.package : null;
+            if (pkg) {
+                // Convênio usa insuranceGrossAmount se disponível, senão sessionValue do package
+                if (pkg.type === 'convenio' && pkg.insuranceGrossAmount) {
+                    return pkg.insuranceGrossAmount;
+                }
+                return pkg.sessionValue ?? appointment.sessionValue ?? 0;
+            }
+            return appointment.sessionValue ?? 0;
+        })(),
         serviceTypeLabel: (() => {
             const map = {
                 evaluation: 'Avaliação',
