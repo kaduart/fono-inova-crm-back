@@ -29,7 +29,6 @@ class AdminDashboardCacheService {
       
       if (cached) {
         const data = JSON.parse(cached);
-        console.log(`[DashboardCache] Cache HIT: ${key}`);
         
         // 🔥 VERIFICA SE PRECISA REBUILD (TTL/2 = 2.5min)
         const shouldRebuild = !data._cachedAt || 
@@ -42,11 +41,9 @@ class AdminDashboardCacheService {
           // REBUILD ASSÍNCRONO (não bloqueia)
           setImmediate(async () => {
             try {
-              console.log(`[DashboardCache] 🔄 Rebuild async: ${key}`);
               const fresh = await fetchFn();
               fresh._cachedAt = new Date().toISOString();
               await this.set(key, fresh, ttl);
-              console.log(`[DashboardCache] ✅ Rebuild done: ${key}`);
             } catch (err) {
               console.error(`[DashboardCache] ⚠️ Rebuild erro: ${err.message}`);
             } finally {
@@ -59,7 +56,6 @@ class AdminDashboardCacheService {
       }
       
       // 🔥 MISS: Executa mas com timeout de segurança
-      console.log(`[DashboardCache] Cache MISS: ${key}`);
       const data = await this._fetchWithTimeout(fetchFn, 5000); // max 5s
       data._cachedAt = new Date().toISOString();
       
@@ -114,7 +110,6 @@ class AdminDashboardCacheService {
   async invalidate(key) {
     if (!redisClient.isReady) return;
     await redisClient.del(`${CACHE_PREFIX}${key}`);
-    console.log(`[DashboardCache] Invalidado: ${key}`);
   }
   
   /**
@@ -133,11 +128,7 @@ class AdminDashboardCacheService {
     
     try {
       const cached = await redisClient.get(key);
-      if (!cached) {
-        // Cache não existe ainda, rebuild tradicional vai criar
-        console.log(`[DashboardCache] ⚠️ Cache vazio, rebuild necessário`);
-        return;
-      }
+      if (!cached) return;
       
       const data = JSON.parse(cached);
       
@@ -165,7 +156,6 @@ class AdminDashboardCacheService {
       data._incrementalUpdate = true;
       
       await redisClient.setEx(key, CACHE_TTL, JSON.stringify(data));
-      console.log(`[DashboardCache] ⚡ Incremental update:`, updates);
       
     } catch (err) {
       console.error(`[DashboardCache] ⚠️ Erro incremental:`, err.message);
@@ -181,7 +171,6 @@ class AdminDashboardCacheService {
     const keys = await redisClient.keys(`${CACHE_PREFIX}*`);
     if (keys.length > 0) {
       await redisClient.del(keys);
-      console.log(`[DashboardCache] Invalidados ${keys.length} caches`);
     }
   }
   

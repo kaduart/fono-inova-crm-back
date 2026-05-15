@@ -187,8 +187,22 @@ router.get('/aniversariantes', auth, async (req, res) => {
       return birthMonth === currentMonth;
     });
     
+    // Ordena cronologicamente pelo dia do mês
+    aniversariantes.sort((a, b) => {
+      const dayOf = (dateStr) => {
+        const s = String(dateStr);
+        if (s.includes('-')) {
+          const parts = s.split('-');
+          return parts[0].length === 4 ? parseInt(parts[2]) : parseInt(parts[1]);
+        }
+        if (s.includes('/')) return parseInt(s.split('/')[0]);
+        return 0;
+      };
+      return dayOf(a.dateOfBirth) - dayOf(b.dateOfBirth);
+    });
+
     console.log(`[ANIVERSARIANTES] Encontrados: ${aniversariantes.length}`);
-    
+
     res.json({ success: true, data: aniversariantes });
   } catch (err) {
     console.error('[ANIVERSARIANTES] Erro:', err);

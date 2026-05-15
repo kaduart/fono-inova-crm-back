@@ -121,7 +121,6 @@ import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.c
 import { schedulePatientConsistency } from './crons/patientConsistency.cron.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
-import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import revenueAnalyticsRoutes from './routes/analytics.js';
 import operationalAnalyticsRoutes from './routes/analytics/operational.routes.js';
@@ -498,7 +497,7 @@ app.use('/api/v2/evolutions', evolutionV2Routes);  // 🧬 V2: evolution event-d
 // 🗑️ V1 removido: /api/pre-agendamento e /api/v2/pre-agendamento desativados
 // Todos os pré-agendamentos agora usam /api/v2/pre-appointments
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/dashboard', etagMiddleware({ ttl: 120 }), dashboardRoutes);
+// 🔴 /api/dashboard LEGADO REMOVIDO — use /api/v2/admin/dashboard/overview
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);

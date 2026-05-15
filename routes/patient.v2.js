@@ -58,13 +58,6 @@ router.get('/', flexibleAuth, async (req, res) => {
       includeStale = 'false' // se 'true', inclui views stale
     } = req.query;
     
-    logger.info(`[${correlationId}] 📋 List patients`, {
-      search: search?.substring(0, 50),
-      limit,
-      skip,
-      doctorId
-    });
-    
     // 🚀 Query otimizada no PatientsView
     const result = await PatientsView.quickSearch(search, {
       limit: parseInt(limit),
@@ -91,13 +84,6 @@ router.get('/', flexibleAuth, async (req, res) => {
           }, { correlationId });
         });
     }
-    
-    logger.info(`[${correlationId}] ✅ List completed`, {
-      count: result.patients.length,
-      total: result.total,
-      duration: `${duration}ms`,
-      staleCount
-    });
     
     // ✅ CORREÇÃO: Mapeia para garantir que _id seja o patientId (não o ID da view)
     const normalizedPatients = result.patients.map(p => ({

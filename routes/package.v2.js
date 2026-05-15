@@ -74,7 +74,12 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     // Build query
     const query = {};
-    if (options.status) query.status = options.status;
+    if (options.status) {
+      query.status = options.status;
+    } else {
+      // 🛡️ Por padrão, NÃO listar packages arquivados/superseded
+      query.status = { $nin: ['superseded'] };
+    }
     if (options.type) query.type = options.type;
     
     // Se tem patientId no token/filtro, filtra

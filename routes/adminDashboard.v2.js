@@ -8,13 +8,10 @@
  */
 
 import express from 'express';
-import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
+import { buildDashboardOverview, invalidateDashboardBlocks } from '../services/adminDashboard/index.js';
 import Payment from '../models/Payment.js';
-import Session from '../models/Session.js';
-import Appointment from '../models/Appointment.js';
-import Patient from '../models/Patient.js';
 
 const router = express.Router();
 
@@ -83,58 +80,39 @@ router.get('/payments-summary', auth, async (req, res) => {
 /**
  * GET /api/v2/admin/dashboard/overview
  * 
- * Overview completo do dashboard (cacheado)
- * Substitui /api/dashboard/overview
+ * Overview completo do dashboard V2 (builders separados + cache granular)
+ * Query: ?include=stats,charts,doctors,upcoming
  */
 router.get('/overview', auth, async (req, res) => {
   try {
-    const cacheKey = 'admin-overview';
-    
-    // 🔥 OTIMIZAÇÃO: TTL aumentado pra 10min + stale-while-revalidate
-    const data = await dashboardCache.getOrSet(cacheKey, async () => {
-      const today = new Date();
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      
-      // 🔥 OTIMIZAÇÃO: Contagens otimizadas
-      const [
-        totalPatients,
-        todaySessions,
-        monthRevenue,
-        pendingPayments
-      ] = await Promise.all([
-        Patient.estimatedDocumentCount(), // ⚡ OK: contagem geral sem filtro
-        Session.countDocuments({
-          date: {
-            $gte: new Date(today.setHours(0, 0, 0, 0)),
-            $lte: new Date(today.setHours(23, 59, 59, 999))
-          }
-        }),
-        Payment.aggregate([
-          {
-            $match: {
-              status: 'paid',
-              paymentDate: { $gte: startOfMonth, $lte: endOfMonth },
-              kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
-            }
-          },
-          { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]).limit(1), // 🔥 Limita resultado
-        Payment.countDocuments({ status: 'pending' }).limit(1000) // 🔥 Limita count
-      ]);
-      
-      return {
-        patients: { total: totalPatients },
-        sessions: { today: todaySessions },
-        revenue: { month: monthRevenue[0]?.total || 0 },
-        payments: { pending: pendingPayments },
-        updatedAt: new Date()
-      };
-    }, 600); // 🔥 10 minutos de TTL
-    
+    const includeParam = req.query.include;
+    const forceRefresh = req.query.refresh === 'true';
+
+    const include = includeParam
+      ? includeParam.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    const data = await buildDashboardOverview(include, forceRefresh);
+
     res.json({ success: true, data });
   } catch (error) {
-    console.error('[AdminDashboardV2] Erro:', error);
+    console.error('[AdminDashboardV2] Erro no overview:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v2/admin/dashboard/invalidate-cache
+ * 
+ * Invalida cache granular do dashboard V2
+ */
+router.post('/invalidate-cache', auth, async (req, res) => {
+  try {
+    const { blocks } = req.body || {};
+    await invalidateDashboardBlocks(blocks);
+    res.json({ success: true, message: 'Cache invalidado' });
+  } catch (error) {
+    console.error('[AdminDashboardV2] Erro ao invalidar cache:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
