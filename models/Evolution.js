@@ -246,7 +246,7 @@ evolutionSchema.index(
 );
 evolutionSchema.index(
     { patient: 1, date: 1, doctor: 1 },
-    { unique: true, name: 'unique_evolution_per_session' }
+    { name: 'evolution_per_session' }
 );
 
 const Evolution = mongoose.model('Evolution', evolutionSchema);

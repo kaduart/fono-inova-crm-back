@@ -783,6 +783,11 @@ server.listen(PORT, '0.0.0.0', () => {
         
         mongoConnected = true;
         console.log("✅ MongoDB conectado");
+
+        // Remove índices legados de evoluções para recriar sem restrições problemáticas
+        const evoCol = mongoose.connection.db.collection('evolutions');
+        evoCol.dropIndex('unique_evolution_per_session').catch(() => {});
+        evoCol.dropIndex('unique_evolution_per_appointment').catch(() => {});
       } catch (mongoErr) {
         if (mongoRetries >= MAX_MONGO_RETRIES) {
           console.error("❌ MongoDB: Todas as tentativas falharam");
