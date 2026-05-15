@@ -1439,7 +1439,7 @@ async function calculatePendentes(year, month) {
     const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
     const convenioVencidos = convenioItems.filter(i => i.data && i.data <= hoje);
     const particularVencidos = particularItems.filter(i => i.data && i.data <= hoje);
-    const vencidosTotal = particularVencidos.reduce((s, i) => s + i.valor, 0);
+    const vencidosTotal = [...particularVencidos, ...convenioVencidos].reduce((s, i) => s + i.valor, 0);
 
     // ── 🆕 V2 FINANCIAL ENGINE: agrupamento por paciente + especialidade correta ──
     // Passa todos os pending do mês para o engine (sem filtro de data, pois já filtramos)
