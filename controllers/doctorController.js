@@ -611,10 +611,31 @@ export const getDoctorStats = async (req, res) => {
       operationalStatus: {}
     };
 
-    // Formatar para frontend
-    // 🔹 Formatar para frontend (versão atualizada com status em inglês)
+    // Stats mensais
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const [monthlyStats, activePatients] = await Promise.all([
+      Appointment.aggregate([
+        { $match: { doctor, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+        { $group: {
+          _id: null,
+          total: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$operationalStatus', 'completed'] }, 1, 0] } }
+        }}
+      ]),
+      Appointment.distinct('patient', { doctor, date: { $gte: startOfMonth, $lte: endOfMonth } })
+    ]);
+
+    const monthly = monthlyStats[0] || { total: 0, completed: 0 };
+
     const formattedResult = {
       today: result.total,
+      monthlyAppointments: monthly.total,
+      monthlyCompleted: monthly.completed,
+      activePatients: activePatients.length,
+      attendanceRate: monthly.total > 0 ? Math.round((monthly.completed / monthly.total) * 100) : 0,
       clinical: {
         pending: result.clinicalStatus.pending || 0,
         inProgress: result.clinicalStatus.in_progress || 0,
@@ -628,7 +649,6 @@ export const getDoctorStats = async (req, res) => {
         paid: result.operationalStatus.paid || 0
       }
     };
-
 
     res.status(200).json(formattedResult);
   } catch (error) {

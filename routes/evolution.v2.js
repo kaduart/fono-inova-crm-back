@@ -63,11 +63,26 @@ router.post('/', flexibleAuth, async (req, res) => {
         if (!doctorId) {
             return res.status(401).json(failure('UNAUTHORIZED', 'Usuário não autenticado'));
         }
+        if (!payload.metrics || !Array.isArray(payload.metrics) || payload.metrics.length === 0) {
+            return res.status(400).json(failure('MISSING_METRICS', 'Adicione ao menos uma métrica de avaliação'));
+        }
+        if (!payload.evaluationAreas || !Array.isArray(payload.evaluationAreas) || payload.evaluationAreas.length === 0) {
+            return res.status(400).json(failure('MISSING_AREAS', 'Adicione ao menos uma área de desenvolvimento'));
+        }
+
+        // Combina date + time para garantir unicidade por horário (permite múltiplas sessões no mesmo dia)
+        const dateObj = new Date(payload.date);
+        if (payload.time) {
+            const [h, m] = String(payload.time).split(':').map(Number);
+            dateObj.setUTCHours(h, m, 0, 0);
+        } else {
+            dateObj.setUTCMilliseconds(Date.now() % 1000);
+        }
 
         const doc = new Evolution({
             patient: payload.patient,
             doctor: doctorId,
-            date: new Date(payload.date),
+            date: dateObj,
             time: payload.time,
             specialty: payload.specialty.trim(),
             content: payload.content || '',
@@ -80,7 +95,7 @@ router.post('/', flexibleAuth, async (req, res) => {
             therapeuticPlan: payload.therapeuticPlan || null,
             protocolCode: payload.protocolCode || null,
             activeProtocols: payload.protocolCode ? [payload.protocolCode] : [],
-            appointmentId: payload.appointmentId || null,
+            appointmentId: payload.appointmentId || undefined,
             createdBy: doctorId,
         });
 
@@ -221,7 +236,7 @@ router.get('/patient/:patientId', flexibleAuth, async (req, res) => {
             return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
-        const evolutions = await Evolution.find({ patient: patientId })
+        const evolutions = await Evolution.find({ patient: patientId, ...getEvolutionScope(req) })
             .populate('doctor', 'fullName specialty')
             .populate('patient', 'fullName dateOfBirth')
             .sort({ date: -1 });
@@ -241,7 +256,7 @@ router.get('/patient/:patientId/last', flexibleAuth, async (req, res) => {
             return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
-        const lastEvolution = await Evolution.findOne({ patient: patientId })
+        const lastEvolution = await Evolution.findOne({ patient: patientId, ...getEvolutionScope(req) })
             .populate('doctor', 'fullName specialty')
             .sort({ date: -1 });
 
@@ -265,7 +280,8 @@ router.get('/chart/:patientId', flexibleAuth, async (req, res) => {
 
         const evolutions = await Evolution.find({
             patient: patientId,
-            metrics: { $exists: true, $not: { $size: 0 } }
+            metrics: { $exists: true, $not: { $size: 0 } },
+            ...getEvolutionScope(req)
         }).sort({ date: 1 });
 
         const allMetrics = await Metric.find();
@@ -351,7 +367,8 @@ router.get('/patient/:patientId/progress', flexibleAuth, async (req, res) => {
 
         const evolutions = await Evolution.find({
             patient: patientId,
-            'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } }
+            'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } },
+            ...getEvolutionScope(req)
         })
             .select('date metrics plan therapeuticPlan evaluationAreas treatmentStatus')
             .sort({ date: 1 });
@@ -436,7 +453,7 @@ router.get('/patient/:patientId/history', flexibleAuth, async (req, res) => {
             return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
-        const evolutions = await Evolution.find({ patient: patientId })
+        const evolutions = await Evolution.find({ patient: patientId, ...getEvolutionScope(req) })
             .select('_id date')
             .sort({ date: -1 })
             .limit(parseInt(limit));
