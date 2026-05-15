@@ -226,6 +226,13 @@ export const packageOperations = {
                 throw new Error('Liminar deve ser criada via /api/v2/liminar-contracts. O fluxo Package type=liminar está descontinuado.');
             }
 
+            // 🔒 BLOQUEIO CRÍTICO: Convênio deve usar InsuranceGuide (novo fluxo)
+            // ⚠️ LEGADO — CONVÊNIO NÃO USA MAIS PACKAGE
+            if (type === 'convenio') {
+                console.warn('[LEGACY BLOCKED] Tentativa de criar Package type=convenio via therapyPackageController. Use /api/v2/insurance-guides');
+                throw new Error('Convênio deve ser criado via /api/v2/insurance-guides. O fluxo Package type=convenio está descontinuado.');
+            }
+
             // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
             // Esse log NUNCA mais executa (bloqueio acima). Mantido para referência.
             if (type === 'liminar') {

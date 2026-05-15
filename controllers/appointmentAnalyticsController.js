@@ -139,7 +139,6 @@ export const getAppointmentsByType = async (req, res) => {
         const filter = { ...dateFilter, ...extraFilters };
 
         // ─── 3. Buscar agendamentos do período (com população completa) ───
-        console.log('[Analytics] main filter:', JSON.stringify(filter));
         const appointments = await Appointment.find(filter)
             .populate('patient', 'fullName phone email dateOfBirth cpf')
             .populate('doctor', 'fullName specialty phoneNumber')
@@ -148,7 +147,6 @@ export const getAppointmentsByType = async (req, res) => {
             .populate('payment', 'status amount paymentMethod billingType kind insuranceValue')
             .sort({ date: 1, time: 1 })
             .lean();
-        console.log('[Analytics] main appointments count:', appointments.length);
 
         // 🎯 FIX: No modo 'date' a intenção é uma visão OPERACIONAL + AQUISIÇÃO:
         // buscamos os agendamentos do período (date) E os pré-agendados criados
@@ -181,7 +179,6 @@ export const getAppointmentsByType = async (req, res) => {
             if (doctorId) preFilter.doctor = new mongoose.Types.ObjectId(doctorId);
             if (specialty) preFilter.specialty = specialty.toLowerCase();
             
-            console.log('[Analytics] preFilter:', JSON.stringify(preFilter));
             preAgendamentos = await Appointment.find(preFilter)
                 .populate('patient', 'fullName phone email dateOfBirth cpf')
                 .populate('doctor', 'fullName specialty phoneNumber')
@@ -190,10 +187,6 @@ export const getAppointmentsByType = async (req, res) => {
                 .populate('payment', 'status amount paymentMethod billingType kind insuranceValue')
                 .sort({ date: 1, time: 1 })
                 .lean();
-            console.log('[Analytics] preAgendamentos count:', preAgendamentos.length);
-            if (preAgendamentos.length > 0) {
-                console.log('[Analytics] preAgendamentos ids:', preAgendamentos.map(p => ({ _id: p._id, operationalStatus: p.operationalStatus, createdAt: p.createdAt, date: p.date })));
-            }
         }
 
         // Deduplica pré-agendamentos: mesmo _id OU mesmo paciente já no pool principal
@@ -270,7 +263,6 @@ export const getAppointmentsByType = async (req, res) => {
         );
 
         const total = enrichedAppointments.length;
-        console.log('[Analytics] final counts -> total:', total, 'leads:', leads.length, 'novos:', novos.length, 'retornos45:', retornos45.length, 'recorrentes:', recorrentes.length);
 
         res.json({
             success: true,

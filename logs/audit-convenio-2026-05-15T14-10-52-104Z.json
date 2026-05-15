@@ -1,0 +1,2647 @@
+{
+  "timestamp": "2026-05-15T14:10:52.104Z",
+  "totalPackages": 29,
+  "stats": {
+    "SAFE": 5,
+    "WARNING": 23,
+    "CRITICAL": 1
+  },
+  "audits": [
+    {
+      "packageId": "69986c057c92d32c1fd44a1f",
+      "patientId": "699869177c92d32c1fd43f86",
+      "patientName": "Kauana Queiroz Gomes Naves",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 32,
+      "sessionsDone": 9,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986a4c7c92d32c1fd44464",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "2028",
+      "guideStatus": "active",
+      "guideTotalSessions": 32,
+      "guideUsedSessions": 6,
+      "completedSessionsCount": 9,
+      "guideConsumedTrueCount": 6,
+      "guideConsumedFalseCount": 3,
+      "anomalousSessionsCount": 3,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 17,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=6, completed=9, delta=3",
+        "ANOMALOUS_SESSIONS: 3 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69986c057c92d32c1fd44a25",
+            "date": "2026-02-20",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69986c057c92d32c1fd44a26",
+            "date": "2026-02-23",
+            "time": "14:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69986c057c92d32c1fd44a2a",
+            "date": "2026-02-13",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69986d557c92d32c1fd44f15",
+      "patientId": "699869177c92d32c1fd43f86",
+      "patientName": "Kauana Queiroz Gomes Naves",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 32,
+      "sessionsDone": 3,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986cc37c92d32c1fd44de9",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "2029",
+      "guideStatus": "active",
+      "guideTotalSessions": 32,
+      "guideUsedSessions": 3,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 3,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 11,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "SAFE"
+    },
+    {
+      "packageId": "699dce804152216f79139871",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 8,
+      "sessionsDone": 3,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dce204152216f7913981c",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "9232",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 3,
+      "anomalousSessionsCount": 3,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 3,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=3, delta=3",
+        "ANOMALOUS_SESSIONS: 3 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699dce804152216f79139878",
+            "date": "2026-01-19",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dcf324152216f79139b59",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dce804152216f79139874",
+            "date": "2026-01-05",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dcedc4152216f79139aea",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dce804152216f79139876",
+            "date": "2026-01-12",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dceff4152216f79139b26",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699ddbf74152216f7913cb1a",
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 24,
+      "sessionsDone": 7,
+      "totalValue": 1920,
+      "totalPaid": 0,
+      "balance": 1920,
+      "insuranceGuideId": "699ddb7b4152216f7913ca10",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15655247",
+      "guideStatus": "active",
+      "guideTotalSessions": 24,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 7,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 7,
+      "anomalousSessionsCount": 7,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 7,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=7, delta=7",
+        "ANOMALOUS_SESSIONS: 7 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699ddbf74152216f7913cb1e",
+            "date": "2026-01-14",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddea04152216f7913d3d4",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb1f",
+            "date": "2026-01-16",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddeb64152216f7913d3f0",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb20",
+            "date": "2026-01-21",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddee54152216f7913d571",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb24",
+            "date": "2026-01-30",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddf9b4152216f7913d81b",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb1d",
+            "date": "2026-01-12",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dde874152216f7913d3b8",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb21",
+            "date": "2026-01-23",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddf004152216f7913d61d",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699ddbf74152216f7913cb22",
+            "date": "2026-01-26",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddf224152216f7913d66b",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699e014f4152216f79145471",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "cancelled",
+      "totalSessions": 8,
+      "sessionsDone": 5,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dedcd4152216f79140ed5",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "6644",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 4,
+      "completedSessionsCount": 5,
+      "guideConsumedTrueCount": 4,
+      "guideConsumedFalseCount": 1,
+      "anomalousSessionsCount": 1,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 3,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=4, completed=5, delta=1",
+        "ANOMALOUS_SESSIONS: 1 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c5754087f4b2aed4723436",
+            "date": "2026-03-30",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "69e5440770171c1b2b8d0651",
+            "paymentId": "69e4feed3537a522feacab45",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69c2ebf15c4ad17fefccc5e8",
+      "patientId": "69c16797c19d35b8454a354d",
+      "patientName": "Benjamim Rocha Simão",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 16,
+      "sessionsDone": 11,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69c2eb9f5c4ad17fefccc5b8",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15924845",
+      "guideStatus": "active",
+      "guideTotalSessions": 16,
+      "guideUsedSessions": 8,
+      "completedSessionsCount": 12,
+      "guideConsumedTrueCount": 6,
+      "guideConsumedFalseCount": 6,
+      "anomalousSessionsCount": 6,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 7,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 6,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=8, completed=12, delta=4",
+        "ANOMALOUS_SESSIONS: 6 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f8",
+            "date": "2026-05-12",
+            "time": "18:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f1",
+            "date": "2026-04-17",
+            "time": "18:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "69e5440770171c1b2b8d0651",
+            "paymentId": "69e54515142030cbc38563b5",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f7",
+            "date": "2026-05-08",
+            "time": "18:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 160,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f0",
+            "date": "2026-04-14",
+            "time": "17:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "69e5440770171c1b2b8d0651",
+            "paymentId": "69e54515142030cbc38563b4",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f4",
+            "date": "2026-04-28",
+            "time": "18:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2ebf15c4ad17fefccc5f2",
+            "date": "2026-04-20",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69d67dfe19c6571d8c76dbbe",
+      "patientId": "69d3f4b8a9bd5f4411488492",
+      "patientName": "Isabela Ferreira De Mendonca",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 11,
+      "sessionsDone": 5,
+      "totalValue": 1760,
+      "totalPaid": 0,
+      "balance": 1760,
+      "insuranceGuideId": "69d67c4919c6571d8c76dae9",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "16007195",
+      "guideStatus": "active",
+      "guideTotalSessions": 11,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 5,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 4,
+      "anomalousSessionsCount": 4,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 7,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 1,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=5, delta=4",
+        "ANOMALOUS_SESSIONS: 4 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69d67dfe19c6571d8c76dbc2",
+            "date": "2026-04-22",
+            "time": "10:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d67e0919c6571d8c76dc0f",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d67dfe19c6571d8c76dbc1",
+            "date": "2026-04-15",
+            "time": "10:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d67e0819c6571d8c76dbfc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d67dfe19c6571d8c76dbc4",
+            "date": "2026-05-06",
+            "time": "10:00",
+            "status": "completed",
+            "paymentOrigin": "package_prepaid",
+            "paymentMethod": "package_prepaid",
+            "paymentStatus": "package_paid",
+            "isPaid": true,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "paymentId": "69d67e0c19c6571d8c76dc32",
+            "anomalies": [
+              "paymentOrigin=package_prepaid em convênio",
+              "paymentMethod=package_prepaid em convênio",
+              "paymentStatus=package_paid em convênio",
+              "isPaid=true em sessão convênio",
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d67dfe19c6571d8c76dbc3",
+            "date": "2026-04-29",
+            "time": "10:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d67e0a19c6571d8c76dc20",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699848397c92d32c1fd3c7dd",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 5,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699846407c92d32c1fd3c1ae",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "2025",
+      "guideStatus": "cancelled",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 3,
+      "completedSessionsCount": 5,
+      "guideConsumedTrueCount": 3,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=3, completed=5, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "6998483a7c92d32c1fd3c7e7",
+            "date": "2026-02-23",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "6998483a7c92d32c1fd3c7e6",
+            "date": "2026-02-23",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699866e27c92d32c1fd43657",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "patientName": "Gabriel Alves Leite",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 32,
+      "sessionsDone": 1,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "699866637c92d32c1fd4345b",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15736718",
+      "guideStatus": "active",
+      "guideTotalSessions": 32,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 1,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 5,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "SAFE"
+    },
+    {
+      "packageId": "699dd72d4152216f7913b8ee",
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 24,
+      "sessionsDone": 24,
+      "totalValue": 1920,
+      "totalPaid": 0,
+      "balance": 1920,
+      "insuranceGuideId": "699dd6e34152216f7913b758",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15655250",
+      "guideStatus": "active",
+      "guideTotalSessions": 24,
+      "guideUsedSessions": 14,
+      "completedSessionsCount": 23,
+      "guideConsumedTrueCount": 11,
+      "guideConsumedFalseCount": 12,
+      "anomalousSessionsCount": 12,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 20,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=14, completed=23, delta=9",
+        "ANOMALOUS_SESSIONS: 12 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699dd72d4152216f7913b8f1",
+            "date": "2026-01-12",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7544152216f7913ba12",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f4",
+            "date": "2026-01-21",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7834152216f7913ba72",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f7",
+            "date": "2026-02-02",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dda134152216f7913c3d1",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8fc",
+            "date": "2026-02-18",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddb194152216f7913c7cb",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8fd",
+            "date": "2026-02-23",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddb414152216f7913c8b9",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f2",
+            "date": "2026-01-14",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7624152216f7913ba3a",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f3",
+            "date": "2026-01-19",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7734152216f7913ba56",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f9",
+            "date": "2026-02-09",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddacd4152216f7913c64e",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f5",
+            "date": "2026-01-26",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7a64152216f7913ba8e",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f6",
+            "date": "2026-01-28",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dd7bb4152216f7913baac",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8f8",
+            "date": "2026-02-04",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699dda254152216f7913c417",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dd72d4152216f7913b8fa",
+            "date": "2026-02-11",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699ddae24152216f7913c6bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699de14a4152216f7913de38",
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 20,
+      "sessionsDone": 11,
+      "totalValue": 1600,
+      "totalPaid": 0,
+      "balance": 1600,
+      "insuranceGuideId": "699de0bf4152216f7913dbee",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15650230",
+      "guideStatus": "active",
+      "guideTotalSessions": 20,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 11,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 11,
+      "anomalousSessionsCount": 11,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 11,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=11, delta=11",
+        "ANOMALOUS_SESSIONS: 11 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699de14a4152216f7913de3a",
+            "date": "2026-01-09",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2004152216f7913e0ff",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de3f",
+            "date": "2026-01-26",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2984152216f7913e3b0",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de43",
+            "date": "2026-02-09",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2f94152216f7913e420",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de41",
+            "date": "2026-02-02",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2ca4152216f7913e3e8",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de44",
+            "date": "2026-02-13",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de3124152216f7913e563",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de46",
+            "date": "2026-02-20",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de34a4152216f7913e696",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de47",
+            "date": "2026-02-23",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de37e4152216f7913e6b2",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de3e",
+            "date": "2026-01-23",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2874152216f7913e374",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de3d",
+            "date": "2026-01-19",
+            "time": "15:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de26b4152216f7913e2c4",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de40",
+            "date": "2026-01-30",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2a94152216f7913e3cc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de14a4152216f7913de42",
+            "date": "2026-02-06",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de2e04152216f7913e404",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699e01084152216f791452ea",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 4,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dede54152216f79140ee5",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "5588",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 3,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 3,
+      "guideConsumedFalseCount": 1,
+      "anomalousSessionsCount": 1,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 2,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 2,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "ANOMALOUS_SESSIONS: 1 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c573a487f4b2aed47232af",
+            "date": "2026-03-30",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "69e5440770171c1b2b8d0651",
+            "paymentId": "69e4feed3537a522feacab34",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69a9985266c460e6da734f68",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "patientName": "Gabriel Alves Leite",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 16,
+      "sessionsDone": 2,
+      "totalValue": 0,
+      "totalPaid": 0,
+      "balance": 0,
+      "insuranceGuideId": "69a997cb66c460e6da734f0b",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15859841",
+      "guideStatus": "active",
+      "guideTotalSessions": 16,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 2,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 5,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=2, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69a9985266c460e6da734f6b",
+            "date": "2026-02-27",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69a9985266c460e6da734f6a",
+            "date": "2026-02-27",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69c2eb495c4ad17fefccc505",
+      "patientId": "69c16866c19d35b8454a35fb",
+      "patientName": "Joaquim Rocha Simão",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 16,
+      "sessionsDone": 10,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69c2eb075c4ad17fefccc4db",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15940686",
+      "guideStatus": "active",
+      "guideTotalSessions": 16,
+      "guideUsedSessions": 8,
+      "completedSessionsCount": 12,
+      "guideConsumedTrueCount": 6,
+      "guideConsumedFalseCount": 6,
+      "anomalousSessionsCount": 6,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 2,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 1,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=8, completed=12, delta=4",
+        "ANOMALOUS_SESSIONS: 6 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc50d",
+            "date": "2026-04-14",
+            "time": "17:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc50f",
+            "date": "2026-04-20",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc514",
+            "date": "2026-05-08",
+            "time": "17:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 160,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc50e",
+            "date": "2026-04-17",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc511",
+            "date": "2026-04-28",
+            "time": "17:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c2eb4a5c4ad17fefccc515",
+            "date": "2026-05-12",
+            "time": "17:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69c566c587f4b2aed4722d2d",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 3,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "69c5661c87f4b2aed4722c7d",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "564",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 5,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=3, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c566c587f4b2aed4722d36",
+            "date": "2026-04-27",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c566c587f4b2aed4722d31",
+            "date": "2026-04-13",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69c5679b87f4b2aed4722dc3",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 3,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "69c5663b87f4b2aed4722c90",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "565",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 5,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=3, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c5679c87f4b2aed4722dc9",
+            "date": "2026-04-13",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c5679c87f4b2aed4722dcd",
+            "date": "2026-04-27",
+            "time": "16:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69d646e885f1fc2849c5b659",
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 15,
+      "sessionsDone": 10,
+      "totalValue": 1200,
+      "totalPaid": 0,
+      "balance": 560,
+      "insuranceGuideId": "69d53541d24df1c9ef974d80",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15650231",
+      "guideStatus": "active",
+      "guideTotalSessions": 15,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 9,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 9,
+      "anomalousSessionsCount": 9,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 8,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=9, delta=9",
+        "ANOMALOUS_SESSIONS: 9 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69d646e885f1fc2849c5b660",
+            "date": "2026-04-27",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d646fa85f1fc2849c5b6f2",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b662",
+            "date": "2026-05-04",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "package_prepaid",
+            "paymentMethod": "package_prepaid",
+            "paymentStatus": "package_paid",
+            "isPaid": true,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "paymentId": "69d646ff85f1fc2849c5b716",
+            "anomalies": [
+              "paymentOrigin=package_prepaid em convênio",
+              "paymentMethod=package_prepaid em convênio",
+              "paymentStatus=package_paid em convênio",
+              "isPaid=true em sessão convênio",
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b65c",
+            "date": "2026-04-13",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d646f585f1fc2849c5b6aa",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b65d",
+            "date": "2026-04-15",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d646f685f1fc2849c5b6bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b65f",
+            "date": "2026-04-22",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d646f985f1fc2849c5b6e0",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b664",
+            "date": "2026-05-11",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "paymentId": "69d6470185f1fc2849c5b73a",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b661",
+            "date": "2026-04-29",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "paymentId": "69d646fd85f1fc2849c5b704",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b663",
+            "date": "2026-05-06",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "package_prepaid",
+            "paymentMethod": "package_prepaid",
+            "paymentStatus": "package_paid",
+            "isPaid": true,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "paymentId": "69d6470085f1fc2849c5b728",
+            "anomalies": [
+              "paymentOrigin=package_prepaid em convênio",
+              "paymentMethod=package_prepaid em convênio",
+              "paymentStatus=package_paid em convênio",
+              "isPaid=true em sessão convênio",
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69d646e885f1fc2849c5b665",
+            "date": "2026-05-13",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 80,
+            "guideConsumed": false,
+            "billingBatchId": "6a06172c28952ae1cb1fa706",
+            "paymentId": "69d6470285f1fc2849c5b74c",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "6998486a7c92d32c1fd3c8ef",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 8,
+      "sessionsDone": 4,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "6998466e7c92d32c1fd3c1c3",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "2024",
+      "guideStatus": "cancelled",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 2,
+      "completedSessionsCount": 4,
+      "guideConsumedTrueCount": 2,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 1,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=2, completed=4, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "6998486a7c92d32c1fd3c8f7",
+            "date": "2026-02-23",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "6998486a7c92d32c1fd3c8f6",
+            "date": "2026-02-20",
+            "time": "14:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "69e53e0e9a172a57b88563b1",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69986c7c7c92d32c1fd44be9",
+      "patientId": "699869177c92d32c1fd43f86",
+      "patientName": "Kauana Queiroz Gomes Naves",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 32,
+      "sessionsDone": 8,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986a657c92d32c1fd4446f",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "2027",
+      "guideStatus": "active",
+      "guideTotalSessions": 32,
+      "guideUsedSessions": 8,
+      "completedSessionsCount": 8,
+      "guideConsumedTrueCount": 8,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 17,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "SAFE"
+    },
+    {
+      "packageId": "699dc1134152216f791365f0",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 6,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dbf8f4152216f79136027",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "2124",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 6,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 6,
+      "anomalousSessionsCount": 6,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 6,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=6, delta=6",
+        "ANOMALOUS_SESSIONS: 6 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699dc1134152216f791365f2",
+            "date": "2026-01-05",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc1304152216f79136637",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dc1134152216f791365f3",
+            "date": "2026-01-09",
+            "time": "13:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc1464152216f79136737",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dc1134152216f791365f6",
+            "date": "2026-01-19",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc2124152216f79136af0",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dc1134152216f791365f4",
+            "date": "2026-01-12",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc1c54152216f79136936",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dc1134152216f791365f9",
+            "date": "2026-01-30",
+            "time": "13:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc2484152216f79136bf9",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dc1134152216f791365f5",
+            "date": "2026-01-16",
+            "time": "13:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dc1f44152216f79136a27",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699dcca24152216f79139213",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 4,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dcc5c4152216f79139072",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "8855",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 4,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 4,
+      "anomalousSessionsCount": 4,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 4,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=0, completed=4, delta=4",
+        "ANOMALOUS_SESSIONS: 4 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699dcca24152216f7913921d",
+            "date": "2026-01-30",
+            "time": "14:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dcde14152216f7913960b",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dcca24152216f7913921a",
+            "date": "2026-01-19",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dcd864152216f791395b9",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dcca24152216f79139216",
+            "date": "2026-01-05",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dccd34152216f791392fe",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699dcca24152216f79139217",
+            "date": "2026-01-09",
+            "time": "14:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "paymentId": "699dcd404152216f79139449",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69dd337beddcc1fcb0275468",
+      "patientId": "6840a4e2928a20e92ab13a52",
+      "patientName": "Marcos Vinicius Morais Maia",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 3,
+      "sessionsDone": 1,
+      "totalValue": 0,
+      "totalPaid": 0,
+      "balance": 0,
+      "insuranceProvider": null,
+      "insuranceGrossAmount": 0,
+      "guideExists": false,
+      "guideNumber": null,
+      "guideStatus": null,
+      "guideTotalSessions": null,
+      "guideUsedSessions": null,
+      "completedSessionsCount": 1,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 1,
+      "anomalousSessionsCount": 1,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [
+        "NO_GUIDE: Package sem insuranceGuide vinculado"
+      ],
+      "warningFlags": [
+        "ANOMALOUS_SESSIONS: 1 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69dd337beddcc1fcb0275473",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": null,
+            "paymentStatus": "paid",
+            "isPaid": true,
+            "guideConsumed": false,
+            "anomalies": [
+              "isPaid=true em sessão convênio",
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "CRITICAL"
+    },
+    {
+      "packageId": "699847fe7c92d32c1fd3c62a",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 5,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "6998460d7c92d32c1fd3c09b",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "2026",
+      "guideStatus": "cancelled",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 4,
+      "completedSessionsCount": 5,
+      "guideConsumedTrueCount": 4,
+      "guideConsumedFalseCount": 1,
+      "anomalousSessionsCount": 1,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=4, completed=5, delta=1",
+        "ANOMALOUS_SESSIONS: 1 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699847fe7c92d32c1fd3c632",
+            "date": "2026-02-23",
+            "time": "17:20",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699866a77c92d32c1fd43595",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "patientName": "Gabriel Alves Leite",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 32,
+      "sessionsDone": 2,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "6998664b7c92d32c1fd43335",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15614089",
+      "guideStatus": "active",
+      "guideTotalSessions": 32,
+      "guideUsedSessions": 2,
+      "completedSessionsCount": 2,
+      "guideConsumedTrueCount": 2,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 6,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "SAFE"
+    },
+    {
+      "packageId": "699de5184152216f7913ebfb",
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 10,
+      "sessionsDone": 6,
+      "totalValue": 800,
+      "totalPaid": 0,
+      "balance": 800,
+      "insuranceGuideId": "699de4144152216f7913e8f7",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "15510345",
+      "guideStatus": "active",
+      "guideTotalSessions": 10,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 4,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 3,
+      "anomalousSessionsCount": 3,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 7,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=4, delta=3",
+        "ANOMALOUS_SESSIONS: 3 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "699de5184152216f7913ec01",
+            "date": "2026-02-19",
+            "time": "14:40",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de5754152216f7913edeb",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de5184152216f7913ec03",
+            "date": "2026-02-20",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de5944152216f7913ee8a",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "699de5184152216f7913ec04",
+            "date": "2026-02-24",
+            "time": "16:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 0,
+            "guideConsumed": false,
+            "paymentId": "699de5b34152216f7913eede",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "699e003d4152216f7914500a",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 7,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dee524152216f791410c2",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "2321",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 5,
+      "completedSessionsCount": 5,
+      "guideConsumedTrueCount": 5,
+      "guideConsumedFalseCount": 1,
+      "anomalousSessionsCount": 1,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 3,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 3,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "ANOMALOUS_SESSIONS: 1 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c56faa87f4b2aed472319b",
+            "date": "2026-03-30",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "69e5440770171c1b2b8d0651",
+            "paymentId": "69e4feec3537a522feacab23",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69c5690187f4b2aed4722e86",
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packageNumber": null,
+      "status": "finished",
+      "totalSessions": 8,
+      "sessionsDone": 3,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "69c5665687f4b2aed4722c9f",
+      "insuranceProvider": "unimed-campinas",
+      "insuranceGrossAmount": 140,
+      "guideExists": true,
+      "guideNumber": "566",
+      "guideStatus": "active",
+      "guideTotalSessions": 8,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 3,
+      "guideConsumedTrueCount": 1,
+      "guideConsumedFalseCount": 2,
+      "anomalousSessionsCount": 2,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 5,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=3, delta=2",
+        "ANOMALOUS_SESSIONS: 2 sessões com classificação errada"
+      ],
+      "details": {
+        "sessions": [
+          {
+            "sessionId": "69c5690187f4b2aed4722e8b",
+            "date": "2026-04-13",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          },
+          {
+            "sessionId": "69c5690187f4b2aed4722e8f",
+            "date": "2026-04-27",
+            "time": "18:00",
+            "status": "completed",
+            "paymentOrigin": "convenio",
+            "paymentMethod": "convenio",
+            "paymentStatus": "pending_receipt",
+            "isPaid": false,
+            "sessionValue": 140,
+            "guideConsumed": false,
+            "billingBatchId": "6a06176828952ae1cb1fa7bc",
+            "anomalies": [
+              "completed sem guideConsumed"
+            ]
+          }
+        ],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69d3107ba14c560c7eb92aca",
+      "patientId": "69bd82b8272d184895f454aa",
+      "patientName": null,
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 4,
+      "sessionsDone": 1,
+      "totalValue": 0,
+      "totalPaid": 0,
+      "balance": 0,
+      "insuranceGuideId": "69d30fee42f0927e70e45b57",
+      "insuranceProvider": "unimed-anapolis",
+      "insuranceGrossAmount": 80,
+      "guideExists": true,
+      "guideNumber": "QWEQWEQWE",
+      "guideStatus": "active",
+      "guideTotalSessions": 5,
+      "guideUsedSessions": 1,
+      "completedSessionsCount": 0,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [
+        "GUIDE_DIVERGENCE: usedSessions=1, completed=0, delta=-1"
+      ],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "WARNING"
+    },
+    {
+      "packageId": "69e92b14e4ac5bea3f7191f8",
+      "patientId": "69e91a14df00c8cb5c78c1f6",
+      "patientName": "GABRIEL HENRIQUE SANTOS NOGUEIRA",
+      "packageNumber": null,
+      "status": "active",
+      "totalSessions": 7,
+      "sessionsDone": 0,
+      "totalValue": 700,
+      "totalPaid": 0,
+      "balance": 700,
+      "insuranceGuideId": "69e92ae8e4ac5bea3f7191d5",
+      "insuranceProvider": null,
+      "insuranceGrossAmount": 0,
+      "guideExists": true,
+      "guideNumber": "312347202604146167",
+      "guideStatus": "linked",
+      "guideTotalSessions": 7,
+      "guideUsedSessions": 0,
+      "completedSessionsCount": 0,
+      "guideConsumedTrueCount": 0,
+      "guideConsumedFalseCount": 0,
+      "anomalousSessionsCount": 0,
+      "paidPaymentsCount": 0,
+      "pendingPaymentsCount": 0,
+      "paymentsWithFinancialDate": 0,
+      "paymentsWithPaidAt": 0,
+      "paymentsWithAmountGreaterThanZero": 0,
+      "sessionsInReceivedBatch": 0,
+      "criticalFlags": [],
+      "warningFlags": [],
+      "details": {
+        "sessions": [],
+        "payments": []
+      },
+      "classification": "SAFE"
+    }
+  ]
+}

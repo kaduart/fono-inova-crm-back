@@ -46,11 +46,6 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       return true;
     });
     
-    sessions.forEach(s => {
-      const insurance = s.insuranceGuide?.insurance || s.package?.insuranceProvider || 'particular';
-      console.log(`  ✓ ${s.date} | ${insurance} | Valor: ${s.sessionValue || 60}`);
-    });
-
     let totalCommission = 0;
     const breakdown = {
       standardSessions: { count: 0, value: 0, byInsurance: {} },

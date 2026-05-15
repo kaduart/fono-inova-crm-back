@@ -1,0 +1,3256 @@
+[
+  {
+    "timestamp": "2026-05-15T14:32:54.871Z",
+    "collection": "insuranceguides",
+    "id": "699dce204152216f7913981c",
+    "action": "update_usedSessions",
+    "oldValue": 0,
+    "newValue": 3
+  },
+  {
+    "timestamp": "2026-05-15T14:32:54.920Z",
+    "collection": "sessions",
+    "id": "699dce804152216f79139874",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:54.961Z",
+    "collection": "sessions",
+    "id": "699dce804152216f79139876",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:54.987Z",
+    "collection": "sessions",
+    "id": "699dce804152216f79139878",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.028Z",
+    "collection": "packages",
+    "id": "699dce804152216f79139871",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:32:54.991Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:32:54.991Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "699dce204152216f7913981c"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.111Z",
+    "collection": "appointments",
+    "id": "699dce814152216f7913987d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.147Z",
+    "collection": "appointments",
+    "id": "699dce814152216f7913987f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.173Z",
+    "collection": "appointments",
+    "id": "699dce814152216f79139881",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.201Z",
+    "collection": "appointments",
+    "id": "699dce814152216f79139883",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.230Z",
+    "collection": "appointments",
+    "id": "699dce814152216f7913987c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.257Z",
+    "collection": "appointments",
+    "id": "699dce814152216f7913987e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.288Z",
+    "collection": "appointments",
+    "id": "699dce814152216f79139880",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.317Z",
+    "collection": "appointments",
+    "id": "699dce814152216f79139882",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.373Z",
+    "collection": "payments",
+    "id": "699dcedc4152216f79139aea",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.413Z",
+    "collection": "payments",
+    "id": "699dceff4152216f79139b26",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.446Z",
+    "collection": "payments",
+    "id": "699dcf324152216f79139b59",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699dce204152216f7913981c"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.550Z",
+    "collection": "insuranceguides",
+    "id": "6998466e7c92d32c1fd3c1c3",
+    "action": "update_usedSessions",
+    "oldValue": 2,
+    "newValue": 4
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.595Z",
+    "collection": "sessions",
+    "id": "6998486a7c92d32c1fd3c8f6",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.644Z",
+    "collection": "sessions",
+    "id": "6998486a7c92d32c1fd3c8f7",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.682Z",
+    "collection": "packages",
+    "id": "6998486a7c92d32c1fd3c8ef",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:32:55.645Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:32:55.645Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "6998466e7c92d32c1fd3c1c3"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.808Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c901",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.863Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c8fa",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.899Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c8fc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.932Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c8fe",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:55.971Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c900",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.003Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c8fb",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.043Z",
+    "collection": "appointments",
+    "id": "6998486a7c92d32c1fd3c8fd",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.078Z",
+    "collection": "appointments",
+    "id": "699db73f4152216f79134093",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.140Z",
+    "collection": "payments",
+    "id": "699cd1a8d6de140f6f2096f3",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.171Z",
+    "collection": "payments",
+    "id": "699cd1a8d6de140f6f2096fc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.195Z",
+    "collection": "payments",
+    "id": "69c3ee31d0da770b9960e801",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.241Z",
+    "collection": "payments",
+    "id": "69e53e0e9a172a57b88563b1",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998466e7c92d32c1fd3c1c3"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.354Z",
+    "collection": "patients",
+    "id": "692da1e37a66901c8975db66",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "699847fe7c92d32c1fd3c62a",
+      "699848397c92d32c1fd3c7dd",
+      "6998486a7c92d32c1fd3c8ef",
+      "699dc1134152216f791365f0",
+      "699dcca24152216f79139213",
+      "699dce804152216f79139871",
+      "699e003d4152216f7914500a",
+      "699e01084152216f791452ea",
+      "699e014f4152216f79145471",
+      "69c566c587f4b2aed4722d2d",
+      "69c5679b87f4b2aed4722dc3",
+      "69c5690187f4b2aed4722e86",
+      "69f3973ea7b38d956961bf3c"
+    ],
+    "newPackages": [
+      "699847fe7c92d32c1fd3c62a",
+      "699848397c92d32c1fd3c7dd",
+      "699dc1134152216f791365f0",
+      "699dcca24152216f79139213",
+      "699e003d4152216f7914500a",
+      "699e01084152216f791452ea",
+      "699e014f4152216f79145471",
+      "69c566c587f4b2aed4722d2d",
+      "69c5679b87f4b2aed4722dc3",
+      "69c5690187f4b2aed4722e86",
+      "69f3973ea7b38d956961bf3c"
+    ]
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.514Z",
+    "collection": "insuranceguides",
+    "id": "699ddb7b4152216f7913ca10",
+    "action": "update_usedSessions",
+    "oldValue": 0,
+    "newValue": 7
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.545Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb1d",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.570Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb1e",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.594Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb1f",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.626Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb20",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.653Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb21",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.679Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb22",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.704Z",
+    "collection": "sessions",
+    "id": "699ddbf74152216f7913cb24",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.730Z",
+    "collection": "packages",
+    "id": "699ddbf74152216f7913cb1a",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:32:56.705Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:32:56.705Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "699ddb7b4152216f7913ca10"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.805Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb37",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.831Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb3b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.857Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb41",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.889Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb44",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.916Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb49",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.943Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb39",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.969Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb3a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:56.994Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb3e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.019Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb3f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.048Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb43",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.078Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb42",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.107Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb47",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.138Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb48",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.172Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb4e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.195Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb38",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.223Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb3c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.254Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb45",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.284Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb46",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.316Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb4a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.343Z",
+    "collection": "appointments",
+    "id": "699ddbf74152216f7913cb4b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.384Z",
+    "collection": "appointments",
+    "id": "69b3023e2117c1ee38c8f3c2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.409Z",
+    "collection": "appointments",
+    "id": "69ce7b7f0518dbe9f88563c2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.434Z",
+    "collection": "appointments",
+    "id": "69ce7b800518dbe9f88563c3",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.459Z",
+    "collection": "appointments",
+    "id": "69ce7b800518dbe9f88563c4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.547Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115e7",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.576Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115e5",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.608Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115e9",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.642Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115ee",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.683Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115ec",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.716Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115f1",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.758Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115f4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699ddb7b4152216f7913ca10"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.834Z",
+    "collection": "insuranceguides",
+    "id": "699de0bf4152216f7913dbee",
+    "action": "update_usedSessions",
+    "oldValue": 0,
+    "newValue": 11
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.860Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de3a",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.886Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de3d",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.922Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de3e",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.948Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de3f",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:57.984Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de40",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.018Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de41",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.042Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de42",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.067Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de43",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.095Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de44",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.128Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de46",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.157Z",
+    "collection": "sessions",
+    "id": "699de14a4152216f7913de47",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.193Z",
+    "collection": "packages",
+    "id": "699de14a4152216f7913de38",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:32:58.159Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:32:58.159Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "699de0bf4152216f7913dbee"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.300Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de52",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.333Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de58",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.361Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de5c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.393Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de62",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.421Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de55",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.446Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de56",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.469Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de59",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.493Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de5b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.520Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de50",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.546Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de51",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.579Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de54",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.605Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de57",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.631Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de5a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.659Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de4f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.683Z",
+    "collection": "appointments",
+    "id": "699de14b4152216f7913de53",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.714Z",
+    "collection": "appointments",
+    "id": "69b3019f2117c1ee38c8f21e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.742Z",
+    "collection": "appointments",
+    "id": "69b301582117c1ee38c8f1dc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.797Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115ea",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.821Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e815",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.844Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e814",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.874Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e816",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.896Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115f0",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.923Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115ef",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.958Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e813",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:58.982Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115e4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.010Z",
+    "collection": "payments",
+    "id": "69c3ce4d4c6aacfaa2a115f5",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.035Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e811",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.059Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e812",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de0bf4152216f7913dbee"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.175Z",
+    "collection": "insuranceguides",
+    "id": "69d53541d24df1c9ef974d80",
+    "action": "update_usedSessions",
+    "oldValue": 0,
+    "newValue": 9
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.204Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b65c",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.242Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b65d",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.284Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b65f",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.318Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b660",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.350Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b661",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.383Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b662",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.416Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b663",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.451Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b664",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.499Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b665",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.526Z",
+    "collection": "packages",
+    "id": "69d646e885f1fc2849c5b659",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:32:59.500Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:32:59.500Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69d53541d24df1c9ef974d80"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.627Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b662",
+    "action": "reclassify_anomalous",
+    "oldValues": {
+      "paymentOrigin": "package_prepaid",
+      "paymentMethod": "package_prepaid",
+      "paymentStatus": "package_paid",
+      "isPaid": true
+    },
+    "newValues": {
+      "paymentOrigin": "convenio",
+      "paymentMethod": "convenio",
+      "paymentStatus": "pending_receipt",
+      "isPaid": false,
+      "updatedAt": "2026-05-15T14:32:59.577Z"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.695Z",
+    "collection": "sessions",
+    "id": "69d646e885f1fc2849c5b663",
+    "action": "reclassify_anomalous",
+    "oldValues": {
+      "paymentOrigin": "package_prepaid",
+      "paymentMethod": "package_prepaid",
+      "paymentStatus": "package_paid",
+      "isPaid": true
+    },
+    "newValues": {
+      "paymentOrigin": "convenio",
+      "paymentMethod": "convenio",
+      "paymentStatus": "pending_receipt",
+      "isPaid": false,
+      "updatedAt": "2026-05-15T14:32:59.654Z"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.752Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b66c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.784Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b66b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.815Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b66d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.842Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b671",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.870Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b672",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.894Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b66e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.926Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b670",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:32:59.952Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b66f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.002Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b674",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.042Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b676",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.070Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b677",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.102Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b673",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.131Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b675",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.158Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b678",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.183Z",
+    "collection": "appointments",
+    "id": "69d646eb85f1fc2849c5b679",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.252Z",
+    "collection": "payments",
+    "id": "69d6470c85f1fc2849c5b79a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.278Z",
+    "collection": "payments",
+    "id": "69d6470485f1fc2849c5b75e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.312Z",
+    "collection": "payments",
+    "id": "69d6470685f1fc2849c5b786",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.431Z",
+    "collection": "payments",
+    "id": "69d646f485f1fc2849c5b69c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.463Z",
+    "collection": "payments",
+    "id": "69d646fa85f1fc2849c5b6f2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.493Z",
+    "collection": "payments",
+    "id": "69d646fd85f1fc2849c5b704",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.518Z",
+    "collection": "payments",
+    "id": "69d646ff85f1fc2849c5b716",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.555Z",
+    "collection": "payments",
+    "id": "69d646f585f1fc2849c5b6aa",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.600Z",
+    "collection": "payments",
+    "id": "69d646f685f1fc2849c5b6bc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.641Z",
+    "collection": "payments",
+    "id": "69d646f885f1fc2849c5b6ce",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.685Z",
+    "collection": "payments",
+    "id": "69d646f985f1fc2849c5b6e0",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.723Z",
+    "collection": "payments",
+    "id": "69d6470085f1fc2849c5b728",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.768Z",
+    "collection": "payments",
+    "id": "69d6470185f1fc2849c5b73a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.814Z",
+    "collection": "payments",
+    "id": "69d6470285f1fc2849c5b74c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.844Z",
+    "collection": "payments",
+    "id": "69d6470585f1fc2849c5b770",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d53541d24df1c9ef974d80"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.927Z",
+    "collection": "insuranceguides",
+    "id": "699de4144152216f7913e8f7",
+    "action": "update_usedSessions",
+    "oldValue": 1,
+    "newValue": 6
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.953Z",
+    "collection": "sessions",
+    "id": "699de5184152216f7913ebff",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:00.978Z",
+    "collection": "sessions",
+    "id": "699de5184152216f7913ec00",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.007Z",
+    "collection": "sessions",
+    "id": "699de5184152216f7913ec01",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.040Z",
+    "collection": "sessions",
+    "id": "699de5184152216f7913ec03",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.073Z",
+    "collection": "sessions",
+    "id": "699de5184152216f7913ec04",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.101Z",
+    "collection": "packages",
+    "id": "699de5184152216f7913ebfb",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:01.074Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:01.074Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "699de4144152216f7913e8f7"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.195Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec0f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.222Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec12",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.252Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec0d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.295Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec13",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.325Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec0e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.351Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec10",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.382Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec14",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.418Z",
+    "collection": "appointments",
+    "id": "699de5184152216f7913ec11",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.452Z",
+    "collection": "appointments",
+    "id": "69b40334215e92b68a2d289d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.482Z",
+    "collection": "appointments",
+    "id": "69b4034f215e92b68a2d292b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.548Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e817",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.584Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e819",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.619Z",
+    "collection": "payments",
+    "id": "69a8aa8c2a05280dd28b1a4f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.657Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e81a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.689Z",
+    "collection": "payments",
+    "id": "69c3ee33d0da770b9960e818",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.715Z",
+    "collection": "payments",
+    "id": "69c3ee34d0da770b9960e81b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.747Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098e1",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699de4144152216f7913e8f7"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:01.830Z",
+    "collection": "patients",
+    "id": "69655746dcdf49e2c282800b",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "699dd72d4152216f7913b8ee",
+      "699ddbf74152216f7913cb1a",
+      "699de14a4152216f7913de38",
+      "699de5184152216f7913ebfb",
+      "69d646e885f1fc2849c5b659"
+    ],
+    "newPackages": [
+      "699dd72d4152216f7913b8ee"
+    ]
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.174Z",
+    "collection": "packages",
+    "id": "699866e27c92d32c1fd43657",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:02.149Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:02.149Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "699866637c92d32c1fd4345b"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.250Z",
+    "collection": "appointments",
+    "id": "699866e27c92d32c1fd43680",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.278Z",
+    "collection": "appointments",
+    "id": "699866e27c92d32c1fd4367a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.330Z",
+    "collection": "payments",
+    "id": "699919934191970789aacc06",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.360Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f209873",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.398Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f209878",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.436Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f209882",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.470Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f20987d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "699866637c92d32c1fd4345b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.570Z",
+    "collection": "insuranceguides",
+    "id": "69a997cb66c460e6da734f0b",
+    "action": "update_usedSessions",
+    "oldValue": 0,
+    "newValue": 2
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.596Z",
+    "collection": "sessions",
+    "id": "69a9985266c460e6da734f6b",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.621Z",
+    "collection": "sessions",
+    "id": "69a9985266c460e6da734f6a",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.656Z",
+    "collection": "packages",
+    "id": "69a9985266c460e6da734f68",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:02.623Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:02.623Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69a997cb66c460e6da734f0b"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.751Z",
+    "collection": "appointments",
+    "id": "69a9985366c460e6da734f7b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.783Z",
+    "collection": "appointments",
+    "id": "69a9985366c460e6da734f7c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.856Z",
+    "collection": "payments",
+    "id": "69c3ee34d0da770b9960e824",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.883Z",
+    "collection": "payments",
+    "id": "69c3ee34d0da770b9960e823",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.908Z",
+    "collection": "payments",
+    "id": "69d06456e0bc04637f2098d8",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.936Z",
+    "collection": "payments",
+    "id": "69d06456e0bc04637f2098db",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:02.962Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098de",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69a997cb66c460e6da734f0b"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.044Z",
+    "collection": "packages",
+    "id": "699866a77c92d32c1fd43595",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:03.020Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:03.020Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "6998664b7c92d32c1fd43335"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.134Z",
+    "collection": "appointments",
+    "id": "699866a87c92d32c1fd435bc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.167Z",
+    "collection": "appointments",
+    "id": "699866a87c92d32c1fd435bd",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.235Z",
+    "collection": "appointments",
+    "id": "699866a87c92d32c1fd435c2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.280Z",
+    "collection": "appointments",
+    "id": "699866a87c92d32c1fd435cd",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.351Z",
+    "collection": "payments",
+    "id": "6999198c4191970789aacb22",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.403Z",
+    "collection": "payments",
+    "id": "69c3ee31d0da770b9960e802",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.456Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f20986d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.513Z",
+    "collection": "payments",
+    "id": "69d06450e0bc04637f20985e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.573Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f209864",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.610Z",
+    "collection": "payments",
+    "id": "69d06451e0bc04637f209867",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "6998664b7c92d32c1fd43335"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.730Z",
+    "collection": "patients",
+    "id": "699865f57c92d32c1fd432bc",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "699866a77c92d32c1fd43595",
+      "699866e27c92d32c1fd43657",
+      "69a9985266c460e6da734f68"
+    ],
+    "newPackages": []
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.878Z",
+    "collection": "insuranceguides",
+    "id": "69986a4c7c92d32c1fd44464",
+    "action": "update_usedSessions",
+    "oldValue": 6,
+    "newValue": 9
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.902Z",
+    "collection": "sessions",
+    "id": "69986c057c92d32c1fd44a2a",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.934Z",
+    "collection": "sessions",
+    "id": "69986c057c92d32c1fd44a25",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.960Z",
+    "collection": "sessions",
+    "id": "69986c057c92d32c1fd44a26",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:03.987Z",
+    "collection": "packages",
+    "id": "69986c057c92d32c1fd44a1f",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:03.961Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:03.961Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69986a4c7c92d32c1fd44464"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.059Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a4a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.090Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a45",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.124Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a46",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.150Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a4c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.181Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a48",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.216Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a4d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.244Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a47",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.273Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a4b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.303Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a55",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.336Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a53",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.380Z",
+    "collection": "appointments",
+    "id": "69986c067c92d32c1fd44a54",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.409Z",
+    "collection": "appointments",
+    "id": "699de6374152216f7913f18d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.461Z",
+    "collection": "payments",
+    "id": "699cd1a8d6de140f6f209705",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.503Z",
+    "collection": "payments",
+    "id": "699cd1a8d6de140f6f20970e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.527Z",
+    "collection": "payments",
+    "id": "69d06452e0bc04637f20988f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.566Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f2098a2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.598Z",
+    "collection": "payments",
+    "id": "699de6364152216f7913f188",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.623Z",
+    "collection": "payments",
+    "id": "69c3eb63fdbe7cd5b7b25060",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.658Z",
+    "collection": "payments",
+    "id": "69c3ec3d64bc8f5c1df65ed4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.694Z",
+    "collection": "payments",
+    "id": "69d06452e0bc04637f209893",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.738Z",
+    "collection": "payments",
+    "id": "69d06452e0bc04637f209898",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.800Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f20989c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.830Z",
+    "collection": "payments",
+    "id": "69a8aa8b2a05280dd28b1a4b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.858Z",
+    "collection": "payments",
+    "id": "69af0891381a1dc2998ab091",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.887Z",
+    "collection": "payments",
+    "id": "69c3eb63fdbe7cd5b7b2505f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.918Z",
+    "collection": "payments",
+    "id": "69c3ee31d0da770b9960e803",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:04.947Z",
+    "collection": "payments",
+    "id": "69d06452e0bc04637f209886",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.008Z",
+    "collection": "payments",
+    "id": "69d06452e0bc04637f20988b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.060Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f20989f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a4c7c92d32c1fd44464"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.212Z",
+    "collection": "packages",
+    "id": "69986d557c92d32c1fd44f15",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:05.138Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:05.138Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69986cc37c92d32c1fd44de9"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.372Z",
+    "collection": "appointments",
+    "id": "69986d567c92d32c1fd44f3a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.465Z",
+    "collection": "appointments",
+    "id": "69986d567c92d32c1fd44f48",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.516Z",
+    "collection": "appointments",
+    "id": "69986d567c92d32c1fd44f39",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.607Z",
+    "collection": "appointments",
+    "id": "69986d567c92d32c1fd44f38",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.640Z",
+    "collection": "appointments",
+    "id": "69986d567c92d32c1fd44f47",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.705Z",
+    "collection": "payments",
+    "id": "699cd1a9d6de140f6f209736",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.730Z",
+    "collection": "payments",
+    "id": "699cd1aad6de140f6f209748",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.757Z",
+    "collection": "payments",
+    "id": "69d06455e0bc04637f2098c6",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.787Z",
+    "collection": "payments",
+    "id": "699cd1a9d6de140f6f20973f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.814Z",
+    "collection": "payments",
+    "id": "69d06455e0bc04637f2098c3",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.848Z",
+    "collection": "payments",
+    "id": "69d06455e0bc04637f2098c9",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.879Z",
+    "collection": "payments",
+    "id": "69d06455e0bc04637f2098bd",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.911Z",
+    "collection": "payments",
+    "id": "69d06455e0bc04637f2098c0",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.938Z",
+    "collection": "payments",
+    "id": "69d06456e0bc04637f2098cc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.963Z",
+    "collection": "payments",
+    "id": "69d06456e0bc04637f2098cf",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:05.990Z",
+    "collection": "payments",
+    "id": "69d06456e0bc04637f2098d2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986cc37c92d32c1fd44de9"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.075Z",
+    "collection": "packages",
+    "id": "69986c7c7c92d32c1fd44be9",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:06.053Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:06.053Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69986a657c92d32c1fd4446f"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.165Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c0d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.192Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c11",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.219Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c26",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.259Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c27",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.292Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c0e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.330Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c10",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.366Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c12",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.394Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c0f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.424Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c13",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.456Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c0c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.484Z",
+    "collection": "appointments",
+    "id": "69986c7d7c92d32c1fd44c1b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.513Z",
+    "collection": "appointments",
+    "id": "699c6a75353c11d3c7775dc4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.567Z",
+    "collection": "payments",
+    "id": "6999199d4191970789aacd55",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.592Z",
+    "collection": "payments",
+    "id": "699cd1a9d6de140f6f209720",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.621Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f2098a5",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.659Z",
+    "collection": "payments",
+    "id": "69d06454e0bc04637f2098b1",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.684Z",
+    "collection": "payments",
+    "id": "69c3ee31d0da770b9960e804",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.716Z",
+    "collection": "payments",
+    "id": "6999199cf865dc3976dbc21c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.741Z",
+    "collection": "payments",
+    "id": "6999199c4191970789aacd4a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.797Z",
+    "collection": "payments",
+    "id": "699cd1a9d6de140f6f209717",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.848Z",
+    "collection": "payments",
+    "id": "699cd1a9d6de140f6f209729",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.875Z",
+    "collection": "payments",
+    "id": "69a8aa8b2a05280dd28b1a4c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.901Z",
+    "collection": "payments",
+    "id": "69d06454e0bc04637f2098b4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.941Z",
+    "collection": "payments",
+    "id": "69d06454e0bc04637f2098b7",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.972Z",
+    "collection": "payments",
+    "id": "69c3ec3e64bc8f5c1df65ed5",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:06.998Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f2098a8",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.039Z",
+    "collection": "payments",
+    "id": "69d06453e0bc04637f2098ab",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.070Z",
+    "collection": "payments",
+    "id": "69d06454e0bc04637f2098ae",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.099Z",
+    "collection": "payments",
+    "id": "69d06454e0bc04637f2098ba",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69986a657c92d32c1fd4446f"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.182Z",
+    "collection": "patients",
+    "id": "699869177c92d32c1fd43f86",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "69986c057c92d32c1fd44a1f",
+      "69986c7c7c92d32c1fd44be9",
+      "69986d557c92d32c1fd44f15"
+    ],
+    "newPackages": []
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.297Z",
+    "collection": "insuranceguides",
+    "id": "69c2eb9f5c4ad17fefccc5b8",
+    "action": "update_usedSessions",
+    "oldValue": 8,
+    "newValue": 12
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.325Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f0",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.355Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f1",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.388Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f2",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.417Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f4",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.453Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f7",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.483Z",
+    "collection": "sessions",
+    "id": "69c2ebf15c4ad17fefccc5f8",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.514Z",
+    "collection": "packages",
+    "id": "69c2ebf15c4ad17fefccc5e8",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:07.488Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:07.488Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69c2eb9f5c4ad17fefccc5b8"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.604Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc5fb",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.632Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc604",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.660Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc5fc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.699Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc5fd",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.734Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc60a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.778Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc5ff",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.804Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc600",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.841Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc601",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.884Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc602",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.918Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc603",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.950Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc605",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:07.978Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc608",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.003Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc5fe",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.031Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc606",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.075Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc607",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.101Z",
+    "collection": "appointments",
+    "id": "69c2ebf15c4ad17fefccc609",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.159Z",
+    "collection": "payments",
+    "id": "69c3ee35d0da770b9960e826",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.190Z",
+    "collection": "payments",
+    "id": "69d06459e0bc04637f209911",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.220Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098fc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.263Z",
+    "collection": "payments",
+    "id": "69d06459e0bc04637f20990b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.294Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098ff",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.328Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f209902",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.358Z",
+    "collection": "payments",
+    "id": "69d06459e0bc04637f20990e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.391Z",
+    "collection": "payments",
+    "id": "69d06459e0bc04637f209905",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.433Z",
+    "collection": "payments",
+    "id": "69d06459e0bc04637f209908",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.465Z",
+    "collection": "payments",
+    "id": "69e54515142030cbc38563b1",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.496Z",
+    "collection": "payments",
+    "id": "69e54515142030cbc38563b2",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.543Z",
+    "collection": "payments",
+    "id": "69e54515142030cbc38563b3",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.569Z",
+    "collection": "payments",
+    "id": "69e54515142030cbc38563b4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.602Z",
+    "collection": "payments",
+    "id": "69e54515142030cbc38563b5",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb9f5c4ad17fefccc5b8"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.689Z",
+    "collection": "patients",
+    "id": "69c16797c19d35b8454a354d",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "69c2ebf15c4ad17fefccc5e8"
+    ],
+    "newPackages": []
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.800Z",
+    "collection": "insuranceguides",
+    "id": "69c2eb075c4ad17fefccc4db",
+    "action": "update_usedSessions",
+    "oldValue": 8,
+    "newValue": 12
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.834Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc50d",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.860Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc50e",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.891Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc50f",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.921Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc511",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.951Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc514",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:08.980Z",
+    "collection": "sessions",
+    "id": "69c2eb4a5c4ad17fefccc515",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.010Z",
+    "collection": "packages",
+    "id": "69c2eb495c4ad17fefccc505",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:08.981Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:08.981Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69c2eb075c4ad17fefccc4db"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.086Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.111Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.209Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc521",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.244Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51b",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.296Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.321Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.349Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc522",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.376Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc51c",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.401Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc526",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.431Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc518",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.468Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc519",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.498Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc520",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.523Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc523",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.554Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc524",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.592Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc525",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.631Z",
+    "collection": "appointments",
+    "id": "69c2eb4a5c4ad17fefccc527",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.687Z",
+    "collection": "payments",
+    "id": "69c3ee35d0da770b9960e825",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.716Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098e7",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.752Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098e4",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.784Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098f3",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.834Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098ea",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.868Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098f6",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.895Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098f9",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.922Z",
+    "collection": "payments",
+    "id": "69d06457e0bc04637f2098ed",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:09.964Z",
+    "collection": "payments",
+    "id": "69d06458e0bc04637f2098f0",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69c2eb075c4ad17fefccc4db"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.041Z",
+    "collection": "patients",
+    "id": "69c16866c19d35b8454a35fb",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "69c2eb495c4ad17fefccc505"
+    ],
+    "newPackages": []
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.132Z",
+    "collection": "packages",
+    "id": "69e92b14e4ac5bea3f7191f8",
+    "action": "update_status_and_marker",
+    "oldValue": {
+      "status": "active"
+    },
+    "newValue": {
+      "status": "superseded",
+      "updatedAt": "2026-05-15T14:33:10.109Z",
+      "migratedToInsuranceGuide": true,
+      "migratedAt": "2026-05-15T14:33:10.109Z",
+      "migrationVersion": "v2",
+      "legacyType": "convenio",
+      "supersededBy": "insuranceGuide",
+      "supersededEntityId": "69e92ae8e4ac5bea3f7191d5"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.224Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719201",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.248Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719202",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.282Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719203",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.309Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719204",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.347Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719205",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.381Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719206",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.411Z",
+    "collection": "appointments",
+    "id": "69e92b15e4ac5bea3f719207",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69e92ae8e4ac5bea3f7191d5"
+  },
+  {
+    "timestamp": "2026-05-15T14:33:10.520Z",
+    "collection": "patients",
+    "id": "69e91a14df00c8cb5c78c1f6",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "69e92aaee4ac5bea3f719151",
+      "69e92b14e4ac5bea3f7191f8"
+    ],
+    "newPackages": [
+      "69e92aaee4ac5bea3f719151"
+    ]
+  }
+]

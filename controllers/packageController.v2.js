@@ -416,6 +416,24 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
+  // 🛡️ HARD-BLOCK: convênio e liminar NÃO usam mais Package
+  if (type === 'convenio' || model === 'convenio') {
+    await mongoSession.endSession();
+    return res.status(410).json({
+      success: false,
+      errorCode: 'DEPRECATED_PACKAGE_TYPE',
+      message: 'Package tipo convênio foi descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.'
+    });
+  }
+  if (type === 'liminar' || model === 'liminar') {
+    await mongoSession.endSession();
+    return res.status(410).json({
+      success: false,
+      errorCode: 'DEPRECATED_PACKAGE_TYPE',
+      message: 'Package tipo liminar foi descontinuado. Use /api/v2/liminar-contracts para criar contratos de liminar diretamente.'
+    });
+  }
+
   // 🛡️ GUARD FINANCEIRO: sessionValue e totalSessions devem ser válidos
   const parsedSessions = parseInt(totalSessions);
   const parsedValue = parseFloat(sessionValue);
@@ -1177,7 +1195,12 @@ export const listPackagesV2 = async (req, res) => {
 
     const query = { patient: patientId };
     if (type) query.type = type;
-    if (status) query.status = status;
+    if (status) {
+      query.status = status;
+    } else {
+      // 🛡️ Por padrão, NÃO listar packages arquivados/superseded
+      query.status = { $nin: ['superseded'] };
+    }
 
     const packages = await Package.find(query)
       .populate('payments', 'amount paymentMethod status paidAt')

@@ -1,0 +1,437 @@
+{
+  "generatedAt": "2026-05-15T14:32:41.686Z",
+  "description": "Estado completo antes da migracao em massa de packages convenio",
+  "packages": [
+    {
+      "_id": "69986c057c92d32c1fd44a1f",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 32,
+      "sessionsDone": 9,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986a4c7c92d32c1fd44464",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:51.583Z"
+    },
+    {
+      "_id": "69986d557c92d32c1fd44f15",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 32,
+      "sessionsDone": 3,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986cc37c92d32c1fd44de9",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:51.615Z"
+    },
+    {
+      "_id": "699dce804152216f79139871",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 8,
+      "sessionsDone": 3,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "699dce204152216f7913981c",
+      "insuranceProvider": "unimed-campinas",
+      "updatedAt": "2026-04-29T22:20:51.643Z"
+    },
+    {
+      "_id": "699ddbf74152216f7913cb1a",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 24,
+      "sessionsDone": 7,
+      "totalValue": 1920,
+      "totalPaid": 0,
+      "balance": 1920,
+      "insuranceGuideId": "699ddb7b4152216f7913ca10",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:51.767Z"
+    },
+    {
+      "_id": "69c2ebf15c4ad17fefccc5e8",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 16,
+      "sessionsDone": 11,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69c2eb9f5c4ad17fefccc5b8",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:51.976Z"
+    },
+    {
+      "_id": "699866e27c92d32c1fd43657",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 32,
+      "sessionsDone": 1,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "699866637c92d32c1fd4345b",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:52.170Z"
+    },
+    {
+      "_id": "699de14a4152216f7913de38",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 20,
+      "sessionsDone": 11,
+      "totalValue": 1600,
+      "totalPaid": 0,
+      "balance": 1600,
+      "insuranceGuideId": "699de0bf4152216f7913dbee",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:52.389Z"
+    },
+    {
+      "_id": "69a9985266c460e6da734f68",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 16,
+      "sessionsDone": 2,
+      "totalValue": 0,
+      "totalPaid": 0,
+      "balance": 0,
+      "insuranceGuideId": "69a997cb66c460e6da734f0b",
+      "insuranceProvider": "unimed-anapolis"
+    },
+    {
+      "_id": "69c2eb495c4ad17fefccc505",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 16,
+      "sessionsDone": 10,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69c2eb075c4ad17fefccc4db",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:52.526Z"
+    },
+    {
+      "_id": "69d646e885f1fc2849c5b659",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 15,
+      "sessionsDone": 10,
+      "totalValue": 1200,
+      "totalPaid": 0,
+      "balance": 560,
+      "insuranceGuideId": "69d53541d24df1c9ef974d80",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:52.692Z"
+    },
+    {
+      "_id": "6998486a7c92d32c1fd3c8ef",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 8,
+      "sessionsDone": 4,
+      "totalValue": 1120,
+      "totalPaid": 0,
+      "balance": 1120,
+      "insuranceGuideId": "6998466e7c92d32c1fd3c1c3",
+      "insuranceProvider": "unimed-campinas",
+      "updatedAt": "2026-04-29T22:20:52.896Z"
+    },
+    {
+      "_id": "69986c7c7c92d32c1fd44be9",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 32,
+      "sessionsDone": 8,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "69986a657c92d32c1fd4446f",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:53.002Z"
+    },
+    {
+      "_id": "699866a77c92d32c1fd43595",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 32,
+      "sessionsDone": 2,
+      "totalValue": 2560,
+      "totalPaid": 0,
+      "balance": 2560,
+      "insuranceGuideId": "6998664b7c92d32c1fd43335",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:53.408Z"
+    },
+    {
+      "_id": "699de5184152216f7913ebfb",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 10,
+      "sessionsDone": 6,
+      "totalValue": 800,
+      "totalPaid": 0,
+      "balance": 800,
+      "insuranceGuideId": "699de4144152216f7913e8f7",
+      "insuranceProvider": "unimed-anapolis",
+      "updatedAt": "2026-04-29T22:20:53.512Z"
+    },
+    {
+      "_id": "69d3107ba14c560c7eb92aca",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 4,
+      "sessionsDone": 1,
+      "totalValue": 0,
+      "totalPaid": 0,
+      "balance": 0,
+      "insuranceGuideId": "69d30fee42f0927e70e45b57",
+      "insuranceProvider": "unimed-anapolis"
+    },
+    {
+      "_id": "69e92b14e4ac5bea3f7191f8",
+      "status": "active",
+      "type": "convenio",
+      "totalSessions": 7,
+      "sessionsDone": 0,
+      "totalValue": 700,
+      "totalPaid": 0,
+      "balance": 700,
+      "insuranceGuideId": "69e92ae8e4ac5bea3f7191d5",
+      "insuranceProvider": null,
+      "updatedAt": "2026-04-29T22:20:53.818Z"
+    }
+  ],
+  "guides": [
+    {
+      "_id": "69986a4c7c92d32c1fd44464",
+      "number": "2028",
+      "patientId": "699869177c92d32c1fd43f86",
+      "totalSessions": 32,
+      "usedSessions": 6,
+      "status": "active",
+      "packageId": "69986c057c92d32c1fd44a1f"
+    },
+    {
+      "_id": "69986cc37c92d32c1fd44de9",
+      "number": "2029",
+      "patientId": "699869177c92d32c1fd43f86",
+      "totalSessions": 32,
+      "usedSessions": 3,
+      "status": "active",
+      "packageId": "69986d557c92d32c1fd44f15"
+    },
+    {
+      "_id": "699dce204152216f7913981c",
+      "number": "9232",
+      "patientId": "692da1e37a66901c8975db66",
+      "totalSessions": 8,
+      "usedSessions": 0,
+      "status": "active",
+      "packageId": "699dce804152216f79139871"
+    },
+    {
+      "_id": "699ddb7b4152216f7913ca10",
+      "number": "15655247",
+      "patientId": "69655746dcdf49e2c282800b",
+      "totalSessions": 24,
+      "usedSessions": 0,
+      "status": "active",
+      "packageId": "699ddbf74152216f7913cb1a"
+    },
+    {
+      "_id": "69c2eb9f5c4ad17fefccc5b8",
+      "number": "15924845",
+      "patientId": "69c16797c19d35b8454a354d",
+      "totalSessions": 16,
+      "usedSessions": 8,
+      "status": "active",
+      "packageId": "69c2ebf15c4ad17fefccc5e8"
+    },
+    {
+      "_id": "699866637c92d32c1fd4345b",
+      "number": "15736718",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "totalSessions": 32,
+      "usedSessions": 1,
+      "status": "active",
+      "packageId": "699866e27c92d32c1fd43657"
+    },
+    {
+      "_id": "699de0bf4152216f7913dbee",
+      "number": "15650230",
+      "patientId": "69655746dcdf49e2c282800b",
+      "totalSessions": 20,
+      "usedSessions": 0,
+      "status": "active",
+      "packageId": "699de14a4152216f7913de38"
+    },
+    {
+      "_id": "69a997cb66c460e6da734f0b",
+      "number": "15859841",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "totalSessions": 16,
+      "usedSessions": 0,
+      "status": "active",
+      "packageId": "69a9985266c460e6da734f68"
+    },
+    {
+      "_id": "69c2eb075c4ad17fefccc4db",
+      "number": "15940686",
+      "patientId": "69c16866c19d35b8454a35fb",
+      "totalSessions": 16,
+      "usedSessions": 8,
+      "status": "active",
+      "packageId": "69c2eb495c4ad17fefccc505"
+    },
+    {
+      "_id": "69d53541d24df1c9ef974d80",
+      "number": "15650231",
+      "patientId": "69655746dcdf49e2c282800b",
+      "totalSessions": 15,
+      "usedSessions": 0,
+      "status": "active",
+      "packageId": "69d646e885f1fc2849c5b659"
+    },
+    {
+      "_id": "6998466e7c92d32c1fd3c1c3",
+      "number": "2024",
+      "patientId": "692da1e37a66901c8975db66",
+      "totalSessions": 8,
+      "usedSessions": 2,
+      "status": "cancelled",
+      "packageId": "6998486a7c92d32c1fd3c8ef"
+    },
+    {
+      "_id": "69986a657c92d32c1fd4446f",
+      "number": "2027",
+      "patientId": "699869177c92d32c1fd43f86",
+      "totalSessions": 32,
+      "usedSessions": 8,
+      "status": "active",
+      "packageId": "69986c7c7c92d32c1fd44be9"
+    },
+    {
+      "_id": "6998664b7c92d32c1fd43335",
+      "number": "15614089",
+      "patientId": "699865f57c92d32c1fd432bc",
+      "totalSessions": 32,
+      "usedSessions": 2,
+      "status": "active",
+      "packageId": "699866a77c92d32c1fd43595"
+    },
+    {
+      "_id": "699de4144152216f7913e8f7",
+      "number": "15510345",
+      "patientId": "69655746dcdf49e2c282800b",
+      "totalSessions": 10,
+      "usedSessions": 1,
+      "status": "active",
+      "packageId": "699de5184152216f7913ebfb"
+    },
+    {
+      "_id": "69d30fee42f0927e70e45b57",
+      "number": "QWEQWEQWE",
+      "patientId": "69bd82b8272d184895f454aa",
+      "totalSessions": 5,
+      "usedSessions": 1,
+      "status": "active",
+      "packageId": "69d3107ba14c560c7eb92aca"
+    },
+    {
+      "_id": "69e92ae8e4ac5bea3f7191d5",
+      "number": "312347202604146167",
+      "patientId": "69e91a14df00c8cb5c78c1f6",
+      "totalSessions": 7,
+      "usedSessions": 0,
+      "status": "linked",
+      "packageId": "69e92b14e4ac5bea3f7191f8"
+    }
+  ],
+  "patients": [
+    {
+      "_id": "699869177c92d32c1fd43f86",
+      "fullName": "Kauana Queiroz Gomes Naves",
+      "packagesCount": 3,
+      "packageIds": [
+        "69986c057c92d32c1fd44a1f",
+        "69986c7c7c92d32c1fd44be9",
+        "69986d557c92d32c1fd44f15"
+      ]
+    },
+    {
+      "_id": "692da1e37a66901c8975db66",
+      "fullName": "Davi Felipe Araújo",
+      "packagesCount": 13,
+      "packageIds": [
+        "699847fe7c92d32c1fd3c62a",
+        "699848397c92d32c1fd3c7dd",
+        "6998486a7c92d32c1fd3c8ef",
+        "699dc1134152216f791365f0",
+        "699dcca24152216f79139213",
+        "699dce804152216f79139871",
+        "699e003d4152216f7914500a",
+        "699e01084152216f791452ea",
+        "699e014f4152216f79145471",
+        "69c566c587f4b2aed4722d2d",
+        "69c5679b87f4b2aed4722dc3",
+        "69c5690187f4b2aed4722e86",
+        "69f3973ea7b38d956961bf3c"
+      ]
+    },
+    {
+      "_id": "69655746dcdf49e2c282800b",
+      "fullName": "Nicolas Lucca",
+      "packagesCount": 5,
+      "packageIds": [
+        "699dd72d4152216f7913b8ee",
+        "699ddbf74152216f7913cb1a",
+        "699de14a4152216f7913de38",
+        "699de5184152216f7913ebfb",
+        "69d646e885f1fc2849c5b659"
+      ]
+    },
+    {
+      "_id": "69c16797c19d35b8454a354d",
+      "fullName": "Benjamim Rocha Simão",
+      "packagesCount": 1,
+      "packageIds": [
+        "69c2ebf15c4ad17fefccc5e8"
+      ]
+    },
+    {
+      "_id": "699865f57c92d32c1fd432bc",
+      "fullName": "Gabriel Alves Leite",
+      "packagesCount": 3,
+      "packageIds": [
+        "699866a77c92d32c1fd43595",
+        "699866e27c92d32c1fd43657",
+        "69a9985266c460e6da734f68"
+      ]
+    },
+    {
+      "_id": "69c16866c19d35b8454a35fb",
+      "fullName": "Joaquim Rocha Simão",
+      "packagesCount": 1,
+      "packageIds": [
+        "69c2eb495c4ad17fefccc505"
+      ]
+    },
+    {
+      "_id": "69e91a14df00c8cb5c78c1f6",
+      "fullName": "GABRIEL HENRIQUE SANTOS NOGUEIRA",
+      "packagesCount": 2,
+      "packageIds": [
+        "69e92aaee4ac5bea3f719151",
+        "69e92b14e4ac5bea3f7191f8"
+      ]
+    }
+  ]
+}

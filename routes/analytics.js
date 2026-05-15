@@ -51,8 +51,6 @@ router.get('/dashboard', async (req, res) => {
     try {
         const { startDate, endDate } = parseDateRange(req);
         
-        console.log('📊 Dashboard solicitado:', { startDate, endDate });
-
         const ANAPOLIS_PATHS = [
             '/fonoaudiologia-anapolis', '/psicologia-infantil-anapolis',
             '/terapia-ocupacional-anapolis', '/psicomotricidade-anapolis',
@@ -164,14 +162,6 @@ router.get('/dashboard', async (req, res) => {
             lastUpdated: new Date().toISOString()
         };
 
-        console.log('✅ Dashboard enviado:', {
-            events: finalEvents.length,
-            pages: dashboardData.pages.length,
-            landingPages: dashboardData.landingPages.length,
-            anapolisPages: anapolisPages.length,
-            leadsPerPage: Object.keys(leadsPerPage).length,
-            dailyReportDays: dailyReport.length
-        });
 
         res.json(dashboardData);
 
@@ -234,8 +224,6 @@ async function getLandingPagesData(startDate, endDate) {
         const landingPages = await LandingPage.find({
             status: 'active'
         }).select('slug title category metrics views leads').lean();
-
-        console.log(`📄 ${landingPages.length} Landing Pages encontradas`);
 
         // Formatar para o dashboard
         const lpPages = landingPages.map(lp => ({

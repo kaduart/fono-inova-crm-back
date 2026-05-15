@@ -415,7 +415,8 @@ export const getConvenioPackages = async (req, res) => {
 
     const packages = await Package.find({
       patient: patientId,
-      type: 'convenio'
+      type: 'convenio',
+      status: { $nin: ['superseded'] }
     })
       .populate('sessions appointments insuranceGuide patient doctor')
       .sort({ createdAt: -1 })

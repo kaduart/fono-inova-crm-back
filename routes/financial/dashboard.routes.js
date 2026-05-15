@@ -730,7 +730,7 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
     const { default: Payment } = await import('../../models/Payment.js');
     const { month, year } = req.query;
 
-    const query = { status: 'pending' };
+    const query = { status: 'pending', billingType: { $nin: ['convenio', 'liminar'] } };
     if (month && year) {
       const start = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
       const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);

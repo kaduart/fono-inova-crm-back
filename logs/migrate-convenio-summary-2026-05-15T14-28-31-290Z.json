@@ -1,0 +1,108 @@
+{
+  "mode": "DRY-RUN",
+  "timestamp": "2026-05-15T14:28:28.640Z",
+  "totalPatients": 7,
+  "patients": [
+    {
+      "patientId": "692da1e37a66901c8975db66",
+      "patientName": "Davi Felipe Araújo",
+      "packagesProcessed": 2,
+      "guidesSynced": 2,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 7,
+      "packagesSuperseded": 2,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "69655746dcdf49e2c282800b",
+      "patientName": "Nicolas Lucca",
+      "packagesProcessed": 4,
+      "guidesSynced": 4,
+      "sessionsReclassified": 2,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 40,
+      "packagesSuperseded": 4,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "699865f57c92d32c1fd432bc",
+      "patientName": "Gabriel Alves Leite",
+      "packagesProcessed": 3,
+      "guidesSynced": 1,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 16,
+      "packagesSuperseded": 3,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "699869177c92d32c1fd43f86",
+      "patientName": "Kauana Queiroz Gomes Naves",
+      "packagesProcessed": 3,
+      "guidesSynced": 1,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 45,
+      "packagesSuperseded": 3,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "69c16797c19d35b8454a354d",
+      "patientName": "Benjamim Rocha Simão",
+      "packagesProcessed": 1,
+      "guidesSynced": 1,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 14,
+      "packagesSuperseded": 1,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "69c16866c19d35b8454a35fb",
+      "patientName": "Joaquim Rocha Simão",
+      "packagesProcessed": 1,
+      "guidesSynced": 1,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 9,
+      "packagesSuperseded": 1,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    },
+    {
+      "patientId": "69e91a14df00c8cb5c78c1f6",
+      "patientName": "GABRIEL HENRIQUE SANTOS NOGUEIRA",
+      "packagesProcessed": 1,
+      "guidesSynced": 0,
+      "sessionsReclassified": 0,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 0,
+      "packagesSuperseded": 1,
+      "packagesSkipped": 0,
+      "patientUpdated": false,
+      "errors": []
+    }
+  ],
+  "totals": {
+    "packagesProcessed": 15,
+    "guidesSynced": 10,
+    "sessionsReclassified": 2,
+    "sessionsSkipped": 0,
+    "paymentsUpdated": 131,
+    "packagesSuperseded": 15,
+    "patientsUpdated": 0,
+    "errors": 0
+  }
+}

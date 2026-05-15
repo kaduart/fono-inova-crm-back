@@ -39,7 +39,7 @@ const packagesViewSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'finished', 'canceled', 'canceling'],
+    enum: ['active', 'finished', 'canceled', 'canceling', 'superseded'],
     default: 'active',
     index: true
   },

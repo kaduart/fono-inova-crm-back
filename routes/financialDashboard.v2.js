@@ -1439,7 +1439,7 @@ async function calculatePendentes(year, month) {
     const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
     const convenioVencidos = convenioItems.filter(i => i.data && i.data <= hoje);
     const particularVencidos = particularItems.filter(i => i.data && i.data <= hoje);
-    const vencidosTotal = convenioVencidos.reduce((s, i) => s + i.valor, 0) + particularVencidos.reduce((s, i) => s + i.valor, 0);
+    const vencidosTotal = particularVencidos.reduce((s, i) => s + i.valor, 0);
 
     // ── 🆕 V2 FINANCIAL ENGINE: agrupamento por paciente + especialidade correta ──
     // Passa todos os pending do mês para o engine (sem filtro de data, pois já filtramos)
@@ -1457,9 +1457,9 @@ async function calculatePendentes(year, month) {
         const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio' || (p.insurance && p.insurance.status);
         const btype = isConvenio ? 'convenio' : 'particular';
         
-        // byPatient
+        // byPatient — apenas particular (convênio não é dívida do paciente)
         const pid = p.patient?._id?.toString() || p.patientId;
-        if (pid) {
+        if (pid && !isConvenio) {
             if (!byPatient[pid]) {
                 byPatient[pid] = {
                     patient: p.patient || { fullName: 'Desconhecido', _id: pid },

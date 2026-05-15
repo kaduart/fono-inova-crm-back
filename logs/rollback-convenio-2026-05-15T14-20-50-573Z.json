@@ -1,0 +1,167 @@
+[
+  {
+    "timestamp": "2026-05-15T14:20:52.515Z",
+    "collection": "insuranceguides",
+    "id": "69d67c4919c6571d8c76dae9",
+    "action": "update_usedSessions",
+    "oldValue": 1,
+    "newValue": 5
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.546Z",
+    "collection": "sessions",
+    "id": "69d67dfe19c6571d8c76dbc1",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.578Z",
+    "collection": "sessions",
+    "id": "69d67dfe19c6571d8c76dbc2",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.600Z",
+    "collection": "sessions",
+    "id": "69d67dfe19c6571d8c76dbc3",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.622Z",
+    "collection": "sessions",
+    "id": "69d67dfe19c6571d8c76dbc4",
+    "action": "update_guideConsumed",
+    "oldValue": false,
+    "newValue": true
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.648Z",
+    "collection": "packages",
+    "id": "69d67dfe19c6571d8c76dbbe",
+    "action": "update_status",
+    "oldValue": "active",
+    "newValue": "superseded"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.719Z",
+    "collection": "sessions",
+    "id": "69d67dfe19c6571d8c76dbc4",
+    "action": "reclassify_anomalous",
+    "oldValues": {
+      "paymentOrigin": "package_prepaid",
+      "paymentMethod": "package_prepaid",
+      "paymentStatus": "package_paid",
+      "isPaid": true
+    },
+    "newValues": {
+      "paymentOrigin": "convenio",
+      "paymentMethod": "convenio",
+      "paymentStatus": "pending_receipt",
+      "isPaid": false,
+      "updatedAt": "2026-05-15T14:20:52.695Z"
+    }
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.765Z",
+    "collection": "payments",
+    "id": "69d67e0819c6571d8c76dbfc",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.790Z",
+    "collection": "payments",
+    "id": "69d67e0919c6571d8c76dc0f",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.814Z",
+    "collection": "payments",
+    "id": "69d67e0c19c6571d8c76dc32",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.837Z",
+    "collection": "payments",
+    "id": "69d67e0e19c6571d8c76dc56",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.866Z",
+    "collection": "payments",
+    "id": "69d67e1319c6571d8c76dc7a",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.890Z",
+    "collection": "payments",
+    "id": "69d67e1619c6571d8c76dc9e",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.915Z",
+    "collection": "payments",
+    "id": "69d67e0a19c6571d8c76dc20",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.940Z",
+    "collection": "payments",
+    "id": "69d67e0d19c6571d8c76dc44",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:52.979Z",
+    "collection": "payments",
+    "id": "69d67e1019c6571d8c76dc68",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:53.004Z",
+    "collection": "payments",
+    "id": "69d67e1419c6571d8c76dc8d",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:53.025Z",
+    "collection": "payments",
+    "id": "69d67e0419c6571d8c76dbee",
+    "action": "add_insuranceGuide",
+    "oldValue": null,
+    "newValue": "69d67c4919c6571d8c76dae9"
+  },
+  {
+    "timestamp": "2026-05-15T14:20:53.091Z",
+    "collection": "patients",
+    "id": "69d3f4b8a9bd5f4411488492",
+    "action": "remove_superseded_packages",
+    "oldPackages": [
+      "69d67dfe19c6571d8c76dbbe"
+    ],
+    "newPackages": []
+  }
+]

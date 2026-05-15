@@ -6,6 +6,7 @@ import { validateEvent, getEventVersion } from './eventContractRegistry.js';
 import { ErrorCodes } from './errorCodes.js';
 import { createContextLogger } from '../../utils/logger.js';
 import EventStore from '../../models/EventStore.js';
+import { dashboardCache } from '../../services/adminDashboardCacheService.js';
 
 /**
  * Event Publisher
@@ -740,6 +741,39 @@ if (size > 5000) {
                 log.error('expense_snapshot_hook_failed', `Expense snapshot falhou após 3 tentativas: ${lastErr?.message}`, { eventId, eventType });
             } catch (importErr) {
                 log.warn('expense_snapshot_import_failed', importErr.message, { eventId, eventType });
+            }
+        })();
+    }
+
+    // 🆕 V2: Invalidação granular de cache do Admin Dashboard
+    const dashboardInvalidationMap = {
+        [EventTypes.APPOINTMENT_CREATED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
+        [EventTypes.APPOINTMENT_CANCELED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
+        [EventTypes.APPOINTMENT_COMPLETED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
+        [EventTypes.APPOINTMENT_UPDATED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
+        [EventTypes.PAYMENT_COMPLETED]: ['v2:stats'],
+        [EventTypes.PAYMENT_CANCELLED]: ['v2:stats'],
+        [EventTypes.PAYMENT_CREATED]: ['v2:stats'],
+        [EventTypes.PATIENT_CREATED]: ['v2:stats', 'v2:doctors'],
+        [EventTypes.PATIENT_DELETED]: ['v2:stats', 'v2:doctors'],
+        [EventTypes.DOCTOR_CREATED]: ['v2:stats', 'v2:doctors'],
+        [EventTypes.DOCTOR_UPDATED]: ['v2:stats', 'v2:doctors'],
+        [EventTypes.DOCTOR_DEACTIVATE_REQUESTED]: ['v2:stats', 'v2:doctors'],
+        [EventTypes.DOCTOR_REACTIVATE_REQUESTED]: ['v2:stats', 'v2:doctors'],
+    };
+
+    const blocksToInvalidate = dashboardInvalidationMap[eventType];
+    if (blocksToInvalidate) {
+        (async () => {
+            try {
+                for (const key of blocksToInvalidate) {
+                    await dashboardCache.invalidate(key);
+                }
+                if (process.env.DEBUG_EVENTS === 'true') {
+                    console.log(`[DashboardCache] Invalidado por ${eventType}:`, blocksToInvalidate);
+                }
+            } catch (err) {
+                log.warn('dashboard_cache_invalidate_failed', err.message, { eventType, blocksToInvalidate });
             }
         })();
     }

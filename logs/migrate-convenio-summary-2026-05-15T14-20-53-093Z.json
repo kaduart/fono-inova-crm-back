@@ -1,0 +1,30 @@
+{
+  "mode": "APPLY",
+  "timestamp": "2026-05-15T14:20:52.414Z",
+  "totalPatients": 1,
+  "patients": [
+    {
+      "patientId": "69d3f4b8a9bd5f4411488492",
+      "patientName": "Isabela Ferreira De Mendonca",
+      "packagesProcessed": 1,
+      "guidesSynced": 1,
+      "sessionsReclassified": 1,
+      "sessionsSkipped": 0,
+      "paymentsUpdated": 11,
+      "packagesSuperseded": 1,
+      "packagesSkipped": 0,
+      "patientUpdated": true,
+      "errors": []
+    }
+  ],
+  "totals": {
+    "packagesProcessed": 1,
+    "guidesSynced": 1,
+    "sessionsReclassified": 1,
+    "sessionsSkipped": 0,
+    "paymentsUpdated": 11,
+    "packagesSuperseded": 1,
+    "patientsUpdated": 1,
+    "errors": 0
+  }
+}
