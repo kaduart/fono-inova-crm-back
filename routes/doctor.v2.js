@@ -22,6 +22,35 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
+const FIELD_LABELS = {
+  fullName: 'Nome completo',
+  email: 'E-mail',
+  specialty: 'Especialidade',
+  licenseNumber: 'Número de registro',
+  phoneNumber: 'Telefone',
+  active: 'Status',
+  password: 'Senha',
+};
+
+function translateMongooseError(error) {
+  if (error.name === 'ValidationError') {
+    const msgs = Object.values(error.errors).map(e => {
+      const field = FIELD_LABELS[e.path] || e.path;
+      if (e.kind === 'required') return `${field} é obrigatório`;
+      if (e.kind === 'enum') return `Valor inválido para ${field}: "${e.value}"`;
+      if (e.kind === 'unique') return `${field} já cadastrado`;
+      return `${field}: ${e.message}`;
+    });
+    return msgs.join('. ');
+  }
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue || {})[0];
+    const label = FIELD_LABELS[field] || field;
+    return `${label} já está cadastrado`;
+  }
+  return error.message;
+}
+
 // ============================================
 // READ SIDE (Síncrono - direto do DB)
 // ============================================
@@ -162,7 +191,10 @@ router.post('/', flexibleAuth, async (req, res) => {
     const { fullName, email, password, specialty, licenseNumber, phoneNumber, active } = req.body;
 
     if (!fullName || !email || !specialty) {
-      return res.status(400).json(formatError(400, 'Nome, email e especialidade são obrigatórios'));
+      return res.status(400).json(formatError(400, 'Nome, e-mail e especialidade são obrigatórios'));
+    }
+    if (!licenseNumber) {
+      return res.status(400).json(formatError(400, 'Número de registro (CRM/CRP/etc) é obrigatório'));
     }
 
     const doctor = await Doctor.create({
@@ -190,7 +222,8 @@ router.post('/', flexibleAuth, async (req, res) => {
 
   } catch (error) {
     console.error('[DoctorV2] Erro ao criar médico:', error);
-    return res.status(500).json(formatError(500, error.message));
+    const msg = translateMongooseError(error);
+    return res.status(400).json(formatError(400, msg));
   }
 });
 
