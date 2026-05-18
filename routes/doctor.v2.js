@@ -17,9 +17,7 @@
 import express from 'express';
 import Doctor from '../models/Doctor.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
-import { auth } from '../middleware/auth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
-import { doctorQueue } from '../config/bullConfig.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
@@ -155,57 +153,41 @@ router.get('/:id', flexibleAuth, async (req, res) => {
 // ============================================
 
 /**
- * POST /api/v2/doctors - Criar médico (async)
+ * POST /api/v2/doctors - Criar médico (síncrono)
  */
-router.post('/', auth, async (req, res) => {
+router.post('/', flexibleAuth, async (req, res) => {
   const correlationId = `doc_create_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  
+
   try {
     const { fullName, email, password, specialty, licenseNumber, phoneNumber, active } = req.body;
-    
+
     if (!fullName || !email || !specialty) {
       return res.status(400).json(formatError(400, 'Nome, email e especialidade são obrigatórios'));
     }
-    
-    // Gera ID provisório
-    const mongoose = await import('mongoose');
-    const doctorId = new mongoose.default.Types.ObjectId().toString();
-    
-    // Adiciona job na fila
-    const job = await doctorQueue.add(
-      'DOCTOR_CREATE',
-      {
-        eventType: 'DOCTOR_CREATE_REQUESTED',
-        payload: {
-          doctorId,
-          fullName: fullName.trim(),
-          email: email.toLowerCase().trim(),
-          password,
-          specialty,
-          licenseNumber,
-          phoneNumber,
-          active: active || 'true',
-          createdBy: req.user?.id
-        },
-        correlationId
-      },
-      {
-        jobId: correlationId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 }
-      }
-    );
-    
-    return res.status(202).json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
+
+    const doctor = await Doctor.create({
+      fullName: fullName.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      specialty,
+      licenseNumber,
+      phoneNumber,
+      active: active !== undefined ? active : true,
+      role: 'doctor',
+      createdBy: req.user?.id
+    });
+
+    console.log(`[DoctorV2] Médico criado: ${doctor._id} (${doctor.fullName})`);
+
+    return res.status(201).json(formatSuccess({
+      jobId: correlationId,
+      eventId: correlationId,
       correlationId,
-      doctorId,
-      status: 'pending',
-      checkStatusUrl: `/api/v2/doctors/status/${job.id}`,
-      estimatedTime: '1-2s'
-    }, 'Médico em processamento', 202));
-    
+      doctorId: doctor._id.toString(),
+      status: 'completed',
+      doctor
+    }, 'Médico criado com sucesso', 201));
+
   } catch (error) {
     console.error('[DoctorV2] Erro ao criar médico:', error);
     return res.status(500).json(formatError(500, error.message));
@@ -213,167 +195,126 @@ router.post('/', auth, async (req, res) => {
 });
 
 /**
- * PUT /api/v2/doctors/:id - Atualizar médico (async)
+ * PUT /api/v2/doctors/:id - Atualizar médico (síncrono)
  */
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', flexibleAuth, async (req, res) => {
   const correlationId = `doc_upd_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  
+
   try {
-    const doctorExists = await Doctor.exists({ _id: req.params.id });
-    if (!doctorExists) {
+    const doctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      { ...req.body, updatedAt: new Date(), updatedBy: req.user?.id },
+      { new: true }
+    );
+
+    if (!doctor) {
       return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
-    
-    const job = await doctorQueue.add(
-      'DOCTOR_UPDATE',
-      {
-        eventType: 'DOCTOR_UPDATE_REQUESTED',
-        payload: {
-          doctorId: req.params.id,
-          updates: req.body,
-          updatedBy: req.user?.id
-        },
-        correlationId
-      },
-      {
-        jobId: correlationId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 }
-      }
-    );
-    
-    return res.status(202).json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
+
+    console.log(`[DoctorV2] Médico atualizado: ${doctor._id}`);
+
+    return res.json(formatSuccess({
+      jobId: correlationId,
+      eventId: correlationId,
       correlationId,
-      status: 'pending',
-      checkStatusUrl: `/api/v2/doctors/status/${job.id}`
-    }, 'Atualização em processamento', 202));
-    
+      doctorId: doctor._id.toString(),
+      status: 'completed',
+      doctor
+    }, 'Médico atualizado com sucesso'));
+
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
 });
 
 /**
- * DELETE /api/v2/doctors/:id - Deletar médico (async)
+ * DELETE /api/v2/doctors/:id - Deletar médico (síncrono)
  */
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', flexibleAuth, async (req, res) => {
   const correlationId = `doc_del_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  
+
   try {
-    const doctorExists = await Doctor.exists({ _id: req.params.id });
-    if (!doctorExists) {
+    const doctor = await Doctor.findByIdAndDelete(req.params.id);
+
+    if (!doctor) {
       return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
-    
-    const job = await doctorQueue.add(
-      'DOCTOR_DELETE',
-      {
-        eventType: 'DOCTOR_DELETE_REQUESTED',
-        payload: {
-          doctorId: req.params.id,
-          deletedBy: req.user?.id,
-          reason: req.body?.reason
-        },
-        correlationId
-      },
-      {
-        jobId: correlationId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 }
-      }
-    );
-    
-    return res.status(202).json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
+
+    console.log(`[DoctorV2] Médico deletado: ${req.params.id}`);
+
+    return res.json(formatSuccess({
+      jobId: correlationId,
+      eventId: correlationId,
       correlationId,
-      status: 'pending'
-    }, 'Deleção em processamento', 202));
-    
+      status: 'completed'
+    }, 'Médico deletado com sucesso'));
+
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
 });
 
 /**
- * PATCH /api/v2/doctors/:id/deactivate - Inativar médico (async)
+ * PATCH /api/v2/doctors/:id/deactivate - Inativar médico (síncrono)
  */
-router.patch('/:id/deactivate', auth, async (req, res) => {
+router.patch('/:id/deactivate', flexibleAuth, async (req, res) => {
   const correlationId = `doc_deact_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  
+
   try {
-    const doctorExists = await Doctor.exists({ _id: req.params.id });
-    if (!doctorExists) {
+    const doctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      { active: false, updatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!doctor) {
       return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
-    
-    const job = await doctorQueue.add(
-      'DOCTOR_DEACTIVATE',
-      {
-        eventType: 'DOCTOR_DEACTIVATE_REQUESTED',
-        payload: {
-          doctorId: req.params.id,
-          deactivatedBy: req.user?.id
-        },
-        correlationId
-      },
-      {
-        jobId: correlationId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 }
-      }
-    );
-    
-    return res.status(202).json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
+
+    console.log(`[DoctorV2] Médico inativado: ${doctor._id}`);
+
+    return res.json(formatSuccess({
+      jobId: correlationId,
+      eventId: correlationId,
       correlationId,
-      status: 'pending'
-    }, 'Inativação em processamento', 202));
-    
+      doctorId: doctor._id.toString(),
+      status: 'completed',
+      doctor
+    }, 'Médico inativado com sucesso'));
+
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
 });
 
 /**
- * PATCH /api/v2/doctors/:id/reactivate - Reativar médico (async)
+ * PATCH /api/v2/doctors/:id/reactivate - Reativar médico (síncrono)
  */
-router.patch('/:id/reactivate', auth, async (req, res) => {
+router.patch('/:id/reactivate', flexibleAuth, async (req, res) => {
   const correlationId = `doc_react_${Date.now()}_${uuidv4().slice(0, 8)}`;
-  
+
   try {
-    const doctorExists = await Doctor.exists({ _id: req.params.id });
-    if (!doctorExists) {
+    const doctor = await Doctor.findByIdAndUpdate(
+      req.params.id,
+      { active: true, updatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!doctor) {
       return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
-    
-    const job = await doctorQueue.add(
-      'DOCTOR_REACTIVATE',
-      {
-        eventType: 'DOCTOR_REACTIVATE_REQUESTED',
-        payload: {
-          doctorId: req.params.id,
-          reactivatedBy: req.user?.id
-        },
-        correlationId
-      },
-      {
-        jobId: correlationId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 }
-      }
-    );
-    
-    return res.status(202).json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
+
+    console.log(`[DoctorV2] Médico reativado: ${doctor._id}`);
+
+    return res.json(formatSuccess({
+      jobId: correlationId,
+      eventId: correlationId,
       correlationId,
-      status: 'pending'
-    }, 'Reativação em processamento', 202));
-    
+      doctorId: doctor._id.toString(),
+      status: 'completed',
+      doctor
+    }, 'Médico reativado com sucesso'));
+
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
@@ -384,51 +325,14 @@ router.patch('/:id/reactivate', auth, async (req, res) => {
 // ============================================
 
 /**
- * GET /api/v2/doctors/status/:jobId - Status de job
+ * GET /api/v2/doctors/status/:jobId - Legado (operações agora síncronas)
  */
 router.get('/status/:jobId', flexibleAuth, async (req, res) => {
-  try {
-    const job = await doctorQueue.getJob(req.params.jobId);
-    
-    if (!job) {
-      return res.status(404).json(formatError(404, 'Job não encontrado'));
-    }
-    
-    const state = await job.getState();
-    
-    // Mapeia estado do Bull para status do frontend
-    const status = state === 'completed' ? 'completed' 
-                 : state === 'failed' ? 'failed'
-                 : 'pending';
-    
-    // Extrai o resultado se existir
-    const error = job.failedReason || (job.returnvalue?.error);
-    
-    // Se completou com sucesso, busca o médico no banco
-    let doctorView = null;
-    if (status === 'completed' && job.returnvalue?.doctorId) {
-      doctorView = await Doctor.findById(job.returnvalue.doctorId)
-        .select('_id fullName email specialty licenseNumber phoneNumber active role createdAt updatedAt')
-        .lean();
-    }
-    
-    return res.json(formatSuccess({
-      jobId: job.id,
-      eventId: job.id,
-      status,
-      state,
-      data: job.data,
-      result: job.returnvalue,
-      doctorView,
-      error,
-      failedReason: job.failedReason,
-      processedOn: job.processedOn,
-      completedOn: job.completedOn
-    }));
-    
-  } catch (error) {
-    return res.status(500).json(formatError(500, error.message));
-  }
+  return res.json(formatSuccess({
+    jobId: req.params.jobId,
+    status: 'completed',
+    message: 'Operações de doutor agora são síncronas'
+  }));
 });
 
 export default router;
