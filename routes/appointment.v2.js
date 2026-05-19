@@ -2212,7 +2212,24 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     // Agora: Processado por appointment-integration worker
     // Motivo: Baixo risco, não afeta dados financeiros críticos
     // Validação: Verificar logs do worker para confirmar atualização
-    
+
+    // 📞 Atualiza telefone (e birthDate/email) do Patient se veio no patientInfo
+    if (updateData.patientInfo && appointment.patient) {
+      const patientFieldsToUpdate = {};
+      if (updateData.patientInfo.phone) {
+        patientFieldsToUpdate.phone = updateData.patientInfo.phone.replace(/\D/g, '') || updateData.patientInfo.phone;
+      }
+      if (updateData.patientInfo.birthDate) patientFieldsToUpdate.dateOfBirth = updateData.patientInfo.birthDate;
+      if (updateData.patientInfo.email)     patientFieldsToUpdate.email = updateData.patientInfo.email;
+      if (Object.keys(patientFieldsToUpdate).length > 0) {
+        patientFieldsToUpdate.updatedAt = new Date();
+        updatePromises.push(
+          Patient.findByIdAndUpdate(appointment.patient, { $set: patientFieldsToUpdate }, { session: mongoSession })
+        );
+        console.log(`[PUT /appointments/${id}] 📞 Atualizando Patient ${appointment.patient}:`, patientFieldsToUpdate);
+      }
+    }
+
     await Promise.all(updatePromises);
     await mongoSession.commitTransaction();
     transactionCommitted = true;  // ✅ Marca como commitado
