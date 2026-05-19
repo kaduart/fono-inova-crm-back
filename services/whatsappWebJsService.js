@@ -31,6 +31,7 @@ let isInitializing = false;
 let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
+let loadingWatchdog = null; // mata o child se travar em loading_screen sem chegar no ready
 const BOOTING_FLAG = '/var/data/wwebjs_auth/.booting';
 let clientInstanceId = 0; // incremental para detectar client stale
 
@@ -176,6 +177,7 @@ function createClient() {
   newClient.on('ready', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ✅ ready — WhatsApp conectado!`);
+    if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     isReady = true;
     qrCodeDataUrl = null;
     connectionStatus = 'ready';
@@ -188,14 +190,29 @@ function createClient() {
     await saveState();
   });
 
-  newClient.on('loading_screen', (percent, message) => {
+  newClient.on('loading_screen', async (percent, message) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ⏳ loading_screen ${percent}% — ${message}`);
+    connectionStatus = 'connecting';
+    await saveState();
+    // Watchdog: se ficar >5min em loading sem chegar no ready, limpa sessão e sai.
+    // Não depende do graceful shutdown — limpa a sessão aqui mesmo.
+    if (loadingWatchdog) clearTimeout(loadingWatchdog);
+    loadingWatchdog = setTimeout(() => {
+      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 5min sem ready — limpando sessão e saindo para respawn limpo.');
+      try {
+        const sess = path.join('/var/data/wwebjs_auth', 'session');
+        if (fs.existsSync(sess)) fs.rmSync(sess, { recursive: true, force: true });
+        console.log('[WhatsAppWeb] 🧹 Sessão corrompida removida pelo watchdog — próximo boot gerará novo QR.');
+      } catch {}
+      process.exit(2);
+    }, 5 * 60 * 1000);
   });
 
   newClient.on('disconnected', async (reason) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
+    if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     isReady = false;
     connectionStatus = 'disconnected';
     try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
