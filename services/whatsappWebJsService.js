@@ -132,6 +132,18 @@ function createClient() {
         '--no-default-browser-check',
         '--password-store=basic',
         '--use-mock-keychain',
+        // Redução agressiva de memória para Render (OOM durante loading_screen 95-99%)
+        '--no-zygote',
+        '--single-process',
+        '--renderer-process-limit=1',
+        '--js-flags=--max_old_space_size=96',
+        '--disable-features=AudioServiceOutOfProcess',
+        '--disable-software-rasterizer',
+        '--disable-gl-extensions',
+        '--disable-canvas-aa',
+        '--disable-composited-antialiasing',
+        '--media-cache-size=0',
+        '--disk-cache-size=0',
       ],
   };
 
@@ -199,14 +211,14 @@ function createClient() {
     // Não depende do graceful shutdown — limpa a sessão aqui mesmo.
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
     loadingWatchdog = setTimeout(() => {
-      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 5min sem ready — limpando sessão e saindo para respawn limpo.');
+      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 2min sem ready — limpando sessão e saindo para respawn limpo.');
       try {
         const sess = path.join('/var/data/wwebjs_auth', 'session');
         if (fs.existsSync(sess)) fs.rmSync(sess, { recursive: true, force: true });
         console.log('[WhatsAppWeb] 🧹 Sessão corrompida removida pelo watchdog — próximo boot gerará novo QR.');
       } catch {}
       process.exit(2);
-    }, 5 * 60 * 1000);
+    }, 2 * 60 * 1000);
   });
 
   newClient.on('disconnected', async (reason) => {
@@ -251,6 +263,20 @@ export async function initWhatsAppClient() {
   if (initAttempts >= MAX_INIT_ATTEMPTS) {
     console.log('[WhatsAppWeb] 🔁 Resetando contador de tentativas.');
     initAttempts = 0;
+  }
+
+  // Se BOOTING_FLAG existe, o boot anterior foi interrompido (OOM/kill do Render).
+  // Sessão pode estar corrompida — limpa para garantir QR limpo.
+  if (fs.existsSync(BOOTING_FLAG)) {
+    console.warn('[WhatsAppWeb] ⚠️ Boot anterior interrompido detectado — limpando sessão corrompida.');
+    try {
+      const sess = path.join('/var/data/wwebjs_auth', 'session');
+      if (fs.existsSync(sess)) fs.rmSync(sess, { recursive: true, force: true });
+      fs.rmSync(BOOTING_FLAG, { force: true });
+      console.log('[WhatsAppWeb] 🧹 Sessão removida — próximo boot gerará novo QR.');
+    } catch (e) {
+      console.warn('[WhatsAppWeb] Erro ao limpar sessão:', e.message);
+    }
   }
 
   // Locks são limpos em createClient() via clearChromiumLocks()
