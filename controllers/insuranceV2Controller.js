@@ -83,8 +83,7 @@ export async function getInsuranceReceivables(req, res) {
 
     const payments = validSessionObjectIds.length > 0
       ? await Payment.find({
-          session: { $in: validSessionObjectIds },
-          billingType: 'convenio'
+          session: { $in: validSessionObjectIds }
         }).lean()
       : [];
     
@@ -145,9 +144,11 @@ export async function getInsuranceReceivables(req, res) {
           grouped[providerName].patients.push(patientGroup);
         }
         
-        const grossAmount = session.package?.insuranceGrossAmount || 
-                           payment?.insurance?.grossAmount || 
-                           payment?.amount || 80;
+        const grossAmount = session.package?.insuranceGrossAmount ||
+                           payment?.insurance?.grossAmount ||
+                           (payment?.amount > 0 ? payment.amount : null) ||
+                           session.sessionValue ||
+                           80;
         
         // Atualizar totais
         grouped[providerName].totalPending += grossAmount;

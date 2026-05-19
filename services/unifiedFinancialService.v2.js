@@ -198,10 +198,12 @@ export async function calculateProduction(start, end) {
     let count = 0;
 
     for (const s of finalSessions) {
-        const valor = s.sessionValue > 0
-            ? s.sessionValue
-            : s.package?.sessionValue > 0
-                ? s.package.sessionValue
+        // Para sessões de pacote, package.sessionValue é o valor definitivo por sessão.
+        // session.sessionValue pode ter sido criado com o valor total do pacote (bug de criação).
+        const valor = s.package?.sessionValue > 0
+            ? s.package.sessionValue
+            : s.sessionValue > 0
+                ? s.sessionValue
                 : (s.package?.totalValue && s.package?.totalSessions)
                     ? Math.round(s.package.totalValue / s.package.totalSessions)
                     : 0;
@@ -242,10 +244,10 @@ export async function calculateProductionByDay(start, end) {
     const result = await calculateProduction(start, end);
     const map = new Map();
     for (const s of result.sessions) {
-        const valor = s.sessionValue > 0
-            ? s.sessionValue
-            : s.package?.sessionValue > 0
-                ? s.package.sessionValue
+        const valor = s.package?.sessionValue > 0
+            ? s.package.sessionValue
+            : s.sessionValue > 0
+                ? s.sessionValue
                 : (s.package?.totalValue && s.package?.totalSessions)
                     ? Math.round(s.package.totalValue / s.package.totalSessions)
                     : 0;

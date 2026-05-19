@@ -517,10 +517,10 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
     const gapPorDia = daysRemaining > 0 ? gapValor / daysRemaining : 0;
 
-    const ritmoEsperado = (daysPassed / diasUteis) * metaMensal;
+    const ritmoEsperado = (daysPassed / daysInMonth) * metaMensal;
     const diferencaRitmo = realizadoMes - ritmoEsperado;
 
-    const percentualEsperado = (daysPassed / diasUteis) * 100;
+    const percentualEsperado = (daysPassed / daysInMonth) * 100;
     const percentualRealizado = metaMensal > 0 ? (realizadoMes / metaMensal) * 100 : 0;
 
     let statusMeta = 'vermelho';
@@ -587,23 +587,23 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
         porTipo: {
             particular: {
                 meta: parseFloat((goal.breakdown.particular || 0).toFixed(2)),
-                realizado: parseFloat((data.caixaDetalhe.particular || 0).toFixed(2)),
-                percentualDoTotal: data.caixa > 0 ? parseFloat(((data.caixaDetalhe.particular || 0) / data.caixa * 100).toFixed(1)) : 0
+                realizado: parseFloat((data.producaoDetalhe.particular || 0).toFixed(2)),
+                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.particular || 0) / data.producao * 100).toFixed(1)) : 0
             },
             pacote: {
                 meta: parseFloat((goal.breakdown.pacote || 0).toFixed(2)),
-                realizado: parseFloat((data.caixaDetalhe.pacote || 0).toFixed(2)),
-                percentualDoTotal: data.caixa > 0 ? parseFloat(((data.caixaDetalhe.pacote || 0) / data.caixa * 100).toFixed(1)) : 0
+                realizado: parseFloat((data.producaoDetalhe.pacote || 0).toFixed(2)),
+                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.pacote || 0) / data.producao * 100).toFixed(1)) : 0
             },
             convenio: {
                 meta: parseFloat((goal.breakdown.convenio || 0).toFixed(2)),
-                realizado: parseFloat((data.caixaDetalhe.convenio || 0).toFixed(2)),
-                percentualDoTotal: data.caixa > 0 ? parseFloat(((data.caixaDetalhe.convenio || 0) / data.caixa * 100).toFixed(1)) : 0
+                realizado: parseFloat((data.producaoDetalhe.convenio || 0).toFixed(2)),
+                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.convenio || 0) / data.producao * 100).toFixed(1)) : 0
             },
             liminar: {
                 meta: parseFloat((goal.breakdown.liminar || 0).toFixed(2)),
-                realizado: parseFloat((data.caixaDetalhe.liminar || 0).toFixed(2)),
-                percentualDoTotal: data.caixa > 0 ? parseFloat(((data.caixaDetalhe.liminar || 0) / data.caixa * 100).toFixed(1)) : 0
+                realizado: parseFloat((data.producaoDetalhe.liminar || 0).toFixed(2)),
+                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.liminar || 0) / data.producao * 100).toFixed(1)) : 0
             }
         }
     };
@@ -622,7 +622,9 @@ async function calculateProfissionais(data, year, month) {
     const sessions = await Session.find({
         date: { $gte: start, $lte: end },
         status: 'completed'
-    }).select('doctor sessionValue paymentMethod package paymentOrigin').lean();
+    }).select('doctor sessionValue paymentMethod package paymentOrigin')
+      .populate('package', 'sessionValue totalValue totalSessions')
+      .lean();
 
     // Caixa real = Payments do mês vinculados a sessões
     const startStr = start.toISOString().split('T')[0];
@@ -723,7 +725,14 @@ async function calculateProfissionais(data, year, month) {
         if (!docId || !profMap.has(docId)) return;
 
         const prof = profMap.get(docId);
-        const valor = s.sessionValue || 0;
+        // Para sessões de pacote, package.sessionValue é o valor definitivo por sessão.
+        const valor = s.package?.sessionValue > 0
+            ? s.package.sessionValue
+            : s.sessionValue > 0
+                ? s.sessionValue
+                : (s.package?.totalValue && s.package?.totalSessions)
+                    ? Math.round(s.package.totalValue / s.package.totalSessions)
+                    : 0;
         const paymentMethod = s.paymentMethod || 'particular';
         const isConvenio = isConvenioSession(s);
         const isPacote = !!s.package;
@@ -1108,23 +1117,34 @@ async function calculateComparativos(year, month) {
         prevDespesas = prevDp.total;
     }
 
-    // Tenta snapshot para mês atual
+    // Mês atual: sempre real-time — snapshot pode estar desatualizado pois o mês ainda está aberto
     let currentCaixa = 0, currentProducao = 0, currentDespesas = 0;
-    const currentSnapReady = await financialSnapshotService.isMonthlySnapshotReady(year, month);
-    const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
-    if (currentSnapReady) {
-        const currSnap = await financialSnapshotService.getMonthlyAggregate(year, month);
-        currentCaixa = currSnap.caixa;
-        currentProducao = currSnap.producao;
+    const nowMoment = moment.tz(TIMEZONE);
+    const isCurrentMonth = year === nowMoment.year() && month === nowMoment.month() + 1;
+
+    if (!isCurrentMonth) {
+        const currentSnapReady = await financialSnapshotService.isMonthlySnapshotReady(year, month);
+        const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
+        if (currentSnapReady) {
+            const currSnap = await financialSnapshotService.getMonthlyAggregate(year, month);
+            currentCaixa = currSnap.caixa;
+            currentProducao = currSnap.producao;
+        } else {
+            const currRt = await calculateRealTime(year, month);
+            currentCaixa = currRt.caixa;
+            currentProducao = currRt.producao;
+        }
+        if (currentExpReady) {
+            const currExp = await financialExpenseSnapshotService.getMonthlyAggregate(year, month);
+            currentDespesas = currExp.total;
+        } else {
+            const currDp = await calculateDespesas(year, month);
+            currentDespesas = currDp.total;
+        }
     } else {
         const currRt = await calculateRealTime(year, month);
         currentCaixa = currRt.caixa;
         currentProducao = currRt.producao;
-    }
-    if (currentExpReady) {
-        const currExp = await financialExpenseSnapshotService.getMonthlyAggregate(year, month);
-        currentDespesas = currExp.total;
-    } else {
         const currDp = await calculateDespesas(year, month);
         currentDespesas = currDp.total;
     }
