@@ -32,7 +32,11 @@ const logger = createContextLogger('PatientV2Routes');
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutos
 const VIEW_TIMEOUT_MS = 3000; // 3s para build sync
-const WORKERS_ENABLED = process.env.ENABLE_WORKERS === 'true';
+// Checa estado real dos workers em runtime (não só env var estática)
+// Se os workers falharam ao iniciar (lock duplicado, crash no clinical group), usa path síncrono
+const isWorkersEnabled = () =>
+    process.env.ENABLE_WORKERS === 'true' && global.workersAtivos !== false;
+const WORKERS_ENABLED = process.env.ENABLE_WORKERS === 'true'; // mantido para compat. legada
 
 // ============================================
 // READ SIDE (PatientsView + fallback)
@@ -327,8 +331,8 @@ router.post('/', flexibleAuth, async (req, res) => {
     });
     
     // 🚀 Fallback síncrono se workers estiverem desabilitados
-    if (!WORKERS_ENABLED) {
-      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+    if (!isWorkersEnabled()) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
       
       const patient = await Patient.create({
         _id: new mongoose.Types.ObjectId(patientId),
@@ -422,8 +426,8 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     }
 
     // 🚀 Fallback síncrono se workers estiverem desabilitados
-    if (!WORKERS_ENABLED) {
-      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+    if (!isWorkersEnabled()) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
       
       const allowedFields = [
         'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
@@ -504,8 +508,8 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     }
 
     // 🚀 Fallback síncrono se workers estiverem desabilitados
-    if (!WORKERS_ENABLED) {
-      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados)`);
+    if (!isWorkersEnabled()) {
+      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
       
       await Patient.findByIdAndDelete(patientId);
       await PatientsView.findOneAndDelete({ patientId });
