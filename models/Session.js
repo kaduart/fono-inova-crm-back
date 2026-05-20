@@ -274,6 +274,52 @@ sessionSchema.pre('validate', function(next) {
     next();
 });
 
+// 🛡️ FINANCIAL INTEGRITY LOCK: Evita sessions com origens financeiras conflitantes
+sessionSchema.pre('validate', function(next) {
+    const hasInsuranceGuide = !!this.insuranceGuide;
+    const hasPackage = !!this.package;
+    const method = (this.paymentMethod || '').toLowerCase();
+    const origin = (this.paymentOrigin || '').toLowerCase();
+    
+    // ❌ Bloqueio 1: insuranceGuide + paymentMethod package_prepaid
+    // Se tem guia de convênio, NÃO pode ser marcada como sessão de pacote pré-pago
+    if (hasInsuranceGuide && method === 'package_prepaid') {
+        const error = new Error(
+            `[FINANCIAL INTEGRITY] Session com insuranceGuide não pode ter paymentMethod='package_prepaid'. ` +
+            `A guia de convênio indica que o pagador é o convênio, não o pacote. ` +
+            `Use paymentMethod='convenio' ou remova o insuranceGuide. ` +
+            `Session: ${this._id || '(novo)'}`
+        );
+        error.code = 'CONFLICTING_FINANCIAL_ORIGIN';
+        error.field = 'paymentMethod';
+        return next(error);
+    }
+    
+    // ❌ Bloqueio 2: insuranceGuide + paymentOrigin package_prepaid
+    if (hasInsuranceGuide && origin === 'package_prepaid') {
+        const error = new Error(
+            `[FINANCIAL INTEGRITY] Session com insuranceGuide não pode ter paymentOrigin='package_prepaid'. ` +
+            `A guia de convênio indica que a origem do pagamento é o convênio, não o pacote. ` +
+            `Use paymentOrigin='convenio' ou remova o insuranceGuide. ` +
+            `Session: ${this._id || '(novo)'}`
+        );
+        error.code = 'CONFLICTING_FINANCIAL_ORIGIN';
+        error.field = 'paymentOrigin';
+        return next(error);
+    }
+    
+    // ⚠️ Alerta (não bloqueia): sessionValue anômalo para convenio
+    if (hasInsuranceGuide && this.sessionValue && this.sessionValue > 200) {
+        console.warn(
+            `[FINANCIAL INTEGRITY WARNING] Session ${this._id || '(novo)'} com insuranceGuide ` +
+            `tem sessionValue=${this.sessionValue}, que parece alto para convênio. ` +
+            `Verifique se não é um valor de pacote particular.`
+        );
+    }
+    
+    next();
+});
+
 sessionSchema.post('findOneAndUpdate', async function (doc) {
     // 🛡️ CRITICAL FIX: syncEvent escreve fora da transação — não rodar dentro de mongoSession
     if (this.getOptions().session) return;

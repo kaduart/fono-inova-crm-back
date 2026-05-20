@@ -66,6 +66,9 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
                  h._id.toString() < apt._id.toString())
         );
 
+        // 🎯 NOVO: primeira vez deste paciente nesta especialidade
+        const isFirstVisitInSpecialty = earlierSameSpecialty.length === 0;
+
         let isReturningAfter45Days = false;
         if (earlierSameSpecialty.length > 0) {
             const lastPrevious = earlierSameSpecialty[earlierSameSpecialty.length - 1];
@@ -73,7 +76,7 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
             isReturningAfter45Days = diffDays >= 45;
         }
 
-        return { ...apt, isLead: false, isFirstVisit, isReturningAfter45Days };
+        return { ...apt, isLead: false, isFirstVisit, isFirstVisitInSpecialty, isReturningAfter45Days };
     });
 }
 
@@ -149,9 +152,10 @@ export const getAppointmentsByType = async (req, res) => {
             .lean();
 
         // 🎯 FIX: No modo 'date' a intenção é uma visão OPERACIONAL + AQUISIÇÃO:
-        // buscamos os agendamentos do período (date) E os pré-agendados criados
+        // buscamos os agendamentos do período (date) E os agendamentos criados
         // no período (createdAt), mesmo que sua consulta real seja futura.
-        let preAgendamentos = [];
+        // Inclui tanto pre_agendado quanto scheduled — se é novo na especialidade, aparece.
+        let criadosHoje = [];
         if (mode === 'date') {
             const createdAtFilter = {};
             if (date) {
@@ -172,14 +176,14 @@ export const getAppointmentsByType = async (req, res) => {
                 createdAtFilter.createdAt = { $gte: today, $lt: tomorrow };
             }
             
-            const preFilter = {
+            const criadosFilter = {
                 ...createdAtFilter,
-                operationalStatus: 'pre_agendado'
+                operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
             };
-            if (doctorId) preFilter.doctor = new mongoose.Types.ObjectId(doctorId);
-            if (specialty) preFilter.specialty = specialty.toLowerCase();
+            if (doctorId) criadosFilter.doctor = new mongoose.Types.ObjectId(doctorId);
+            if (specialty) criadosFilter.specialty = specialty.toLowerCase();
             
-            preAgendamentos = await Appointment.find(preFilter)
+            criadosHoje = await Appointment.find(criadosFilter)
                 .populate('patient', 'fullName phone email dateOfBirth cpf')
                 .populate('doctor', 'fullName specialty phoneNumber')
                 .populate('session', 'status notes')
@@ -189,26 +193,18 @@ export const getAppointmentsByType = async (req, res) => {
                 .lean();
         }
 
-        // Deduplica pré-agendamentos: mesmo _id OU mesmo paciente já no pool principal
+        // Deduplica por _id apenas (não por paciente — um paciente pode ter vários agendamentos)
         const appointmentIds = new Set(appointments.map(a => a._id.toString()));
-        const patientIdsInMainPool = new Set(
-            appointments
-                .filter(a => a.patient?._id)
-                .map(a => a.patient._id.toString())
-        );
-        const uniquePreAgendamentos = preAgendamentos
-            .filter(p => {
-                if (appointmentIds.has(p._id.toString())) return false;
-                const pid = p.patient?._id?.toString?.();
-                if (pid && patientIdsInMainPool.has(pid)) return false;
-                return true;
-            })
-            .map(p => ({ ...p, origin: 'pre_agendamento' }));
+        const uniqueCriadosHoje = criadosHoje
+            .filter(c => !appointmentIds.has(c._id.toString()))
+            .map(c => ({ ...c, origin: c.operationalStatus === 'pre_agendado' ? 'pre_agendamento' : 'agendado_hoje' }));
 
         const allAppointments = [
             ...appointments,
-            ...uniquePreAgendamentos
+            ...uniqueCriadosHoje
         ];
+        console.log(`[analytics/by-type] 📅 Período: ${date || startDate} ~ ${endDate || date} | mode=${mode}`);
+        console.log(`[analytics/by-type] 📋 Appointments do período: ${appointments.length} | Criados hoje (único): ${uniqueCriadosHoje.length} | Total pool: ${allAppointments.length}`);
 
         // ─── 4. Buscar histórico completo dos pacientes envolvidos ───
         const patientIds = [
@@ -234,10 +230,22 @@ export const getAppointmentsByType = async (req, res) => {
                 if (!patientHistoryMap.has(pid)) patientHistoryMap.set(pid, []);
                 patientHistoryMap.get(pid).push(h);
             });
+            console.log(`[analytics/by-type] 📚 Histórico: ${patientIds.length} pacientes, ${histories.length} agendamentos históricos`);
+            patientIds.forEach(pid => {
+                const h = patientHistoryMap.get(pid) || [];
+                const specialties = [...new Set(h.map(x => x.specialty).filter(Boolean))];
+                console.log(`[analytics/by-type]    → paciente ${pid}: ${h.length} históricos, especialidades: [${specialties.join(', ')}]`);
+            });
         }
 
         // ─── 5. Calcular flags de lifecycle ───
         const enrichedAppointments = computeLifecycleFlags(allAppointments, patientHistoryMap);
+        console.log(`[analytics/by-type] 🔍 Flags calculadas:`);
+        enrichedAppointments.forEach(a => {
+            const pid = a.patient?._id?.toString?.() || a.patient?.toString?.() || 'sem-paciente';
+            const nome = a.patient?.fullName || 'Sem nome';
+            console.log(`[analytics/by-type]    → ${nome} (${pid}) | specialty=${a.specialty} | isFirstVisit=${a.isFirstVisit} | isFirstVisitInSpecialty=${a.isFirstVisitInSpecialty} | isReturningAfter45Days=${a.isReturningAfter45Days} | status=${a.operationalStatus}`);
+        });
 
         // ─── 6. Separar categorias ───
         // NÍVEL CEO: separação clara entre aquisição, primeira visita e retenção
@@ -257,12 +265,16 @@ export const getAppointmentsByType = async (req, res) => {
         }
 
         const novos = enrichedAppointments.filter(a => a.isFirstVisit && !a.isLead);
+        const novosEspecialidade = enrichedAppointments.filter(
+            a => !a.isLead && !a.isFirstVisit && a.isFirstVisitInSpecialty && !a.isReturningAfter45Days
+        );
         const retornos45 = enrichedAppointments.filter(a => a.isReturningAfter45Days);
         const recorrentes = enrichedAppointments.filter(
-            a => !a.isLead && !a.isFirstVisit && !a.isReturningAfter45Days
+            a => !a.isLead && !a.isFirstVisit && !a.isFirstVisitInSpecialty && !a.isReturningAfter45Days
         );
 
         const total = enrichedAppointments.length;
+        console.log(`[analytics/by-type] ✅ Resultado: total=${total} | leads=${leads.length} | novos=${novos.length} | novosEspecialidade=${novosEspecialidade.length} | retornos45=${retornos45.length} | recorrentes=${recorrentes.length}`);
 
         res.json({
             success: true,
@@ -283,6 +295,10 @@ export const getAppointmentsByType = async (req, res) => {
                     count: novos.length,
                     percentage: total > 0 ? Math.round((novos.length / total) * 100) : 0
                 },
+                novosEspecialidade: {
+                    count: novosEspecialidade.length,
+                    percentage: total > 0 ? Math.round((novosEspecialidade.length / total) * 100) : 0
+                },
                 retornos45: {
                     count: retornos45.length,
                     percentage: total > 0 ? Math.round((retornos45.length / total) * 100) : 0
@@ -295,6 +311,7 @@ export const getAppointmentsByType = async (req, res) => {
             details: {
                 leads,
                 novos,
+                novosEspecialidade,
                 retornos45,
                 recorrentes,
                 all: enrichedAppointments
