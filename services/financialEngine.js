@@ -44,7 +44,8 @@ export async function calculateFinancialSnapshot({
   patientId = null,
   groupByPatient = true,
   groupByDoctor = true,
-  populate = true
+  populate = true,
+  excludeBillingTypes = null // ex: ['convenio', 'liminar'] para excluir receitas de terceiros
 } = {}) {
   const start = Date.now();
 
@@ -54,6 +55,10 @@ export async function calculateFinancialSnapshot({
     clinicId,
     kind: { $ne: 'package_consumed' } // 🛡️ package_consumed NÃO é caixa
   };
+
+  if (excludeBillingTypes && excludeBillingTypes.length > 0) {
+    query.billingType = { $nin: excludeBillingTypes };
+  }
 
   // Date filter: usa paymentDate (data do pagamento/agendamento) ou serviceDate
   // paymentDate e serviceDate são strings 'YYYY-MM-DD' no DB
@@ -194,7 +199,8 @@ export async function calculatePendentesEngine({ startDate, endDate, clinicId = 
     clinicId,
     status: ['pending', 'partial'],
     groupByPatient: true,
-    groupByDoctor: true
+    groupByDoctor: true,
+    excludeBillingTypes: ['convenio', 'liminar'] // convênio é receita da seguradora, não débito do paciente
   });
 }
 

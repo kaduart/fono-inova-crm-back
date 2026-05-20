@@ -44,12 +44,11 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         const isFirstVisit = earlierAppointments.length === 0;
 
         // 🔥 Fonte de verdade para lead:
-        // operationalStatus === 'pre_agendado' (ainda não convertido)
-        // NOTA: 'converted' foi removido do domínio — pré-agendamentos convertidos viram 'canceled'
-        // com metadata.convertedToAppointmentId, e um novo appointment 'scheduled' é criado.
-        // 🎯 FIX: Só é lead se for pré-agendamento DE UM NOVO PACIENTE (sem histórico).
-        // Pacientes existentes que fazem pré-agendamento não são leads.
-        const isLead = apt.operationalStatus === 'pre_agendado' && isFirstVisit;
+        // pre_agendado → funil de lead clássico
+        // scheduled + isFirstVisit → agendamento direto de novo paciente (fluxo alternativo)
+        // Ambos representam aquisição de um paciente novo e devem aparecer em "Pré-agendados Novos".
+        // O filtro por período (mode=date) já limita ao dia correto via post-filter nas linhas abaixo.
+        const isLead = apt.operationalStatus === 'pre_agendado' || (apt.operationalStatus === 'scheduled' && isFirstVisit);
 
         if (isLead) {
             return { ...apt, isLead: true, isFirstVisit: true, isReturningAfter45Days: false };
