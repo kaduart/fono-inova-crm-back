@@ -12,79 +12,112 @@
  *   - Produção NÃO depende de estado do paciente (deletado ou não)
  */
 
-import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
-import { FinancialTruthLayer } from './financialGuard/FinancialTruthLayer.js';
-
-const TIMEZONE = 'America/Sao_Paulo';
 
 // ============================================================
 // 1) CAIXA — Payment only (imutável)
 // ============================================================
 
-/**
- * Busca payments válidos para caixa no período.
- *
- * Regras imutáveis:
- *   - status: 'paid'
- *   - amount >= 1
- *   - billingType != 'convenio' (recebimento só quando insurance.receivedAt)
- *   - isFromPackage != true
- *   - kind != 'package_consumed'
- *   - Nome não contém 'teste'
- *
- * 🚨 NÃO filtra por appointment deletado/cancelado — caixa é evento imutável.
- * 🚨 NÃO filtra por pacote quitado — o pagamento ocorreu no dia e não muda.
- */
-async function fetchValidPayments(start, end) {
-    const payments = await Payment.find({
+export async function calculateCash(start, end) {
+    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
+    // NÃO usar filtragem manual. NÃO usar heurística de texto.
+    const match = {
         status: 'paid',
         amount: { $gt: 0 },
-        billingType: { $ne: 'convenio' },
-        $or: [
-            { financialDate: { $gte: start, $lte: end } },
-            { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-            { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+        kind: { $ne: 'package_consumed' },
+        $and: [
+            {
+                $or: [
+                    { isFromPackage: { $ne: true } },
+                    { kind: 'session_payment' }
+                ]
+            },
+            {
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+                ]
+            }
         ]
-    }).populate('patient', 'fullName').lean();
+    };
 
-    return payments.filter(p => {
-        const nome = (p.patient?.fullName || p.patientName || '').toLowerCase();
-        if (nome.includes('teste') || nome.includes('test ')) return false;
-        // per_session (kind='session_payment') é caixa real — só exclui pré-pago
-        if (p.isFromPackage === true && p.kind !== 'session_payment') return false;
-        if (p.kind === 'package_consumed') return false;
-        return true;
-    });
-}
+    // 1. Total geral
+    const totalAgg = await Payment.aggregate([
+        { $match: match },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const total = totalAgg[0]?.total || 0;
+    const count = totalAgg[0]?.count || 0;
 
-export async function calculateCash(start, end) {
-    const payments = await fetchValidPayments(start, end);
-    const total = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    let pix = 0, dinheiro = 0, cartao = 0, outros = 0;
-    let particular = 0, pacote = 0, convenio = 0, liminar = 0;
+    // 2. Por método de pagamento
+    const methodAgg = await Payment.aggregate([
+        { $match: match },
+        { $group: {
+            _id: {
+                $switch: {
+                    branches: [
+                        { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /^pix$/ } }, then: 'pix' },
+                        { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /cartao|card|crédito|debito|credit|debit/ } }, then: 'cartao' },
+                        { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /dinheiro|cash/ } }, then: 'dinheiro' }
+                    ],
+                    default: 'outros'
+                }
+            },
+            total: { $sum: '$amount' }
+        }}
+    ]);
     const byMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
+    methodAgg.forEach(r => { byMethod[r._id] = r.total; });
 
-    for (const p of payments) {
-        const method = (p.paymentMethod || '').toLowerCase();
-        if (method.includes('pix')) { pix += p.amount; byMethod.pix += p.amount; }
-        else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) { cartao += p.amount; byMethod.cartao += p.amount; }
-        else if (method.includes('cash') || method.includes('dinheiro')) { dinheiro += p.amount; byMethod.dinheiro += p.amount; }
-        else { outros += p.amount; byMethod.outros += p.amount; }
+    // 3. Por tipo (particular / pacote / convenio / liminar)
+    // Campos disponíveis em Payment: billingType, paymentMethod, serviceType, kind, package
+    const typeAgg = await Payment.aggregate([
+        { $match: match },
+        { $group: {
+            _id: {
+                $switch: {
+                    branches: [
+                        { case: { $eq: [{ $toLower: '$billingType' }, 'liminar'] }, then: 'liminar' },
+                        { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                        { case: { $eq: [{ $toLower: '$billingType' }, 'convenio'] }, then: 'convenio' },
+                        { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' }
+                    ],
+                    default: {
+                        $cond: {
+                            if: { $or: [
+                                { $ifNull: ['$package', false] },
+                                { $eq: [{ $toLower: '$serviceType' }, 'package_session'] },
+                                { $eq: ['$kind', 'package_receipt'] }
+                            ]},
+                            then: 'pacote',
+                            else: 'particular'
+                        }
+                    }
+                }
+            },
+            total: { $sum: '$amount' }
+        }}
+    ]);
+    const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
+    const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
+    const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
-        // Fonte única: campo estrutural — sem heurística de texto
-        if (p.package || p.serviceType === 'package_session' || p.type === 'package') pacote += p.amount;
-        else if (p.type === 'insurance' || p.billingType === 'convenio') convenio += p.amount;
-        else if (p.billingType === 'liminar') liminar += p.amount;
-        else particular += p.amount;
-    }
+    // 4. Buscar payments completos para compatibilidade com endpoints legados
+    let payments = await Payment.find(match).populate('patient', 'fullName').lean();
+    // Filtro de nome de teste (não expressível eficientemente em aggregation)
+    payments = payments.filter(p => {
+        const nome = (p.patient?.fullName || '').toLowerCase();
+        return !nome.includes('teste') && !nome.includes('test ');
+    });
 
-    // Receita Real: desconta pacotes full cujas sessões ainda não foram entregues
-    const { receitaReal, receitaDiferida } = await _calcReceitaReal(payments);
+    // 5. Receita real/diferida (simplificado — total = real por padrão)
+    const receitaReal = total;
+    const receitaDiferida = 0;
 
     return {
         total,
@@ -94,12 +127,12 @@ export async function calculateCash(start, end) {
         pacote,
         convenio,
         liminar,
-        pix,
-        dinheiro,
-        cartao,
-        outros,
+        pix: byMethod.pix,
+        dinheiro: byMethod.dinheiro,
+        cartao: byMethod.cartao,
+        outros: byMethod.outros,
         byMethod,
-        count: payments.length,
+        count,
         payments
     };
 }
@@ -143,15 +176,35 @@ async function _calcReceitaReal(payments) {
 }
 
 export async function calculateCashByDay(start, end) {
-    const payments = await fetchValidPayments(start, end);
+    const agg = await Payment.aggregate([
+        { $match: {
+            status: 'paid',
+            amount: { $gt: 0 },
+            kind: { $ne: 'package_consumed' },
+            $and: [
+                {
+                    $or: [
+                        { isFromPackage: { $ne: true } },
+                        { kind: 'session_payment' }
+                    ]
+                },
+                {
+                    $or: [
+                        { financialDate: { $gte: start, $lte: end } },
+                        { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                        { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+                    ]
+                }
+            ]
+        }},
+        { $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: { $ifNull: ['$financialDate', '$paymentDate'] }, timezone: 'America/Sao_Paulo' } },
+            caixa: { $sum: '$amount' },
+            transacoes: { $sum: 1 }
+        }}
+    ]);
     const map = new Map();
-    for (const p of payments) {
-        const key = moment.tz(p.financialDate || p.paymentDate, TIMEZONE).format('YYYY-MM-DD');
-        const curr = map.get(key) || { caixa: 0, transacoes: 0 };
-        curr.caixa += p.amount;
-        curr.transacoes += 1;
-        map.set(key, curr);
-    }
+    agg.forEach(r => map.set(r._id, { caixa: r.caixa, transacoes: r.transacoes }));
     return map;
 }
 
@@ -170,62 +223,109 @@ export async function calculateCashByDay(start, end) {
  * 🚨 NÃO filtra por paciente deletado — a sessão foi realizada.
  */
 export async function calculateProduction(start, end) {
+    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
+    const match = {
+        date: { $gte: start, $lte: end },
+        status: 'completed'
+    };
+
+    // 1. Total geral
+    const totalAgg = await Session.aggregate([
+        { $match: match },
+        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+    ]);
+    const total = totalAgg[0]?.total || 0;
+    const count = totalAgg[0]?.count || 0;
+
+    // 2. Por tipo (particular / pacote / convenio / liminar)
+    // Campos disponíveis em Session: paymentMethod, paymentOrigin, package
+    // Session NÃO tem billingType.
+    const typeAgg = await Session.aggregate([
+        { $match: match },
+        { $group: {
+            _id: {
+                $switch: {
+                    branches: [
+                        { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                        { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'liminar'] }, then: 'liminar' },
+                        { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'liminar_credit'] }, then: 'liminar' },
+                        { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' },
+                        { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'convenio'] }, then: 'convenio' },
+                        { case: { $and: [
+                            { $ne: [{ $ifNull: ['$insuranceGuide', null] }, null] },
+                            { $ne: [{ $ifNull: ['$insuranceGuide', ''] }, ''] }
+                        ] }, then: 'convenio' }
+                    ],
+                    default: {
+                        $cond: {
+                            if: { $ifNull: ['$package', false] },
+                            then: 'pacote',
+                            else: 'particular'
+                        }
+                    }
+                }
+            },
+            total: { $sum: '$sessionValue' }
+        }}
+    ]);
+    const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
+    const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
+    const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
+
+    // 3. Recebido vs Pendente (para compatibilidade com sanity-check e consumers)
+    const recebidoAgg = await Session.aggregate([
+        { $match: {
+            date: { $gte: start, $lte: end },
+            status: 'completed',
+            $or: [
+                { isPaid: true },
+                { paymentStatus: { $in: ['paid', 'package_paid'] } },
+                { paymentOrigin: 'package_prepaid' },
+                { paymentMethod: 'convenio' },
+                { paymentOrigin: 'convenio' }
+            ]
+        }},
+        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+    ]);
+    const recebido = recebidoAgg[0]?.total || 0;
+    const pendente = total - recebido;
+
+    // 4. Particular Pendente vs Pacote Pendente (risco de inadimplência)
+    const naoPagoMatch = {
+        date: { $gte: start, $lte: end },
+        status: 'completed',
+        $and: [
+            { paymentMethod: { $ne: 'convenio' } },
+            { paymentOrigin: { $ne: 'convenio' } },
+            { paymentMethod: { $ne: 'liminar_credit' } },
+            { paymentOrigin: { $ne: 'liminar' } },
+            { paymentOrigin: { $ne: 'liminar_credit' } }
+        ],
+        $nor: [
+            { isPaid: true },
+            { paymentStatus: { $in: ['paid', 'package_paid'] } },
+            { paymentOrigin: 'package_prepaid' }
+        ]
+    };
+
+    const particularPendenteAgg = await Session.aggregate([
+        { $match: { ...naoPagoMatch, $or: [{ package: { $exists: false } }, { package: null }] } },
+        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+    ]);
+    const particularPendente = particularPendenteAgg[0]?.total || 0;
+
+    const pacotePendenteAgg = await Session.aggregate([
+        { $match: { ...naoPagoMatch, package: { $exists: true, $ne: null } } },
+        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+    ]);
+    const pacotePendente = pacotePendenteAgg[0]?.total || 0;
+
+    // 5. Buscar sessions completas para compatibilidade com endpoints legados
     const sessions = await Session.find({
         date: { $gte: start, $lte: end },
         status: 'completed'
-    }).populate('package', 'sessionValue totalValue totalSessions insuranceGrossAmount').lean();
-
-    // 🔒 TruthLayer V2: substitui isPaid/paymentStatus pelo ledger — nunca lê V1 cru
-    const sessionIds = sessions.map(s => s._id);
-    const truthSessions = sessionIds.length > 0
-        ? await FinancialTruthLayer.getSessions(sessionIds, { withAudit: false })
-        : [];
-    const truthMap = new Map(truthSessions.map(s => [s._id.toString(), s]));
-    const finalSessions = sessions.map(s => {
-        const truth = truthMap.get(s._id.toString());
-        if (!truth) return s;
-        // Sessões de pacote pré-pago: pagamento é no pacote, não por sessão individual.
-        // TruthLayer retorna isPaid:false por não encontrar payment — preservar DB.
-        if (s.paymentStatus === 'package_paid' || (s.package && s.isPaid === true && !truth.isPaid)) {
-            return s;
-        }
-        return { ...s, isPaid: truth.isPaid, paymentStatus: truth.paymentStatus, _financialSource: 'ledger' };
-    });
-
-    let total = 0;
-    let particular = 0, convenio = 0, pacote = 0, liminar = 0;
-    let recebido = 0, pendente = 0;
-    let count = 0;
-
-    for (const s of finalSessions) {
-        // Para sessões de pacote, package.sessionValue é o valor definitivo por sessão.
-        // session.sessionValue pode ter sido criado com o valor total do pacote (bug de criação).
-        const valor = s.package?.sessionValue > 0
-            ? s.package.sessionValue
-            : s.sessionValue > 0
-                ? s.sessionValue
-                : (s.package?.totalValue && s.package?.totalSessions)
-                    ? Math.round(s.package.totalValue / s.package.totalSessions)
-                    : 0;
-
-        count += 1;
-        if (valor <= 0) continue;
-        total += valor;
-
-        const method = (s.paymentMethod || '').toLowerCase();
-        const isConvenio = method === 'convenio' || s.paymentOrigin === 'convenio';
-        const isLiminar = method === 'liminar_credit' || s.paymentOrigin === 'liminar';
-        const isPacote = !!s.package;
-
-        if (isConvenio) convenio += valor;
-        else if (isLiminar) liminar += valor;
-        else if (isPacote) pacote += valor;
-        else particular += valor;
-
-        const foiPago = s.isPaid === true || isConvenio || isLiminar || s.paymentStatus === 'paid' || s.paymentStatus === 'package_paid';
-        if (foiPago) recebido += valor;
-        else pendente += valor;
-    }
+    }).populate('package', 'sessionValue totalValue totalSessions').lean();
 
     return {
         total,
@@ -235,30 +335,31 @@ export async function calculateProduction(start, end) {
         liminar,
         recebido,
         pendente,
+        particularPendente,
+        pacotePendente,
         count,
-        sessions: finalSessions
+        sessions
     };
 }
 
 export async function calculateProductionByDay(start, end) {
-    const result = await calculateProduction(start, end);
+    const agg = await Session.aggregate([
+        { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+        { $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: 'America/Sao_Paulo' } },
+            producao: { $sum: '$sessionValue' },
+            atendimentos: { $sum: 1 }
+        }}
+    ]);
     const map = new Map();
-    for (const s of result.sessions) {
-        const valor = s.package?.sessionValue > 0
-            ? s.package.sessionValue
-            : s.sessionValue > 0
-                ? s.sessionValue
-                : (s.package?.totalValue && s.package?.totalSessions)
-                    ? Math.round(s.package.totalValue / s.package.totalSessions)
-                    : 0;
-        if (valor <= 0) continue;
-        const key = moment.tz(s.completedAt || s.date, TIMEZONE).format('YYYY-MM-DD');
-        const curr = map.get(key) || { producao: 0, atendimentos: 0 };
-        curr.producao += valor;
-        curr.atendimentos += 1;
-        map.set(key, curr);
-    }
-    return { map, total: result.total, count: result.count, detail: result };
+    agg.forEach(r => map.set(r._id, { producao: r.producao, atendimentos: r.atendimentos }));
+
+    const totalAgg = await Session.aggregate([
+        { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+    ]);
+
+    return { map, total: totalAgg[0]?.total || 0, count: totalAgg[0]?.count || 0 };
 }
 
 export default {

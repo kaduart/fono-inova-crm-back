@@ -134,7 +134,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 
     // 🔹 Busca otimizada
     const patients = await Patient.find(query)
-      .select('_id fullName cpf phone email dateOfBirth address healthPlan')
+      .select('_id fullName cpf phone email dateOfBirth address healthPlan responsible')
       .sort({ fullName: 1 })
       .skip(skip)
       .limit(limit)

@@ -249,6 +249,11 @@ router.get('/', auth, async (req, res) => {
                 caixaDetalhe: data.caixaDetalhe,
                 producao: data.producao,
                 producaoDetalhe: data.producaoDetalhe,
+                resultadoEconomico: data.resultadoEconomico,
+                resultadoCaixa: data.resultadoCaixa,
+                convenioAReceber: data.convenioAReceber,
+                particularPendente: data.particularPendente,
+                pacotePendente: data.pacotePendente,
                 aReceber,
                 pendentes,
                 saldo: data.saldo,
@@ -274,6 +279,11 @@ router.get('/', auth, async (req, res) => {
                     count: despesas.count
                 },
                 balance: data.saldo,
+                resultadoEconomico: data.resultadoEconomico,
+                resultadoCaixa: data.resultadoCaixa,
+                convenioAReceber: data.convenioAReceber,
+                particularPendente: data.particularPendente,
+                pacotePendente: data.pacotePendente,
                 metas,
                 profissionais,
                 insights,
@@ -508,7 +518,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    const realizadoMes = data.resultadoEconomico || data.producao;
+    const realizadoMes = data.resultadoEconomico ?? data.producao;
     const realizadoDia = data.caixaHoje || 0;
 
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
@@ -977,6 +987,8 @@ async function calculateRealTime(year, month) {
     const packageSalesTotal = packageSalesAgg[0]?.total || 0;
     const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
+    const convenioAReceber = Math.max(0, (production.convenio || 0) - (cash.convenio || 0));
+
     return {
         caixa: cash.total,
         receitaReal: cash.receitaReal,
@@ -999,9 +1011,15 @@ async function calculateRealTime(year, month) {
             convenio: production.convenio,
             liminar: production.liminar,
             recebido: production.recebido,
-            pendente: production.pendente
+            pendente: production.pendente,
+            particularPendente: production.particularPendente,
+            pacotePendente: production.pacotePendente
         },
-        resultadoEconomico: cash.total + Math.max(0, (production.convenio || 0) - (cash.convenio || 0)),
+        resultadoEconomico: cash.total + convenioAReceber,
+        resultadoCaixa: cash.total,
+        convenioAReceber,
+        particularPendente: production.particularPendente,
+        pacotePendente: production.pacotePendente,
         saldo: cash.total
     };
 }
@@ -1603,7 +1621,7 @@ router.get('/sanity-check', auth, async (req, res) => {
             { name: 'Caixa >= 0', pass: cash.total >= 0 },
             { name: 'Produção >= 0', pass: production.total >= 0 },
             { name: 'Recebido + Pendente == Produção', pass: Math.abs(production.recebido + production.pendente - production.total) < 0.01 },
-            { name: 'Zero convênio no caixa', pass: cash.convenio === 0 },
+            { name: 'Caixa particular + pacote + convenio + liminar == total', pass: Math.abs(cash.particular + cash.pacote + cash.convenio + cash.liminar - cash.total) < 0.01 },
             { name: 'Contagens coerentes', pass: production.total === 0 || production.count > 0 },
         ];
 

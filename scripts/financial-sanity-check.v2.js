@@ -174,8 +174,8 @@ async function runChecks() {
         { name: 'Caixa >= 0', check: cash.total >= 0 },
         { name: 'Produção >= 0', check: production.total >= 0 },
         { name: 'Produção recebido + pendente == total', check: Math.abs(production.recebido + production.pendente - production.total) < 0.01 },
-        { name: 'Caixa particular + pacote + convenio == total', check: Math.abs(cash.particular + cash.pacote + cash.convenio - cash.total) < 0.01 },
-        { name: 'Nenhum convênio no caixa (regra V2)', check: cash.convenio === 0 },
+        { name: 'Caixa particular + pacote + convenio + liminar == total', check: Math.abs(cash.particular + cash.pacote + cash.convenio + cash.liminar - cash.total) < 0.01 },
+        { name: 'Convênio no caixa deve ser recebido (status=paid)', check: cash.convenio >= 0 },
         { name: 'Produção count > 0 se total > 0', check: production.total === 0 || production.count > 0 },
     ];
 

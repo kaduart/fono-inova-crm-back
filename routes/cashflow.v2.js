@@ -225,9 +225,16 @@ router.get('/', auth, async (req, res) => {
                 }
             }
 
-            if (method.includes('pix')) qtdPix++;
-            else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) qtdCartao++;
-            else if (method.includes('cash') || method.includes('dinheiro')) qtdDinheiro++;
+            // 🎯 Liminar = Transferência Bancária, não conta em nenhum método tradicional
+            if (isLiminar) {
+                // não incrementa pix/cartao/dinheiro — liminar é categoria própria
+            } else if (method.includes('pix')) {
+                qtdPix++;
+            } else if (method.includes('card') || method.includes('cartao') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) {
+                qtdCartao++;
+            } else if (method.includes('cash') || method.includes('dinheiro')) {
+                qtdDinheiro++;
+            }
 
             // 🎯 Fonte de verdade: Appointment (doctor/specialty/sessionType) > Payment > 'Outra'
             const esp = appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra';
@@ -235,9 +242,17 @@ router.get('/', auth, async (req, res) => {
             porEspecialidadeCaixa[esp] += p.amount;
 
             let metodo = 'Outros';
-            if (method.includes('pix')) metodo = 'Pix';
-            else if (method.includes('dinheiro') || method.includes('cash')) metodo = 'Dinheiro';
-            else if (method.includes('cartão') || method.includes('cartao') || method.includes('card') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) metodo = 'Cartão';
+            if (isLiminar) {
+                metodo = 'Transferência Bancária';
+            } else if (tipo === 'Convênio') {
+                metodo = 'Convênio';
+            } else if (method.includes('pix')) {
+                metodo = 'Pix';
+            } else if (method.includes('dinheiro') || method.includes('cash')) {
+                metodo = 'Dinheiro';
+            } else if (method.includes('cartão') || method.includes('cartao') || method.includes('card') || method.includes('crédito') || method.includes('debito') || method.includes('credit') || method.includes('debit')) {
+                metodo = 'Cartão';
+            }
 
             return {
                 id: p._id,
@@ -264,7 +279,8 @@ router.get('/', auth, async (req, res) => {
         const pixFiltrado = transacoesCaixa.filter(t => t.metodo === 'Pix').reduce((s, t) => s + t.valor, 0);
         const dinheiroFiltrado = transacoesCaixa.filter(t => t.metodo === 'Dinheiro').reduce((s, t) => s + t.valor, 0);
         const cartaoFiltrado = transacoesCaixa.filter(t => t.metodo === 'Cartão').reduce((s, t) => s + t.valor, 0);
-        const outrosFiltrado = transacoesCaixa.filter(t => !['Pix', 'Dinheiro', 'Cartão'].includes(t.metodo)).reduce((s, t) => s + t.valor, 0);
+        const transferenciaFiltrado = transacoesCaixa.filter(t => t.metodo === 'Transferência Bancária').reduce((s, t) => s + t.valor, 0);
+        const outrosFiltrado = transacoesCaixa.filter(t => !['Pix', 'Dinheiro', 'Cartão', 'Transferência Bancária'].includes(t.metodo)).reduce((s, t) => s + t.valor, 0);
         const countCaixaFiltrado = transacoesCaixa.length;
 
         // ========== DESPESAS DO DIA ==========
@@ -298,7 +314,9 @@ router.get('/', auth, async (req, res) => {
             const appt = s.appointmentId ? appointmentsMap.get(s.appointmentId.toString()) : null;
 
             const patientName = patient?.fullName || appt?.patientName || appt?.patientInfo?.fullName || 'Paciente não identificado';
-            const isConvenio = (s.paymentMethod || '').toLowerCase() === 'convenio' || s.paymentOrigin === 'convenio';
+            const methodLower = (s.paymentMethod || '').toLowerCase();
+            const isConvenio = methodLower === 'convenio' || s.paymentOrigin === 'convenio';
+            const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.billingType === 'liminar';
             const isPacote = !!s.package;
 
             // Detecta pacote pré-pago: dinheiro entrou na compra, sessão consumida = receita realizada
@@ -314,9 +332,13 @@ router.get('/', auth, async (req, res) => {
 
             // Pacote pré-pago: sessão consumida = "paga" (money came in at package purchase)
             const foiPago = s.isPaid === true || s.paymentStatus === 'paid' || s.paymentStatus === 'package_paid' || isPrepaidPkg;
-            const categoria = isConvenio ? 'recebido' : (foiPago ? 'recebido' : 'a_receber');
+            // Convênio = produção realizada, mas pagamento vem da seguradora (não é caixa recebido)
+            const categoria = isConvenio ? 'convenio' : isLiminar ? 'liminar' : (foiPago ? 'recebido' : 'a_receber');
 
-            if (!foiPago && !isConvenio) {
+            if (isConvenio) {
+                // Convênio conta como produção realizada mas não entra em recebido/pendente de caixa
+                porEspecialidade[esp].recebido += valor;
+            } else if (!foiPago) {
                 aReceber += valor;
                 porEspecialidade[esp].pendente += valor;
                 pendentesCobranca.push({
@@ -327,8 +349,8 @@ router.get('/', auth, async (req, res) => {
                     horario: appt?.time || '',
                     especialidade: esp,
                     professional: doctor?.fullName || '-',
-                    tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
-                    convenio: isConvenio ? 'Convênio' : null
+                    tipo: isPacote ? 'Pacote' : 'Particular',
+                    convenio: null
                 });
             } else {
                 porEspecialidade[esp].recebido += valor;
@@ -339,8 +361,8 @@ router.get('/', auth, async (req, res) => {
                 id: s._id,
                 paciente: patientName,
                 valor,
-                metodo: s.paymentMethod || (isConvenio ? 'Convênio' : 'Pendente'),
-                tipo: isConvenio ? 'Convênio' : (isPacote ? 'Pacote' : 'Particular'),
+                metodo: isLiminar ? 'Transferência Bancária' : (s.paymentMethod || (isConvenio ? 'Convênio' : 'Pendente')),
+                tipo: isConvenio ? 'Convênio' : isLiminar ? 'Liminar' : (isPacote ? 'Pacote' : 'Particular'),
                 servico: appt?.serviceType === 'evaluation' ? 'Avaliação' :
                         appt?.serviceType === 'consultation' ? 'Consulta' :
                         appt?.serviceType === 'package_session' ? 'Sessão de Pacote' :
@@ -387,6 +409,7 @@ router.get('/', auth, async (req, res) => {
                     pix: pixFiltrado,
                     dinheiro: dinheiroFiltrado,
                     cartao: cartaoFiltrado,
+                    transferencia: transferenciaFiltrado,
                     outros: outrosFiltrado,
                     qtdPix,
                     qtdDinheiro,
