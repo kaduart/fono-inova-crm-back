@@ -166,7 +166,6 @@ const gmbPostSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Índices para consultas comuns
-gmbPostSchema.index({ status: 1, scheduledAt: 1 });
 gmbPostSchema.index({ status: 1, createdAt: -1 });
 gmbPostSchema.index({ status: 1, type: 1, createdAt: -1 });
 gmbPostSchema.index({ theme: 1, status: 1 });

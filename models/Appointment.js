@@ -280,7 +280,6 @@ const appointmentSchema = new mongoose.Schema({
   
   correlationId: {
     type: String,
-    index: true,
     description: 'ID de correlação para rastreamento da transação de conclusão'
   },
 

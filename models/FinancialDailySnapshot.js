@@ -135,7 +135,6 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
 
 // Índices otimizados para leitura do dashboard
 FinancialDailySnapshotSchema.index({ clinicId: 1, date: 1 }, { unique: true });
-FinancialDailySnapshotSchema.index({ date: 1 });
 FinancialDailySnapshotSchema.index({ updatedAt: 1 });
 
 export default mongoose.model('FinancialDailySnapshot', FinancialDailySnapshotSchema);

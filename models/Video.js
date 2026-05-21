@@ -272,7 +272,7 @@ const videoSchema = new mongoose.Schema({
 videoSchema.index({ status: 1 });
 videoSchema.index({ especialidadeId: 1 });
 videoSchema.index({ createdAt: -1 });
-videoSchema.index({ jobId: 1 });
+// jobId já indexado via unique:true+sparse no campo
 videoSchema.index({ pipelineStatus: 1 });
 videoSchema.index({ 'config.funil': 1 });
 videoSchema.index({ platform: 1 });

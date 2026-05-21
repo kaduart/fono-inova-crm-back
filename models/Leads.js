@@ -428,9 +428,7 @@ leadSchema.index({ 'operational.nextActionAt': 1, 'operational.pipeline': 1 });
 leadSchema.index({ recoveryEnabled: 1, 'recovery.finishedAt': 1, 'recovery.nextAttemptAt': 1 });
 leadSchema.index({ recoveryEnabled: 1, convertedToPatient: 1, 'recovery.cancelledAt': 1 });
 
-// 🛤️ ÍNDICES PARA JOURNEY TRACKING
-leadSchema.index({ journeyId: 1 });
-leadSchema.index({ sessionId: 1 });
+// 🛤️ ÍNDICES PARA JOURNEY TRACKING — journeyId e sessionId já têm index:true+sparse nos campos
 leadSchema.index({ landingPage: 1, createdAt: -1 });
 leadSchema.index({ utmSource: 1, utmCampaign: 1 });
 leadSchema.index({ journeySource: 1, createdAt: -1 });
