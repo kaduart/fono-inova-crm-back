@@ -370,6 +370,42 @@ const leadSchema = new mongoose.Schema({
   // Última atividade (para expiração de sessão)
   lastJourneyActivityAt: { type: Date, default: Date.now },
 
+  // ─── CAMADA OPERACIONAL (uso humano da secretária) ───────────────────────
+  operational: {
+    pipeline: {
+      type: String,
+      enum: [
+        'novo_contato',
+        'aguardando_resposta',
+        'interessado',
+        'aguardando_decisao',
+        'retornar_depois',
+        'agendado',
+        'nao_fechou',
+        'virou_paciente',
+      ],
+      default: 'novo_contato',
+    },
+    nextActionAt: { type: Date, default: null },
+    followupReason: {
+      type: String,
+      enum: [
+        'retornar_whatsapp',
+        'retornar_telefone',
+        'aguardar_resposta_paciente',
+        'aguardando_decisao_familia',
+        'aguardando_documentacao',
+        'enviar_proposta',
+        'confirmar_agendamento',
+        'nenhuma',
+      ],
+      default: 'nenhuma',
+    },
+    nextActionNote: { type: String, default: null },
+    lastHumanContactAt: { type: Date, default: null },
+    phone: { type: String, default: null },
+  },
+
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -382,6 +418,11 @@ leadSchema.index({ origin: 1, createdAt: -1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ conversionScore: -1 });
 leadSchema.index({ 'contact.phone': 1 });
+
+// 🗂️ ÍNDICES OPERACIONAIS (secretária)
+leadSchema.index({ 'operational.nextActionAt': 1 });
+leadSchema.index({ 'operational.pipeline': 1 });
+leadSchema.index({ 'operational.nextActionAt': 1, 'operational.pipeline': 1 });
 
 // 🔁 ÍNDICES PARA LEAD RECOVERY (performance na query de recuperação)
 leadSchema.index({ recoveryEnabled: 1, 'recovery.finishedAt': 1, 'recovery.nextAttemptAt': 1 });

@@ -157,6 +157,11 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
+    // Aguarda até 5min para ready disparar; se não vier, respawn limpo
+    loadingWatchdog = setTimeout(() => {
+      console.error('[WhatsAppWeb] ⚠️ Autenticado mas ready não disparou em 5min — saindo para respawn limpo.');
+      process.exit(2);
+    }, 5 * 60 * 1000);
     connectionStatus = 'connecting';
     await saveState();
   });

@@ -321,7 +321,23 @@ router.post('/', flexibleAuth, async (req, res) => {
         formatError('Nome completo e data de nascimento são obrigatórios', 400)
       );
     }
-    
+
+    // Duplicata por nome + telefone
+    if (req.body.phone) {
+      const normalizedPhone = req.body.phone.replace(/\D/g, '');
+      const namePhoneDup = await Patient.findOne({
+        fullName: { $regex: new RegExp(`^${fullName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        phone: normalizedPhone
+      });
+      if (namePhoneDup) {
+        return res.status(409).json({
+          success: false,
+          message: `Já existe um paciente com o nome "${namePhoneDup.fullName}" e telefone ${normalizedPhone} cadastrado.`,
+          existingId: namePhoneDup._id.toString()
+        });
+      }
+    }
+
     // Gera ID provisório
     const patientId = new mongoose.Types.ObjectId().toString();
     

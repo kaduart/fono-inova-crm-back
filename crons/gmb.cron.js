@@ -197,8 +197,8 @@ async function taskSendToMake() {
             }
         }
 
-        // Pausa entre envios (aumentado para evitar 'Make queue full')
-        await new Promise(r => setTimeout(r, 10000));
+        // 30s entre envios — Make processa cada cenário em ~10-20s; rajadas mais curtas enchem a fila
+        await new Promise(r => setTimeout(r, 30000));
     }
 
     logger.success(`Make: ${sent} enviados, ${failed} falharam`);

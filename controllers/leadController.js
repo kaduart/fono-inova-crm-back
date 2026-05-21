@@ -362,6 +362,115 @@ export const createLeadFromSheet = async (req, res) => {
     }
 };
 
+// =====================================================================
+// 🔍 BY-PHONE — gateway da extensão Chrome ↔ CRM
+// =====================================================================
+
+const PHONE_PRIORITY = {
+    novo: 0, new: 0, engajado: 0, atendimento: 0, em_andamento: 0,
+    lead_quente: 0, agendado: 0, lista_espera: 0, pendencia_documentacao: 0,
+    lead_frio: 1, sem_cobertura: 1,
+    convertido: 2, virou_paciente: 2,
+    perdido: 3,
+};
+
+const BY_PHONE_PROJECTION = {
+    _id: 1, name: 1, status: 1, stage: 1, origin: 1,
+    'contact.phone': 1,
+    operational: 1,
+    lastInteractionAt: 1, conversationSummary: 1,
+    createdAt: 1, updatedAt: 1,
+};
+
+export const getLeadByPhone = async (req, res) => {
+    try {
+        const { phone } = req.params;
+        const normalized = normalizeE164BR(phone);
+
+        if (!normalized) {
+            return res.status(400).json({ error: 'Telefone inválido.' });
+        }
+
+        const matches = await Lead.find(
+            { $or: [{ 'contact.phone': normalized }, { 'operational.phone': normalized }] },
+            BY_PHONE_PROJECTION
+        ).sort({ updatedAt: -1 }).limit(10).lean();
+
+        if (!matches.length) {
+            return res.json({ found: false, lead: null, alternatives: [] });
+        }
+
+        matches.sort((a, b) => {
+            const pa = PHONE_PRIORITY[a.status] ?? 1;
+            const pb = PHONE_PRIORITY[b.status] ?? 1;
+            if (pa !== pb) return pa - pb;
+            return new Date(b.updatedAt) - new Date(a.updatedAt);
+        });
+
+        const [lead, ...alternatives] = matches;
+        res.json({ found: true, lead, alternatives });
+    } catch (err) {
+        console.error('Erro em by-phone:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// =====================================================================
+// ➕ NOVO ACOMPANHAMENTO (secretária) — sempre cria, sem dedup por phone
+// =====================================================================
+export const createNewFollowup = async (req, res) => {
+    try {
+        const {
+            name,
+            phone,
+            origin,
+            pipeline,
+            nextActionAt,
+            followupReason,
+            nextActionNote,
+        } = req.body;
+
+        if (!name?.trim()) {
+            return res.status(400).json({ error: 'Nome é obrigatório.' });
+        }
+
+        const phoneE164 = phone ? normalizeE164BR(phone) : null;
+
+        // Date-string "2026-05-21" sem hora é UTC midnight — ajusta para noon local
+        // para evitar off-by-one em timezones UTC-3 (Brasil)
+        const safeNextActionAt = nextActionAt
+            ? /^\d{4}-\d{2}-\d{2}$/.test(nextActionAt)
+                ? new Date(nextActionAt + 'T12:00:00')
+                : new Date(nextActionAt)
+            : null;
+
+        const lead = await Lead.create({
+            name: name.trim(),
+            origin: origin || 'WhatsApp',
+            status: 'novo',
+            manualControl: {
+                active: true,
+                takenOverAt: new Date(),
+                takenOverBy: req.user?.name || null,
+                autoResumeAfter: null,
+            },
+            operational: {
+                pipeline: pipeline || 'novo_contato',
+                nextActionAt: safeNextActionAt,
+                followupReason: followupReason || 'nenhuma',
+                nextActionNote: nextActionNote || null,
+                lastHumanContactAt: new Date(),
+                phone: phoneE164,
+            },
+        });
+
+        res.status(201).json({ success: true, message: 'Acompanhamento criado!', data: lead });
+    } catch (err) {
+        console.error('Erro ao criar acompanhamento:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 
 /**
  * 📊 Dashboard específico para métricas da planilha

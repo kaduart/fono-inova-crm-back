@@ -163,7 +163,8 @@ function createPackageData(data) {
     specialty,
     sessionType: sessionType || specialty,
     totalSessions: parseInt(totalSessions),
-    sessionsDone: 0,
+    sessionsDone: parseInt(data.sessionsDone) || 0,
+    preConsumedCount: parseInt(data.sessionsDone) || 0,
     notes,
     status: 'active',
     // Campos obrigatórios do modelo Package
@@ -401,7 +402,8 @@ export const createPackageV2 = async (req, res) => {
     sessionsPerWeek,
     durationMonths,
     idempotencyKey,
-    appointmentId = null   // 🔗 appointment avulso a reutilizar (opcional)
+    appointmentId = null,   // 🔗 appointment avulso a reutilizar (opcional)
+    preConsumedCount = 0    // 🔗 sessões já realizadas antes do pacote (retroativo)
   } = req.body;
 
   // 🔄 RESOLVER patientId (pode vir como ID da PatientsView)
@@ -444,6 +446,16 @@ export const createPackageV2 = async (req, res) => {
       success: false,
       errorCode: 'TOTAL_SESSIONS_INVALID',
       message: 'totalSessions deve ser um número inteiro maior que zero'
+    });
+  }
+
+  const parsedConsumed = parseInt(preConsumedCount) || 0;
+  if (parsedConsumed < 0 || parsedConsumed >= parsedSessions) {
+    await mongoSession.endSession();
+    return res.status(400).json({
+      success: false,
+      errorCode: 'PRE_CONSUMED_INVALID',
+      message: `preConsumedCount (${parsedConsumed}) deve ser menor que totalSessions (${parsedSessions})`
     });
   }
 
@@ -626,7 +638,7 @@ export const createPackageV2 = async (req, res) => {
     // ========================================
     transactionStartTime = Date.now();
     
-    const packageData = createPackageData(req.body);
+    const packageData = createPackageData({ ...req.body, sessionsDone: parsedConsumed });
     packageData.createdBy = req.user?._id;
 
     const [pkg] = await Package.create([packageData], { session: mongoSession });
@@ -651,23 +663,26 @@ export const createPackageV2 = async (req, res) => {
       }
       schedule = Array.from(uniqueSlots.values());
       
-      // 🚨 VALIDAR: schedule não pode ter mais itens que totalSessions
-      if (schedule.length > parseInt(totalSessions)) {
+      // sessões restantes = total - já consumidas retroativamente
+      const remainingSessions = parsedSessions - parsedConsumed;
+
+      // 🚨 VALIDAR: schedule não pode ter mais itens que sessões restantes
+      if (schedule.length > remainingSessions) {
         await mongoSession.abortTransaction();
         return res.status(400).json({
           success: false,
           errorCode: 'SCHEDULE_EXCEEDS_TOTAL',
-          message: `Agenda tem ${schedule.length} sessões, mas pacote permite apenas ${totalSessions}`
+          message: `Agenda tem ${schedule.length} sessões, mas pacote permite apenas ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`
         });
       }
-      
-      // 🚨 VALIDAR: schedule deve ter EXATAMENTE totalSessions itens
-      if (schedule.length !== parseInt(totalSessions)) {
+
+      // 🚨 VALIDAR: schedule deve ter EXATAMENTE remainingSessions itens
+      if (schedule.length !== remainingSessions) {
         await mongoSession.abortTransaction();
         return res.status(400).json({
           success: false,
           errorCode: 'SCHEDULE_COUNT_MISMATCH',
-          message: `Agenda tem ${schedule.length} sessões, mas deve ter exatamente ${totalSessions}`
+          message: `Agenda tem ${schedule.length} sessões, mas deve ter exatamente ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`
         });
       }
 
