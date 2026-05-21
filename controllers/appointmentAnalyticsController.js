@@ -247,16 +247,13 @@ export const getAppointmentsByType = async (req, res) => {
         });
 
         // ─── 6. Separar categorias ───
-        // NÍVEL CEO: separação clara entre aquisição, primeira visita e retenção
-        // 🎯 FIX: No modo 'date', leads converted (first-visit) só contam se foram
-        // criados no período. Pre-agendados continuam contando pela data da consulta.
+        // Leads (pré-agendados novos) contam pela data em que foram CRIADOS no sistema.
         let leads = enrichedAppointments.filter(a => a.isLead);
         if (mode === 'date') {
             const periodStartStr = date || startDate;
             const periodEndStr = date || endDate;
             if (periodStartStr && periodEndStr) {
                 leads = leads.filter(a => {
-                    if (a.operationalStatus === 'pre_agendado') return true;
                     const createdAt = new Date(a.createdAt).toISOString().split('T')[0];
                     return createdAt >= periodStartStr && createdAt <= periodEndStr;
                 });
