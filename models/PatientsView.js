@@ -142,9 +142,7 @@ const patientsViewSchema = new mongoose.Schema({
 // Busca por nome (accent-insensitive já no normalizedName)
 patientsViewSchema.index({ normalizedName: 'text', fullName: 'text' });
 
-// Busca por telefone/CPF (apenas dígitos)
-patientsViewSchema.index({ phoneDigits: 1 });
-patientsViewSchema.index({ cpfDigits: 1 });
+// Busca por telefone/CPF (apenas dígitos) — índices já declarados com index:true nos campos
 
 // Listagem por doutor + ordenação
 patientsViewSchema.index({ doctorId: 1, 'stats.lastAppointmentDate': -1 });

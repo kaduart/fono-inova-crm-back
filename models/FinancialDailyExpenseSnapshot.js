@@ -41,7 +41,6 @@ const FinancialDailyExpenseSnapshotSchema = new mongoose.Schema({
 });
 
 FinancialDailyExpenseSnapshotSchema.index({ clinicId: 1, date: 1 }, { unique: true });
-FinancialDailyExpenseSnapshotSchema.index({ date: 1 });
 FinancialDailyExpenseSnapshotSchema.index({ updatedAt: 1 });
 
 export default mongoose.model('FinancialDailyExpenseSnapshot', FinancialDailyExpenseSnapshotSchema);

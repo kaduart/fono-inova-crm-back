@@ -46,8 +46,7 @@ const convenioSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Índices
-convenioSchema.index({ code: 1 });
+// Índices — code já indexado via unique:true
 convenioSchema.index({ active: 1 });
 
 // Método estático para obter valor por código
