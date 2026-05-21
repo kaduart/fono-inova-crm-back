@@ -1480,15 +1480,18 @@ async function calculatePendentes(year, month) {
     const vencidosTotal = [...particularVencidos, ...convenioVencidos].reduce((s, i) => s + i.valor, 0);
 
     // ── 🆕 V2 FINANCIAL ENGINE: agrupamento por paciente + especialidade correta ──
-    // Passa todos os pending do mês para o engine (sem filtro de data, pois já filtramos)
-    const monthPayments = [...convenioItems, ...particularItems].map(i => i.sessionId);
-    const enginePayments = paymentsAll.filter(p => monthPayments.includes(p._id.toString()));
-    
     // Monta resultado do engine manualmente a partir dos payments já filtrados
+    // FIX: converter para Set de strings para comparação correta (ObjectId !== string)
+    const monthPaymentIds = new Set([...convenioItems, ...particularItems].map(i => i.sessionId?.toString()));
+    const enginePayments = paymentsAll.filter(p => monthPaymentIds.has(p._id.toString()));
+
     const byPatient = {};
     const byDoctor = {};
     const bySpecialty = {};
     const byBillingType = { particular: { total: 0, count: 0, items: [] }, convenio: { total: 0, count: 0, items: [] } };
+
+    // Valores que são billing types, não especialidades clínicas
+    const billingTypeValues = new Set(['convenio', 'convênio', 'liminar', 'particular', 'insurance', 'package_session', 'session', 'avulso']);
 
     for (const p of enginePayments) {
         const valor = p.amount || 0;
@@ -1519,7 +1522,7 @@ async function calculatePendentes(year, month) {
                 serviceDate: p.serviceDate,
                 data: p.appointment?.date || p.paymentDate,
                 hora: p.appointment?.time || '',
-                specialty: p.doctor?.specialty || p.serviceType || p.sessionType || 'N/A',
+                specialty: (() => { const s = p.doctor?.specialty || p.serviceType || p.sessionType; return (s && !billingTypeValues.has(String(s).toLowerCase())) ? s : 'N/A'; })(),
                 doctor: p.doctor || null,
                 appointment: p.appointment || null,
                 notes: p.notes

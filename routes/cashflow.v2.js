@@ -11,15 +11,24 @@ import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 
-// GET /api/v2/cashflow?date=2026-04-10
+// GET /api/v2/cashflow?date=2026-04-10 OU ?startDate=2026-04-10&endDate=2026-04-16
 router.get('/', auth, async (req, res) => {
     try {
-        const { date } = req.query;
-        const targetDate = date || moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const { date, startDate, endDate } = req.query;
 
-        // Range do dia em Brasília (UTC-3)
-        const start = moment.tz(targetDate, 'America/Sao_Paulo').startOf('day').utc().toDate();
-        const end = moment.tz(targetDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
+        let start, end, targetDate;
+
+        if (startDate && endDate) {
+            // Range customizado (semana, etc.)
+            targetDate = startDate;
+            start = moment.tz(startDate, 'America/Sao_Paulo').startOf('day').utc().toDate();
+            end = moment.tz(endDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
+        } else {
+            // Dia único (padrão)
+            targetDate = date || moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+            start = moment.tz(targetDate, 'America/Sao_Paulo').startOf('day').utc().toDate();
+            end = moment.tz(targetDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
+        }
 
         // ============================================================
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
@@ -30,12 +39,17 @@ router.get('/', auth, async (req, res) => {
         ]);
 
         // ============================================================
-        // 🎯 BUSCA DESPESAS DO DIA
+        // 🎯 BUSCA DESPESAS DO PERÍODO
         // ============================================================
-        const expenses = await Expense.find({
-            date: targetDate,
+        const expenseQuery = {
             status: { $nin: ['canceled', 'cancelado'] }
-        }).lean();
+        };
+        if (startDate && endDate) {
+            expenseQuery.date = { $gte: startDate, $lte: endDate };
+        } else {
+            expenseQuery.date = targetDate;
+        }
+        const expenses = await Expense.find(expenseQuery).lean();
 
         // ============================================================
         // 🔧 DADOS AUXILIARES PARA EXIBIÇÃO (transações detalhadas)
