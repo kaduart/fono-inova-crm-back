@@ -156,6 +156,7 @@ function createClient() {
   newClient.on('authenticated', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
+    if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     connectionStatus = 'connecting';
     await saveState();
   });
@@ -186,9 +187,9 @@ function createClient() {
     await saveState();
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
     loadingWatchdog = setTimeout(() => {
-      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 2min — saindo para respawn limpo.');
+      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 5min — saindo para respawn limpo.');
       process.exit(2);
-    }, 2 * 60 * 1000);
+    }, 5 * 60 * 1000);
   });
 
   newClient.on('disconnected', async (reason) => {
