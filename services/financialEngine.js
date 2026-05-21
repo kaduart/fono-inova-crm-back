@@ -199,8 +199,7 @@ export async function calculatePendentesEngine({ startDate, endDate, clinicId = 
     clinicId,
     status: ['pending', 'partial'],
     groupByPatient: true,
-    groupByDoctor: true,
-    excludeBillingTypes: ['convenio', 'liminar'] // convênio é receita da seguradora, não débito do paciente
+    groupByDoctor: true
   });
 }
 
@@ -286,7 +285,9 @@ function resolveSpecialty(payment) {
   const genericValues = new Set([
     'evaluation', 'individual_session', 'session', 'package_session',
     'avaliacao', 'sessao', 'sessao_avulsa', 'pacote', 'package',
-    'current', 'undefined', 'null', ''
+    'current', 'undefined', 'null', '',
+    // billing types não são especialidades clínicas
+    'convenio', 'convênio', 'liminar', 'particular', 'insurance'
   ]);
 
   function isValidSpec(val) {
