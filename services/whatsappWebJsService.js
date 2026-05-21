@@ -125,6 +125,9 @@ function createClient() {
   const newClient = new Client({
     authStrategy: new RemoteAuth({
       store,
+      // dataPath = CWD para alinhar com MongoStore.save() que lê 'RemoteAuth.zip' relativo ao CWD
+      // (MongoStore ignora dataPath no save — só o extract recebe path completo)
+      dataPath: process.cwd(),
       backupSyncIntervalMs: 300_000, // sincroniza sessão no MongoDB a cada 5 min
     }),
     authTimeoutMs: 600_000,
