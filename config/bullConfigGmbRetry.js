@@ -15,7 +15,7 @@ export const gmbPublishRetryQueue = new Queue('gmb-publish-retry', {
         attempts: 5,           // Tenta 5 vezes
         backoff: {
             type: 'exponential',
-            delay: 60000       // Começa com 1min, depois 2min, 4min, 8min...
+            delay: 300000      // Começa com 5min, depois 10min, 20min, 40min, 80min
         },
         removeOnComplete: 50,
         removeOnFail: 10
@@ -74,8 +74,8 @@ export function initGmbRetryWorker() {
         connection: bullMqConnection,
         concurrency: 1,  // Um por vez pra não sobrecarregar o Make
         limiter: {
-            max: 10,
-            duration: 60000  // 10 por minuto
+            max: 1,
+            duration: 60000  // 1 por minuto — Make precisa de tempo para processar cada cenário
         }
     });
     

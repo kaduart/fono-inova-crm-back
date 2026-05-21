@@ -160,6 +160,7 @@ import projectionsV2Routes from './routes/projections.v2.js';  // 🚀 NOVO: Pro
 import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Real V2
 import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
+import retentionV2Routes from './routes/retention.v2.js';        // 🏥 NOVO: Retenção Clínica V2
 import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
@@ -437,6 +438,7 @@ app.use("/api/v2/projections", projectionsV2Routes);
 app.use("/api/v2/cashflow", cashflowV2Routes);
 app.use("/api/v2/goals", goalsV2Routes);
 app.use("/api/v2/intelligence", intelligenceV2Routes);  // 🚀 NOVO: Inteligência Financeira V2
+app.use("/api/v2/retention", retentionV2Routes);        // 🏥 NOVO: Retenção Clínica V2
 app.use("/api/v2/payments", paymentsV2Routes);  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 app.use("/api/v2/payments", paymentV2Routes);  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 app.use("/api/v2/appointments", appointmentV2Routes);

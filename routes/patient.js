@@ -41,7 +41,23 @@ router.post('/add', flexibleAuth, async (req, res) => {
       });
     }
 
-    // Duplicata apenas por CPF (telefone/email/nome NÃO são únicos: mãe com vários filhos, homônimos)
+    // Duplicata por nome + telefone
+    if (phone) {
+      const normalizedPhone = phone.replace(/\D/g, '');
+      const namePhoneDup = await Patient.findOne({
+        fullName: { $regex: new RegExp(`^${fullName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        phone: normalizedPhone
+      });
+      if (namePhoneDup) {
+        return res.status(409).json({
+          success: false,
+          message: `Já existe um paciente com o nome "${namePhoneDup.fullName}" e telefone ${normalizedPhone} cadastrado.`,
+          existingId: namePhoneDup._id
+        });
+      }
+    }
+
+    // Duplicata por CPF
     let existing = null;
     if (cpf) {
       existing = await Patient.findOne({ cpf });

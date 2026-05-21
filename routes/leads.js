@@ -6,6 +6,8 @@ import {
     // 🆕 Funções de anúncios
     createLeadFromAd,
     createLeadFromSheet,
+    createNewFollowup,
+    getLeadByPhone,
     getSheetMetrics,
     getWeeklyMetrics,
     // 📞 Webhooks
@@ -287,6 +289,45 @@ router.get('/history-metrics',
 );
 
 /**
+ * GET /leads/by-phone/:phone
+ * Gateway da extensão Chrome — retorna lead prioritário + alternativas para um número
+ * Acesso: admin, secretary
+ */
+router.get('/by-phone/:phone', authorize(['admin', 'secretary']), getLeadByPhone);
+
+/**
+ * GET /leads/operational-counts
+ * Retorna contagem de retornos atrasados e de hoje para o badge global
+ * Acesso: admin, secretary
+ */
+router.get('/operational-counts',
+    authorize(['admin', 'secretary']),
+    async (req, res) => {
+        try {
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+            const [overdue, today] = await Promise.all([
+                Lead.countDocuments({
+                    'operational.nextActionAt': { $lt: startOfToday },
+                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou'] },
+                }),
+                Lead.countDocuments({
+                    'operational.nextActionAt': { $gte: startOfToday, $lte: endOfToday },
+                    'operational.pipeline': { $nin: ['virou_paciente'] },
+                }),
+            ]);
+
+            res.json({ overdue, today, total: overdue + today });
+        } catch (err) {
+            console.error('❌ Erro ao buscar contagens operacionais:', err);
+            res.status(500).json({ overdue: 0, today: 0, total: 0 });
+        }
+    }
+);
+
+/**
  * GET /leads/:id
  * Detalha um lead específico
  * Acesso: admin, secretary, professional
@@ -433,6 +474,12 @@ router.post('/from-ad', authorize(['admin', 'secretary']), createLeadFromAd);
  * Acesso: admin, secretary
  */
 router.post('/from-sheet', authorize(['admin', 'secretary']), createLeadFromSheet);
+
+/**
+ * POST /leads/novo-acompanhamento
+ * Cria novo lead operacional (secretária) — sempre cria, sem dedup por telefone
+ */
+router.post('/novo-acompanhamento', authorize(['admin', 'secretary']), createNewFollowup);
 
 // =====================================================================
 // ✏️ ATUALIZAÇÃO E EXCLUSÃO

@@ -51,6 +51,7 @@ const packageSchema = new mongoose.Schema({
   date: { type: Date, required: true },
   time: { type: String },
   sessionsDone: { type: Number, default: 0 },
+  preConsumedCount: { type: Number, default: 0 }, // sessões retroativas convertidas na criação do pacote
   payments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }],
   status: { type: String, enum: ['active', 'in-progress', 'completed', 'finished', 'canceled'], default: 'active' },
   balance: { type: Number, default: 0 },
