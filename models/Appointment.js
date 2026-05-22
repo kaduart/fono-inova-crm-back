@@ -261,7 +261,7 @@ const appointmentSchema = new mongoose.Schema({
     origin: {
       source: {
         type: String,
-        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'crm', 'web_app', 'outro'],
+        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'crm', 'web_app', 'reschedule', 'outro'],
         default: 'outro'
       },
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
