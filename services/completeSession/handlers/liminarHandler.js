@@ -42,6 +42,9 @@ export const LiminarHandler = {
         if (!sessionValue || sessionValue <= 0) return null;
 
         const now = new Date();
+        // financialDate = data da sessão (não de quando foi completada) para evitar
+        // que completions retroativas apareçam no caixa do dia errado
+        const sessionDate = appointment.date ? new Date(appointment.date) : now;
         const liminarContractId = appointment.liminarContract?._id || appointment.liminarContract;
 
         if (liminarContractId) {
@@ -66,7 +69,7 @@ export const LiminarHandler = {
             paymentMethod:   'liminar_credit',
             paymentDate:     now,
             paidAt:          now,
-            financialDate:   now,   // ESSENCIAL — entra no caixa
+            financialDate:   sessionDate,   // data da sessão — não da completion retroativa
             isFromPackage:   false,
             description:     `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
             appointment:     appointmentId,
