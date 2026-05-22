@@ -39,14 +39,29 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
             { patientId: patientId }
         ]
     };
-    const match = { ...patientMatch };
+    // 🚫 package_consumed representa consumo de crédito, não dinheiro recebido
+    const match = { ...patientMatch, kind: { $ne: 'package_consumed' } };
     if (packageId) {
         // Package pode ser null em appointments avulsos — filtramos pelo appointment
+        // 🔧 TAMBÉM incluímos payments ligados diretamente ao package (ex: package_receipt com appointment:null)
+        const packageOid = mongoose.Types.ObjectId.isValid(packageId)
+            ? new mongoose.Types.ObjectId(packageId)
+            : packageId;
         const appointmentIds = await Appointment.find({
             $or: [{ patient: patientOid }, { patient: patientId }],
-            package: packageId
+            package: packageOid
         }).distinct('_id');
-        match.appointment = { $in: appointmentIds };
+        match.$and = [
+            { $or: patientMatch.$or },
+            {
+                $or: [
+                    { appointment: { $in: appointmentIds } },
+                    { package: packageOid },
+                    { package: packageId }
+                ]
+            }
+        ];
+        delete match.$or; // evita conflito com o spread anterior
     }
 
     const paidAgg = await Payment.aggregate([
