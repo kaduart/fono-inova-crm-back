@@ -277,7 +277,9 @@ router.get('/', auth, async (req, res) => {
                 servico,
                 especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
                 profissional: appt?.doctor?.fullName || appt?.professionalName || '-',
-                hora: appt?.time || moment(p.createdAt || p.financialDate).format('HH:mm'),
+                hora: isLiminar
+                    ? moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')
+                    : (appt?.time || moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')),
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
                 categoria: 'recebido',
                 observacao: p.notes || p.description || '-',
@@ -330,7 +332,7 @@ router.get('/', auth, async (req, res) => {
             const patientName = patient?.fullName || appt?.patientName || appt?.patientInfo?.fullName || 'Paciente não identificado';
             const methodLower = (s.paymentMethod || '').toLowerCase();
             const isConvenio = methodLower === 'convenio' || s.paymentOrigin === 'convenio';
-            const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.billingType === 'liminar';
+            const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.paymentOrigin === 'liminar_credit' || s.billingType === 'liminar';
             const isPacote = !!s.package;
 
             // Detecta pacote pré-pago: dinheiro entrou na compra, sessão consumida = receita realizada
@@ -502,7 +504,18 @@ router.get('/', auth, async (req, res) => {
                     ontem: yesterdayTotal
                 },
                 transacoes: transacoesCaixa,
-                transacoesProducao: transacoesProducao
+                transacoesProducao: transacoesProducao,
+                transacoesOntem: yesterdayCash.payments
+                    .filter(p => p && p.amount > 0)
+                    .map(p => {
+                        const apptId = p.appointment?.toString()
+                            || (p.session ? yesterdaySessionToApptIdMap.get(p.session.toString()) : null);
+                        const appt = apptId ? yesterdayAppointmentsMap.get(apptId) : null;
+                        return {
+                            hora: appt?.time || moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm'),
+                            valor: p.amount
+                        };
+                    })
             }
         });
 

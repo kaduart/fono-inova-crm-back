@@ -325,6 +325,22 @@ function calculateStats(appointments, payments, packages) {
   const completed = appointments.filter(a => a.operationalStatus === 'completed');
   const pendingPayments = payments.filter(p => p.status === 'pending');
   
+  // 🆕 PACOTE PER-SESSION: incluir balance como dívida real
+  // Evita duplicar com Payments pending de sessões fiadas do pacote
+  const packageDebt = packages
+    .filter(p => p.model === 'per_session' && (p.balance || 0) > 0.01)
+    .reduce((sum, p) => sum + (p.balance || 0), 0);
+
+  const appointmentIdsWithPackage = new Set(
+    appointments.filter(a => a.package).map(a => a._id?.toString?.())
+  );
+
+  const pendingAvulso = pendingPayments
+    .filter(p => !appointmentIdsWithPackage.has(p.appointment?.toString?.()))
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  const totalPending = pendingAvulso + packageDebt;
+  
   return {
     totalAppointments: appointments.length,
     totalCompleted: completed.length,
@@ -337,7 +353,8 @@ function calculateStats(appointments, payments, packages) {
     totalRevenue: payments
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + (p.amount || 0), 0),
-    totalPending: pendingPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
+    totalPending: totalPending,
+    totalPendingParticular: totalPending
   };
 }
 
