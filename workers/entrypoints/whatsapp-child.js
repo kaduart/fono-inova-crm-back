@@ -17,9 +17,10 @@ import { bullMqConnection } from '../../config/redisConnection.js';
 dotenv.config();
 
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
-const CRASH_LOG = '/var/data/wwebjs_auth/.crash-log.json';
-const SESSION_DIR = '/var/data/wwebjs_auth/session';
-const BOOTING_FLAG = '/var/data/wwebjs_auth/.booting';
+const AUTH_BASE = '/var/data/wwebjs_auth';
+const CRASH_LOG = path.join(AUTH_BASE, '.crash-log.json');
+const SESSION_DIR = path.join(AUTH_BASE, '.wwebjs_auth', 'session');
+const BOOTING_FLAG = path.join(AUTH_BASE, '.booting');
 
 if (!MONGO_URI) {
     console.error('[CHILD] ❌ MONGODB_URI não configurada');
@@ -36,6 +37,11 @@ function checkInterruptedBoot() {
                 if (fs.existsSync(SESSION_DIR)) {
                     fs.rmSync(SESSION_DIR, { recursive: true, force: true });
                     console.log('[CHILD] 🧹 Sessão corrompida removida. Novo QR será gerado.');
+                }
+                const wwebjsDir = path.join(AUTH_BASE, '.wwebjs_auth');
+                if (fs.existsSync(wwebjsDir)) {
+                    fs.rmSync(wwebjsDir, { recursive: true, force: true });
+                    console.log('[CHILD] 🧹 .wwebjs_auth removido.');
                 }
             } catch (e) {
                 console.error('[CHILD] Erro ao limpar sessão:', e.message);
@@ -101,9 +107,28 @@ async function main() {
     // Se bootstrap anterior foi interrompido (Render restart), limpa sessão corrompida
     checkInterruptedBoot();
 
+    // Cria flag de boot para detectar interrupção no próximo restart
+    try {
+        fs.mkdirSync(path.dirname(BOOTING_FLAG), { recursive: true });
+        fs.writeFileSync(BOOTING_FLAG, Date.now().toString());
+    } catch (e) {
+        console.warn('[CHILD] Não foi possível criar booting flag:', e.message);
+    }
+
     // Inicializa WhatsApp
     await initWhatsAppClient();
     console.log('[CHILD] 🟢 WhatsApp inicializado');
+
+    // Remove booting flag quando ficar ready
+    const bootingCheck = setInterval(async () => {
+        try {
+            const status = await getStatus();
+            if (status.ready) {
+                fs.rmSync(BOOTING_FLAG, { force: true });
+                clearInterval(bootingCheck);
+            }
+        } catch {}
+    }, 5000);
 
     // Heartbeat: envia status para o pai a cada 5s
     setInterval(async () => {
