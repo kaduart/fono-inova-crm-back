@@ -31,7 +31,8 @@ const sessionSchema = new mongoose.Schema({
                 'neuroped',
                 'musicoterapia',
                 'psicomotricidade',
-                'psicopedagogia'
+                'psicopedagogia',
+                'neuropsicologia'
             ],
             message: 'sessionType "{VALUE}" não é válido. Use: fonoaudiologia, psicologia, terapia ocupacional, etc'
         },
@@ -257,7 +258,7 @@ sessionSchema.pre('validate', function(next) {
     const validTypes = [
         'fonoaudiologia', 'psicologia', 'terapia ocupacional',
         'fisioterapia', 'pediatria', 'neuroped', 'musicoterapia',
-        'psicomotricidade', 'psicopedagogia'
+        'psicomotricidade', 'psicopedagogia', 'neuropsicologia'
     ];
     
     // Se sessionType foi setado manualmente e não é válido, rejeita

@@ -12,7 +12,7 @@ const produtoServicoSchema = new mongoose.Schema({
     categoria: {
         type: String,
         enum: ['facial', 'corporal', 'capilar', 'depilacao', 'massagem',
-            'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
+            'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'neuropsicologia',
             'psicomotricidade', 'musicoterapia', 'psicopedagogia', 'produto'],
         required: true
     },

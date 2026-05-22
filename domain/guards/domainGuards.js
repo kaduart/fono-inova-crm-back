@@ -54,7 +54,7 @@ export function validateSpecialty(specialty, context = '') {
     const validSpecialties = [
         'fonoaudiologia', 'psicologia', 'terapia ocupacional',
         'fisioterapia', 'pediatria', 'neuroped', 'musicoterapia',
-        'psicomotricidade', 'psicopedagogia'
+        'psicomotricidade', 'psicopedagogia', 'neuropsicologia'
     ];
     
     if (specialty && !validSpecialties.includes(specialty)) {
