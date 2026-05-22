@@ -2527,11 +2527,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
       throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
     }
 
-    // Bloqueia reschedule de cancelado
-    if (existing.operationalStatus === 'canceled') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError('Agendamento cancelado não pode ser remarcado', 400, 'ALREADY_CANCELED');
-    }
+    // Cancelados podem ser remarcados — fluxo intencional de reagendamento
 
     // ─── 2. IDEMPOTÊNCIA ───────────────────────────────────────
     const rootId = existing.rootAppointmentId || existing._id;
@@ -2623,7 +2619,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
       package: existing.package || null,
       responsible: existing.responsible || '',
       metadata: {
-        origin: { source: 'reschedule' },
+        origin: { source: existing.metadata?.origin?.source || 'crm' },
         previousAppointmentId: existing._id,
         rescheduledAt: new Date().toISOString()
       },
@@ -2750,7 +2746,9 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    await mongoSession.abortTransaction();
+    if (mongoSession.inTransaction()) {
+      await mongoSession.abortTransaction();
+    }
     throw error;
   } finally {
     mongoSession.endSession();

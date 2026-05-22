@@ -412,7 +412,8 @@ router.get('/slots', auth, async (req, res) => {
         }
       ]),
 
-      // 2) Último paciente por slot (sort desc → $first = mais recente)
+      // 2) Último paciente por slot + contagem desse paciente nesse horário
+      //    Agrupa (slot × paciente) primeiro → depois pega o mais recente por slot
       Appointment.aggregate([
         {
           $match: {
@@ -429,11 +430,22 @@ router.get('/slots', auth, async (req, res) => {
           }
         },
         { $match: { weekday: { $gte: 2, $lte: 6 } } },
-        { $sort: { date: -1 } },
+        // Agrupa por (slot × paciente): conta sessões e acha data mais recente
         {
           $group: {
-            _id: { weekday: '$weekday', time: '$time' },
-            lastPatientId: { $first: '$patient' }
+            _id: { weekday: '$weekday', time: '$time', patient: '$patient' },
+            patientCount: { $sum: 1 },
+            lastDate:     { $max: '$date' }
+          }
+        },
+        // Ordena do mais recente para o mais antigo
+        { $sort: { lastDate: -1 } },
+        // Pega o paciente mais recente por slot e sua contagem pessoal
+        {
+          $group: {
+            _id: { weekday: '$_id.weekday', time: '$_id.time' },
+            lastPatientId:       { $first: '$_id.patient' },
+            currentPatientCount: { $first: '$patientCount' }
           }
         }
       ])
@@ -450,14 +462,19 @@ router.get('/slots', auth, async (req, res) => {
       });
     }
 
-    // Map: slotKey → lastPatientId
+    // Map: slotKey → { patientId, currentPatientCount }
     const lastPatientMap = {};
     for (const lp of lastPatientAgg) {
-      lastPatientMap[`${lp._id.weekday}_${lp._id.time}`] = lp.lastPatientId?.toString();
+      lastPatientMap[`${lp._id.weekday}_${lp._id.time}`] = {
+        patientId:           lp.lastPatientId?.toString(),
+        currentPatientCount: lp.currentPatientCount || 0
+      };
     }
 
     // Coletar todos os IDs de pacientes necessários
-    const patientIdSet = new Set(Object.values(lastPatientMap).filter(Boolean));
+    const patientIdSet = new Set(
+      Object.values(lastPatientMap).map(v => v.patientId).filter(Boolean)
+    );
     const patientOids  = [...patientIdSet].map(id => new mongoose.Types.ObjectId(id));
 
     // ─── Queries paralelas: nomes, próxima sessão, pacotes, profissional ────
@@ -512,19 +529,21 @@ router.get('/slots', auth, async (req, res) => {
       const { weekday, time } = row._id;
       if (!weekdays[weekday]) continue;
 
-      const slotKey    = `${weekday}_${time}`;
-      const patientId  = lastPatientMap[slotKey];
-      const isVacant   = row.recentCompleted === 0 && row.histCompleted > 0;
+      const slotKey            = `${weekday}_${time}`;
+      const slotData           = lastPatientMap[slotKey] || {};
+      const patientId          = slotData.patientId;
+      const patientCount       = slotData.currentPatientCount || 0; // sessões deste paciente neste horário
+      const isVacant           = row.recentCompleted === 0 && row.histCompleted > 0;
 
       const histTotal      = row.histCompleted + row.histMissed;
       const attendanceRate = histTotal > 0 ? row.histCompleted / histTotal : 0;
 
-      // Tipo do slot
+      // Tipo baseado no histórico DO PACIENTE neste horário específico (não do slot total)
       let slotType;
-      if (isVacant)                                            slotType = 'buraco';
-      else if (row.histCompleted >= 6 && attendanceRate >= 0.75) slotType = 'fixo';
-      else if (row.histCompleted >= 3)                          slotType = 'semi_fixo';
-      else                                                      slotType = 'novo';
+      if (isVacant)                                        slotType = 'buraco';
+      else if (patientCount >= 6 && attendanceRate >= 0.75) slotType = 'fixo';
+      else if (patientCount >= 3)                           slotType = 'semi_fixo';
+      else                                                  slotType = 'novo';
 
       const lastSessionAt        = row.lastSessionAt || null;
       const daysSinceLastSession = lastSessionAt
@@ -546,7 +565,8 @@ router.get('/slots', auth, async (req, res) => {
         lastPatientId:       isVacant  ? patientId       : null,
         lastPatientName:     isVacant  ? (nameMap[patientId]  || null) : null,
 
-        recurrenceCount:  row.histCompleted,
+        recurrenceCount:  patientCount,       // sessões deste paciente neste horário
+        slotTotalSessions: row.histCompleted, // total histórico do horário (todos os pacientes)
         recentCompleted:  row.recentCompleted,
         attendanceRate:   Math.round(attendanceRate * 100) / 100,
 

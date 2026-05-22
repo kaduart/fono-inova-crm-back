@@ -421,7 +421,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
       : { insuranceGuide: guideObjId };
 
     let appointments = await Appointment.find(query)
-      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt')
+      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom')
       .populate('doctor', 'fullName')
       .sort({ date: -1 })
       .lean();
@@ -439,7 +439,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
       if (legacyPackages.length > 0) {
         const legacyPackageIds = legacyPackages.map(p => p._id);
         appointments = await Appointment.find({ package: { $in: legacyPackageIds } })
-          .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt')
+          .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom')
           .populate('doctor', 'fullName')
           .sort({ date: -1 })
           .lean();
@@ -506,7 +506,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
     const apptIdsToDelete = apptsToDelete.map(a => a._id);
 
     if (apptIdsToDelete.length > 0) {
-      await Session.deleteMany({ appointment: { $in: apptIdsToDelete } });
+      await Session.deleteMany({ appointmentId: { $in: apptIdsToDelete } });
       await Payment.deleteMany({ appointment: { $in: apptIdsToDelete } });
     }
     const appointmentsDeletedResult = await Appointment.deleteMany({ _id: { $in: apptIdsToDelete } });
@@ -540,7 +540,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
       const planApptIds = planApptsToDelete.map(a => a._id);
 
       if (planApptIds.length > 0) {
-        await Session.deleteMany({ appointment: { $in: planApptIds } });
+        await Session.deleteMany({ appointmentId: { $in: planApptIds } });
         await Payment.deleteMany({ appointment: { $in: planApptIds } });
       }
       const planApptResult = await Appointment.deleteMany({ _id: { $in: planApptIds } });

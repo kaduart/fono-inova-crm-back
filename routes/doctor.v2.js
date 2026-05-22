@@ -77,14 +77,14 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     const [doctors, total] = await Promise.all([
       Doctor.find(query)
-        .select('_id fullName email specialty licenseNumber phoneNumber active role createdAt updatedAt')
+        .select('_id fullName email specialty licenseNumber phoneNumber active role weeklyAvailability createdAt updatedAt')
         .sort({ fullName: 1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
         .lean(),
       Doctor.countDocuments(query)
     ]);
-    
+
     return res.json(formatSuccess({
       doctors: doctors.map(d => ({
         _id: d._id.toString(),
@@ -95,6 +95,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         phoneNumber: d.phoneNumber,
         active: d.active,
         role: d.role || 'doctor',
+        weeklyAvailability: d.weeklyAvailability || [],
         createdAt: d.createdAt,
         updatedAt: d.updatedAt
       })),
@@ -168,6 +169,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       phoneNumber: doctor.phoneNumber,
       active: doctor.active,
       role: doctor.role || 'doctor',
+      weeklyAvailability: doctor.weeklyAvailability || [],
       createdAt: doctor.createdAt,
       updatedAt: doctor.updatedAt
     }));
