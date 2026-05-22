@@ -1,21 +1,21 @@
 /**
- * 💬 Serviço WhatsApp Web.js — RemoteAuth com MongoDB
+ * 💬 Serviço WhatsApp Web.js — LocalAuth com persistência em disco (/var/data)
  *
  * Regra de ouro: NÃO tente "salvar" o sistema. Deixe o WhatsApp Web.js
  * trabalhar sozinho. Só inicializa, ouve eventos, e reinicia suave se cair.
  *
  * ZERO purge automático
  * ZERO stuck detection
- * ZERO force ready
  * ZERO reconnect storm
  * TIMEOUTS altos
  *
- * Sessão persistida no MongoDB via RemoteAuth — sobrevive a deploys/restarts.
+ * Sessão persistida em disco via LocalAuth — mais confiável que RemoteAuth.
+ * Fallback: polling de getState() força ready se o evento nativo não disparar.
  */
 
 import './setPuppeteerCache.js';
 import pkg from 'whatsapp-web.js';
-const { Client, RemoteAuth } = pkg;
+const { Client, LocalAuth } = pkg;
 import { MongoStore } from 'wwebjs-mongo';
 import mongoose from 'mongoose';
 import qrcode from 'qrcode';
@@ -34,6 +34,7 @@ let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
+let readyPollInterval = null;
 
 // ─── Persistência MongoDB ────────────────────────────────────────────────────
 async function saveState() {
@@ -55,6 +56,39 @@ async function saveState() {
   }
 }
 
+// ─── Fallback: polling getState() para detectar ready quando o evento não dispara ─
+function startReadyPoll(newClient) {
+  if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
+  readyPollInterval = setInterval(async () => {
+    if (isReady || !newClient) {
+      clearInterval(readyPollInterval);
+      readyPollInterval = null;
+      return;
+    }
+    try {
+      const state = await newClient.getState();
+      if (state === 'CONNECTED') {
+        const ts = new Date().toISOString();
+        console.log(`[WhatsAppWeb][${ts}] ✅ getState() retornou CONNECTED — forçando ready.`);
+        clearInterval(readyPollInterval);
+        readyPollInterval = null;
+        if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
+        isReady = true;
+        qrCodeDataUrl = null;
+        connectionStatus = 'ready';
+        initAttempts = 0;
+        if (retryTimeout) {
+          clearTimeout(retryTimeout);
+          retryTimeout = null;
+        }
+        await saveState();
+      }
+    } catch (e) {
+      // ainda não está pronto — ignora
+    }
+  }, 10_000);
+}
+
 // ─── Resolve caminho do Chrome ───────────────────────────────────────────────
 function resolveChromePath() {
   const candidates = [
@@ -72,7 +106,14 @@ function resolveChromePath() {
 
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function createClient() {
-  const store = new MongoStore({ mongoose });
+  // Garante pasta de persistência
+  try {
+    if (!fs.existsSync(authPath)) {
+      fs.mkdirSync(authPath, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível criar authPath:', e.message);
+  }
 
   const puppeteerOpts = {
     headless: true,
@@ -122,13 +163,10 @@ function createClient() {
     console.log(`[WhatsAppWeb] Usando Chrome: ${chromePath}`);
   }
 
+  const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
   const newClient = new Client({
-    authStrategy: new RemoteAuth({
-      store,
-      // dataPath = CWD para alinhar com MongoStore.save() que lê 'RemoteAuth.zip' relativo ao CWD
-      // (MongoStore ignora dataPath no save — só o extract recebe path completo)
-      dataPath: process.cwd(),
-      backupSyncIntervalMs: 300_000, // sincroniza sessão no MongoDB a cada 5 min
+    authStrategy: new LocalAuth({
+      dataPath: authPath,
     }),
     authTimeoutMs: 600_000,
     takeoverOnConflict: true,
@@ -157,11 +195,14 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
-    // Aguarda até 5min para ready disparar; se não vier, respawn limpo
+    // Fallback: se o evento ready nunca disparar (bug do whatsapp-web.js),
+    // o polling de getState() detectará CONNECTED e forçará ready.
+    startReadyPoll(newClient);
+    // Aguarda até 10min para ready disparar; se não vier, respawn limpo
     loadingWatchdog = setTimeout(() => {
-      console.error('[WhatsAppWeb] ⚠️ Autenticado mas ready não disparou em 5min — saindo para respawn limpo.');
+      console.error('[WhatsAppWeb] ⚠️ Autenticado mas ready não disparou em 10min — saindo para respawn limpo.');
       process.exit(2);
-    }, 5 * 60 * 1000);
+    }, 10 * 60 * 1000);
     connectionStatus = 'connecting';
     await saveState();
   });
@@ -174,6 +215,7 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ✅ ready — WhatsApp conectado!`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
+    if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
     isReady = true;
     qrCodeDataUrl = null;
     connectionStatus = 'ready';
@@ -192,15 +234,16 @@ function createClient() {
     await saveState();
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
     loadingWatchdog = setTimeout(() => {
-      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 5min — saindo para respawn limpo.');
+      console.error('[WhatsAppWeb] ⚠️ Travado em loading_screen por 10min — saindo para respawn limpo.');
       process.exit(2);
-    }, 5 * 60 * 1000);
+    }, 10 * 60 * 1000);
   });
 
   newClient.on('disconnected', async (reason) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
+    if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
     isReady = false;
     connectionStatus = 'disconnected';
     await saveState();
@@ -370,9 +413,9 @@ export async function softReconnect() {
   await initWhatsAppClient();
 }
 
-// ─── Limpa sessão (botão "Desconectar" — apaga sessão do MongoDB) ─────────────
+// ─── Limpa sessão (botão "Desconectar" — apaga sessão local) ─────────────
 export async function clearSession() {
-  console.log('[WhatsAppWeb] 🧹 Limpando sessão do MongoDB...');
+  console.log('[WhatsAppWeb] 🧹 Limpando sessão...');
 
   try {
     await WhatsAppWebState.findOneAndUpdate(
@@ -385,13 +428,15 @@ export async function clearSession() {
     console.warn('[WhatsAppWeb] Erro ao limpar estado MongoDB:', e.message);
   }
 
-  // Remove sessão da store RemoteAuth no MongoDB
+  // Remove sessão local do LocalAuth
   try {
-    const store = new MongoStore({ mongoose });
-    await store.delete({ session: 'RemoteAuth-client' });
-    console.log('[WhatsAppWeb] Sessão RemoteAuth removida do MongoDB.');
+    const localAuthDir = path.join(authPath, '.wwebjs_auth');
+    if (fs.existsSync(localAuthDir)) {
+      fs.rmSync(localAuthDir, { recursive: true, force: true });
+      console.log('[WhatsAppWeb] Sessão local removida.');
+    }
   } catch (e) {
-    console.warn('[WhatsAppWeb] Erro ao remover sessão RemoteAuth:', e.message);
+    console.warn('[WhatsAppWeb] Erro ao remover sessão local:', e.message);
   }
 
   return { success: true, message: 'Sessão limpa. Reinicie o worker do WhatsApp para gerar novo QR.' };
@@ -399,7 +444,7 @@ export async function clearSession() {
 
 // ─── Reconectar manual (botão "Gerar novo QR") ───────────────────────────────
 export async function reconnect() {
-  console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão do MongoDB...');
+  console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão local...');
   isReady = false;
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
@@ -414,13 +459,15 @@ export async function reconnect() {
     client = null;
   }
 
-  // Remove sessão do MongoDB para forçar novo QR
+  // Remove sessão local para forçar novo QR
   try {
-    const store = new MongoStore({ mongoose });
-    await store.delete({ session: 'RemoteAuth-client' });
-    console.log('[WhatsAppWeb] Sessão removida — próximo boot gerará novo QR.');
+    const localAuthDir = path.join(authPath, '.wwebjs_auth');
+    if (fs.existsSync(localAuthDir)) {
+      fs.rmSync(localAuthDir, { recursive: true, force: true });
+      console.log('[WhatsAppWeb] Sessão local removida — próximo boot gerará novo QR.');
+    }
   } catch (e) {
-    console.warn('[WhatsAppWeb] Erro ao remover sessão do MongoDB:', e.message);
+    console.warn('[WhatsAppWeb] Erro ao remover sessão local:', e.message);
   }
 
   await saveState();
