@@ -138,7 +138,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
       'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia',
-      'neuropsych_evaluation'
+      'neuropsych_evaluation', 'neuropsicologia'
     ],
     default: null
   },
@@ -206,7 +206,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'fonoaudiologia', 'terapia_ocupacional', 'psicologia',
       'tongue_tie_test', 'neuropsych_evaluation', 'fisioterapia',
-      'pediatria', 'neuroped', 'musicoterapia', 'psicopedagogia', 'psicomotricidade'
+      'pediatria', 'neuroped', 'musicoterapia', 'psicopedagogia', 'psicomotricidade', 'neuropsicologia'
     ],
     set: v => typeof v === 'string' ? v.toLowerCase() : v
   },

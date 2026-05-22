@@ -35,7 +35,7 @@ export const SERVICE_TO_SPECIALTY = {
  */
 // Valores válidos de specialty (especialidades clínicas)
 const VALID_SPECIALTIES = [
-    'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia',
+    'fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'neuropsicologia',
     'pediatria', 'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia'
 ];
 

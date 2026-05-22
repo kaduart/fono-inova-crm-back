@@ -102,7 +102,7 @@ async function criarRecebivelConvenio(session, pkg, mongoSession) {
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
-    sessionType: (type) => ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'].includes(type),
+    sessionType: (type) => ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia', 'neuropsicologia'].includes(type),
     paymentMethod: (method) => ['dinheiro', 'pix', 'cartão'].includes(method),
     paymentType: (type) => ['full', 'per-session', 'partial'].includes(type)
 };
