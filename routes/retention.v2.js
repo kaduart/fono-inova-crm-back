@@ -412,7 +412,7 @@ router.get('/slots', auth, async (req, res) => {
         }
       ]),
 
-      // 2) Último paciente por slot + contagem desse paciente nesse horário
+      // 2) Último paciente por slot + contagem + primeira data (continuidade)
       //    Agrupa (slot × paciente) primeiro → depois pega o mais recente por slot
       Appointment.aggregate([
         {
@@ -430,11 +430,12 @@ router.get('/slots', auth, async (req, res) => {
           }
         },
         { $match: { weekday: { $gte: 2, $lte: 6 } } },
-        // Agrupa por (slot × paciente): conta sessões e acha data mais recente
+        // Agrupa por (slot × paciente): conta sessões, primeira e última data
         {
           $group: {
             _id: { weekday: '$weekday', time: '$time', patient: '$patient' },
             patientCount: { $sum: 1 },
+            firstDate:    { $min: '$date' },
             lastDate:     { $max: '$date' }
           }
         },
@@ -445,7 +446,8 @@ router.get('/slots', auth, async (req, res) => {
           $group: {
             _id: { weekday: '$_id.weekday', time: '$_id.time' },
             lastPatientId:       { $first: '$_id.patient' },
-            currentPatientCount: { $first: '$patientCount' }
+            currentPatientCount: { $first: '$patientCount' },
+            firstSessionAt:      { $first: '$firstDate' }
           }
         }
       ])
@@ -462,12 +464,13 @@ router.get('/slots', auth, async (req, res) => {
       });
     }
 
-    // Map: slotKey → { patientId, currentPatientCount }
+    // Map: slotKey → { patientId, currentPatientCount, firstSessionAt }
     const lastPatientMap = {};
     for (const lp of lastPatientAgg) {
       lastPatientMap[`${lp._id.weekday}_${lp._id.time}`] = {
         patientId:           lp.lastPatientId?.toString(),
-        currentPatientCount: lp.currentPatientCount || 0
+        currentPatientCount: lp.currentPatientCount || 0,
+        firstSessionAt:      lp.firstSessionAt || null
       };
     }
 
@@ -532,13 +535,13 @@ router.get('/slots', auth, async (req, res) => {
       const slotKey            = `${weekday}_${time}`;
       const slotData           = lastPatientMap[slotKey] || {};
       const patientId          = slotData.patientId;
-      const patientCount       = slotData.currentPatientCount || 0; // sessões deste paciente neste horário
+      const patientCount       = slotData.currentPatientCount || 0;
       const isVacant           = row.recentCompleted === 0 && row.histCompleted > 0;
 
       const histTotal      = row.histCompleted + row.histMissed;
       const attendanceRate = histTotal > 0 ? row.histCompleted / histTotal : 0;
 
-      // Tipo baseado no histórico DO PACIENTE neste horário específico (não do slot total)
+      // Tipo legado (fixo/semi_fixo/novo/buraco)
       let slotType;
       if (isVacant)                                        slotType = 'buraco';
       else if (patientCount >= 6 && attendanceRate >= 0.75) slotType = 'fixo';
@@ -553,6 +556,79 @@ router.get('/slots', auth, async (req, res) => {
       const packageRemaining = patientId ? (packageMap[patientId] ?? 0) : 0;
       const nextSessionAt    = patientId ? (nextMap[patientId] || null) : null;
 
+      // ─── Continuidade clínica (em meses) ───
+      const firstSessionAt = slotData.firstSessionAt || null;
+      const continuityMonths = firstSessionAt && lastSessionAt
+        ? Math.max(1, Math.round(now.diff(moment(firstSessionAt).tz(TIMEZONE), 'days') / 30))
+        : 0;
+
+      // ─── Score de estabilidade (0-100) ───
+      let score = 50;
+      // Recorrência passada
+      if (patientCount >= 8) score += 30;
+      else if (patientCount >= 4) score += 20;
+      else if (patientCount >= 2) score += 10;
+      // Frequência
+      if (attendanceRate >= 0.85) score += 20;
+      else if (attendanceRate >= 0.65) score += 10;
+      // Próxima sessão marcada
+      if (nextSessionAt) score += 25;
+      // Faltas recentes
+      if (row.recentMissed >= 2) score -= 15;
+      else if (row.recentMissed >= 1) score -= 5;
+      // Sem sessão futura (só se não é vazio)
+      if (!isVacant && !nextSessionAt) score -= 20;
+      // Dias sem atendimento
+      if (daysSinceLastSession !== null && daysSinceLastSession > 14) score -= 15;
+      // Slot vazio
+      if (isVacant && daysSinceLastSession !== null && daysSinceLastSession <= 30) score -= 20;
+      if (isVacant && daysSinceLastSession !== null && daysSinceLastSession > 60) score -= 30;
+      if (isVacant && daysSinceLastSession !== null && daysSinceLastSession > 45) score -= 10;
+      // Clamp
+      score = Math.max(0, Math.min(100, Math.round(score)));
+
+      // ─── Classificação de estabilidade ───
+      let stability;
+      if (isVacant && (row.histCompleted >= 4 || (daysSinceLastSession !== null && daysSinceLastSession <= 30))) {
+        stability = 'risco';
+      } else if (!isVacant && nextSessionAt && attendanceRate >= 0.75 && patientCount >= 4) {
+        stability = 'estavel';
+      } else if (!isVacant && patientCount < 3) {
+        stability = 'novo';
+      } else if (!isVacant && (!nextSessionAt || (daysSinceLastSession !== null && daysSinceLastSession > 10))) {
+        stability = 'atencao';
+      } else if (isVacant && row.histCompleted < 3) {
+        stability = 'livre';
+      } else {
+        stability = 'atencao';
+      }
+
+      // ─── Tipo de vazio ───
+      let vacantType = null;
+      if (isVacant) {
+        if (nextSessionAt) vacantType = 'temporario';
+        else if (row.histCompleted >= 4 || (daysSinceLastSession !== null && daysSinceLastSession <= 30)) vacantType = 'critico';
+        else vacantType = 'livre';
+      }
+
+      // ─── Motivo da classificação ───
+      const reasons = [];
+      if (isVacant) {
+        if (nextSessionAt) reasons.push('Paciente ausente esta semana, mas tem próxima sessão agendada');
+        else if (row.histCompleted >= 4) reasons.push(`Ocupado ${row.histCompleted}x nas últimas semanas, sem continuidade`);
+        else reasons.push('Pouco uso histórico');
+      } else {
+        if (nextSessionAt) reasons.push('Próxima sessão confirmada');
+        else reasons.push('Sem próxima sessão agendada');
+        if (patientCount >= 4) reasons.push(`${patientCount} sessões neste horário`);
+        if (attendanceRate >= 0.85) reasons.push(`Presença ${Math.round(attendanceRate * 100)}%`);
+        else if (attendanceRate < 0.65) reasons.push(`Presença baixa (${Math.round(attendanceRate * 100)}%)`);
+      }
+      if (daysSinceLastSession !== null) {
+        reasons.push(`Última sessão há ${daysSinceLastSession} dias`);
+      }
+      if (row.recentMissed >= 2) reasons.push(`${row.recentMissed} faltas recentes`);
+
       weekdays[weekday].push({
         weekday,
         time,
@@ -565,8 +641,8 @@ router.get('/slots', auth, async (req, res) => {
         lastPatientId:       isVacant  ? patientId       : null,
         lastPatientName:     isVacant  ? (nameMap[patientId]  || null) : null,
 
-        recurrenceCount:  patientCount,       // sessões deste paciente neste horário
-        slotTotalSessions: row.histCompleted, // total histórico do horário (todos os pacientes)
+        recurrenceCount:  patientCount,
+        slotTotalSessions: row.histCompleted,
         recentCompleted:  row.recentCompleted,
         attendanceRate:   Math.round(attendanceRate * 100) / 100,
 
@@ -575,6 +651,11 @@ router.get('/slots', auth, async (req, res) => {
         daysSinceLastSession,
         daysSinceVacant: isVacant ? daysSinceLastSession : null,
         avgSessionValue: Math.round(row.avgSessionValue || 0),
+        continuityMonths,
+        stabilityScore: score,
+        stability,
+        vacantType,
+        stabilityReason: reasons.join(' · '),
 
         needsAttention:
           isVacant ||
@@ -588,9 +669,11 @@ router.get('/slots', auth, async (req, res) => {
       slots.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
     }
 
-    // ─── Sumário de ocupação ─────────────────────────────────────────────────
+    // ─── Sumário de ocupação + estabilidade ──────────────────────────────────
     const occupancyByDay = {};
     let totalSlots = 0, activeSlots = 0, vacantSlots = 0;
+    let stableSlots = 0, atRiskSlots = 0, attentionSlots = 0, newSlots = 0, criticalSlots = 0;
+    let potentialLossMonthly = 0;
 
     for (const [wd, slots] of Object.entries(weekdays)) {
       const active = slots.filter(s => !s.isVacant).length;
@@ -600,7 +683,20 @@ router.get('/slots', auth, async (req, res) => {
       totalSlots  += total;
       activeSlots += active;
       vacantSlots += vacant;
+
+      for (const s of slots) {
+        if (s.stability === 'estavel') stableSlots++;
+        else if (s.stability === 'atencao') attentionSlots++;
+        else if (s.stability === 'risco') atRiskSlots++;
+        else if (s.stability === 'novo') newSlots++;
+        if (s.vacantType === 'critico') criticalSlots++;
+        if ((s.stability === 'risco' || s.vacantType === 'critico') && s.avgSessionValue > 0) {
+          potentialLossMonthly += s.avgSessionValue * 4;
+        }
+      }
     }
+
+    const recurrentSlots = totalSlots - newSlots;
 
     return res.json({
       doctor:     doctorDoc ? { id: doctorId, name: doctorDoc.fullName, specialty: doctorDoc.specialty } : null,
@@ -609,7 +705,14 @@ router.get('/slots', auth, async (req, res) => {
         totalSlots,
         activeSlots,
         vacantSlots,
-        occupancyRate: totalSlots > 0 ? Math.round((activeSlots / totalSlots) * 100) : 0
+        occupancyRate: totalSlots > 0 ? Math.round((activeSlots / totalSlots) * 100) : 0,
+        stableSlots,
+        attentionSlots,
+        atRiskSlots,
+        newSlots,
+        criticalSlots,
+        potentialLossMonthly: Math.round(potentialLossMonthly),
+        stabilityRate: recurrentSlots > 0 ? Math.round((stableSlots / recurrentSlots) * 100) : 0
       },
       occupancyByDay,
       weekdays

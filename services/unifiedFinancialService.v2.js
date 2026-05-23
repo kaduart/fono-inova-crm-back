@@ -28,6 +28,8 @@ export async function calculateCash(start, end) {
         status: 'paid',
         amount: { $gt: 0 },
         kind: { $ne: 'package_consumed' },
+        billingType: { $ne: 'convenio' },
+        paymentMethod: { $ne: 'convenio' },
         $and: [
             {
                 $or: [
@@ -115,14 +117,8 @@ export async function calculateCash(start, end) {
         return !nome.includes('teste') && !nome.includes('test ');
     });
 
-    // 5. Receita real/diferida (simplificado — total = real por padrão)
-    const receitaReal = total;
-    const receitaDiferida = 0;
-
     return {
         total,
-        receitaReal,
-        receitaDiferida,
         particular,
         pacote,
         convenio,
@@ -181,6 +177,8 @@ export async function calculateCashByDay(start, end) {
             status: 'paid',
             amount: { $gt: 0 },
             kind: { $ne: 'package_consumed' },
+            billingType: { $ne: 'convenio' },
+            paymentMethod: { $ne: 'convenio' },
             $and: [
                 {
                     $or: [
@@ -213,6 +211,34 @@ export async function calculateCashByDay(start, end) {
 // ============================================================
 
 /**
+ * Stages que resolvem o valor unitário correto por sessão.
+ * Para sessões de pacote: usa Package.sessionValue (valor contratual por sessão).
+ * Para sessões avulsas: usa Session.sessionValue como está.
+ * Evita inflação quando session.sessionValue foi gravado com o valor total do pacote.
+ */
+const pkgLookupStages = [
+    { $lookup: {
+        from: 'packages',
+        localField: 'package',
+        foreignField: '_id',
+        pipeline: [{ $project: { sessionValue: 1 } }],
+        as: '_pkg'
+    }},
+    { $addFields: {
+        effectiveValue: {
+            $cond: {
+                if: { $and: [
+                    { $gt: [{ $size: { $ifNull: ['$_pkg', []] } }, 0] },
+                    { $gt: [{ $arrayElemAt: ['$_pkg.sessionValue', 0] }, 0] }
+                ]},
+                then: { $arrayElemAt: ['$_pkg.sessionValue', 0] },
+                else: { $ifNull: ['$sessionValue', 0] }
+            }
+        }
+    }}
+];
+
+/**
  * Busca sessions completadas no período.
  *
  * Regras imutáveis:
@@ -232,7 +258,8 @@ export async function calculateProduction(start, end) {
     // 1. Total geral
     const totalAgg = await Session.aggregate([
         { $match: match },
-        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+        ...pkgLookupStages,
+        { $group: { _id: null, total: { $sum: '$effectiveValue' }, count: { $sum: 1 } } }
     ]);
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
@@ -242,6 +269,7 @@ export async function calculateProduction(start, end) {
     // Session NÃO tem billingType.
     const typeAgg = await Session.aggregate([
         { $match: match },
+        ...pkgLookupStages,
         { $group: {
             _id: {
                 $switch: {
@@ -265,7 +293,7 @@ export async function calculateProduction(start, end) {
                     }
                 }
             },
-            total: { $sum: '$sessionValue' }
+            total: { $sum: '$effectiveValue' }
         }}
     ]);
     const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
@@ -286,40 +314,32 @@ export async function calculateProduction(start, end) {
                 { paymentOrigin: 'convenio' }
             ]
         }},
-        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+        ...pkgLookupStages,
+        { $group: { _id: null, total: { $sum: '$effectiveValue' } } }
     ]);
     const recebido = recebidoAgg[0]?.total || 0;
     const pendente = total - recebido;
 
-    // 4. Particular Pendente vs Pacote Pendente (risco de inadimplência)
-    const naoPagoMatch = {
-        date: { $gte: start, $lte: end },
-        status: 'completed',
-        $and: [
-            { paymentMethod: { $ne: 'convenio' } },
-            { paymentOrigin: { $ne: 'convenio' } },
-            { paymentMethod: { $ne: 'liminar_credit' } },
-            { paymentOrigin: { $ne: 'liminar' } },
-            { paymentOrigin: { $ne: 'liminar_credit' } }
-        ],
-        $nor: [
-            { isPaid: true },
-            { paymentStatus: { $in: ['paid', 'package_paid'] } },
-            { paymentOrigin: 'package_prepaid' }
+    // 4. Particular Pendente vs Pacote Pendente — fonte: Payment.pending (fonte correta)
+    // Session como fonte classifica erroneamente por presença de package, ignorando billingType real.
+    // Isis Caldas e similares: tem package operacional mas billingType=particular nos payments.
+    const pendingDateMatch = {
+        status: 'pending',
+        amount: { $gt: 0 },
+        billingType: { $nin: ['convenio', 'liminar'] },
+        paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+        $or: [
+            { financialDate: { $gte: start, $lte: end } },
+            { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+            { financialDate: null, paymentDate: { $gte: start, $lte: end } }
         ]
     };
-
-    const particularPendenteAgg = await Session.aggregate([
-        { $match: { ...naoPagoMatch, $or: [{ package: { $exists: false } }, { package: null }] } },
-        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+    const pendingByTypeAgg = await Payment.aggregate([
+        { $match: pendingDateMatch },
+        { $group: { _id: '$billingType', total: { $sum: '$amount' } } }
     ]);
-    const particularPendente = particularPendenteAgg[0]?.total || 0;
-
-    const pacotePendenteAgg = await Session.aggregate([
-        { $match: { ...naoPagoMatch, package: { $exists: true, $ne: null } } },
-        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
-    ]);
-    const pacotePendente = pacotePendenteAgg[0]?.total || 0;
+    const particularPendente = pendingByTypeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacotePendente     = pendingByTypeAgg.find(r => ['pacote', 'package', 'package_session'].includes(r._id))?.total || 0;
 
     // 5. Buscar sessions completas para compatibilidade com endpoints legados
     const sessions = await Session.find({
@@ -345,9 +365,10 @@ export async function calculateProduction(start, end) {
 export async function calculateProductionByDay(start, end) {
     const agg = await Session.aggregate([
         { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+        ...pkgLookupStages,
         { $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: 'America/Sao_Paulo' } },
-            producao: { $sum: '$sessionValue' },
+            producao: { $sum: '$effectiveValue' },
             atendimentos: { $sum: 1 }
         }}
     ]);
@@ -356,7 +377,8 @@ export async function calculateProductionByDay(start, end) {
 
     const totalAgg = await Session.aggregate([
         { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
-        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+        ...pkgLookupStages,
+        { $group: { _id: null, total: { $sum: '$effectiveValue' }, count: { $sum: 1 } } }
     ]);
 
     return { map, total: totalAgg[0]?.total || 0, count: totalAgg[0]?.count || 0 };

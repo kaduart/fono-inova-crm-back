@@ -30,6 +30,21 @@ import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
 
+// Cache server-side: 30s TTL + deduplicação de requests simultâneos
+const _dashCache = new Map();
+const _dashPending = new Map();
+const DASH_CACHE_TTL = 30_000;
+
+function getDashCached(key) {
+    const entry = _dashCache.get(key);
+    if (entry && Date.now() - entry.ts < DASH_CACHE_TTL) return entry.data;
+    return null;
+}
+function setDashCached(key, data) {
+    if (_dashCache.size > 50) _dashCache.clear();
+    _dashCache.set(key, { data, ts: Date.now() });
+}
+
 const paymentBaseFilter = {
     status: { $in: ['paid', 'completed', 'confirmed'] },
     amount: { $gte: 1 }
@@ -102,6 +117,31 @@ router.get('/', auth, async (req, res) => {
         const targetMonth = month ? parseInt(month) : moment().month() + 1;
         const targetYear = year ? parseInt(year) : moment().year();
         const monthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+
+        // Cache server-side 30s + deduplicação thundering herd
+        const cacheKey = monthKey;
+        const cachedRes = getDashCached(cacheKey);
+        if (cachedRes) {
+            return res.json(cachedRes);
+        }
+        if (_dashPending.has(cacheKey)) {
+            try {
+                const result = await _dashPending.get(cacheKey);
+                return res.json(result);
+            } catch {
+                // request em voo falhou — processa normalmente
+            }
+        }
+        let _pendingResolve, _pendingReject;
+        _dashPending.set(cacheKey, new Promise((rs, rj) => { _pendingResolve = rs; _pendingReject = rj; }));
+        const _origJson = res.json.bind(res);
+        res.json = (body) => {
+            setDashCached(cacheKey, body);
+            _pendingResolve?.(body);
+            _dashPending.delete(cacheKey);
+            res.json = _origJson;
+            return _origJson(body);
+        };
 
         // 🆕 PROJEÇÃO V2: tenta usar snapshot primeiro
         const snapshotReady = await financialSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
@@ -300,6 +340,8 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[DashboardV3] Erro:', error);
+        _pendingReject?.(error);
+        _dashPending.delete(monthKey);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -1423,7 +1465,8 @@ async function calculatePendentes(year, month) {
     const skippedAudit = [];
 
     for (const p of paymentsAll) {
-        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio' || (p.insurance && p.insurance.status);
+        // insurance.status é inicializado como template em todo Payment — não indica convênio
+        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio';
         const valor = p.amount || 0;
 
         // Determina a data relevante para filtro de mês
@@ -1495,7 +1538,7 @@ async function calculatePendentes(year, month) {
 
     for (const p of enginePayments) {
         const valor = p.amount || 0;
-        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio' || (p.insurance && p.insurance.status);
+        const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio';
         const btype = isConvenio ? 'convenio' : 'particular';
         
         // byPatient — apenas particular (convênio não é dívida do paciente)

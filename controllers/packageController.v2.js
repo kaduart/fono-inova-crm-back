@@ -765,13 +765,15 @@ export const createPackageV2 = async (req, res) => {
         // Vincular ao pacote
         reuseAppt.package = pkg._id;
         reuseAppt.serviceType = 'package_session';
+        // Sincroniza sessionValue com o contrato do pacote para evitar inflação na produção
+        reuseAppt.sessionValue = pkg.sessionValue;
         LegacyFinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid', { reason: 'reuse_appointment_v2' });
         reuseAppt.paymentOrigin = pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid';
         await reuseAppt.save({ session: mongoSession });
 
         // Atualizar session existente se houver
         if (reuseAppt.session) {
-          const sessionUpdate = { package: pkg._id };
+          const sessionUpdate = { package: pkg._id, sessionValue: pkg.sessionValue };
           LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, reuseAppt.paymentStatus, { reason: 'sync_from_reuse_appointment' });
           await Session.findByIdAndUpdate(
             reuseAppt.session,

@@ -161,6 +161,7 @@ import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Rea
 import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
 import retentionV2Routes from './routes/retention.v2.js';        // 🏥 NOVO: Retenção Clínica V2
+import operationalV2Routes from './routes/operational.v2.js';    // 🏥 NOVO: Painel Operacional V2
 import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
@@ -495,6 +496,7 @@ function legacyRouteAlert(req, res, next) {
 
 app.use('/api/v2/pre-appointments', preAgendamentoEngineRoutes);  // 🚀 V2 REAL: engine transacional + hybrid service
 app.use('/api/v2/evolutions', evolutionV2Routes);  // 🧬 V2: evolution event-driven
+app.use('/api/v2/operational', operationalV2Routes);  // 🏥 NOVO: Painel Operacional V2
 
 // 🗑️ V1 removido: /api/pre-agendamento e /api/v2/pre-agendamento desativados
 // Todos os pré-agendamentos agora usam /api/v2/pre-appointments
