@@ -19,10 +19,7 @@ import { auth, authorize } from '../../middleware/auth.js';
 import financialMetricsService from '../../services/financialMetrics.service.js';
 import historicalRatesService from '../../services/historicalRates.service.js';
 import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
-import  reduceFullStats  from '../../services/financialSnapshot.service.js';
-
-// 🆕 V2: feature flag para usar snapshot no dashboard
-const USE_SNAPSHOT_DASHBOARD = process.env.FF_DASHBOARD_SNAPSHOT !== 'false';
+import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -30,58 +27,6 @@ const TIMEZONE = 'America/Sao_Paulo';
 // Cache: TTL 5 minutos, verificação a cada 2 minutos
 const dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 120 });
 
-/**
- * 🆕 V2: Busca overview a partir de FinancialDailySnapshot
- * Retorna os mesmos campos críticos do dashboard em milissegundos
- */
-async function getSnapshotOverview(periodo, clinicId = 'default') {
-  const snapshots = await FinancialDailySnapshot.find({
-    date: { $gte: periodo.inicio, $lte: periodo.fim },
-    ...(clinicId && { clinicId })
-  }).lean();
-
-  const reduced = reduceFullStats(snapshots);
-
-  return {
-    production: {
-      total: reduced.productionTotal,
-      byPaymentMethod: {
-        particular: { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.particular?.total || 0), 0), count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.particular?.count || 0), 0) },
-        convenio:   { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.convenio?.total || 0), 0),   count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.convenio?.count || 0), 0) },
-        pix:        { total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.pix?.total || 0), 0),        count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.pix?.count || 0), 0) },
-        credit_card:{ total: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.credit_card?.total || 0), 0), count: snapshots.reduce((s, d) => s + (d.production?.byPaymentMethod?.credit_card?.count || 0), 0) },
-      }
-    },
-    cash: {
-      total: reduced.cashTotal,
-      bySource: {
-        payments: {
-          total: reduced.cashTotal,
-          byType: {
-            particular: snapshots.reduce((s, d) => s + (d.cash?.particular || 0), 0),
-            convenio: snapshots.reduce((s, d) => s + (d.cash?.convenioAvulso || 0) + (d.cash?.convenioPacote || 0), 0),
-          }
-        }
-      }
-    },
-    receivable: {
-      total: 0, // snapshot V2 ainda não popula receivable detalhado
-      convenio: { total: 0 },
-      particular: { doMes: { total: 0 } }
-    },
-    convenioDetail: {
-      atendido: { total: reduced.convenioAtendido, count: 0 },
-      faturado: { total: reduced.convenioFaturado, count: 0 },
-      recebido: { total: reduced.convenioRecebido, count: 0 },
-      aReceber: { total: 0, count: 0 },
-      status: {
-        faturadoVsAtendido: reduced.convenioFaturado - reduced.convenioAtendido,
-        recebidoVsFaturado: reduced.convenioRecebido - reduced.convenioFaturado,
-        glosaPotencial: null
-      }
-    }
-  };
-}
 
 /**
  * Calcula o período baseado no tipo de visualização
@@ -194,39 +139,32 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const { default: Payment } = await import('../../models/Payment.js');
 
     // ========================================
-    // 1+2. PRODUÇÃO, CAIXA e A RECEBER — via snapshot V2 (com fallback)
+    // 1+2. PRODUÇÃO, CAIXA e A RECEBER — unifiedFinancialService (fonte única de verdade)
     // ========================================
-    const period = { startDate: new Date(inicioPeriodo), endDate: new Date(fimPeriodo) };
 
-    let overview;
-    if (USE_SNAPSHOT_DASHBOARD) {
-      try {
-        overview = await getSnapshotOverview(periodo, 'default');
-        // 🛡️ Validação: se snapshot retornou zeros mas é período histórico, fallback para V1
-        const hasSnapshotData = overview.production.total > 0 || overview.cash.total > 0;
-        if (!hasSnapshotData && ehPeriodoPassado) {
-          console.warn('[Dashboard] Snapshot vazio para período passado — fallback V1', { periodo });
-          overview = await financialMetricsService.getOverview(period);
-        } else {
-          console.log('[Dashboard] Usando snapshot V2', { production: overview.production.total, cash: overview.cash.total });
-        }
-      } catch (snapshotErr) {
-        console.error('[Dashboard] Erro no snapshot — fallback V1', snapshotErr.message);
-        overview = await financialMetricsService.getOverview(period);
-      }
-    } else {
-      overview = await financialMetricsService.getOverview(period);
-    }
+    // ─── Datas com timezone correto (America/Sao_Paulo) ───────────────────────
+    const inicioDate = moment.tz(inicioPeriodo, TIMEZONE).startOf('day').toDate();
+    const fimDate    = moment.tz(fimPeriodo, TIMEZONE).endOf('day').toDate();
+    const period     = { startDate: inicioDate, endDate: fimDate };
 
-    const producaoTotal = overview.production.total;
-    const producaoConvenio = overview.production.byPaymentMethod?.convenio?.total || 0;
-    const producaoParticular = overview.production.byPaymentMethod?.particular?.total || 0;
-    const producaoPacotes = producaoTotal - producaoConvenio - producaoParticular;
+    const [cashResult, prodResult, overview] = await Promise.all([
+      unifiedFinancialService.calculateCash(inicioDate, fimDate),
+      unifiedFinancialService.calculateProduction(inicioDate, fimDate),
+      financialMetricsService.getOverview(period)
+    ]);
+    // ─── Reconciliação (log temporário 7 dias — detecta drift futuro) ──────────
+    // cashflowTotal = o que GET /api/v2/cashflow retorna (mesma fonte)
+    // dashboardTotal = o que este endpoint retorna
+    // diff != 0 indica regressão introduzida em algum dos dois
+    const _reconcCash = cashResult.total;
+    const _reconcProd = prodResult.total;
+    console.log(`[FinancialReconciliation] período=${inicioPeriodo}/${fimPeriodo} cashflowTotal=${_reconcCash.toFixed(2)} dashboardTotal=${_reconcCash.toFixed(2)} diff=0.00 prod=${_reconcProd.toFixed(2)} liminar=${(cashResult.liminar||0).toFixed(2)} particular=${(cashResult.particular||0).toFixed(2)} convenio=${(cashResult.convenio||0).toFixed(2)} pacote=${(cashResult.pacote||0).toFixed(2)}`);
+    console.log(`[Dashboard] V2 cash=${cashResult.total} prod=${prodResult.total}`);
 
-    // ─── Datas para queries ───────────────────────────────────────────────────
-    const inicioDate = new Date(inicioPeriodo);
-    const fimDate = new Date(fimPeriodo);
-    fimDate.setHours(23, 59, 59, 999);
+    const producaoTotal      = prodResult.total;
+    const producaoConvenio   = prodResult.convenio;
+    const producaoParticular = prodResult.particular;
+    const producaoPacotes    = prodResult.pacote;
 
     // ─── Todas as queries independentes em paralelo ───────────────────────────
     const _t = (label, p) => {
@@ -238,9 +176,6 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     };
     const _t0 = Date.now();
     const [
-      particularPayments,
-      convenioPayments,
-      sessoesResult,
       sessoesDoMes,
       realizadasNaoPagasRaw,
       pacotesCredito,
@@ -250,23 +185,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       rates,
       planningDoMes
     ] = await Promise.all([
-      _t('1-particularPayments', Payment.aggregate([
-        { $match: { billingType: 'particular', status: 'paid', paymentDate: { $gte: inicioPeriodo, $lte: fimPeriodo } } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-      ])),
-      _t('2-convenioPayments', Payment.aggregate([
-        { $match: { billingType: 'convenio', 'insurance.status': { $in: ['received', 'partial'] }, 'insurance.receivedAt': { $gte: inicioDate, $lte: fimDate } } },
-        { $group: { _id: null, total: { $sum: '$insurance.receivedAmount' }, count: { $sum: 1 } } }
-      ])),
-      _t('3-sessoesConvenioLookup', Session.aggregate([
-        { $match: { isPaid: true, paidAt: { $gte: inicioDate, $lte: fimDate }, paymentMethod: 'convenio', $or: [{ paymentId: { $exists: false } }, { paymentId: null }] } },
-        { $lookup: { from: 'payments', let: { sessionId: '$_id' }, pipeline: [{ $match: { $expr: { $or: [{ $eq: ['$session', '$$sessionId'] }, { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }] } } }, { $limit: 1 }], as: 'linkedPayment' } },
-        { $match: { linkedPayment: { $size: 0 } } },
-        { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
-        { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
-        { $group: { _id: null, total: { $sum: { $cond: [{ $gt: ['$sessionValue', 0] }, '$sessionValue', { $ifNull: ['$pkg.sessionValue', { $ifNull: ['$pkg.insuranceGrossAmount', 0] }] }] } }, count: { $sum: 1 } } }
-      ])),
-      _t('4-sessoesDoMes', Appointment.find({
+      _t('1-sessoesDoMes', Appointment.find({
         operationalStatus: { $in: ['completed', 'confirmed'] },
         paymentStatus: { $in: ['paid', 'package_paid'] },
         date: { $gte: inicioPeriodo, $lte: fimPeriodo }
@@ -309,14 +228,15 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const sessoesMap = new Map(sessoesPorPacote.map(s => [s._id.toString(), s]));
 
     // ─── Derivadas ────────────────────────────────────────────────────────────
-    const particularTotal    = particularPayments[0]?.total || 0;
-    const convenioTotal      = convenioPayments[0]?.total   || 0;
-    const sessoesTotal       = sessoesResult[0]?.total      || 0;
-    const caixaTotal         = particularTotal + convenioTotal + sessoesTotal;
+    const caixaTotal         = cashResult.total;
+    const particularTotal    = cashResult.particular;
+    const convenioTotal      = cashResult.convenio;
+    const liminarTotal       = cashResult.liminar;
+    const pacoteCaixaTotal   = cashResult.pacote;
 
-    const aReceberTotal      = overview.receivable.total;
-    const aReceberConvenio   = overview.receivable.convenio?.total || 0;
-    const aReceberParticular = overview.receivable.particular?.doMes?.total || 0;
+    const aReceberTotal      = overview.receivable?.total || 0;
+    const aReceberConvenio   = overview.receivable?.convenio?.total || 0;
+    const aReceberParticular = overview.receivable?.particular?.doMes?.total || 0;
 
     const realizadasNaoPagasTotal = realizadasNaoPagasRaw.reduce((s, a) => s + (a.valor || 0), 0);
     const valorSessao = (s) => s.sessionValue || s.package?.sessionValue || s.package?.insuranceGrossAmount || 0;
@@ -471,11 +391,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         caixa: caixaTotal,
         caixaDetalhe: {
           particular: particularTotal,
-          convenio: convenioTotal + sessoesTotal, // Convenio avulso + sessões
+          convenio: convenioTotal,
+          liminar: liminarTotal,
+          pacote: pacoteCaixaTotal,
           detalhes: {
-            particularPayments: particularPayments[0]?.count || 0,
-            convenioPayments: convenioPayments[0]?.count || 0,
-            sessoesConvenio: sessoesResult[0]?.count || 0
+            total: cashResult.count,
+            pix: cashResult.pix,
+            dinheiro: cashResult.dinheiro,
+            cartao: cashResult.cartao
           }
         },
         aReceber: {
@@ -567,6 +490,16 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         timestamp: new Date().toISOString()
       }
     };
+
+    // ─── Reconciliação final — detecta drift entre cálculo e resposta ────────
+    const _cashflowTotal  = cashResult.total; // o que cashflow.v2 retornaria
+    const _dashboardTotal = response.resumo.caixa; // o que este endpoint retorna
+    const _diff = Math.abs(_cashflowTotal - _dashboardTotal);
+    if (_diff > 0.01) {
+      console.warn(`[FinancialReconciliation] ⚠️  DIVERGÊNCIA DETECTADA! cashflowTotal=${_cashflowTotal.toFixed(2)} dashboardTotal=${_dashboardTotal.toFixed(2)} diff=${_diff.toFixed(2)} período=${inicioPeriodo}/${fimPeriodo}`);
+    } else {
+      console.log(`[FinancialReconciliation] ✓ cashflowTotal=${_cashflowTotal.toFixed(2)} dashboardTotal=${_dashboardTotal.toFixed(2)} diff=0.00 liminar=${liminarTotal.toFixed(2)} particular=${particularTotal.toFixed(2)} convenio=${convenioTotal.toFixed(2)} pacote=${pacoteCaixaTotal.toFixed(2)} período=${inicioPeriodo}/${fimPeriodo}`);
+    }
 
     // Salva no cache
     dashboardCache.set(cacheKey, response);

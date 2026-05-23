@@ -456,13 +456,15 @@ router.get('/', auth, async (req, res) => {
                     total: production.total,
                     aReceber,
                     recebido: recebidoProducao,
+                    convenioAReceber: production.convenio || 0,
                     quantidadeAtendimentos: production.count,
                     ticketMedio: ticketMedioProducao,
                     taxaEficiencia: parseFloat(taxaEficiencia),
                     porTipo: {
                         particular: production.particular,
                         pacote: production.pacote,
-                        convenio: production.convenio
+                        convenio: production.convenio,
+                        liminar: production.liminar || 0
                     },
                     porEspecialidade: especialidadesResumo
                 },
@@ -540,9 +542,10 @@ router.get('/month', auth, async (req, res) => {
         const end = monthEnd.clone().utc().toDate();
 
         // 🎯 Fonte única de verdade V2
-        const [cashMap, productionResult] = await Promise.all([
+        const [cashMap, productionResult, productionTotals] = await Promise.all([
             unifiedFinancialService.calculateCashByDay(start, end),
-            unifiedFinancialService.calculateProductionByDay(start, end)
+            unifiedFinancialService.calculateProductionByDay(start, end),
+            unifiedFinancialService.calculateProduction(start, end)
         ]);
 
         const producaoMap = productionResult.map;
@@ -562,10 +565,23 @@ router.get('/month', auth, async (req, res) => {
             });
         }
 
+        const caixaBruto = result.reduce((s, d) => s + d.caixa, 0);
+
         res.json({
             success: true,
             month,
-            data: result
+            data: result,
+            resumo: {
+                caixaBruto,
+                producaoTotal: productionTotals.total || 0,
+                convenioAReceber: productionTotals.convenio || 0,
+                porTipo: {
+                    particular: productionTotals.particular || 0,
+                    pacote: productionTotals.pacote || 0,
+                    convenio: productionTotals.convenio || 0,
+                    liminar: productionTotals.liminar || 0
+                }
+            }
         });
 
     } catch (err) {

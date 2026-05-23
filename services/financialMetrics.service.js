@@ -788,20 +788,27 @@ class FinancialMetricsService {
       }
     ]);
 
-    // 3️⃣ Particular do mês: débitos do PatientBalance lançados no período e ainda não pagos
-    const particularReceivable = await PatientBalance.aggregate([
-      { $unwind: '$transactions' },
+    // 3️⃣ Particular do mês: Payment.status='pending' no período
+    // Fonte correta: serviço já realizado mas ainda não recebido.
+    // PatientBalance é ledger contábil — pode estar atrasado ou ausente.
+    const particularReceivable = await Payment.aggregate([
       {
         $match: {
-          'transactions.type': 'debit',
-          $or: [{ 'transactions.isPaid': false }, { 'transactions.isPaid': { $exists: false } }],
-          'transactions.transactionDate': { $gte: start, $lte: end }
+          status: 'pending',
+          amount: { $gt: 0 },
+          billingType: { $nin: ['convenio', 'liminar'] },
+          paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+          $or: [
+            { financialDate: { $gte: start, $lte: end } },
+            { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+            { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+          ]
         }
       },
       {
         $group: {
           _id: null,
-          total: { $sum: '$transactions.amount' },
+          total: { $sum: '$amount' },
           count: { $sum: 1 }
         }
       }
