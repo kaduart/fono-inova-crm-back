@@ -86,16 +86,14 @@ router.get('/', auth, async (req, res) => {
       .sort({ 'period.start': -1 });
     console.log(`[Planning GET] 📊 Encontrados ${plannings.length} planejamentos`);
 
-    // Se solicitado refresh, recalcular todos
+    // Se solicitado refresh, recalcular todos em paralelo
     if (refresh === 'true') {
-      console.log('[Planning GET] 🔄 Recalculando todos os planejamentos...');
-      for (const planning of plannings) {
-        try {
-          await updatePlanningProgress(planning._id);
-        } catch (err) {
-          console.error(`[Planning GET] ❌ Erro ao atualizar ${planning._id}:`, err.message);
-        }
-      }
+      console.log('[Planning GET] 🔄 Recalculando todos os planejamentos em paralelo...');
+      await Promise.all(plannings.map(planning =>
+        updatePlanningProgress(planning._id).catch(err =>
+          console.error(`[Planning GET] ❌ Erro ao atualizar ${planning._id}:`, err.message)
+        )
+      ));
       
       // Buscar novamente após atualização
       plannings = await Planning.find(filters)

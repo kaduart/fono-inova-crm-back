@@ -25,6 +25,8 @@ export async function getInsuranceReceivables(req, res) {
       : null;
 
     let sessionIds = null;
+    let prevMonthTotal = null;
+
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
         return res.status(400).json({ success: false, error: 'Formato de mês inválido. Use YYYY-MM.' });
@@ -34,10 +36,26 @@ export async function getInsuranceReceivables(req, res) {
       if (isNaN(startOfMonth.getTime()) || isNaN(endOfMonth.getTime())) {
         return res.status(400).json({ success: false, error: 'Mês inválido.' });
       }
-      const sessionsInMonth = await Session.find({
-        date: { $gte: startOfMonth, $lte: endOfMonth }
-      }).select('_id').lean();
+
+      const [curY, curM] = month.split('-').map(Number);
+      const prevY = curM === 1 ? curY - 1 : curY;
+      const prevM = curM === 1 ? 12 : curM - 1;
+      const prevStart = new Date(`${prevY}-${String(prevM).padStart(2, '0')}-01T00:00:00-03:00`);
+      const prevEnd = new Date(prevY, prevM, 0, 23, 59, 59, 999); // last day of prevMonth
+
+      const [sessionsInMonth, prevSessionsInMonth] = await Promise.all([
+        Session.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).select('_id').lean(),
+        Session.find({ date: { $gte: prevStart, $lte: prevEnd } }).select('_id').lean()
+      ]);
+
       sessionIds = sessionsInMonth.map(s => s._id);
+
+      const prevFilter = buildInsuranceReceivableFilter(prevSessionsInMonth.map(s => s._id), null);
+      const prevAgg = await Payment.aggregate([
+        { $match: prevFilter },
+        { $group: { _id: null, total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } } } }
+      ]);
+      prevMonthTotal = prevAgg[0]?.total || 0;
     }
 
     const matchFilter = buildInsuranceReceivableFilter(sessionIds, requestedStatuses);
@@ -48,7 +66,7 @@ export async function getInsuranceReceivables(req, res) {
       .populate('package', 'insuranceProvider insuranceGuide')
       .lean();
 
-    return _processPaymentsLegacy(res, payments, provider);
+    return _processPaymentsLegacy(res, payments, provider, prevMonthTotal);
   } catch (error) {
     console.error('[InsuranceV2] Erro:', error);
     res.status(500).json({ success: false, error: error.message, stack: error.stack });
@@ -56,7 +74,7 @@ export async function getInsuranceReceivables(req, res) {
 }
 
 // Função auxiliar para comportamento legacy (sem month)
-async function _processPaymentsLegacy(res, payments, provider) {
+async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = null) {
   // Filtra por provider se especificado
   let filteredPayments = payments;
   if (provider) {
@@ -116,12 +134,16 @@ async function _processPaymentsLegacy(res, payments, provider) {
   
   const result = Object.values(grouped);
   
+  const grandTotal = result.reduce((sum, g) => sum + g.totalPending, 0);
   const summary = {
     totalProviders: result.length,
-    grandTotal: result.reduce((sum, g) => sum + g.totalPending, 0),
-    pendingCount: filteredPayments.filter(p => ['pending_billing', 'billed'].includes(p.insurance?.status)).length
+    grandTotal,
+    pendingCount: filteredPayments.filter(p => ['pending_billing', 'billed'].includes(p.insurance?.status)).length,
+    prevMonthTotal,
+    change: prevMonthTotal !== null ? grandTotal - prevMonthTotal : null,
+    changePercent: prevMonthTotal ? Math.round(((grandTotal - prevMonthTotal) / prevMonthTotal) * 100) : null
   };
-  
+
   res.json({ success: true, data: result, summary });
 }
 
