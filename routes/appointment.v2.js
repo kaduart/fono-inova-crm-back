@@ -1407,7 +1407,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract responsible'
     )
     .populate('payment', 'status amount paymentMethod')
-    .sort({ date: 1, time: 1 })
+    .sort(patientId ? { date: -1, time: -1 } : { date: 1, time: 1 })
     .skip(skip)
     .limit(limitNum)
     .lean();

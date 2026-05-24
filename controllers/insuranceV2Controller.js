@@ -17,174 +17,46 @@ export async function getInsuranceReceivables(req, res) {
     // 🆕 CORREÇÃO: Segue mesma regra do legado (ConvenioMetricsService)
     // Busca SESSÕES completadas no período, não payments por paymentDate
     
-    let sessions = [];
-    
+    // Fonte de verdade: Payment com billingType='convenio'
+    // Session é usada apenas para filtrar pelo date range do mês
+
+    const receivableStatuses = ['pending_billing', 'billed'];
+    const requestedStatuses = status
+      ? status.split(',').map(s => s.trim()).filter(Boolean)
+      : receivableStatuses;
+
+    const matchFilter = {
+      billingType: 'convenio',
+      amount: { $gt: 0 },
+      status: { $ne: 'canceled' },
+      'insurance.status': { $in: requestedStatuses }
+    };
+
     if (month) {
-      // Validar formato YYYY-MM para evitar Invalid Date
       if (!/^\d{4}-\d{2}$/.test(month)) {
         return res.status(400).json({ success: false, error: 'Formato de mês inválido. Use YYYY-MM.' });
       }
-
       const startOfMonth = new Date(month + '-01T00:00:00-03:00');
       const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
-
       if (isNaN(startOfMonth.getTime()) || isNaN(endOfMonth.getTime())) {
         return res.status(400).json({ success: false, error: 'Mês inválido.' });
       }
 
-      // Busca TODAS as sessões completadas do mês e filtra por isConvenioSession
-      // Isso garante consistência com outros endpoints financeiros.
-      const allSessions = await Session.find({
-        status: 'completed',
+      // Filtra payments pelas sessions que caem no mês (fonte de verdade = session.date)
+      const sessionsInMonth = await Session.find({
         date: { $gte: startOfMonth, $lte: endOfMonth }
-      })
+      }).select('_id').lean();
+
+      matchFilter.session = { $in: sessionsInMonth.map(s => s._id) };
+    }
+
+    const payments = await Payment.find(matchFilter)
       .populate('patient', 'fullName phone')
-      .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount insuranceGuideNumber type')
-      .populate('doctor', 'fullName specialty')
-      .sort({ date: -1 })
+      .populate('session', 'date time specialty status')
+      .populate('package', 'insuranceProvider insuranceGuide')
       .lean();
 
-      sessions = allSessions.filter(isConvenioSession);
-    } else {
-      // Sem mês, busca todos os payments pendentes (comportamento antigo)
-      const matchFilter = { billingType: 'convenio' };
-      if (status) {
-        matchFilter['insurance.status'] = status;
-      } else {
-        matchFilter['insurance.status'] = { $in: ['pending_billing', 'billed'] };
-      }
-      
-      const payments = await Payment.find(matchFilter)
-        .populate('patient', 'fullName phone')
-        .populate('session', 'date time specialty status')
-        .populate('package', 'insuranceProvider insuranceGuide')
-        .lean();
-      
-      // Converte payments para formato de sessão
-      return _processPaymentsLegacy(res, payments, provider);
-    }
-    
-    // Filtra por provider se especificado
-    if (provider) {
-      sessions = sessions.filter(s => 
-        s.package?.insuranceProvider === provider || 
-        s.package?.insuranceCompany === provider
-      );
-    }
-    
-    // Para cada sessão, busca o payment associado
-    const sessionIds = sessions
-      .map(s => s._id?.toString())
-      .filter(Boolean);
-
-    const validSessionObjectIds = sessionIds
-      .filter(id => mongoose.isValidObjectId(id))
-      .map(id => new mongoose.Types.ObjectId(id));
-
-    const payments = validSessionObjectIds.length > 0
-      ? await Payment.find({
-          session: { $in: validSessionObjectIds }
-        }).lean()
-      : [];
-    
-    // Cria map de session -> payment
-    const paymentBySession = {};
-    payments.forEach(p => {
-      if (p.session) {
-        paymentBySession[p.session.toString()] = p;
-      }
-    });
-    
-    // Agrupar por CONVÊNIO (formato que InsuranceTab.tsx espera)
-    const grouped = {};
-    
-    for (const session of sessions) {
-      try {
-        const sessionIdStr = session._id?.toString();
-        if (!sessionIdStr) continue;
-
-        const payment = paymentBySession[sessionIdStr];
-        
-        // 🆕 CORREÇÃO: Se não tem payment, considera como 'pending_billing'
-        const paymentStatus = payment?.insurance?.status || 'pending_billing';
-        
-        // Se especificou status, filtra
-        if (status && paymentStatus !== status) continue;
-        // Se não especificou, mostra pending_billing e billed
-        if (!status && !['pending_billing', 'billed'].includes(paymentStatus)) continue;
-        
-        const providerName = session.package?.insuranceProvider || 
-                             session.package?.insuranceCompany || 
-                             payment?.insurance?.provider || 
-                             'Outros';
-        
-        const patientId = session.patient?._id?.toString();
-        if (!patientId) continue;
-        
-        if (!grouped[providerName]) {
-          grouped[providerName] = {
-            _id: providerName,
-            name: providerName,
-            totalPending: 0,
-            count: 0,
-            patients: []
-          };
-        }
-        
-        // Encontrar ou criar o paciente neste grupo
-        let patientGroup = grouped[providerName].patients.find(p => p.patientId === patientId);
-        if (!patientGroup) {
-          patientGroup = {
-            patientId: patientId,
-            patientName: session.patient?.fullName || 'N/A',
-            total: 0,
-            count: 0,
-            payments: []
-          };
-          grouped[providerName].patients.push(patientGroup);
-        }
-        
-        const grossAmount = session.package?.insuranceGrossAmount ||
-                           payment?.insurance?.grossAmount ||
-                           (payment?.amount > 0 ? payment.amount : null) ||
-                           session.sessionValue ||
-                           80;
-        
-        // Atualizar totais
-        grouped[providerName].totalPending += grossAmount;
-        grouped[providerName].count += 1;
-        patientGroup.total += grossAmount;
-        patientGroup.count += 1;
-        
-        // Adicionar payment
-        patientGroup.payments.push({
-          paymentId: payment?._id?.toString() || sessionIdStr,
-          sessionId: sessionIdStr,
-          grossAmount: grossAmount,
-          status: payment?.insurance?.status || 'pending_billing',
-          paymentDate: session.date,
-          authorizationCode: payment?.insurance?.authorizationCode || session.package?.insuranceAuthorizationCode,
-          specialty: session.doctor?.specialty || 'Outros'
-        });
-      } catch (sessionError) {
-        console.error('[InsuranceV2] Erro ao processar sessão:', session?._id, sessionError.message);
-        // Continua processando as demais sessões
-      }
-    }
-    
-    const result = Object.values(grouped);
-    
-    const summary = {
-      totalProviders: result.length,
-      grandTotal: result.reduce((sum, g) => sum + g.totalPending, 0),
-      pendingCount: result.reduce((sum, g) => 
-        sum + g.patients.reduce((pSum, p) => 
-          pSum + p.payments.filter(pay => pay.status === 'pending_billing').length, 0
-        ), 0
-      )
-    };
-    
-    res.json({ success: true, data: result, summary });
+    return _processPaymentsLegacy(res, payments, provider);
   } catch (error) {
     console.error('[InsuranceV2] Erro:', error);
     res.status(500).json({ success: false, error: error.message, stack: error.stack });
@@ -255,7 +127,7 @@ async function _processPaymentsLegacy(res, payments, provider) {
   const summary = {
     totalProviders: result.length,
     grandTotal: result.reduce((sum, g) => sum + g.totalPending, 0),
-    pendingCount: filteredPayments.filter(p => p.insurance?.status === 'pending_billing').length
+    pendingCount: filteredPayments.filter(p => ['pending_billing', 'billed'].includes(p.insurance?.status)).length
   };
   
   res.json({ success: true, data: result, summary });
