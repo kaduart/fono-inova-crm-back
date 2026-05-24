@@ -6,7 +6,7 @@ import Package from '../models/Package.js';
 import { createBatch, sendBatch, processReturn } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
-import { isConvenioSession } from '../utils/billingHelpers.js';
+import { isConvenioSession, buildInsuranceReceivableFilter } from '../utils/billingHelpers.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
 
 // GET /api/v2/payments/insurance/receivables
@@ -20,18 +20,11 @@ export async function getInsuranceReceivables(req, res) {
     // Fonte de verdade: Payment com billingType='convenio'
     // Session é usada apenas para filtrar pelo date range do mês
 
-    const receivableStatuses = ['pending_billing', 'billed'];
     const requestedStatuses = status
       ? status.split(',').map(s => s.trim()).filter(Boolean)
-      : receivableStatuses;
+      : null;
 
-    const matchFilter = {
-      billingType: 'convenio',
-      amount: { $gt: 0 },
-      status: { $ne: 'canceled' },
-      'insurance.status': { $in: requestedStatuses }
-    };
-
+    let sessionIds = null;
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
         return res.status(400).json({ success: false, error: 'Formato de mês inválido. Use YYYY-MM.' });
@@ -41,14 +34,13 @@ export async function getInsuranceReceivables(req, res) {
       if (isNaN(startOfMonth.getTime()) || isNaN(endOfMonth.getTime())) {
         return res.status(400).json({ success: false, error: 'Mês inválido.' });
       }
-
-      // Filtra payments pelas sessions que caem no mês (fonte de verdade = session.date)
       const sessionsInMonth = await Session.find({
         date: { $gte: startOfMonth, $lte: endOfMonth }
       }).select('_id').lean();
-
-      matchFilter.session = { $in: sessionsInMonth.map(s => s._id) };
+      sessionIds = sessionsInMonth.map(s => s._id);
     }
+
+    const matchFilter = buildInsuranceReceivableFilter(sessionIds, requestedStatuses);
 
     const payments = await Payment.find(matchFilter)
       .populate('patient', 'fullName phone')

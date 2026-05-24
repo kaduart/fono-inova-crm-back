@@ -124,6 +124,46 @@ export function resolveSessionBillingType(session) {
   return 'particular';
 }
 
+// ─── Payment helpers ────────────────────────────────────────────────────────
+// Fonte única de verdade para classificação financeira de payments.
+// USE SEMPRE ESSES HELPERS — nunca cheque insurance.status inline nas rotas.
+
+const RECEIVABLE_STATUSES = ['pending_billing', 'billed'];
+const PAID_STATUSES = ['paid', 'received'];
+
+export function isInsuranceReceivable(payment) {
+  if (!payment) return false;
+  if (payment.status === 'canceled') return false;
+  if (!payment.amount || payment.amount <= 0) return false;
+  return RECEIVABLE_STATUSES.includes(payment.insurance?.status);
+}
+
+export function isFinanciallyValid(payment) {
+  if (!payment) return false;
+  return payment.status !== 'canceled' && payment.amount > 0;
+}
+
+export function isPaid(payment) {
+  if (!payment) return false;
+  return PAID_STATUSES.includes(payment.insurance?.status) || payment.status === 'paid';
+}
+
+export function isCanceled(payment) {
+  return payment?.status === 'canceled';
+}
+
+export function buildInsuranceReceivableFilter(sessionIds, requestedStatuses) {
+  const statuses = requestedStatuses?.length ? requestedStatuses : RECEIVABLE_STATUSES;
+  const filter = {
+    billingType: 'convenio',
+    amount: { $gt: 0 },
+    status: { $ne: 'canceled' },
+    'insurance.status': { $in: statuses }
+  };
+  if (sessionIds) filter.session = { $in: sessionIds };
+  return filter;
+}
+
 export async function checkScheduleConflict({
   date,
   time,
