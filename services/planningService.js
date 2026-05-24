@@ -26,32 +26,19 @@ export const updatePlanningProgress = async (planningId) => {
         const startDateObj = new Date(start + 'T00:00:00-03:00');
         const endDateObj = new Date(end + 'T23:59:59-03:00');
 
-        // 1. Buscar sessões concluídas no período
-        const sessions = await Session.find({
-            date: { $gte: startDateObj, $lte: endDateObj },
-            status: 'completed'
-        }).lean();
-
-        // 2. Buscar pagamentos recebidos no período
-        const payments = await Payment.find({
-            paymentDate: { $gte: startDateObj, $lte: endDateObj },
-            status: 'paid'
-        }).lean();
-
-        // 3. Buscar agendamentos completados (para horas trabalhadas mais precisas)
-        const appointments = await Appointment.find({
-            date: { $gte: startDateObj, $lte: endDateObj },
-            clinicalStatus: 'completed'
-        }).lean();
-
-        const completedSessions = sessions.length;
-
-        // Particular: caixa do período (avulso pago + pacote pago — o que entrou em dinheiro)
-        // Convênio: produção do período (sessões feitas × valor, independente de quando paga)
         const startDate = new Date(start + 'T00:00:00.000Z');
         const endDate = new Date(end + 'T23:59:59.999Z');
-        const productionResult = await financialMetricsService.calculateProduction({ startDate, endDate });
-        const cashResult = await financialMetricsService.calculateCash({ startDate, endDate });
+
+        // Todas as queries em paralelo
+        const [sessions, payments, appointments, productionResult, cashResult] = await Promise.all([
+            Session.find({ date: { $gte: startDateObj, $lte: endDateObj }, status: 'completed' }).lean(),
+            Payment.find({ paymentDate: { $gte: startDateObj, $lte: endDateObj }, status: 'paid' }).lean(),
+            Appointment.find({ date: { $gte: startDateObj, $lte: endDateObj }, clinicalStatus: 'completed' }).lean(),
+            financialMetricsService.calculateProduction({ startDate, endDate }),
+            financialMetricsService.calculateCash({ startDate, endDate })
+        ]);
+
+        const completedSessions = sessions.length;
 
         // 🎯 RESULTADO ECONÔMICO DO MÊS
         // = caixa recebido + produção não recebida (convênio pendente)

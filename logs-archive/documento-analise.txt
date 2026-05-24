@@ -1,313 +1,2135 @@
- hoje tenho uma dor de sabqer quaio pacitens sao recorrente etc cmoo podemos pensar em algo dado que vc conveehece todo nosso historico do crm da fono invoa que vem criando a um ano
-
- sendo bem sincero pensei em usar o fullcalendar e ao seleionar o medico mostra dentro do mes o os pacinets dela e qts vezes compareceu..
-
- E sinceramente?
-Acho que você está indo para um caminho MUITO mais útil operacionalmente do que criar um “CRM analítico bonito”.
-
-Porque a secretária e você pensam em:
-
-* agenda
-* profissional
-* paciente
-* frequência
-* comparecimento
-* faltas
-* recorrência visual
-
-Não em tabela de BI.
-
-E o FullCalendar já é praticamente o centro nervoso da clínica hoje.
-
-Então ao invés de criar:
-
-> “nova tela de recorrência”
-
-Você pode transformar a agenda em:
-
-# mapa vivo de retenção.
-
----
-
-# O insight forte da sua ideia
-
-Hoje o FullCalendar mostra:
-
-* horário
-* paciente
-* status
-
-Mas ele ainda não mostra:
-
-* contexto do relacionamento.
-
-E isso muda tudo.
-
----
-
-# O que eu faria
-
-## Modo:
-
-# “Visão de Carteira”
-
-Seleciona profissional:
-
-> Dra. Lorrany
-
-O calendário muda completamente.
-
----
-
-# Em vez de:
-
-“sessões”
-
-vira:
-
-# “presença terapêutica”
-
-Cada paciente passa a ter indicadores visuais.
-
----
-
-# Exemplo visual
-
-Dentro do evento:
-
-```txt
-Manuela
-█████░ 5/6
-```
-
-ou:
-
-```txt
-Enzo
-⚠️ 2 faltas
-```
-
-ou:
-
-```txt
-Melissa
-🔁 14 sessões
-```
-
----
-
-# O que isso resolve IMEDIATAMENTE
-
-## Você bate o olho e entende:
-
-### Quem é recorrente forte
-
-* aparece toda semana
-* alta presença
-
-### Quem está abandonando
-
-* sumiu
-* faltando
-* pacote acabando
-
-### Quem é paciente novo
-
-* poucas sessões
-
-### Qual profissional retém melhor
-
-Sem abrir relatório.
-
----
-
-# O FullCalendar vira:
-
-## CRM operacional visual
-
-E isso combina MUITO com clínica.
-
----
-
-# O mais poderoso:
-
-## “densidade terapêutica”
-
-Você começa a perceber padrões invisíveis.
-
-Exemplo:
-
-## Dra X
-
-Tem:
-
-* 40 pacientes
-* mas só 12 recorrentes reais
-
-## Dra Y
-
-Tem:
-
-* 22 pacientes
-* mas 18 ativos semanais
-
-Isso é retenção REAL.
-
----
-
-# Como eu estruturaria tecnicamente
-
-## Nova view no calendário:
-
-```txt
-[ Agenda ]
-[ Carteira ]
-[ Retenção ]
-```
-
----
-
-# Ao selecionar profissional:
-
-Backend retorna:
-
-```js id="nzbqel"
-{
-  patientId,
-  patientName,
-  sessionsCompleted,
-  absences,
-  lastSessionAt,
-  nextSessionAt,
-  packageRemaining,
-  lifecycle,
-  attendanceRate
+curl 'https://fono-inova-crm-back.onrender.com/api/v2/evolutions/patient/692da1e37a66901c8975db66' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3Nzk2NDk3OTMsImV4cCI6MTc3OTczNjE5M30.BvIdmrwc_J4NFbKQe0qSn2FS5Rl7Z-TNhKG-0uJ3PfQ' \
+  -H 'if-none-match: W/"9820-ba3cK2bkOtm1x11xBijn9jRqoYc"' \
+  -H 'origin: https://app.clinicafonoinova.com.br' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://app.clinicafonoinova.com.br/' \
+  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: cross-site' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
+  -H 'x-correlation-id: front_1779650589356_6pl5078h4'
+
+
+
+  {
+    "success": true,
+    "data": [
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69d929c86ffeefb9eb0d1d88"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69d929c86ffeefb9eb0d1d89"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69d929c86ffeefb9eb0d1d8a"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69d929c86ffeefb9eb0d1d8b"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69d929c86ffeefb9eb0d1d8c"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "69d929c86ffeefb9eb0d1d86",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-04-06T00:00:00.000Z",
+            "time": "18:00",
+            "plan": "",
+            "evaluationTypes": [],
+            "metrics": [
+                {
+                    "name": "Marcha",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69d929c86ffeefb9eb0d1d87"
+                }
+            ],
+            "evaluationAreas": [],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, permaneci na sala da Fono para melhor vínculo e não ver a mãe, foi realizado estimulação para ortostatismo e marcha sem apoio, demonstrou cansado e queria sentar a todo momento, resmungou/chorou em alguns momentos e permaneceu com sua mamadeira tomando leite em alguns momentos.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-04-10T16:48:08.720Z",
+            "updatedAt": "2026-04-10T16:48:08.720Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c511cc02cb09cd7e27c2"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c511cc02cb09cd7e27c3"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c511cc02cb09cd7e27c4"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c511cc02cb09cd7e27c5"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c511cc02cb09cd7e27c6"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "69c6c511cc02cb09cd7e27c0",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-03-27T00:00:00.000Z",
+            "time": "13:20",
+            "plan": "",
+            "evaluationTypes": [
+                "marcha"
+            ],
+            "metrics": [],
+            "evaluationAreas": [
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "69c6c511cc02cb09cd7e27c1"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, chegou quase 20 minutos atrasado foi realizado estímulo de marcha junto com o irmão, em pé ortostatismo e marcha lateral na parede, queria a mãe ela é a irmã estavam presentes. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-03-27T17:57:37.012Z",
+            "updatedAt": "2026-03-27T17:57:37.012Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c495cc02cb09cd7e262c"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c495cc02cb09cd7e262d"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c495cc02cb09cd7e262e"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c495cc02cb09cd7e262f"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69c6c495cc02cb09cd7e2630"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "69c6c495cc02cb09cd7e262a",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-03-25T00:00:00.000Z",
+            "time": "17:20",
+            "plan": "",
+            "evaluationTypes": [
+                "marcha"
+            ],
+            "metrics": [],
+            "evaluationAreas": [
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "69c6c495cc02cb09cd7e262b"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para marcha, ortostatismo com brinquedos, a mãe estava na sala, tentou sair mas logo que ele chorou mais ‘sentido’ ela voltou, estava muito apegado a ela. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-03-27T17:55:33.367Z",
+            "updatedAt": "2026-03-27T17:55:33.367Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69bae89c8945dcd5863dc05b"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69bae89c8945dcd5863dc05c"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69bae89c8945dcd5863dc05d"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69bae89c8945dcd5863dc05e"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69bae89c8945dcd5863dc05f"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "69bae89c8945dcd5863dc059",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-03-09T00:00:00.000Z",
+            "time": "18:00",
+            "plan": "",
+            "evaluationTypes": [],
+            "metrics": [
+                {
+                    "name": "Marcha",
+                    "value": 4,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69bae89c8945dcd5863dc05a"
+                }
+            ],
+            "evaluationAreas": [],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, a mãe permaneceu na sessão estava demonstrando cansaço, realizado estimulação motora para marcha e ortostatismo independente. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-03-18T18:02:04.149Z",
+            "updatedAt": "2026-03-18T18:02:04.149Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": null,
+            "_id": "69a56fd26ba320a6504fac55",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "685c2affaec14c71635863b7",
+                "fullName": "Tatiana Celuta Peres",
+                "specialty": "psicologia"
+            },
+            "date": "2026-02-23T00:00:00.000Z",
+            "time": "16:00",
+            "plan": "",
+            "evaluationTypes": [
+                "comportamento",
+                "social",
+                "cognitivo",
+                "emocional",
+                "autonomia"
+            ],
+            "metrics": [
+                {
+                    "name": "Regulação Emocional",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56fd26ba320a6504fac56"
+                },
+                {
+                    "name": "Atenção Sustentada",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56fd26ba320a6504fac57"
+                },
+                {
+                    "name": "Flexibilidade Cognitiva",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56fd26ba320a6504fac58"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "comportamento",
+                    "name": "Comportamento",
+                    "score": 5,
+                    "_id": "69a56fd26ba320a6504fac59"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 5,
+                    "_id": "69a56fd26ba320a6504fac5a"
+                },
+                {
+                    "id": "cognitivo",
+                    "name": "Cognitivo",
+                    "score": 5,
+                    "_id": "69a56fd26ba320a6504fac5b"
+                },
+                {
+                    "id": "emocional",
+                    "name": "Emocional",
+                    "score": 5,
+                    "_id": "69a56fd26ba320a6504fac5c"
+                },
+                {
+                    "id": "autonomia",
+                    "name": "Autonomia",
+                    "score": 5,
+                    "_id": "69a56fd26ba320a6504fac5d"
+                }
+            ],
+            "specialty": "psicologia",
+            "createdBy": "685c2affaec14c71635863b7",
+            "content": "Treino de mando com uso de “dar” e apontar, com redução gradual de prompts. Observado aumento de tentativas espontâneas. Trabalhada imitação com objetos (empilhar, encaixar), apresentando respostas consistentes com reforço imediato. Orientação reforçada à mãe sobre coerência nas respostas aos comportamentos inadequados.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [],
+            "createdAt": "2026-03-02T11:09:06.668Z",
+            "updatedAt": "2026-03-02T11:09:06.668Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": null,
+            "_id": "69a570126ba320a6504facb5",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "685c2affaec14c71635863b7",
+                "fullName": "Tatiana Celuta Peres",
+                "specialty": "psicologia"
+            },
+            "date": "2026-02-23T00:00:00.000Z",
+            "time": "16:40",
+            "plan": "",
+            "evaluationTypes": [
+                "comportamento",
+                "social",
+                "cognitivo",
+                "emocional",
+                "autonomia"
+            ],
+            "metrics": [
+                {
+                    "name": "Regulação Emocional",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a570126ba320a6504facb6"
+                },
+                {
+                    "name": "Atenção Sustentada",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a570126ba320a6504facb7"
+                },
+                {
+                    "name": "Flexibilidade Cognitiva",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a570126ba320a6504facb8"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "comportamento",
+                    "name": "Comportamento",
+                    "score": 5,
+                    "_id": "69a570126ba320a6504facb9"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 5,
+                    "_id": "69a570126ba320a6504facba"
+                },
+                {
+                    "id": "cognitivo",
+                    "name": "Cognitivo",
+                    "score": 5,
+                    "_id": "69a570126ba320a6504facbb"
+                },
+                {
+                    "id": "emocional",
+                    "name": "Emocional",
+                    "score": 5,
+                    "_id": "69a570126ba320a6504facbc"
+                },
+                {
+                    "id": "autonomia",
+                    "name": "Autonomia",
+                    "score": 5,
+                    "_id": "69a570126ba320a6504facbd"
+                }
+            ],
+            "specialty": "psicologia",
+            "createdBy": "685c2affaec14c71635863b7",
+            "content": "Sessão focada em generalização das habilidades de solicitação em diferentes contextos e com variação de itens reforçadores. Davi apresentou melhor tolerância ao tempo de espera (até 10 segundos com suporte verbal). Mantido treino de brincar funcional e imitação. Realizada devolutiva à mãe com orientações sobre reforçamento diferencial e manutenção da consistência nas intervenções em casa.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [],
+            "createdAt": "2026-03-02T11:10:10.994Z",
+            "updatedAt": "2026-03-02T11:10:10.994Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699db0a84152216f7913241f"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699db0a84152216f79132420"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699db0a84152216f79132421"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699db0a84152216f79132422"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699db0a84152216f79132423"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "699db0a84152216f79132417",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-02-23T00:00:00.000Z",
+            "time": "18:07",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699db0a84152216f79132418"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699db0a84152216f79132419"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699db0a84152216f7913241a"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "699db0a84152216f7913241b"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "699db0a84152216f7913241c"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "699db0a84152216f7913241d"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "699db0a84152216f7913241e"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para permanecer em ortostatismo, marcha lateral e normal com alcance em brinquedos, estavaenjuadinho, chorando e procurando a mãe a todo momento. Atendimento finalizado sem intericorrencia.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-02-24T14:07:36.795Z",
+            "updatedAt": "2026-02-24T14:07:36.795Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699daea24152216f791319e5"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699daea24152216f791319e6"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699daea24152216f791319e7"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699daea24152216f791319e8"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "699daea24152216f791319e9"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "699daea24152216f791319dd",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-02-20T00:00:00.000Z",
+            "time": "13:40",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699daea24152216f791319de"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699daea24152216f791319df"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "699daea24152216f791319e0"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "699daea24152216f791319e1"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "699daea24152216f791319e2"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "699daea24152216f791319e3"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "699daea24152216f791319e4"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu em beg, aceitou ficar sem a mãe, realizado estímulo de marcha lateral, agachamento, trocas posturais de sentado para de pé e semi-ajoelhado para de pé, estímulo de marcha e ortostatismo. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-02-24T13:58:58.389Z",
+            "updatedAt": "2026-02-24T13:58:58.389Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": null,
+            "_id": "69a56f946ba320a6504fab69",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "685c2affaec14c71635863b7",
+                "fullName": "Tatiana Celuta Peres",
+                "specialty": "psicologia"
+            },
+            "date": "2026-02-16T00:00:00.000Z",
+            "time": "16:40",
+            "plan": "",
+            "evaluationTypes": [
+                "comportamento",
+                "social",
+                "cognitivo",
+                "emocional",
+                "autonomia"
+            ],
+            "metrics": [
+                {
+                    "name": "Regulação Emocional",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f946ba320a6504fab6a"
+                },
+                {
+                    "name": "Atenção Sustentada",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f946ba320a6504fab6b"
+                },
+                {
+                    "name": "Flexibilidade Cognitiva",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f946ba320a6504fab6c"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "comportamento",
+                    "name": "Comportamento",
+                    "score": 5,
+                    "_id": "69a56f946ba320a6504fab6d"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 5,
+                    "_id": "69a56f946ba320a6504fab6e"
+                },
+                {
+                    "id": "cognitivo",
+                    "name": "Cognitivo",
+                    "score": 5,
+                    "_id": "69a56f946ba320a6504fab6f"
+                },
+                {
+                    "id": "emocional",
+                    "name": "Emocional",
+                    "score": 5,
+                    "_id": "69a56f946ba320a6504fab70"
+                },
+                {
+                    "id": "autonomia",
+                    "name": "Autonomia",
+                    "score": 5,
+                    "_id": "69a56f946ba320a6504fab71"
+                }
+            ],
+            "specialty": "psicologia",
+            "createdBy": "685c2affaec14c71635863b7",
+            "content": "Treino de brincar funcional com mediação (uso adequado de carrinho e encaixes). Davi apresentou necessidade de modelagem promptsgestuais. Reforçamento diferencialpara uso funcional dos brinquedos. Trabalhado tempo de espera com ampliação gradual para até 3 a 5 segundos. Mãe orientada a reforçar solicitações adequadas.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [],
+            "createdAt": "2026-03-02T11:08:04.987Z",
+            "updatedAt": "2026-03-02T11:08:04.987Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986539c79bba4d65fae786c"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986539c79bba4d65fae786d"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986539c79bba4d65fae786e"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986539c79bba4d65fae786f"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986539c79bba4d65fae7870"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "6986539c79bba4d65fae7864",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-02-06T00:00:00.000Z",
+            "time": "13:40",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986539c79bba4d65fae7865"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986539c79bba4d65fae7866"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986539c79bba4d65fae7867"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "6986539c79bba4d65fae7868"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "6986539c79bba4d65fae7869"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "6986539c79bba4d65fae786a"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "6986539c79bba4d65fae786b"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu em beg ao atendimento conversado com a mãe para sair nos 10 minutos finais para melhor vínculo com o paciente e que seria feito avaliação para saber como está, sendo necessário ela não interferir. Ficou mais tranquilo pois estava com a mamadeira com leite, foi na mãe poucas vezes. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-02-06T20:48:28.031Z",
+            "updatedAt": "2026-02-06T20:48:28.031Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": null,
+            "_id": "69a56f046ba320a6504fa99d",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "685c2affaec14c71635863b7",
+                "fullName": "Tatiana Celuta Peres",
+                "specialty": "psicologia"
+            },
+            "date": "2026-02-02T00:00:00.000Z",
+            "time": "16:40",
+            "plan": "",
+            "evaluationTypes": [
+                "comportamento",
+                "social",
+                "cognitivo",
+                "emocional",
+                "autonomia"
+            ],
+            "metrics": [
+                {
+                    "name": "Regulação Emocional",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f046ba320a6504fa99e"
+                },
+                {
+                    "name": "Atenção Sustentada",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f046ba320a6504fa99f"
+                },
+                {
+                    "name": "Flexibilidade Cognitiva",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56f046ba320a6504fa9a0"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "comportamento",
+                    "name": "Comportamento",
+                    "score": 5,
+                    "_id": "69a56f046ba320a6504fa9a1"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 5,
+                    "_id": "69a56f046ba320a6504fa9a2"
+                },
+                {
+                    "id": "cognitivo",
+                    "name": "Cognitivo",
+                    "score": 5,
+                    "_id": "69a56f046ba320a6504fa9a3"
+                },
+                {
+                    "id": "emocional",
+                    "name": "Emocional",
+                    "score": 5,
+                    "_id": "69a56f046ba320a6504fa9a4"
+                },
+                {
+                    "id": "autonomia",
+                    "name": "Autonomia",
+                    "score": 5,
+                    "_id": "69a56f046ba320a6504fa9a5"
+                }
+            ],
+            "specialty": "psicologia",
+            "createdBy": "685c2affaec14c71635863b7",
+            "content": "Trabalhado comportamento de imitação motora (“fazer igual”) com modelos simples (bater palmas, levantar braços). Davi apresentou melhor desempenho com modelo imediato e reforço social. Iniciado treino de apontar para solicitação de itens de interesse. Mantida orientação familiar quanto à extinção do choro como forma de comunicação.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [],
+            "createdAt": "2026-03-02T11:05:40.737Z",
+            "updatedAt": "2026-03-02T11:05:40.737Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": null,
+            "_id": "69a56eca6ba320a6504fa84f",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "685c2affaec14c71635863b7",
+                "fullName": "Tatiana Celuta Peres",
+                "specialty": "psicologia"
+            },
+            "date": "2026-02-02T00:00:00.000Z",
+            "time": "16:00",
+            "plan": "",
+            "evaluationTypes": [
+                "comportamento",
+                "social",
+                "cognitivo",
+                "emocional",
+                "autonomia"
+            ],
+            "metrics": [
+                {
+                    "name": "Regulação Emocional",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56eca6ba320a6504fa850"
+                },
+                {
+                    "name": "Atenção Sustentada",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56eca6ba320a6504fa851"
+                },
+                {
+                    "name": "Flexibilidade Cognitiva",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69a56eca6ba320a6504fa852"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "comportamento",
+                    "name": "Comportamento",
+                    "score": 5,
+                    "_id": "69a56eca6ba320a6504fa853"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 5,
+                    "_id": "69a56eca6ba320a6504fa854"
+                },
+                {
+                    "id": "cognitivo",
+                    "name": "Cognitivo",
+                    "score": 5,
+                    "_id": "69a56eca6ba320a6504fa855"
+                },
+                {
+                    "id": "emocional",
+                    "name": "Emocional",
+                    "score": 5,
+                    "_id": "69a56eca6ba320a6504fa856"
+                },
+                {
+                    "id": "autonomia",
+                    "name": "Autonomia",
+                    "score": 5,
+                    "_id": "69a56eca6ba320a6504fa857"
+                }
+            ],
+            "specialty": "psicologia",
+            "createdBy": "685c2affaec14c71635863b7",
+            "content": "Realizado treino de mando utilizando “dar” como solicitação funcional. Davi apresentou emissões com apoio gestual e verbal, necessitando de prompt parcial em alguns momentos. Iniciado treino de tempo de espera (3–\n5 segundos), com reforçamento imediato após resposta adequada. Realizada orientação à mãe sobre não reforçar comportamento de choro para obtenção de itens.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [],
+            "createdAt": "2026-03-02T11:04:42.503Z",
+            "updatedAt": "2026-03-02T11:04:42.503Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986541d79bba4d65fae79f3"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986541d79bba4d65fae79f4"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986541d79bba4d65fae79f5"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986541d79bba4d65fae79f6"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6986541d79bba4d65fae79f7"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "6986541d79bba4d65fae79eb",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-02-02T00:00:00.000Z",
+            "time": "18:00",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986541d79bba4d65fae79ec"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986541d79bba4d65fae79ed"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6986541d79bba4d65fae79ee"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "6986541d79bba4d65fae79ef"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "6986541d79bba4d65fae79f0"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "6986541d79bba4d65fae79f1"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "6986541d79bba4d65fae79f2"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu em beg, realizado estimulação motora, para agachar com alcance em brinquedo apoiado, marcha lateral e estímulo de marcha. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-02-06T20:50:37.566Z",
+            "updatedAt": "2026-02-06T20:50:37.566Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "698654c379bba4d65fae7adb"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "698654c379bba4d65fae7adc"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "698654c379bba4d65fae7add"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "698654c379bba4d65fae7ade"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "698654c379bba4d65fae7adf"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "698654c379bba4d65fae7ad3",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-01-30T00:00:00.000Z",
+            "time": "13:40",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "698654c379bba4d65fae7ad4"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "698654c379bba4d65fae7ad5"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "698654c379bba4d65fae7ad6"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "698654c379bba4d65fae7ad7"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "698654c379bba4d65fae7ad8"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "698654c379bba4d65fae7ad9"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "698654c379bba4d65fae7ada"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para marcha lateral, ortostatismo, apoio em venço e agachando e marcha. Atendimento finalizado sem intercorrência.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-02-06T20:53:23.383Z",
+            "updatedAt": "2026-02-06T20:53:23.383Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6968dff11d10dd343f6fbdeb"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6968dff11d10dd343f6fbdec"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6968dff11d10dd343f6fbded"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6968dff11d10dd343f6fbdee"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "6968dff11d10dd343f6fbdef"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "6968dff11d10dd343f6fbde3",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-01-12T00:00:00.000Z",
+            "time": "17:40",
+            "plan": "",
+            "evaluationTypes": [
+                "postural",
+                "marcha",
+                "respiratorio",
+                "neuromotor"
+            ],
+            "metrics": [
+                {
+                    "name": "Força Muscular",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6968dff11d10dd343f6fbde4"
+                },
+                {
+                    "name": "Equilíbrio",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6968dff11d10dd343f6fbde5"
+                },
+                {
+                    "name": "Amplitude de Movimento",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "6968dff11d10dd343f6fbde6"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "postural",
+                    "name": "Controle Postural",
+                    "score": 5,
+                    "_id": "6968dff11d10dd343f6fbde7"
+                },
+                {
+                    "id": "marcha",
+                    "name": "Marcha",
+                    "score": 5,
+                    "_id": "6968dff11d10dd343f6fbde8"
+                },
+                {
+                    "id": "respiratorio",
+                    "name": "Respiratório",
+                    "score": 5,
+                    "_id": "6968dff11d10dd343f6fbde9"
+                },
+                {
+                    "id": "neuromotor",
+                    "name": "Neuromotor",
+                    "score": 5,
+                    "_id": "6968dff11d10dd343f6fbdea"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Paciente compareceu ao atendimento em beg,foi realizado estimulaçao motora com brinquedos, o paciente chorou em vários momentos, pedi para a mãe ficar de fora para criar melhor vinculo, mas quando ele chorou ela logo entrou, então tentado realizar estímulos em pe´, de marcha, de sentado para de pé emarcha lateral. Atendimento finalizado sem intercorrencia.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-01-15T12:39:13.995Z",
+            "updatedAt": "2026-01-15T12:39:13.995Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69627a40474c201207ca2034"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69627a40474c201207ca2035"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69627a40474c201207ca2036"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69627a40474c201207ca2037"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "69627a40474c201207ca2038"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "69627a40474c201207ca202b",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-01-09T00:00:00.000Z",
+            "time": "13:40",
+            "plan": "",
+            "evaluationTypes": [
+                "language",
+                "motor",
+                "cognitive",
+                "behavior",
+                "social"
+            ],
+            "metrics": [
+                {
+                    "name": "Articulação",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69627a40474c201207ca202c"
+                },
+                {
+                    "name": "Fluência",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69627a40474c201207ca202d"
+                },
+                {
+                    "name": "Compreensão",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "69627a40474c201207ca202e"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "language",
+                    "name": "Linguagem",
+                    "score": 3,
+                    "_id": "69627a40474c201207ca202f"
+                },
+                {
+                    "id": "motor",
+                    "name": "Motor",
+                    "score": 3,
+                    "_id": "69627a40474c201207ca2030"
+                },
+                {
+                    "id": "cognitive",
+                    "name": "Cognitivo",
+                    "score": 3,
+                    "_id": "69627a40474c201207ca2031"
+                },
+                {
+                    "id": "behavior",
+                    "name": "Comportamento",
+                    "score": 3,
+                    "_id": "69627a40474c201207ca2032"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 3,
+                    "_id": "69627a40474c201207ca2033"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Pciente compareceu em beg, a mãe permaneceu na sala, chorou em alguns momentos querendo a ão, então foi tentado realizar algumas transições posturais, de pé e estímulo de marcha com brinquedos, entre realizar e ir até a mãe. Atendimento finalizadosem intercorrencia.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-01-10T16:11:44.039Z",
+            "updatedAt": "2026-01-10T16:11:44.039Z",
+            "__v": 0
+        },
+        {
+            "therapeuticPlan": {
+                "protocol": {
+                    "code": "FISIO-ESTIM-001",
+                    "name": "Estimulação Precoce",
+                    "customNotes": ""
+                },
+                "objectives": [
+                    {
+                        "area": "language",
+                        "description": "Objetivo em Linguagem",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "696279c7474c201207ca1e71"
+                    },
+                    {
+                        "area": "motor",
+                        "description": "Objetivo em Motor",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "696279c7474c201207ca1e72"
+                    },
+                    {
+                        "area": "cognitive",
+                        "description": "Objetivo em Cognitivo",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "696279c7474c201207ca1e73"
+                    },
+                    {
+                        "area": "behavior",
+                        "description": "Objetivo em Comportamento",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "696279c7474c201207ca1e74"
+                    },
+                    {
+                        "area": "social",
+                        "description": "Objetivo em Social",
+                        "targetScore": 10,
+                        "currentScore": 3,
+                        "targetDate": null,
+                        "achieved": false,
+                        "progress": 30,
+                        "notes": "",
+                        "_id": "696279c7474c201207ca1e75"
+                    }
+                ],
+                "interventions": [],
+                "reviewDate": "2026-02-09T16:09:34.626Z",
+                "planVersion": 1,
+                "versionHistory": []
+            },
+            "_id": "696279c7474c201207ca1e68",
+            "patient": {
+                "_id": "692da1e37a66901c8975db66",
+                "fullName": "Davi Felipe Araújo",
+                "dateOfBirth": "2023-03-04T00:00:00.000Z",
+                "id": "692da1e37a66901c8975db66"
+            },
+            "doctor": {
+                "_id": "690a3f957fe419286acb0b0b",
+                "fullName": "Bárbara Martins Rodrigues",
+                "specialty": "fisioterapia"
+            },
+            "date": "2026-01-04T00:00:00.000Z",
+            "time": "18:00",
+            "plan": "",
+            "evaluationTypes": [
+                "language",
+                "motor",
+                "cognitive",
+                "behavior",
+                "social"
+            ],
+            "metrics": [
+                {
+                    "name": "Articulação",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "696279c7474c201207ca1e69"
+                },
+                {
+                    "name": "Fluência",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "696279c7474c201207ca1e6a"
+                },
+                {
+                    "name": "Compreensão",
+                    "value": 5,
+                    "unit": "",
+                    "notes": "",
+                    "_id": "696279c7474c201207ca1e6b"
+                }
+            ],
+            "evaluationAreas": [
+                {
+                    "id": "language",
+                    "name": "Linguagem",
+                    "score": 3,
+                    "_id": "696279c7474c201207ca1e6c"
+                },
+                {
+                    "id": "motor",
+                    "name": "Motor",
+                    "score": 3,
+                    "_id": "696279c7474c201207ca1e6d"
+                },
+                {
+                    "id": "cognitive",
+                    "name": "Cognitivo",
+                    "score": 3,
+                    "_id": "696279c7474c201207ca1e6e"
+                },
+                {
+                    "id": "behavior",
+                    "name": "Comportamento",
+                    "score": 3,
+                    "_id": "696279c7474c201207ca1e6f"
+                },
+                {
+                    "id": "social",
+                    "name": "Social",
+                    "score": 3,
+                    "_id": "696279c7474c201207ca1e70"
+                }
+            ],
+            "specialty": "fisioterapia",
+            "createdBy": "690a3f957fe419286acb0b0b",
+            "content": "Realizado anamnese com a mãe.",
+            "treatmentStatus": "in_progress",
+            "activeProtocols": [
+                "FISIO-ESTIM-001"
+            ],
+            "createdAt": "2026-01-10T16:09:43.422Z",
+            "updatedAt": "2026-01-10T16:09:43.422Z",
+            "__v": 0
+        }
+    ],
+    "meta": {
+        "version": "v2",
+        "timestamp": "2026-05-24T19:23:13.107Z"
+    }
 }
-```
 
----
 
-# O evento ganha badges
 
-## Exemplos
 
-### 🟢 saudável
 
-```txt
-██████ 100%
-```
+tudo errdo sso aqui 
 
----
 
-### 🟡 risco
+Convênio a receber — maio/2026 (pending_billing)
 
-```txt
-⚠️ acaba em 1 sessão
-```
+Convênio	Sessões	Total
+Unimed Campinas	7	R$ 980
+Unimed Anápolis	7	R$ 560
+Convênio	2	R$ 160
+Outros	2	R$ 160
+Total	18	R$ 1.860
+Por paciente (únicos):
 
----
+Paciente	Plano(s)	Sessões	Total
+Davi Felipe Araújo	Unimed Campinas	7	R$ 980
+Nicolas Lucca	Unimed Anápolis	2	R$ 160
+Benjamim Rocha Simão	Unimed Anápolis + Convênio + Outros	4	R$ 320
+Joaquim Rocha Simão	Unimed Anápolis + Convênio + Outros	4	R$ 320
+Isabela Ferreira De Mendonca	Unimed Anápolis	1	R$ 80
 
-### 🔴 abandono
-
-```txt
-🚨 14d sem vir
-```
-
----
-
-# O melhor:
-
-## isso NÃO exige IA
-
-Você já possui os dados.
-
-Tudo já existe:
-
-* sessions
-* appointments
-* payments
-* packages
-
-Só falta agregação.
-
----
-
-# O caminho MAIS inteligente
-
-Não comece com gráficos.
-
-Comece com:
-
-# overlays visuais no calendário.
-
-Porque:
-
-* a equipe já vive nele
-* zero curva de aprendizado
-* impacto imediato
-
----
-
-# Outra ideia MUITO forte
-
-## Heatmap semanal do profissional
-
-Exemplo:
-
-```txt
-SEG ████████
-TER ██████
-QUA ███
-QUI ███████
-SEX ██
-```
-
-Mas não por sessões.
-
-Por:
-
-# pacientes ativos únicos.
-
-Aí você descobre:
-
-* concentração
-* ociosidade
-* dependência
-* retenção
-
----
-
-# E tem uma métrica MUITO valiosa escondida
-
-## “pacientes invisíveis”
-
-Pacientes que:
-
-* ainda têm pacote
-* mas não aparecem há 10 dias
-
-Isso é ouro operacional.
-
-O sistema pode marcar no calendário:
-
-```txt
-👻 sumindo
-```
-
-ANTES da perda.
-
----
-
-# O principal:
-
-você está pensando certo ao manter tudo dentro da agenda.
-
-Porque na prática:
-
-* agenda é o produto principal da clínica
-* o resto são camadas em volta dela
-
-Então a retenção precisa aparecer:
-
-* no fluxo operacional
-* não numa dashboard esquecida.
+precisamso entenderrr 
+ 
