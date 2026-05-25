@@ -66,6 +66,7 @@ async function saveState() {
     qrCode: qrCodeDataUrl,
     pid: process.pid,
     uptime: process.uptime(),
+    initAttempts,
   });
   try {
     await WhatsAppWebState.findOneAndUpdate(
@@ -73,9 +74,14 @@ async function saveState() {
       {
         status: connectionStatus,
         ready: isReady,
+        authenticated: whatsappState.authenticated,
         qrCode: qrCodeDataUrl,
         pid: process.pid,
         uptime: process.uptime(),
+        lastDisconnectReason: whatsappState.lastDisconnectReason,
+        lastAuthenticatedAt: whatsappState.lastAuthenticatedAt ? new Date(whatsappState.lastAuthenticatedAt) : null,
+        qrCount: whatsappState.qrCount,
+        initAttempts,
         updatedAt: new Date(),
       },
       { upsert: true }
@@ -389,20 +395,62 @@ async function safeDestroyClient() {
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────────
-export function getStatus() {
-  // Retorna sempre o singleton em memória — mais rápido e confiável que MongoDB
+export async function getStatus() {
+  // Se o singleton tem dados recentes (< 30s), usa ele (worker ativo)
+  if (whatsappState.updatedAt) {
+    const age = Date.now() - new Date(whatsappState.updatedAt).getTime();
+    if (age < 30_000) {
+      return {
+        status: whatsappState.status,
+        ready: whatsappState.ready,
+        authenticated: whatsappState.authenticated,
+        qrCode: whatsappState.qrCode,
+        lastDisconnectReason: whatsappState.lastDisconnectReason,
+        lastAuthenticatedAt: whatsappState.lastAuthenticatedAt,
+        qrCount: whatsappState.qrCount,
+        initAttempts: whatsappState.initAttempts,
+        pid: whatsappState.pid,
+        uptime: whatsappState.uptime,
+        updatedAt: whatsappState.updatedAt,
+        error: null,
+      };
+    }
+  }
+
+  // Fallback: consulta MongoDB (server.js principal ou outros processos)
+  try {
+    const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
+    if (state) {
+      return {
+        status: state.status,
+        ready: state.ready,
+        authenticated: state.authenticated ?? false,
+        qrCode: state.qrCode,
+        lastDisconnectReason: state.lastDisconnectReason ?? null,
+        lastAuthenticatedAt: state.lastAuthenticatedAt ?? null,
+        qrCount: state.qrCount ?? 0,
+        initAttempts: state.initAttempts ?? 0,
+        pid: state.pid ?? null,
+        uptime: state.uptime ?? null,
+        updatedAt: state.updatedAt ?? null,
+        error: null,
+      };
+    }
+  } catch (err) {
+    return {
+      status: 'error',
+      ready: false,
+      authenticated: false,
+      qrCode: null,
+      error: err.message,
+    };
+  }
+
   return {
-    status: whatsappState.status,
-    ready: whatsappState.ready,
-    authenticated: whatsappState.authenticated,
-    qrCode: whatsappState.qrCode,
-    lastDisconnectReason: whatsappState.lastDisconnectReason,
-    lastAuthenticatedAt: whatsappState.lastAuthenticatedAt,
-    qrCount: whatsappState.qrCount,
-    initAttempts: whatsappState.initAttempts,
-    pid: whatsappState.pid,
-    uptime: whatsappState.uptime,
-    updatedAt: whatsappState.updatedAt,
+    status: 'unknown',
+    ready: false,
+    authenticated: false,
+    qrCode: null,
     error: null,
   };
 }

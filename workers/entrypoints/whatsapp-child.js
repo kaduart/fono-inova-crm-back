@@ -120,6 +120,20 @@ async function main() {
         console.warn('[CHILD] Não foi possível criar booting flag:', e.message);
     }
 
+    // Handler para mensagens do parent (reconnect request via HTTP)
+    process.on('message', async (msg) => {
+        if (!msg) return;
+        if (msg.type === 'reconnect_request') {
+            console.log('[CHILD] 🔄 Reconnect request recebido do parent');
+            try {
+                const { reconnect } = await import('../../services/whatsappWebJsService.js');
+                await reconnect();
+            } catch (e) {
+                console.error('[CHILD] Erro ao reconectar:', e.message);
+            }
+        }
+    });
+
     // Inicializa WhatsApp
     await initWhatsAppClient();
     console.log('[CHILD] 🟢 WhatsApp inicializado');
