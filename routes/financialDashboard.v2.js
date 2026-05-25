@@ -1602,8 +1602,15 @@ async function calculatePendentes(year, month) {
         byBillingType[btype].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
     }
 
+    // Total de débitos de particular/pacote independente do mês (inclui dívidas antigas)
+    const allParticularTotal = allPendingRaw
+        .filter(p => p.billingType !== 'convenio' && p.paymentMethod !== 'convenio')
+        .reduce((s, p) => s + (p.amount || 0), 0);
+
     return {
         total: parseFloat(total.toFixed(2)),
+        allPendingTotal: parseFloat(allPendingTotal.toFixed(2)),
+        allParticularTotal: parseFloat(allParticularTotal.toFixed(2)),
         convenio: {
             total: parseFloat(convenioTotal.toFixed(2)),
             count: convenioItems.length,
