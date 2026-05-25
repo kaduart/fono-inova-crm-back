@@ -644,6 +644,7 @@ router.get('/slots', auth, async (req, res) => {
         recurrenceCount:  patientCount,
         slotTotalSessions: row.histCompleted,
         recentCompleted:  row.recentCompleted,
+        recentMissed:     row.recentMissed || 0,
         attendanceRate:   Math.round(attendanceRate * 100) / 100,
 
         packageRemaining,
