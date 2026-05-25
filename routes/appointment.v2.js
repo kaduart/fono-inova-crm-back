@@ -2338,6 +2338,35 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
       await mongoSession.abortTransaction();
       transactionAborted = true;
     }
+
+    // 🎯 Conflito de slot: transforma E11000 em mensagem legível com nome do paciente
+    if (error.code === 11000 && error.message?.includes('unique_appointment_slot')) {
+      const conflictTime = req.body.time || '';
+      const conflictDoctorId = req.body.doctorId || (await Appointment.findById(id).select('doctor').lean())?.doctor;
+      const conflictDate = req.body.date ? parseDateInTimezone(req.body.date, conflictTime || '00:00') : null;
+
+      let patientName = 'outro paciente';
+      if (conflictDate && conflictDoctorId) {
+        const conflicting = await Appointment.findOne({
+          doctor: conflictDoctorId,
+          date: conflictDate,
+          time: conflictTime,
+          _id: { $ne: id }
+        }).select('patientInfo').lean();
+        if (conflicting?.patientInfo?.fullName) patientName = conflicting.patientInfo.fullName;
+      }
+
+      const dateFormatted = req.body.date
+        ? new Date(req.body.date + 'T12:00:00').toLocaleDateString('pt-BR')
+        : 'a data selecionada';
+
+      throw createBusinessError(
+        `Conflito de horário: ${patientName} já tem agendamento em ${dateFormatted} às ${conflictTime}. Escolha outro horário.`,
+        409,
+        'APPOINTMENT_SLOT_CONFLICT'
+      );
+    }
+
     throw error;
   } finally {
     mongoSession.endSession();
