@@ -27,11 +27,26 @@ import WhatsAppWebState from '../models/WhatsAppWebState.js';
 // ─── Caminho de persistência da sessão (module-level para uso em clearSession/reconnect) ─
 const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
 
-// ─── Estado simples ──────────────────────────────────────────────────────────
+// ─── Estado singleton em memória (fonte de verdade para rotas, parent, frontend) ─
+export const whatsappState = {
+  status: 'starting',
+  ready: false,
+  authenticated: false,
+  qrCode: null,
+  lastDisconnectReason: null,
+  lastAuthenticatedAt: null,
+  qrCount: 0,
+  initAttempts: 0,
+  updatedAt: null,
+  pid: null,
+  uptime: null,
+};
+
+// ─── Estado interno do serviço ───────────────────────────────────────────────
 let client = null;
 let isReady = false;
 let qrCodeDataUrl = null;
-let connectionStatus = 'waiting_mongo';
+let connectionStatus = 'starting';
 let isInitializing = false;
 let retryTimeout = null;
 let initAttempts = 0;
@@ -39,8 +54,19 @@ const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
 let readyPollInterval = null;
 
-// ─── Persistência MongoDB ────────────────────────────────────────────────────
+function updateState(updates) {
+  Object.assign(whatsappState, updates, { updatedAt: new Date().toISOString() });
+}
+
+// ─── Persistência MongoDB + singleton em memória ─────────────────────────────
 async function saveState() {
+  updateState({
+    status: connectionStatus,
+    ready: isReady,
+    qrCode: qrCodeDataUrl,
+    pid: process.pid,
+    uptime: process.uptime(),
+  });
   try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
@@ -147,9 +173,6 @@ function createClient() {
         '--password-store=basic',
         '--use-mock-keychain',
         '--no-zygote',
-        '--single-process',
-        '--renderer-process-limit=1',
-        '--js-flags=--max_old_space_size=96',
         '--disable-features=AudioServiceOutOfProcess',
         '--disable-software-rasterizer',
         '--disable-gl-extensions',
@@ -183,11 +206,18 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 📡 qr gerado — escaneie com o celular`);
     connectionStatus = 'qr';
+    whatsappState.qrCount++;
+    if (whatsappState.qrCount > 10) {
+      console.warn('[WhatsAppWeb] ⚠️ POSSÍVEL LOOP DE AUTH — qrCount > 10');
+    }
     try {
       qrCodeDataUrl = await qrcode.toDataURL(qr);
       const base64Data = qrCodeDataUrl.replace(/^data:image\/png;base64,/, '');
       fs.writeFileSync(path.resolve(process.cwd(), 'qr-code.png'), Buffer.from(base64Data, 'base64'));
       await saveState();
+      if (process.send) {
+        process.send({ type: 'whatsapp_qr', qrCode: qrCodeDataUrl });
+      }
     } catch (err) {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
     }
@@ -197,6 +227,11 @@ function createClient() {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
+    whatsappState.authenticated = true;
+    whatsappState.lastAuthenticatedAt = new Date().toISOString();
+    if (process.send) {
+      process.send({ type: 'whatsapp_authenticated' });
+    }
     // Fallback: se o evento ready nunca disparar (bug do whatsapp-web.js),
     // o polling de getState() detectará CONNECTED e forçará ready.
     startReadyPoll(newClient);
@@ -222,11 +257,16 @@ function createClient() {
     qrCodeDataUrl = null;
     connectionStatus = 'ready';
     initAttempts = 0;
+    whatsappState.qrCount = 0;
+    whatsappState.ready = true;
     if (retryTimeout) {
       clearTimeout(retryTimeout);
       retryTimeout = null;
     }
     await saveState();
+    if (process.send) {
+      process.send({ type: 'whatsapp_ready' });
+    }
   });
 
   newClient.on('loading_screen', async (percent, message) => {
@@ -248,7 +288,13 @@ function createClient() {
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
     isReady = false;
     connectionStatus = 'disconnected';
+    whatsappState.ready = false;
+    whatsappState.authenticated = false;
+    whatsappState.lastDisconnectReason = reason;
     await saveState();
+    if (process.send) {
+      process.send({ type: 'whatsapp_disconnected', reason });
+    }
     if (reason === 'LOGOUT') {
       console.log('[WhatsAppWeb] LOGOUT detectado — saindo para respawn limpo.');
       process.exit(1);
@@ -343,34 +389,22 @@ async function safeDestroyClient() {
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────────
-export async function getStatus() {
-  try {
-    if (client && isReady) {
-      return {
-        status: connectionStatus,
-        ready: isReady,
-        qrCode: qrCodeDataUrl,
-        error: null,
-        pid: process.pid,
-        uptime: process.uptime(),
-      };
-    }
-
-    const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
-    if (state) {
-      return {
-        status: state.status,
-        ready: state.ready,
-        qrCode: state.qrCode,
-        error: state.error,
-        pid: state.pid ?? null,
-        uptime: state.uptime ?? null,
-      };
-    }
-    return { status: 'unknown', ready: false, qrCode: null, error: null };
-  } catch (err) {
-    return { status: 'error', ready: false, qrCode: null, error: err.message };
-  }
+export function getStatus() {
+  // Retorna sempre o singleton em memória — mais rápido e confiável que MongoDB
+  return {
+    status: whatsappState.status,
+    ready: whatsappState.ready,
+    authenticated: whatsappState.authenticated,
+    qrCode: whatsappState.qrCode,
+    lastDisconnectReason: whatsappState.lastDisconnectReason,
+    lastAuthenticatedAt: whatsappState.lastAuthenticatedAt,
+    qrCount: whatsappState.qrCount,
+    initAttempts: whatsappState.initAttempts,
+    pid: whatsappState.pid,
+    uptime: whatsappState.uptime,
+    updatedAt: whatsappState.updatedAt,
+    error: null,
+  };
 }
 
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
@@ -401,6 +435,8 @@ export async function sendMessage(phone, message) {
 export async function softReconnect() {
   console.log('[WhatsAppWeb] 🔄 Soft reconnect — preservando sessão no MongoDB...');
   isReady = false;
+  whatsappState.ready = false;
+  whatsappState.status = 'reconnecting';
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
@@ -418,6 +454,15 @@ export async function softReconnect() {
 // ─── Limpa sessão (botão "Desconectar" — apaga sessão local) ─────────────
 export async function clearSession() {
   console.log('[WhatsAppWeb] 🧹 Limpando sessão...');
+
+  whatsappState.status = 'disconnected';
+  whatsappState.ready = false;
+  whatsappState.authenticated = false;
+  whatsappState.qrCode = null;
+  whatsappState.lastDisconnectReason = null;
+  whatsappState.lastAuthenticatedAt = null;
+  whatsappState.qrCount = 0;
+  updateState({});
 
   try {
     await WhatsAppWebState.findOneAndUpdate(
@@ -451,6 +496,10 @@ export async function reconnect() {
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
   initAttempts = 0;
+  whatsappState.ready = false;
+  whatsappState.authenticated = false;
+  whatsappState.qrCode = null;
+  whatsappState.qrCount = 0;
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
