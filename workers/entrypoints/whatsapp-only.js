@@ -30,14 +30,65 @@ let lastChildHeartbeat = 0;
 let childProcess = null;
 let isShuttingDown = false;
 
-// ─── Health check MINIMALISTA (nunca falha, nunca consulta Mongo) ──────────
+// Estado exposto via HTTP para o frontend
+let stateSnapshot = {
+    status: 'initializing',
+    ready: false,
+    authenticated: false,
+    qrCode: null,
+    lastDisconnectReason: null,
+    lastAuthenticatedAt: null,
+    qrCount: 0,
+    initAttempts: 0,
+    pid: null,
+    uptime: null,
+    updatedAt: null,
+};
+
+function setCors(res) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
+// ─── HTTP server com rotas do WhatsApp Web ─────────────────────────────────
 const server = http.createServer((req, res) => {
+    setCors(res);
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204); res.end(); return;
+    }
+
     if (req.url === '/api/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', mode: 'whatsapp-only' }));
+        res.end(JSON.stringify({ status: 'ok', mode: 'whatsapp-only', childReady, childStatus }));
         return;
     }
-    res.writeHead(404); res.end();
+
+    if (req.url === '/api/whatsapp-web/status') {
+        res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+        });
+        res.end(JSON.stringify({ ...stateSnapshot, error: null }));
+        return;
+    }
+
+    if (req.url === '/api/whatsapp-web/reconnect' && req.method === 'POST') {
+        if (childProcess && childProcess.send) {
+            childProcess.send({ type: 'reconnect_request' });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: 'Reconexão solicitada ao child.' }));
+        } else {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Child não está rodando.' }));
+        }
+        return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -80,29 +131,53 @@ function spawnWhatsAppChild() {
         if (!msg) return;
         if (msg.type === 'ready_to_init') {
             childStatus = 'initializing';
+            stateSnapshot.status = 'initializing';
         }
         if (msg.type === 'whatsapp_status') {
             childStatus = msg.status || childStatus;
             childReady = msg.ready ?? childReady;
             childPid = msg.pid ?? childPid;
             lastChildHeartbeat = Date.now();
+            stateSnapshot.status = msg.status || stateSnapshot.status;
+            stateSnapshot.ready = msg.ready ?? stateSnapshot.ready;
+            stateSnapshot.pid = msg.pid ?? stateSnapshot.pid;
+            stateSnapshot.uptime = msg.uptime ?? stateSnapshot.uptime;
+            stateSnapshot.updatedAt = new Date().toISOString();
         }
         if (msg.type === 'whatsapp_qr') {
             console.log('[PARENT] 📡 QR code recebido do child — disponível em /api/whatsapp-web/status');
+            stateSnapshot.qrCode = msg.qrCode || stateSnapshot.qrCode;
+            stateSnapshot.status = 'qr';
+            stateSnapshot.qrCount = (stateSnapshot.qrCount || 0) + 1;
+            stateSnapshot.updatedAt = new Date().toISOString();
         }
         if (msg.type === 'whatsapp_ready') {
             console.log('[PARENT] ✅ WhatsApp READY recebido do child!');
             childReady = true;
             childStatus = 'ready';
+            stateSnapshot.ready = true;
+            stateSnapshot.status = 'ready';
+            stateSnapshot.qrCode = null;
+            stateSnapshot.authenticated = true;
+            stateSnapshot.updatedAt = new Date().toISOString();
         }
         if (msg.type === 'whatsapp_authenticated') {
             console.log('[PARENT] 🔐 WhatsApp AUTHENTICATED — aguardando ready...');
             childStatus = 'authenticated';
+            stateSnapshot.status = 'authenticated';
+            stateSnapshot.authenticated = true;
+            stateSnapshot.lastAuthenticatedAt = new Date().toISOString();
+            stateSnapshot.updatedAt = new Date().toISOString();
         }
         if (msg.type === 'whatsapp_disconnected') {
             console.log(`[PARENT] 🔴 WhatsApp DISCONNECTED — ${msg.reason}`);
             childReady = false;
             childStatus = 'disconnected';
+            stateSnapshot.ready = false;
+            stateSnapshot.authenticated = false;
+            stateSnapshot.status = 'disconnected';
+            stateSnapshot.lastDisconnectReason = msg.reason || null;
+            stateSnapshot.updatedAt = new Date().toISOString();
         }
     });
 
