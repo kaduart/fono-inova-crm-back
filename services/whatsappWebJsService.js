@@ -24,6 +24,9 @@ import path from 'path';
 import { normalizeE164BR } from '../utils/phone.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
+// ─── Caminho de persistência da sessão (module-level para uso em clearSession/reconnect) ─
+const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+
 // ─── Estado simples ──────────────────────────────────────────────────────────
 let client = null;
 let isReady = false;
@@ -163,7 +166,6 @@ function createClient() {
     console.log(`[WhatsAppWeb] Usando Chrome: ${chromePath}`);
   }
 
-  const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
   const newClient = new Client({
     authStrategy: new LocalAuth({
       dataPath: authPath,

@@ -177,6 +177,8 @@ async function main() {
 // Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
 async function shutdown(signal) {
     console.log(`[CHILD] ${signal} recebido — destruindo client...`);
+    // Remove booting flag em shutdown limpo para o próximo boot não apagar a sessão válida
+    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
     await gracefulShutdownWhatsApp();
     process.exit(0);
 }
