@@ -87,6 +87,23 @@ function spawnWhatsAppChild() {
             childPid = msg.pid ?? childPid;
             lastChildHeartbeat = Date.now();
         }
+        if (msg.type === 'whatsapp_qr') {
+            console.log('[PARENT] 📡 QR code recebido do child — disponível em /api/whatsapp-web/status');
+        }
+        if (msg.type === 'whatsapp_ready') {
+            console.log('[PARENT] ✅ WhatsApp READY recebido do child!');
+            childReady = true;
+            childStatus = 'ready';
+        }
+        if (msg.type === 'whatsapp_authenticated') {
+            console.log('[PARENT] 🔐 WhatsApp AUTHENTICATED — aguardando ready...');
+            childStatus = 'authenticated';
+        }
+        if (msg.type === 'whatsapp_disconnected') {
+            console.log(`[PARENT] 🔴 WhatsApp DISCONNECTED — ${msg.reason}`);
+            childReady = false;
+            childStatus = 'disconnected';
+        }
     });
 
     childProcess = child;
@@ -121,7 +138,7 @@ function shutdown(signal) {
             console.log('[PARENT] Child não respondeu — forçando kill.');
             childProcess.kill('SIGKILL');
             process.exit(0);
-        }, 8000);
+        }, 20_000);
         childProcess.on('exit', () => {
             clearTimeout(timeout);
             console.log('[PARENT] Child encerrado. Saindo.');

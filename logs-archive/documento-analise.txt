@@ -1,2135 +1,761 @@
-curl 'https://fono-inova-crm-back.onrender.com/api/v2/evolutions/patient/692da1e37a66901c8975db66' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3Nzk2NDk3OTMsImV4cCI6MTc3OTczNjE5M30.BvIdmrwc_J4NFbKQe0qSn2FS5Rl7Z-TNhKG-0uJ3PfQ' \
-  -H 'if-none-match: W/"9820-ba3cK2bkOtm1x11xBijn9jRqoYc"' \
-  -H 'origin: https://app.clinicafonoinova.com.br' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/' \
-  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: cross-site' \
-  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
-  -H 'x-correlation-id: front_1779650589356_6pl5078h4'
+ScheduleAppointmentModal.tsx#64-64
+voltandoa o assunto do qr code do wppp -aidna nano fucnionall 2026-05-25T18:11:38.039685311Z [CHILD MEMORY] RSS: 136MB | Heap: 45MB
+2026-05-25T18:11:51.735690183Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6541s
+2026-05-25T18:12:01.175631737Z [WhatsAppWeb][2026-05-25T18:12:01.175Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:12:06.738943772Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6556s
+2026-05-25T18:12:08.040575034Z [CHILD MEMORY] RSS: 136MB | Heap: 46MB
+2026-05-25T18:12:21.73866543Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6571s
+2026-05-25T18:12:36.742570555Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6586s
+2026-05-25T18:12:38.040700483Z [CHILD MEMORY] RSS: 136MB | Heap: 47MB
+2026-05-25T18:12:51.742741456Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6601s
+2026-05-25T18:13:01.179802093Z [WhatsAppWeb][2026-05-25T18:13:01.179Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:13:06.746631713Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6616s
+2026-05-25T18:13:08.040782067Z [CHILD MEMORY] RSS: 136MB | Heap: 48MB
+2026-05-25T18:13:21.184520214Z [WhatsAppWeb][2026-05-25T18:13:21.184Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:13:21.747034002Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6631s
+2026-05-25T18:13:34.082795038Z ==> Deploying...
+2026-05-25T18:13:36.750895622Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=6646s
+2026-05-25T18:13:38.040909137Z [CHILD MEMORY] RSS: 136MB | Heap: 41MB
+2026-05-25T18:13:39.037712632Z 
+2026-05-25T18:13:39.037745883Z 🛑 SIGTERM no processo principal. Aguardando child...
+2026-05-25T18:13:39.038193783Z [CHILD] SIGTERM recebido — destruindo client...
+2026-05-25T18:13:39.038241444Z [WhatsAppWeb] 🛑 Graceful shutdown...
+2026-05-25T18:13:39.176410668Z [WhatsAppWeb] ✅ Cliente destruído.
+2026-05-25T18:13:39.190663201Z [PARENT] 💀 Child 59 morreu (código 0).
+2026-05-25T18:13:39.190730642Z [PARENT] Child encerrado. Saindo.
+2026-05-25T18:14:29.651772661Z ==> Your service is live 🎉
+2026-05-25T18:16:50.026806192Z [WhatsAppWeb][2026-05-25T18:16:50.026Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:16:50.984536062Z [CHILD MEMORY] RSS: 129MB | Heap: 45MB
+2026-05-25T18:16:59.932737507Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=150s
+2026-05-25T18:17:10.031092626Z [WhatsAppWeb][2026-05-25T18:17:10.030Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:17:14.936587932Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=165s
+2026-05-25T18:17:20.9844416Z [CHILD MEMORY] RSS: 130MB | Heap: 47MB
+2026-05-25T18:17:29.936717066Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=180s
+2026-05-25T18:17:44.939554713Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=195s
+2026-05-25T18:17:50.984539955Z [CHILD MEMORY] RSS: 130MB | Heap: 47MB
+2026-05-25T18:17:59.93998348Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=210s
+2026-05-25T18:18:14.943607382Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=225s
+2026-05-25T18:18:20.607474939Z [WhatsAppWeb][2026-05-25T18:18:20.607Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:18:20.984293556Z [CHILD MEMORY] RSS: 131MB | Heap: 48MB
+2026-05-25T18:18:29.943702538Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=240s
+2026-05-25T18:18:44.947997962Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=255s
+2026-05-25T18:18:50.983777223Z [CHILD MEMORY] RSS: 131MB | Heap: 48MB
+2026-05-25T18:18:59.947800548Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=270s
+2026-05-25T18:19:14.951100647Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=285s
+2026-05-25T18:19:20.612241563Z [WhatsAppWeb][2026-05-25T18:19:20.611Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:19:20.983830048Z [CHILD MEMORY] RSS: 132MB | Heap: 42MB
+2026-05-25T18:19:29.950758928Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=300s
+2026-05-25T18:19:40.616822229Z [WhatsAppWeb][2026-05-25T18:19:40.616Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:19:44.953730288Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=315s
+2026-05-25T18:19:50.98435118Z [CHILD MEMORY] RSS: 132MB | Heap: 43MB
+2026-05-25T18:19:59.953601111Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=330s
+2026-05-25T18:20:00.620908367Z [WhatsAppWeb][2026-05-25T18:20:00.620Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:20:14.95754603Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=345s
+2026-05-25T18:20:20.62195513Z [WhatsAppWeb][2026-05-25T18:20:20.621Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:20:20.983983218Z [CHILD MEMORY] RSS: 132MB | Heap: 46MB
+2026-05-25T18:20:29.957673418Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=360s
+2026-05-25T18:20:40.626383524Z [WhatsAppWeb][2026-05-25T18:20:40.626Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:20:44.961560324Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=375s
+2026-05-25T18:20:50.983806136Z [CHILD MEMORY] RSS: 132MB | Heap: 47MB
+2026-05-25T18:20:59.961648539Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=390s
+2026-05-25T18:21:14.966148998Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=405s
+2026-05-25T18:21:20.984542043Z [CHILD MEMORY] RSS: 132MB | Heap: 48MB
+2026-05-25T18:21:29.966210901Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=420s
+2026-05-25T18:21:44.969577354Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=435s
+2026-05-25T18:21:50.984884159Z [CHILD MEMORY] RSS: 132MB | Heap: 48MB
+2026-05-25T18:21:51.35345063Z [WhatsAppWeb][2026-05-25T18:21:51.353Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:21:59.969685418Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=450s
+2026-05-25T18:22:14.973546681Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=465s
+2026-05-25T18:22:20.985689594Z [CHILD MEMORY] RSS: 133MB | Heap: 40MB
+2026-05-25T18:22:29.97477426Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=480s
+2026-05-25T18:22:44.977691572Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=495s
+2026-05-25T18:22:50.986627513Z [CHILD MEMORY] RSS: 133MB | Heap: 40MB
+2026-05-25T18:22:51.357753829Z [WhatsAppWeb][2026-05-25T18:22:51.357Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:22:59.977711574Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=510s
+2026-05-25T18:23:11.364941737Z [WhatsAppWeb][2026-05-25T18:23:11.364Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:23:14.979455809Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=525s
+2026-05-25T18:23:20.986177281Z [CHILD MEMORY] RSS: 133MB | Heap: 43MB
+2026-05-25T18:23:29.978671874Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=540s
+2026-05-25T18:23:31.366977684Z [WhatsAppWeb][2026-05-25T18:23:31.366Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:23:44.98304857Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=555s
+2026-05-25T18:23:50.986181399Z [CHILD MEMORY] RSS: 133MB | Heap: 45MB
+2026-05-25T18:23:51.371326539Z [WhatsAppWeb][2026-05-25T18:23:51.371Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:23:59.982709364Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=570s
+2026-05-25T18:24:11.375695382Z [WhatsAppWeb][2026-05-25T18:24:11.375Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:24:14.988577704Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=585s
+2026-05-25T18:24:20.986337245Z [CHILD MEMORY] RSS: 132MB | Heap: 40MB
+2026-05-25T18:24:29.98865724Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=600s
+2026-05-25T18:24:44.992542547Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=615s
+2026-05-25T18:24:50.985863468Z [CHILD MEMORY] RSS: 132MB | Heap: 40MB
+2026-05-25T18:24:59.992667596Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=630s
+2026-05-25T18:25:14.994687643Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=645s
+2026-05-25T18:25:20.986617644Z [CHILD MEMORY] RSS: 132MB | Heap: 40MB
+2026-05-25T18:25:22.428117156Z [WhatsAppWeb][2026-05-25T18:25:22.427Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:25:29.994928776Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=660s
+2026-05-25T18:25:44.998330487Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=675s
+2026-05-25T18:25:50.986725218Z [CHILD MEMORY] RSS: 132MB | Heap: 41MB
+2026-05-25T18:25:59.99806433Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=690s
+2026-05-25T18:26:03.176040136Z [WhatsAppWeb][2026-05-25T18:26:03.175Z] ⏳ loading_screen 100% — WhatsApp
+2026-05-25T18:26:14.999613292Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=705s
+2026-05-25T18:26:20.98870263Z [CHILD MEMORY] RSS: 141MB | Heap: 41MB
+2026-05-25T18:26:29.999734017Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=720s
+2026-05-25T18:26:45.00257219Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=735s
+2026-05-25T18:26:50.987178317Z [CHILD MEMORY] RSS: 142MB | Heap: 44MB
+2026-05-25T18:27:00.003194888Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=750s
+2026-05-25T18:27:15.005606245Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=765s
+2026-05-25T18:27:20.98734314Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:27:30.005779297Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=780s
+2026-05-25T18:27:45.009567388Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=795s
+2026-05-25T18:27:50.986862324Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:28:00.009626531Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=810s
+2026-05-25T18:28:15.012552456Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=825s
+2026-05-25T18:28:20.986838037Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:28:30.013141106Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=840s
+2026-05-25T18:28:45.016524586Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=855s
+2026-05-25T18:28:50.986925901Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:29:00.016626249Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=870s
+2026-05-25T18:29:15.019578874Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=885s
+2026-05-25T18:29:20.987439604Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:29:30.019716273Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=900s
+2026-05-25T18:29:45.023567632Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=915s
+2026-05-25T18:29:50.9868125Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:30:00.023671305Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=930s
+2026-05-25T18:30:15.023725474Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=945s
+2026-05-25T18:30:20.986955834Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:30:30.023643598Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=960s
+2026-05-25T18:30:45.026588007Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=975s
+2026-05-25T18:30:50.986929814Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:31:00.02665868Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=990s
+2026-05-25T18:31:15.028606903Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1005s
+2026-05-25T18:31:20.986850685Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:31:30.028545209Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1020s
+2026-05-25T18:31:45.032524444Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1035s
+2026-05-25T18:31:50.987386323Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:32:00.032739522Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1050s
+2026-05-25T18:32:15.035568987Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1065s
+2026-05-25T18:32:20.987315618Z [CHILD MEMORY] RSS: 142MB | Heap: 40MB
+2026-05-25T18:32:30.035643988Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1080s
+2026-05-25T18:32:45.039565875Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1095s
+2026-05-25T18:32:50.987247028Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:33:00.039662965Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1110s
+2026-05-25T18:33:15.04407234Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1125s
+2026-05-25T18:33:20.98748852Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:33:30.044098454Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1140s
+2026-05-25T18:33:45.046627594Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1155s
+2026-05-25T18:33:50.987304476Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:34:00.046656276Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1170s
+2026-05-25T18:34:15.050520484Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1185s
+2026-05-25T18:34:20.987569507Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:34:30.049871542Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1200s
+2026-05-25T18:34:45.05457697Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1215s
+2026-05-25T18:34:50.987212357Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:35:00.05459919Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1230s
+2026-05-25T18:35:15.057729482Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1245s
+2026-05-25T18:35:20.987452668Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:35:30.058618242Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1260s
+2026-05-25T18:35:45.062527051Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1275s
+2026-05-25T18:35:50.98729312Z [CHILD MEMORY] RSS: 142MB | Heap: 41MB
+2026-05-25T18:36:00.062624873Z [PARENT] 💓 heartbeat | childReady=false | childPid=60 | uptime=1290s
+2026-05-25T18:36:03.360358154Z [WhatsAppWeb] ⚠️ Travado em loading_screen por 10min — saindo para respawn limpo.
+2026-05-25T18:36:03.387863074Z [PARENT] 💀 Child 60 morreu (código 2).
+2026-05-25T18:36:03.388009018Z [PARENT] Reiniciando em 10s...
+2026-05-25T18:36:13.397958418Z [PARENT] 👶 Spawnando WhatsApp child (tentativa 2/20)...
+2026-05-25T18:36:14.527316734Z 🚀 IORedis conectando via REDIS_URL...
+2026-05-25T18:36:14.529054963Z ✅ Redis configurado com limite de conexões (maxSockets: 3)
+2026-05-25T18:36:14.529147665Z [QueueConfig] Reutilizando conexão Redis existente
+2026-05-25T18:36:15.063597935Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1305s
+2026-05-25T18:36:15.413644298Z [CHILD] 🚀 Iniciando WhatsApp child process...
+2026-05-25T18:36:17.170110467Z [CHILD] ✅ MongoDB conectado
+2026-05-25T18:36:17.170644169Z [CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Limpando sessão corrompida...
+2026-05-25T18:36:17.171615951Z [WhatsAppWeb] 🚀 Inicializando... (tentativa 1/10)
+2026-05-25T18:36:19.314951737Z [WhatsAppWeb] Não foi possível criar authPath: Cannot access 'authPath' before initialization
+2026-05-25T18:36:25.403667966Z [CHILD] 🟢 WhatsApp inicializado
+2026-05-25T18:36:25.485488551Z ✅ Redis connected (BullMQ)
+2026-05-25T18:36:25.579419194Z [WhatsAppWeb][2026-05-25T18:36:25.507Z] ⏳ loading_screen 0% — WhatsApp
+2026-05-25T18:36:30.080183616Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1320s
+2026-05-25T18:36:45.083553733Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1335s
+2026-05-25T18:36:55.404106506Z [CHILD MEMORY] RSS: 138MB | Heap: 48MB
+2026-05-25T18:37:00.087005714Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1350s
+2026-05-25T18:37:15.09156383Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1365s
+2026-05-25T18:37:25.404350115Z [CHILD MEMORY] RSS: 140MB | Heap: 44MB
+2026-05-25T18:37:30.091689155Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1380s
+2026-05-25T18:37:45.095615719Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1395s
+2026-05-25T18:37:55.404052374Z [CHILD MEMORY] RSS: 140MB | Heap: 44MB
+2026-05-25T18:38:00.095695785Z [PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1410s
+Vou analisar os logs e o código do WhatsApp para entender o problema.
+
+Bash Find WhatsApp-related files
+IN
+find /home/user/projetos/crm -type f -name "*.js" | grep -i "whatsapp\|wapp\|wpp" | head -20
+
+OUT
+/home/user/projetos/crm/scripts/clear-whatsapp-session.js
+/home/user/projetos/crm/back/services/whatsappMediaService.js
+/home/user/projetos/crm/back/services/whatsappVPSService.js
+/home/user/projetos/crm/back/services/whatsappWebJsService.js
+/home/user/projetos/crm/back/services/whatsappService.js
+/home/user/projetos/crm/back/services/whatsappLinkService.js
+/home/user/projetos/crm/back/scripts/pre-whatsapp-cleanup.js
+/home/user/projetos/crm/back/scripts/reprocessPendingWhatsAppEvents.js
+/home/user/projetos/crm/back/scripts/connect-whatsapp-local.js
+/home/user/projetos/crm/back/orchestrators/WhatsAppOrchestrator.js
+/home/user/projetos/crm/back/models/WhatsAppWebState.js
+/home/user/projetos/crm/back/middleware/whatsappGuard.js
+/home/user/projetos/crm/back/tests/WhatsAppOrchestrator.full.test.js
+/home/user/projetos/crm/back/utils/whatsappFormatter.js
+/home/user/projetos/crm/back/utils/whatsappMediaExtractor.js
+/home/user/projetos/crm/back/routes/whatsappVPS.js
+/home/user/projetos/crm/back/routes/whatsappWebJs.js
+/home/user/projetos/crm/back/routes/whatsapp.js
+/home/user/projetos/crm/back/controllers/whatsappController.js
+/home/user/projetos/crm/back/workers/entrypoints/whatsapp-only.js
+Bash Find files referencing QR or authPath
+IN
+find /home/user/projetos/crm -type f -name "*.js" | xargs grep -l "qr\|authPath\|loading_screen" 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/crm/scripts/clear-whatsapp-session.js
+/home/user/projetos/crm/front/dist/sw.js
+/home/user/projetos/crm/back/services/whatsappWebJsService.js
+/home/user/projetos/crm/back/services/whatsappLinkService.js
+/home/user/projetos/crm/back/scripts/connect-whatsapp-local.js
+/home/user/projetos/crm/back/models/WhatsAppWebState.js
+/home/user/projetos/crm/back/dist/sw.js
+/home/user/projetos/crm/back/controllers/sicoobController.js
+/home/user/projetos/crm/node_modules/color-convert/conversions.js
+/home/user/projetos/crm/node_modules/yauzl/index.js
+foi ao fincal e deonfetdoiu ✅ Redis connected (BullMQ)
+[WhatsAppWeb][2026-05-25T18:36:25.507Z] ⏳ loading_screen 0% — WhatsApp
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1320s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1335s
+[CHILD MEMORY] RSS: 138MB | Heap: 48MB
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1350s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1365s
+[CHILD MEMORY] RSS: 140MB | Heap: 44MB
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1380s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1395s
+[CHILD MEMORY] RSS: 140MB | Heap: 44MB
+Menu
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1410s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1425s
+[CHILD MEMORY] RSS: 140MB | Heap: 44MB
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1440s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1455s
+[CHILD MEMORY] RSS: 142MB | Heap: 44MB
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1470s
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1485s
+[CHILD MEMORY] RSS: 142MB | Heap: 45MB
+[PARENT] 💓 heartbeat | childReady=false | childPid=128 | uptime=1500s
+[WhatsAppWeb][2026-05-25T18:39:32.892Z] 🔴 disconnected: LOGOUT
+[WhatsAppWeb] LOGOUT detectado — saindo para respawn limpo.
+[PARENT] 💀 Child 128 morreu (código 1).
+[PARENT] Reiniciando em 10s...
+[PARENT] 👶 Spawnando WhatsApp child (tentativa 3/20)...
+🚀 IORedis conectando via REDIS_URL...
+✅ Redis configurado com limite de conexões (maxSockets: 3)
+[QueueConfig] Reutilizando conexão Redis existente
+[CHILD] 🚀 Iniciando WhatsApp child process...
+[PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1515s
+[CHILD] ✅ MongoDB conectado
+[CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Limpando sessão corrompida...
+[WhatsAppWeb] 🚀 Inicializando... (tentativa 1/10)
+[WhatsAppWeb] Não foi possível criar authPath: Cannot access 'authPath' before initialization
+Deixa eu ler os arquivos principais do WhatsApp.
+
+Read whatsappWebJsService.js
+Read whatsapp-only.js
+Achei o bug crítico. Na função createClient(), a variável authPath é usada na linha 111 mas só declarada na linha 166 — isso é o Temporal Dead Zone do JS. Além disso, clearSession() e reconnect() também usam authPath mas ela é local ao createClient().
+
+O LOGOUT provavelmente aconteceu porque o .booting cleanup destruiu a sessão que acabou de ser escaneada. Vou ler o child antes de corrigir.
+
+Bash Find whatsapp-child.js
+IN
+find /home/user/projetos/crm/back/workers/entrypoints -name "whatsapp-child.js"
+
+OUT
+/home/user/projetos/crm/back/workers/entrypoints/whatsapp-child.js
+Read whatsapp-child.js
+Encontrei dois bugs críticos:
+
+Bug 1 — authPath TDZ (whatsappWebJsService.js): usada na linha 111, declarada na linha 166. O const dentro da função cria Temporal Dead Zone — causa o erro Cannot access 'authPath' before initialization. Além disso, clearSession() e reconnect() também usam authPath mas ela é local ao createClient().
+
+Bug 2 — .booting flag não removida no shutdown limpo (whatsapp-child.js): quando o Render faz deploy (SIGTERM → exit 0), o child sai limpo mas não remove o .booting. No próximo boot, checkInterruptedBoot() pensa que houve crash e apaga a sessão válida — forçando novo QR para sempre. É isso que causa o loop infinito de QR.
+
+Corrigindo os dois agora:
+
+Edit whatsappWebJsService.js
+Added 3 lines
+Agora removo a declaração duplicada dentro de createClient():
+
+Edit whatsappWebJsService.js
+Removed 1 line
+Agora corrijo o whatsapp-child.js para remover o .booting no shutdown limpo:
+
+Edit whatsapp-child.js
+Added 2 lines
+Vamos verificar que ficou correto:
+
+Bash Verify authPath references in service
+IN
+grep -n "authPath" /home/user/projetos/crm/back/services/whatsappWebJsService.js
+
+OUT
+28:const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+114:    if (!fs.existsSync(authPath)) {
+115:      fs.mkdirSync(authPath, { recursive: true });
+118:    console.warn('[WhatsAppWeb] Não foi possível criar authPath:', e.message);
+171:      dataPath: authPath,
+435:    const localAuthDir = path.join(authPath, '.wwebjs_auth');
+466:    const localAuthDir = path.join(authPath, '.wwebjs_auth');
+Bash Verify booting flag fix in child
+IN
+grep -n "BOOTING\|shutdown\|rmSync" /home/user/projetos/crm/back/workers/entrypoints/whatsapp-child.js
+
+OUT
+23:const BOOTING_FLAG = path.join(AUTH_BASE, '.booting');
+34:        if (fs.existsSync(BOOTING_FLAG)) {
+38:                    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+43:                    fs.rmSync(wwebjsDir, { recursive: true, force: true });
+49:                fs.rmSync(BOOTING_FLAG, { force: true });
+112:        fs.mkdirSync(path.dirname(BOOTING_FLAG), { recursive: true });
+113:        fs.writeFileSync(BOOTING_FLAG, Date.now().toString());
+127:                fs.rmSync(BOOTING_FLAG, { force: true });
+177:// Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
+178:async function shutdown(signal) {
+180:    // Remove booting flag em shutdown limpo para o próximo boot não apagar a sessão válida
+181:    try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
+185:process.on('SIGTERM', () => shutdown('SIGTERM'));
+186:process.on('SIGINT', () => shutdown('SIGINT'));
+Ambos os fixes estão corretos.
+
+Resumo dos dois bugs corrigidos:
+
+Bug 1 — whatsappWebJsService.js
+
+authPath estava declarada dentro de createClient() na linha 166, mas usada na linha 111 → Temporal Dead Zone → Cannot access 'authPath' before initialization
+Também causava referência undefined em clearSession() e reconnect()
+Fix: movida para nível de módulo (linha 28)
+Bug 2 — whatsapp-child.js
+
+No shutdown por SIGTERM (deploy do Render), o child saía com código 0 mas não removia o .booting
+No próximo boot, checkInterruptedBoot() via o .booting e deletava a sessão válida inteira → forçava novo QR para sempre
+Fix: shutdown() agora remove o .booting antes de sair, então o próximo boot reutiliza a sessão existente
+Após o próximo deploy, o fluxo correto será:
+
+Render envia SIGTERM → child remove .booting → exit 0
+Novo container sobe → .booting não existe → sessão preservada → WhatsApp conecta direto sem QR
+whatsappWebJsService.js
+nada acontreceu cara nao abre o qr code tb da probleema e nao envia msg 2026-05-25T18:46:15.125553434Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1905s
+2026-05-25T18:46:23.72371098Z [CHILD MEMORY] RSS: 132MB | Heap: 46MB
+2026-05-25T18:46:30.125564323Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1920s
+2026-05-25T18:46:45.126573999Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1935s
+2026-05-25T18:46:53.724443702Z [CHILD MEMORY] RSS: 132MB | Heap: 46MB
+2026-05-25T18:46:54.746038566Z [WhatsAppWeb][2026-05-25T18:46:54.745Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:47:00.12661415Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1950s
+2026-05-25T18:47:15.128393185Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1965s
+2026-05-25T18:47:23.724614921Z [CHILD MEMORY] RSS: 132MB | Heap: 47MB
+2026-05-25T18:47:30.127678395Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1980s
+2026-05-25T18:47:45.128560103Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=1995s
+2026-05-25T18:47:53.725333609Z [CHILD MEMORY] RSS: 132MB | Heap: 47MB
+2026-05-25T18:47:54.750829435Z [WhatsAppWeb][2026-05-25T18:47:54.750Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:48:00.128623104Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2010s
+2026-05-25T18:48:14.755167532Z [WhatsAppWeb][2026-05-25T18:48:14.754Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:48:15.129562046Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2025s
+2026-05-25T18:48:23.725219244Z [CHILD MEMORY] RSS: 132MB | Heap: 42MB
+2026-05-25T18:48:30.130315416Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2040s
+2026-05-25T18:48:34.75599602Z [WhatsAppWeb][2026-05-25T18:48:34.755Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:48:45.132696045Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2055s
+2026-05-25T18:48:53.725384753Z [CHILD MEMORY] RSS: 132MB | Heap: 43MB
+2026-05-25T18:48:54.759970059Z [WhatsAppWeb][2026-05-25T18:48:54.759Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:49:00.132783733Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2070s
+2026-05-25T18:49:14.764732817Z [WhatsAppWeb][2026-05-25T18:49:14.764Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:49:15.134596733Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2085s
+2026-05-25T18:49:23.724781803Z [CHILD MEMORY] RSS: 132MB | Heap: 45MB
+2026-05-25T18:49:30.134666266Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2100s
+2026-05-25T18:49:45.13559118Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2115s
+2026-05-25T18:49:53.724944809Z [CHILD MEMORY] RSS: 132MB | Heap: 45MB
+2026-05-25T18:50:00.137367407Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2130s
+2026-05-25T18:50:15.137337954Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2145s
+2026-05-25T18:50:23.724997453Z [CHILD MEMORY] RSS: 132MB | Heap: 46MB
+2026-05-25T18:50:26.07768536Z [WhatsAppWeb][2026-05-25T18:50:26.077Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:50:30.136897726Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2160s
+2026-05-25T18:50:45.138372413Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2175s
+2026-05-25T18:50:53.726109102Z [CHILD MEMORY] RSS: 132MB | Heap: 47MB
+2026-05-25T18:51:00.137639203Z [PARENT] 💓 heartbeat | childReady=false | childPid=196 | uptime=2190s
+2026-05-25T18:51:03.732228738Z ==> Deploying...
+2026-05-25T18:51:08.535741358Z 
+2026-05-25T18:51:08.535772539Z 🛑 SIGTERM no processo principal. Aguardando child...
+2026-05-25T18:51:08.536301781Z [CHILD] SIGTERM recebido — destruindo client...
+2026-05-25T18:51:08.536408883Z [WhatsAppWeb] 🛑 Graceful shutdown...
+2026-05-25T18:51:08.636587335Z [WhatsAppWeb] ✅ Cliente destruído.
+2026-05-25T18:51:08.6547291Z [PARENT] 💀 Child 196 morreu (código 0).
+2026-05-25T18:51:08.654830553Z [PARENT] Child encerrado. Saindo.
+2026-05-25T18:51:55.448689934Z ==> Running 'node --max-old-space-size=768 workers/entrypoints/whatsapp-only.js'
+2026-05-25T18:51:55.558357782Z 🆘 MODO EMERGÊNCIA: WhatsApp ONLY (com child process isolado)
+2026-05-25T18:51:55.558376212Z 
+2026-05-25T18:51:55.558380253Z 📂 CWD: /opt/render/project/src
+2026-05-25T18:51:55.558383523Z 📂 Sessão path: /var/data/wwebjs_auth
+2026-05-25T18:51:55.558386003Z 
+2026-05-25T18:51:55.558613188Z [PARENT] 👶 Spawnando WhatsApp child (tentativa 1/20)...
+2026-05-25T18:51:55.571945073Z 📊 Health Check: http://localhost:10000/api/health
+2026-05-25T18:51:55.571960533Z 🟢 Processo principal estável — WhatsApp vai subir em child process
+2026-05-25T18:51:55.571963703Z 
+2026-05-25T18:51:56.046217878Z ==> Your service is live 🎉
+2026-05-25T18:51:56.386660817Z 🚀 IORedis conectando via REDIS_URL...
+2026-05-25T18:51:56.388816886Z ✅ Redis configurado com limite de conexões (maxSockets: 3)
+2026-05-25T18:51:56.38894756Z [QueueConfig] Reutilizando conexão Redis existente
+2026-05-25T18:51:56.843806403Z [CHILD] 🚀 Iniciando WhatsApp child process...
+2026-05-25T18:51:58.628012261Z [CHILD] ✅ MongoDB conectado
+2026-05-25T18:51:58.628491562Z [CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Limpando sessão corrompida...
+2026-05-25T18:51:58.630042238Z [WhatsAppWeb] 🚀 Inicializando... (tentativa 1/10)
+2026-05-25T18:52:10.305726315Z [WhatsAppWeb][2026-05-25T18:52:10.305Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:52:10.441734575Z [CHILD] 🟢 WhatsApp inicializado
+2026-05-25T18:52:10.449169225Z ✅ Redis connected (BullMQ)
+2026-05-25T18:52:10.565843494Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=15s
+2026-05-25T18:52:25.570115135Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=30s
+2026-05-25T18:52:40.44232107Z [CHILD MEMORY] RSS: 128MB | Heap: 42MB
+2026-05-25T18:52:40.574669056Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=45s
+2026-05-25T18:52:55.575691511Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=60s
+2026-05-25T18:53:10.190826856Z [WhatsAppWeb][2026-05-25T18:53:10.190Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:53:10.442139612Z [CHILD MEMORY] RSS: 131MB | Heap: 44MB
+2026-05-25T18:53:10.580566907Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=75s
+2026-05-25T18:53:25.580761359Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=90s
+2026-05-25T18:53:30.191751983Z [WhatsAppWeb][2026-05-25T18:53:30.191Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:53:40.442142773Z [CHILD MEMORY] RSS: 133MB | Heap: 45MB
+2026-05-25T18:53:40.586308599Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=105s
+2026-05-25T18:53:50.196220596Z [WhatsAppWeb][2026-05-25T18:53:50.196Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:53:55.585711721Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=120s
+2026-05-25T18:54:10.196850953Z [WhatsAppWeb][2026-05-25T18:54:10.196Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:54:10.441762021Z [CHILD MEMORY] RSS: 135MB | Heap: 48MB
+2026-05-25T18:54:10.590543802Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=135s
+2026-05-25T18:54:25.590661879Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=150s
+2026-05-25T18:54:30.20160934Z [WhatsAppWeb][2026-05-25T18:54:30.201Z] 📡 qr gerado — escaneie com o celular
+2026-05-25T18:54:40.442315958Z [CHILD MEMORY] RSS: 137MB | Heap: 41MB
+2026-05-25T18:54:40.595631481Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=165s
+2026-05-25T18:54:55.595647814Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=180s
+2026-05-25T18:55:10.442601545Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:55:10.601088716Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=195s
+2026-05-25T18:55:25.600903684Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=210s
+2026-05-25T18:55:40.442065691Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:55:40.605546856Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=225s
+2026-05-25T18:55:55.605710112Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=240s
+2026-05-25T18:56:10.442139662Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:56:10.610836105Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=255s
+2026-05-25T18:56:25.610848917Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=270s
+2026-05-25T18:56:40.4421844Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:56:40.613686498Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=285s
+2026-05-25T18:56:55.613767211Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=300s
+2026-05-25T18:57:10.442336953Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:57:10.618555547Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=315s
+2026-05-25T18:57:25.618875826Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=330s
+2026-05-25T18:57:40.442156998Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:57:40.624249766Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=345s
+2026-05-25T18:57:55.623985961Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=360s
+2026-05-25T18:58:10.442327762Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:58:10.625512915Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=375s
+2026-05-25T18:58:25.625671292Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=390s
+2026-05-25T18:58:40.441668302Z [CHILD MEMORY] RSS: 137MB | Heap: 42MB
+2026-05-25T18:58:40.629022169Z [PARENT] 💓 heartbeat | childReady=false | childPid=59 | uptime=405s]
+O fix foi deployado mas o .booting já estava lá do ciclo anterior, então limpou de novo uma última vez. Agora o QR está sendo gerado (logs mostram 📡 qr gerado a cada ~20s) mas o usuário não consegue ver na UI.
+
+O problema agora é diferente: o QR existe no backend mas não aparece no frontend. Vou verificar o fluxo API → UI.
+
+Read whatsappWebJs.js
+Bash Find frontend WhatsApp/QR components
+IN
+find /home/user/projetos/crm/front/src -type f | xargs grep -l "whatsapp\|WhatsApp\|qr\|QR" 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/crm/front/src/App.tsx
+/home/user/projetos/crm/front/src/AppRoutes.tsx
+/home/user/projetos/crm/front/src/assets/notify2.wav
+/home/user/projetos/crm/front/src/components/AdminDashboard.tsx
+/home/user/projetos/crm/front/src/hooks/useWhatsAppDeliveryError.ts
+/home/user/projetos/crm/front/src/hooks/usePreAgendamentos.ts
+/home/user/projetos/crm/front/src/components/notifications/NotificationBell.tsx
+/home/user/projetos/crm/front/src/components/notifications/NotificationBellWorking.tsx
+/home/user/projetos/crm/front/src/components/notifications/WhatsAppMessagePopup.tsx
+/home/user/projetos/crm/front/src/components/notifications/WhatsAppNotificationButton.tsx
+A rota do backend parece ok. Agora preciso ver onde na UI o QR aparece e por onde a API é chamada.
+
+Bash Find QR/whatsapp references in AdminDashboard
+IN
+grep -n "whatsapp-web\|whatsappWeb\|qrCode\|qr_code\|WhatsAppWeb" /home/user/projetos/crm/front/src/components/AdminDashboard.tsx | head -30
+
+OUT
+(Bash completed with no output)
+Bash Find component that fetches whatsapp-web status
+IN
+find /home/user/projetos/crm/front/src -type f -name "*.tsx" | xargs grep -l "whatsapp-web\|qrCode\|WhatsAppStatus\|WhatsAppConnect" 2>/dev/null
+
+OUT
+Exit code 123
+Bash Find files referencing whatsapp-web API or qrCode
+IN
+grep -rn "whatsapp-web\|qrCode" /home/user/projetos/crm/front/src/ --include="*.tsx" --include="*.ts" -l 2>/dev/null
+
+OUT
+(Bash completed with no output)
+Bash Check if route is registered in main app
+IN
+grep -rn "whatsapp-web\|qrCode" /home/user/projetos/crm/back/routes/ --include="*.js" -l 2>/dev/null && grep -rn "whatsapp-web\|whatsappWebJs" /home/user/projetos/crm/back/app.js /home/user/projetos/crm/back/server.js 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/crm/back/routes/whatsappVPS.js
+/home/user/projetos/crm/back/routes/whatsappWebJs.js
+/home/user/projetos/crm/back/server.js:84:import whatsappWebJsRoutes from "./routes/whatsappWebJs.js";
+/home/user/projetos/crm/back/server.js:85:import { initWhatsAppClient } from "./services/whatsappWebJsService.js";
+/home/user/projetos/crm/back/server.js:370:    const { getStatus } = await import('./services/whatsappWebJsService.js');
+/home/user/projetos/crm/back/server.js:554:app.use("/api/whatsapp-web", whatsappWebJsRoutes);
+cara abrew uma aba do wpp aonde mostra o qrcode interno do wpp eu conectpo e salva na agenda uai
+A rota está registrada. O frontend não tem arquivo que chame /api/whatsapp-web. Preciso ver o AdminDashboard e AppRoutes para entender onde o QR deveria aparecer.
+
+Bash Find WhatsApp route in AppRoutes
+IN
+grep -n "Whats\|whats\|QR\|qr\|connect\|Connect" /home/user/projetos/crm/front/src/AppRoutes.tsx | head -20
+
+OUT
+71:const ContactsPage = lazyWithRetry(() => import('./components/mkt/whatsapp/ContactsPage'));
+78:const AppChat = lazyWithRetry(() => import('./components/mkt/whatsapp/AppChat'));
+Bash Find any frontend API calls to whatsapp-web endpoint
+IN
+grep -rn "whatsapp-web\|/api/whatsapp" /home/user/projetos/crm/front/src/ 2>/dev/null | head -20
+
+OUT
+(Bash completed with no output)
+Ótimo! Então o QR apareceu corretamente e você conseguiu conectar. Sobre o "salva na agenda" — você quer dizer que funcionou: conectou e os agendamentos estão sendo enviados por WhatsApp?
+
+Só confirmando o status dos dois bugs que corrigi hoje:
+
+Bug 1 (TDZ authPath) — já estava causando o erro Cannot access 'authPath' before initialization a cada boot, mas o WhatsApp ainda funcionava parcialmente porque o catch engolia o erro.
+
+Bug 2 (.booting no shutdown limpo) — esse era o principal vilão. No próximo deploy do Render:
+
+SIGTERM chega → shutdown() remove o .booting → sai com código 0
+Novo boot → sem .booting → sessão preservada → WhatsApp conecta direto sem pedir QR de novo
+Você ainda tem algum problema? Por exemplo:
+
+Mensagens não sendo enviadas?
+QR precisando ser escaneado a cada deploy?
+Algo específico no fluxo?
 
 
 
-  {
-    "success": true,
-    "data": [
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69d929c86ffeefb9eb0d1d88"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69d929c86ffeefb9eb0d1d89"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69d929c86ffeefb9eb0d1d8a"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69d929c86ffeefb9eb0d1d8b"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69d929c86ffeefb9eb0d1d8c"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "69d929c86ffeefb9eb0d1d86",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-04-06T00:00:00.000Z",
-            "time": "18:00",
-            "plan": "",
-            "evaluationTypes": [],
-            "metrics": [
-                {
-                    "name": "Marcha",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69d929c86ffeefb9eb0d1d87"
-                }
-            ],
-            "evaluationAreas": [],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, permaneci na sala da Fono para melhor vínculo e não ver a mãe, foi realizado estimulação para ortostatismo e marcha sem apoio, demonstrou cansado e queria sentar a todo momento, resmungou/chorou em alguns momentos e permaneceu com sua mamadeira tomando leite em alguns momentos.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-04-10T16:48:08.720Z",
-            "updatedAt": "2026-04-10T16:48:08.720Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c511cc02cb09cd7e27c2"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c511cc02cb09cd7e27c3"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c511cc02cb09cd7e27c4"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c511cc02cb09cd7e27c5"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c511cc02cb09cd7e27c6"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "69c6c511cc02cb09cd7e27c0",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-03-27T00:00:00.000Z",
-            "time": "13:20",
-            "plan": "",
-            "evaluationTypes": [
-                "marcha"
-            ],
-            "metrics": [],
-            "evaluationAreas": [
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "69c6c511cc02cb09cd7e27c1"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, chegou quase 20 minutos atrasado foi realizado estímulo de marcha junto com o irmão, em pé ortostatismo e marcha lateral na parede, queria a mãe ela é a irmã estavam presentes. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-03-27T17:57:37.012Z",
-            "updatedAt": "2026-03-27T17:57:37.012Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c495cc02cb09cd7e262c"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c495cc02cb09cd7e262d"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c495cc02cb09cd7e262e"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c495cc02cb09cd7e262f"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69c6c495cc02cb09cd7e2630"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "69c6c495cc02cb09cd7e262a",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-03-25T00:00:00.000Z",
-            "time": "17:20",
-            "plan": "",
-            "evaluationTypes": [
-                "marcha"
-            ],
-            "metrics": [],
-            "evaluationAreas": [
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "69c6c495cc02cb09cd7e262b"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para marcha, ortostatismo com brinquedos, a mãe estava na sala, tentou sair mas logo que ele chorou mais ‘sentido’ ela voltou, estava muito apegado a ela. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-03-27T17:55:33.367Z",
-            "updatedAt": "2026-03-27T17:55:33.367Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69bae89c8945dcd5863dc05b"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69bae89c8945dcd5863dc05c"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69bae89c8945dcd5863dc05d"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69bae89c8945dcd5863dc05e"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69bae89c8945dcd5863dc05f"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "69bae89c8945dcd5863dc059",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-03-09T00:00:00.000Z",
-            "time": "18:00",
-            "plan": "",
-            "evaluationTypes": [],
-            "metrics": [
-                {
-                    "name": "Marcha",
-                    "value": 4,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69bae89c8945dcd5863dc05a"
-                }
-            ],
-            "evaluationAreas": [],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, a mãe permaneceu na sessão estava demonstrando cansaço, realizado estimulação motora para marcha e ortostatismo independente. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-03-18T18:02:04.149Z",
-            "updatedAt": "2026-03-18T18:02:04.149Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": null,
-            "_id": "69a56fd26ba320a6504fac55",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "date": "2026-02-23T00:00:00.000Z",
-            "time": "16:00",
-            "plan": "",
-            "evaluationTypes": [
-                "comportamento",
-                "social",
-                "cognitivo",
-                "emocional",
-                "autonomia"
-            ],
-            "metrics": [
-                {
-                    "name": "Regulação Emocional",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56fd26ba320a6504fac56"
-                },
-                {
-                    "name": "Atenção Sustentada",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56fd26ba320a6504fac57"
-                },
-                {
-                    "name": "Flexibilidade Cognitiva",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56fd26ba320a6504fac58"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "comportamento",
-                    "name": "Comportamento",
-                    "score": 5,
-                    "_id": "69a56fd26ba320a6504fac59"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 5,
-                    "_id": "69a56fd26ba320a6504fac5a"
-                },
-                {
-                    "id": "cognitivo",
-                    "name": "Cognitivo",
-                    "score": 5,
-                    "_id": "69a56fd26ba320a6504fac5b"
-                },
-                {
-                    "id": "emocional",
-                    "name": "Emocional",
-                    "score": 5,
-                    "_id": "69a56fd26ba320a6504fac5c"
-                },
-                {
-                    "id": "autonomia",
-                    "name": "Autonomia",
-                    "score": 5,
-                    "_id": "69a56fd26ba320a6504fac5d"
-                }
-            ],
-            "specialty": "psicologia",
-            "createdBy": "685c2affaec14c71635863b7",
-            "content": "Treino de mando com uso de “dar” e apontar, com redução gradual de prompts. Observado aumento de tentativas espontâneas. Trabalhada imitação com objetos (empilhar, encaixar), apresentando respostas consistentes com reforço imediato. Orientação reforçada à mãe sobre coerência nas respostas aos comportamentos inadequados.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [],
-            "createdAt": "2026-03-02T11:09:06.668Z",
-            "updatedAt": "2026-03-02T11:09:06.668Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": null,
-            "_id": "69a570126ba320a6504facb5",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "date": "2026-02-23T00:00:00.000Z",
-            "time": "16:40",
-            "plan": "",
-            "evaluationTypes": [
-                "comportamento",
-                "social",
-                "cognitivo",
-                "emocional",
-                "autonomia"
-            ],
-            "metrics": [
-                {
-                    "name": "Regulação Emocional",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a570126ba320a6504facb6"
-                },
-                {
-                    "name": "Atenção Sustentada",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a570126ba320a6504facb7"
-                },
-                {
-                    "name": "Flexibilidade Cognitiva",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a570126ba320a6504facb8"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "comportamento",
-                    "name": "Comportamento",
-                    "score": 5,
-                    "_id": "69a570126ba320a6504facb9"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 5,
-                    "_id": "69a570126ba320a6504facba"
-                },
-                {
-                    "id": "cognitivo",
-                    "name": "Cognitivo",
-                    "score": 5,
-                    "_id": "69a570126ba320a6504facbb"
-                },
-                {
-                    "id": "emocional",
-                    "name": "Emocional",
-                    "score": 5,
-                    "_id": "69a570126ba320a6504facbc"
-                },
-                {
-                    "id": "autonomia",
-                    "name": "Autonomia",
-                    "score": 5,
-                    "_id": "69a570126ba320a6504facbd"
-                }
-            ],
-            "specialty": "psicologia",
-            "createdBy": "685c2affaec14c71635863b7",
-            "content": "Sessão focada em generalização das habilidades de solicitação em diferentes contextos e com variação de itens reforçadores. Davi apresentou melhor tolerância ao tempo de espera (até 10 segundos com suporte verbal). Mantido treino de brincar funcional e imitação. Realizada devolutiva à mãe com orientações sobre reforçamento diferencial e manutenção da consistência nas intervenções em casa.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [],
-            "createdAt": "2026-03-02T11:10:10.994Z",
-            "updatedAt": "2026-03-02T11:10:10.994Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699db0a84152216f7913241f"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699db0a84152216f79132420"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699db0a84152216f79132421"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699db0a84152216f79132422"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699db0a84152216f79132423"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "699db0a84152216f79132417",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-02-23T00:00:00.000Z",
-            "time": "18:07",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699db0a84152216f79132418"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699db0a84152216f79132419"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699db0a84152216f7913241a"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "699db0a84152216f7913241b"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "699db0a84152216f7913241c"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "699db0a84152216f7913241d"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "699db0a84152216f7913241e"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para permanecer em ortostatismo, marcha lateral e normal com alcance em brinquedos, estavaenjuadinho, chorando e procurando a mãe a todo momento. Atendimento finalizado sem intericorrencia.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-02-24T14:07:36.795Z",
-            "updatedAt": "2026-02-24T14:07:36.795Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699daea24152216f791319e5"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699daea24152216f791319e6"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699daea24152216f791319e7"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699daea24152216f791319e8"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "699daea24152216f791319e9"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "699daea24152216f791319dd",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-02-20T00:00:00.000Z",
-            "time": "13:40",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699daea24152216f791319de"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699daea24152216f791319df"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "699daea24152216f791319e0"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "699daea24152216f791319e1"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "699daea24152216f791319e2"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "699daea24152216f791319e3"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "699daea24152216f791319e4"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu em beg, aceitou ficar sem a mãe, realizado estímulo de marcha lateral, agachamento, trocas posturais de sentado para de pé e semi-ajoelhado para de pé, estímulo de marcha e ortostatismo. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-02-24T13:58:58.389Z",
-            "updatedAt": "2026-02-24T13:58:58.389Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": null,
-            "_id": "69a56f946ba320a6504fab69",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "date": "2026-02-16T00:00:00.000Z",
-            "time": "16:40",
-            "plan": "",
-            "evaluationTypes": [
-                "comportamento",
-                "social",
-                "cognitivo",
-                "emocional",
-                "autonomia"
-            ],
-            "metrics": [
-                {
-                    "name": "Regulação Emocional",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f946ba320a6504fab6a"
-                },
-                {
-                    "name": "Atenção Sustentada",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f946ba320a6504fab6b"
-                },
-                {
-                    "name": "Flexibilidade Cognitiva",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f946ba320a6504fab6c"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "comportamento",
-                    "name": "Comportamento",
-                    "score": 5,
-                    "_id": "69a56f946ba320a6504fab6d"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 5,
-                    "_id": "69a56f946ba320a6504fab6e"
-                },
-                {
-                    "id": "cognitivo",
-                    "name": "Cognitivo",
-                    "score": 5,
-                    "_id": "69a56f946ba320a6504fab6f"
-                },
-                {
-                    "id": "emocional",
-                    "name": "Emocional",
-                    "score": 5,
-                    "_id": "69a56f946ba320a6504fab70"
-                },
-                {
-                    "id": "autonomia",
-                    "name": "Autonomia",
-                    "score": 5,
-                    "_id": "69a56f946ba320a6504fab71"
-                }
-            ],
-            "specialty": "psicologia",
-            "createdBy": "685c2affaec14c71635863b7",
-            "content": "Treino de brincar funcional com mediação (uso adequado de carrinho e encaixes). Davi apresentou necessidade de modelagem promptsgestuais. Reforçamento diferencialpara uso funcional dos brinquedos. Trabalhado tempo de espera com ampliação gradual para até 3 a 5 segundos. Mãe orientada a reforçar solicitações adequadas.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [],
-            "createdAt": "2026-03-02T11:08:04.987Z",
-            "updatedAt": "2026-03-02T11:08:04.987Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986539c79bba4d65fae786c"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986539c79bba4d65fae786d"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986539c79bba4d65fae786e"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986539c79bba4d65fae786f"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986539c79bba4d65fae7870"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "6986539c79bba4d65fae7864",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-02-06T00:00:00.000Z",
-            "time": "13:40",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986539c79bba4d65fae7865"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986539c79bba4d65fae7866"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986539c79bba4d65fae7867"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "6986539c79bba4d65fae7868"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "6986539c79bba4d65fae7869"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "6986539c79bba4d65fae786a"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "6986539c79bba4d65fae786b"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu em beg ao atendimento conversado com a mãe para sair nos 10 minutos finais para melhor vínculo com o paciente e que seria feito avaliação para saber como está, sendo necessário ela não interferir. Ficou mais tranquilo pois estava com a mamadeira com leite, foi na mãe poucas vezes. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-02-06T20:48:28.031Z",
-            "updatedAt": "2026-02-06T20:48:28.031Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": null,
-            "_id": "69a56f046ba320a6504fa99d",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "date": "2026-02-02T00:00:00.000Z",
-            "time": "16:40",
-            "plan": "",
-            "evaluationTypes": [
-                "comportamento",
-                "social",
-                "cognitivo",
-                "emocional",
-                "autonomia"
-            ],
-            "metrics": [
-                {
-                    "name": "Regulação Emocional",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f046ba320a6504fa99e"
-                },
-                {
-                    "name": "Atenção Sustentada",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f046ba320a6504fa99f"
-                },
-                {
-                    "name": "Flexibilidade Cognitiva",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56f046ba320a6504fa9a0"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "comportamento",
-                    "name": "Comportamento",
-                    "score": 5,
-                    "_id": "69a56f046ba320a6504fa9a1"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 5,
-                    "_id": "69a56f046ba320a6504fa9a2"
-                },
-                {
-                    "id": "cognitivo",
-                    "name": "Cognitivo",
-                    "score": 5,
-                    "_id": "69a56f046ba320a6504fa9a3"
-                },
-                {
-                    "id": "emocional",
-                    "name": "Emocional",
-                    "score": 5,
-                    "_id": "69a56f046ba320a6504fa9a4"
-                },
-                {
-                    "id": "autonomia",
-                    "name": "Autonomia",
-                    "score": 5,
-                    "_id": "69a56f046ba320a6504fa9a5"
-                }
-            ],
-            "specialty": "psicologia",
-            "createdBy": "685c2affaec14c71635863b7",
-            "content": "Trabalhado comportamento de imitação motora (“fazer igual”) com modelos simples (bater palmas, levantar braços). Davi apresentou melhor desempenho com modelo imediato e reforço social. Iniciado treino de apontar para solicitação de itens de interesse. Mantida orientação familiar quanto à extinção do choro como forma de comunicação.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [],
-            "createdAt": "2026-03-02T11:05:40.737Z",
-            "updatedAt": "2026-03-02T11:05:40.737Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": null,
-            "_id": "69a56eca6ba320a6504fa84f",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "date": "2026-02-02T00:00:00.000Z",
-            "time": "16:00",
-            "plan": "",
-            "evaluationTypes": [
-                "comportamento",
-                "social",
-                "cognitivo",
-                "emocional",
-                "autonomia"
-            ],
-            "metrics": [
-                {
-                    "name": "Regulação Emocional",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56eca6ba320a6504fa850"
-                },
-                {
-                    "name": "Atenção Sustentada",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56eca6ba320a6504fa851"
-                },
-                {
-                    "name": "Flexibilidade Cognitiva",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69a56eca6ba320a6504fa852"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "comportamento",
-                    "name": "Comportamento",
-                    "score": 5,
-                    "_id": "69a56eca6ba320a6504fa853"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 5,
-                    "_id": "69a56eca6ba320a6504fa854"
-                },
-                {
-                    "id": "cognitivo",
-                    "name": "Cognitivo",
-                    "score": 5,
-                    "_id": "69a56eca6ba320a6504fa855"
-                },
-                {
-                    "id": "emocional",
-                    "name": "Emocional",
-                    "score": 5,
-                    "_id": "69a56eca6ba320a6504fa856"
-                },
-                {
-                    "id": "autonomia",
-                    "name": "Autonomia",
-                    "score": 5,
-                    "_id": "69a56eca6ba320a6504fa857"
-                }
-            ],
-            "specialty": "psicologia",
-            "createdBy": "685c2affaec14c71635863b7",
-            "content": "Realizado treino de mando utilizando “dar” como solicitação funcional. Davi apresentou emissões com apoio gestual e verbal, necessitando de prompt parcial em alguns momentos. Iniciado treino de tempo de espera (3–\n5 segundos), com reforçamento imediato após resposta adequada. Realizada orientação à mãe sobre não reforçar comportamento de choro para obtenção de itens.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [],
-            "createdAt": "2026-03-02T11:04:42.503Z",
-            "updatedAt": "2026-03-02T11:04:42.503Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986541d79bba4d65fae79f3"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986541d79bba4d65fae79f4"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986541d79bba4d65fae79f5"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986541d79bba4d65fae79f6"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6986541d79bba4d65fae79f7"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "6986541d79bba4d65fae79eb",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-02-02T00:00:00.000Z",
-            "time": "18:00",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986541d79bba4d65fae79ec"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986541d79bba4d65fae79ed"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6986541d79bba4d65fae79ee"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "6986541d79bba4d65fae79ef"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "6986541d79bba4d65fae79f0"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "6986541d79bba4d65fae79f1"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "6986541d79bba4d65fae79f2"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu em beg, realizado estimulação motora, para agachar com alcance em brinquedo apoiado, marcha lateral e estímulo de marcha. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-02-06T20:50:37.566Z",
-            "updatedAt": "2026-02-06T20:50:37.566Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "698654c379bba4d65fae7adb"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "698654c379bba4d65fae7adc"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "698654c379bba4d65fae7add"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "698654c379bba4d65fae7ade"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "698654c379bba4d65fae7adf"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "698654c379bba4d65fae7ad3",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-01-30T00:00:00.000Z",
-            "time": "13:40",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "698654c379bba4d65fae7ad4"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "698654c379bba4d65fae7ad5"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "698654c379bba4d65fae7ad6"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "698654c379bba4d65fae7ad7"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "698654c379bba4d65fae7ad8"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "698654c379bba4d65fae7ad9"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "698654c379bba4d65fae7ada"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg, foi realizado estimulação motora para marcha lateral, ortostatismo, apoio em venço e agachando e marcha. Atendimento finalizado sem intercorrência.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-02-06T20:53:23.383Z",
-            "updatedAt": "2026-02-06T20:53:23.383Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6968dff11d10dd343f6fbdeb"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6968dff11d10dd343f6fbdec"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6968dff11d10dd343f6fbded"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6968dff11d10dd343f6fbdee"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "6968dff11d10dd343f6fbdef"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "6968dff11d10dd343f6fbde3",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-01-12T00:00:00.000Z",
-            "time": "17:40",
-            "plan": "",
-            "evaluationTypes": [
-                "postural",
-                "marcha",
-                "respiratorio",
-                "neuromotor"
-            ],
-            "metrics": [
-                {
-                    "name": "Força Muscular",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6968dff11d10dd343f6fbde4"
-                },
-                {
-                    "name": "Equilíbrio",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6968dff11d10dd343f6fbde5"
-                },
-                {
-                    "name": "Amplitude de Movimento",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "6968dff11d10dd343f6fbde6"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "postural",
-                    "name": "Controle Postural",
-                    "score": 5,
-                    "_id": "6968dff11d10dd343f6fbde7"
-                },
-                {
-                    "id": "marcha",
-                    "name": "Marcha",
-                    "score": 5,
-                    "_id": "6968dff11d10dd343f6fbde8"
-                },
-                {
-                    "id": "respiratorio",
-                    "name": "Respiratório",
-                    "score": 5,
-                    "_id": "6968dff11d10dd343f6fbde9"
-                },
-                {
-                    "id": "neuromotor",
-                    "name": "Neuromotor",
-                    "score": 5,
-                    "_id": "6968dff11d10dd343f6fbdea"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Paciente compareceu ao atendimento em beg,foi realizado estimulaçao motora com brinquedos, o paciente chorou em vários momentos, pedi para a mãe ficar de fora para criar melhor vinculo, mas quando ele chorou ela logo entrou, então tentado realizar estímulos em pe´, de marcha, de sentado para de pé emarcha lateral. Atendimento finalizado sem intercorrencia.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-01-15T12:39:13.995Z",
-            "updatedAt": "2026-01-15T12:39:13.995Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69627a40474c201207ca2034"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69627a40474c201207ca2035"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69627a40474c201207ca2036"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69627a40474c201207ca2037"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "69627a40474c201207ca2038"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "69627a40474c201207ca202b",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-01-09T00:00:00.000Z",
-            "time": "13:40",
-            "plan": "",
-            "evaluationTypes": [
-                "language",
-                "motor",
-                "cognitive",
-                "behavior",
-                "social"
-            ],
-            "metrics": [
-                {
-                    "name": "Articulação",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69627a40474c201207ca202c"
-                },
-                {
-                    "name": "Fluência",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69627a40474c201207ca202d"
-                },
-                {
-                    "name": "Compreensão",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "69627a40474c201207ca202e"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "language",
-                    "name": "Linguagem",
-                    "score": 3,
-                    "_id": "69627a40474c201207ca202f"
-                },
-                {
-                    "id": "motor",
-                    "name": "Motor",
-                    "score": 3,
-                    "_id": "69627a40474c201207ca2030"
-                },
-                {
-                    "id": "cognitive",
-                    "name": "Cognitivo",
-                    "score": 3,
-                    "_id": "69627a40474c201207ca2031"
-                },
-                {
-                    "id": "behavior",
-                    "name": "Comportamento",
-                    "score": 3,
-                    "_id": "69627a40474c201207ca2032"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 3,
-                    "_id": "69627a40474c201207ca2033"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Pciente compareceu em beg, a mãe permaneceu na sala, chorou em alguns momentos querendo a ão, então foi tentado realizar algumas transições posturais, de pé e estímulo de marcha com brinquedos, entre realizar e ir até a mãe. Atendimento finalizadosem intercorrencia.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-01-10T16:11:44.039Z",
-            "updatedAt": "2026-01-10T16:11:44.039Z",
-            "__v": 0
-        },
-        {
-            "therapeuticPlan": {
-                "protocol": {
-                    "code": "FISIO-ESTIM-001",
-                    "name": "Estimulação Precoce",
-                    "customNotes": ""
-                },
-                "objectives": [
-                    {
-                        "area": "language",
-                        "description": "Objetivo em Linguagem",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "696279c7474c201207ca1e71"
-                    },
-                    {
-                        "area": "motor",
-                        "description": "Objetivo em Motor",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "696279c7474c201207ca1e72"
-                    },
-                    {
-                        "area": "cognitive",
-                        "description": "Objetivo em Cognitivo",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "696279c7474c201207ca1e73"
-                    },
-                    {
-                        "area": "behavior",
-                        "description": "Objetivo em Comportamento",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "696279c7474c201207ca1e74"
-                    },
-                    {
-                        "area": "social",
-                        "description": "Objetivo em Social",
-                        "targetScore": 10,
-                        "currentScore": 3,
-                        "targetDate": null,
-                        "achieved": false,
-                        "progress": 30,
-                        "notes": "",
-                        "_id": "696279c7474c201207ca1e75"
-                    }
-                ],
-                "interventions": [],
-                "reviewDate": "2026-02-09T16:09:34.626Z",
-                "planVersion": 1,
-                "versionHistory": []
-            },
-            "_id": "696279c7474c201207ca1e68",
-            "patient": {
-                "_id": "692da1e37a66901c8975db66",
-                "fullName": "Davi Felipe Araújo",
-                "dateOfBirth": "2023-03-04T00:00:00.000Z",
-                "id": "692da1e37a66901c8975db66"
-            },
-            "doctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "date": "2026-01-04T00:00:00.000Z",
-            "time": "18:00",
-            "plan": "",
-            "evaluationTypes": [
-                "language",
-                "motor",
-                "cognitive",
-                "behavior",
-                "social"
-            ],
-            "metrics": [
-                {
-                    "name": "Articulação",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "696279c7474c201207ca1e69"
-                },
-                {
-                    "name": "Fluência",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "696279c7474c201207ca1e6a"
-                },
-                {
-                    "name": "Compreensão",
-                    "value": 5,
-                    "unit": "",
-                    "notes": "",
-                    "_id": "696279c7474c201207ca1e6b"
-                }
-            ],
-            "evaluationAreas": [
-                {
-                    "id": "language",
-                    "name": "Linguagem",
-                    "score": 3,
-                    "_id": "696279c7474c201207ca1e6c"
-                },
-                {
-                    "id": "motor",
-                    "name": "Motor",
-                    "score": 3,
-                    "_id": "696279c7474c201207ca1e6d"
-                },
-                {
-                    "id": "cognitive",
-                    "name": "Cognitivo",
-                    "score": 3,
-                    "_id": "696279c7474c201207ca1e6e"
-                },
-                {
-                    "id": "behavior",
-                    "name": "Comportamento",
-                    "score": 3,
-                    "_id": "696279c7474c201207ca1e6f"
-                },
-                {
-                    "id": "social",
-                    "name": "Social",
-                    "score": 3,
-                    "_id": "696279c7474c201207ca1e70"
-                }
-            ],
-            "specialty": "fisioterapia",
-            "createdBy": "690a3f957fe419286acb0b0b",
-            "content": "Realizado anamnese com a mãe.",
-            "treatmentStatus": "in_progress",
-            "activeProtocols": [
-                "FISIO-ESTIM-001"
-            ],
-            "createdAt": "2026-01-10T16:09:43.422Z",
-            "updatedAt": "2026-01-10T16:09:43.422Z",
-            "__v": 0
-        }
-    ],
-    "meta": {
-        "version": "v2",
-        "timestamp": "2026-05-24T19:23:13.107Z"
-    }
+
+
+
+
+
+
+
+
+
+O backend agora está claramente gerando o QR corretamente. O problema mudou de “WhatsApp não sobe” para:
+
+* QR é gerado no worker
+* mas o frontend NÃO consome/exibe ele
+* e o `childReady=false` nunca vira `true`
+
+Pelos logs, o WhatsApp WebJS está funcionando parcialmente:
+
+* `📡 qr gerado — escaneie com o celular`
+* `loading_screen 0%`
+* depois QR renova infinitamente
+
+Isso normalmente significa UM destes cenários:
+
+1. QR não está chegando na UI
+2. sessão não está persistindo em `/var/data`
+3. evento `authenticated` nunca dispara
+4. evento `ready` nunca dispara
+5. Chromium/puppeteer trava após scan
+
+Mas tem um detalhe MUITO importante no que você falou:
+
+> “abriu uma aba do wpp onde mostra o qrcode interno do wpp eu conecto”
+
+Isso significa que o WhatsApp abriu no Chromium interno do Puppeteer, NÃO na sua interface React.
+
+Então hoje seu fluxo está assim:
+
+```txt
+Render
+ └── Puppeteer abre WhatsApp Web
+      └── QR existe DENTRO do navegador headless
+           └── frontend não recebe base64 do QR
+```
+
+Ou seja:
+o problema agora NÃO é mais autenticação.
+É transmissão do QR para a UI.
+
+O principal suspeito é que o evento:
+
+```js
+client.on('qr', ...)
+```
+
+está apenas fazendo `console.log`
+e NÃO salvando o QR em memória/Redis/Mongo para o frontend buscar.
+
+Você precisa garantir algo assim no `whatsappWebJsService.js`:
+
+```js
+let latestQr = null;
+
+client.on('qr', async (qr) => {
+  latestQr = qr;
+
+  console.log('[WhatsAppWeb] QR recebido');
+
+  io.emit('whatsapp:qr', qr);
+});
+```
+
+e na rota:
+
+```js
+router.get('/status', (req, res) => {
+  res.json({
+    connected,
+    qr: latestQr
+  });
+});
+```
+
+E no frontend:
+
+```ts
+const res = await api.get('/api/whatsapp-web/status');
+
+setQr(res.data.qr);
+```
+
+Depois:
+
+```tsx
+<img src={qr} />
+```
+
+MAS tem outro problema nos logs:
+
+```txt
+childReady=false
+```
+
+isso nunca muda.
+
+Então provavelmente o `ready` também não está disparando:
+
+```js
+client.on('ready', () => {
+  childReady = true;
+});
+```
+
+ou o parent process nunca recebe IPC:
+
+```js
+process.send?.({
+  type: 'READY'
+});
+```
+
+e no parent:
+
+```js
+child.on('message', (msg) => {
+  if (msg.type === 'READY') {
+    childReady = true;
+  }
+});
+```
+
+Hoje o sistema parece preso nesse limbo:
+
+```txt
+QR gera
+scan acontece
+mas READY nunca chega
+```
+
+Outro ponto crítico:
+
+nos logs apareceu:
+
+```txt
+🔴 disconnected: LOGOUT
+```
+
+isso geralmente acontece quando:
+
+* sessão não persiste
+* multi-device invalida
+* Puppeteer perde filesystem
+* auth strategy corrompe
+
+Confere isso AGORA:
+
+Seu `LocalAuth` precisa estar EXATAMENTE assim:
+
+```js
+authStrategy: new LocalAuth({
+  clientId: 'crm',
+  dataPath: authPath
+})
+```
+
+e NÃO:
+
+```js
+dataPath: path.join(authPath, '.wwebjs_auth')
+```
+
+porque o próprio LocalAuth já cria `.wwebjs_auth`.
+
+Senão vira:
+
+```txt
+/var/data/wwebjs_auth/.wwebjs_auth/.wwebjs_auth
+```
+
+e quebra persistência.
+
+Também recomendo fortemente adicionar estes args do Chromium no Render:
+
+```js
+puppeteer: {
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process'
+  ]
 }
+```
 
+Porque o `loading_screen 0%` infinito normalmente é Chromium travando no Render.
 
+Os 3 pontos mais prováveis agora são:
 
+1. QR não está sendo enviado para frontend
+2. `ready` não está propagando via IPC
+3. `LocalAuth.dataPath` está errado
 
+O mais suspeito mesmo é esse aqui:
 
-tudo errdo sso aqui 
+```txt
+loading_screen 0%
+```
 
+porque isso costuma acontecer quando:
 
-Convênio a receber — maio/2026 (pending_billing)
+* sessão não hidrata
+* browser trava
+* filesystem auth corrompe
 
-Convênio	Sessões	Total
-Unimed Campinas	7	R$ 980
-Unimed Anápolis	7	R$ 560
-Convênio	2	R$ 160
-Outros	2	R$ 160
-Total	18	R$ 1.860
-Por paciente (únicos):
-
-Paciente	Plano(s)	Sessões	Total
-Davi Felipe Araújo	Unimed Campinas	7	R$ 980
-Nicolas Lucca	Unimed Anápolis	2	R$ 160
-Benjamim Rocha Simão	Unimed Anápolis + Convênio + Outros	4	R$ 320
-Joaquim Rocha Simão	Unimed Anápolis + Convênio + Outros	4	R$ 320
-Isabela Ferreira De Mendonca	Unimed Anápolis	1	R$ 80
-
-precisamso entenderrr 
- 
+e o fato do QR regenerar eternamente confirma isso.

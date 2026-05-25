@@ -32,21 +32,12 @@ if (!MONGO_URI) {
 function checkInterruptedBoot() {
     try {
         if (fs.existsSync(BOOTING_FLAG)) {
-            console.log('[CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Limpando sessão corrompida...');
+            console.log('[CHILD] 🚨 Bootstrap anterior foi interrompido (.booting encontrado). Removendo flag e tentando reutilizar sessão existente...');
             try {
-                if (fs.existsSync(SESSION_DIR)) {
-                    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-                    console.log('[CHILD] 🧹 Sessão corrompida removida. Novo QR será gerado.');
-                }
-                const wwebjsDir = path.join(AUTH_BASE, '.wwebjs_auth');
-                if (fs.existsSync(wwebjsDir)) {
-                    fs.rmSync(wwebjsDir, { recursive: true, force: true });
-                    console.log('[CHILD] 🧹 .wwebjs_auth removido.');
-                }
-            } catch (e) {
-                console.error('[CHILD] Erro ao limpar sessão:', e.message);
-            } finally {
                 fs.rmSync(BOOTING_FLAG, { force: true });
+                console.log('[CHILD] 🧹 .booting removido. Sessão será reutilizada se válida.');
+            } catch (e) {
+                console.error('[CHILD] Erro ao remover .booting:', e.message);
             }
             return;
         }
@@ -94,6 +85,20 @@ process.on('unhandledRejection', (reason) => {
 
 async function main() {
     console.log('[CHILD] 🚀 Iniciando WhatsApp child process...');
+
+    // ─── Teste de persistência do disco (Render disk) ────────────────────────
+    const pingFile = path.join(AUTH_BASE, '.render-persistence-test.txt');
+    try {
+        if (fs.existsSync(pingFile)) {
+            const pingTime = fs.readFileSync(pingFile, 'utf-8');
+            console.log(`[CHILD] ✅ Persistent disk OK — último ping: ${new Date(Number(pingTime)).toISOString()}`);
+        } else {
+            fs.writeFileSync(pingFile, Date.now().toString());
+            console.log('[CHILD] 🆕 Persistence test file created — próximo deploy confirmará se o disco persiste');
+        }
+    } catch (e) {
+        console.warn('[CHILD] ⚠️ Não foi possível testar persistência do disco:', e.message);
+    }
 
     await mongoose.connect(MONGO_URI, {
         maxPoolSize: 3,
@@ -177,7 +182,9 @@ async function main() {
 // Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
 async function shutdown(signal) {
     console.log(`[CHILD] ${signal} recebido — destruindo client...`);
-    // Remove booting flag em shutdown limpo para o próximo boot não apagar a sessão válida
+    // 1. Remove booting flag IMEDIATAMENTE antes de qualquer operação longa.
+    //    Se gracefulShutdownWhatsApp() travar e o parent nos matar com SIGKILL,
+    //    a flag já estará removida e o próximo boot reutilizará a sessão.
     try { fs.rmSync(BOOTING_FLAG, { force: true }); } catch {}
     await gracefulShutdownWhatsApp();
     process.exit(0);
