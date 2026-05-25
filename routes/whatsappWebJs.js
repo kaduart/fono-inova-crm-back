@@ -1,5 +1,5 @@
 import express from 'express';
-import { getStatus, reconnect } from '../services/whatsappWebJsService.js';
+import { getStatus, clearSession } from '../services/whatsappWebJsService.js';
 import { whatsappSendQueue } from '../config/bullConfig.js';
 
 const router = express.Router();
@@ -54,7 +54,9 @@ router.post('/send', async (req, res) => {
  */
 router.post('/reconnect', async (req, res) => {
   try {
-    const result = await reconnect();
+    // ⚠️ No server.js principal NÃO chama reconnect() que dispara Puppeteer.
+    // Apenas limpa a sessão no disk/MongoDB. O worker detecta e gera novo QR.
+    const result = await clearSession();
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
