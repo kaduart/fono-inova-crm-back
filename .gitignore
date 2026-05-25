@@ -73,3 +73,4 @@ ENV_VARS_FOR_WORKER.md
 # Build do frontend (não versionar)
 dist/
 dist/*
+.cache/
