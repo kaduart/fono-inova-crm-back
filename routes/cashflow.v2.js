@@ -287,6 +287,7 @@ router.get('/', auth, async (req, res) => {
                 billingType: p.billingType || '-',
                 kind: p.kind || '-',
                 package: !!p.package || !!appt?.package,
+                isPackageSale: tipo === 'Pacote' && !!p.package,
                 appointmentStatus: appt?.operationalStatus || '-'
             };
         }).filter(Boolean);

@@ -132,7 +132,7 @@ export async function calculateCash(start, end) {
     const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
     // 4. Buscar payments completos para compatibilidade com endpoints legados
-    let payments = await Payment.find(match).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
+    let payments = await Payment.find(match).populate('patient', 'fullName').lean();
     // Filtro de nome de teste (não expressível eficientemente em aggregation)
     payments = payments.filter(p => {
         const nome = (p.patient?.fullName || '').toLowerCase();
