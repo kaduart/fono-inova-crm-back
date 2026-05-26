@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
+import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
 
 // ============================================================
 // 1) CAIXA — Payment only (imutável)
@@ -27,9 +28,10 @@ export async function calculateCash(start, end) {
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
+        isFromPackage: { $ne: true },   // defense-in-depth: consumo de pacote nunca é caixa
         kind: { $ne: 'package_consumed' },
-        billingType: { $ne: 'convenio' },
-        paymentMethod: { $ne: 'convenio' },
+        // convenio entra no caixa apenas quando status='paid' (via processReturn do lote)
+        // não excluir billingType: 'convenio' aqui — pagamentos pendentes/billed não passam pelo status: 'paid'
         $and: [
             {
                 $or: [
@@ -41,11 +43,17 @@ export async function calculateCash(start, end) {
                 $or: [
                     { financialDate: { $gte: start, $lte: end } },
                     { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-                    { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+                    // 🛡️ Último fallback: createdAt garante que pagamentos recentes nunca sumam
+                    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
                 ]
             }
         ]
     };
+
+    // 🔍 DIAGNÓSTICO: logar range e resultados
+    console.log(`[calculateCash] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
 
     // 1. Total geral
     const totalAgg = await Payment.aggregate([
@@ -54,6 +62,20 @@ export async function calculateCash(start, end) {
     ]);
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
+    console.log(`[calculateCash] Encontrados: ${count} payments, total=${total}`);
+
+    // Diagnóstico extra: listar primeiros payments do período
+    if (count > 0) {
+        const samples = await Payment.find(match).select('amount paymentDate financialDate billingType paymentMethod kind').limit(5).lean();
+        console.log(`[calculateCash] Amostras:`, samples.map(p => ({
+            amount: p.amount,
+            paymentDate: p.paymentDate,
+            financialDate: p.financialDate,
+            billingType: p.billingType,
+            method: p.paymentMethod,
+            kind: p.kind
+        })));
+    }
 
     // 2. Por método de pagamento
     const methodAgg = await Payment.aggregate([
@@ -110,7 +132,7 @@ export async function calculateCash(start, end) {
     const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
     // 4. Buscar payments completos para compatibilidade com endpoints legados
-    let payments = await Payment.find(match).populate('patient', 'fullName').lean();
+    let payments = await Payment.find(match).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
     // Filtro de nome de teste (não expressível eficientemente em aggregation)
     payments = payments.filter(p => {
         const nome = (p.patient?.fullName || '').toLowerCase();
@@ -159,8 +181,7 @@ async function _calcReceitaReal(payments) {
     for (const p of fullPkgPayments) {
         const pkg = pkgMap.get(p.package.toString());
         if (!pkg) continue;
-        const sessVal = pkg.sessionValue > 0 ? pkg.sessionValue
-            : pkg.totalValue && pkg.totalSessions ? pkg.totalValue / pkg.totalSessions : 0;
+        const sessVal = resolveSessionFinancialValue({ sessionValue: 0, package: pkg });
         if (sessVal <= 0) continue;
         const feitas = countMap.get(p.package.toString()) || 0;
         const ganho = feitas * sessVal;
@@ -177,8 +198,7 @@ export async function calculateCashByDay(start, end) {
             status: 'paid',
             amount: { $gt: 0 },
             kind: { $ne: 'package_consumed' },
-            billingType: { $ne: 'convenio' },
-            paymentMethod: { $ne: 'convenio' },
+            // convenio entra apenas quando status='paid' (via processReturn) — não excluir aqui
             $and: [
                 {
                     $or: [
@@ -212,30 +232,18 @@ export async function calculateCashByDay(start, end) {
 
 /**
  * Stages que resolvem o valor unitário correto por sessão.
- * Para sessões de pacote: usa Package.sessionValue (valor contratual por sessão).
- * Para sessões avulsas: usa Session.sessionValue como está.
- * Evita inflação quando session.sessionValue foi gravado com o valor total do pacote.
+ * Importado do módulo centralizado para garantir consistência
+ * entre aggregation (MongoDB) e objetos JavaScript.
  */
 const pkgLookupStages = [
     { $lookup: {
         from: 'packages',
         localField: 'package',
         foreignField: '_id',
-        pipeline: [{ $project: { sessionValue: 1 } }],
+        pipeline: [{ $project: { sessionValue: 1, totalValue: 1, totalSessions: 1 } }],
         as: '_pkg'
     }},
-    { $addFields: {
-        effectiveValue: {
-            $cond: {
-                if: { $and: [
-                    { $gt: [{ $size: { $ifNull: ['$_pkg', []] } }, 0] },
-                    { $gt: [{ $arrayElemAt: ['$_pkg.sessionValue', 0] }, 0] }
-                ]},
-                then: { $arrayElemAt: ['$_pkg.sessionValue', 0] },
-                else: { $ifNull: ['$sessionValue', 0] }
-            }
-        }
-    }}
+    ...resolveSessionFinancialValueAggregate()
 ];
 
 /**
@@ -255,6 +263,9 @@ export async function calculateProduction(start, end) {
         status: 'completed'
     };
 
+    // 🔍 DIAGNÓSTICO: logar range e resultados
+    console.log(`[calculateProduction] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
+
     // 1. Total geral
     const totalAgg = await Session.aggregate([
         { $match: match },
@@ -263,6 +274,20 @@ export async function calculateProduction(start, end) {
     ]);
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
+    console.log(`[calculateProduction] Encontradas: ${count} sessions, total=${total}`);
+
+    // Diagnóstico extra: listar primeiras sessions do período
+    if (count > 0) {
+        const samples = await Session.find(match).select('date sessionValue package status paymentMethod paymentOrigin').limit(5).lean();
+        console.log(`[calculateProduction] Amostras:`, samples.map(s => ({
+            date: s.date,
+            sessionValue: s.sessionValue,
+            package: s.package,
+            status: s.status,
+            method: s.paymentMethod,
+            origin: s.paymentOrigin
+        })));
+    }
 
     // 2. Por tipo (particular / pacote / convenio / liminar)
     // Campos disponíveis em Session: paymentMethod, paymentOrigin, package
@@ -384,9 +409,72 @@ export async function calculateProductionByDay(start, end) {
     return { map, total: totalAgg[0]?.total || 0, count: totalAgg[0]?.count || 0 };
 }
 
+/**
+ * Recebimento da Produção do Mês (regime de competência).
+ * Responde: "quanto da produção clínica DESTE mês já foi efetivamente pago?"
+ *
+ * Filtro por serviceDate (data da sessão), não por financialDate/paymentDate.
+ * Exclui:
+ *   - package_receipt  → venda antecipada de pacote, sem sessão vinculada
+ *   - monthly_settlement → recibo agregado; os session_payment originais já são contados
+ *   - package_consumed / isFromPackage → débitos internos de consumo
+ *
+ * A diferença (produçãoTotal - recebimentoProducao) = "a receber da produção do mês"
+ * A diferença (caixaFinanceiro - recebimentoProducao) = "recebimentos retroativos"
+ */
+export async function calculateCashByCompetencia(start, end) {
+    const match = {
+        status: 'paid',
+        amount: { $gt: 0 },
+        isFromPackage: { $ne: true },
+        kind: { $nin: ['package_consumed', 'package_receipt', 'monthly_settlement'] },
+        serviceDate: { $gte: start, $lte: end }
+    };
+
+    const [totalAgg, typeAgg] = await Promise.all([
+        Payment.aggregate([
+            { $match: match },
+            { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        ]),
+        Payment.aggregate([
+            { $match: match },
+            { $group: {
+                _id: {
+                    $switch: {
+                        branches: [
+                            { case: { $eq: [{ $toLower: '$billingType' }, 'liminar'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$billingType' }, 'convenio'] }, then: 'convenio' },
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' },
+                        ],
+                        default: {
+                            $cond: {
+                                if: { $or: [{ $ifNull: ['$package', false] }, { $eq: ['$kind', 'package_receipt'] }] },
+                                then: 'pacote',
+                                else: 'particular'
+                            }
+                        }
+                    }
+                },
+                total: { $sum: '$amount' }
+            }}
+        ])
+    ]);
+
+    const total   = totalAgg[0]?.total || 0;
+    const count   = totalAgg[0]?.count || 0;
+    const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacote     = typeAgg.find(r => r._id === 'pacote')?.total || 0;
+    const convenio   = typeAgg.find(r => r._id === 'convenio')?.total || 0;
+    const liminar    = typeAgg.find(r => r._id === 'liminar')?.total || 0;
+
+    return { total, count, particular, pacote, convenio, liminar };
+}
+
 export default {
     calculateCash,
     calculateCashByDay,
     calculateProduction,
-    calculateProductionByDay
+    calculateProductionByDay,
+    calculateCashByCompetencia
 };

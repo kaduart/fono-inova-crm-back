@@ -27,6 +27,9 @@ const insuranceBatchSessionSchema = new mongoose.Schema({
   glosaReason: String,
   protocolNumber: String,
   
+  // Data da sessão original — usada para atribuir o recebimento ao mês de competência
+  sessionDate: Date,
+
   // Controle
   sentAt: Date,
   processedAt: Date,

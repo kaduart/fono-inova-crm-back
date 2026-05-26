@@ -26,23 +26,41 @@ import { calculatePendentesEngine, getPatientPendingPayments } from '../services
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
+import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
 
-// Cache server-side: 30s TTL + deduplicação de requests simultâneos
+// Cache server-side: mensal apenas. Real-time diário NUNCA é cacheado.
+// Invalidação explícita via invalidateDashboardCache() em mutações financeiras
 const _dashCache = new Map();
 const _dashPending = new Map();
-const DASH_CACHE_TTL = 30_000;
+const DASH_CACHE_TTL = 5_000;
 
 function getDashCached(key) {
     const entry = _dashCache.get(key);
-    if (entry && Date.now() - entry.ts < DASH_CACHE_TTL) return entry.data;
+    if (entry && Date.now() - entry.ts < DASH_CACHE_TTL) {
+        console.log(`[DashboardV3] SERVINDO CACHE: ${key} (idade=${Date.now() - entry.ts}ms)`);
+        return entry.data;
+    }
     return null;
 }
 function setDashCached(key, data) {
     if (_dashCache.size > 50) _dashCache.clear();
     _dashCache.set(key, { data, ts: Date.now() });
+    console.log(`[DashboardV3] CACHE SET: ${key}`);
+}
+
+/**
+ * Invalida todo o cache do dashboard financeiro.
+ * Deve ser chamado após qualquer mutação que altere caixa ou produção
+ * (completeSession, createPayment, refund, etc).
+ */
+export function invalidateDashboardCache() {
+    const size = _dashCache.size;
+    _dashCache.clear();
+    _dashPending.clear();
+    console.log(`[DashboardV3] Cache invalidado (${size} entradas limpas)`);
 }
 
 const paymentBaseFilter = {
@@ -118,38 +136,60 @@ router.get('/', auth, async (req, res) => {
         const targetYear = year ? parseInt(year) : moment().year();
         const monthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
 
-        // Cache server-side 30s + deduplicação thundering herd
+        // Cache server-side: SÓ para meses passados. Mês atual = sempre real-time.
+        const now = moment.tz(TIMEZONE);
+        const isCurrentMonth = targetMonth === (now.month() + 1) && targetYear === now.year();
         const cacheKey = monthKey;
-        const cachedRes = getDashCached(cacheKey);
-        if (cachedRes) {
-            return res.json(cachedRes);
-        }
-        if (_dashPending.has(cacheKey)) {
-            try {
-                const result = await _dashPending.get(cacheKey);
-                return res.json(result);
-            } catch {
-                // request em voo falhou — processa normalmente
+        
+        // 🚫 NUNCA cacheia mês atual — caixaHoje/producaoHoje precisam ser real-time
+        const useCache = !isCurrentMonth;
+        
+        if (useCache) {
+            const cachedRes = getDashCached(cacheKey);
+            if (cachedRes) {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+                res.setHeader('X-Cache-Status', 'HIT');
+                return res.json(cachedRes);
             }
+            if (_dashPending.has(cacheKey)) {
+                try {
+                    const result = await _dashPending.get(cacheKey);
+                    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                    res.setHeader('Pragma', 'no-cache');
+                    res.setHeader('Expires', '0');
+                    res.setHeader('X-Cache-Status', 'PENDING');
+                    return res.json(result);
+                } catch {
+                    // request em voo falhou — processa normalmente
+                }
+            }
+            let _pendingResolve, _pendingReject;
+            _dashPending.set(cacheKey, new Promise((rs, rj) => { _pendingResolve = rs; _pendingReject = rj; }));
+            const _origJson = res.json.bind(res);
+            res.json = (body) => {
+                setDashCached(cacheKey, body);
+                _pendingResolve?.(body);
+                _dashPending.delete(cacheKey);
+                res.json = _origJson;
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+                res.setHeader('X-Cache-Status', 'MISS');
+                return _origJson(body);
+            };
+        } else {
+            console.log(`[DashboardV3] RECALCULANDO REAL-TIME: ${cacheKey} (mês atual — sem cache)`);
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+            res.setHeader('X-Cache-Status', 'BYPASS');
         }
-        let _pendingResolve, _pendingReject;
-        _dashPending.set(cacheKey, new Promise((rs, rj) => { _pendingResolve = rs; _pendingReject = rj; }));
-        const _origJson = res.json.bind(res);
-        res.json = (body) => {
-            setDashCached(cacheKey, body);
-            _pendingResolve?.(body);
-            _dashPending.delete(cacheKey);
-            res.json = _origJson;
-            return _origJson(body);
-        };
 
         // 🆕 PROJEÇÃO V2: tenta usar snapshot primeiro
         const snapshotReady = await financialSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
         let data, profissionais, source = 'real-time';
-
-        // HOTFIX: mês atual sempre real-time (evita divergência silenciosa de snapshot desatualizado)
-        const now = moment.tz(TIMEZONE);
-        const isCurrentMonth = targetMonth === (now.month() + 1) && targetYear === now.year();
 
         if (snapshotReady && !isCurrentMonth) {
             console.log(`[DashboardV3] Usando snapshot: ${monthKey}`);
@@ -211,14 +251,42 @@ router.get('/', auth, async (req, res) => {
             const drillDownSnap = buildDrillDown(data, profissionaisSnap);
             const indicadoresSnap = calculateIndicadores(data.caixa, data.producao, despesasSnap.total, metasSnap);
 
+            // Campos de competência derivados do snapshot (mesma fórmula do real-time)
+            const _snapConvenioAReceber  = Math.max(0, (data.producaoDetalhe?.convenio  || 0) - (data.caixaDetalhe?.convenio  || 0));
+            const _snapLiminarAReceber   = Math.max(0, (data.producaoDetalhe?.liminar   || 0) - (data.caixaDetalhe?.liminar   || 0));
+            const _snapParticularPend    = data.producaoDetalhe?.particularPendente || 0;
+            const _snapPacotePend        = data.producaoDetalhe?.pacotePendente     || 0;
+            const _snapAReceberProducao  = _snapConvenioAReceber + _snapLiminarAReceber + _snapParticularPend + _snapPacotePend;
+            const _snapRecebidoProducao  = Math.max(0, (data.producao || 0) - _snapAReceberProducao);
+            const _snapRetroativos       = Math.max(0, (data.caixa   || 0) - _snapRecebidoProducao);
+            const _snapResultadoCaixa    = data.caixa    || 0;
+            const _snapResultadoEcon     = data.producao || 0;
+            const _snapRecebimentoProd   = {
+                total:     _snapRecebidoProducao,
+                particular: Math.max(0, (data.producaoDetalhe?.particular || 0) - _snapParticularPend),
+                pacote:     Math.max(0, (data.producaoDetalhe?.pacote     || 0) - _snapPacotePend),
+                convenio:   Math.max(0, (data.producaoDetalhe?.convenio   || 0) - _snapConvenioAReceber),
+                liminar:    Math.max(0, (data.producaoDetalhe?.liminar    || 0) - _snapLiminarAReceber),
+            };
+
             return res.json({
                 success: true,
                 source,
                 resumo: {
                     caixa: data.caixa,
+                    caixaHoje: data.caixaHoje,
                     caixaDetalhe: data.caixaDetalhe,
                     producao: data.producao,
+                    producaoHoje: data.producaoHoje,
                     producaoDetalhe: data.producaoDetalhe,
+                    resultadoEconomico: _snapResultadoEcon,
+                    resultadoCaixa: _snapResultadoCaixa,
+                    convenioAReceber: _snapConvenioAReceber,
+                    particularPendente: _snapParticularPend,
+                    pacotePendente: _snapPacotePend,
+                    recebimentoProducao: _snapRecebimentoProd,
+                    retroativos: _snapRetroativos,
+                    aReceberProducao: _snapAReceberProducao,
                     aReceber: aReceberSnap,
                     pendentes: pendentesSnap,
                     saldo: data.saldo,
@@ -231,11 +299,13 @@ router.get('/', auth, async (req, res) => {
                     period: { month: targetMonth, year: targetYear },
                     cash: {
                         total: data.caixa,
+                        today: data.caixaHoje,
                         breakdown: data.caixaDetalhe,
                         byMethod: data.caixaByMethod
                     },
                     revenue: {
                         total: data.producao,
+                        today: data.producaoHoje,
                         byMethod: data.producaoDetalhe
                     },
                     pendentes: pendentesSnap,
@@ -245,6 +315,14 @@ router.get('/', auth, async (req, res) => {
                         breakdown: despesasSnap.breakdown
                     },
                     balance: data.saldo,
+                    resultadoCaixa: _snapResultadoCaixa,
+                    resultadoEconomico: _snapResultadoEcon,
+                    convenioAReceber: _snapConvenioAReceber,
+                    particularPendente: _snapParticularPend,
+                    pacotePendente: _snapPacotePend,
+                    recebimentoProducao: _snapRecebimentoProd,
+                    retroativos: _snapRetroativos,
+                    aReceberProducao: _snapAReceberProducao,
                     metas: metasSnap,
                     profissionais: profissionaisSnap,
                     insights: insightsSnap,
@@ -286,14 +364,19 @@ router.get('/', auth, async (req, res) => {
             source: 'real-time',
             resumo: {
                 caixa: data.caixa,
+                caixaHoje: data.caixaHoje,
                 caixaDetalhe: data.caixaDetalhe,
                 producao: data.producao,
+                producaoHoje: data.producaoHoje,
                 producaoDetalhe: data.producaoDetalhe,
                 resultadoEconomico: data.resultadoEconomico,
                 resultadoCaixa: data.resultadoCaixa,
                 convenioAReceber: data.convenioAReceber,
                 particularPendente: data.particularPendente,
                 pacotePendente: data.pacotePendente,
+                recebimentoProducao: data.recebimentoProducao,
+                retroativos: data.retroativos,
+                aReceberProducao: data.aReceberProducao,
                 aReceber,
                 pendentes,
                 saldo: data.saldo,
@@ -306,11 +389,13 @@ router.get('/', auth, async (req, res) => {
                 period: { month: targetMonth, year: targetYear },
                 cash: {
                     total: data.caixa,
+                    today: data.caixaHoje,
                     breakdown: data.caixaDetalhe,
                     byMethod: data.caixaByMethod
                 },
                 revenue: {
                     total: data.producao,
+                    today: data.producaoHoje,
                     byMethod: data.producaoDetalhe
                 },
                 pendentes,
@@ -324,6 +409,9 @@ router.get('/', auth, async (req, res) => {
                 convenioAReceber: data.convenioAReceber,
                 particularPendente: data.particularPendente,
                 pacotePendente: data.pacotePendente,
+                recebimentoProducao: data.recebimentoProducao,
+                retroativos: data.retroativos,
+                aReceberProducao: data.aReceberProducao,
                 metas,
                 profissionais,
                 insights,
@@ -560,8 +648,9 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    const realizadoMes = data.resultadoEconomico ?? data.producao;
+    const realizadoMes = data.producao ?? 0;
     const realizadoDia = data.caixaHoje || 0;
+    const producaoDia  = data.producaoHoje || 0;
 
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
     const projecaoFinal = isMonthClosed ? realizadoMes : mediaDiariaAtual * daysInMonth;
@@ -617,6 +706,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             mes: parseFloat(realizadoMes.toFixed(2)),
             hoje: parseFloat(realizadoDia.toFixed(2))
         },
+        producaoHoje: parseFloat(producaoDia.toFixed(2)),
         ritmo: {
             esperadoAteAgora: parseFloat(ritmoEsperado.toFixed(2)),
             realizadoAteAgora: parseFloat(realizadoMes.toFixed(2)),
@@ -1008,10 +1098,12 @@ async function calculateRealTime(year, month) {
     // ───────────────────────────────────────────────
     // 🎯 Fonte única de verdade V2 (unificada)
     // ───────────────────────────────────────────────
-    const [cash, production, todayCash, packageSalesAgg] = await Promise.all([
+    const [cash, production, todayCash, todayProduction, competencia, packageSalesAgg] = await Promise.all([
         unifiedFinancialService.calculateCash(start, end),
         unifiedFinancialService.calculateProduction(start, end),
         unifiedFinancialService.calculateCash(todayStart, todayEnd),
+        unifiedFinancialService.calculateProduction(todayStart, todayEnd),
+        unifiedFinancialService.calculateCashByCompetencia(start, end),
         Payment.aggregate([
             { $match: {
                 status: 'paid',
@@ -1029,40 +1121,77 @@ async function calculateRealTime(year, month) {
     const packageSalesTotal = packageSalesAgg[0]?.total || 0;
     const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
-    const convenioAReceber = Math.max(0, (production.convenio || 0) - (cash.convenio || 0));
+    const convenioAReceber  = Math.max(0, (production.convenio || 0) - (cash.convenio || 0));
+    const liminarAReceber   = Math.max(0, (production.liminar  || 0) - (cash.liminar  || 0));
+    const particularPendente = production.particularPendente || 0;
+    const pacotePendente     = production.pacotePendente     || 0;
+
+    // ──────────────────────────────────────────────────────────────
+    // VISÃO OPERACIONAL — derivada de produção e pendentes
+    // Não depende de serviceDate (dado histórico corrompido no banco)
+    //
+    //   aReceber    = tudo que foi produzido mas ainda não pago
+    //   recebido    = produção - aReceber  (o que já virou caixa DESSE mês)
+    //   retroativos = caixa total - recebido  (recebimentos de outros meses)
+    // ──────────────────────────────────────────────────────────────
+    const aReceberProducao   = convenioAReceber + particularPendente + pacotePendente + liminarAReceber;
+    const recebidoProducao   = Math.max(0, (production.total || 0) - aReceberProducao);
+    const retroativos        = Math.max(0, cash.total - recebidoProducao);
+
+    const caixaBlock = buildCaixaBlock({
+        total: cash.total,
+        particular: cash.particular,
+        pacote: cash.pacote,
+        convenio: cash.convenio,
+        liminar: cash.liminar,
+        byMethod: cash.byMethod,
+    });
+
+    const producaoBlock = buildProducaoBlock({
+        totalProduzido: production.total,
+        producaoLiquidada: production.recebido,
+        pendente: production.pendente,
+        convenio: production.convenio,
+        particular: production.particular,
+        pacote: production.pacote,
+        liminar: production.liminar,
+    });
 
     return {
-        caixa: cash.total,
+        caixa: caixaBlock.total,
         receitaReal: cash.receitaReal,
         receitaDiferida: cash.receitaDiferida,
         caixaHoje: todayCash.total,
+        producaoHoje: todayProduction.total || 0,
         caixaDetalhe: {
-            particular: cash.particular,
-            pacote: cash.pacote,
-            convenio: cash.convenio,
-            liminar: cash.liminar,
+            ...caixaBlock,
             packageSales: packageSalesTotal,
             packageSalesCount: packageSalesCount,
             particularNet: Math.max(0, cash.particular - packageSalesTotal)
         },
         caixaByMethod: cash.byMethod,
-        producao: production.total,
+        producao: producaoBlock.totalProduzido,
         producaoDetalhe: {
-            particular: production.particular,
-            pacote: production.pacote,
-            convenio: production.convenio,
-            liminar: production.liminar,
-            recebido: production.recebido,
-            pendente: production.pendente,
-            particularPendente: production.particularPendente,
-            pacotePendente: production.pacotePendente
+            ...producaoBlock,
+            particularPendente,
+            pacotePendente
         },
-        resultadoEconomico: cash.total + convenioAReceber,
+        resultadoEconomico: production.total,
         resultadoCaixa: cash.total,
         convenioAReceber,
-        particularPendente: production.particularPendente,
-        pacotePendente: production.pacotePendente,
-        saldo: cash.total
+        particularPendente,
+        pacotePendente,
+        saldo: cash.total,
+        // VISÃO OPERACIONAL — recebimento da produção deste mês
+        recebimentoProducao: {
+            total: recebidoProducao,
+            particular: Math.max(0, (production.particular || 0) - particularPendente),
+            pacote:     Math.max(0, (production.pacote     || 0) - pacotePendente),
+            convenio:   Math.max(0, (production.convenio   || 0) - convenioAReceber),
+            liminar:    Math.max(0, (production.liminar    || 0) - liminarAReceber),
+        },
+        retroativos,
+        aReceberProducao,
     };
 }
 

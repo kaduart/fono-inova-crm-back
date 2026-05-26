@@ -11,6 +11,7 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
+import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 
 const router = express.Router();
 
@@ -44,6 +45,7 @@ router.get('/daily-closing-v2', async (req, res) => {
       isDeleted: { $ne: true }
     }).populate('patient', 'fullName phone')
       .populate('doctor', 'fullName specialty')
+      .populate('package', 'sessionValue totalValue totalSessions')
       .lean();
 
     console.log(`   📋 ${sessions.length} sessions encontradas`);
@@ -78,12 +80,12 @@ router.get('/daily-closing-v2', async (req, res) => {
     
     // Produção real (o que aconteceu)
     const productionValue = completedSessions.reduce(
-      (sum, s) => sum + (s.value || 0), 0
+      (sum, s) => sum + resolveSessionFinancialValue(s), 0
     );
 
     // Previsão (agenda futura)
     const expectedValue = scheduledSessions.reduce(
-      (sum, s) => sum + (s.value || 0), 0
+      (sum, s) => sum + resolveSessionFinancialValue(s), 0
     );
 
     // Dinheiro real recebido
@@ -111,7 +113,7 @@ router.get('/daily-closing-v2', async (req, res) => {
       specialty: s.doctor?.specialty,
       time: s.time,
       status: s.status,
-      value: s.value || 0,
+      value: resolveSessionFinancialValue(s),
       hasEvolution: !!s.evolution,
       isPackage: !!s.packageId,
       packageId: s.packageId

@@ -30,6 +30,7 @@ import {
     recordPackageSessionConsumed,
     recordSessionRevenue
 } from './financialLedgerService.js';
+import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 
 /**
  * Completa uma sessão - Mutação primária de estado
@@ -230,9 +231,18 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         appointment.paymentOrigin === 'add_to_balance' ||
         (appointment.balanceAmount > 0 && !appointment.sessionValue);
 
-    const sessionValue = (isBalanceOrigin && balanceAmount > 0)
+    let sessionValue = (isBalanceOrigin && balanceAmount > 0)
         ? balanceAmount
         : (options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0);
+    
+    // 🩹 RECUPERAÇÃO: se sessionValue ainda é 0, tenta outras fontes
+    if (!sessionValue || sessionValue <= 0) {
+        const fallbackValue = appointment.paymentAmount || appointment.sessionValue || packageData?.sessionValue || 0;
+        if (fallbackValue > 0) {
+            console.log(`[CompleteSessionV2] 🩹 sessionValue recuperado: ${fallbackValue} (original: ${sessionValue})`);
+            sessionValue = fallbackValue;
+        }
+    }
     
     // 🚨 VALIDAÇÃO: liminar exige sessionValue > 0 (consome crédito)
     if (billingType === 'liminar' && (!sessionValue || sessionValue <= 0)) {
@@ -803,6 +813,9 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         }
 
         console.log(`[CompleteSessionV2] ✅ Transação commitada (${Date.now() - startTime}ms)`);
+
+        // 🔄 INVALIDA CACHE do dashboard para refletir novo caixa/produção em tempo real
+        invalidateDashboardCache();
 
         // 🔄 REBUILD SÍNCRONO da view (frontend precisa ver dados atualizados)
         let viewRebuilt = false;

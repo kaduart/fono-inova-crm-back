@@ -11,6 +11,7 @@ import PackagesView from '../models/PackagesView.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { createContextLogger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -119,10 +120,7 @@ router.get('/', async (req, res) => {
                     ] }, 1, 0] } }
                 }}
             ]),
-            Session.aggregate([
-                { $match: { status: 'completed', date: { $gte: rangeStart, $lte: rangeEnd } } },
-                { $group: { _id: null, totalProduction: { $sum: '$sessionValue' }, countProduction: { $sum: 1 } } }
-            ]),
+            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd),
             Expense.aggregate([
                 { $match: { status: { $ne: 'canceled' }, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }
@@ -138,7 +136,7 @@ router.get('/', async (req, res) => {
         ]);
 
         const p = paymentResult[0] || {};
-        const sessProd = sessionProductionResult[0] || {};
+        const sessProd = sessionProductionResult || {};
         const exp = expenseResult[0] || {};
         const pkg = packageResult[0] || {};
         const bal = balanceResult[0] || {};
@@ -192,7 +190,7 @@ router.get('/', async (req, res) => {
 
         const totals = {
             totalReceived,
-            totalProduction: sessProd.totalProduction || 0, // 🏭 Produção = Session.completed (sessionValue)
+            totalProduction: sessProd.total || 0, // 🏭 Produção = Session.completed (fonte única V2)
             totalPending: appointmentPendingTotal, // 💰 a receber real do período
             totalPartial,
             countReceived: p.countReceived || 0,

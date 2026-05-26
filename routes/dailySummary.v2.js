@@ -12,6 +12,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import { createContextLogger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -105,44 +106,14 @@ router.get('/', async (req, res) => {
                 }
             ]),
             
-            // 📊 PRODUÇÃO DO DIA: Tudo que foi realizado (inclui convênios)
-            Payment.aggregate([
-                {
-                    $match: {
-                        status: { $in: ['paid', 'pending'] },
-                        kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é produção (já contado na venda)
-                        ...dateRangeQuery
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalProduction: { $sum: '$amount' },
-                        insurancePending: {
-                            $sum: {
-                                $cond: [
-                                    { $eq: ['$insurance.status', 'pending_billing'] },
-                                    '$amount', 0
-                                ]
-                            }
-                        },
-                        insuranceBilled: {
-                            $sum: {
-                                $cond: [
-                                    { $eq: ['$insurance.status', 'billed'] },
-                                    '$amount', 0
-                                ]
-                            }
-                        }
-                    }
-                }
-            ])
+            // 📊 PRODUÇÃO DO DIA: Fonte única V2 (Session completed)
+            unifiedFinancialService.calculateProduction(startOfDay, endOfDay)
         ]);
 
         // Processar resultados
         const cash = cashResult[0] || { totalReceived: 0, count: 0, byMethod: [] };
-        const production = productionResult[0] || { 
-            totalProduction: 0, insurancePending: 0, insuranceBilled: 0 
+        const production = productionResult || { 
+            total: 0, convenio: 0, recebido: 0, pendente: 0 
         };
         
         // Consolidar métodos de pagamento
@@ -183,9 +154,9 @@ router.get('/', async (req, res) => {
                 canceled: appointments.canceled
             },
             revenue: {
-                production: production.totalProduction || 0,
+                production: production.total || 0,
                 received: cash.totalReceived || 0,
-                insurance: (production.insurancePending || 0) + (production.insuranceBilled || 0),
+                insurance: production.convenio || 0,
                 pending: (production.totalProduction || 0) - (cash.totalReceived || 0)
             }
         };

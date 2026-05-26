@@ -1,13 +1,13 @@
 /**
  * 💰 Financial Metrics Service
  * 
- * Service unificado para cálculo de métricas financeiras.
- * Resolve o problema de dual-source-of-truth entre Payment e Session.
+ * ⚠️  DEPRECATED — Em processo de migração para unifiedFinancialService.v2.js
  * 
- * Arquitetura: FASE 1 (híbrido) → FASE 2 (unificado em Payment)
+ * Este service ainda é usado por alguns endpoints legados, mas novos
+ * desenvolvimentos devem usar unifiedFinancialService.v2.js como
+ * fonte única de verdade para Caixa e Produção.
  * 
- * FASE 1: Busca em Payment + Session.isPaid (com proteção anti-duplicação)
- * FASE 2: Tudo vira Payment, Session apenas referencia
+ * Ver: back/docs/FINANCIAL_CONTRACT.md
  */
 
 import mongoose from 'mongoose';

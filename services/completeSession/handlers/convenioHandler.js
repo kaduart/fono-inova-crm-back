@@ -89,7 +89,7 @@ export const ConvenioHandler = {
                 grossAmount:       insuranceValue,
                 guideId:           guide._id
             },
-            serviceDate:  now,
+            serviceDate:  appointment.date || now,
             description:  `Sessão convênio - ${guide.insurance || 'Convênio'} | Guia ${guide.number} | ${appointment.patient?.fullName || 'Paciente'}`,
             appointment:  appointmentId,
             session:      sessionId,
