@@ -44,14 +44,14 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         const isFirstVisit = earlierAppointments.length === 0;
 
         // 🔥 Fonte de verdade para lead:
-        // pre_agendado → funil de lead clássico
-        // scheduled + isFirstVisit → agendamento direto de novo paciente (fluxo alternativo)
-        // Ambos representam aquisição de um paciente novo e devem aparecer em "Pré-agendados Novos".
-        // O filtro por período (mode=date) já limita ao dia correto via post-filter nas linhas abaixo.
-        const isLead = apt.operationalStatus === 'pre_agendado' || (apt.operationalStatus === 'scheduled' && isFirstVisit);
+        // Lead = paciente que NUNCA teve nenhum agendamento no sistema e está
+        // entrando pelo funil de aquisição (pre_agendado ou scheduled).
+        // Agendamentos pre_agendado de pacientes COM histórico (ex: convênio gerado
+        // automaticamente) NÃO são leads.
+        const isLead = isFirstVisit && (apt.operationalStatus === 'pre_agendado' || apt.operationalStatus === 'scheduled');
 
         if (isLead) {
-            return { ...apt, isLead: true, isFirstVisit: true, isReturningAfter45Days: false };
+            return { ...apt, isLead: true, isFirstVisit, isReturningAfter45Days: false };
         }
 
         // isReturningAfter45Days: olhar histórico na MESMA especialidade (por date)
@@ -65,12 +65,21 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
                  h._id.toString() < apt._id.toString())
         );
 
-        // 🎯 NOVO: primeira vez deste paciente nesta especialidade
-        const isFirstVisitInSpecialty = earlierSameSpecialty.length === 0;
+        // 🎯 Ativo na especialidade = teve agendamento nos últimos 45 dias (inclui pre_agendado).
+        // Se tem pré-agendamento recente da mesma especialidade, é continuidade clínica.
+        const recentSameSpecialty = earlierSameSpecialty.filter(
+            h => (new Date(apt.date) - new Date(h.date)) / DAY_IN_MS <= 45
+        );
+        const isFirstVisitInSpecialty = recentSameSpecialty.length === 0;
 
+        // 🎯 Retorno 45+ = última sessão CONCRETA (exclui pre_agendado) foi há +45 dias.
+        // Pré-agendamento antigo não conta como "sessão realizada" para fins de gap.
+        const concreteEarlierSameSpecialty = earlierSameSpecialty.filter(
+            h => h.operationalStatus !== 'pre_agendado'
+        );
         let isReturningAfter45Days = false;
-        if (earlierSameSpecialty.length > 0) {
-            const lastPrevious = earlierSameSpecialty[earlierSameSpecialty.length - 1];
+        if (concreteEarlierSameSpecialty.length > 0) {
+            const lastPrevious = concreteEarlierSameSpecialty[concreteEarlierSameSpecialty.length - 1];
             const diffDays = (new Date(apt.date) - new Date(lastPrevious.date)) / DAY_IN_MS;
             isReturningAfter45Days = diffDays >= 45;
         }
@@ -218,7 +227,7 @@ export const getAppointmentsByType = async (req, res) => {
         if (patientIds.length > 0) {
             const histories = await Appointment.find({
                 patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) },
-                operationalStatus: { $nin: ['pre_agendado', 'canceled', 'cancelled'] }
+                operationalStatus: { $nin: ['canceled', 'cancelled'] }
             })
                 .select('patient date specialty createdAt operationalStatus')
                 .lean();

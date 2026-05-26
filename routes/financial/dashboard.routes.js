@@ -579,7 +579,9 @@ router.get('/projection-daily', auth, authorize(['admin', 'secretary']), async (
     }
 
     // 4. projecaoFinal: usa param do frontend (cenário esperado) ou extrapola pelo ritmo atual
-    const realHoje = cumReal;
+    // realAtual: fallback enviado pelo frontend (producao acumulada) quando snapshots diários ainda não existem
+    const realAtualParam = parseFloat(req.query.realAtual);
+    const realHoje = (cumReal === 0 && !isNaN(realAtualParam) && realAtualParam > 0) ? realAtualParam : cumReal;
     let projecaoFinal;
     if (projecaoParam && !isNaN(parseFloat(projecaoParam))) {
       projecaoFinal = parseFloat(projecaoParam);

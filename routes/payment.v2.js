@@ -1072,6 +1072,13 @@ router.post('/bulk-settle', auth, async (req, res) => {
         }
 
         // 5. Cria 1 recibo consolidado que aparece no caixa do dia
+        // serviceDate = data mais recente das sessões sendo quitadas (regime de competência)
+        const _settledDates = payments
+            .map(p => p.serviceDate || p.paymentDate)
+            .filter(Boolean)
+            .sort((a, b) => new Date(b) - new Date(a));
+        const _receiptServiceDate = _settledDates[0] ? new Date(_settledDates[0]) : now;
+
         const receipt = await Payment.create([{
             patient: payments[0].patient,
             patientId,
@@ -1080,7 +1087,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             amount: totalSettled,
             status: 'paid',
             paymentDate: now,
-            serviceDate: now,
+            serviceDate: _receiptServiceDate,
             paidAt: now,
             paymentMethod: paymentMethod || 'dinheiro',
             billingType: payments[0].billingType || 'particular',

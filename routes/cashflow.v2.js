@@ -8,6 +8,7 @@ import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
 import Session from '../models/Session.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
+import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 
 const router = express.Router();
 
@@ -276,10 +277,10 @@ router.get('/', auth, async (req, res) => {
                 tipo,
                 servico,
                 especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
-                profissional: appt?.doctor?.fullName || appt?.professionalName || '-',
+                profissional: appt?.doctor?.fullName || appt?.professionalName || p.doctor?.fullName || '-',
                 hora: isLiminar
-                    ? moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')
-                    : (appt?.time || moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')),
+                    ? moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')
+                    : (appt?.time || moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')),
                 data: moment(p.financialDate || p.createdAt).format('DD/MM/YYYY'),
                 categoria: 'recebido',
                 observacao: p.notes || p.description || '-',
@@ -311,19 +312,13 @@ router.get('/', auth, async (req, res) => {
         const saldoLiquido = totalCaixaFiltrado - totalDespesas;
 
         // ========== PRODUÇÃO DO DIA ==========
-        let recebidoProducao = 0;
+        let producaoLiquidada = 0;
         let aReceber = 0;
         const porEspecialidade = {};
         const pendentesCobranca = [];
 
         const transacoesProducao = production.sessions.map(s => {
-            const valor = s.sessionValue > 0
-                ? s.sessionValue
-                : s.package?.sessionValue > 0
-                    ? s.package.sessionValue
-                    : (s.package?.totalValue && s.package?.totalSessions)
-                        ? Math.round(s.package.totalValue / s.package.totalSessions)
-                        : 0;
+            const valor = resolveSessionFinancialValue(s);
 
             const patient = patientMap.get(s.patient?.toString());
             const doctor = doctorsMap.get(s.doctor?.toString());
@@ -370,7 +365,7 @@ router.get('/', auth, async (req, res) => {
                 });
             } else {
                 porEspecialidade[esp].recebido += valor;
-                recebidoProducao += valor;
+                producaoLiquidada += valor;
             }
 
             return {
@@ -405,7 +400,7 @@ router.get('/', auth, async (req, res) => {
             : 0;
         const ticketMedio = countCaixaFiltrado > 0 ? (totalCaixaFiltrado / countCaixaFiltrado) : 0;
         const ticketMedioProducao = production.count > 0 ? (production.total / production.count) : 0;
-        const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
+        const taxaEficiencia = production.total > 0 ? ((producaoLiquidada / production.total) * 100).toFixed(1) : 0;
 
         const especialidadesResumo = Object.entries(porEspecialidade).map(([nome, dados]) => ({
             nome,
@@ -455,7 +450,7 @@ router.get('/', auth, async (req, res) => {
                 producao: {
                     total: production.total,
                     aReceber,
-                    recebido: recebidoProducao,
+                    producaoLiquidada,
                     convenioAReceber: production.convenio || 0,
                     quantidadeAtendimentos: production.count,
                     ticketMedio: ticketMedioProducao,

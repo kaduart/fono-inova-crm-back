@@ -7,6 +7,7 @@ import { auth, authorize } from '../../middleware/auth.js';
 import Appointment from '../../models/Appointment.js';
 import Session from '../../models/Session.js';
 import Package from '../../models/Package.js';
+import { resolveSessionFinancialValueAggregate } from '../../utils/resolveSessionFinancialValue.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -78,6 +79,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
         const sessionStats = await Session.aggregate([
             { $match: sessionMatch },
+            { $lookup: {
+                from: 'packages',
+                localField: 'package',
+                foreignField: '_id',
+                pipeline: [{ $project: { sessionValue: 1, totalValue: 1, totalSessions: 1 } }],
+                as: '_pkg'
+            }},
+            ...resolveSessionFinancialValueAggregate(),
             {
                 $group: {
                     _id: null,
@@ -86,7 +95,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
                         $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
                     },
                     totalRevenue: {
-                        $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$value', 0] }
+                        $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$effectiveValue', 0] }
                     },
                     totalCommission: {
                         $sum: '$commissionValue'
@@ -107,11 +116,19 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         // ======================================================
         const productionByDoctor = await Session.aggregate([
             { $match: { ...sessionMatch, status: 'completed' } },
+            { $lookup: {
+                from: 'packages',
+                localField: 'package',
+                foreignField: '_id',
+                pipeline: [{ $project: { sessionValue: 1, totalValue: 1, totalSessions: 1 } }],
+                as: '_pkg'
+            }},
+            ...resolveSessionFinancialValueAggregate(),
             {
                 $group: {
                     _id: '$doctor',
                     sessionsCount: { $sum: 1 },
-                    totalRevenue: { $sum: '$value' },
+                    totalRevenue: { $sum: '$effectiveValue' },
                     totalCommission: { $sum: '$commissionValue' }
                 }
             },

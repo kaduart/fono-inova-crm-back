@@ -69,10 +69,11 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
     endDate: new Date(endDate),
     sessions: sessions.map(s => ({
       session: s._id,
+      sessionDate: s.date,   // data da sessão para regime de competência no processReturn
       appointment: s.appointmentId,
       guide: s.insuranceGuide,
-      payment: s.paymentId,  // ✅ Vínculo seguro para retorno
-      protocolItemId: null,  // ✅ Será preenchido ao gerar XML TISS
+      payment: s.paymentId,
+      protocolItemId: null,
       grossAmount: s.sessionValue || 0,
       netAmount: s.sessionValue || 0,
       status: 'pending'
@@ -193,9 +194,11 @@ export async function processReturn(batchId, returnData) {
   }
   
   // Atualizar cada sessão com o retorno (busca por paymentId ou sessionId)
+  // sessionDateMap: chave = paymentId ou sessionId → Date da sessão (para regime de competência)
+  const sessionDateMap = new Map();
   let totalReceived = 0;
   let totalGlosa = 0;
-  
+
   for (const item of returnData.items || []) {
     // Busca por paymentId (preferencial) ou sessionId (fallback)
     const sessionItem = batch.sessions.find(s => {
@@ -204,7 +207,7 @@ export async function processReturn(batchId, returnData) {
       }
       return s.session.toString() === item.sessionId;
     });
-    
+
     if (sessionItem) {
       sessionItem.status = item.status; // 'paid', 'partial', 'glosa', 'rejected'
       sessionItem.returnAmount = item.returnAmount || 0;
@@ -212,13 +215,17 @@ export async function processReturn(batchId, returnData) {
       sessionItem.glosaReason = item.glosaReason || null;
       sessionItem.protocolNumber = returnData.protocolNumber;
       sessionItem.processedAt = new Date();
-      
+
+      // Guardar sessionDate para uso no segundo loop (regime de competência)
+      const mapKey = item.paymentId || item.sessionId;
+      if (mapKey && sessionItem.sessionDate) sessionDateMap.set(mapKey, sessionItem.sessionDate);
+
       totalReceived += item.returnAmount || 0;
       totalGlosa += item.glosaAmount || 0;
     } else {
-      console.warn(`[InsuranceBatch] Item não encontrado no lote:`, { 
-        paymentId: item.paymentId, 
-        sessionId: item.sessionId 
+      console.warn(`[InsuranceBatch] Item não encontrado no lote:`, {
+        paymentId: item.paymentId,
+        sessionId: item.sessionId
       });
     }
   }
@@ -273,10 +280,13 @@ export async function processReturn(batchId, returnData) {
     };
     
     // Se convênio pagou, atualizar status principal também
+    // financialDate = data da sessão (regime de competência): o recebimento é atribuído
+    // ao mês em que a sessão foi realizada, não ao mês do processReturn
     if (item.status === 'paid') {
+      const mapKey = item.paymentId || item.sessionId;
       paymentUpdate.status = 'paid';
       paymentUpdate.paidAt = new Date();
-      paymentUpdate.financialDate = new Date();
+      paymentUpdate.financialDate = sessionDateMap.get(mapKey) || new Date();
     }
     
     await Payment.updateOne(
