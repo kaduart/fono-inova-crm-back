@@ -171,13 +171,17 @@ services:
   - type: worker
     name: crm-worker-whatsapp
     runtime: node
-    plan: starter
+    plan: standard
     region: ohio
     branch: main
     rootDir: back
-    buildCommand: npm install && node installChrome.js
-    startCommand: node workers/entrypoints/whatsapp-worker.js
+    buildCommand: npm ci --omit=optional && node installChrome.js
+    startCommand: node workers/entrypoints/whatsapp-only.js
     autoDeploy: false
+    disk:
+      name: whatsapp-session
+      mountPath: /var/data/wwebjs_auth
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -185,6 +189,8 @@ services:
         value: "true"
       - key: WORKER_GROUP
         value: whatsapp
+      - key: WHATSAPP_AUTH_PATH
+        value: "/var/data/wwebjs_auth"
       - key: MONGODB_URI
         fromService:
           name: fono-inova-crm-api

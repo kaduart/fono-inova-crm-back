@@ -195,6 +195,17 @@ function createClient() {
     console.log(`[WhatsAppWeb] Usando Chrome: ${chromePath}`);
   }
 
+  // Limpa cache local stale do WhatsApp Web (pode ter HTML antigo)
+  try {
+    const staleCacheDir = path.resolve(process.cwd(), '.wwebjs_cache');
+    if (fs.existsSync(staleCacheDir)) {
+      fs.rmSync(staleCacheDir, { recursive: true, force: true });
+      console.log('[WhatsAppWeb] 🧹 Cache local .wwebjs_cache removido (stale).');
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível limpar cache local:', e.message);
+  }
+
   const newClient = new Client({
     authStrategy: new LocalAuth({
       dataPath: authPath,
@@ -204,6 +215,10 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0,
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040214237-alpha.html',
+    },
     puppeteer: puppeteerOpts,
   });
 
@@ -309,6 +324,28 @@ function createClient() {
 
   newClient.on('error', (err) => {
     console.error('[WhatsAppWeb] ❌ error:', err.message);
+  });
+
+  newClient.on('auth_failure', (msg) => {
+    const ts = new Date().toISOString();
+    console.error(`[WhatsAppWeb][${ts}] 🔴 auth_failure:`, msg);
+    connectionStatus = 'auth_failure';
+    whatsappState.lastDisconnectReason = `auth_failure: ${msg}`;
+    saveState();
+    if (process.send) {
+      process.send({ type: 'whatsapp_disconnected', reason: `auth_failure: ${msg}` });
+    }
+  });
+
+  newClient.on('change_state', (state) => {
+    const ts = new Date().toISOString();
+    console.log(`[WhatsAppWeb][${ts}] 🔄 change_state: ${state}`);
+    if (state === 'CONFLICT' || state === 'UNPAIRED' || state === 'UNPAIRED_IDLE') {
+      connectionStatus = 'disconnected';
+      whatsappState.ready = false;
+      whatsappState.authenticated = false;
+      saveState();
+    }
   });
 
   return newClient;
