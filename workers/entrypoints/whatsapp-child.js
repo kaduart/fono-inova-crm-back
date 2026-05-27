@@ -86,6 +86,22 @@ process.on('unhandledRejection', (reason) => {
 async function main() {
     console.log('[CHILD] 🚀 Iniciando WhatsApp child process...');
 
+    // Limpa cache stale do WhatsApp Web em todos os paths possíveis
+    const cachePaths = [
+        path.join(process.cwd(), '.wwebjs_cache'),
+        path.join('/opt/render/project/src/back', '.wwebjs_cache'),
+    ];
+    for (const cp of cachePaths) {
+        try {
+            if (fs.existsSync(cp)) {
+                fs.rmSync(cp, { recursive: true, force: true });
+                console.log(`[CHILD] 🧹 Cache removido: ${cp}`);
+            }
+        } catch (e) {
+            // ignora
+        }
+    }
+
     // ─── Teste de persistência do disco (Render disk) ────────────────────────
     const pingFile = path.join(AUTH_BASE, '.render-persistence-test.txt');
     try {
@@ -165,10 +181,21 @@ async function main() {
         } catch {}
     }, 5000);
 
-    // Log de memória a cada 30s
+    // Log de memória a cada 30s (processo + container)
     setInterval(() => {
         const mem = process.memoryUsage();
-        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB`);
+        let sysMem = '';
+        try {
+            const meminfo = fs.readFileSync('/proc/meminfo', 'utf-8');
+            const avail = meminfo.match(/MemAvailable:\s+(\d+)/);
+            const total = meminfo.match(/MemTotal:\s+(\d+)/);
+            if (avail && total) {
+                const usedMB = Math.round((parseInt(total[1]) - parseInt(avail[1])) / 1024);
+                const totalMB = Math.round(parseInt(total[1]) / 1024);
+                sysMem = ` | Container: ${usedMB}/${totalMB}MB`;
+            }
+        } catch {}
+        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}`);
     }, 30000);
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
