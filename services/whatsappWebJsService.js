@@ -215,10 +215,9 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0,
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040214237-alpha.html',
-    },
+    // Cache: usa LocalWebCache (padrão) porque limpamos .wwebjs_cache no boot.
+    // Isso garante que a versão do WhatsApp Web seja sempre a mais recente.
+    // webVersionCache: { type: 'remote', remotePath: '...' }
     puppeteer: puppeteerOpts,
   });
 
