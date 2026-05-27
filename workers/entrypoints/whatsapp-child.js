@@ -102,17 +102,16 @@ async function main() {
         }
     }
 
-    // ─── Força limpeza total da sessão se solicitado via env ─────────────────
-    if (process.env.WHATSAPP_FORCE_CLEAN_SESSION === 'true') {
-        try {
-            const sessionDir = path.join(AUTH_BASE, '.wwebjs_auth');
-            if (fs.existsSync(sessionDir)) {
-                fs.rmSync(sessionDir, { recursive: true, force: true });
-                console.log('[CHILD] 🧨 WHATSAPP_FORCE_CLEAN_SESSION ativo — sessão local REMOVIDA completamente.');
-            }
-        } catch (e) {
-            console.warn('[CHILD] Erro ao forçar limpeza de sessão:', e.message);
+    // ─── LIMPEZA TEMPORÁRIA DE SESSÃO CORROMPIDA ─────────────────────────────
+    // TODO: remover este bloco após reconexão bem-sucedida
+    try {
+        const sessionDir = path.join(AUTH_BASE, '.wwebjs_auth');
+        if (fs.existsSync(sessionDir)) {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+            console.log('[CHILD] 🧨 SESSÃO LOCAL REMOVIDA — boot limpo forçado.');
         }
+    } catch (e) {
+        console.warn('[CHILD] Erro ao limpar sessão:', e.message);
     }
 
     // ─── Teste de persistência do disco (Render disk) ────────────────────────
