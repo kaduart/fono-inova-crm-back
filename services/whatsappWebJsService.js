@@ -186,7 +186,10 @@ function createClient() {
         '--disable-composited-antialiasing',
         '--media-cache-size=0',
         '--disk-cache-size=0',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080',
       ],
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
 
   const chromePath = resolveChromePath();
@@ -214,7 +217,7 @@ function createClient() {
     takeoverOnConflict: true,
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
-    qrMaxRetries: 0,
+    qrMaxRetries: 3,
     // Cache: usa LocalWebCache (padrão) porque limpamos .wwebjs_cache no boot.
     // Isso garante que a versão do WhatsApp Web seja sempre a mais recente.
     // webVersionCache: { type: 'remote', remotePath: '...' }
@@ -240,6 +243,22 @@ function createClient() {
       }
     } catch (err) {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
+    }
+
+    // Tentativa de pairing code como alternativa ao QR
+    const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
+    if (phoneNumber && newClient.requestPairingCode) {
+      try {
+        console.log(`[WhatsAppWeb] 🔢 Solicitando pairing code para ${phoneNumber}...`);
+        const pairingCode = await newClient.requestPairingCode(phoneNumber);
+        console.log(`[WhatsAppWeb] 🔢 PAIRING CODE: ${pairingCode}`);
+        console.log(`[WhatsAppWeb] 🔢 Para usar: WhatsApp no celular → Config → Aparelhos Conectados → Conectar com número de telefone → digite: ${pairingCode}`);
+        if (process.send) {
+          process.send({ type: 'whatsapp_pairing_code', pairingCode, phoneNumber });
+        }
+      } catch (pairErr) {
+        console.warn('[WhatsAppWeb] Não foi possível obter pairing code:', pairErr.message);
+      }
     }
   });
 
