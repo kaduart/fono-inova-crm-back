@@ -292,6 +292,8 @@ router.get('/', auth, async (req, res) => {
             };
         }).filter(Boolean);
 
+        transacoesCaixa.sort((a, b) => b.hora.localeCompare(a.hora));
+
         // Recalcula totais do caixa a partir das transações já filtradas
         const totalCaixaFiltrado = transacoesCaixa.reduce((s, t) => s + t.valor, 0);
         const pixFiltrado = transacoesCaixa.filter(t => t.metodo === 'Pix').reduce((s, t) => s + t.valor, 0);
