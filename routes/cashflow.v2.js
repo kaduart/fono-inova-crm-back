@@ -34,9 +34,18 @@ router.get('/', auth, async (req, res) => {
         // ============================================================
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
-        const [cash, production] = await Promise.all([
+        const [cash, production, convenioAppts] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end),
-            unifiedFinancialService.calculateProduction(start, end)
+            unifiedFinancialService.calculateProduction(start, end),
+            Appointment.find({
+                date: { $gte: start, $lte: end },
+                operationalStatus: 'completed',
+                billingType: 'convenio'
+            })
+                .select('_id time date doctor specialty billingType insuranceProvider insuranceValue sessionValue paymentStatus patient patientName patientInfo serviceType')
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName specialty')
+                .lean()
         ]);
 
         // ============================================================
@@ -329,7 +338,8 @@ router.get('/', auth, async (req, res) => {
 
             const patientName = patient?.fullName || appt?.patientName || appt?.patientInfo?.fullName || 'Paciente não identificado';
             const methodLower = (s.paymentMethod || '').toLowerCase();
-            const isConvenio = methodLower === 'convenio' || s.paymentOrigin === 'convenio';
+            const isConvenio = methodLower === 'convenio' || s.paymentOrigin === 'convenio'
+                || appt?.billingType === 'convenio' || s.billingType === 'convenio';
             const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.paymentOrigin === 'liminar_credit' || s.billingType === 'liminar';
             const isPacote = !!s.package;
 
@@ -393,6 +403,43 @@ router.get('/', auth, async (req, res) => {
                 paymentModel: isPacote ? (isPrepaidPkg ? 'prepaid' : 'per_session') : null
             };
         });
+
+        // Appointments convênio sem Session document — injetar como entradas sintéticas
+        const sessionCoveredApptIds = new Set(
+            production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean)
+        );
+        for (const appt of convenioAppts) {
+            if (sessionCoveredApptIds.has(appt._id.toString())) continue;
+            const valor = appt.insuranceValue || appt.sessionValue || 0;
+            const esp = appt.doctor?.specialty || 'Outra';
+            const patientName = appt.patient?.fullName || appt.patientName || appt.patientInfo?.fullName || 'Paciente não identificado';
+            const serviceTypeLabel =
+                appt.serviceType === 'evaluation' ? 'Avaliação' :
+                appt.serviceType === 'consultation' ? 'Consulta' :
+                appt.serviceType === 'convenio_session' ? 'Sessão Convênio' :
+                appt.serviceType === 'package_session' ? 'Sessão de Pacote' : 'Sessão';
+            if (!porEspecialidade[esp]) {
+                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
+            }
+            porEspecialidade[esp].total += valor;
+            porEspecialidade[esp].quantidade += 1;
+            porEspecialidade[esp].recebido += valor;
+            transacoesProducao.push({
+                id: appt._id,
+                paciente: patientName,
+                valor,
+                metodo: 'Convênio',
+                tipo: 'Convênio',
+                servico: serviceTypeLabel,
+                especialidade: esp,
+                hora: appt.time || '',
+                data: moment(appt.date).format('DD/MM/YYYY'),
+                status: 'completed',
+                categoria: 'convenio',
+                professional: appt.doctor?.fullName || '-',
+                paymentModel: null
+            });
+        }
 
         // Comparativos e métricas
         const variacao = yesterdayTotal > 0
