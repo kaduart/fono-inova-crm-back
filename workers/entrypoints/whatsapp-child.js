@@ -102,18 +102,6 @@ async function main() {
         }
     }
 
-    // ─── LIMPEZA TEMPORÁRIA DE SESSÃO CORROMPIDA ─────────────────────────────
-    // TODO: remover este bloco após reconexão bem-sucedida
-    try {
-        const sessionDir = path.join(AUTH_BASE, '.wwebjs_auth');
-        if (fs.existsSync(sessionDir)) {
-            fs.rmSync(sessionDir, { recursive: true, force: true });
-            console.log('[CHILD] 🧨 SESSÃO LOCAL REMOVIDA — boot limpo forçado.');
-        }
-    } catch (e) {
-        console.warn('[CHILD] Erro ao limpar sessão:', e.message);
-    }
-
     // ─── Teste de persistência do disco (Render disk) ────────────────────────
     const pingFile = path.join(AUTH_BASE, '.render-persistence-test.txt');
     try {
