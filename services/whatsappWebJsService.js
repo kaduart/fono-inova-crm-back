@@ -371,6 +371,29 @@ function createClient() {
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
 export async function initWhatsAppClient() {
+  console.log(`[WhatsAppWeb] 📂 Auth path: ${authPath}`);
+
+  // 🧨 Modo emergência: limpa sessão COMPLETAMENTE antes de criar qualquer cliente
+  if (process.env.WHATSAPP_FORCE_CLEAN_SESSION === 'true') {
+    console.log('[WhatsAppWeb] 🧨 WHATSAPP_FORCE_CLEAN_SESSION ativo — limpando tudo antes de iniciar');
+    const targets = [
+      path.join(authPath, '.wwebjs_auth'),
+      path.join(authPath, '.booting'),
+      path.join(authPath, '.crash-log.json'),
+      path.join(process.cwd(), '.wwebjs_cache'),
+    ];
+    for (const t of targets) {
+      try {
+        if (fs.existsSync(t)) {
+          fs.rmSync(t, { recursive: true, force: true });
+          console.log(`[WhatsAppWeb] 🗑️  Removido: ${t}`);
+        }
+      } catch (e) {
+        console.warn(`[WhatsAppWeb] ⚠️ Não foi possível remover ${t}:`, e.message);
+      }
+    }
+  }
+
   if (isReady && client) {
     console.log('[WhatsAppWeb] Já está ready — ignorando init.');
     return;

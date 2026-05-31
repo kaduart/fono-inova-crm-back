@@ -74,3 +74,38 @@ ENV_VARS_FOR_WORKER.md
 dist/
 dist/*
 .cache/
+
+# ─── BLOQUEIO PERMANENTE: arquivos grandes e temporários ───
+# NUNCA versionar: vídeos, binários pesados, tarballs
+tmp/
+tmp/videos/
+videos/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.tar.gz
+*.tar
+*.tgz
+*.zip
+
+# NUNCA versionar: caches de build e teste
+coverage/
+.nyc_output/
+
+# NUNCA versionar: repos aninhados
+.git/
+
+# NUNCA versionar: assets 3D pesados
+*.blend
+*.fbx
+*.obj
+*.gltf
+*.glb
+
+# NUNCA versionar: dumps de banco
+*.dump
+*.sql
+*.sqlite
+*.sqlite3
