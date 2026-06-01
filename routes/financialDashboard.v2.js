@@ -656,14 +656,12 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    // ⛔ FONTE ÚNICA: novaReceitaMes.total — nunca fazer fallback para producao ou caixa.
-    // producao = tudo atendido (inclui pacote pré-pago, fiado, convênio) → ERRADO para meta.
-    // caixa = dinheiro recebido (inclui retroativos, parcelas antigas) → ERRADO para meta.
-    // Se novaReceitaMes vier null, expõe 0 (falha explícita) em vez de mentir com producao.
-    // Bug silencioso corrigido em 2026-06-01: fallback ?? producao inflava meta com R$870+
-    // de consumo de pacote. "Falha visível > mentira silenciosa" em KPI financeiro.
-    const realizadoMes = data.novaReceitaMes?.total ?? 0;
-    const realizadoDia = data.caixaHoje || 0;
+    // 🎯 Receita reconhecida = caixa real recebido + tudo que foi produzido mas ainda não pago.
+    // Alinhado com o modelo de meta por produção: caixa + convênio a receber + particular pendente.
+    // NÃO usa novaReceitaMes (que exclui retroativos do caixa e particular pendente).
+    const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
+    // 🎯 META REAL DO DIA: caixa + convênio produzido + particular pendente (sessões realizadas)
+    const realizadoDia = (data.caixaHoje || 0) + (data.convenioHoje || 0) + (data.particularPendenteHoje || 0);
     const producaoDia  = data.producaoHoje || 0;
 
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
@@ -1140,22 +1138,6 @@ async function calculateNovaReceita(start, end) {
                     { financialDate: null, paymentDate: { $gte: start, $lte: end } }
                 ]
             }},
-            { $lookup: {
-                from: 'sessions',
-                localField: 'session',
-                foreignField: '_id',
-                as: 'sess'
-            }},
-            { $addFields: {
-                sessionOrigin: { $arrayElemAt: ['$sess.paymentOrigin', 0] }
-            }},
-            { $match: {
-                $or: [
-                    { session: { $exists: false } },
-                    { session: null },
-                    { sessionOrigin: { $nin: ['auto_per_session', 'package_prepaid'] } }
-                ]
-            }},
             { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
         ]),
         Session.aggregate([
@@ -1242,6 +1224,32 @@ async function calculateRealTime(year, month) {
         calculateNovaReceita(start, end)
     ]);
 
+    // 🛡️ Particular pendente do dia — fonte: sessions completed sem payment paid (exclui pré-pago)
+    const particularPendenteHojeAgg = await Session.aggregate([
+        { $match: { date: { $gte: todayStart, $lte: todayEnd }, status: 'completed' } },
+        { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+        { $unwind: '$appt' },
+        { $match: {
+            'appt.billingType': { $nin: ['convenio', 'liminar'] },
+            'appt.operationalStatus': 'completed'
+        }},
+        { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+        { $match: { $or: [
+            { 'appt.package': { $exists: false } },
+            { 'appt.package': null },
+            { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+            { 'pkg.model': 'per_session' },
+            { pkg: { $size: 0 } }
+        ]}},
+        { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+        { $match: { $or: [
+            { payment: { $size: 0 } },
+            { 'payment.status': { $ne: 'paid' } }
+        ]}},
+        { $group: { _id: null, total: { $sum: '$sessionValue' } } }
+    ]);
+    const particularPendenteHoje = particularPendenteHojeAgg[0]?.total || 0;
+
     const packageSalesTotal = packageSalesAgg[0]?.total || 0;
     const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
@@ -1287,6 +1295,8 @@ async function calculateRealTime(year, month) {
         receitaDiferida: cash.receitaDiferida,
         caixaHoje: todayCash.total,
         producaoHoje: todayProduction.total || 0,
+        convenioHoje: todayProduction.convenio || 0,
+        particularPendenteHoje: particularPendenteHoje,
         caixaDetalhe: {
             ...caixaBlock,
             packageSales: packageSalesTotal,
@@ -1316,7 +1326,7 @@ async function calculateRealTime(year, month) {
         },
         retroativos,
         aReceberProducao,
-        receitaReconhecida: cash.total + convenioAReceber,
+        receitaReconhecida: cash.total + aReceberProducao,
         novaReceitaMes,
     };
 }

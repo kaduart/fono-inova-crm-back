@@ -2786,19 +2786,19 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
     await newAppointment.save({ session: mongoSession });
 
     // ─── 7. POLÍTICA DE PAYMENT ────────────────────────────────
-    if (existing.payment) {
+    // PARTICULAR: cancela payment original e cria novo pendente
+    // PACOTE: não cancela payment, não cria novo — só recria o agendamento
+    if (!existing.package && existing.payment) {
       const originalPayment = await Payment.findById(existing.payment).session(mongoSession).lean();
 
       if (originalPayment) {
         if (originalPayment.status === 'paid') {
-          // Pago: cancela o original (exceto package_receipt, que é pagamento do pacote)
-          if (originalPayment.kind !== 'package_receipt') {
-            await Payment.findByIdAndUpdate(
-              existing.payment,
-              { status: 'canceled', canceledAt: new Date(), cancelReason: 'Remarcado para outro horário' },
-              { session: mongoSession }
-            );
-          }
+          // Pago: cancela o original
+          await Payment.findByIdAndUpdate(
+            existing.payment,
+            { status: 'canceled', canceledAt: new Date(), cancelReason: 'Remarcado para outro horário' },
+            { session: mongoSession }
+          );
           const newPayment = new Payment({
             patient: newAppointment.patient,
             doctor: newAppointment.doctor,
