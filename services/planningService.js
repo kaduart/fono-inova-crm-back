@@ -335,10 +335,101 @@ export const calculateDetailedProgress = async (planningId) => {
     }
 };
 
+/**
+ * 🎯 Calcula a projeção operacional REAL do mês
+ * Baseado em appointments futuros já agendados (agenda real)
+ * 
+ * Pesos por status:
+ *   - confirmed: 100%
+ *   - scheduled: 90%
+ *   - no_show: 60%
+ *   - cancelled / force_cancelled: 0% (ignorados)
+ */
+export const calculateMonthlyProjection = async (month, year) => {
+    try {
+        const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const endStr = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+
+        const startDate = new Date(startStr + 'T00:00:00.000Z');
+        const endDate = new Date(endStr + 'T23:59:59.999Z');
+
+        // 📌 PAINEL COMERCIAL ESTRATÉGICO — MVP SIMPLES
+        // Soma direta de appointments não cancelados.
+        // Sem pesos de probabilidade. O foco é "quanto já temos na mão".
+        const appointments = await Appointment.find({
+            date: { $gte: startDate, $lte: endDate },
+            operationalStatus: {
+                $nin: ['canceled', 'force_cancelled']
+            }
+        }).select('date operationalStatus sessionValue billingType package patientType').lean();
+
+        // Separar por fonte E por natureza estratégica
+        let totalProjected = 0;
+        let recurringRevenue = 0; // base previsível (pacotes + recorrentes)
+        let newRevenue = 0;       // captação nova (avulsos + convênios)
+        const composition = {
+            pacotes: 0,
+            convenios: 0,
+            perSession: 0,
+            recorrentes: 0
+        };
+
+        appointments.forEach(appt => {
+            const value = appt.sessionValue || 0;
+            totalProjected += value;
+
+            // Classificar por fonte
+            if (appt.package) {
+                composition.pacotes += value;
+                recurringRevenue += value; // pacote = compromisso de continuidade
+            } else if (appt.billingType === 'convenio') {
+                composition.convenios += value;
+                newRevenue += value; // convênio = geralmente autorização nova
+            } else if (appt.patientType === 'recorrente') {
+                composition.recorrentes += value;
+                recurringRevenue += value; // recorrente = base previsível
+            } else {
+                composition.perSession += value;
+                newRevenue += value; // avulso não-recorrente = captação/esporádico
+            }
+        });
+
+        // Arredondar
+        totalProjected = Math.round(totalProjected);
+        recurringRevenue = Math.round(recurringRevenue);
+        newRevenue = Math.round(newRevenue);
+        composition.pacotes = Math.round(composition.pacotes);
+        composition.convenios = Math.round(composition.convenios);
+        composition.perSession = Math.round(composition.perSession);
+        composition.recorrentes = Math.round(composition.recorrentes);
+
+        return {
+            projectedRevenue: totalProjected,
+            recurringRevenue,
+            newRevenue,
+            composition,
+            totalAppointments: appointments.length,
+            breakdownByStatus: appointments.reduce((acc, appt) => {
+                const status = appt.operationalStatus;
+                if (!acc[status]) acc[status] = { count: 0, projected: 0 };
+                acc[status].count += 1;
+                acc[status].projected += Math.round(appt.sessionValue || 0);
+                return acc;
+            }, {})
+        };
+
+    } catch (error) {
+        console.error('[Planning Service] ❌ Erro ao calcular projeção mensal:', error);
+        throw error;
+    }
+};
+
 export default {
     updatePlanningProgress,
     updateAllPlanningsProgress,
     createWeeklyPlanning,
     createMonthlyPlanning,
-    calculateDetailedProgress
+    calculateDetailedProgress,
+    calculateMonthlyProjection
 };

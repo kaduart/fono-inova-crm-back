@@ -63,13 +63,6 @@ router.post('/', flexibleAuth, async (req, res) => {
         if (!doctorId) {
             return res.status(401).json(failure('UNAUTHORIZED', 'Usuário não autenticado'));
         }
-        if (!payload.metrics || !Array.isArray(payload.metrics) || payload.metrics.length === 0) {
-            return res.status(400).json(failure('MISSING_METRICS', 'Adicione ao menos uma métrica de avaliação'));
-        }
-        if (!payload.evaluationAreas || !Array.isArray(payload.evaluationAreas) || payload.evaluationAreas.length === 0) {
-            return res.status(400).json(failure('MISSING_AREAS', 'Adicione ao menos uma área de desenvolvimento'));
-        }
-
         // Combina date + time para garantir unicidade por horário (permite múltiplas sessões no mesmo dia)
         const dateObj = new Date(payload.date);
         if (payload.time) {

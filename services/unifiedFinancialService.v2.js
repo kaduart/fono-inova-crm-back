@@ -28,7 +28,12 @@ export async function calculateCash(start, end) {
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
-        isFromPackage: { $ne: true },   // defense-in-depth: consumo de pacote nunca é caixa
+        // ⛔ NÃO REMOVER — regra central de separação de domínios financeiros.
+        // Consumo de sessão de pacote pré-pago (isFromPackage=true) NÃO é entrada de caixa.
+        // O dinheiro entrou na venda do pacote (package_receipt). Retirar este filtro
+        // causa inflação do caixa histórico — bug confirmado e corrigido em 2026-06-01.
+        // Ver: back/scripts/audit-prepaid-ghost-payments.js para diagnóstico completo.
+        isFromPackage: { $ne: true },
         kind: { $ne: 'package_consumed' },
         // convenio entra no caixa apenas quando status='paid' (via processReturn do lote)
         // não excluir billingType: 'convenio' aqui — pagamentos pendentes/billed não passam pelo status: 'paid'

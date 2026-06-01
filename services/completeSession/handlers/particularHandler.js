@@ -100,14 +100,38 @@ export const ParticularHandler = {
             if (pkgAtual && (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full')) {
                 const sessionsDone = pkgAtual.sessionsDone || 0;
                 const totalPaid    = pkgAtual.totalPaid || 0;
+                // ⚠️ FRAGILIDADE CONHECIDA: esta fórmula assume sessionValue fixo para todas as sessões.
+                // Quebra com: descontos, sessões bônus, valores variáveis, upgrades, renegociação.
+                // Correto futuro: sum(sessoesExecutadas.value) em vez de sessionsDone * sessionValue.
+                // NÃO corrigir aqui sem migração de dados e auditoria completa.
                 const isPrepaidCovered = totalPaid >= sessionsDone * sessionValue;
 
                 if (isPrepaidCovered) {
                     console.log(`[ParticularHandler] [PREPAID] Sessao coberta por pagamento antecipado — Payment nao criado`);
                     return null;
                 }
+
+                // Guard: pacote prepaid/full com cobertura insuficiente (edge case).
+                // Loga para auditoria e marca isFromPackage=true para não contaminar caixa.
+                console.warn('[PREPAID_FALLBACK_PAYMENT]', {
+                    patient: appointment.patient?._id,
+                    packageId,
+                    sessionValue,
+                    totalPaid: pkgAtual.totalPaid,
+                    sessionsDone: pkgAtual.sessionsDone,
+                    model: pkgAtual.model,
+                    paymentType: pkgAtual.paymentType
+                });
             }
         }
+
+        // ⛔ NÃO REMOVER — safety net para evitar ghost payments no caixa.
+        // Quando isPrepaidCovered=false em pacote prepaid/full (edge case de dados inconsistentes),
+        // o payment criado DEVE ser marcado isFromPackage=true para ser excluído de calculateCash.
+        // Sem isso, consumo de pacote vira "entrada de caixa falsa" — bug confirmado 2026-06-01
+        // que gerou R$9.420 de inflação histórica em 58 payments (março/abril/maio/junho).
+        const isPrepaidFallback = !!(packageId && pkgAtual &&
+            (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full'));
 
         // Sub-caso 2: fiado / addToBalance
         if (isBalanceOrigin) {
@@ -125,7 +149,8 @@ export const ParticularHandler = {
                 session:       sessionId,
                 createdBy:     userId,
                 kind:          'session_payment',
-                billingType:   'particular'
+                billingType:   'particular',
+                ...(isPrepaidFallback ? { isFromPackage: true } : {})
             }], { session: mongoSession });
             appointmentUpdate.$set.payment = paymentDoc._id;
             console.log(`[ParticularHandler] [FIADO] Payment pending criado (addToBalance): ${paymentDoc._id}`);
@@ -157,7 +182,8 @@ export const ParticularHandler = {
                         paymentMethod: appointment.paymentMethod || 'cash',
                         kind:          'session_payment',
                         billingType:   'particular',
-                        updatedAt:     now
+                        updatedAt:     now,
+                        ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }
                 },
                 { session: mongoSession, new: true }
@@ -179,7 +205,8 @@ export const ParticularHandler = {
                 session:       sessionId,
                 createdBy:     userId,
                 kind:          'session_payment',
-                billingType:   'particular'
+                billingType:   'particular',
+                ...(isPrepaidFallback ? { isFromPackage: true } : {})
             }], { session: mongoSession });
             paymentCreated = paymentDoc;
             appointmentUpdate.$set.payment = paymentCreated._id;

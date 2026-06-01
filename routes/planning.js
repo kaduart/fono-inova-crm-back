@@ -2,7 +2,7 @@
 import express from 'express';
 import { auth, authorize } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
-import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress } from '../services/planningService.js';
+import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
 
 const router = express.Router();
 
@@ -102,10 +102,21 @@ router.get('/', auth, async (req, res) => {
         .sort({ 'period.start': -1 });
     }
 
+    // Se solicitou month/year, calcular projeção operacional do mês
+    let projection = null;
+    if (month && year) {
+      try {
+        projection = await calculateMonthlyProjection(parseInt(month), parseInt(year));
+      } catch (projErr) {
+        console.error('[Planning GET] ❌ Erro ao calcular projeção:', projErr.message);
+      }
+    }
+
     res.json({
       success: true,
       count: plannings.length,
-      data: plannings
+      data: plannings,
+      projection
     });
 
   } catch (error) {
@@ -244,7 +255,7 @@ router.post('/quick/monthly', auth, authorize(['admin']), async (req, res) => {
  */
 router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req, res) => {
   try {
-    const { month, year, monthlyRevenue, totalSessions, workHours } = req.body;
+    const { month, year, monthlyRevenue, totalSessions, workHours, averageTicket, commercialTicket } = req.body;
 
     if (!month || !year || !monthlyRevenue) {
       return res.status(400).json({ success: false, message: 'month, year e monthlyRevenue são obrigatórios' });
@@ -279,7 +290,9 @@ router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req
         targets: {
           expectedRevenue: Math.round(monthlyRevenue * frac),
           totalSessions: Math.round((totalSessions || 0) * frac),
-          workHours: parseFloat(((workHours || 0) * frac).toFixed(1))
+          workHours: parseFloat(((workHours || 0) * frac).toFixed(1)),
+          averageTicket: averageTicket || 0,
+          commercialTicket: commercialTicket || 0
         },
         createdBy: req.user.id
       });

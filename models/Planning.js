@@ -21,6 +21,8 @@ const planningSchema = new mongoose.Schema({
         workHours: { type: Number, default: 0 },          // ex: 160h/mês
         availableSlots: { type: Number, default: 0 },     // ex: 40 vagas/semana
         expectedRevenue: { type: Number, default: 0 },    // ex: R$ 20.000/mês
+        averageTicket: { type: Number, default: 0 },      // 💎 Ticket médio por SESSÃO (ex: R$ 250)
+        commercialTicket: { type: Number, default: 0 },   // 🎯 Ticket por PACIENTE FECHADO (ex: R$ 1.500 pacote)
     },
 
     // 🔹 Execução real (preenchido automaticamente)

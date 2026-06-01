@@ -1,2808 +1,842 @@
+vmao la entede meu flow e o que preciso add na app totdo mes ,,,, minha meta e 45k preiso levantar o que ja temso de provisao ou seja pacietnes recorrentes que irao contrinuar possivelmente....exemplo, 30k , falta 15k, ticket medio vmaos dizer qu e 1000 reais logo preciso 15 agednamentos algo asism entede 
 
-This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
 
-Summary:
-1. Primary Request and Intent:
-   - **Loading fix**: Fix multiple loading states (blank → spinner → skeleton) on F5 for the Financial page. Use one consistent skeleton.
-   - **Premium cards**: User loved the Caixa & Fluxo premium cards and wants the same design applied to all Dashboard tab cards (Comparativos Mensais, Débitos de Sessões, Projeção & Cenários, Pessimista/Esperado/Otimista).
-   - **Enthony Kauan investigation**: Patient "Enthony Kauan Mesias Oliveira" (liminar, patientId `69bbf5d42d22a57a538ed310`) appears in today's (22/05) cashflow when he shouldn't have a session today. User wants to understand and fix why.
-   - **Double API call**: User noticed cashflow makes two calls (`?date=22` and `?date=21`) on reload — eliminate it.
-   - **Data/hora column**: User wants date shown alongside time in the transactions table to identify retroactive payments.
-   - **Feedback**: Always respond in pt-BR. Never commit without explicit user confirmation.
+Entendi o fluxo que você quer montar no CRM da Clínica Fono Inova — e faz bastante sentido para gestão real de clínica.
 
-2. Key Technical Concepts:
-   - React Suspense/lazy with `lazyWithRetry` wrapper
-   - Multiple Suspense layers creating sequential loading UI
-   - MongoDB `calculateProduction` queries `Session.find({ date: ..., status: 'completed' })` — uses session date not payment date
-   - Cashflow `transacoes` (caixa) built from Payments by `financialDate` — different from production which uses session date
-   - `buildLiminarSession` sets `paymentOrigin: 'liminar_credit'`; cashflow.v2.js was only checking `paymentOrigin === 'liminar'` (mismatch)
-   - Liminar payments: session happens one day, bank transfer registered on different day → payment.financialDate determines which day it shows in cashflow
-   - `transacoesOntem` optimization: backend returns yesterday's `{hora, valor}` pairs in single response instead of second API call
-   - `therapyPackageController.js` liminar revenue recognition correctly uses `paymentDate: sessionDoc.date`
-   - Payment `6a104b96aa87388cdac1b211` was created 22/05 for a 05/05 session, with `notes: null` meaning it was NOT created via the PUT appointment flow (which adds notes)
+Você quer transformar o dashboard em uma visão de:
 
-3. Files and Code Sections:
+* **Meta mensal**
+* **Receita previsível já garantida**
+* **Gap restante**
+* **Quantos novos pacientes precisa fechar**
+* baseado no **ticket médio**
 
-   **`/home/user/projetos/crm/front/src/pages/Financial/components/CashflowPageSkeleton.tsx`** (created in previous session)
-   - Shared premium skeleton component used by both AdminDashboard and FinancialDashboard Suspense boundaries
+Ficaria algo assim:
 
-   **`/home/user/projetos/crm/front/src/components/AdminDashboard.tsx`**
-   - Added import: `import { CashflowPageSkeleton } from '../pages/Financial/components/CashflowPageSkeleton';`
-   - Changed Financeiro case: `<Suspense fallback={<CashflowPageSkeleton />}>` (was `<TabSpinner />`)
+---
 
-   **`/home/user/projetos/crm/front/src/pages/Financial/FinancialDashboard.tsx`**
-   - Removed inline `CaixaFluxoSkeleton` definition (lines 63-110)
-   - Added import: `import { CashflowPageSkeleton } from './components/CashflowPageSkeleton';`
-   - Changed: `<Suspense fallback={<CashflowPageSkeleton />}>` (was `<CaixaFluxoSkeleton />`)
+# 📊 Estrutura da Meta Mensal
 
-   **`/home/user/projetos/crm/back/routes/cashflow.v2.js`** (3 edits)
-   - **isLiminar fix** (line 333):
-     ```js
-     const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.paymentOrigin === 'liminar_credit' || s.billingType === 'liminar';
-     ```
-   - **transacoesOntem added** to response:
-     ```js
-     transacoesOntem: yesterdayCash.payments
-         .filter(p => p && p.amount > 0)
-         .map(p => {
-             const apptId = p.appointment?.toString()
-                 || (p.session ? yesterdaySessionToApptIdMap.get(p.session.toString()) : null);
-             const appt = apptId ? yesterdayAppointmentsMap.get(apptId) : null;
-             return {
-                 hora: appt?.time || moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm'),
-                 valor: p.amount
-             };
-         })
-     ```
-   - **hora fix for liminar** (line 280 area):
-     ```js
-     hora: isLiminar
-         ? moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')
-         : (appt?.time || moment(p.financialDate || p.createdAt).tz('America/Sao_Paulo').format('HH:mm')),
-     ```
+## 1. Meta do mês
 
-   **`/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx`** (4 edits)
-   - **loadDayData simplified** (single API call, removed second `getDailyCashflow(prevDateStr)` call)
-   - **previousDayCashflow state removed** (was orphaned)
-   - **Chart updated**: `const yesterdayTx = (data.transacoesOntem || []) as any[];` (was `prevData?.transacoes`)
-   - **Column renamed + cell updated**:
-     ```tsx
-     <th className="px-3 py-2 text-left">Data / Hora</th>
-     // cell:
-     <td className="px-3 py-2 whitespace-nowrap">
-         <div className="text-xs text-gray-400">{t.data}</div>
-         <div className="font-medium">{t.hora}</div>
-     </td>
-     ```
+Exemplo:
 
-   **`/home/user/projetos/crm/front/src/pages/Financial/tabs/DashboardV3Tab.tsx`** (read only, pending edits)
-   - Line 791-800: Comparativos Mensais cards (white bg, basic style — needs premium redesign)
-   - Line 811-829: Débitos de Sessões cards (rose/amber borders — needs premium redesign)
-   - Line 1177: `{activeTab === 6 && <ProjecaoCenarios month={month} year={year} />}` — Projeção is a separate component
-   - Line 1171: `{activeTab === 0 && renderDecisaoExecutiva()}` — Decisão Executiva is renderDecisaoExecutiva()
+```txt
+Meta Junho = R$ 45.000
+```
 
-   **`/home/user/projetos/crm/back/controllers/therapyPackageController.js`** (read only)
-   - Line 1394-1408: Liminar revenue recognition — CORRECTLY uses `paymentDate: sessionDoc.date`
-   - But Enthony's payment has different `kind: 'session_payment'`, not `revenue_recognition`
+---
 
-4. Errors and fixes:
-   - **Import placed in wrong location**: When removing CaixaFluxoSkeleton from FinancialDashboard.tsx, the import replacement was placed in the middle of the file. Fixed by adding proper import at line 15 (after other imports) and removing the misplaced one.
-   - **transacoesOntem hora shows 00:00**: For package receipt payments (no appointment reference), `hora` falls back to `moment(p.financialDate).format('HH:mm')`. For packages purchased with midnight UTC `financialDate`, this shows 00:00. Minor cosmetic issue, not critical.
+## 2. Receita previsível (base recorrente)
 
-5. Problem Solving:
-   - **Loading fix** ✅: Created shared CashflowPageSkeleton, eliminated TabSpinner for Financeiro case, eliminated CaixaFluxoSkeleton duplicate definition.
-   - **isLiminar mismatch** ✅: Fixed `paymentOrigin === 'liminar_credit'` check missing.
-   - **Double API call** ✅: Backend now returns `transacoesOntem`, frontend makes single call.
-   - **Data/hora column** ✅: Shows both date and payment time (for liminar: actual payment registration time, not old appointment time).
-   - **Enthony investigation** 🔴 ONGOING: Payment `6a104b96aa87388cdac1b211` was created TODAY (22/05) for a session from 05/05. `notes: null` means it was NOT created via PUT appointment. It has `liminarContract` reference. 3 of 4 sessions on 05/05 got payments on that same day; this one was missed and only got its payment today. The code path that created it is still being investigated — it's not the therapyPackageController liminar revenue recognition (which uses `kind: 'revenue_recognition'`) and not the PUT appointment edit (which adds notes). The root cause is that `paymentDate: new Date()` is used instead of the session's date.
+Aqui entra:
 
-6. All user messages:
-   - "ajusta o UnifiedCashflowTab olha como ta chfeio aparesentacoa..." → redesign premium cards
-   - "pagina de financeiro carregando varios loading qdo dou f5..." → fix multiple loading states
-   - [pasted cashflow JSON 2026-05-21] "ooooooooutro pnto op cash flow ta ddoiso enthony kauan Messias olieira as 18:20 nem ta no agendamento o dia dele e terca pq ele ta aparecendo faz rastrabilidade do que ocorre"
-   - [screenshots blank + spinner] "veja os loading que aparecem qdo carrego a tela do financeiro feiuraa finaliza o caso que vc ta investigando depois ve resse ultimo aqui"
-   - "adebndo adorei seus card na aba financeiro ficou premium de vdd precisamos fazer isso para todos os card, vai anotando as abas dos prints" [screenshots of Dashboard > Decisão Executiva and Projeção & Cenários]
-   - "cara nao e kauan cara e Enthony Kauan Mesias Oliveira paciente de liminar pq aparece hj precisamos entender"
-   - "anote tudo e me dar um parecer do que pedir correção"
-   - "sim aplique"
-   - "ai o enthony dia 22" [screenshot showing Enthony at 18:20 in cashflow for 22/05]
-   - "cara vc ta vendo a foto filtro dia 22 nao 19"
-   - [pasted full cashflow JSON for 21/05 and 22/05] "porque e chamado 21 e 22 qdo dou reload na tela"
-   - "moscou legal ai"
-   - "cara chamr o endpoint duas vezes que bizarrice e essa mds e melhor fazer a query no back e so devolver pqp"
-   - [screenshot of hora column] "ja falei data e hora aqui 22/05 21/05 = pois facilita no identificar erro"
-   - "caraaaaaaaaaaa porque mostra enthony dia 22/05 se nao tem sessao dele pohaaaaaaaaaaaaaaaaaaaaa, to falando grego para vc pedir para analisar bd o cara e entender e so ta dando voltas aparecendo um nooob"
-   - "me de detalhes pagamento criado hoje 927"
-   - "quero detalhes"
+* pacientes ativos
+* pacotes em andamento
+* sessões futuras já agendadas
+* recorrentes prováveis
+* contratos contínuos
 
-7. Pending Tasks:
-   - **Fix root cause** of Enthony's payment being created on 22/05 with wrong date: find which code path creates a `session_payment` with `liminarContract`, `billingType: 'liminar'`, `notes: null` and fix it to use `paymentDate: session.date` instead of `new Date()`
-   - **Premium card redesign** for `DashboardV3Tab.tsx`: Comparativos Mensais (3 cards), Débitos de Sessões (2 cards), Projeção & Cenários sub-tab (Meta do Mês, Ritmo Necessário, Projeção de Fechamento + Pessimista/Esperado/Otimista)
+Exemplo:
 
-8. Current Work:
-   Investigating why payment `6a104b96aa87388cdac1b211` was created on 22/05 (today) for Enthony's 05/05 session. The payment has:
-   - `notes: null` → NOT via PUT appointment edit flow
-   - `liminarContract: ObjectId('69f38663f11fefdf5bfca10b')` → via liminar-specific flow
-   - `kind: 'session_payment'` (not `revenue_recognition`)
-   - `paymentDate: 2026-05-22T12:27:01.759Z` → wrong, should be 05/05
+```txt
+Receita previsível = R$ 30.200
+```
 
-   Found `appointment.v2.js` lines 2135 and 2193 use `paymentDate: new Date()` but this flow adds notes, so this isn't it either. Also found `therapyPackageController.js` line 1404 correctly uses `paymentDate: sessionDoc.date` but for a different kind (`revenue_recognition`).
+Isso é o “já encaminhado”.
 
-   The user is frustrated: "caraaaaaaaaaaa porque mostra enthony dia 22/05 se nao tem sessao dele pohaaaaaaaaaaaaaaaaaaaaa, to falando grego para vc pedir para analisar bd o cara e entender e so ta dando voltas aparecendo um nooob"
+---
 
-   The DB query showed all other payments for this liminar contract but couldn't identify the specific code path that created this payment.
+## 3. Gap da meta
 
-9. Optional Next Step:
-   The user explicitly says "me de detalhes pagamento criado hoje 927" and "quero detalhes" — they want to understand exactly what code triggered this payment creation. I was reading `appointment.v2.js` line 2193 context to find the second `paymentDate: new Date()` occurrence. I need to:
-   1. Read `appointment.v2.js` around line 2193 to identify the second `paymentDate: new Date()` path
-   2. Check if it's related to the liminarContract flow
-   3. Fix it to use `session.date` as `paymentDate`/`financialDate` for liminar payments
+```txt
+45.000 - 30.200 = 14.800
+```
 
-If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /home/user/.claude/projects/-home-user-projetos-crm/a021b37c-3995-4a48-ab4a-773fb97ae037.jsonl
-Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
-Vou ler o appointment.v2.js em volta da linha 2193 para identificar o caminho exato.
+Dashboard:
 
-Read appointment.v2.js (lines 2151-2230)
-Esse trecho é para billingType: 'particular'. O payment do Enthony tem billingType: 'liminar'. Preciso achar onde cria session_payment com liminarContract. Vou buscar esse padrão.
+```txt
+Faltam R$ 14.800 para bater a meta
+```
 
-Bash Find liminarContract and session_payment in appointment.v2.js
-IN
-grep -n "liminarContract\|liminar_credit\|session_payment" /home/user/projetos/crm/back/routes/appointment.v2.js | head -60
+---
 
-OUT
-1406:      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment liminarContract responsible'
-1407:      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract responsible'
-1419:    .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status');
-1597:    .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
-2137:          kind: 'session_payment',
-2195:            kind: 'session_payment',
-Bash Find liminarContract references in other backend routes
-IN
-grep -rn "liminarContract\|session_payment" /home/user/projetos/crm/back/routes/ --include="*.js" | grep -v "appointment.v2.js" | head -40
+# 4. Conversão em quantidade de pacientes
 
-OUT
-/home/user/projetos/crm/back/routes/appointment.js:673:                kind:        'session_payment',
-/home/user/projetos/crm/back/routes/appointment.js:966:            .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
-/home/user/projetos/crm/back/routes/appointment.js:1054:            .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
-/home/user/projetos/crm/back/routes/appointment.js:1253:                    kind: 'session_payment',
-/home/user/projetos/crm/back/routes/appointment.js:1519:                if (pay && pay.kind !== 'package_receipt' && pay.kind !== 'session_payment') {
-/home/user/projetos/crm/back/routes/payment.v2.js:583:            kind: appointmentId ? 'appointment_payment' : 'session_payment',
-/home/user/projetos/crm/back/routes/liminarContract.js:13:} from '../controllers/liminarContractController.js';
-Bash Find liminarContract usage in therapyPackageController
-IN
-grep -n "liminarContract" /home/user/projetos/crm/back/controllers/therapyPackageController.js | head -30
+Agora entra ticket médio.
 
-OUT
-(Bash completed with no output)
-Bash Find where liminarContract field is SET (written) in backend
-IN
-grep -rn "liminarContract" /home/user/projetos/crm/back/ --include="*.js" | grep -v "populate\|select\|appointment.v2\|appointment.js" | head -30
+Exemplo:
 
-OUT
-/home/user/projetos/crm/back/server.js:170:import liminarContractRoutes from './routes/liminarContract.js';  // ⚖️ NOVO: Liminar desacoplado
-/home/user/projetos/crm/back/server.js:454:app.use("/api/v2/liminar-contracts", liminarContractRoutes);  // ⚖️ NOVO: Liminar desacoplado
-/home/user/projetos/crm/back/utils/appointmentDto.js:140:        liminarContract: appointment.liminarContract && typeof appointment.liminarContract === 'object'
-/home/user/projetos/crm/back/utils/appointmentDto.js:142:                  _id: appointment.liminarContract._id?.toString?.(),
-/home/user/projetos/crm/back/utils/appointmentDto.js:143:                  processNumber: appointment.liminarContract.processNumber || null,
-/home/user/projetos/crm/back/utils/appointmentDto.js:144:                  court: appointment.liminarContract.court || null,
-/home/user/projetos/crm/back/utils/appointmentDto.js:145:                  totalCredit: appointment.liminarContract.totalCredit ?? null,
-/home/user/projetos/crm/back/utils/appointmentDto.js:146:                  creditBalance: appointment.liminarContract.creditBalance ?? null,
-/home/user/projetos/crm/back/utils/appointmentDto.js:147:                  usedCredit: appointment.liminarContract.usedCredit ?? null,
-/home/user/projetos/crm/back/utils/appointmentDto.js:148:                  status: appointment.liminarContract.status || null,
-/home/user/projetos/crm/back/services/completeSessionService.v2.js:1024:    if (appointment?.liminarContract) {
-/home/user/projetos/crm/back/services/completeSessionService.v2.js:1037:    // Fonte de verdade: appointment.liminarContract
-/home/user/projetos/crm/back/services/completeSession/handlers/liminarHandler.js:45:        const liminarContractId = appointment.liminarContract?._id || appointment.liminarContract;
-/home/user/projetos/crm/back/services/completeSession/handlers/liminarHandler.js:47:        if (liminarContractId) {
-/home/user/projetos/crm/back/services/completeSession/handlers/liminarHandler.js:51:                    liminarContractId: liminarContractId.toString(),
-/home/user/projetos/crm/back/services/completeSession/handlers/liminarHandler.js:74:            liminarContract: liminarContractId || null,
-/home/user/projetos/crm/back/services/completeSession/handlers/liminarHandler.js:82:        console.log(`[LiminarHandler] 💰 Payment liminar criado: ${paymentCreated._id}`, { liminarContractId });
-/home/user/projetos/crm/back/services/completeSession/shared/context.js:7: * @property {Object}  appointment     - Appointment populado (patient, doctor, package, liminarContract)
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:23:  const { liminarContractId, sessionValue = 0, appointmentId } = payload;
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:25:  console.log('[LiminarGuard][COMPLETE]', { liminarContractId, sessionValue, appointmentId });
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:27:  if (!liminarContractId) {
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:31:  const contract = await LiminarContract.findById(liminarContractId).session(session);
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:51:      _id: liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:81:      liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:89:        liminarContract: liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:104:      liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:110:    liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:117:    liminarContractId,
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:129:  const { liminarContractId, sessionValue = 0, appointmentStatus, confirmedAbsence, appointmentId } = payload;
-/home/user/projetos/crm/back/services/financialGuard/guards/liminar.guard.js:131:  console.log('[LiminarGuard][CANCEL]', { liminarContractId, sessionValue, appointmentStatus });
-Achei — o liminarHandler.js cria o payment com liminarContract. Vou ler esse arquivo.
-
-Read liminarHandler.js
-Achei o bug. Linha 69 do liminarHandler.js:
-
-
-financialDate: now,   // ESSENCIAL — entra no caixa
-Quando uma sessão liminar é completada retroativamente (sessão foi 05/05, secretária marcou como completa hoje 22/05), financialDate = now → o payment entra no caixa de hoje em vez de aparecer no caixa do dia da sessão.
-
-O fix correto: usar appointment.date como financialDate (quando a sessão aconteceu), mantendo paymentDate = now (quando o ato de completar ocorreu).
-
-Edit liminarHandler.js
-Added 3 lines
-Edit liminarHandler.js
-Modified
-Agora preciso também corrigir o payment do Enthony que já existe no banco com financialDate: 22/05 errado. Mas isso é uma correção de dados — é via script ou endpoint admin, não código.
-
-Resumo do bug:
-
-Campo	Antes (errado)	Depois (correto)
-financialDate	new Date() (dia da completion)	appointment.date (dia da sessão)
-paymentDate	new Date()	new Date() (mantido)
-O que aconteceu com o Enthony: a sessão dele era de 05/05, mas alguém marcou como "completa" hoje (22/05). O LiminarHandler usava now como financialDate, então o payment entrou no caixa de hoje. Com o fix, completions retroativas sempre registram receita na data da sessão.
-
-Para corrigir o payment já criado (6a104b96aa87388cdac1b211), precisa rodar no mongo:
-
-
-db.payments.updateOne(
-  { _id: ObjectId("6a104b96aa87388cdac1b211") },
-  { $set: { financialDate: new Date("2026-05-05") } }
-)
-Quer que eu faça isso via script, ou você faz direto no banco?
-
-Posso agora ir para os cards premium do Dashboard (Comparativos Mensais, Débitos de Sessões, Projeção & Cenários). Avanço?
-Sim, pode avançar. Deixa eu ler o estado atual das seções antes de editar.
-
-Read DashboardV3Tab.tsx (lines 781-880)
-Agora vou ver a seção de Projeção & Cenários.
-
-Read DashboardV3Tab.tsx (lines 761-780)
-Bash Find ProjecaoCenarios component references in DashboardV3Tab
-IN
-grep -n "ProjecaoCenarios\|renderProjecao\|Meta do Mês\|Pessimista\|Otimista\|Ritmo" /home/user/projetos/crm/front/src/pages/Financial/tabs/DashboardV3Tab.tsx | head -20
-
-OUT
-28:import { ProjecaoCenarios } from './AnaliseProjecaoTab';
-222:      {/* RitmoCard hero — no padrão dos KPIs do ExpensesTab */}
-297:  const RitmoCard = () => {
-350:      <RitmoCard />
-1177:        {activeTab === 6 && <ProjecaoCenarios month={month} year={year} />}
-ProjecaoCenarios está em AnaliseProjecaoTab. Vou ler as duas seções que preciso editar.
-
-Bash Find card sections in AnaliseProjecaoTab
-IN
-grep -n "Meta do Mês\|Pessimista\|Otimista\|Ritmo Necessário\|Projeção de Fechamento\|cenario\|card" /home/user/projetos/crm/front/src/pages/Financial/tabs/AnaliseProjecaoTab.tsx | head -40
-
-OUT
-170:    const cenarioEsperado = dashData?.metas?.projecao?.final || 0;
-291:                    <p className="text-xl font-bold text-blue-600 mt-1">{formatCurrency(cenarioEsperado)}</p>
-293:                        <p className={`text-xs ${cenarioEsperado >= metaValor ? 'text-green-600' : 'text-red-600'}`}>
-294:                            {cenarioEsperado >= metaValor
-295:                                ? `✅ +${formatCurrency(cenarioEsperado - metaValor)}`
-296:                                : `⚠️ ${formatCurrency(metaValor - cenarioEsperado)} abaixo da meta`}
-354:                        { label: 'ESPERADO', value: cenarioEsperado || resultadoEconomico, desc: 'Taxa histórica de conversão', color: '#3182CE' },
-Read AnaliseProjecaoTab.tsx (lines 251-380)
-Vou ler o início do ProjecaoCenarios para ter o quadro completo antes de editar.
-
-Read AnaliseProjecaoTab.tsx (lines 156-255)
-Bash Check imports in AnaliseProjecaoTab
-IN
-grep -n "^import\|from '" /home/user/projetos/crm/front/src/pages/Financial/tabs/AnaliseProjecaoTab.tsx | head -20
-
-OUT
-3:import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
-4:import React, { useEffect, useMemo, useState } from 'react';
-5:import {
-8:} from 'recharts';
-9:import api from '../../../services/api';
-10:import {
-14:} from '@mui/material';
-15:import { NavigateBefore, NavigateNext } from '@mui/icons-material';
-16:import { TrendingUp, Target, Calendar, RefreshCcw } from 'lucide-react';
-17:import { format } from 'date-fns';
-18:import { ptBR } from 'date-fns/locale';
-19:import { useFinancialDashboardV3 } from '../../../hooks/useFinancialDashboardV3';
-20:import { IAppointment } from '../../../utils/types/types';
-21:import { DashboardEspecialidades } from '../components/DashboardEspecialidades';
-22:import { RankingProfissionais } from '../components/RankingProfissionais';
-23:import { ListaPacientesVIP } from '../components/ListaPacientesVIP';
-Também a aba Decisão Executiva. Deixa eu ler essa função e os imports do DashboardV3Tab.
-
-Bash Find renderDecisaoExecutiva function location
-IN
-grep -n "renderDecisaoExecutiva\|activeTab === 0" /home/user/projetos/crm/front/src/pages/Financial/tabs/DashboardV3Tab.tsx | head -10
-
-OUT
-197:    if (activeTab === 0 && insuranceLoaded.current !== key) {
-740:  const renderDecisaoExecutiva = () => {
-1171:        {activeTab === 0 && renderDecisaoExecutiva()}
-Bash Check imports in DashboardV3Tab
-IN
-grep -n "^import" /home/user/projetos/crm/front/src/pages/Financial/tabs/DashboardV3Tab.tsx | head -30
-
-OUT
-1:import { useState, useEffect, useCallback, useRef } from 'react';
-2:import { Skeleton } from '@mui/material';
-3:import {
-26:import api from '../../../services/api';
-27:import { useFinancialDashboardV3 } from '../../../hooks/useFinancialDashboardV3';
-28:import { ProjecaoCenarios } from './AnaliseProjecaoTab';
-29:import { DashboardEspecialidades } from '../components/DashboardEspecialidades';
-30:import { RankingProfissionais } from '../components/RankingProfissionais';
-31:import { ListaPacientesVIP } from '../components/ListaPacientesVIP';
-32:import {
-38:import { toast } from 'react-toastify';
-Read DashboardV3Tab.tsx (lines 741-780)
-Preciso ver o bloco de imports completo do DashboardV3Tab.
-
-Read DashboardV3Tab.tsx (lines 2-41)
-Tenho tudo que preciso. Vou fazer todos os redesigns agora: Comparativos Mensais, Débitos de Sessões (Decisão Executiva) + Meta do Mês, Ritmo Necessário, Projeção de Fechamento e Cenários (Projeção & Cenários).
-
-Edit DashboardV3Tab.tsx
-Added 9 lines
-Sugestões são para Next.js App Router — não se aplica aqui (CRA/Vite). Continuando com Débitos de Sessões.
-
-Edit DashboardV3Tab.tsx
-Added 12 lines
-Agora os cards do AnaliseProjecaoTab.tsx. Primeiro adiciono TrendingDown ao import, depois redesenho os 4 grupos de cards.
-
-Edit AnaliseProjecaoTab.tsx
-Modified
-Edit AnaliseProjecaoTab.tsx
-Modified
-Edit AnaliseProjecaoTab.tsx
-Added 12 lines
-Edit AnaliseProjecaoTab.tsx
-Added 7 lines
-Último grupo — Cenários Pessimista/Esperado/Otimista.
-
-Edit AnaliseProjecaoTab.tsx
-Added 5 lines
-Tudo pronto. Resumo completo do que foi feito:
-
-DashboardV3Tab.tsx — Decisão Executiva:
-
-Comparativos Mensais: 3 cards premium — Caixa (verde #10B981), Produção (azul #3B82F6), Despesas (âmbar #F59E0B) — cada um com ícone colorido, valor grande, variação % no rodapé
-Débitos de Sessões: 2 cards premium — Débito do Mês (vermelho #EF4444 + ícone AlertTriangle), Débito Total (âmbar #F59E0B + ícone Clock) — mantidos como botões clicáveis
-AnaliseProjecaoTab.tsx — Projeção & Cenários:
-
-Meta do Mês: card verde esmeralda com Target, Chip %, barra LinearProgress e detalhes Produção/Caixa/Convênio
-Ritmo Necessário: card azul com TrendingUp, valor /dia grande, ritmo atual e dias restantes no rodapé
-Projeção de Fechamento: card roxo #8B5CF6 com Calendar, valor projetado, barra de progresso e status vs meta
-Cenários Pessimista/Esperado/Otimista: 3 cards com cor própria de cada cenário, ícone TrendingDown/Target/TrendingUp, valor e descrição
-Backend — fix do Enthony:
-
-liminarHandler.js: financialDate agora usa appointment.date em vez de new Date() — completions retroativas não vão mais aparecer no caixa do dia errado
-Ainda pendente: corrigir manualmente no banco o payment 6a104b96aa87388cdac1b211 com $set: { financialDate: new Date("2026-05-05") }.
-
-ScheduleAppointmentModal.tsx#67-67
-cara vsamos la de qod e calculado o caixa do olha o caixa de hojeee soemente hoje {
-    "success": true,
-    "data": {
-        "data": "2026-05-25",
-        "caixa": {
-            "total": 300,
-            "pix": 300,
-            "dinheiro": 0,
-            "cartao": 0,
-            "transferencia": 0,
-            "outros": 0,
-            "qtdPix": 2,
-            "qtdDinheiro": 0,
-            "qtdCartao": 0
-        },
-        "porTipo": {
-            "particular": 0,
-            "pacote": 300,
-            "convenio": 0,
-            "liminar": 0
-        },
-        "porEspecialidade": {
-            "psicologia": 300
-        },
-        "despesas": {
-            "total": 0,
-            "porCategoria": {},
-            "quantidade": 0
-        },
-        "saldo": {
-            "bruto": 300,
-            "liquido": 300,
-            "despesaTotal": 0
-        },
-        "producao": {
-            "total": 1130,
-            "aReceber": 290,
-            "recebido": 760,
-            "convenioAReceber": 80,
-            "quantidadeAtendimentos": 8,
-            "ticketMedio": 141.25,
-            "taxaEficiencia": 67.3,
-            "porTipo": {
-                "particular": 0,
-                "pacote": 1050,
-                "convenio": 80,
-                "liminar": 0
-            },
-            "porEspecialidade": [
-                {
-                    "nome": "psicologia",
-                    "total": 730,
-                    "quantidade": 5,
-                    "recebido": 600,
-                    "pendente": 130,
-                    "ticketMedio": "146.00"
-                },
-                {
-                    "nome": "fonoaudiologia",
-                    "total": 320,
-                    "quantidade": 2,
-                    "recebido": 160,
-                    "pendente": 160,
-                    "ticketMedio": "160.00"
-                },
-                {
-                    "nome": "terapia_ocupacional",
-                    "total": 80,
-                    "quantidade": 1,
-                    "recebido": 80,
-                    "pendente": 0,
-                    "ticketMedio": "80.00"
-                }
-            ]
-        },
-        "pendentesCobranca": [
-            {
-                "id": "69e2730e119880557248670f",
-                "paciente": "Isis Caldas Rebelatto",
-                "telefone": "66984449284",
-                "valor": 160,
-                "horario": "15:20",
-                "especialidade": "fonoaudiologia",
-                "professional": "Lorrany Siqueira Marques",
-                "tipo": "Pacote",
-                "convenio": null
-            },
-            {
-                "id": "69e2724f11988055724865b3",
-                "paciente": "Isis Caldas Rebelatto",
-                "telefone": "66984449284",
-                "valor": 130,
-                "horario": "16:00",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "tipo": "Pacote",
-                "convenio": null
-            }
-        ],
-        "pacotesAtendidos": [
-            {
-                "id": "6a01c2a203cf8c44fece95e6",
-                "horario": "08:40",
-                "paciente": "Heloísa Lopes Santana",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Suzane de Morais Soares",
-                "valor": 160,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "6a022415c574de6da0bac3b8",
-                "horario": "14:00",
-                "paciente": "Helena Pedro Bezerra",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "professional": "Lorrany Siqueira Marques",
-                "valor": 160,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "6a022767c574de6da0bac795",
-                "horario": "14:40",
-                "paciente": "Marcos Miguel Rodrigues de Sousa",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "valor": 140,
-                "statusPagamento": "Pago",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69e2730e119880557248670f",
-                "horario": "15:20",
-                "paciente": "Isis Caldas Rebelatto",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "professional": "Lorrany Siqueira Marques",
-                "valor": 160,
-                "statusPagamento": "Pendente",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69efd3196d3b7ccdae9d5765",
-                "horario": "15:20",
-                "paciente": "Isaac Flávio Lacerda Dantas",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "valor": 140,
-                "statusPagamento": "Pago",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69e2724f11988055724865b3",
-                "horario": "16:00",
-                "paciente": "Isis Caldas Rebelatto",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "valor": 130,
-                "statusPagamento": "Pendente",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69f0b8c46d3b7ccdae9d853e",
-                "horario": "17:20",
-                "paciente": "Ian de Oliveira Brito",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "professional": "Tatiana Celuta Peres",
-                "valor": 160,
-                "statusPagamento": "Pago",
-                "paymentModel": "per_session"
-            }
-        ],
-        "conveniosAtendidos": [
-            {
-                "id": "69d646e885f1fc2849c5b668",
-                "horario": "16:00",
-                "paciente": "Nicolas Lucca",
-                "servico": "Sessão de Pacote",
-                "especialidade": "terapia_ocupacional",
-                "professional": "Luis Henrique",
-                "valor": 80,
-                "convenio": "convenio"
-            }
-        ],
-        "comparativos": {
-            "ontem": 0,
-            "variacaoVsOntem": 100,
-            "mediaDiariaMes": 1086.4,
-            "vsMediaMes": -72.4,
-            "totalAcumuladoMes": 27160,
-            "projecaoMes": 32592,
-            "diasDecorridos": 25
-        },
-        "estatisticas": {
-            "quantidade": 2,
-            "quantidadeAtendimentos": 8,
-            "ticketMedio": 150,
-            "ontem": 0
-        },
-        "transacoes": [
-            {
-                "id": "6a14a3555dc5d75961210b03",
-                "paciente": "Isaac Flávio Lacerda Dantas",
-                "valor": 140,
-                "metodo": "Pix",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "profissional": "Tatiana Celuta Peres",
-                "hora": "15:20",
-                "data": "25/05/2026",
-                "categoria": "recebido",
-                "observacao": "-",
-                "billingType": "particular",
-                "kind": "session_payment",
-                "package": true,
-                "appointmentStatus": "completed"
-            },
-            {
-                "id": "6a14b7e6a29814035f660634",
-                "paciente": "Ian de Oliveira Brito",
-                "valor": 160,
-                "metodo": "Pix",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "profissional": "Tatiana Celuta Peres",
-                "hora": "17:20",
-                "data": "25/05/2026",
-                "categoria": "recebido",
-                "observacao": "Valor avulso registrado em sessão de pacote - 25/05/2026, 17:58:14",
-                "billingType": "particular",
-                "kind": "session_payment",
-                "package": true,
-                "appointmentStatus": "completed"
-            }
-        ],
-        "transacoesProducao": [
-            {
-                "id": "6a01c2a203cf8c44fece95e6",
-                "paciente": "Heloísa Lopes Santana",
-                "valor": 160,
-                "metodo": "package_prepaid",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "08:40",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Suzane de Morais Soares",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69d646e885f1fc2849c5b668",
-                "paciente": "Nicolas Lucca",
-                "valor": 80,
-                "metodo": "convenio",
-                "tipo": "Convênio",
-                "servico": "Sessão de Pacote",
-                "especialidade": "terapia_ocupacional",
-                "hora": "16:00",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "convenio",
-                "professional": "Luis Henrique",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "6a022415c574de6da0bac3b8",
-                "paciente": "Helena Pedro Bezerra",
-                "valor": 160,
-                "metodo": "package_prepaid",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "hora": "14:00",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "6a022767c574de6da0bac795",
-                "paciente": "Marcos Miguel Rodrigues de Sousa",
-                "valor": 140,
-                "metodo": "package_prepaid",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "14:40",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Tatiana Celuta Peres",
-                "paymentModel": "prepaid"
-            },
-            {
-                "id": "69e2730e119880557248670f",
-                "paciente": "Isis Caldas Rebelatto",
-                "valor": 160,
-                "metodo": "dinheiro",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "fonoaudiologia",
-                "hora": "15:20",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "a_receber",
-                "professional": "Lorrany Siqueira Marques",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69efd3196d3b7ccdae9d5765",
-                "paciente": "Isaac Flávio Lacerda Dantas",
-                "valor": 140,
-                "metodo": "pix",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "15:20",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Tatiana Celuta Peres",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69e2724f11988055724865b3",
-                "paciente": "Isis Caldas Rebelatto",
-                "valor": 130,
-                "metodo": "dinheiro",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "16:00",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "a_receber",
-                "professional": "Tatiana Celuta Peres",
-                "paymentModel": "per_session"
-            },
-            {
-                "id": "69f0b8c46d3b7ccdae9d853e",
-                "paciente": "Ian de Oliveira Brito",
-                "valor": 160,
-                "metodo": "pix",
-                "tipo": "Pacote",
-                "servico": "Sessão de Pacote",
-                "especialidade": "psicologia",
-                "hora": "17:20",
-                "data": "25/05/2026",
-                "status": "completed",
-                "categoria": "recebido",
-                "professional": "Tatiana Celuta Peres",
-                "paymentModel": "per_session"
-            }
-        ],
-        "transacoesOntem": []
-    }
-}curl 'http://localhost:5000/api/v2/cashflow?date=2026-05-25' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3Nzk3NDY5MzIsImV4cCI6MTc3OTgzMzMzMn0.NesCJBODfDuShC9rjzk_k9QUDgMCBdRzkbSPV9ikoow' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"1c1c-pKFECRMdJwXtVUsOiXqXoCXdFQ4"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
-  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1779747001604_l6t7i0h0g'                     producaoanalise la....
-Vou ler o trecho do backend que calcula producao para comparar com os números do JSON.
-
-Bash Find where producao is calculated in cashflow.v2.js
-IN
-grep -n "producao\|recebido\|aReceber\|calculateProduction\|porEspecialidade" /home/user/projetos/crm/back/routes/cashflow.v2.js | head -50
-
-OUT
-38:            unifiedFinancialService.calculateProduction(start, end)
-167:        const porEspecialidadeCaixa = {};
-255:            if (!porEspecialidadeCaixa[esp]) porEspecialidadeCaixa[esp] = 0;
-256:            porEspecialidadeCaixa[esp] += p.amount;
-284:                categoria: 'recebido',
-314:        let recebidoProducao = 0;
-315:        let aReceber = 0;
-316:        const porEspecialidade = {};
-343:            if (!porEspecialidade[esp]) {
-344:                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
-346:            porEspecialidade[esp].total += valor;
-347:            porEspecialidade[esp].quantidade += 1;
-351:            // Convênio = produção realizada, mas pagamento vem da seguradora (não é caixa recebido)
-352:            const categoria = isConvenio ? 'convenio' : isLiminar ? 'liminar' : (foiPago ? 'recebido' : 'a_receber');
-355:                // Convênio conta como produção realizada mas não entra em recebido/pendente de caixa
-356:                porEspecialidade[esp].recebido += valor;
-358:                aReceber += valor;
-359:                porEspecialidade[esp].pendente += valor;
-372:                porEspecialidade[esp].recebido += valor;
-373:                recebidoProducao += valor;
-408:        const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
-410:        const especialidadesResumo = Object.entries(porEspecialidade).map(([nome, dados]) => ({
-414:            recebido: dados.recebido,
-444:                porEspecialidade: porEspecialidadeCaixa,
-455:                producao: {
-457:                    aReceber,
-458:                    recebido: recebidoProducao,
-469:                    porEspecialidade: especialidadesResumo
-480:                    statusPagamento: t.categoria === 'recebido' ? 'Pago' : 'Pendente',
-547:            unifiedFinancialService.calculateProductionByDay(start, end),
-548:            unifiedFinancialService.calculateProduction(start, end)
-551:        const producaoMap = productionResult.map;
-559:            const prodData = producaoMap.get(dayStr);
-563:                producao: prodData?.producao || 0,
-576:                producaoTotal: productionTotals.total || 0,
-Vou ler a seção que monta o producao no cashflow.
-
-Read cashflow.v2.js (lines 306-425)
-Agora tenho o quadro completo. Deixa eu traçar o diagnóstico.
-
-Análise: Caixa R$300 vs Produção R$760
-Por que diferem? São métricas diferentes:
-
-Fonte	Lógica	Valor
-Caixa	Pagamentos com financialDate = hoje	R$ 300
-Produção recebida	Sessões concluídas hoje onde foiPago = true	R$ 760
-A diferença de R$ 460 são as 3 sessões pré-pagas:
-
-Heloísa Lopes (psico) → R$ 160 prepaid
-Helena Pedro (fono) → R$ 160 prepaid
-Marcos Miguel (psico) → R$ 140 prepaid
-O dinheiro dessas 3 entrou no caixa quando o pacote foi comprado (outro dia). Hoje a sessão foi realizada → produção conta como "recebido", mas caixa de hoje é zero delas. Isso é correto e intencional.
-
-Decomposição completa da produção hoje (R$ 1.130)
-
-R$ 460  → Prepaid (sessão consumida, caixa entrou na compra do pacote)
-R$ 300  → Per-session pago hoje (Isaac R$140 + Ian R$160 via Pix) ← entra no caixa
-R$ 290  → Pendente (Isis fono R$160 + Isis psico R$130, per_session, não pago)
-R$  80  → Convênio (Nicolas, a receber da seguradora)
-─────────
-R$ 1.130 total ✅
-Um ponto que vale revisar
-A taxaEficiencia = 67.3% é calculada como recebidoProducao / producao.total = 760 / 1.130. O problema: o denominador inclui o convênio (R$80), mas o numerador não inclui convênio. Isso subestima a eficiência real de clínicas com pacientes de convênio.
-
-Eficiência real seria: (760 + 80) / 1.130 = 74.3% (se incluir convênio como "produção confirmada").
-
-Quer que eu corrija o cálculo da taxaEficiencia para incluir convenio no numerador?
-
-massssssssssss vem adendo no caixa do mes nao pode ressomar o valor pago de pacote pago antecipado por exemplo pois ficara redudndate, fui claro?????
-Entendi perfeitamente. O risco é: pacote pré-pago de R$640 entra no caixa do dia da compra → quando as sessões são consumidas em dias posteriores, se o cálculo mensal somar producao.recebido em cima dos pagamentos, conta R$640 duas vezes. Vou rastrear onde o caixa mensal é montado.
-
-Bash Find monthly caixa aggregation in cashflow.v2.js
-IN
-grep -n "calculateProduction\|recebidoProducao\|caixa.*mes\|totalMes\|monthTotal\|package_receipt\|acumulado\|totalAcumulado" /home/user/projetos/crm/back/routes/cashflow.v2.js | head -40
-
-OUT
-38:            unifiedFinancialService.calculateProduction(start, end)
-158:        const totalMes = monthCash.total;
-160:        const mediaDiariaMes = dayOfMonth > 0 ? totalMes / dayOfMonth : 0;
-314:        let recebidoProducao = 0;
-373:                recebidoProducao += valor;
-408:        const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
-458:                    recebido: recebidoProducao,
-498:                    totalAcumuladoMes: totalMes,
-547:            unifiedFinancialService.calculateProductionByDay(start, end),
-548:            unifiedFinancialService.calculateProduction(start, end)
-Bash Find package_receipt and producao logic in unifiedFinancialService
-IN
-grep -rn "package_receipt\|producao.*recebido\|recebido.*producao\|caixa.*total\|totalCaixa" /home/user/projetos/crm/back/services/unifiedFinancialService.v2.js | head -40
-
-OUT
-/home/user/projetos/crm/back/services/unifiedFinancialService.v2.js:96:                                { $eq: ['$kind', 'package_receipt'] }
-/home/user/projetos/crm/back/services/unifiedFinancialService.v2.js:170:    const totalCaixa = payments.reduce((s, p) => s + p.amount, 0);
-/home/user/projetos/crm/back/services/unifiedFinancialService.v2.js:171:    return { receitaReal: totalCaixa - receitaDiferida, receitaDiferida };
-Preciso ler como monthCash e calculateProduction são montados para confirmar o duplo-cômputo.
-
-Read cashflow.v2.js (lines 131-170)
-Read unifiedFinancialService.v2.js (lines 81-190)
-Preciso ver o match completo do calculateCash para entender exatamente o que entra no caixa mensal.
-
-Read unifiedFinancialService.v2.js (lines 2-81)
-Agora tenho tudo para responder com precisão. Analisei o filtro completo do calculateCash.
-
-Diagnóstico: Há risco real de duplo-cômputo?
-O filtro do calculateCash (caixa mensal, linha 33–47) é:
-
-
-$or: [
-  { isFromPackage: { $ne: true } },  // não é de pacote → entra
-  { kind: 'session_payment' }        // OU é session_payment → entra sempre
-]
-O problema estrutural: A segunda condição (kind: 'session_payment') inclui pagamentos mesmo quando isFromPackage: true. Então se existir:
-
-Documento	kind	isFromPackage	Entra no caixa?
-Compra do pacote	package_receipt	false	✅ sim
-Sessão pré-paga consumida	session_payment	true	✅ sim também
-→ Duplo-cômputo se ambos existirem no mesmo mês.
-
-Como está hoje (dados de 25/05)
-Para pacotes pré-pagos (Heloísa, Helena, Marcos): nenhum session_payment foi criado ao completar a sessão → invariante mantida, sem duplo-cômputo hoje. ✅
-
-Para pacotes per_session (Isaac, Ian): apenas session_payment criado, sem package_receipt → correto. ✅
-
-O perigo
-O calculateCash assume que "pré-pago nunca gera session_payment" — mas o filtro não garante isso. Se qualquer handler de completion criar um session_payment para uma sessão de pacote pré-pago (bug latente), o mês inflaciona sem alerta.
-
-Fix recomendado
-Tornar o filtro explícito — excluir session_payment que pertencem a sessões de pacotes pré-pagos:
-
-
-// No match de calculateCash, trocar:
-{ kind: 'session_payment' }
-
-// Por:
-{ kind: 'session_payment', isFromPackage: { $ne: true } }
-Isso elimina a ambiguidade: session_payment de per_session têm isFromPackage: true mas também são cobertos pela primeira cláusula? Não — per_session sessions têm isFromPackage: true. Então a lógica correta seria:
-
-
-$or: [
-  { isFromPackage: { $ne: true } },          // pagamentos não-pacote (particulares, package_receipt)
-  { kind: 'session_payment', package: { $exists: false } },  // session_payment avulso (não de pacote)
-  { kind: 'session_payment', billingType: { $in: ['particular', 'liminar'] } }  // per_session pago
-]
-Mas antes de aplicar, preciso confirmar: os session_payment de pacotes per_session têm billingType definido? Quer que eu verifique e aplique o fix seguro?
-
-Sim, você foi extremamente claro — e você está correto.
-
-Você NÃO pode reconhecer financeiramente o mesmo valor duas vezes.
-
-Hoje existem duas naturezas diferentes acontecendo:
-
-| Evento                     | Deve entrar no caixa? | Deve entrar na produção? |
-| -------------------------- | --------------------- | ------------------------ |
-| Compra do pacote           | ✅ Sim                 | ❌ Não                    |
-| Consumo da sessão pré-paga | ❌ Não                 | ✅ Sim                    |
+```txt
+Ticket médio novo paciente = R$ 1.000
+```
 
 Então:
 
-```txt id="y4rj7u"
-CAIXA ≠ PRODUÇÃO
+```txt
+14.800 / 1.000 = 14,8
 ```
 
-e isso é saudável.
-
-O problema que você identificou é MUITO importante:
-
-```txt id="8wp0n8"
-produçao.recebido
-```
-
-está semanticamente perigoso.
-
-Porque ele mistura:
-
-* dinheiro recebido HOJE
-* com sessão já paga anteriormente
-
-Ou seja:
-
-```txt id="lqep0k"
-recebido operacional
-≠
-recebido financeiro
-```
-
-Você percebeu exatamente o bug conceitual.
-
-Hoje o sistema está tratando:
-
-```txt id="d7t4dx"
-sessão pré-paga consumida
-```
-
-como:
-
-```txt id="s2n9vv"
-recebido
-```
-
-mas financeiramente isso é falso.
-
-O dinheiro entrou no passado.
-
-Então o ideal é separar as métricas em 3 camadas:
-
-| Métrica            | Significado                         |
-| ------------------ | ----------------------------------- |
-| Caixa              | dinheiro que entrou no período      |
-| Produção           | valor clínico realizado             |
-| Produção liquidada | produção já financeiramente coberta |
-
-Hoje seu sistema mistura “produção liquidada” com “recebido”.
-
-Eu mudaria isso imediatamente.
-
-Em vez de:
-
-```js id="q4p63h"
-recebidoProducao
-```
-
-eu criaria:
-
-```js id="zt2s6k"
-producaoLiquidada
-```
-
-porque:
-
-* pré-pago → liquidado
-* convênio → realizado mas não liquidado
-* pendente → não liquidado
-* pix/cartão hoje → liquidado
-
-Isso resolve TODA a ambiguidade mental.
-
-E sobre o caixa mensal:
-sim, o risco de redundância existe estruturalmente.
-
-Seu diagnóstico do `$or` foi excelente.
-
-Esse trecho realmente é perigoso:
-
-```js id="yr5n89"
-{ kind: 'session_payment' }
-```
-
-porque ele ignora completamente o contexto financeiro.
-
-Você não quer perguntar:
-
-```txt id="fjqj7x"
-é session_payment?
-```
-
-Você quer perguntar:
-
-```txt id="rjlwm4"
-esse documento representa entrada nova de dinheiro?
-```
-
-Essa é a regra correta.
-
-Então eu recomendaria uma mudança mais conceitual e segura:
-
-Em vez de filtrar por `kind`, filtrar por:
-
-```js id="6mfrt9"
-affectsCashFlow: true
-```
-
-ou:
-
-```js id="k0oq0q"
-financialRecognition: 'cash'
-```
-
-Porque hoje o sistema está inferindo contabilidade através do tipo do documento — isso é frágil.
-
-Exemplo ideal:
-
-| Evento                      | affectsCashFlow |
-| --------------------------- | --------------- |
-| package_receipt             | true            |
-| prepaid_session_consumption | false           |
-| convenio_session            | false           |
-| session_payment avulso      | true            |
-
-Aí o caixa vira:
-
-```js id="g4c8jg"
-payments.filter(p => p.affectsCashFlow)
-```
-
-e acabou o inferno de duplicidade.
-
-Mas no curto prazo, antes da refatoração grande, eu faria exatamente o que você sugeriu:
-
-EXCLUIR explicitamente:
-
-```js id="3c0zpy"
-session_payment + isFromPackage=true
-```
-
-SE esses documentos representarem consumo interno do pacote.
-
-Porque aí você protege o financeiro imediatamente.
-
-Só toma cuidado com um ponto MUITO importante:
-
-Você comentou:
-
-```txt id="34q7g8"
-per_session
-```
-
-e isso muda tudo.
-
-Porque existem dois tipos de pacote:
-
-| Tipo        | Caixa reconhece quando? |
-| ----------- | ----------------------- |
-| prepaid     | na compra               |
-| per_session | na sessão               |
-
-Então o filtro NÃO pode simplesmente excluir tudo com:
-
-```js id="wulv4q"
-isFromPackage=true
-```
-
-senão você mata os per_session legítimos.
-
-Então a regra correta provavelmente é:
-
-```js id="jgkpqo"
-if (
-  kind === 'session_payment' &&
-  packagePaymentModel === 'prepaid'
-) {
-  excludeFromCash = true;
-}
-```
-
-Essa é a modelagem mais correta.
-
-Então antes de aplicar o fix final, vale MUITO validar estes campos nos documentos reais:
-
-```js id="wn3mkk"
-billingType
-packagePaymentModel
-isFromPackage
-kind
-origin
-```
-
-Porque você está num ponto onde um fix rápido errado pode distorcer o financeiro inteiro silenciosamente.
-Concordo com toda a análise. Antes de qualquer fix, preciso ver os campos reais nos documentos Payment para saber exatamente o que temos disponível.
-
-Bash Check Payment model fields related to package payment type
-IN
-grep -n "packagePaymentModel\|isFromPackage\|affectsCashFlow\|financialRecognition\|packageModel\|paymentModel" /home/user/projetos/crm/back/models/Payment.js | head -30
-
-OUT
-61:    isFromPackage: {
-100:    if (['paid', 'completed', 'confirmed'].includes(this.status) && !this.financialDate && !this.isFromPackage) {
-105:    if (this.kind === 'package_consumed' && !this.isFromPackage) {
-106:        this.isFromPackage = true;
-110:    if ((this.isFromPackage || this.kind === 'package_consumed') && this.paidAt) {
-126:    if ((this.isFromPackage || this.kind === 'package_consumed')) {
-144:        if (!this.financialDate && !this.isFromPackage) {
-150:    if (this.isFromPackage && this.financialDate) {
-152:            `[FINANCIAL_LOCK] Payment de consumo de pacote (isFromPackage=true) não pode ter financialDate. `
-165:        const error = new Error(`[FINANCIAL_LOCK] billingType='prepaid' foi removido do domínio. Use isFromPackage=true + paymentMethod='package'.`);
-Bash Find where isFromPackage is set on Payment creation
-IN
-grep -n "isFromPackage\|packagePaymentModel\|paymentModel" /home/user/projetos/crm/back/routes/appointment.v2.js | head -20
-
-OUT
-(Bash completed with no output)
-Achei algo crítico. Preciso ler o modelo Payment completo para confirmar o FINANCIAL_LOCK e o comportamento do financialDate.
-
-Read Payment.js (lines 56-165)
-Agora tenho a resposta definitiva. O modelo tem uma proteção que eu precisava confirmar antes de qualquer ação.
-
-Achado crítico — o status: 'consumed' já é a guarda principal
-Linha 127–129 do Payment model:
-
-
-if (this.isFromPackage || this.kind === 'package_consumed') {
-    if (this.status === 'paid') {
-        this.status = 'consumed';  // ← auto-downgrade, nunca 'paid'
-    }
-}
-E o calculateCash filtra status: 'paid' no topo. Então:
-
-Payment	isFromPackage	status real	Entra no caixa?
-package_receipt (compra)	false	paid	✅ sim
-Consumo prepaid (package_consumed)	true	consumed	❌ não — bloqueado pelo status
-session_payment per_session	false	paid	✅ sim
-Conclusão: duplo-cômputo não acontece hoje para dados salvos via Mongoose. O FINANCIAL_LOCK no pre-save garante isso.
-
-Onde ainda existe vulnerabilidade real
-1. updateMany / findByIdAndUpdate bypassa o pre-save hook.
-Qualquer migration ou correção direta no banco pode criar { isFromPackage: true, status: 'paid' } sem passar pela guarda. Nesse caso o $or: [{ kind: 'session_payment' }] deixaria entrar.
-
-2. Dados legados — payments criados antes do FINANCIAL_LOCK ter sido introduzido podem ter status: 'paid', isFromPackage: true.
-
-Fix defensivo — adicionar isFromPackage: { $ne: true } no topo do match:
-
-
-const match = {
-    status: 'paid',
-    amount: { $gt: 0 },
-    isFromPackage: { $ne: true },   // ← defense-in-depth explícito
-    kind: { $ne: 'package_consumed' },
-    ...
-};
-Renomeação semântica (producao.recebido → producaoLiquidada)
-Você está 100% certo. O nome recebido é enganoso — dinheiro recebido em janeiro aparece como "recebido" em maio. O fix é renomear no backend e atualizar o frontend.
-
-Quer que eu aplique os dois agora?
-
-Fix defensivo no calculateCash (isFromPackage: { $ne: true } no topo)
-Renomear recebidoProducao → producaoLiquidada no backend + todos os locais que consomem no frontend
-Sim — eu aplicaria os dois.
-E principalmente o **fix defensivo no `calculateCash`**, porque ele transforma uma “garantia implícita do Mongoose” em uma “garantia explícita da regra financeira”.
-
-Hoje vocês dependem disso:
-
-* ninguém usar `updateMany`
-* ninguém mexer direto no Mongo
-* nenhum dado legado escapar do pre-save
-* nenhum worker criar `status: 'paid'` indevido
-
-Em sistema financeiro, isso é frágil.
-
-O melhor cenário é:
-
-```js
-const match = {
-    status: 'paid',
-    amount: { $gt: 0 },
-
-    // defense-in-depth:
-    isFromPackage: { $ne: true },
-
-    kind: { $ne: 'package_consumed' },
-
-    ...
-}
-```
-
-Assim:
-
-| Cenário                                | Resultado        |
-| -------------------------------------- | ---------------- |
-| package_receipt                        | ✅ entra no caixa |
-| package_consumed                       | ❌ nunca entra    |
-| consumo prepaid bugado com status paid | ❌ bloqueado      |
-| dado legado incorreto                  | ❌ bloqueado      |
-| per_session real                       | ✅ entra          |
-
----
-
-## O segundo ponto é ainda mais importante semanticamente
-
-Você matou o problema conceitual:
-
-> “recebido” ≠ “dinheiro recebido hoje”
-
-Hoje o backend chama isso de:
-
-```js
-recebidoProducao
-```
-
-Mas na prática ele significa:
+Arredonda:
 
 ```txt
-produção já liquidada financeiramente
-```
-
-porque inclui:
-
-* sessões consumidas de pacote pré-pago
-* convênio reconhecido
-* sessões já quitadas anteriormente
-
-Então o nome atual induz erro analítico.
-
----
-
-## O rename que eu faria
-
-### Backend
-
-Trocar:
-
-```js
-recebidoProducao
-```
-
-por:
-
-```js
-producaoLiquidada
-```
-
-e no payload:
-
-```js
-producao: {
-   total,
-   producaoLiquidada,
-   aReceber,
-   ...
-}
+Precisa de 15 novos fechamentos
 ```
 
 ---
 
-## Melhor separação conceitual
+# 🔥 O diferencial importante
 
-Hoje vocês têm 3 conceitos diferentes misturados:
+Você NÃO quer usar:
 
-| Conceito           | Significa                             |
-| ------------------ | ------------------------------------- |
-| Caixa              | dinheiro que entrou no período        |
-| Produção           | serviço realizado                     |
-| Produção liquidada | produção já financeiramente garantida |
+* faturamento bruto passado
+* valor produzido
+* projeção fake
 
-Isso deveria ficar explícito.
+Você quer:
 
-Exemplo ideal:
+✅ previsão operacional REAL
+✅ baseado em agenda e recorrência
+✅ quanto falta vender
+✅ quantos pacientes precisa fechar
 
-```js
-producao: {
-   totalProduzido,
-   liquidado,
-   pendente,
-   convenio,
-   eficienciaFinanceira
-}
-```
+Isso vira praticamente um:
+
+# “Painel Comercial da Clínica”
 
 ---
 
-## O maior ganho disso
+# 📈 O que eu adicionaria no dashboard
 
-Seu dashboard deixa de parecer “errado”.
-
-Porque hoje o usuário olha:
+## CARD 1 — META
 
 ```txt
-Caixa hoje: R$300
-Produção recebida: R$760
+META DO MÊS
+R$ 45.000
 ```
 
-e pensa:
+---
 
-> “o sistema duplicou dinheiro”
+## CARD 2 — PREVISÃO ATUAL
 
-Mas na verdade:
-
-* R$460 já tinham entrado antes
-* hoje só ocorreu o consumo clínico
-
-Ou seja:
-
-* financeiro correto
-* nomenclatura errada
+```txt
+PREVISÃO ATUAL
+R$ 30.200
+67% da meta
+```
 
 ---
 
-## Minha recomendação final
+## CARD 3 — GAP
 
-### Aplicar agora:
-
-✅ `isFromPackage: { $ne: true }` no `calculateCash`
-✅ rename `recebidoProducao` → `producaoLiquidada`
+```txt
+FALTAM
+R$ 14.800
+```
 
 ---
 
-### Depois (fortemente recomendado)
+## CARD 4 — NOVOS PACIENTES NECESSÁRIOS
 
-Criar métricas explícitas:
+```txt
+TICKET MÉDIO
+R$ 1.000
+
+NECESSÁRIOS
+15 pacientes
+```
+
+---
+
+# 📦 De onde vem a “previsão”
+
+Você provavelmente vai precisar somar:
+
+## Pacotes
+
+Pacotes ainda não executados:
+
+```js
+appointments
+  .filter(a => a.package)
+  .filter(a => a.operationalStatus !== 'completed')
+```
+
+---
+
+## Per session recorrente
+
+Pacientes:
+
+* semanal
+* 2x semana
+* mensal
+* em continuidade
+
+Você pode projetar pelas sessões futuras do mês.
+
+---
+
+# 🧠 O MAIS IMPORTANTE
+
+Separar:
+
+## REALIZADO
+
+Dinheiro já recebido.
+
+---
+
+## PRODUZIDO
+
+Sessões executadas.
+
+---
+
+## PREVISÃO
+
+O que provavelmente vai entrar.
+
+---
+
+## META
+
+Objetivo financeiro.
+
+---
+
+# 💎 O fluxo ideal
+
+## Entrada
+
+Lead → Avaliação → Fechamento
+
+---
+
+## Conversão
+
+Fecha pacote / recorrência
+
+---
+
+## Impacto automático no painel
+
+Painel recalcula:
+
+```txt
+“Agora faltam apenas 11 pacientes”
+```
+
+Isso dá MUITA clareza operacional.
+
+---
+
+# 🚀 Evolução futura
+
+Depois você pode adicionar:
+
+## Probabilidade
+
+Exemplo:
+
+| Tipo                  | Peso |
+| --------------------- | ---- |
+| Paciente ativo antigo | 95%  |
+| Paciente faltoso      | 60%  |
+| Lead quente           | 40%  |
+
+E gerar:
+
+```txt
+Previsão conservadora
+Previsão otimista
+```
+
+---
+
+# 📌 Na prática, sua fórmula fica:
+
+```txt
+META
+-
+PREVISÃO RECORRENTE
+=
+GAP
+
+GAP
+/
+TICKET MÉDIO
+=
+NOVOS FECHAMENTOS NECESSÁRIOS
+```
+
+É exatamente assim que empresas SaaS, clínicas grandes e times comerciais acompanham meta mensal.
+
+
+
+
+
+
+
+aba projecao e cenarios ...
+Sim. E sinceramente esse é o lugar CERTO pra isso.
+
+Essa aba de Planejamento Anual já está praticamente no contexto ideal porque ela fala de:
+
+* metas
+* projeções
+* acompanhamento
+* evolução mensal
+
+Então ao invés de virar só “meta anual”, ela pode evoluir para:
+
+# 📈 Planejamento Financeiro Inteligente
+
+E aí você adiciona exatamente essa lógica operacional/comercial.
+
+---
+
+# 💡 O que eu faria nessa tela
+
+Hoje ela parece muito “vazia” e genérica.
+
+Você pode transformar em:
+
+---
+
+# TOPO — RESUMO EXECUTIVO DO MÊS
+
+Logo abaixo do seletor do mês:
+
+| Card           | Valor        |
+| -------------- | ------------ |
+| Meta           | R$ 45.000    |
+| Previsão Atual | R$ 30.200    |
+| Gap            | R$ 14.800    |
+| Necessários    | 15 pacientes |
+
+---
+
+# 🔥 O card MAIS importante
+
+## “PACIENTES NECESSÁRIOS”
+
+Visualmente:
+
+```txt id="e4u7x2"
+FALTAM 15 PACIENTES
+para atingir a meta
+```
+
+Isso muda a cabeça da secretária/comercial.
+
+Ela para de pensar:
+
+```txt id="bktz2u"
+“precisamos vender”
+```
+
+E começa:
+
+```txt id="f72o5w"
+“precisamos fechar 15 avaliações”
+```
+
+Muito mais acionável.
+
+---
+
+# 📊 Abaixo: composição da previsão
+
+Você pode mostrar:
+
+| Fonte           | Valor     |
+| --------------- | --------- |
+| Pacotes ativos  | R$ 18.000 |
+| Sessões futuras | R$ 7.500  |
+| Convênios       | R$ 2.700  |
+| Recorrentes     | R$ 2.000  |
+
+Total:
+
+```txt id="l34r11"
+Previsão atual: R$ 30.200
+```
+
+---
+
+# 🧠 E O MAIS LEGAL:
+
+Você já TEM praticamente todos os dados.
+
+Porque no seu sistema já existem:
+
+* appointments
+* packages
+* sessionValue
+* operationalStatus
+* paymentType
+* recurring flows
+
+Então isso é MUITO mais regra de negócio e dashboard do que infraestrutura nova.
+
+---
+
+# 🚀 O que eu adicionaria visualmente
+
+## Barra de progresso gigante
+
+Exemplo:
+
+```txt id="7ch5zl"
+67% da meta atingida
+████████░░░░
+R$ 30.200 / R$ 45.000
+```
+
+---
+
+# 📉 Indicador de risco
+
+Exemplo:
+
+| Situação | Cor      |
+| -------- | -------- |
+| ≥90%     | Verde    |
+| 70–89%   | Amarelo  |
+| <70%     | Vermelho |
+
+---
+
+# 🔥 E um negócio MUITO forte:
+
+## Meta convertida em agenda
+
+Exemplo:
+
+```txt id="18d8n8"
+Ticket médio:
+R$ 1.000
+
+Taxa de conversão:
+60%
+
+Necessário:
+25 avaliações
+
+Meta semanal:
+6 avaliações/semana
+```
+
+Isso vira um painel comercial REAL.
+
+---
+
+# 📌 Fluxo ideal dessa tela
+
+## 1. Define meta mensal
+
+```txt id="6r0r7x"
+R$ 45.000
+```
+
+---
+
+## 2. Sistema calcula automaticamente
+
+* previsão
+* recorrência
+* backlog
+* sessões futuras
+
+---
+
+## 3. Sistema mostra
+
+```txt id="mq2i4h"
+Faltam R$ 14.800
+```
+
+---
+
+## 4. Sistema converte
+
+```txt id="d4v0gu"
+≈ 15 novos pacientes
+```
+
+---
+
+# 💎 Outra coisa MUITO boa
+
+Separar:
+
+| Métrica         | Objetivo  |
+| --------------- | --------- |
+| Caixa realizado | entrou    |
+| Produzido       | executado |
+| Previsto        | provável  |
+| Meta            | alvo      |
+
+Porque isso dá visão absurda da clínica.
+
+---
+
+# 📈 Futuramente
+
+Você pode até colocar:
+
+## Funil
+
+```txt id="jjg9ri"
+Leads → Avaliações → Fechamentos
+```
+
+E o sistema dizer:
+
+```txt id="7ruxnh"
+Para fechar 15 pacientes,
+você precisa gerar 40 leads
+```
+
+Aí virou quase um mini ERP comercial de clínica.
+
+
+
+
+
+
+
+
+
+
+note A lógica mais importante aqui é:
+
+# ❌ NÃO criar uma tabela fake de “provisão”
+
+Porque sua provisão já existe operacionalmente no sistema.
+
+Ela nasce de:
+
+* appointments futuros
+* pacotes ativos
+* recorrência
+* contratos
+* convênios
+* frequência do paciente
+
+Então o ideal é:
+
+# ✅ calcular dinamicamente
+
+e salvar só snapshots/cache quando necessário.
+
+---
+
+# 📦 Como eu estruturaria isso
+
+## 1. Tabela de metas
+
+Você provavelmente precisa de algo assim:
+
+```js
+GoalPlanning
+{
+  _id,
+  month: 6,
+  year: 2026,
+
+  revenueGoal: 45000,
+
+  targetNewPatients: 15,
+
+  averageTicket: 1000,
+
+  createdBy,
+  createdAt
+}
+```
+
+Essa tabela guarda só:
+
+* meta
+* ticket médio manual
+* talvez conversão esperada
+
+---
+
+# 2. NÃO salvar provisão fixa
+
+Ao invés disso:
+
+# criar um serviço calculador
+
+Exemplo:
+
+```js
+calculateMonthlyProjection(month, year)
+```
+
+Ele soma tudo dinamicamente.
+
+---
+
+# 📊 De onde sai a previsão
+
+## A) Pacotes ativos
+
+Appointments futuros:
 
 ```js
 {
-  caixaReal,
-  producaoRealizada,
-  producaoLiquidada,
-  receitaDiferida,
-  convenioAReceber,
-  inadimplencia,
+  packageId: ObjectId,
+  operationalStatus: 'scheduled',
+  sessionValue: 180,
+  date: future
 }
 ```
 
-Porque sua clínica já está entrando num nível onde:
-
-* competência
-* caixa
-* diferido
-* produção clínica
-* convênio
-* pacote pré-pago
-
-precisam ser tratados como domínios separados — e hoje vocês já têm dados suficientes pra isso.
-Vou aplicar os dois agora. Primeiro localizo todos os consumidores de recebido no frontend, depois faço os edits em sequência.
-
-Bash Find all frontend consumers of producao.recebido
-IN
-grep -rn "producao\.recebido\|producao\?\.recebido\|recebidoProducao\|producaoLiquidada" /home/user/projetos/crm/front/src/ --include="*.tsx" --include="*.ts" | grep -v node_modules
-
-OUT
-(Bash completed with no output)
-Bash Find all backend usages of recebidoProducao in cashflow.v2.js
-IN
-grep -n "recebidoProducao\|producao\.recebido\|\.recebido" /home/user/projetos/crm/back/routes/cashflow.v2.js
-
-OUT
-314:        let recebidoProducao = 0;
-356:                porEspecialidade[esp].recebido += valor;
-372:                porEspecialidade[esp].recebido += valor;
-373:                recebidoProducao += valor;
-408:        const taxaEficiencia = production.total > 0 ? ((recebidoProducao / production.total) * 100).toFixed(1) : 0;
-414:            recebido: dados.recebido,
-458:                    recebido: recebidoProducao,
-Frontend sem consumidor direto — vou buscar com padrão mais amplo.
-
-Bash Find .recebido field accesses in frontend
-IN
-grep -rn "\.recebido\b" /home/user/projetos/crm/front/src/ --include="*.tsx" --include="*.ts" | grep -v ".recebidos"
-
-OUT
-/home/user/projetos/crm/front/src/pages/Financial/CashflowTab.tsx:638:                                                value={(esp.recebido / esp.total) * 100} 
-/home/user/projetos/crm/front/src/pages/Financial/CashflowTab.tsx:642:                                                {formatCurrency(esp.recebido)} recebido • {formatCurrency(esp.pendente)} pendente
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:1250:                                            value={(esp.recebido / esp.total) * 100} 
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:1254:                                            <span className="text-emerald-600">{formatCurrency(esp.recebido)} recebido</span>
-esp.recebido é de porEspecialidade (breakdown por especialidade) — diferente do producao.recebido de topo. Vou verificar se o topo é usado no front.
-
-Bash Find producao.recebido top-level usage in UnifiedCashflowTab
-IN
-grep -rn "producao\b" /home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx | grep -i "receb\|liquid\|producao\." | head -20
-
-OUT
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:435:                                {formatCurrency(data.producao.total)}
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:438:                                <span className="font-semibold text-gray-700">{data.producao.quantidadeAtendimentos}</span> atendimentos
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:440:                                Ticket: <span className="font-semibold text-gray-700">{formatCurrency(data.producao.ticketMedio)}</span>
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:454:                                const total = data.producao.total || 1;
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:455:                                const naoRecebido = (data.producao.aReceber || 0) + ((data.conveniosAtendidos || []).reduce((s: number, c: any) => s + (c.valor || 0), 0));
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:457:                                const porTipo = data.producao.porTipo || {};
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:474:                                            const tipos = data.producao.porTipo || {};
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:558:                                const particular = data.producao.aReceber || 0;
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:932:                            <Tab label={Object.keys(data.producao?.porEspecialidade || {}).length > 0 ? `Especialidades (${Object.keys(data.producao.porEspecialidade).length})` : 'Especialidades'} icon={<PieChartIcon fontSize="small" />} iconPosition="start" />
-/home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx:1241:                                {data.producao.porEspecialidade?.map((esp) => (
-Bash Check CashflowTab for producao.recebido usage
-IN
-grep -n "producao\.recebido\|producao\?\.recebido" /home/user/projetos/crm/front/src/pages/Financial/CashflowTab.tsx
-
-OUT
-(Bash completed with no output)
-producao.recebido de topo não é consumido no front — apenas esp.recebido (por especialidade). Posso aplicar os dois fixes agora sem quebrar nada no front.
-
-Edit unifiedFinancialService.v2.js
-Added 1 line
-Agora o rename recebidoProducao → producaoLiquidada no backend.
-
-Edit cashflow.v2.js
-Modified
-Edit cashflow.v2.js
-Modified
-Edit cashflow.v2.js
-Modified
-Edit cashflow.v2.js
-Modified
-Feito. Resumo dos dois fixes:
-
-Fix 1 — unifiedFinancialService.v2.js (garantia explícita):
-
-
-isFromPackage: { $ne: true },  // defense-in-depth
-A regra financeira agora está no match do MongoDB — não depende mais de nenhum hook Mongoose, migration ou worker respeitar o invariante.
-
-Fix 2 — cashflow.v2.js (semântica correta):
-
-Antes	Depois
-let recebidoProducao	let producaoLiquidada
-recebidoProducao += valor	producaoLiquidada += valor
-payload: recebido: recebidoProducao	payload: producaoLiquidada
-O campo no JSON agora é producao.producaoLiquidada — leitura imediata do que significa: produção clínica com cobertura financeira garantida, independente de quando o dinheiro entrou.
-
-O esp.recebido (por especialidade) não foi renomeado pois o frontend o consome diretamente — é um rename de segunda fase se quiser consistência total.
-
-outro ponto o aoi dashboar dnao ta somando a producao de hoje...{
-    "success": true,
-    "source": "real-time",
-    "resumo": {
-        "caixa": 27160,
-        "caixaDetalhe": {
-            "particular": 9150,
-            "pacote": 15050,
-            "convenio": 0,
-            "liminar": 2960,
-            "packageSales": 13900,
-            "packageSalesCount": 17,
-            "particularNet": 0
-        },
-        "producao": 28610,
-        "producaoDetalhe": {
-            "particular": 6900,
-            "pacote": 14670,
-            "convenio": 4080,
-            "liminar": 2960,
-            "recebido": 26620,
-            "pendente": 1990,
-            "particularPendente": 1830,
-            "pacotePendente": 0
-        },
-        "resultadoEconomico": 31240,
-        "resultadoCaixa": 27160,
-        "convenioAReceber": 4080,
-        "particularPendente": 1830,
-        "pacotePendente": 0,
-        "aReceber": {
-            "total": 3420,
-            "mesAtual": 3420,
-            "historico": 0
-        },
-        "pendentes": {
-            "total": 5010,
-            "allPendingTotal": 19161.23,
-            "allParticularTotal": 14801.23,
-            "convenio": {
-                "total": 3180,
-                "count": 42,
-                "items": [
-                    {
-                        "sessionId": "69d6470c85f1fc2849c5b79a",
-                        "data": "2026-05-27",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d67e0c19c6571d8c76dc32",
-                        "data": "2026-05-06",
-                        "hora": "10:00",
-                        "paciente": "Isabela Ferreira De Mendonca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d67e0e19c6571d8c76dc56",
-                        "data": "2026-05-20",
-                        "hora": "10:00",
-                        "paciente": "Isabela Ferreira De Mendonca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d97d1612144c068f8563b1",
-                        "data": "2026-04-10",
-                        "hora": "",
-                        "paciente": "Paciente",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d6470485f1fc2849c5b75e",
-                        "data": "2026-05-18",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d6470685f1fc2849c5b786",
-                        "data": "2026-05-25",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d97d1612144c068f8563b2",
-                        "data": "2026-04-10",
-                        "hora": "",
-                        "paciente": "Paciente",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d646ff85f1fc2849c5b716",
-                        "data": "2026-05-04",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d67e0d19c6571d8c76dc44",
-                        "data": "2026-05-15",
-                        "hora": "10:00",
-                        "paciente": "Isabela Ferreira De Mendonca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d67e1019c6571d8c76dc68",
-                        "data": "2026-05-27",
-                        "hora": "10:00",
-                        "paciente": "Isabela Ferreira De Mendonca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d6470085f1fc2849c5b728",
-                        "data": "2026-05-06",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69d6470585f1fc2849c5b770",
-                        "data": "2026-05-20",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "Convênio"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3ba",
-                        "data": "2026-05-15",
-                        "hora": "14:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3b8",
-                        "data": "2026-05-22",
-                        "hora": "14:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3b6",
-                        "data": "2026-05-29",
-                        "hora": "14:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3b7",
-                        "data": "2026-05-25",
-                        "hora": "17:20",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3b9",
-                        "data": "2026-05-18",
-                        "hora": "17:20",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fa9ac83a33f73695f3bd",
-                        "data": "2026-05-05",
-                        "hora": "",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fb59c83a33f73695f424",
-                        "data": "2026-05-25",
-                        "hora": "16:40",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fb59c83a33f73695f425",
-                        "data": "2026-05-18",
-                        "hora": "16:40",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69f9fb59c83a33f73695f427",
-                        "data": "2026-05-04",
-                        "hora": "16:40",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab8635e",
-                        "data": "2026-05-29",
-                        "hora": "13:20",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab8635f",
-                        "data": "2026-05-25",
-                        "hora": "18:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab86360",
-                        "data": "2026-05-22",
-                        "hora": "13:20",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab86361",
-                        "data": "2026-05-18",
-                        "hora": "18:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab86362",
-                        "data": "2026-05-15",
-                        "hora": "13:20",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "69fa297b003164e56ab86365",
-                        "data": "2026-05-04",
-                        "hora": "18:00",
-                        "paciente": "Davi Felipe Araújo",
-                        "valor": 140,
-                        "status": "pending",
-                        "convenio": "unimed-campinas"
-                    },
-                    {
-                        "sessionId": "6a078b643799f3ee160361b0",
-                        "data": "2026-05-15",
-                        "hora": "18:00",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 160,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a078bdd3799f3ee160363c6",
-                        "data": "2026-05-15",
-                        "hora": "18:40",
-                        "paciente": "Benjamim Rocha Simão",
-                        "valor": 160,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0b64ef80cc438aa0b6281d",
-                        "data": "2026-05-18",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0c545180cc438aa0b67e14",
-                        "data": "2026-05-26",
-                        "hora": "17:00",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0d12456d98f2350f0341eb",
-                        "data": "2026-05-19",
-                        "hora": "17:40",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0d12466d98f2350f0341fb",
-                        "data": "2026-05-19",
-                        "hora": "18:20",
-                        "paciente": "Benjamim Rocha Simão",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0db2ad8f55e6d47c18ac7a",
-                        "data": "2026-05-20",
-                        "hora": "10:00",
-                        "paciente": "Isabela Ferreira De Mendonca",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a0e12768f55e6d47c191462",
-                        "data": "2026-05-20",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a104b25aa87388cdac1af91",
-                        "data": "2026-05-05",
-                        "hora": "17:40",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 160,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a104b41aa87388cdac1b0bc",
-                        "data": "2026-05-05",
-                        "hora": "18:20",
-                        "paciente": "Benjamim Rocha Simão",
-                        "valor": 160,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a14a403efdd1a644f543378",
-                        "data": "2026-05-25",
-                        "hora": "16:00",
-                        "paciente": "Nicolas Lucca",
-                        "valor": 80,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a14ae6edf43507213eaa8ac",
-                        "data": "2026-05-29",
-                        "hora": "17:00",
-                        "paciente": "Benjamim Rocha Simão",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a14ae6edf43507213eaa8ad",
-                        "data": "2026-05-26",
-                        "hora": "17:00",
-                        "paciente": "Benjamim Rocha Simão",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a14aed3df43507213eaa9f7",
-                        "data": "2026-05-29",
-                        "hora": "17:40",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    },
-                    {
-                        "sessionId": "6a14aed3df43507213eaa9f8",
-                        "data": "2026-05-26",
-                        "hora": "17:40",
-                        "paciente": "Joaquim Rocha Simão",
-                        "valor": 0,
-                        "status": "pending",
-                        "convenio": "unimed-anapolis"
-                    }
-                ]
-            },
-            "particular": {
-                "total": 1830,
-                "count": 12,
-                "items": [
-                    {
-                        "sessionId": "69fe3b5a6f9062389047bd4e",
-                        "data": "2026-05-08",
-                        "hora": "14:40",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "69fe3b766f9062389047be41",
-                        "data": "2026-05-08",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a022d13c574de6da0bacdf0",
-                        "data": "2026-05-11",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a022d7dc574de6da0bad0ab",
-                        "data": "2026-05-11",
-                        "hora": "16:00",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 130,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a075d3014259ec2e37d7404",
-                        "data": "2026-05-15",
-                        "hora": "14:40",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a076962d49a855f4a46c241",
-                        "data": "2026-05-15",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a0b64da80cc438aa0b626a6",
-                        "data": "2026-05-18",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a0b655380cc438aa0b62a41",
-                        "data": "2026-05-18",
-                        "hora": "16:00",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 130,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a10a41e5686e616627bed43",
-                        "data": "2026-05-22",
-                        "hora": "14:40",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a10a4675686e616627befb3",
-                        "data": "2026-05-22",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a14a33f5dc5d759612109b0",
-                        "data": "2026-05-25",
-                        "hora": "15:20",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 160,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    },
-                    {
-                        "sessionId": "6a14a42befdd1a644f5434f7",
-                        "data": "2026-05-25",
-                        "hora": "16:00",
-                        "paciente": "Isis Caldas Rebelatto",
-                        "valor": 130,
-                        "status": "pending",
-                        "paymentMethod": "dinheiro"
-                    }
-                ]
-            },
-            "vencidos": {
-                "total": 4930,
-                "convenio": {
-                    "total": 3100,
-                    "count": 33,
-                    "items": [
-                        {
-                            "sessionId": "69d67e0c19c6571d8c76dc32",
-                            "data": "2026-05-06",
-                            "hora": "10:00",
-                            "paciente": "Isabela Ferreira De Mendonca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d67e0e19c6571d8c76dc56",
-                            "data": "2026-05-20",
-                            "hora": "10:00",
-                            "paciente": "Isabela Ferreira De Mendonca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d97d1612144c068f8563b1",
-                            "data": "2026-04-10",
-                            "hora": "",
-                            "paciente": "Paciente",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d6470485f1fc2849c5b75e",
-                            "data": "2026-05-18",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d6470685f1fc2849c5b786",
-                            "data": "2026-05-25",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d97d1612144c068f8563b2",
-                            "data": "2026-04-10",
-                            "hora": "",
-                            "paciente": "Paciente",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d646ff85f1fc2849c5b716",
-                            "data": "2026-05-04",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d67e0d19c6571d8c76dc44",
-                            "data": "2026-05-15",
-                            "hora": "10:00",
-                            "paciente": "Isabela Ferreira De Mendonca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d6470085f1fc2849c5b728",
-                            "data": "2026-05-06",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69d6470585f1fc2849c5b770",
-                            "data": "2026-05-20",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 0,
-                            "status": "pending",
-                            "convenio": "Convênio"
-                        },
-                        {
-                            "sessionId": "69f9fa9ac83a33f73695f3ba",
-                            "data": "2026-05-15",
-                            "hora": "14:00",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fa9ac83a33f73695f3b8",
-                            "data": "2026-05-22",
-                            "hora": "14:00",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fa9ac83a33f73695f3b7",
-                            "data": "2026-05-25",
-                            "hora": "17:20",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fa9ac83a33f73695f3b9",
-                            "data": "2026-05-18",
-                            "hora": "17:20",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fa9ac83a33f73695f3bd",
-                            "data": "2026-05-05",
-                            "hora": "",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fb59c83a33f73695f424",
-                            "data": "2026-05-25",
-                            "hora": "16:40",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fb59c83a33f73695f425",
-                            "data": "2026-05-18",
-                            "hora": "16:40",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69f9fb59c83a33f73695f427",
-                            "data": "2026-05-04",
-                            "hora": "16:40",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69fa297b003164e56ab8635f",
-                            "data": "2026-05-25",
-                            "hora": "18:00",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69fa297b003164e56ab86360",
-                            "data": "2026-05-22",
-                            "hora": "13:20",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69fa297b003164e56ab86361",
-                            "data": "2026-05-18",
-                            "hora": "18:00",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69fa297b003164e56ab86362",
-                            "data": "2026-05-15",
-                            "hora": "13:20",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "69fa297b003164e56ab86365",
-                            "data": "2026-05-04",
-                            "hora": "18:00",
-                            "paciente": "Davi Felipe Araújo",
-                            "valor": 140,
-                            "status": "pending",
-                            "convenio": "unimed-campinas"
-                        },
-                        {
-                            "sessionId": "6a078b643799f3ee160361b0",
-                            "data": "2026-05-15",
-                            "hora": "18:00",
-                            "paciente": "Joaquim Rocha Simão",
-                            "valor": 160,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a078bdd3799f3ee160363c6",
-                            "data": "2026-05-15",
-                            "hora": "18:40",
-                            "paciente": "Benjamim Rocha Simão",
-                            "valor": 160,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a0b64ef80cc438aa0b6281d",
-                            "data": "2026-05-18",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a0d12456d98f2350f0341eb",
-                            "data": "2026-05-19",
-                            "hora": "17:40",
-                            "paciente": "Joaquim Rocha Simão",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a0d12466d98f2350f0341fb",
-                            "data": "2026-05-19",
-                            "hora": "18:20",
-                            "paciente": "Benjamim Rocha Simão",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a0db2ad8f55e6d47c18ac7a",
-                            "data": "2026-05-20",
-                            "hora": "10:00",
-                            "paciente": "Isabela Ferreira De Mendonca",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a0e12768f55e6d47c191462",
-                            "data": "2026-05-20",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a104b25aa87388cdac1af91",
-                            "data": "2026-05-05",
-                            "hora": "17:40",
-                            "paciente": "Joaquim Rocha Simão",
-                            "valor": 160,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a104b41aa87388cdac1b0bc",
-                            "data": "2026-05-05",
-                            "hora": "18:20",
-                            "paciente": "Benjamim Rocha Simão",
-                            "valor": 160,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        },
-                        {
-                            "sessionId": "6a14a403efdd1a644f543378",
-                            "data": "2026-05-25",
-                            "hora": "16:00",
-                            "paciente": "Nicolas Lucca",
-                            "valor": 80,
-                            "status": "pending",
-                            "convenio": "unimed-anapolis"
-                        }
-                    ]
-                },
-                "particular": {
-                    "total": 1830,
-                    "count": 12,
-                    "items": [
-                        {
-                            "sessionId": "69fe3b5a6f9062389047bd4e",
-                            "data": "2026-05-08",
-                            "hora": "14:40",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "69fe3b766f9062389047be41",
-                            "data": "2026-05-08",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a022d13c574de6da0bacdf0",
-                            "data": "2026-05-11",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a022d7dc574de6da0bad0ab",
-                            "data": "2026-05-11",
-                            "hora": "16:00",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 130,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a075d3014259ec2e37d7404",
-                            "data": "2026-05-15",
-                            "hora": "14:40",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a076962d49a855f4a46c241",
-                            "data": "2026-05-15",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a0b64da80cc438aa0b626a6",
-                            "data": "2026-05-18",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a0b655380cc438aa0b62a41",
-                            "data": "2026-05-18",
-                            "hora": "16:00",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 130,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a10a41e5686e616627bed43",
-                            "data": "2026-05-22",
-                            "hora": "14:40",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a10a4675686e616627befb3",
-                            "data": "2026-05-22",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a14a33f5dc5d759612109b0",
-                            "data": "2026-05-25",
-                            "hora": "15:20",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 160,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        },
-                        {
-                            "sessionId": "6a14a42befdd1a644f5434f7",
-                            "data": "2026-05-25",
-                            "hora": "16:00",
-                            "paciente": "Isis Caldas Rebelatto",
-                            "valor": 130,
-                            "status": "pending",
-                            "paymentMethod": "dinheiro"
-                        }
-                    ]
-                }
-            },
-            "v2_financial": {
-                "total": 5010,
-                "count": 54,
-                "byPatient": {
-                    "685b0cfaaec14c7163585b5b": {
-                        "patient": {
-                            "_id": "685b0cfaaec14c7163585b5b",
-                            "fullName": "Isis Caldas Rebelatto"
-                        },
-                        "patientId": "685b0cfaaec14c7163585b5b",
-                        "total": 1830,
-                        "count": 12,
-                        "items": [
-                            {
-                                "_id": "69fe3b5a6f9062389047bd4e",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-08T19:36:58.221Z",
-                                "serviceDate": null,
-                                "data": "2026-05-08T17:40:00.000Z",
-                                "hora": "14:40",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e22ce74e856f552b1aa3ec",
-                                    "date": "2026-05-08T17:40:00.000Z",
-                                    "time": "14:40"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "69fe3b766f9062389047be41",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-08T19:37:26.643Z",
-                                "serviceDate": null,
-                                "data": "2026-05-08T18:20:00.000Z",
-                                "hora": "15:20",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e2730d11988055724866f3",
-                                    "date": "2026-05-08T18:20:00.000Z",
-                                    "time": "15:20"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a022d13c574de6da0bacdf0",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-11T19:25:07.140Z",
-                                "serviceDate": null,
-                                "data": "2026-05-11T18:20:00.000Z",
-                                "hora": "15:20",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e2730d11988055724866f4",
-                                    "date": "2026-05-11T18:20:00.000Z",
-                                    "time": "15:20"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a022d7dc574de6da0bad0ab",
-                                "amount": 130,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-11T19:26:53.934Z",
-                                "serviceDate": null,
-                                "data": "2026-05-11T19:00:00.000Z",
-                                "hora": "16:00",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e2724d119880557248659c",
-                                    "date": "2026-05-11T19:00:00.000Z",
-                                    "time": "16:00"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a075d3014259ec2e37d7404",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-15T17:51:44.697Z",
-                                "serviceDate": null,
-                                "data": "2026-05-15T17:40:00.000Z",
-                                "hora": "14:40",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e22ce74e856f552b1aa3ed",
-                                    "date": "2026-05-15T17:40:00.000Z",
-                                    "time": "14:40"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a076962d49a855f4a46c241",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-15T18:43:46.584Z",
-                                "serviceDate": null,
-                                "data": "2026-05-15T18:20:00.000Z",
-                                "hora": "15:20",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e2730d11988055724866f5",
-                                    "date": "2026-05-15T18:20:00.000Z",
-                                    "time": "15:20"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a0b64da80cc438aa0b626a6",
-                                "amount": 160,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                                "billingType": "particular",
-                                "paymentDate": "2026-05-18T19:13:30.582Z",
-                                "serviceDate": null,
-                                "data": "2026-05-18T18:20:00.000Z",
-                                "hora": "15:20",
-                                "specialty": "N/A",
-                                "doctor": null,
-                                "appointment": {
-                                    "_id": "69e2730d11988055724866f6",
-                                    "date": "2026-05-18T18:20:00.000Z",
-                                    "time": "15:20"
-                                },
-                                "notes": null
-                            },
-                            {
-                                "_id": "6a0b655380cc438aa0b62a41",
-                                "amount": 130,
-                                "status": "pending",
-                                "paymentMethod": "dinheiro",
-                
-
-[Message truncated - exceeded 50,000 character limit]
-Preciso encontrar o endpoint que gera esse resumo para ver onde a produção de hoje é calculada.
-
-Bash Find which route file builds the resumo with producao
-IN
-grep -rn "resumo.*producao\|producao.*resumo\|resultadoEconomico\|producaoDetalhe" /home/user/projetos/crm/back/routes/ --include="*.js" -l
-
-OUT
-/home/user/projetos/crm/back/routes/financialDashboard.v2.js
-/home/user/projetos/crm/back/routes/financial/dashboard.routes.js
-Bash Find the route that returns source: real-time
-IN
-grep -rn "source.*real-time\|real-time\|resumo.*caixa" /home/user/projetos/crm/back/routes/ --include="*.js" -l
-
-OUT
-/home/user/projetos/crm/back/routes/financial/dashboard.routes.js
-/home/user/projetos/crm/back/routes/financialDashboard.v2.js
-Bash Find production calculation and date range in financialDashboard.v2.js
-IN
-grep -n "calculateProduction\|producao\|start.*end\|monthStart\|startOf" /home/user/projetos/crm/back/routes/financialDashboard.v2.js | head -40
-
-OUT
-163:                producao: snap.producao,
-164:                producaoDetalhe: snap.producaoDetalhe,
-212:            const indicadoresSnap = calculateIndicadores(data.caixa, data.producao, despesasSnap.total, metasSnap);
-220:                    producao: data.producao,
-221:                    producaoDetalhe: data.producaoDetalhe,
-238:                        total: data.producao,
-239:                        byMethod: data.producaoDetalhe
-282:        const indicadores = calculateIndicadores(data.caixa, data.producao, despesas.total, metas);
-290:                producao: data.producao,
-291:                producaoDetalhe: data.producaoDetalhe,
-313:                    total: data.producao,
-314:                    byMethod: data.producaoDetalhe
-356:        const { startDate, endDate, clearFirst = true, clinicId } = req.body;
-357:        if (!startDate || !endDate) {
-358:            return res.status(400).json({ success: false, error: 'startDate e endDate são obrigatórios' });
-361:        console.log(`[DashboardV3] Rebuild snapshot: ${startDate} → ${endDate} (clearFirst=${clearFirst})`);
-365:            const startStr = moment.tz(startDate, TIMEZONE).startOf('day').format('YYYY-MM-DD');
-370:                date: { $gte: startStr, $lte: endStr }
-372:            console.log(`[DashboardV3] Snapshots deletados: ${deleted.deletedCount} (${startStr} → ${endStr})`);
-378:        const startDateObj = moment.tz(startDate, TIMEZONE).startOf('day').toDate();
-381:            date: { $gte: startDateObj, $lte: endDateObj },
-403:                { status: 'paid', paymentDate: { $gte: startDate, $lte: endDate } },
-404:                { billingType: 'convenio', 'insurance.status': { $in: ['received', 'partial'] }, 'insurance.receivedAt': { $gte: new Date(startDate), $lte: new Date(endDate) } }
-454:        const startDate = moment.tz([y, m - 1, 1], TIMEZONE).startOf('day').toDate();
-461:            paymentDate: { $gte: startDate, $lte: endDate },
-474:            paidAt: { $gte: startDate, $lte: endDate }
-522:            periodo: { mes: m, ano: y, inicio: startDate, fim: endDate },
-563:    const realizadoMes = data.resultadoEconomico ?? data.producao;
-642:                realizado: parseFloat((data.producaoDetalhe.particular || 0).toFixed(2)),
-643:                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.particular || 0) / data.producao * 100).toFixed(1)) : 0
-647:                realizado: parseFloat((data.producaoDetalhe.pacote || 0).toFixed(2)),
-648:                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.pacote || 0) / data.producao * 100).toFixed(1)) : 0
-652:                realizado: parseFloat((data.producaoDetalhe.convenio || 0).toFixed(2)),
-653:                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.convenio || 0) / data.producao * 100).toFixed(1)) : 0
-657:                realizado: parseFloat((data.producaoDetalhe.liminar || 0).toFixed(2)),
-658:                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.liminar || 0) / data.producao * 100).toFixed(1)) : 0
-668:    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
-675:        date: { $gte: start, $lte: end },
-688:            paymentDate: { $gte: startStr, $lte: endStr },
-694:            'insurance.receivedAt': { $gte: start, $lte: end },
-Read financialDashboard.v2.js (lines 451-540)
-Esse trecho é outro endpoint. Preciso ver o caminho real-time que retorna source: real-time com resumo.producao.
-
-Read financialDashboard.v2.js (lines 201-310)
-calculateRealTime é a função-chave. Vou encontrá-la.
-
-Bash Find calculateRealTime function definition
-IN
-grep -n "function calculateRealTime\|async function calculateRealTime\|const calculateRealTime\|calculateRealTime = " /home/user/projetos/crm/back/routes/financialDashboard.v2.js
-
-OUT
-1002:async function calculateRealTime(year, month) {
-Read financialDashboard.v2.js (lines 1003-1122)
-Excelente decisão manter o rename parcial em duas fases.
-Isso reduz muito o risco de quebrar dashboard, cards e gráficos já conectados no frontend.
-
-O estado atual ficou bem sólido:
-
-| Área              | Resultado                                |
-| ----------------- | ---------------------------------------- |
-| Caixa             | protegido contra dupla contagem          |
-| Produção          | semanticamente correta                   |
-| Pacotes pré-pagos | tratados como receita diferida real      |
-| Hooks Mongoose    | deixaram de ser ponto único de segurança |
-| JSON API          | muito mais legível analiticamente        |
-
----
-
-## O que vocês ganharam arquiteturalmente
-
-Antes o sistema dependia de uma “verdade implícita”:
-
-> “ninguém nunca vai salvar `isFromPackage=true` com `status=paid`”
-
-Agora a verdade financeira está:
-
-* explícita
-* auditável
-* centralizada no aggregate
-
-Isso é uma mudança grande de maturidade do sistema.
-
----
-
-## Sobre o rename parcial (`esp.recebido`)
-
-Você fez certo em não renomear ainda.
-
-Porque esse trecho provavelmente alimenta:
-
-* cards
-* tabelas
-* gráficos empilhados
-* tooltips
-* exports
-
-e rename parcial no backend costuma quebrar frontend silenciosamente.
-
----
-
-## O rename ideal de segunda fase
-
-Quando quiser consistência total:
-
-### Hoje
+Soma:
 
 ```js
-porEspecialidade[esp] = {
-   total,
-   quantidade,
-   recebido,
-   pendente
-}
-```
-
-### Futuro
-
-```js
-porEspecialidade[esp] = {
-   totalProduzido,
-   producaoLiquidada,
-   pendente,
-   quantidade
-}
+future appointments
+where status != cancelled
 ```
 
 ---
 
-## Outro ponto MUITO importante
+# B) Sessões recorrentes
 
-Agora que existe:
+Paciente semanal:
 
-```js
-producaoLiquidada
+```txt id="33c1lr"
+2x semana
 ```
 
-você pode finalmente separar 3 indicadores reais no dashboard:
+Você já terá appointments futuros gerados.
 
-| Indicador              | Fórmula                           |
-| ---------------------- | --------------------------------- |
-| Eficiência operacional | liquidada / produzida             |
-| Conversão financeira   | caixa / liquidada                 |
-| Receita diferida       | pacote vendido - pacote consumido |
-
-Isso começa a transformar o CRM em ERP clínico de verdade.
+Então entra automaticamente.
 
 ---
 
-## Próximo ajuste que eu recomendaria
+# C) Convênios
 
-Hoje vocês ainda têm ambiguidade aqui:
-
-```js
-taxaEficiencia
-```
-
-Porque:
-
-* “eficiência” pode significar cobrança
-* ocupação
-* adimplência
-* aproveitamento clínico
-
-Eu migraria futuramente para:
+Mesma lógica:
 
 ```js
-taxaLiquidacaoFinanceira
+paymentType: 'insurance'
 ```
 
 ou:
 
 ```js
-indiceLiquidacao
+agreementId
 ```
-
-Fica impossível interpretar errado.
 
 ---
 
-## Resultado final dessa refatoração
+# D) Per session
 
-Vocês saíram de:
+Sessões futuras individuais.
 
-```txt
-"quanto entrou?"
+---
+
+# 🧠 O segredo
+
+Você NÃO quer:
+
+```txt id="o0mnpx"
+“quanto o paciente pode pagar”
 ```
 
-para:
+Você quer:
 
-```txt
-"quando entrou?"
-"o serviço já foi realizado?"
-"o valor já foi liquidado?"
-"é competência ou caixa?"
-"é receita diferida?"
+# receita operacional prevista
+
+Baseada no calendário real.
+
+---
+
+# 🚀 Serviço central
+
+Algo tipo:
+
+```js
+async function calculateMonthlyProjection(month, year) {
+
+  const appointments = await Appointment.find({
+    date: {
+      $gte: startOfMonth,
+      $lte: endOfMonth
+    },
+
+    operationalStatus: {
+      $nin: ['cancelled']
+    }
+  })
+
+  const projectedRevenue =
+    appointments.reduce((sum, appt) => {
+      return sum + (appt.sessionValue || 0)
+    }, 0)
+
+  return {
+    projectedRevenue
+  }
+}
 ```
 
-Isso é exatamente o salto que sistemas clínicos grandes fazem quando começam a lidar com:
+---
 
-* pacotes
-* convênio
-* competência
-* previsibilidade financeira
-* DRE real
-* retenção
-* forecast de receita
+# 📌 Depois cruza com a meta
 
-A base financeira agora está muito mais confiável para crescer.
-producao.total = production.total vem de calculateProduction(start, end). Preciso ver essa função para entender o filtro de data.
+```js
+gap = revenueGoal - projectedRevenue
+```
 
-Bash Find calculateProduction function in unifiedFinancialService
-IN
-grep -n "function calculateProduction\|async function calculateProduction\|const calculateProduction" /home/user/projetos/crm/back/services/unifiedFinancialService.v2.js
+---
 
-OUT
-252:export async function calculateProduction(start, end) {
-366:export async function calculateProductionByDay(start, end) {
-Read unifiedFinancialService.v2.js (lines 253-332)
-Preciso ver o pkgLookupStages que é usado no aggregate de production — pode estar filtrando sessões.
+# 📌 Depois calcula pacientes necessários
 
-Bash Find pkgLookupStages and effectiveValue definition
+```js
+patientsNeeded =
+  Math.ceil(gap / averageTicket)
+```
+
+---
+
+# 💎 O QUE É MAIS IMPORTANTE
+
+Separar 3 conceitos:
+
+| Tipo      | Origem             |
+| --------- | ------------------ |
+| Realizado | caixa/transações   |
+| Produzido | sessões concluídas |
+| Previsto  | agenda futura      |
+
+Isso evita dashboard mentiroso.
+
+---
+
+# 🔥 O ideal MESMO
+
+Você criar um:
+
+# projection engine
+
+Centralizado.
+
+Exemplo:
+
+```txt id="x4lggq"
+services/financialProjection.service.js
+```
+
+---
+
+# Ele retorna:
+
+```js
+{
+  goal: 45000,
+
+  projectedRevenue: 30200,
+
+  realizedRevenue: 18000,
+
+  producedRevenue: 21000,
+
+  gap: 14800,
+
+  averageTicket: 1000,
+
+  patientsNeeded: 15,
+
+  completionPercentage: 67
+}
+```
+
+---
+
+# 📈 E aí o frontend só renderiza
+
+Sem lógica pesada no React.
+
+---
+
+# 🚨 Importante operacionalmente
+
+Você provavelmente vai precisar ignorar:
+
+| Status    | Ignorar?        |
+| --------- | --------------- |
+| cancelled | sim             |
+| no_show   | talvez          |
+| completed | depende         |
+| scheduled | simular entrada |
+| confirmed | simular entrada |
+
+---
+
+# 🔥 Melhor abordagem de previsão
+
+## Baseado em Appointments
+
+E NÃO em Package.balance legado.
+
+Porque appointment é:
+
+✅ rastreável
+✅ operacional
+✅ data real
+✅ valor real
+✅ profissional real
+✅ executável
+
+---
+
+# 📊 Futuramente você pode sofisticar
+
+## Peso probabilístico
+
+Exemplo:
+
+| Status            | Peso |
+| ----------------- | ---- |
+| confirmed         | 100% |
+| scheduled         | 90%  |
+| no_show histórico | 60%  |
+
+---
+
+# Exemplo:
+
+```js
+projection +=
+  appointment.sessionValue * probabilityWeight
+```
+
+---
+
+# 💎 Melhor arquitetura
+
+## Persistir:
+
+✅ metas
+✅ configurações
+✅ ticket médio
+
+---
+
+## Calcular:
+
+✅ previsão
+✅ gap
+✅ pacientes necessários
+✅ progresso
+
+em tempo real.
+
+Isso deixa o sistema MUITO mais confiável.
+

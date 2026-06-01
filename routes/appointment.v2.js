@@ -663,7 +663,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { reason, confirmedAbsence = false } = req.body;
+    const { reason, confirmedAbsence = false, forceCancel = false, reverseFinancial = false, notes, observations, responsible } = req.body;
 
     if (!reason) {
       throw createBusinessError(Messages.VALIDATION.REASON_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
@@ -723,64 +723,88 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
 
     // 🎯 CRM: operationalStatus é a fonte da verdade
     if (appointment.operationalStatus === 'completed') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.CANNOT_CANCEL_COMPLETED, 409, ErrorCodes.CONFLICT_STATE
-      );
+      if (!forceCancel) {
+        await mongoSession.abortTransaction();
+        throw createBusinessError(Messages.BUSINESS.CANNOT_CANCEL_COMPLETED, 409, ErrorCodes.CONFLICT_STATE);
+      }
+      // forceCancel:true — reversão administrativa explícita
+      console.log(`[cancel] ⚠️ FORCE CANCEL em appointment completed: ${id} | reverseFinancial=${reverseFinancial}`);
     }
 
     // 🎯 V2 SÍNCRONO: Cancela imediatamente
-    appointment.operationalStatus = 'canceled';
-    appointment.status = 'canceled';
-    appointment.paymentStatus = 'canceled';
+    const newStatus = forceCancel ? 'force_cancelled' : 'canceled';
+    appointment.operationalStatus = newStatus;
+    appointment.status = newStatus;
+    if (!forceCancel || reverseFinancial) {
+      appointment.paymentStatus = 'canceled';
+    }
     appointment.canceledAt = new Date();
     appointment.cancellationReason = reason;
+    if (notes != null || observations != null) appointment.notes = notes ?? observations;
+    if (responsible != null) appointment.responsible = responsible;
+
+    if (forceCancel) {
+      appointment.forceCancelAudit = {
+        forceCancelledBy: req.user?._id?.toString() || req.user?.email || 'unknown',
+        forceCancelledAt: new Date(),
+        forceCancelledReason: reason,
+        reverseFinancial: !!reverseFinancial
+      };
+    }
+
     appointment.history.push({
-      action: 'canceled',
-      newStatus: 'canceled',
+      action: newStatus,
+      newStatus,
       changedBy: req.user?._id,
       timestamp: new Date(),
-      context: `Motivo: ${reason}`
+      context: forceCancel
+        ? `[FORCE CANCEL] Motivo: ${reason} | reverseFinancial: ${!!reverseFinancial}`
+        : `Motivo: ${reason}`
     });
 
     await appointment.save({ session: mongoSession });
 
-    // 💰 FINANCIAL GUARD: processa efeitos financeiros do cancelamento dentro da mesma transaction
+    // 💰 FINANCIAL GUARD: pula se forceCancel sem reverseFinancial (reversão operacional sem estorno)
     let financialResult = null;
-    try {
-      financialResult = await FinancialGuard.execute({
-        context: 'CANCEL_APPOINTMENT',
-        // 🎯 Se tem package, SEMPRE usar package guard (independentemente de billingType do appointment)
-        billingType: appointment.package ? 'package' : (appointment.billingType || 'particular'),
-        payload: {
-          appointmentId: id,
-          packageId: appointment.package?.toString(),
-          paymentId: appointment.payment?.toString(),
-          appointmentStatus: appointment.operationalStatus,
-          paymentOrigin: appointment.paymentOrigin,
-          sessionValue: appointment.sessionValue || 0,
-          confirmedAbsence,
-          reason,
-          billingType: appointment.billingType
-        },
-        session: mongoSession
-      });
-      
-      if (financialResult?.handled) {
-        console.log(`[cancel] 💰 Financial Guard processado:`, financialResult);
+    if (!forceCancel || reverseFinancial) {
+      try {
+        financialResult = await FinancialGuard.execute({
+          context: 'CANCEL_APPOINTMENT',
+          // 🎯 Se tem package, SEMPRE usar package guard (independentemente de billingType do appointment)
+          billingType: appointment.package ? 'package' : (appointment.billingType || 'particular'),
+          payload: {
+            appointmentId: id,
+            packageId: appointment.package?.toString(),
+            paymentId: appointment.payment?.toString(),
+            appointmentStatus: appointment.operationalStatus,
+            paymentOrigin: appointment.paymentOrigin,
+            sessionValue: appointment.sessionValue || 0,
+            confirmedAbsence,
+            reason,
+            billingType: appointment.billingType
+          },
+          session: mongoSession
+        });
+
+        if (financialResult?.handled) {
+          console.log(`[cancel] 💰 Financial Guard processado:`, financialResult);
+        }
+      } catch (financialErr) {
+        console.error(`[cancel] ❌ ERRO CRÍTICO no Financial Guard:`, financialErr.message);
+        await mongoSession.abortTransaction();
+        throw createBusinessError(
+          'Não foi possível processar o cancelamento financeiro. Tente novamente ou contate o suporte.',
+          500,
+          'FINANCIAL_GUARD_FAILED'
+        );
       }
-    } catch (financialErr) {
-      console.error(`[cancel] ❌ ERRO CRÍTICO no Financial Guard:`, financialErr.message);
-      await mongoSession.abortTransaction();
-      throw createBusinessError(
-        'Não foi possível processar o cancelamento financeiro. Tente novamente ou contate o suporte.',
-        500,
-        'FINANCIAL_GUARD_FAILED'
-      );
+    } else {
+      console.log(`[cancel] ⏭️ Financial Guard ignorado (forceCancel sem reverseFinancial)`);
     }
 
-    // 🔄 CANCELA PAYMENT + self-healing de vínculo
+    // 🔄 CANCELA PAYMENT + self-healing de vínculo (pula se forceCancel sem reverseFinancial)
     let needsAppointmentResave = false;
-    {
+    if (!forceCancel || reverseFinancial) {
       const paymentId = appointment.payment?._id || appointment.payment;
       const payment = paymentId
         ? await Payment.findById(paymentId).session(mongoSession)
@@ -801,6 +825,8 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
           console.log(`[cancel] 💰 Payment ${payment._id} cancelado`);
         }
       }
+    } else {
+      console.log(`[cancel] ⏭️ Payment preservado (forceCancel sem reverseFinancial)`);
     }
 
     // 🔄 CANCELA SESSION + self-healing de vínculo
@@ -886,7 +912,9 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
             reason,
             confirmedAbsence,
             userId: req.user?._id?.toString(),
-            financialResult
+            financialResult,
+            forceCancel: forceCancel || false,
+            reverseFinancial: reverseFinancial || false
           },
           {
             correlationId: id,
@@ -903,15 +931,19 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
       formatSuccess(
         {
           appointmentId: id,
-          status: 'canceled',
-          operationalStatus: 'canceled',
+          status: newStatus,
+          operationalStatus: newStatus,
           correlationId: id,
           idempotencyKey,
           viewRebuilt,
-          financialResult
+          financialResult,
+          forceCancel: forceCancel || false,
+          reverseFinancial: reverseFinancial || false
         },
         {
-          message: 'Agendamento cancelado com sucesso',
+          message: forceCancel
+            ? `Agendamento revertido administrativamente (force_cancelled) | reverseFinancial: ${!!reverseFinancial}`
+            : 'Agendamento cancelado com sucesso',
           processing: 'sync',
           note: 'Cancelamento síncrono - já refletido no dashboard'
         }
@@ -924,6 +956,71 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
   } finally {
     mongoSession.endSession();
   }
+}));
+
+/**
+ * 🛡️ PATCH /api/v2/appointments/:id/admin-edit
+ * Edição segura de campos operacionais em qualquer status, incluindo completed.
+ * NÃO toca payment, session, package, nem financeiro.
+ * Whitelist estrita: notes | responsible | assignedTo
+ */
+router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const {
+    notes, responsible, assignedTo, adminReason,
+    sessionValue, paymentMethod, serviceType, sessionType,
+    specialty, date, time, observations
+  } = req.body;
+
+  if (!adminReason) {
+    throw createBusinessError('adminReason obrigatório para edição administrativa', 400, ErrorCodes.MISSING_REQUIRED_FIELD, { field: 'adminReason' });
+  }
+
+  const ALLOWED_FIELDS = {
+    notes: notes ?? observations,
+    responsible,
+    assignedTo,
+    sessionValue: sessionValue != null ? Number(sessionValue) : undefined,
+    paymentMethod,
+    serviceType,
+    sessionType,
+    specialty,
+    date,
+    time
+  };
+  const updates = Object.fromEntries(
+    Object.entries(ALLOWED_FIELDS).filter(([, v]) => v !== undefined)
+  );
+
+  if (Object.keys(updates).length === 0) {
+    throw createBusinessError('Nenhum campo editável informado', 400, ErrorCodes.MISSING_REQUIRED_FIELD);
+  }
+
+  const appointment = await Appointment.findById(id);
+  if (!appointment) {
+    throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+  }
+
+  Object.assign(appointment, updates);
+  appointment.history.push({
+    action: 'admin_edit',
+    newStatus: appointment.operationalStatus,
+    changedBy: req.user?._id,
+    timestamp: new Date(),
+    context: `[ADMIN EDIT] Motivo: ${adminReason} | Campos: ${Object.keys(updates).join(', ')}`
+  });
+
+  await appointment.save();
+  clearCache();
+
+  console.log(`[admin-edit] ✏️ Appointment ${id} editado administrativamente | campos: ${Object.keys(updates).join(', ')} | motivo: ${adminReason}`);
+
+  res.status(200).json(
+    formatSuccess(
+      { appointmentId: id, updatedFields: Object.keys(updates), operationalStatus: appointment.operationalStatus },
+      { message: 'Campos operacionais atualizados sem impacto financeiro' }
+    )
+  );
 }));
 
 /**
@@ -2168,7 +2265,10 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
         );
         updatePromises.push(paymentUpdate);
       } else if (!existingPayment && updateData.paymentAmount > 0) {
-        // Sem payment: cria registro avulso para a sessão
+        // Sem payment: cria registro avulso para a sessão de pacote.
+        // ⛔ MANTER isFromPackage: true — consumo de pacote NÃO é entrada de caixa.
+        // O dinheiro entrou na venda do pacote. Remover esse flag causa ghost payment
+        // que infla calculateCash. Bug corrigido em 2026-06-01 (29 casos históricos).
         console.log(`[PUT /appointments/${id}] Package session sem payment — criando registro de valor avulso`);
 
         // 🩹 RESOLVE PATIENT: appointment.patient pode ser null
@@ -2193,6 +2293,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
             paymentDate: new Date(),
             paidAt: new Date(),
             kind: 'session_payment',
+            isFromPackage: true,
             notes: `Valor avulso registrado em sessão de pacote - ${new Date().toLocaleString('pt-BR')}`
           });
           await newPayment.save({ session: mongoSession });

@@ -656,13 +656,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    // ⛔ FONTE ÚNICA: novaReceitaMes.total — nunca fazer fallback para producao ou caixa.
-    // producao = tudo atendido (inclui pacote pré-pago, fiado, convênio) → ERRADO para meta.
-    // caixa = dinheiro recebido (inclui retroativos, parcelas antigas) → ERRADO para meta.
-    // Se novaReceitaMes vier null, expõe 0 (falha explícita) em vez de mentir com producao.
-    // Bug silencioso corrigido em 2026-06-01: fallback ?? producao inflava meta com R$870+
-    // de consumo de pacote. "Falha visível > mentira silenciosa" em KPI financeiro.
-    const realizadoMes = data.novaReceitaMes?.total ?? 0;
+    const realizadoMes = data.receitaReconhecida ?? data.producao ?? 0; // 💰 Receita reconhecida = caixa + convenio a receber
     const realizadoDia = data.caixaHoje || 0;
     const producaoDia  = data.producaoHoje || 0;
 

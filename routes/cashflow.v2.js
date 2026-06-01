@@ -150,13 +150,13 @@ router.get('/', auth, async (req, res) => {
             const notes = (p.notes || '').toLowerCase();
             const desc = (p.description || '').toLowerCase();
             const isLiminarY = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
-            const isPackagePayment = !isLiminarY && (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session' || p.package || appt?.package || (p.session && yesterdayPkgSessionPrepaidMap.has(p.session.toString())));
+            const isPackagePayment = !isLiminarY && (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session' || p.package || (p.session && yesterdayPkgSessionPrepaidMap.get(p.session.toString()) === true));
             if (isPackagePayment && appt && appt.operationalStatus !== 'completed') return null;
             if (isPackagePayment) {
                 const isCompraHoje = !!p.package;
                 const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
                 const isSessionPrepaid = p.session ? yesterdayPkgSessionPrepaidMap.get(p.session.toString()) : false;
-                const isPrepaidConsumo = !isCompraHoje && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
+                const isPrepaidConsumo = !isCompraHoje && !!p.session && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
                 if (isPrepaidConsumo) return null;
             }
             return { valor: p.amount };
@@ -208,8 +208,8 @@ router.get('/', auth, async (req, res) => {
             const isPackagePayment = !isLiminar && (
                 notes.includes('pacote') || desc.includes('pacote') ||
                 p.type === 'package' || p.serviceType === 'package_session' ||
-                p.package || appt?.package ||
-                (p.session && pkgSessionPrepaidMap.has(p.session.toString()))
+                p.package ||
+                (p.session && pkgSessionPrepaidMap.get(p.session.toString()) === true)
             );
 
             // Pagamentos de pacote só entram no caixa se o appointment foi concluído
@@ -234,7 +234,8 @@ router.get('/', auth, async (req, res) => {
                 const isCompraHoje = !!p.package; // pagamento tem ref direta ao pacote = é a compra
                 const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
                 const isSessionPrepaid = p.session ? pkgSessionPrepaidMap.get(p.session.toString()) : false;
-                const isPrepaidConsumo = !isCompraHoje && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
+                // Consumo pré-pago exige session vinculada — avulso (session: null) é cash real recebido
+                const isPrepaidConsumo = !isCompraHoje && !!p.session && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
 
                 if (isPrepaidConsumo) return null;
             } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {

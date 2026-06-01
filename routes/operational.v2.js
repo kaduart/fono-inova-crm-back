@@ -28,7 +28,9 @@ router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (r
   const todayAppointments = await Appointment.find({
     date: { $gte: todayStart, $lte: todayEnd },
     operationalStatus: 'completed'
-  }).select('patient patientInfo operationalStatus date time specialty doctor serviceType').lean();
+  }).select('patient patientInfo patientName operationalStatus date time specialty doctor serviceType')
+    .populate('patient', 'fullName phone')
+    .lean();
 
   if (todayAppointments.length === 0) {
     return res.json({
@@ -67,12 +69,13 @@ router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (r
     if (!grouped[pid]) {
       grouped[pid] = {
         patientId: pid,
-        name: a.patientInfo?.fullName || 'Paciente sem nome',
-        phone: a.patientInfo?.phone || '',
+        name: a.patient?.fullName || a.patientInfo?.fullName || a.patientName || 'Paciente sem nome',
+        phone: a.patient?.phone || a.patientInfo?.phone || '',
         lastSessionDate: a.date,
         lastSessionTime: a.time,
         specialty: a.specialty || '',
         doctor: a.doctor,
+        serviceType: a.serviceType || '',
         count: 0
       };
     }

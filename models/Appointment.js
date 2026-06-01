@@ -90,7 +90,8 @@ const appointmentSchema = new mongoose.Schema({
       // 🔥 REMOVIDO: 'converted' era estado transitório interno, nunca deveria ter sido persistido
       'processing_create',
       'processing_complete',
-      'processing_cancel'
+      'processing_cancel',
+      'force_cancelled' // Reversão administrativa de completed — requer forceCancel:true explícito
     ],
     default: 'pre_agendado',
   },
@@ -349,6 +350,16 @@ const appointmentSchema = new mongoose.Schema({
   cancelReason: {
     type: String,
     default: ''
+  },
+
+  // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────
+  // Preenchido SOMENTE quando forceCancel:true é usado na rota /cancel
+  // Separa reversão administrativa de cancelamento operacional normal
+  forceCancelAudit: {
+    forceCancelledBy: { type: String, default: null },
+    forceCancelledAt: { type: Date, default: null },
+    forceCancelledReason: { type: String, default: null },
+    reverseFinancial: { type: Boolean, default: false }
   }
 
 }, {

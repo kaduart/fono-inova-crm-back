@@ -5,6 +5,45 @@ import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
 // ======================================================
+// 🔇 FILTRO DE LOG — suprime ruído de startup/workers
+// Editar SUPPRESS_PATTERNS para ajustar o que silenciar.
+// console.error sempre passa. LOG_VERBOSE=true desativa o filtro.
+// ======================================================
+if (process.env.LOG_VERBOSE !== 'true') {
+    const SUPPRESS_PATTERNS = [
+        /^\[Queue:/,                      // Queue:xyz Inicializada
+        /^\[Registry\]/,                  // Registry start/ok
+        /^🔄 Redis retry/,                // Redis retry tentativas
+        /^\[CronManager\]/,               // Cron startup
+        /Worker (iniciado|criado|pronto|registrado|Started)/i,
+        /^⚡ Novo cliente conectado/,      // socket connections
+        /^👥 Total de clientes/,           // socket count
+        /^\[INSTANCE INFO\]|^🖥️ INSTANCE/,
+        /^\[QueueConfig\] Reutilizando/,
+        /^\[IO INIT\]/,
+        /^IO INIT:/,
+        /Inicializada \(modo manual\)/,
+        /^\[Workers\] Iniciando|Workers 4\.0|Workers ATIVADOS/,
+        /^\[Registry\] Workers ativos/,
+        /^\[whatsapp_guard\].*whatsapp_guard_started/,
+        /^\[whatsapp_guard\].*whatsapp_critical_pending/,  // repetitivo — ver no alerta
+        /^\[conversationStateWorker\]|^\[contextBuilderWorker\]|^\[whatsappAutoReplyWorker\]/,
+    ];
+    const _log = console.log.bind(console);
+    const _warn = console.warn.bind(console);
+    console.log = (...args) => {
+        const msg = String(args[0] ?? '');
+        if (SUPPRESS_PATTERNS.some(p => p.test(msg))) return;
+        _log(...args);
+    };
+    console.warn = (...args) => {
+        const msg = String(args[0] ?? '');
+        if (SUPPRESS_PATTERNS.some(p => p.test(msg))) return;
+        _warn(...args);
+    };
+}
+
+// ======================================================
 // 🧱 Importações principais
 // ======================================================
 // import "./mongooseTrap.js";
