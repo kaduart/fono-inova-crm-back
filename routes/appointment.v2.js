@@ -2791,7 +2791,14 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
 
       if (originalPayment) {
         if (originalPayment.status === 'paid') {
-          // Pago: mantém no original, cria novo pendente
+          // Pago: cancela o original (exceto package_receipt, que é pagamento do pacote)
+          if (originalPayment.kind !== 'package_receipt') {
+            await Payment.findByIdAndUpdate(
+              existing.payment,
+              { status: 'canceled', canceledAt: new Date(), cancelReason: 'Remarcado para outro horário' },
+              { session: mongoSession }
+            );
+          }
           const newPayment = new Payment({
             patient: newAppointment.patient,
             doctor: newAppointment.doctor,
@@ -2844,13 +2851,15 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
     await publishEvent(EventTypes.APPOINTMENT_RESCHEDULED, {
       from: existing._id,
       to: newAppointment._id,
+      patientId: existing.patient,
       reason: reason,
       rescheduledBy: req.user._id,
       timestamp: new Date()
     });
 
-    await publishEvent(EventTypes.APPOINTMENT_CANCELLED, {
+    await publishEvent(EventTypes.APPOINTMENT_CANCELED, {
       _id: existing._id,
+      patientId: existing.patient,
       reason: 'Remarcado',
       replacedBy: newAppointment._id
     });

@@ -781,13 +781,7 @@ server.listen(PORT, '0.0.0.0', () => {
           global.lastWorkerStack = workerStartErr.stack;
         }
 
-        // 🛡️ Inicia guardião do pipeline WhatsApp (watchdog crítico)
-        try {
-          const { startWhatsAppPipelineGuard } = await import("./infrastructure/observability/whatsappPipelineGuard.js");
-          startWhatsAppPipelineGuard();
-        } catch (guardErr) {
-          console.warn("⚠️ WhatsApp Pipeline Guard não iniciado:", guardErr.message);
-        }
+        // WhatsApp pipeline guard desativado — Amanda não está em uso
       } else {
         console.log("⏭️ Workers desabilitados (ENABLE_WORKERS !== true). Use o serviço de Worker separado.");
       }

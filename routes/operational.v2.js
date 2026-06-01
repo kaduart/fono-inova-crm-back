@@ -45,7 +45,7 @@ router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (r
   // 2. Extrair IDs únicos de pacientes
   const patientIds = [...new Set(
     todayAppointments
-      .map(a => a.patient?.toString())
+      .map(a => a.patient?._id?.toString() ?? a.patient?.toString())
       .filter(Boolean)
   )];
 
@@ -57,15 +57,17 @@ router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (r
 
   const patientsWithFuture = new Set(futureAppointments.map(a => a.patient?.toString()));
 
+  const patientPid = (a) => a.patient?._id?.toString() ?? a.patient?.toString();
+
   // 4. Filtrar pacientes SEM próxima sessão
   const patientsWithoutNext = todayAppointments.filter(
-    a => !patientsWithFuture.has(a.patient?.toString())
+    a => !patientsWithFuture.has(patientPid(a))
   );
 
   // 5. Agrupar por paciente (pegar o último appointment de hoje como referência)
   const grouped = {};
   patientsWithoutNext.forEach(a => {
-    const pid = a.patient?.toString();
+    const pid = patientPid(a);
     if (!grouped[pid]) {
       grouped[pid] = {
         patientId: pid,

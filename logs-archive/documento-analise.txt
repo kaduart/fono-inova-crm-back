@@ -1,842 +1,1322 @@
-vmao la entede meu flow e o que preciso add na app totdo mes ,,,, minha meta e 45k preiso levantar o que ja temso de provisao ou seja pacietnes recorrentes que irao contrinuar possivelmente....exemplo, 30k , falta 15k, ticket medio vmaos dizer qu e 1000 reais logo preciso 15 agednamentos algo asism entede 
-
-
-Entendi o fluxo que você quer montar no CRM da Clínica Fono Inova — e faz bastante sentido para gestão real de clínica.
-
-Você quer transformar o dashboard em uma visão de:
-
-* **Meta mensal**
-* **Receita previsível já garantida**
-* **Gap restante**
-* **Quantos novos pacientes precisa fechar**
-* baseado no **ticket médio**
-
-Ficaria algo assim:
-
----
-
-# 📊 Estrutura da Meta Mensal
-
-## 1. Meta do mês
-
-Exemplo:
-
-```txt
-Meta Junho = R$ 45.000
-```
-
----
-
-## 2. Receita previsível (base recorrente)
-
-Aqui entra:
-
-* pacientes ativos
-* pacotes em andamento
-* sessões futuras já agendadas
-* recorrentes prováveis
-* contratos contínuos
-
-Exemplo:
-
-```txt
-Receita previsível = R$ 30.200
-```
-
-Isso é o “já encaminhado”.
-
----
-
-## 3. Gap da meta
-
-```txt
-45.000 - 30.200 = 14.800
-```
-
-Dashboard:
-
-```txt
-Faltam R$ 14.800 para bater a meta
-```
-
----
-
-# 4. Conversão em quantidade de pacientes
-
-Agora entra ticket médio.
-
-Exemplo:
-
-```txt
-Ticket médio novo paciente = R$ 1.000
-```
-
-Então:
-
-```txt
-14.800 / 1.000 = 14,8
-```
-
-Arredonda:
-
-```txt
-Precisa de 15 novos fechamentos
-```
-
----
-
-# 🔥 O diferencial importante
-
-Você NÃO quer usar:
-
-* faturamento bruto passado
-* valor produzido
-* projeção fake
-
-Você quer:
-
-✅ previsão operacional REAL
-✅ baseado em agenda e recorrência
-✅ quanto falta vender
-✅ quantos pacientes precisa fechar
-
-Isso vira praticamente um:
-
-# “Painel Comercial da Clínica”
-
----
-
-# 📈 O que eu adicionaria no dashboard
-
-## CARD 1 — META
-
-```txt
-META DO MÊS
-R$ 45.000
-```
-
----
-
-## CARD 2 — PREVISÃO ATUAL
-
-```txt
-PREVISÃO ATUAL
-R$ 30.200
-67% da meta
-```
-
----
-
-## CARD 3 — GAP
-
-```txt
-FALTAM
-R$ 14.800
-```
-
----
-
-## CARD 4 — NOVOS PACIENTES NECESSÁRIOS
-
-```txt
-TICKET MÉDIO
-R$ 1.000
-
-NECESSÁRIOS
-15 pacientes
-```
-
----
-
-# 📦 De onde vem a “previsão”
-
-Você provavelmente vai precisar somar:
-
-## Pacotes
-
-Pacotes ainda não executados:
-
-```js
-appointments
-  .filter(a => a.package)
-  .filter(a => a.operationalStatus !== 'completed')
-```
-
----
-
-## Per session recorrente
-
-Pacientes:
-
-* semanal
-* 2x semana
-* mensal
-* em continuidade
-
-Você pode projetar pelas sessões futuras do mês.
-
----
-
-# 🧠 O MAIS IMPORTANTE
-
-Separar:
-
-## REALIZADO
-
-Dinheiro já recebido.
-
----
-
-## PRODUZIDO
-
-Sessões executadas.
-
----
-
-## PREVISÃO
-
-O que provavelmente vai entrar.
-
----
-
-## META
-
-Objetivo financeiro.
-
----
-
-# 💎 O fluxo ideal
-
-## Entrada
-
-Lead → Avaliação → Fechamento
-
----
-
-## Conversão
-
-Fecha pacote / recorrência
-
----
-
-## Impacto automático no painel
-
-Painel recalcula:
-
-```txt
-“Agora faltam apenas 11 pacientes”
-```
-
-Isso dá MUITA clareza operacional.
-
----
-
-# 🚀 Evolução futura
-
-Depois você pode adicionar:
-
-## Probabilidade
-
-Exemplo:
-
-| Tipo                  | Peso |
-| --------------------- | ---- |
-| Paciente ativo antigo | 95%  |
-| Paciente faltoso      | 60%  |
-| Lead quente           | 40%  |
-
-E gerar:
-
-```txt
-Previsão conservadora
-Previsão otimista
-```
-
----
-
-# 📌 Na prática, sua fórmula fica:
-
-```txt
-META
--
-PREVISÃO RECORRENTE
-=
-GAP
-
-GAP
-/
-TICKET MÉDIO
-=
-NOVOS FECHAMENTOS NECESSÁRIOS
-```
-
-É exatamente assim que empresas SaaS, clínicas grandes e times comerciais acompanham meta mensal.
-
-
-
-
-
-
-
-aba projecao e cenarios ...
-Sim. E sinceramente esse é o lugar CERTO pra isso.
-
-Essa aba de Planejamento Anual já está praticamente no contexto ideal porque ela fala de:
-
-* metas
-* projeções
-* acompanhamento
-* evolução mensal
-
-Então ao invés de virar só “meta anual”, ela pode evoluir para:
-
-# 📈 Planejamento Financeiro Inteligente
-
-E aí você adiciona exatamente essa lógica operacional/comercial.
-
----
-
-# 💡 O que eu faria nessa tela
-
-Hoje ela parece muito “vazia” e genérica.
-
-Você pode transformar em:
-
----
-
-# TOPO — RESUMO EXECUTIVO DO MÊS
-
-Logo abaixo do seletor do mês:
-
-| Card           | Valor        |
-| -------------- | ------------ |
-| Meta           | R$ 45.000    |
-| Previsão Atual | R$ 30.200    |
-| Gap            | R$ 14.800    |
-| Necessários    | 15 pacientes |
-
----
-
-# 🔥 O card MAIS importante
-
-## “PACIENTES NECESSÁRIOS”
-
-Visualmente:
-
-```txt id="e4u7x2"
-FALTAM 15 PACIENTES
-para atingir a meta
-```
-
-Isso muda a cabeça da secretária/comercial.
-
-Ela para de pensar:
-
-```txt id="bktz2u"
-“precisamos vender”
-```
-
-E começa:
-
-```txt id="f72o5w"
-“precisamos fechar 15 avaliações”
-```
-
-Muito mais acionável.
-
----
-
-# 📊 Abaixo: composição da previsão
-
-Você pode mostrar:
-
-| Fonte           | Valor     |
-| --------------- | --------- |
-| Pacotes ativos  | R$ 18.000 |
-| Sessões futuras | R$ 7.500  |
-| Convênios       | R$ 2.700  |
-| Recorrentes     | R$ 2.000  |
-
-Total:
-
-```txt id="l34r11"
-Previsão atual: R$ 30.200
-```
-
----
-
-# 🧠 E O MAIS LEGAL:
-
-Você já TEM praticamente todos os dados.
-
-Porque no seu sistema já existem:
-
-* appointments
-* packages
-* sessionValue
-* operationalStatus
-* paymentType
-* recurring flows
-
-Então isso é MUITO mais regra de negócio e dashboard do que infraestrutura nova.
-
----
-
-# 🚀 O que eu adicionaria visualmente
-
-## Barra de progresso gigante
-
-Exemplo:
-
-```txt id="7ch5zl"
-67% da meta atingida
-████████░░░░
-R$ 30.200 / R$ 45.000
-```
-
----
-
-# 📉 Indicador de risco
-
-Exemplo:
-
-| Situação | Cor      |
-| -------- | -------- |
-| ≥90%     | Verde    |
-| 70–89%   | Amarelo  |
-| <70%     | Vermelho |
-
----
-
-# 🔥 E um negócio MUITO forte:
-
-## Meta convertida em agenda
-
-Exemplo:
-
-```txt id="18d8n8"
-Ticket médio:
-R$ 1.000
-
-Taxa de conversão:
-60%
-
-Necessário:
-25 avaliações
-
-Meta semanal:
-6 avaliações/semana
-```
-
-Isso vira um painel comercial REAL.
-
----
-
-# 📌 Fluxo ideal dessa tela
-
-## 1. Define meta mensal
-
-```txt id="6r0r7x"
-R$ 45.000
-```
-
----
-
-## 2. Sistema calcula automaticamente
-
-* previsão
-* recorrência
-* backlog
-* sessões futuras
-
----
-
-## 3. Sistema mostra
-
-```txt id="mq2i4h"
-Faltam R$ 14.800
-```
-
----
-
-## 4. Sistema converte
-
-```txt id="d4v0gu"
-≈ 15 novos pacientes
-```
-
----
-
-# 💎 Outra coisa MUITO boa
-
-Separar:
-
-| Métrica         | Objetivo  |
-| --------------- | --------- |
-| Caixa realizado | entrou    |
-| Produzido       | executado |
-| Previsto        | provável  |
-| Meta            | alvo      |
-
-Porque isso dá visão absurda da clínica.
-
----
-
-# 📈 Futuramente
-
-Você pode até colocar:
-
-## Funil
-
-```txt id="jjg9ri"
-Leads → Avaliações → Fechamentos
-```
-
-E o sistema dizer:
-
-```txt id="7ruxnh"
-Para fechar 15 pacientes,
-você precisa gerar 40 leads
-```
-
-Aí virou quase um mini ERP comercial de clínica.
-
-
-
-
-
-
-
-
-
-
-note A lógica mais importante aqui é:
-
-# ❌ NÃO criar uma tabela fake de “provisão”
-
-Porque sua provisão já existe operacionalmente no sistema.
-
-Ela nasce de:
-
-* appointments futuros
-* pacotes ativos
-* recorrência
-* contratos
-* convênios
-* frequência do paciente
-
-Então o ideal é:
-
-# ✅ calcular dinamicamente
-
-e salvar só snapshots/cache quando necessário.
-
----
-
-# 📦 Como eu estruturaria isso
-
-## 1. Tabela de metas
-
-Você provavelmente precisa de algo assim:
-
-```js
-GoalPlanning
-{
-  _id,
-  month: 6,
-  year: 2026,
-
-  revenueGoal: 45000,
-
-  targetNewPatients: 15,
-
-  averageTicket: 1000,
-
-  createdBy,
-  createdAt
-}
-```
-
-Essa tabela guarda só:
-
-* meta
-* ticket médio manual
-* talvez conversão esperada
-
----
-
-# 2. NÃO salvar provisão fixa
-
-Ao invés disso:
-
-# criar um serviço calculador
-
-Exemplo:
-
-```js
-calculateMonthlyProjection(month, year)
-```
-
-Ele soma tudo dinamicamente.
-
----
-
-# 📊 De onde sai a previsão
-
-## A) Pacotes ativos
-
-Appointments futuros:
-
-```js
-{
-  packageId: ObjectId,
-  operationalStatus: 'scheduled',
-  sessionValue: 180,
-  date: future
-}
-```
-
-Soma:
-
-```js
-future appointments
-where status != cancelled
-```
-
----
-
-# B) Sessões recorrentes
-
-Paciente semanal:
-
-```txt id="33c1lr"
-2x semana
-```
-
-Você já terá appointments futuros gerados.
-
-Então entra automaticamente.
-
----
-
-# C) Convênios
-
-Mesma lógica:
-
-```js
-paymentType: 'insurance'
-```
-
-ou:
-
-```js
-agreementId
-```
-
----
-
-# D) Per session
-
-Sessões futuras individuais.
-
----
-
-# 🧠 O segredo
-
-Você NÃO quer:
-
-```txt id="o0mnpx"
-“quanto o paciente pode pagar”
-```
-
-Você quer:
-
-# receita operacional prevista
-
-Baseada no calendário real.
-
----
-
-# 🚀 Serviço central
-
-Algo tipo:
-
-```js
-async function calculateMonthlyProjection(month, year) {
-
-  const appointments = await Appointment.find({
-    date: {
-      $gte: startOfMonth,
-      $lte: endOfMonth
-    },
-
-    operationalStatus: {
-      $nin: ['cancelled']
-    }
-  })
-
-  const projectedRevenue =
-    appointments.reduce((sum, appt) => {
-      return sum + (appt.sessionValue || 0)
-    }, 0)
-
-  return {
-    projectedRevenue
+por que o dashbaord ta mostrando 10810??? curl 'http://localhost:5000/api/v2/financial/dashboard?month=6&year=2026&_t=1780347791795' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3ODAzNDU3MTMsImV4cCI6MTc4MDQzMjExM30.UG6937whzfb7XdoSerBkTAEHl6nddBMnO_OegOWv3k0' \
+  -H 'Connection: keep-alive' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1780347791822_zpjgglsg9'{
+    "success": true,
+    "source": "real-time",
+    "resumo": {
+        "caixa": 1080,
+        "caixaHoje": 1080,
+        "caixaDetalhe": {
+            "total": 1080,
+            "particular": 1080,
+            "pacote": 0,
+            "convenio": 0,
+            "liminar": 0,
+            "byMethod": {
+                "pix": 650,
+                "dinheiro": 430,
+                "cartao": 0,
+                "outros": 0
+            },
+            "packageSales": 0,
+            "packageSalesCount": 0,
+            "particularNet": 1080
+        },
+        "producao": 1660,
+        "producaoHoje": 1660,
+        "producaoDetalhe": {
+            "totalProduzido": 1660,
+            "producaoLiquidada": 1370,
+            "pendente": 290,
+            "convenio": 280,
+            "particular": 330,
+            "pacote": 1050,
+            "liminar": 0,
+            "recebido": 1370,
+            "total": 1660,
+            "particularPendente": 290,
+            "pacotePendente": 0
+        },
+        "resultadoEconomico": 1660,
+        "receitaReconhecida": 1360,
+        "novaReceitaMes": {
+            "total": 530,
+            "packageSales": 0,
+            "individual": 250,
+            "convenioProduction": 280,
+            "count": 3
+        },
+        "resultadoCaixa": 1080,
+        "convenioAReceber": 280,
+        "particularPendente": 290,
+        "pacotePendente": 0,
+        "recebimentoProducao": {
+            "total": 1090,
+            "particular": 40,
+            "pacote": 1050,
+            "convenio": 0,
+            "liminar": 0
+        },
+        "retroativos": 0,
+        "aReceberProducao": 570,
+        "aReceber": {
+            "total": 280,
+            "mesAtual": 280,
+            "historico": 0
+        },
+        "pendentes": {
+            "total": 1130,
+            "allPendingTotal": 18851.23,
+            "allParticularTotal": 13371.23,
+            "convenio": {
+                "total": 440,
+                "count": 59,
+                "items": [
+                    {
+                        "sessionId": "69d67e1319c6571d8c76dc7a",
+                        "data": "2026-06-03",
+                        "hora": "10:00",
+                        "paciente": "Isabela Ferreira De Mendonca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "Convênio"
+                    },
+                    {
+                        "sessionId": "69d97d1612144c068f8563b1",
+                        "data": "2026-04-10",
+                        "hora": "",
+                        "paciente": "Paciente",
+                        "valor": 80,
+                        "status": "pending",
+                        "convenio": "Convênio"
+                    },
+                    {
+                        "sessionId": "69d67e1619c6571d8c76dc9e",
+                        "data": "2026-06-17",
+                        "hora": "10:00",
+                        "paciente": "Isabela Ferreira De Mendonca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "Convênio"
+                    },
+                    {
+                        "sessionId": "69d97d1612144c068f8563b2",
+                        "data": "2026-04-10",
+                        "hora": "",
+                        "paciente": "Paciente",
+                        "valor": 80,
+                        "status": "pending",
+                        "convenio": "Convênio"
+                    },
+                    {
+                        "sessionId": "69d67e1419c6571d8c76dc8d",
+                        "data": "2026-06-10",
+                        "hora": "10:00",
+                        "paciente": "Isabela Ferreira De Mendonca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "Convênio"
+                    },
+                    {
+                        "sessionId": "6a0c540480cc438aa0b67d36",
+                        "data": "2026-06-02",
+                        "hora": "18:20",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a3",
+                        "data": "2026-06-30",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a4",
+                        "data": "2026-06-26",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a5",
+                        "data": "2026-06-23",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a6",
+                        "data": "2026-06-19",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a7",
+                        "data": "2026-06-16",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a8",
+                        "data": "2026-06-12",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8a9",
+                        "data": "2026-06-09",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8aa",
+                        "data": "2026-06-05",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14ae6edf43507213eaa8ab",
+                        "data": "2026-06-02",
+                        "hora": "17:00",
+                        "paciente": "Benjamim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9ee",
+                        "data": "2026-06-30",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9ef",
+                        "data": "2026-06-26",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f0",
+                        "data": "2026-06-23",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f1",
+                        "data": "2026-06-19",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f2",
+                        "data": "2026-06-16",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f3",
+                        "data": "2026-06-12",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f4",
+                        "data": "2026-06-09",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f5",
+                        "data": "2026-06-05",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a14aed3df43507213eaa9f6",
+                        "data": "2026-06-02",
+                        "hora": "17:40",
+                        "paciente": "Joaquim Rocha Simão",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a15d869a29814035f6657ee",
+                        "data": "2026-06-30",
+                        "hora": "16:20",
+                        "paciente": "Nicolas Lucca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a15d869a29814035f6657ef",
+                        "data": "2026-06-23",
+                        "hora": "16:20",
+                        "paciente": "Nicolas Lucca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a15d869a29814035f6657f0",
+                        "data": "2026-06-16",
+                        "hora": "16:20",
+                        "paciente": "Nicolas Lucca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a15d869a29814035f6657f1",
+                        "data": "2026-06-09",
+                        "hora": "16:20",
+                        "paciente": "Nicolas Lucca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a15d869a29814035f6657f2",
+                        "data": "2026-06-02",
+                        "hora": "16:20",
+                        "paciente": "Nicolas Lucca",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-anapolis"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab904",
+                        "data": "2026-06-24",
+                        "hora": "18:20",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab905",
+                        "data": "2026-06-23",
+                        "hora": "17:40",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab906",
+                        "data": "2026-06-17",
+                        "hora": "18:20",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab907",
+                        "data": "2026-06-16",
+                        "hora": "17:40",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab908",
+                        "data": "2026-06-10",
+                        "hora": "18:20",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab909",
+                        "data": "2026-06-09",
+                        "hora": "17:40",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab90a",
+                        "data": "2026-06-03",
+                        "hora": "18:20",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a175117c1ed3cd03a3ab90b",
+                        "data": "2026-06-02",
+                        "hora": "17:40",
+                        "paciente": "Evandro Marques Faustino",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "bradesco-saude"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f32",
+                        "data": "2026-06-26",
+                        "hora": "14:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f33",
+                        "data": "2026-06-22",
+                        "hora": "17:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f34",
+                        "data": "2026-06-19",
+                        "hora": "14:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f35",
+                        "data": "2026-06-15",
+                        "hora": "17:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f36",
+                        "data": "2026-06-12",
+                        "hora": "14:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f37",
+                        "data": "2026-06-08",
+                        "hora": "17:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f38",
+                        "data": "2026-06-05",
+                        "hora": "14:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc25d4bafb710ab160f39",
+                        "data": "2026-06-01",
+                        "hora": "17:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 140,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab160ffe",
+                        "data": "2026-06-29",
+                        "hora": "18:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab160fff",
+                        "data": "2026-06-26",
+                        "hora": "13:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161000",
+                        "data": "2026-06-22",
+                        "hora": "18:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161001",
+                        "data": "2026-06-19",
+                        "hora": "13:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161002",
+                        "data": "2026-06-15",
+                        "hora": "18:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161003",
+                        "data": "2026-06-12",
+                        "hora": "13:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161004",
+                        "data": "2026-06-08",
+                        "hora": "18:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161005",
+                        "data": "2026-06-05",
+                        "hora": "13:20",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc29f4bafb710ab161006",
+                        "data": "2026-06-01",
+                        "hora": "18:00",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc2eb4bafb710ab1610a3",
+                        "data": "2026-06-29",
+                        "hora": "16:40",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc2eb4bafb710ab1610a4",
+                        "data": "2026-06-22",
+                        "hora": "16:40",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc2eb4bafb710ab1610a5",
+                        "data": "2026-06-15",
+                        "hora": "16:40",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc2eb4bafb710ab1610a6",
+                        "data": "2026-06-08",
+                        "hora": "16:40",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 0,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    },
+                    {
+                        "sessionId": "6a1dc2eb4bafb710ab1610a7",
+                        "data": "2026-06-01",
+                        "hora": "16:40",
+                        "paciente": "Davi Felipe Araújo",
+                        "valor": 140,
+                        "status": "pending",
+                        "convenio": "unimed-campinas"
+                    }
+                ]
+            },
+            "particular": {
+                "total": 690,
+                "count": 4,
+                "items": [
+                    {
+                        "sessionId": "6a1a019222fd43f8985033aa",
+                        "data": "2026-06-02",
+                        "hora": "",
+                        "paciente": "Vai mandar os dados",
+                        "valor": 250,
+                        "status": "pending",
+                        "paymentMethod": "other"
+                    },
+                    {
+                        "sessionId": "6a1a2a8b60e4eae26c956f1b",
+                        "data": "2026-06-11",
+                        "hora": "10:00",
+                        "paciente": "Bruno Kauê Damásio dos Santos",
+                        "valor": 150,
+                        "status": "pending",
+                        "paymentMethod": "dinheiro"
+                    },
+                    {
+                        "sessionId": "6a1de23e4bafb710ab166944",
+                        "data": "2026-06-01",
+                        "hora": "15:20",
+                        "paciente": "Isis Caldas Rebelatto",
+                        "valor": 160,
+                        "status": "pending",
+                        "paymentMethod": "dinheiro"
+                    },
+                    {
+                        "sessionId": "6a1de26f4bafb710ab166b58",
+                        "data": "2026-06-01",
+                        "hora": "16:00",
+                        "paciente": "Isis Caldas Rebelatto",
+                        "valor": 130,
+                        "status": "pending",
+                        "paymentMethod": "dinheiro"
+                    }
+                ]
+            },
+            "vencidos": {
+                "total": 730,
+                "convenio": {
+                    "total": 440,
+                    "count": 5,
+                    "items": [
+                        {
+                            "sessionId": "69d97d1612144c068f8563b1",
+                            "data": "2026-04-10",
+                            "hora": "",
+                            "paciente": "Paciente",
+                            "valor": 80,
+                            "status": "pending",
+                            "convenio": "Convênio"
+                        },
+                        {
+                            "sessionId": "69d97d1612144c068f8563b2",
+                            "data": "2026-04-10",
+                            "hora": "",
+                            "paciente": "Paciente",
+                            "valor": 80,
+                            "status": "pending",
+                            "convenio": "Convênio"
+                        },
+                        {
+                            "sessionId": "6a1dc25d4bafb710ab160f39",
+                            "data": "2026-06-01",
+                            "hora": "17:20",
+                            "paciente": "Davi Felipe Araújo",
+                            "valor": 140,
+                            "status": "pending",
+                            "convenio": "unimed-campinas"
+                        },
+                        {
+                            "sessionId": "6a1dc29f4bafb710ab161006",
+                            "data": "2026-06-01",
+                            "hora": "18:00",
+                            "paciente": "Davi Felipe Araújo",
+                            "valor": 0,
+                            "status": "pending",
+                            "convenio": "unimed-campinas"
+                        },
+                        {
+                            "sessionId": "6a1dc2eb4bafb710ab1610a7",
+                            "data": "2026-06-01",
+                            "hora": "16:40",
+                            "paciente": "Davi Felipe Araújo",
+                            "valor": 140,
+                            "status": "pending",
+                            "convenio": "unimed-campinas"
+                        }
+                    ]
+                },
+                "particular": {
+                    "total": 290,
+                    "count": 2,
+                    "items": [
+                        {
+                            "sessionId": "6a1de23e4bafb710ab166944",
+                            "data": "2026-06-01",
+                            "hora": "15:20",
+                            "paciente": "Isis Caldas Rebelatto",
+                            "valor": 160,
+                            "status": "pending",
+                            "paymentMethod": "dinheiro"
+                        },
+                        {
+                            "sessionId": "6a1de26f4bafb710ab166b58",
+                            "data": "2026-06-01",
+                            "hora": "16:00",
+                            "paciente": "Isis Caldas Rebelatto",
+                            "valor": 130,
+                            "status": "pending",
+                            "paymentMethod": "dinheiro"
+                        }
+                    ]
+                }
+            },
+            "v2_financial": {
+                "total": 1130,
+                "count": 63,
+                "byPatient": {
+                    "6a198cd4c1ed3cd03a3bd991": {
+                        "patient": {
+                            "_id": "6a198cd4c1ed3cd03a3bd991",
+                            "fullName": "Vai mandar os dados"
+                        },
+                        "patientId": "6a198cd4c1ed3cd03a3bd991",
+                        "total": 250,
+                        "count": 1,
+                        "items": [
+                            {
+                                "_id": "6a1a019222fd43f8985033aa",
+                                "amount": 250,
+                                "status": "pending",
+                                "paymentMethod": "other",
+                                "billingType": "particular",
+                                "paymentDate": "2026-06-02T12:20:00.000Z",
+                                "serviceDate": "2026-06-02T12:20:00.000Z",
+                                "data": "2026-06-02T12:20:00.000Z",
+                                "hora": "",
+                                "specialty": "N/A",
+                                "doctor": null,
+                                "appointment": null,
+                                "notes": "Débito operacional gerado no completeSession"
+                            }
+                        ]
+                    },
+                    "6a07160d14259ec2e37d34bc": {
+                        "patient": {
+                            "_id": "6a07160d14259ec2e37d34bc",
+                            "fullName": "Bruno Kauê Damásio dos Santos"
+                        },
+                        "patientId": "6a07160d14259ec2e37d34bc",
+                        "total": 150,
+                        "count": 1,
+                        "items": [
+                            {
+                                "_id": "6a1a2a8b60e4eae26c956f1b",
+                                "amount": 150,
+                                "status": "pending",
+                                "paymentMethod": "dinheiro",
+                                "billingType": "particular",
+                                "serviceDate": "2026-06-11T13:00:00.000Z",
+                                "data": "2026-06-11T13:00:00.000Z",
+                                "hora": "10:00",
+                                "specialty": "terapia_ocupacional",
+                                "doctor": {
+                                    "_id": "6840aa2f928a20e92ab13be8",
+                                    "fullName": "Luis Henrique",
+                                    "specialty": "terapia_ocupacional"
+                                },
+                                "appointment": {
+                                    "_id": "6a1889c4c1ed3cd03a3b6674",
+                                    "date": "2026-06-11T13:00:00.000Z",
+                                    "time": "10:00"
+                                },
+                                "notes": "[CORREÇÃO] Débito pendente após ajuste de R$ 200 para R$ 50"
+                            }
+                        ]
+                    },
+                    "685b0cfaaec14c7163585b5b": {
+                        "patient": {
+                            "_id": "685b0cfaaec14c7163585b5b",
+                            "fullName": "Isis Caldas Rebelatto"
+                        },
+                        "patientId": "685b0cfaaec14c7163585b5b",
+                        "total": 290,
+                        "count": 2,
+                        "items": [
+                            {
+                                "_id": "6a1de23e4bafb710ab166944",
+                                "amount": 160,
+                                "status": "pending",
+                                "paymentMethod": "dinheiro",
+                                "billingType": "particular",
+                                "paymentDate": "2026-06-01T19:49:18.800Z",
+                                "serviceDate": null,
+                                "data": "2026-06-01T18:20:00.000Z",
+                                "hora": "15:20",
+                                "specialty": "N/A",
+                                "doctor": null,
+                                "appointment": {
+                                    "_id": "6a1d9ecd4bafb710ab15bb09",
+                                    "date": "2026-06-01T18:20:00.000Z",
+                                    "time": "15:20"
+                                },
+                                "notes": null
+                            },
+                            {
+                                "_id": "6a1de26f4bafb710ab166b58",
+                                "amount": 130,
+                                "status": "pending",
+                                "paymentMethod": "dinheiro",
+                                "billingType": "particular",
+                                "paymentDate": "2026-06-01T19:50:07.340Z",
+                                "serviceDate": null,
+                                "data": "2026-06-01T19:00:00.000Z",
+                                "hora": "16:00",
+                                "specialty": "N/A",
+                                "doctor": null,
+                                "appointment": {
+                                    "_id": "6a1d9f1c4bafb710ab15bc87",
+                                    "date": "2026-06-01T19:00:00.000Z",
+                                    "time": "16:00"
+                                },
+                                "notes": null
+                            }
+                        ]
+                    }
+                },
+                "byDoctor": {
+                    "68bedf1104ec4875aaea8188": {
+                        "doctor": {
+                            "_id": "68bedf1104ec4875aaea8188",
+                            "fullName": "Mikaelly da Silva Sousa",
+                            "specialty": "fonoaudiologia"
+                        },
+                        "doctorId": "68bedf1104ec4875aaea8188",
+                        "total": 0,
+                        "count": 24,
+                        "items": [
+                            {
+                                "_id": "6a0c540480cc438aa0b67d36",
+                                "amount": 0,
+                                "data": "2026-06-02T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a3",
+                                "amount": 0,
+                                "data": "2026-06-30T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a4",
+                                "amount": 0,
+                                "data": "2026-06-26T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a5",
+                                "amount": 0,
+                                "data": "2026-06-23T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a6",
+                                "amount": 0,
+                                "data": "2026-06-19T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a7",
+                                "amount": 0,
+                                "data": "2026-06-16T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a8",
+                                "amount": 0,
+                                "data": "2026-06-12T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8a9",
+                                "amount": 0,
+                                "data": "2026-06-09T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8aa",
+                                "amount": 0,
+                                "data": "2026-06-05T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14ae6edf43507213eaa8ab",
+                                "amount": 0,
+                                "data": "2026-06-02T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9ee",
+                                "amount": 0,
+                                "data": "2026-06-30T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9ef",
+                                "amount": 0,
+                                "data": "2026-06-26T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f0",
+                                "amount": 0,
+                                "data": "2026-06-23T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f1",
+                                "amount": 0,
+                                "data": "2026-06-19T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f2",
+                                "amount": 0,
+                                "data": "2026-06-16T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f3",
+                                "amount": 0,
+                                "data": "2026-06-12T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f4",
+                                "amount": 0,
+                                "data": "2026-06-09T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f5",
+                                "amount": 0,
+                                "data": "2026-06-05T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a14aed3df43507213eaa9f6",
+                                "amount": 0,
+                                "data": "2026-06-02T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a15d869a29814035f6657ee",
+                                "amount": 0,
+                                "data": "2026-06-30T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a15d869a29814035f6657ef",
+                                "amount": 0,
+                                "data": "2026-06-23T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a15d869a29814035f6657f0",
+                                "amount": 0,
+                                "data": "2026-06-16T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a15d869a29814035f6657f1",
+                                "amount": 0,
+                                "data": "2026-06-09T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a15d869a29814035f6657f2",
+                                "amount": 0,
+                                "data": "2026-06-02T03:00:00.000Z"
+                            }
+                        ]
+                    },
+                    "698f09aa39d78a9c5746dc28": {
+                        "doctor": {
+                            "_id": "698f09aa39d78a9c5746dc28",
+                            "fullName": "Thayna Miranda",
+                            "specialty": "terapia_ocupacional"
+                        },
+                        "doctorId": "698f09aa39d78a9c5746dc28",
+                        "total": 0,
+                        "count": 8,
+                        "items": [
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab904",
+                                "amount": 0,
+                                "data": "2026-06-24T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab905",
+                                "amount": 0,
+                                "data": "2026-06-23T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab906",
+                                "amount": 0,
+                                "data": "2026-06-17T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab907",
+                                "amount": 0,
+                                "data": "2026-06-16T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab908",
+                                "amount": 0,
+                                "data": "2026-06-10T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab909",
+                                "amount": 0,
+                                "data": "2026-06-09T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab90a",
+                                "amount": 0,
+                                "data": "2026-06-03T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a175117c1ed3cd03a3ab90b",
+                                "amount": 0,
+                                "data": "2026-06-02T03:00:00.000Z"
+                            }
+                        ]
+                    },
+                    "6840aa2f928a20e92ab13be8": {
+                        "doctor": {
+                            "_id": "6840aa2f928a20e92ab13be8",
+                            "fullName": "Luis Henrique",
+                            "specialty": "terapia_ocupacional"
+                        },
+                        "doctorId": "6840aa2f928a20e92ab13be8",
+                        "total": 150,
+                        "count": 1,
+                        "items": [
+                            {
+                                "_id": "6a1a2a8b60e4eae26c956f1b",
+                                "amount": 150,
+                                "data": "2026-06-11T13:00:00.000Z"
+                            }
+                        ]
+                    },
+                    "684072213830f473da1b0b0b": {
+                        "doctor": {
+                            "_id": "684072213830f473da1b0b0b",
+                            "fullName": "Lorrany Siqueira Marques",
+                            "specialty": "fonoaudiologia"
+                        },
+                        "doctorId": "684072213830f473da1b0b0b",
+                        "total": 140,
+                        "count": 8,
+                        "items": [
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f32",
+                                "amount": 0,
+                                "data": "2026-06-26T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f33",
+                                "amount": 0,
+                                "data": "2026-06-22T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f34",
+                                "amount": 0,
+                                "data": "2026-06-19T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f35",
+                                "amount": 0,
+                                "data": "2026-06-15T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f36",
+                                "amount": 0,
+                                "data": "2026-06-12T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f37",
+                                "amount": 0,
+                                "data": "2026-06-08T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f38",
+                                "amount": 0,
+                                "data": "2026-06-05T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc25d4bafb710ab160f39",
+                                "amount": 140,
+                                "data": "2026-06-01T03:00:00.000Z"
+                            }
+                        ]
+                    },
+                    "690a3f957fe419286acb0b0b": {
+                        "doctor": {
+                            "_id": "690a3f957fe419286acb0b0b",
+                            "fullName": "Bárbara Martins Rodrigues",
+                            "specialty": "fisioterapia"
+                        },
+                        "doctorId": "690a3f957fe419286acb0b0b",
+                        "total": 0,
+                        "count": 9,
+                        "items": [
+                            {
+                                "_id": "6a1dc29f4bafb710ab160ffe",
+                                "amount": 0,
+                                "data": "2026-06-29T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc29f4bafb710ab160fff",
+                                "amount": 0,
+                                "data": "2026-06-26T03:00:00.000Z"
+                            },
+                            {
+                                "_id": "6a1dc29f4bafb710ab161000",
+                                "amount": 0,
+                                "data": "2026-06-22T03:00:00.000Z"
+                
+
+[Message truncated - exceeded 50,000 character limit]
+Show less
+Preciso ver a rota do dashboard para identificar de onde vem esse valor.
+
+Read dashboard.routes.js
+precisamso entener por uqe mostra 1080
+va no bd sem achiusmooo
+Preciso ver o que gera o valor 10810 — preciso entender o que kind os ghost payments têm e o que a rota do dashboard calcula.
+
+Bash Check what kind is set on package session payments
+IN
+grep -n "kind.*session_payment\|session_payment\|isFromPackage" /home/user/projetos/crm/back/services/completeSessionService.v2.js 2>/dev/null | head -30
+
+OUT
+615:                            isFromPackage: true,
+638:                    kind:          'session_payment',
+639:                    isFromPackage: true
+Bash Check how isFromPackage and kind are set in handlers
+IN
+grep -rn "isFromPackage\|kind.*session_payment\|kind.*package" /home/user/projetos/crm/back/handlers/particularHandler.js 2>/dev/null | head -20; grep -rn "isFromPackage\|kind.*session_payment\|kind.*package" /home/user/projetos/crm/back/routes/appointment.v2.js 2>/dev/null | head -20
+
+OUT
+/home/user/projetos/crm/back/routes/appointment.v2.js:2234:          kind: 'session_payment',
+/home/user/projetos/crm/back/routes/appointment.v2.js:2269:        // ⛔ MANTER isFromPackage: true — consumo de pacote NÃO é entrada de caixa.
+/home/user/projetos/crm/back/routes/appointment.v2.js:2295:            kind: 'session_payment',
+/home/user/projetos/crm/back/routes/appointment.v2.js:2296:            isFromPackage: true,
+Vou no banco direto.
+
+Bash Find MongoDB connection string
+IN
+grep -n "MONGO\|mongodb" /home/user/projetos/crm/back/.env 2>/dev/null | head -5; grep -n "MONGO\|mongodb" /home/user/projetos/crm/back/.env.local 2>/dev/null | head -5
+
+OUT
+64:MONGO_URI="mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0"
+9:MONGO_URI=mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_test_e2e
+Bash Find all env files in CRM back
+IN
+grep -rn "MONGO\|mongodb" /home/user/projetos/crm/back/.env.production 2>/dev/null | head -5; ls /home/user/projetos/crm/back/.env* 2>/dev/null
+
+OUT
+/home/user/projetos/crm/back/.env
+/home/user/projetos/crm/back/.env.backup
+/home/user/projetos/crm/back/.env.broken_20250415
+/home/user/projetos/crm/back/.env.development
+/home/user/projetos/crm/back/.env.example
+/home/user/projetos/crm/back/.env.local
+Bash Get MongoDB URI from CRM .env
+IN
+grep "MONGO" /home/user/projetos/crm/back/.env | head -5
+
+OUT
+MONGO_URI="mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0"
+Bash Query today's paid payments from MongoDB
+IN
+mongosh "mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0" --eval '
+db.payments.find({
+  status: "paid",
+  amount: {$gt: 0},
+  $or: [
+    {financialDate: {$gte: new Date("2026-06-01T00:00:00-03:00"), $lte: new Date("2026-06-01T23:59:59-03:00")}},
+    {paymentDate:   {$gte: new Date("2026-06-01T00:00:00-03:00"), $lte: new Date("2026-06-01T23:59:59-03:00")}}
+  ]
+}, {amount:1, paymentMethod:1, billingType:1, kind:1, isFromPackage:1, financialDate:1, paymentDate:1, notes:1}).toArray()
+' --quiet 2>/dev/null | head -100
+
+OUT
+[
+  {
+    _id: ObjectId('6a1d9c284bafb710ab15b370'),
+    amount: 250,
+    paymentDate: ISODate('2026-06-02T00:00:00.000Z'),
+    paymentMethod: 'dinheiro',
+    kind: 'appointment_payment',
+    billingType: 'particular',
+    notes: 'Pagamento registrado via tabela financeira',
+    financialDate: ISODate('2026-06-02T00:00:00.000Z'),
+    isFromPackage: false
+  },
+  {
+    _id: ObjectId('6a1d8ce94bafb710ab158d72'),
+    amount: 180,
+    paymentDate: ISODate('2026-06-01T20:49:37.278Z'),
+    paymentMethod: 'pix',
+    kind: 'session_payment',
+    billingType: 'particular',
+    notes: 'Valor avulso registrado em sessão de pacote - 01/06/2026, 10:45:13',
+    financialDate: ISODate('2026-06-01T20:49:37.278Z'),
+    isFromPackage: true
+  },
+  {
+    _id: ObjectId('6a1deb0a4bafb710ab168673'),
+    amount: 160,
+    paymentDate: ISODate('2026-06-01T20:26:50.238Z'),
+    paymentMethod: 'pix',
+    kind: 'session_payment',
+    billingType: 'particular',
+    notes: null,
+    financialDate: ISODate('2026-06-01T20:26:50.238Z'),
+    isFromPackage: false
+  },
+  {
+    _id: ObjectId('6a1de1d14bafb710ab1666a7'),
+    amount: 140,
+    paymentDate: ISODate('2026-06-01T19:47:29.435Z'),
+    paymentMethod: 'pix',
+    kind: 'session_payment',
+    billingType: 'particular',
+    notes: null,
+    financialDate: ISODate('2026-06-01T19:47:29.435Z'),
+    isFromPackage: false
+  },
+  {
+    _id: ObjectId('6a1dc3f54bafb710ab1614ea'),
+    amount: 170,
+    paymentDate: ISODate('2026-06-01T17:40:05.656Z'),
+    paymentMethod: 'pix',
+    kind: 'session_payment',
+    billingType: 'particular',
+    notes: null,
+    financialDate: ISODate('2026-06-01T17:40:05.656Z'),
+    isFromPackage: false
+  },
+  {
+    _id: ObjectId('6a1d7ffa4bafb710ab1570b5'),
+    amount: 180,
+    paymentDate: ISODate('2026-06-01T12:50:02.307Z'),
+    paymentMethod: 'dinheiro',
+    kind: 'session_payment',
+    billingType: 'particular',
+    notes: 'Valor avulso registrado em sessão de pacote - 01/06/2026, 09:50:02',
+    financialDate: ISODate('2026-06-01T12:50:02.307Z'),
+    isFromPackage: true
   }
-}
-```
+]
+Banco mostra o problema claramente. Há 6 pagamentos hoje, e dois têm isFromPackage: true. Preciso saber quem é o R$180 dinheiro das 12:50.
 
----
+Bash Get full details of the R$180 dinheiro isFromPackage payment
+IN
+mongosh "mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0" --eval '
+db.payments.findOne(
+  {_id: ObjectId("6a1d7ffa4bafb710ab1570b5")},
+  {amount:1, paymentMethod:1, kind:1, isFromPackage:1, notes:1, appointment:1, session:1, package:1, patient:1, billingType:1}
+)
+' --quiet 2>/dev/null
 
-# 📌 Depois cruza com a meta
-
-```js
-gap = revenueGoal - projectedRevenue
-```
-
----
-
-# 📌 Depois calcula pacientes necessários
-
-```js
-patientsNeeded =
-  Math.ceil(gap / averageTicket)
-```
-
----
-
-# 💎 O QUE É MAIS IMPORTANTE
-
-Separar 3 conceitos:
-
-| Tipo      | Origem             |
-| --------- | ------------------ |
-| Realizado | caixa/transações   |
-| Produzido | sessões concluídas |
-| Previsto  | agenda futura      |
-
-Isso evita dashboard mentiroso.
-
----
-
-# 🔥 O ideal MESMO
-
-Você criar um:
-
-# projection engine
-
-Centralizado.
-
-Exemplo:
-
-```txt id="x4lggq"
-services/financialProjection.service.js
-```
-
----
-
-# Ele retorna:
-
-```js
+OUT
 {
-  goal: 45000,
-
-  projectedRevenue: 30200,
-
-  realizedRevenue: 18000,
-
-  producedRevenue: 21000,
-
-  gap: 14800,
-
-  averageTicket: 1000,
-
-  patientsNeeded: 15,
-
-  completionPercentage: 67
+  _id: ObjectId('6a1d7ffa4bafb710ab1570b5'),
+  patient: ObjectId('6a061e1300ff2e03fb40480f'),
+  appointment: ObjectId('6a19ed76c1ed3cd03a3c4c34'),
+  session: null,
+  package: null,
+  amount: 180,
+  paymentMethod: 'dinheiro',
+  kind: 'session_payment',
+  billingType: 'particular',
+  notes: 'Valor avulso registrado em sessão de pacote - 01/06/2026, 09:50:02',
+  isFromPackage: true
 }
-```
+Bash Get appointment and patient details for the R$180 dinheiro payment
+IN
+mongosh "mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0" --eval '
+const appt = db.appointments.findOne(
+  {_id: ObjectId("6a19ed76c1ed3cd03a3c4c34")},
+  {time:1, date:1, operationalStatus:1, billingType:1, serviceType:1, patientName:1, "patientInfo.fullName":1, package:1, paymentStatus:1}
+);
+const patient = db.patients.findOne({_id: ObjectId("6a061e1300ff2e03fb40480f")}, {fullName:1});
+print(JSON.stringify({appt, patient}));
+' --quiet 2>/dev/null
 
----
+OUT
+{"appt":{"_id":"6a19ed76c1ed3cd03a3c4c34","patientInfo":{"fullName":"Ícaro Lima de Souza Rezende"},"date":"2026-06-05T18:20:00.000Z","time":"15:20","operationalStatus":"canceled","serviceType":"session","billingType":"particular","package":"6a19ed75c1ed3cd03a3c4c2e","paymentStatus":"pending"},"patient":{"_id":"6a061e1300ff2e03fb40480f","fullName":"Ícaro Lima de Souza Rezende"}}
+Diagnóstico completo. O R$180 dinheiro é um ghost payment de Ícaro Lima de Souza Rezende:
 
-# 📈 E aí o frontend só renderiza
+Appointment 6a19ed76... está com operationalStatus: "canceled" e data 2026-06-05 (futuro)
+O pagamento foi criado em 01/06 com status: 'paid', mas o appointment foi cancelado depois — e o pagamento não foi cancelado junto
+Ou seja, o caixa correto hoje seria:
 
-Sem lógica pesada no React.
+900 = 720 (original) + 180 (Gustavo, legítimo)
+O R$180 do Ícaro não deveria estar paid. Posso fazer o updateOne no banco para setar status: 'cancelled' nesse pagamento? Confirma que posso executar:
 
----
 
-# 🚨 Importante operacionalmente
+db.payments.updateOne(
+  { _id: ObjectId("6a1d7ffa4bafb710ab1570b5") },
+  { $set: { status: "cancelled" } }
+)
+faca
+You've hit your session limit · resets 8pm (America/Sao_Paulo)
 
-Você provavelmente vai precisar ignorar:
-
-| Status    | Ignorar?        |
-| --------- | --------------- |
-| cancelled | sim             |
-| no_show   | talvez          |
-| completed | depende         |
-| scheduled | simular entrada |
-| confirmed | simular entrada |
-
----
-
-# 🔥 Melhor abordagem de previsão
-
-## Baseado em Appointments
-
-E NÃO em Package.balance legado.
-
-Porque appointment é:
-
-✅ rastreável
-✅ operacional
-✅ data real
-✅ valor real
-✅ profissional real
-✅ executável
-
----
-
-# 📊 Futuramente você pode sofisticar
-
-## Peso probabilístico
-
-Exemplo:
-
-| Status            | Peso |
-| ----------------- | ---- |
-| confirmed         | 100% |
-| scheduled         | 90%  |
-| no_show histórico | 60%  |
-
----
-
-# Exemplo:
-
-```js
-projection +=
-  appointment.sessionValue * probabilityWeight
-```
-
----
-
-# 💎 Melhor arquitetura
-
-## Persistir:
-
-✅ metas
-✅ configurações
-✅ ticket médio
-
----
-
-## Calcular:
-
-✅ previsão
-✅ gap
-✅ pacientes necessários
-✅ progresso
-
-em tempo real.
-
-Isso deixa o sistema MUITO mais confiável.
-
+cara poqr qeu aparece esses gosth nao e secetaria nao foi ediatdo hoje esse agendmento???
