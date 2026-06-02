@@ -593,10 +593,10 @@ export async function clearSession() {
   try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
-      { status: 'disconnected', ready: false, qrCode: null, pid: null, uptime: null, updatedAt: new Date() },
+      { status: 'disconnected', ready: false, qrCode: null, pid: null, uptime: null, reconnectSignal: new Date(), updatedAt: new Date() },
       { upsert: true }
     );
-    console.log('[WhatsAppWeb] Estado limpo no MongoDB.');
+    console.log('[WhatsAppWeb] Estado limpo no MongoDB + sinal de reconexão gravado.');
   } catch (e) {
     console.warn('[WhatsAppWeb] Erro ao limpar estado MongoDB:', e.message);
   }
@@ -652,6 +652,31 @@ export async function reconnect() {
   return { success: true, message: 'Reconectando... Escaneie o novo QR.' };
 }
 
+// ─── Sinal externo de reconexão (backend → worker via MongoDB) ───────────────
+// Chamado pelo heartbeat do child a cada 5s. Se o backend gravou um novo
+// reconnectSignal (via clearSession), o worker detecta e chama reconnect().
+let _lastReconnectSignal = null;
+
+export async function checkExternalReconnectSignal() {
+  if (isReady || isInitializing || client) return;
+  try {
+    const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).select('reconnectSignal').lean();
+    if (!state?.reconnectSignal) return;
+    const signal = new Date(state.reconnectSignal).getTime();
+    if (_lastReconnectSignal === null) {
+      _lastReconnectSignal = signal;
+      return;
+    }
+    if (signal > _lastReconnectSignal) {
+      _lastReconnectSignal = signal;
+      console.log('[WhatsAppWeb] 🔔 Sinal de reconexão externo detectado — gerando novo QR...');
+      await reconnect();
+    }
+  } catch (e) {
+    // ignora erros de leitura
+  }
+}
+
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 export async function gracefulShutdownWhatsApp() {
   console.log('[WhatsAppWeb] 🛑 Graceful shutdown...');
@@ -672,5 +697,6 @@ export default {
   reconnect,
   softReconnect,
   clearSession,
+  checkExternalReconnectSignal,
   gracefulShutdownWhatsApp,
 };

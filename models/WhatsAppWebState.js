@@ -16,6 +16,7 @@ const schema = new mongoose.Schema({
   lastAuthenticatedAt: { type: Date, default: null },
   qrCount: { type: Number, default: 0 },
   initAttempts: { type: Number, default: 0 },
+  reconnectSignal: { type: Date, default: null },
   updatedAt: { type: Date, default: Date.now },
 });
 

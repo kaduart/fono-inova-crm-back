@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
 import { Worker } from 'bullmq';
@@ -165,7 +165,7 @@ async function main() {
         } catch {}
     }, 5000);
 
-    // Heartbeat: envia status para o pai a cada 5s
+    // Heartbeat: envia status para o pai a cada 5s + detecta sinal externo de reconexão
     setInterval(async () => {
         try {
             const status = await getStatus();
@@ -178,6 +178,8 @@ async function main() {
                     ready: status.ready,
                 });
             }
+            // Detecta se o backend solicitou reconexão via MongoDB (clearSession)
+            await checkExternalReconnectSignal();
         } catch {}
     }, 5000);
 
