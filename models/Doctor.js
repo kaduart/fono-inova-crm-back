@@ -30,6 +30,14 @@ const doctorSchema = new mongoose.Schema({
   // 🆕 Soft delete tracking
   deactivatedAt: { type: Date, default: null },
 
+  // 🆕 Status operacional + vagas
+  status: {
+    type: String,
+    enum: ['ativo', 'ferias', 'afastado', 'inativo'],
+    default: 'ativo'
+  },
+  maxSlots: { type: Number, default: 30, min: 1 },
+
   // 🔑 reset de senha
   passwordResetToken: { type: String, index: true, select: false },
   passwordResetExpires: { type: Date, select: false },

@@ -15,7 +15,10 @@
  */
 
 import express from 'express';
+import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
+import Patient from '../models/Patient.js';
+import Appointment from '../models/Appointment.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,15 +58,72 @@ function translateMongooseError(error) {
 // READ SIDE (Síncrono - direto do DB)
 // ============================================
 
+// Helper: calcula stats dos médicos
+async function enrichDoctorsWithStats(doctors) {
+  if (!doctors.length) return [];
+  const doctorIds = doctors.map(d => d._id.toString());
+  const objectIds = doctorIds.map(id => new mongoose.Types.ObjectId(id));
+
+  // Mês atual
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  endOfMonth.setHours(23, 59, 59, 999);
+
+  const [patientCounts, appointmentCounts] = await Promise.all([
+    // Pacientes ÚNICOS atendidos por cada doctor (via appointments do mês)
+    Appointment.aggregate([
+      {
+        $match: {
+          doctor: { $in: objectIds, $exists: true, $ne: null },
+          date: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      { $group: { _id: '$doctor', patients: { $addToSet: '$patient' } } },
+      { $project: { _id: 1, count: { $size: '$patients' } } }
+    ]),
+
+    // Appointments do MÊS por doctor
+    Appointment.aggregate([
+      {
+        $match: {
+          doctor: { $in: objectIds, $exists: true, $ne: null },
+          date: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      { $group: { _id: '$doctor', count: { $sum: 1 } } }
+    ])
+  ]);
+
+  const patientMap = Object.fromEntries(patientCounts.map(p => [p._id.toString(), p.count]));
+  const appointmentMap = Object.fromEntries(appointmentCounts.map(a => [a._id.toString(), a.count]));
+
+  return doctors.map(d => {
+    const dId = d._id.toString();
+    const patients = patientMap[dId] || 0;
+    const monthlySessions = appointmentMap[dId] || 0;
+    const maxSlots = d.maxSlots || 30;
+    return {
+      ...d,
+      _id: dId,
+      status: d.status || (d.active === false ? 'inativo' : 'ativo'),
+      maxSlots,
+      patients,
+      monthlySessions,
+      occupancy: Math.round((monthlySessions / maxSlots) * 100)
+    };
+  });
+}
+
 /**
- * GET /api/v2/doctors - Lista médicos com paginação
+ * GET /api/v2/doctors - Lista médicos com paginação + stats
  */
 router.get('/', flexibleAuth, async (req, res) => {
   try {
     const { search, limit = 50, skip = 0, status = 'all' } = req.query;
     
     let query = {};
-    
     if (status === 'active') query.active = true;
     if (status === 'inactive') query.active = false;
     
@@ -77,7 +137,7 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     const [doctors, total] = await Promise.all([
       Doctor.find(query)
-        .select('_id fullName email specialty licenseNumber phoneNumber active role weeklyAvailability createdAt updatedAt')
+        .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability createdAt updatedAt deactivatedAt')
         .sort({ fullName: 1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
@@ -85,30 +145,17 @@ router.get('/', flexibleAuth, async (req, res) => {
       Doctor.countDocuments(query)
     ]);
 
+    const enriched = await enrichDoctorsWithStats(doctors);
+
     return res.json(formatSuccess({
-      doctors: doctors.map(d => ({
-        _id: d._id.toString(),
-        fullName: d.fullName,
-        email: d.email,
-        specialty: d.specialty,
-        licenseNumber: d.licenseNumber,
-        phoneNumber: d.phoneNumber,
-        active: d.active,
-        role: d.role || 'doctor',
-        weeklyAvailability: d.weeklyAvailability || [],
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt
-      })),
+      doctors: enriched,
       pagination: {
         total,
         limit: parseInt(limit),
         skip: parseInt(skip),
         hasMore: parseInt(skip) + doctors.length < total
       },
-      meta: {
-        source: 'doctor_v2',
-        duration: 'fast'
-      }
+      meta: { source: 'doctor_v2', duration: 'fast' }
     }));
     
   } catch (error) {
@@ -118,32 +165,34 @@ router.get('/', flexibleAuth, async (req, res) => {
 });
 
 /**
- * GET /api/v2/doctors/active - Lista médicos ativos
+ * GET /api/v2/doctors/active - Lista médicos ativos + stats
  */
 router.get('/active', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: true })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role')
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
     
-    return res.json(formatSuccess({ doctors }));
+    const enriched = await enrichDoctorsWithStats(doctors);
+    return res.json(formatSuccess({ doctors: enriched }));
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
 });
 
 /**
- * GET /api/v2/doctors/inactive - Lista médicos inativos
+ * GET /api/v2/doctors/inactive - Lista médicos inativos + stats
  */
 router.get('/inactive', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: false })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role')
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
     
-    return res.json(formatSuccess({ doctors }));
+    const enriched = await enrichDoctorsWithStats(doctors);
+    return res.json(formatSuccess({ doctors: enriched }));
   } catch (error) {
     return res.status(500).json(formatError(500, error.message));
   }
@@ -358,6 +407,94 @@ router.patch('/:id/reactivate', flexibleAuth, async (req, res) => {
 // ============================================
 // STATUS & MONITORING
 // ============================================
+
+/**
+ * GET /api/v2/doctors/stats - Lista médicos com estatísticas operacionais
+ *
+ * Retorna:
+ * - patients: total de pacientes vinculados
+ * - weeklySessions: sessões agendadas esta semana (seg-dom)
+ * - occupancy: % de vagas preenchidas (weeklySessions / maxSlots * 100)
+ */
+router.get('/stats', flexibleAuth, async (req, res) => {
+  try {
+    const { status = 'all' } = req.query;
+    let query = {};
+    if (status === 'active') query.active = true;
+    if (status === 'inactive') query.active = false;
+
+    const doctors = await Doctor.find(query)
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
+      .sort({ fullName: 1 })
+      .lean();
+
+    if (!doctors.length) {
+      return res.json(formatSuccess({ doctors: [] }));
+    }
+
+    const doctorIds = doctors.map(d => d._id.toString());
+
+    // Semana atual (segunda a domingo)
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    // Busca counts simples (sem aggregation)
+    const patientCounts = {};
+    const appointmentCounts = {};
+
+    for (const id of doctorIds) {
+      try {
+        patientCounts[id] = await Patient.countDocuments({ doctor: id });
+      } catch (e) {
+        patientCounts[id] = 0;
+      }
+      try {
+        appointmentCounts[id] = await Appointment.countDocuments({
+          doctor: id,
+          date: { $gte: startOfWeek, $lte: endOfWeek }
+        });
+      } catch (e) {
+        appointmentCounts[id] = 0;
+      }
+    }
+
+    const enriched = doctors.map(d => {
+      const dId = d._id.toString();
+      const patients = patientCounts[dId] || 0;
+      const weeklySessions = appointmentCounts[dId] || 0;
+      const maxSlots = d.maxSlots || 30;
+      const occupancy = Math.round((weeklySessions / maxSlots) * 100);
+
+      return {
+        _id: dId,
+        fullName: d.fullName,
+        email: d.email,
+        specialty: d.specialty,
+        licenseNumber: d.licenseNumber,
+        phoneNumber: d.phoneNumber,
+        active: d.active,
+        status: d.status || (d.active === false ? 'inativo' : 'ativo'),
+        maxSlots,
+        patients,
+        weeklySessions,
+        occupancy,
+        deactivatedAt: d.deactivatedAt
+      };
+    });
+
+    return res.json(formatSuccess({ doctors: enriched }));
+
+  } catch (error) {
+    console.error('[DoctorV2] Erro em /stats:', error);
+    return res.status(500).json(formatError(500, error.message));
+  }
+});
 
 /**
  * GET /api/v2/doctors/status/:jobId - Legado (operações agora síncronas)
