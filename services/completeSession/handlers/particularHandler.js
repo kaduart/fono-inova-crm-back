@@ -24,6 +24,8 @@ export const ParticularHandler = {
 
         // Detecta se e pacote prepaid (full / pre-pago)
         const isPrepaid = packageData?.model === 'prepaid' || packageData?.paymentType === 'full';
+        // Detecta se e pacote per-session (paga individualmente, nao no ato por padrao)
+        const isPerSession = packageData?.model === 'per_session' || packageData?.paymentType === 'per-session';
 
         if (isPrepaid) {
             LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
@@ -37,8 +39,15 @@ export const ParticularHandler = {
             LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'unpaid', { reason: 'per_session_complete' });
             sessionUpdate.paymentOrigin = 'manual_balance';
             sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+        } else if (isPerSession) {
+            // 🎯 CORRECAO: per-session sem pagamento no ato → fica como unpaid
+            // buildPayment vai corrigir para paid se o payment ja estiver pago
+            LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_pending' });
+            LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'unpaid', { reason: 'per_session_pending' });
+            sessionUpdate.paymentOrigin = 'auto_per_session';
+            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
         } else {
-            // Pago no ato (avulso ou per-session)
+            // Pago no ato (avulso)
             LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
             LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
             sessionUpdate.paymentOrigin = 'auto_per_session';
@@ -133,6 +142,9 @@ export const ParticularHandler = {
         const isPrepaidFallback = !!(packageId && pkgAtual &&
             (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full'));
 
+        // Detecta per-session
+        const isPerSession = packageData?.model === 'per_session' || packageData?.paymentType === 'per-session';
+
         // Sub-caso 2: fiado / addToBalance
         if (isBalanceOrigin) {
             const [paymentDoc] = await Payment.create([{
@@ -158,17 +170,90 @@ export const ParticularHandler = {
             return paymentDoc;
         }
 
-        // Sub-caso 3: pago no ato
+        // Sub-caso 3: per-session sem pagamento no ato
+        // 🎯 CORRECAO: per-session cria payment PENDING se ainda nao estiver pago
+        if (isPerSession) {
+            let paymentCreated;
+
+            if (appointment.payment) {
+                const existingPaymentId = appointment.payment._id || appointment.payment;
+                const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+
+                if (existingPayment?.status === 'paid') {
+                    // Já foi pago anteriormente — mantém paid (re-complete ou pagamento antecipado)
+                    paymentCreated = await Payment.findByIdAndUpdate(
+                        existingPaymentId,
+                        {
+                            $set: {
+                                amount:        sessionValue,
+                                kind:          'session_payment',
+                                billingType:   'particular',
+                                updatedAt:     now,
+                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                            }
+                        },
+                        { session: mongoSession, new: true }
+                    );
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment já pago mantido: ${paymentCreated._id}`);
+                } else {
+                    // Não está pago — atualiza para pending (ou mantém pending)
+                    paymentCreated = await Payment.findByIdAndUpdate(
+                        existingPaymentId,
+                        {
+                            $set: {
+                                status:        'pending',
+                                amount:        sessionValue,
+                                paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                                kind:          'session_payment',
+                                billingType:   'particular',
+                                updatedAt:     now,
+                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                            }
+                        },
+                        { session: mongoSession, new: true }
+                    );
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment pending atualizado: ${paymentCreated._id}`);
+                }
+            } else {
+                // Sem payment existente — cria pending
+                const [paymentDoc] = await Payment.create([{
+                    patient:       appointment.patient?._id,
+                    amount:        sessionValue,
+                    status:        'pending',
+                    type:          'service',
+                    serviceType:   'session',
+                    paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                    paymentDate:   now,
+                    financialDate: null,
+                    description:   `Sessao per-session pendente - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment:   appointmentId,
+                    session:       sessionId,
+                    createdBy:     userId,
+                    kind:          'session_payment',
+                    billingType:   'particular',
+                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                }], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[ParticularHandler] [PER_SESSION] Payment pending criado: ${paymentCreated._id}`);
+            }
+
+            return paymentCreated;
+        }
+
+        // Sub-caso 4: pago no ato (avulso)
         let paymentCreated;
 
         if (appointment.payment) {
             const existingPaymentId = appointment.payment._id || appointment.payment;
             const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
-            // Re-complete é impossível: completeSessionV2 faz early return se já completed.
-            // financialDate = now sempre (data real do recebimento = hoje)
-            const preservePaymentDate = now;
-            const preserveFinancialDate = now;
+            // Se o payment já estava paid (pré-pago), preserva datas originais — imutabilidade financeira.
+            // Só usa `now` se o payment ainda estava pending (primeiro recebimento na sessão).
+            const alreadyPaid = existingPayment?.status === 'paid';
+            const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : now;
+            const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : now;
+            const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (appointment.paymentMethod || 'cash');
 
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,
@@ -179,7 +264,7 @@ export const ParticularHandler = {
                         paymentDate:   preservePaymentDate,
                         financialDate: preserveFinancialDate,
                         amount:        sessionValue,
-                        paymentMethod: appointment.paymentMethod || 'cash',
+                        paymentMethod: preservePaymentMethod,
                         kind:          'session_payment',
                         billingType:   'particular',
                         updatedAt:     now,
@@ -214,8 +299,9 @@ export const ParticularHandler = {
         }
 
         // Per-session package: atualiza totalPaid e recalcula balance
-        // ⚠️ Só incrementa totalPaid quando dinheiro REALMENTE entrou (NAO fiado)
-        if (packageId && paymentCreated && !isBalanceOrigin) {
+        // ⚠️ Só incrementa totalPaid quando dinheiro REALMENTE entrou (status === 'paid')
+        // CORRECAO: nao incrementa no complete se o payment ficou pending
+        if (packageId && paymentCreated && !isBalanceOrigin && paymentCreated.status === 'paid') {
             const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
             if (pkgAtual && (pkgAtual.model === 'per_session' || pkgAtual.paymentType === 'per-session')) {
                 const novoTotalPaid    = (pkgAtual.totalPaid || 0) + sessionValue;

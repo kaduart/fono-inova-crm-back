@@ -217,7 +217,7 @@ function createClient() {
     takeoverOnConflict: true,
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
-    qrMaxRetries: 3,
+    qrMaxRetries: 20,
     // Cache: usa LocalWebCache (padrão) porque limpamos .wwebjs_cache no boot.
     // Isso garante que a versão do WhatsApp Web seja sempre a mais recente.
     // webVersionCache: { type: 'remote', remotePath: '...' }
@@ -338,15 +338,41 @@ function createClient() {
       console.log('[WhatsAppWeb] LOGOUT detectado — saindo para respawn limpo.');
       process.exit(1);
     }
+    if (reason === 'Max qrcode retries reached') {
+      console.log('[WhatsAppWeb] QRs expiraram sem scan — saindo para respawn e novo QR em 10s.');
+      process.exit(1);
+    }
   });
 
   newClient.on('error', (err) => {
     console.error('[WhatsAppWeb] ❌ error:', err.message);
   });
 
-  newClient.on('auth_failure', (msg) => {
+  newClient.on('auth_failure', async (msg) => {
     const ts = new Date().toISOString();
     console.error(`[WhatsAppWeb][${ts}] 🔴 auth_failure:`, msg);
+
+    // qrCount === 0: sessão existente no disco foi rejeitada (nunca chegou a mostrar QR)
+    // → limpa sessão stale e sai para o parent respawnar com QR novo
+    if (whatsappState.qrCount === 0) {
+      console.log('[WhatsAppWeb] 🧹 Sessão stale detectada (qrCount=0) — removendo e saindo para respawn limpo...');
+      try {
+        const localAuthDir = path.join(authPath, '.wwebjs_auth');
+        if (fs.existsSync(localAuthDir)) {
+          fs.rmSync(localAuthDir, { recursive: true, force: true });
+          console.log('[WhatsAppWeb] Sessão local removida.');
+        }
+      } catch (e) {
+        console.warn('[WhatsAppWeb] Erro ao remover sessão:', e.message);
+      }
+      connectionStatus = 'disconnected';
+      await saveState();
+      if (process.send) process.send({ type: 'whatsapp_disconnected', reason: `auth_failure_stale: ${msg}` });
+      process.exit(1); // parent respawna child limpo, gera novo QR
+      return;
+    }
+
+    // qrCount > 0: QRs expiraram sem ser escaneados — fica disconnected, espera ação manual
     connectionStatus = 'auth_failure';
     whatsappState.lastDisconnectReason = `auth_failure: ${msg}`;
     saveState();
@@ -658,7 +684,7 @@ export async function reconnect() {
 let _lastReconnectSignal = null;
 
 export async function checkExternalReconnectSignal() {
-  if (isReady || isInitializing || client) return;
+  if (isReady || isInitializing) return;
   try {
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).select('reconnectSignal').lean();
     if (!state?.reconnectSignal) return;

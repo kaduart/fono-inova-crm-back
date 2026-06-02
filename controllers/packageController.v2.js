@@ -356,6 +356,7 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
       package: pkg._id,
       patient: pkg.patient,
       doctor: pkg.doctor,
+      specialty: pkg.specialty,
       amount: p.amount,
       paymentMethod: p.method || 'pix',
       paymentDate: paymentDate,

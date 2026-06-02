@@ -71,7 +71,7 @@ router.get('/', auth, async (req, res) => {
         const [appointmentsMap, doctorsMap, patientMap] = await Promise.all([
             allApptIds.length > 0
                 ? Appointment.find({ _id: { $in: allApptIds } })
-                    .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod')
+                    .select('_id time date doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod')
                     .populate('patient', 'fullName phone')
                     .populate('doctor', 'fullName specialty')
                     .populate('package', 'paymentType sessionValue totalValue totalSessions model')
@@ -212,8 +212,13 @@ router.get('/', auth, async (req, res) => {
                 (p.session && pkgSessionPrepaidMap.get(p.session.toString()) === true)
             );
 
-            // Pagamentos de pacote só entram no caixa se o appointment foi concluído
-            if (isPackagePayment && appt && appt.operationalStatus !== 'completed') {
+            // Pré-pagamento: dinheiro recebido antes da sessão → entra no caixa imediatamente (Ana Laura, Henre Gabriel etc.)
+            const isPrepagamento = !!(appt?.date && p.financialDate &&
+                moment(p.financialDate).tz('America/Sao_Paulo').startOf('day')
+                    .isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day')));
+
+            // Pagamentos de pacote só entram no caixa se o appointment foi concluído — exceto pré-pagamentos
+            if (isPackagePayment && appt && appt.operationalStatus !== 'completed' && !isPrepagamento) {
                 return null;
             }
 
@@ -261,7 +266,7 @@ router.get('/', auth, async (req, res) => {
                 qtdDinheiro++;
             }
 
-            // 🎯 Fonte de verdade: Appointment (doctor/specialty/sessionType) > Payment > 'Outra'
+            // 🎯 Fonte de verdade: Appointment > Payment (specialty/sessionType) > 'Outra'
             const esp = appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra';
             if (!porEspecialidadeCaixa[esp]) porEspecialidadeCaixa[esp] = 0;
             porEspecialidadeCaixa[esp] += p.amount;
@@ -287,7 +292,7 @@ router.get('/', auth, async (req, res) => {
                 tipo,
                 servico,
                 especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
-                profissional: appt?.doctor?.fullName || appt?.professionalName || p.doctor?.fullName || '-',
+                profissional: appt?.doctor?.fullName || appt?.professionalName || (p.doctor ? doctorsMap.get(p.doctor.toString())?.fullName : null) || '-',
                 hora: isLiminar
                     ? moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')
                     : (appt?.time || moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')),
@@ -298,6 +303,7 @@ router.get('/', auth, async (req, res) => {
                 kind: p.kind || '-',
                 package: !!p.package || !!appt?.package,
                 isPackageSale: tipo === 'Pacote' && !!p.package,
+                isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
                 appointmentStatus: appt?.operationalStatus || '-'
             };
         }).filter(Boolean);

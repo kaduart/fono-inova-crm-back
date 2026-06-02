@@ -656,11 +656,16 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    // 🎯 Receita reconhecida = caixa real recebido + tudo que foi produzido mas ainda não pago.
-    // Alinhado com o modelo de meta por produção: caixa + convênio a receber + particular pendente.
-    // NÃO usa novaReceitaMes (que exclui retroativos do caixa e particular pendente).
+    // 🎯 REALIZADO MÊS = caixa recebido + produção ainda não paga
+    //   - data.caixa         → Payments status='paid' no mês (particular, pacote per-session, liminar, venda de pacote)
+    //   - data.aReceberProducao → Sessões completadas sem pagamento recebido:
+    //       • convenio atendido → entra via calculateNovaReceita.convenioProduction (Sessions.status=completed)
+    //       • particular pendente → Isis, "vai mandar os dados", etc.
+    // NÃO usa novaReceitaMes aqui — ela exclui retroativos e sessões particulares pendentes.
     const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-    // 🎯 META REAL DO DIA: caixa + convênio produzido + particular pendente (sessões realizadas)
+
+    // 🎯 REALIZADO DIA = caixa hoje + convênio produzido hoje + particular pendente hoje
+    // Garante que convenios atendidos entram na meta do dia mesmo sem pagamento recebido.
     const realizadoDia = (data.caixaHoje || 0) + (data.convenioHoje || 0) + (data.particularPendenteHoje || 0);
     const producaoDia  = data.producaoHoje || 0;
 
@@ -1110,6 +1115,18 @@ function generateInsights(data, metas, profissionais) {
  *   • debt_settlement, monthly_settlement (divida antiga/acerto)
  *   • auto_per_session, package_prepaid (recorrente/pacote ja captado)
  *   • package_consumed, isFromPackage (nao e caixa)
+ */
+/**
+ * NOVA RECEITA DO MÊS — 3 fontes independentes:
+ *
+ * 1. packageSales     → Payments kind='package_receipt' (venda de pacote no período)
+ * 2. individual       → Payments particular pagos na sessão (não-pacote, não-liminar)
+ * 3. convenioProduction → Sessions status='completed' com paymentMethod/Origin='convenio'
+ *                         Usa session.date (não financialDate) — data de realização do serviço.
+ *                         Valor: package.sessionValue → session.sessionValue (fallback).
+ *
+ * ⚠️  Esta função NÃO é usada diretamente para a meta mensal (calculateMetas usa caixa+aReceberProducao).
+ *     É exibida no dashboard como breakdown informativo de "receita nova gerada no mês".
  */
 async function calculateNovaReceita(start, end) {
     const [packageSalesAgg, individualAgg, convenioProductionAgg] = await Promise.all([

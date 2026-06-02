@@ -347,26 +347,38 @@ export async function calculateProduction(start, end) {
     const recebido = recebidoAgg[0]?.total || 0;
     const pendente = total - recebido;
 
-    // 4. Particular Pendente vs Pacote Pendente — fonte: Payment.pending (fonte correta)
-    // Session como fonte classifica erroneamente por presença de package, ignorando billingType real.
-    // Isis Caldas e similares: tem package operacional mas billingType=particular nos payments.
-    const pendingDateMatch = {
-        status: 'pending',
-        amount: { $gt: 0 },
-        billingType: { $nin: ['convenio', 'liminar'] },
-        paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
-        $or: [
-            { financialDate: { $gte: start, $lte: end } },
-            { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-            { financialDate: null, paymentDate: { $gte: start, $lte: end } }
-        ]
-    };
-    const pendingByTypeAgg = await Payment.aggregate([
-        { $match: pendingDateMatch },
-        { $group: { _id: '$billingType', total: { $sum: '$amount' } } }
+    // 4. Particular Pendente vs Pacote Pendente — fonte: Session (nao Payment)
+    // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
+    // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
+    const particularPendenteAgg = await Session.aggregate([
+        { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+        { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+        { $unwind: '$appt' },
+        { $match: {
+            'appt.billingType': { $nin: ['convenio', 'liminar'] },
+            'appt.operationalStatus': 'completed'
+        }},
+        { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+        { $match: { $or: [
+            { 'appt.package': { $exists: false } },
+            { 'appt.package': null },
+            { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+            { 'pkg.model': 'per_session' },
+            { pkg: { $size: 0 } }
+        ]}},
+        { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+        { $match: { $or: [
+            { payment: { $size: 0 } },
+            { 'payment.status': { $ne: 'paid' } }
+        ]}},
+        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
     ]);
-    const particularPendente = pendingByTypeAgg.find(r => r._id === 'particular')?.total || 0;
-    const pacotePendente     = pendingByTypeAgg.find(r => ['pacote', 'package', 'package_session'].includes(r._id))?.total || 0;
+    const particularPendente = particularPendenteAgg[0]?.total || 0;
+
+    // Pacote Pendente: para pacotes prepaid/full, o dinheiro entrou na venda.
+    // NAO deve haver pendente — sessoes sem payment vinculado sao normais (payment e do pacote).
+    // CORRECAO: forca 0 para evitar inflacao do aReceberProducao com dados inconsistentes.
+    const pacotePendente = 0;
 
     // 5. Buscar sessions completas para compatibilidade com endpoints legados
     const sessions = await Session.find({

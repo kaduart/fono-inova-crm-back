@@ -1306,6 +1306,17 @@ function generateImagePromptFromContent(content, especialidade) {
 // ─────────────────────────────────────────────
 // UPLOAD PRO CLOUDINARY
 // ─────────────────────────────────────────────
+
+/**
+ * Adiciona transformacao na URL do Cloudinary para carregar mais rapido.
+ * q_auto:low = compressao agressiva automatica
+ * w_800 = largura maxima 800px (suficiente pro Google Business)
+ */
+function optimizeCloudinaryUrl(url, transform = 'q_auto:low,w_800') {
+  if (!url || !url.includes('/image/upload/')) return url;
+  return url.replace('/image/upload/', `/image/upload/${transform}/`);
+}
+
 async function uploadToCloudinary(imageBlob, especialidadeId) {
   const buffer = Buffer.from(await imageBlob.arrayBuffer());
   const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
@@ -1316,7 +1327,7 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
     transformation: [{ width: 1024, height: 1024, crop: 'fill', quality: 'auto' }],
   });
 
-  return result.secure_url;
+  return optimizeCloudinaryUrl(result.secure_url);
 }
 
 // ─────────────────────────────────────────────
@@ -1392,8 +1403,9 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         type:          'upload',
         access_mode:   'public',
       });
-      console.log('✅ Upload OK:', result.secure_url.substring(0, 60) + '...');
-      return result.secure_url;
+      const optimizedUrl = optimizeCloudinaryUrl(result.secure_url);
+      console.log('✅ Upload OK:', optimizedUrl.substring(0, 60) + '...');
+      return optimizedUrl;
     } catch (e) {
       console.error('❌ Upload foto limpa falhou:', e.message);
       if (e.message.includes('authentication')) {
