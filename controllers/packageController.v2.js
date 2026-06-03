@@ -768,18 +768,133 @@ export const createPackageV2 = async (req, res) => {
         reuseAppt.serviceType = 'package_session';
         // Sincroniza sessionValue com o contrato do pacote para evitar inflação na produção
         reuseAppt.sessionValue = pkg.sessionValue;
-        LegacyFinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid', { reason: 'reuse_appointment_v2' });
-        reuseAppt.paymentOrigin = pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid';
+        // 🔧 FIX: sincroniza billingType igual a appointments novos
+        reuseAppt.billingType = pkg.type === 'convenio' ? 'convenio' :
+                                pkg.type === 'liminar' ? 'liminar' : 'particular';
+        const isPrepaidPackage = pkg.paymentType !== 'per-session';
+        LegacyFinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, isPrepaidPackage ? 'package_paid' : 'unpaid', { reason: 'reuse_appointment_v2' });
+        LegacyFinanceWriteGuard.setAppointmentPaid(reuseAppt, isPrepaidPackage, { reason: 'reuse_appointment_v2' });
+        reuseAppt.paymentOrigin = isPrepaidPackage ? 'package_prepaid' : 'auto_per_session';
+        // 🔧 FIX: limpa referência ao payment avulso anterior — agora é do pacote
+        const previousPaymentId = reuseAppt.payment;
+        reuseAppt.payment = null;
         await reuseAppt.save({ session: mongoSession });
+
+        // 🔧 FIX: converte payment avulso pendente para 'converted_to_package' (não deleta para preservar histórico)
+        if (previousPaymentId) {
+          const linkedAppointments = await Appointment.countDocuments({
+            payment: previousPaymentId,
+            _id: { $ne: reuseAppt._id }
+          }).session(mongoSession);
+
+          if (linkedAppointments > 0) {
+            logger.warn('[PackageV2] Payment antigo vinculado a múltiplos appointments — NÃO convertendo para evitar quebrar cobranças legítimas', {
+              paymentId: previousPaymentId.toString(),
+              linkedAppointments,
+              reuseApptId: reuseAppt._id.toString(),
+              packageId: pkg._id.toString(),
+              action: 'REQUIRES_MANUAL_REVIEW'
+            });
+          } else {
+            const oldPayment = await Payment.findById(previousPaymentId).session(mongoSession);
+            if (!oldPayment) {
+              logger.warn('[PackageV2] Payment antigo não encontrado no banco — possível lixo legacy', {
+                paymentId: previousPaymentId.toString(),
+                reuseApptId: reuseAppt._id.toString()
+              });
+            } else if (oldPayment.status === 'cancelled') {
+              logger.info('[PackageV2] Payment antigo já está cancelled — pulando', {
+                paymentId: previousPaymentId.toString()
+              });
+            } else if (oldPayment.status === 'paid') {
+              // 💰 Payment já foi pago — NÃO converte status para não dar furo de caixa.
+              // Apenas linka ao pacote para rastreabilidade.
+              await Payment.findByIdAndUpdate(
+                previousPaymentId,
+                {
+                  $set: {
+                    package: pkg._id,
+                    notes: (oldPayment.notes ? oldPayment.notes + ' | ' : '') +
+                           `Sessao avulsa paga vinculada ao pacote ${pkg._id.toString().slice(-6)} em ${new Date().toISOString()}`
+                  }
+                },
+                { session: mongoSession }
+              );
+              logger.info('[PackageV2] Payment avulso PAID mantido e linkado ao pacote', {
+                paymentId: previousPaymentId.toString(),
+                packageId: pkg._id.toString(),
+                appointmentId: reuseAppt._id.toString()
+              });
+            } else {
+              // 🔄 Payment pendente/outro status — converte para não duplicar débito
+              await Payment.findByIdAndUpdate(
+                previousPaymentId,
+                {
+                  $set: {
+                    status: 'converted_to_package',
+                    package: pkg._id,
+                    convertedAt: new Date(),
+                    notes: (oldPayment.notes ? oldPayment.notes + ' | ' : '') +
+                           `Convertido ao criar pacote ${pkg._id.toString().slice(-6)} (sessao avulsa atrelada ao pacote)`
+                  }
+                },
+                { session: mongoSession }
+              );
+            }
+          }
+        }
+
+        // 🔧 FIX: quitar débito no PatientBalance referente ao appointment avulso reutilizado
+        const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
+        if (patientBalance) {
+          const debitToSettle = patientBalance.transactions.find(
+            t => t.appointmentId?.toString() === reuseAppt._id.toString() &&
+                 t.type === 'debit' &&
+                 !t.settledByPackageId &&
+                 !t.isPaid
+          );
+
+          if (debitToSettle) {
+            debitToSettle.settledByPackageId = pkg._id;
+            LegacyFinanceWriteGuard.setSessionPaid(debitToSettle, true, { reason: 'reuse_appointment_v2_settle' });
+            debitToSettle.paidAmount = debitToSettle.amount;
+
+            patientBalance.transactions.push({
+              type: 'credit',
+              amount: debitToSettle.amount,
+              description: `Quitação via pacote #${pkg._id.toString().slice(-6)} (sessão avulsa atrelada)`,
+              specialty: debitToSettle.specialty || req.body.sessionType,
+              settledByPackageId: pkg._id,
+              appointmentId: reuseAppt._id,
+              registeredBy: req.user?._id,
+              transactionDate: new Date()
+            });
+
+            patientBalance.currentBalance -= debitToSettle.amount;
+            patientBalance.totalCredited += debitToSettle.amount;
+            patientBalance.lastTransactionAt = new Date();
+
+            await patientBalance.save({ session: mongoSession });
+            logger.info('[PackageV2] Débito do appointment avulso quitado via pacote', {
+              appointmentId: reuseAppt._id.toString(),
+              debitAmount: debitToSettle.amount,
+              packageId: pkg._id.toString()
+            });
+          }
+        }
 
         // Atualizar session existente se houver
         if (reuseAppt.session) {
-          const sessionUpdate = { package: pkg._id, sessionValue: pkg.sessionValue };
-          LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, reuseAppt.paymentStatus, { reason: 'sync_from_reuse_appointment' });
+          const sessionUpdate = {
+            package: pkg._id,
+            sessionValue: pkg.sessionValue,
+            paymentStatus: reuseAppt.paymentStatus,
+            isPaid: isPrepaidPackage
+          };
           await Session.findByIdAndUpdate(
             reuseAppt.session,
             { $set: sessionUpdate },
-            { session: mongoSession }
+            { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
           );
         }
 
