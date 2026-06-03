@@ -253,6 +253,11 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0, // 0 = nunca desistir — dá tempo ao usuário escanear
+    // Força versão específica do WhatsApp Web compatível
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040753655-alpha.html',
+    },
     puppeteer: puppeteerOpts,
   });
 
