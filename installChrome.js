@@ -29,9 +29,32 @@ if (FORCE_UPDATE && fs.existsSync(projectCache)) {
   fs.rmSync(projectCache, { recursive: true, force: true });
 }
 
-console.log('[installChrome] Instalando Chrome via Puppeteer...');
+// Detecta a versão exata que o puppeteer-core local espera
+function getExpectedChromeVersion() {
+  try {
+    const pkgPath = path.join(process.cwd(), 'node_modules', 'puppeteer-core', 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const version = pkg.puppeteer?.chrome || pkg.puppeteer?.chromium;
+      if (version) {
+        console.log(`[installChrome] 🔍 puppeteer-core espera Chrome: ${version}`);
+        return version;
+      }
+    }
+  } catch (e) {
+    console.warn('[installChrome] ⚠️ Não foi possível ler versão do puppeteer-core:', e.message);
+  }
+  return null;
+}
+
+const expectedVersion = getExpectedChromeVersion();
+const installCmd = expectedVersion
+  ? `npx @puppeteer/browsers install chrome@${expectedVersion}`
+  : 'npx @puppeteer/browsers install chrome@stable';
+
+console.log(`[installChrome] Instalando Chrome: ${installCmd}`);
 try {
-  execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
+  execSync(installCmd, { stdio: 'inherit' });
   console.log('[installChrome] ✅ Chrome instalado com sucesso.');
 } catch (err) {
   console.error('[installChrome] ❌ Falha na instalação:', err.message);
