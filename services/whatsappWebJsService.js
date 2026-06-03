@@ -186,7 +186,7 @@ function createClient() {
   }
 
   const puppeteerOpts = {
-    headless: true,
+    headless: 'new',
     protocolTimeout: 600_000,
     handleSIGINT: false,
     handleSIGTERM: false,
@@ -253,9 +253,8 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0, // 0 = nunca desistir — dá tempo ao usuário escanear
-    // Cache: usa LocalWebCache (padrão) porque limpamos .wwebjs_cache no boot.
-    // Isso garante que a versão do WhatsApp Web seja sempre a mais recente.
-    // webVersionCache: { type: 'remote', remotePath: '...' }
+    // Força download da versão mais recente do WhatsApp Web via remote cache
+    webVersionCache: { type: 'remote' },
     puppeteer: puppeteerOpts,
   });
 
