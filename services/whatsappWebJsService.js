@@ -146,7 +146,22 @@ function resolveChromePath() {
     }
   } catch {}
 
-  // 3. Caminhos do sistema
+  // 3. Chrome instalado via @puppeteer/browsers (novo path do Render)
+  try {
+    const browsersDir = path.join(process.cwd(), 'chrome');
+    if (fs.existsSync(browsersDir)) {
+      const versions = fs.readdirSync(browsersDir).filter(v => v.startsWith('linux-')).sort().reverse();
+      for (const v of versions) {
+        const p = path.join(browsersDir, v, 'chrome-linux64', 'chrome');
+        if (fs.existsSync(p)) {
+          console.log(`[WhatsAppWeb] Chrome encontrado em chrome/: ${p}`);
+          return p;
+        }
+      }
+    }
+  } catch {}
+
+  // 4. Caminhos do sistema
   const system = [
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome-stable',
