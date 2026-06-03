@@ -277,30 +277,10 @@ function createClient() {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
     }
 
-    // Tentativa de pairing code como alternativa ao QR (com delay e retry)
-    const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
-    if (phoneNumber && newClient.requestPairingCode) {
-      const requestWithRetry = async (attempt = 1) => {
-        const delay = Math.min(2000 * attempt, 10000);
-        await new Promise(r => setTimeout(r, delay));
-        try {
-          console.log(`[WhatsAppWeb] 🔢 Solicitando pairing code para ${phoneNumber} (tentativa ${attempt})...`);
-          const pairingCode = await newClient.requestPairingCode(phoneNumber);
-          console.log(`[WhatsAppWeb] 🔢 PAIRING CODE: ${pairingCode}`);
-          console.log(`[WhatsAppWeb] 🔢 Para usar: WhatsApp → Config → Aparelhos Conectados → Conectar com número → digite: ${pairingCode}`);
-          if (process.send) {
-            process.send({ type: 'whatsapp_pairing_code', pairingCode, phoneNumber });
-          }
-        } catch (pairErr) {
-          console.warn(`[WhatsAppWeb] Pairing code falhou (tentativa ${attempt}):`, pairErr.message, pairErr.stack?.slice(0, 200));
-          if (attempt < 3) {
-            console.log(`[WhatsAppWeb] 🔁 Retry pairing code em ${delay}ms...`);
-            await requestWithRetry(attempt + 1);
-          }
-        }
-      };
-      requestWithRetry().catch(() => {});
-    }
+    // Pairing code DESABILITADO temporariamente — estava travando o Puppeteer/CDP
+    // com Runtime.callFunctionOn timed out. Focando apenas no QR code.
+    // const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
+    // if (phoneNumber && newClient.requestPairingCode) { ... }
   });
 
   newClient.on('authenticated', async () => {
