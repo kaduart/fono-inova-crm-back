@@ -253,8 +253,6 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0, // 0 = nunca desistir — dá tempo ao usuário escanear
-    // Força download da versão mais recente do WhatsApp Web via remote cache
-    webVersionCache: { type: 'remote' },
     puppeteer: puppeteerOpts,
   });
 
