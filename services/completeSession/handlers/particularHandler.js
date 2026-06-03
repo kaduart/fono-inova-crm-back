@@ -60,7 +60,7 @@ export const ParticularHandler = {
      * Fase 2 — cria/atualiza Payment e ajusta Package.
      */
     async buildPayment(appointmentUpdate, ctx) {
-        const { appointment, appointmentId, sessionId, sessionValue, packageId, mongoSession, userId, isBalanceOrigin, sessionDoc } = ctx;
+        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc } = ctx;
 
         // Incrementa sessionsDone apenas se sessao NAO estava completed antes
         // (protecao contra retry/idempotencia)
