@@ -126,15 +126,35 @@ function startReadyPoll(newClient) {
 
 // ─── Resolve caminho do Chrome ───────────────────────────────────────────────
 function resolveChromePath() {
-  const candidates = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
+  // 1. Variável de ambiente explícita
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  // 2. Cache do puppeteer no projeto (.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome)
+  try {
+    const cacheDir = path.join(process.cwd(), '.cache', 'puppeteer', 'chrome');
+    if (fs.existsSync(cacheDir)) {
+      const versions = fs.readdirSync(cacheDir).filter(v => v.startsWith('linux-')).sort().reverse();
+      for (const v of versions) {
+        const p = path.join(cacheDir, v, 'chrome-linux64', 'chrome');
+        if (fs.existsSync(p)) {
+          console.log(`[WhatsAppWeb] Chrome encontrado no cache: ${p}`);
+          return p;
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Caminhos do sistema
+  const system = [
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
   ];
-  for (const p of candidates) {
-    if (p && fs.existsSync(p)) return p;
+  for (const p of system) {
+    if (fs.existsSync(p)) return p;
   }
   return null;
 }
@@ -441,6 +461,24 @@ export async function initWhatsAppClient() {
   isInitializing = true;
   initAttempts++;
   console.log(`[WhatsAppWeb] 🚀 Inicializando... (tentativa ${initAttempts}/${MAX_INIT_ATTEMPTS})`);
+
+  // ─── DIAGNÓSTICO COMPLETO ───────────────────────────────────────────────────
+  const chromePath = resolveChromePath();
+  console.log('[WhatsAppWeb][DIAG] Chrome path resolvido:', chromePath || 'NULL — usando default do puppeteer');
+  console.log('[WhatsAppWeb][DIAG] Node.js:', process.version);
+  console.log('[WhatsAppWeb][DIAG] CWD:', process.cwd());
+  console.log('[WhatsAppWeb][DIAG] Auth path:', authPath);
+  console.log('[WhatsAppWeb][DIAG] FORCE_CLEAN:', process.env.WHATSAPP_FORCE_CLEAN_SESSION);
+  try {
+    const cacheDir = path.join(process.cwd(), '.cache', 'puppeteer', 'chrome');
+    if (fs.existsSync(cacheDir)) {
+      console.log('[WhatsAppWeb][DIAG] Versões Chrome no cache:', fs.readdirSync(cacheDir).join(', '));
+    } else {
+      console.log('[WhatsAppWeb][DIAG] Cache puppeteer NÃO existe em:', cacheDir);
+    }
+  } catch (e) { console.warn('[WhatsAppWeb][DIAG] Erro ao listar cache:', e.message); }
+  // ───────────────────────────────────────────────────────────────────────────
+
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
@@ -449,6 +487,7 @@ export async function initWhatsAppClient() {
   } catch (err) {
     const msg = err?.message || String(err);
     console.error('[WhatsAppWeb] Falha na inicialização:', msg);
+    console.error('[WhatsAppWeb][DIAG] Stack completo:', err?.stack || 'sem stack');
     connectionStatus = 'error';
     await saveState();
     await safeDestroyClient();
