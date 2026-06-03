@@ -187,7 +187,7 @@ function createClient() {
 
   const puppeteerOpts = {
     headless: 'new',
-    protocolTimeout: 600_000,
+    protocolTimeout: 120_000,
     handleSIGINT: false,
     handleSIGTERM: false,
     handleSIGHUP: false,
@@ -197,30 +197,8 @@ function createClient() {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-default-apps',
-        '--disable-background-networking',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-breakpad',
-        '--disable-component-update',
-        '--disable-features=IsolateOrigins,site-per-process,AudioServiceOutOfProcess,InterestFeedContentSuggestions,MediaRouter,TranslateUI',
-        '--disable-site-isolation-trials',
-        '--disable-sync',
-        '--metrics-recording-only',
-        '--no-default-browser-check',
-        '--password-store=basic',
-        '--use-mock-keychain',
         '--no-zygote',
-        '--disable-features=AudioServiceOutOfProcess',
-        '--disable-software-rasterizer',
-        '--disable-gl-extensions',
-        '--disable-canvas-aa',
-        '--disable-composited-antialiasing',
-        '--media-cache-size=0',
-        '--disk-cache-size=0',
+        '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
       ],
@@ -253,11 +231,6 @@ function createClient() {
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
     qrMaxRetries: 0, // 0 = nunca desistir — dá tempo ao usuário escanear
-    // Força versão específica do WhatsApp Web compatível
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040753655-alpha.html',
-    },
     puppeteer: puppeteerOpts,
   });
 
