@@ -252,7 +252,7 @@ function createClient() {
     takeoverOnConflict: true,
     takeoverTimeoutMs: 30_000,
     restartOnAuthFail: false,
-    qrMaxRetries: 20,
+    qrMaxRetries: 0, // 0 = nunca desistir — dá tempo ao usuário escanear
     // Cache: usa LocalWebCache (padrão) porque limpamos .wwebjs_cache no boot.
     // Isso garante que a versão do WhatsApp Web seja sempre a mais recente.
     // webVersionCache: { type: 'remote', remotePath: '...' }
@@ -280,20 +280,29 @@ function createClient() {
       console.error('[WhatsAppWeb] Erro ao gerar QR:', err.message);
     }
 
-    // Tentativa de pairing code como alternativa ao QR
+    // Tentativa de pairing code como alternativa ao QR (com delay e retry)
     const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
     if (phoneNumber && newClient.requestPairingCode) {
-      try {
-        console.log(`[WhatsAppWeb] 🔢 Solicitando pairing code para ${phoneNumber}...`);
-        const pairingCode = await newClient.requestPairingCode(phoneNumber);
-        console.log(`[WhatsAppWeb] 🔢 PAIRING CODE: ${pairingCode}`);
-        console.log(`[WhatsAppWeb] 🔢 Para usar: WhatsApp no celular → Config → Aparelhos Conectados → Conectar com número de telefone → digite: ${pairingCode}`);
-        if (process.send) {
-          process.send({ type: 'whatsapp_pairing_code', pairingCode, phoneNumber });
+      const requestWithRetry = async (attempt = 1) => {
+        const delay = Math.min(2000 * attempt, 10000);
+        await new Promise(r => setTimeout(r, delay));
+        try {
+          console.log(`[WhatsAppWeb] 🔢 Solicitando pairing code para ${phoneNumber} (tentativa ${attempt})...`);
+          const pairingCode = await newClient.requestPairingCode(phoneNumber);
+          console.log(`[WhatsAppWeb] 🔢 PAIRING CODE: ${pairingCode}`);
+          console.log(`[WhatsAppWeb] 🔢 Para usar: WhatsApp → Config → Aparelhos Conectados → Conectar com número → digite: ${pairingCode}`);
+          if (process.send) {
+            process.send({ type: 'whatsapp_pairing_code', pairingCode, phoneNumber });
+          }
+        } catch (pairErr) {
+          console.warn(`[WhatsAppWeb] Pairing code falhou (tentativa ${attempt}):`, pairErr.message, pairErr.stack?.slice(0, 200));
+          if (attempt < 3) {
+            console.log(`[WhatsAppWeb] 🔁 Retry pairing code em ${delay}ms...`);
+            await requestWithRetry(attempt + 1);
+          }
         }
-      } catch (pairErr) {
-        console.warn('[WhatsAppWeb] Não foi possível obter pairing code:', pairErr.message);
-      }
+      };
+      requestWithRetry().catch(() => {});
     }
   });
 
@@ -434,9 +443,10 @@ function createClient() {
 export async function initWhatsAppClient() {
   console.log(`[WhatsAppWeb] 📂 Auth path: ${authPath}`);
 
-  // 🧨 Modo emergência: limpa sessão COMPLETAMENTE antes de criar qualquer cliente
-  if (process.env.WHATSAPP_FORCE_CLEAN_SESSION === 'true') {
-    console.log('[WhatsAppWeb] 🧨 WHATSAPP_FORCE_CLEAN_SESSION ativo — limpando tudo antes de iniciar');
+  // 🧨 LIMPEZA DE SESSÃO DESATIVADA por padrão — sessão deve persistir no disco.
+  // Para forçar limpeza manual: definir WHATSAPP_FORCE_CLEAN_SESSION='true' E WHATSAPP_ALLOW_CLEAN='true'
+  if (process.env.WHATSAPP_FORCE_CLEAN_SESSION === 'true' && process.env.WHATSAPP_ALLOW_CLEAN === 'true') {
+    console.log('[WhatsAppWeb] 🧨 LIMPEZA MANUAL autorizada — removendo sessão...');
     const targets = [
       path.join(authPath, '.wwebjs_auth'),
       path.join(authPath, '.booting'),
@@ -453,6 +463,8 @@ export async function initWhatsAppClient() {
         console.warn(`[WhatsAppWeb] ⚠️ Não foi possível remover ${t}:`, e.message);
       }
     }
+  } else {
+    console.log('[WhatsAppWeb] 💾 Sessão preservada — FORCE_CLEAN desativado.');
   }
 
   if (isReady && client) {
