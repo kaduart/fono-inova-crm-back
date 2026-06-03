@@ -168,13 +168,46 @@ router.post('/request', auth, async (req, res) => {
         // 🔍 VERIFICAÇÃO PRÉVIA: Appointment existe? (para appointment_payment)
         // ========================================
         if (type === 'appointment_payment' && appointmentId) {
-            const appointmentExists = await Appointment.exists({ _id: appointmentId });
-            if (!appointmentExists) {
+            const apptDoc = await Appointment.findById(appointmentId)
+                .select('billingType package')
+                .populate('package', 'paymentType model')
+                .lean();
+            if (!apptDoc) {
                 return res.status(404).json({
                     success: false,
                     error: 'Agendamento não encontrado',
                     code: 'APPOINTMENT_NOT_FOUND',
                     appointmentId
+                });
+            }
+
+            // 🛡️ GUARD: tipos que não permitem pagamento manual
+            const billingType = apptDoc.billingType;
+            const pkgPayType  = apptDoc.package?.paymentType || apptDoc.package?.model;
+            const isPrepaid   = pkgPayType === 'full' || pkgPayType === 'prepaid';
+
+            if (billingType === 'convenio') {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Convênio — pagamento gerenciado pela seguradora. Não é possível registrar pagamento manual.',
+                    code: 'PAYMENT_NOT_ALLOWED_CONVENIO',
+                    billingType
+                });
+            }
+            if (billingType === 'liminar') {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Liminar judicial — crédito gerenciado pelo sistema. Não é possível registrar pagamento manual.',
+                    code: 'PAYMENT_NOT_ALLOWED_LIMINAR',
+                    billingType
+                });
+            }
+            if (isPrepaid) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Pacote pré-pago — dinheiro já entrou na compra do pacote. Não é possível registrar pagamento por sessão.',
+                    code: 'PAYMENT_NOT_ALLOWED_PREPAID',
+                    packagePaymentType: pkgPayType
                 });
             }
         }

@@ -13,6 +13,7 @@
 
 import Payment from '../../../models/Payment.js';
 import Package from '../../../models/Package.js';
+import Session from '../../../models/Session.js';
 import LegacyFinanceWriteGuard from '../../financialGuard/LegacyFinanceWriteGuard.js';
 
 export const ParticularHandler = {
@@ -194,7 +195,14 @@ export const ParticularHandler = {
                         },
                         { session: mongoSession, new: true }
                     );
-                    console.log(`[ParticularHandler] [PER_SESSION] Payment já pago mantido: ${paymentCreated._id}`);
+                    // Pagamento pre-registrado (ex: tabela financeira) — sincroniza appointment e session
+                    appointmentUpdate.$set.paymentStatus = 'paid';
+                    await Session.findByIdAndUpdate(
+                        sessionId,
+                        { $set: { isPaid: true, paymentStatus: 'paid', paidAt: existingPayment.paidAt || existingPayment.financialDate || now } },
+                        { session: mongoSession }
+                    );
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment pre-registrado — appointment e session sincronizados: ${paymentCreated._id}`);
                 } else {
                     // Não está pago — atualiza para pending (ou mantém pending)
                     paymentCreated = await Payment.findByIdAndUpdate(
