@@ -603,6 +603,12 @@ router.post('/create-sync', auth, async (req, res) => {
 
     try {
         const now = new Date();
+        // Converte paymentDate para startOf('day') em Brasília para alinhar com o range do cashflow
+        // new Date('2026-06-03') = T00:00:00Z (UTC midnight) = 21h anterior em Brasília → cai fora do range
+        const financialDateBrasilia = paymentDate
+            ? moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
+            : now;
+
         const paymentData = {
             patient: patientId,
             patientId: patientId.toString(),
@@ -610,6 +616,7 @@ router.post('/create-sync', auth, async (req, res) => {
             amount,
             paymentMethod,
             paymentDate: paymentDate ? new Date(paymentDate) : now,
+            financialDate: financialDateBrasilia,
             status,
             serviceType,
             notes: notes || '',
