@@ -1311,10 +1311,28 @@ function generateImagePromptFromContent(content, especialidade) {
  * Adiciona transformacao na URL do Cloudinary para carregar mais rapido.
  * q_auto:low = compressao agressiva automatica
  * w_800 = largura maxima 800px (suficiente pro Google Business)
+ * f_jpg = FORCA formato JPEG (evita WebP que o GMB nao aceita)
+ * .jpg no final do path = OBRIGATORIO pro Google Business Profile fazer fetch
  */
-function optimizeCloudinaryUrl(url, transform = 'q_auto:low,w_800') {
+function optimizeCloudinaryUrl(url, transform = 'q_auto:low,w_800,f_jpg') {
   if (!url || !url.includes('/image/upload/')) return url;
-  return url.replace('/image/upload/', `/image/upload/${transform}/`);
+
+  // Injeta transformacao no path
+  let optimized = url.replace('/image/upload/', `/image/upload/${transform}/`);
+
+  // Garante extensao .jpg no final do path — o GMB exige isso pra fazer fetch da imagem
+  try {
+    const urlObj = new URL(optimized);
+    const lastSegment = urlObj.pathname.split('/').pop();
+    if (lastSegment && !/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lastSegment)) {
+      urlObj.pathname = urlObj.pathname + '.jpg';
+    }
+    optimized = urlObj.toString();
+  } catch {
+    // fallback: se URL for invalida por algum motivo, ignora e retorna o que tem
+  }
+
+  return optimized;
 }
 
 async function uploadToCloudinary(imageBlob, especialidadeId) {
@@ -1369,8 +1387,10 @@ export async function generateImageForEspecialidade(especialidade, postContent =
 
       if (existingImages) {
         console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImages.reuseCount}x)`);
+        // Força extensao .jpg e formato JPEG — o GMB exige isso no URL path
+        const gmbCompatibleUrl = optimizeCloudinaryUrl(existingImages.url);
         return {
-          url: existingImages.url,
+          url: gmbCompatibleUrl,
           provider: 'imagebank-reused',
           reused: true
         };

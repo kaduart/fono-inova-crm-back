@@ -43,6 +43,42 @@ function sanitizePermanentMedia(mediaUrl, postId) {
   return mediaUrl;
 }
 
+/**
+ * Garante que URLs do Cloudinary sejam compatíveis com Google Business Profile.
+ * O GMB exige:
+ *  1. Formato JPEG explicito (f_jpg) — evita WebP que o GMB rejeita
+ *  2. Extensao .jpg no final do path — senao da "Fetching image failed"
+ */
+function ensureGmbCompatibleUrl(url) {
+  if (!url || !url.includes('res.cloudinary.com')) return url;
+
+  try {
+    const urlObj = new URL(url);
+
+    // Forca formato JPEG se ainda nao estiver presente
+    if (!urlObj.pathname.includes('f_jpg')) {
+      const hasOtherTransforms = /\/image\/upload\/[^/]+,/.test(urlObj.pathname);
+      if (hasOtherTransforms) {
+        // Ja tem transformacoes — adiciona f_jpg no inicio delas
+        urlObj.pathname = urlObj.pathname.replace('/image/upload/', '/image/upload/f_jpg,');
+      } else {
+        // URL crua sem transformacoes
+        urlObj.pathname = urlObj.pathname.replace('/image/upload/', '/image/upload/f_jpg/');
+      }
+    }
+
+    // Garante extensao .jpg no final do path
+    const lastSegment = urlObj.pathname.split('/').pop();
+    if (lastSegment && !/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lastSegment)) {
+      urlObj.pathname = urlObj.pathname + '.jpg';
+    }
+
+    return urlObj.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Erro especial para fila cheia — permite tratamento diferenciado no caller
 export class MakeQueueFullError extends Error {
   constructor() {
@@ -187,6 +223,11 @@ export async function sendPostToMake(post, attempt = 1) {
 
   // 🔒 Sanitiza: URL fora do Cloudinary vira null (publica sem mídia, não quebra fluxo)
   safeMediaUrl = sanitizePermanentMedia(safeMediaUrl, post._id);
+
+  // 🖼️ Garante compatibilidade com GMB (extensao .jpg + formato JPEG)
+  if (safeMediaUrl) {
+    safeMediaUrl = ensureGmbCompatibleUrl(safeMediaUrl);
+  }
 
   const payload = {
     postId: post._id.toString(),
