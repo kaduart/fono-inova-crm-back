@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
+import moment from 'moment-timezone';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import mongoose from 'mongoose';
 import { 
@@ -195,7 +196,10 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         amount,
         paymentMethod,
         paymentDate: payload.paymentDate ? new Date(payload.paymentDate) : new Date(),
-        financialDate: payload.paymentDate ? new Date(payload.paymentDate) : new Date(), // 🎯 Fonte única
+        // Converte para startOf('day') em Brasília — evita UTC midnight cair no dia anterior
+        financialDate: payload.paymentDate
+            ? moment.tz(payload.paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
+            : new Date(),
         status: 'pending',
         billingType: 'particular', // 🎯 Dashboard separa por tipo
         source: 'appointment',
