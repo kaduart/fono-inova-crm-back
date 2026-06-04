@@ -23,6 +23,7 @@ import Payment from '../models/Payment.js';
 import PatientsView from '../models/PatientsView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
@@ -1490,12 +1491,18 @@ export const settlePackagePayments = async (req, res) => {
 
     // Atualiza payments para vinculados ao pacote
     for (const payment of payments) {
-      payment.status = 'paid';
-      payment.paidAt = new Date();
-      payment.financialDate = new Date();
       payment.package = pkg._id;
       if (paymentMethod) payment.paymentMethod = paymentMethod;
       await payment.save({ session: mongoSession });
+
+      // 🎯 STATUS TRANSITION: usa paymentStatusService
+      await transitionPaymentStatus(payment._id, 'paid', {
+        session: mongoSession,
+        paymentMethod: paymentMethod || payment.paymentMethod,
+        financialDate: new Date(),
+        paidAt: new Date(),
+        reason: 'package_settlement'
+      });
     }
 
     // Atualiza PatientBalance (crédito de quitação)

@@ -6,7 +6,7 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
-import financialMetricsService from './financialMetrics.service.js';
+import unifiedFinancialService from './unifiedFinancialService.v2.js';
 
 /**
  * Atualiza automaticamente o progresso do planejamento
@@ -34,8 +34,8 @@ export const updatePlanningProgress = async (planningId) => {
             Session.find({ date: { $gte: startDateObj, $lte: endDateObj }, status: 'completed' }).lean(),
             Payment.find({ paymentDate: { $gte: startDateObj, $lte: endDateObj }, status: 'paid' }).lean(),
             Appointment.find({ date: { $gte: startDateObj, $lte: endDateObj }, clinicalStatus: 'completed' }).lean(),
-            financialMetricsService.calculateProduction({ startDate, endDate }),
-            financialMetricsService.calculateCash({ startDate, endDate })
+            unifiedFinancialService.calculateProduction(startDate, endDate),
+            unifiedFinancialService.calculateCash(startDate, endDate)
         ]);
 
         const completedSessions = sessions.length;
@@ -43,15 +43,15 @@ export const updatePlanningProgress = async (planningId) => {
         // 🎯 RESULTADO ECONÔMICO DO MÊS
         // = caixa recebido + produção não recebida (convênio pendente)
         // Evita duplicar particular/pacote/liminar já recebidos.
-        const convenioProduzido = productionResult.byPaymentMethod?.['convenio']?.total || 0;
-        const convenioRecebido = (cashResult.breakdown?.convenioAvulso || 0) + (cashResult.breakdown?.convenioPacote || 0);
+        const convenioProduzido = productionResult.convenio || 0;
+        const convenioRecebido = (cashResult.convenio || 0) + (cashResult.pacote || 0);
         const convenioNaoRecebido = Math.max(0, convenioProduzido - convenioRecebido);
 
         const actualRevenue = (cashResult.total || 0) + convenioNaoRecebido;
-        const actualRevenueParticular = productionResult.byPaymentMethod?.['particular']?.total || 0;
-        const actualRevenuePacote = productionResult.byPaymentMethod?.['package']?.total || productionResult.byPaymentMethod?.['pacote']?.total || 0;
+        const actualRevenueParticular = productionResult.particular || 0;
+        const actualRevenuePacote = productionResult.pacote || 0;
         const actualRevenueConvenio = convenioProduzido;
-        const actualRevenueLiminar = productionResult.byPaymentMethod?.['liminar']?.total || productionResult.byPaymentMethod?.['liminar_credit']?.total || 0;
+        const actualRevenueLiminar = productionResult.liminar || 0;
         const actualRevenueConvenioAReceber = convenioNaoRecebido;
         
         // Calcular horas trabalhadas (baseado na duração dos agendamentos ou 40min padrão)

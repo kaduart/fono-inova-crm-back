@@ -9,6 +9,7 @@ import Payment from '../models/Payment.js';
 import Expense from '../models/Expense.js';
 import PackagesView from '../models/PackagesView.js';
 import PatientBalance from '../models/PatientBalance.js';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -64,57 +65,64 @@ export function startTotalsWorker() {
         const rangeStart = new Date(startStr);
         const rangeEnd = new Date(endStr);
 
-        // MATCH: Date direto no paymentDate
-        const matchStage = {
-            status: { $ne: 'canceled' },
-            kind: { $ne: 'package_consumed' }, // 🛡️ package_consumed NÃO é caixa
-            paymentDate: { $gte: rangeStart, $lte: rangeEnd }
-        };
-        if (clinicId) matchStage.clinicId = clinicId;
-
-        const [paymentResult, expenseResult, packageResult, balanceResult] = await Promise.all([
-            Payment.aggregate([
-                { $match: matchStage },
-                { $group: {
-                    _id: null,
-                    totalReceived: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-                    totalProduction: { $sum: '$amount' },
-                    totalPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
-                    countReceived: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
-                    countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-                    particularReceived: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'paid'] }, { $ne: ['$billingType', 'convenio'] }] }, '$amount', 0] } }
-                }}
-            ]),
+        // 🎯 FONTE ÚNICA DE VERDADE: unifiedFinancialService para caixa e produção
+        const [
+            cashResult,
+            productionResult,
+            expenseResult,
+            packageResult,
+            balanceResult,
+            pipelineResult
+        ] = await Promise.all([
+            unifiedFinancialService.calculateCash(rangeStart, rangeEnd),
+            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd),
             Expense.aggregate([
                 { $match: { status: { $ne: 'canceled' }, date: { $gte: startStr.split('T')[0], $lte: endStr.split('T')[0] } } },
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, totalExpensesPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }
             ]),
             PackagesView.aggregate([{ $match: { status: { $in: ['active', 'finished'] } } }, { $group: { _id: null, contractedRevenue: { $sum: '$totalValue' }, cashReceived: { $sum: '$totalPaid' }, deferredRevenue: { $sum: { $multiply: ['$sessionsRemaining', '$sessionValue'] } }, deferredSessions: { $sum: '$sessionsRemaining' }, recognizedRevenue: { $sum: { $multiply: ['$sessionsUsed', '$sessionValue'] } }, recognizedSessions: { $sum: '$sessionsUsed' }, totalSessions: { $sum: '$totalSessions' }, activePackages: { $sum: 1 } } }]),
-            PatientBalance.aggregate([{ $group: { _id: null, totalDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, '$currentBalance', 0] } }, totalCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, { $multiply: ['$currentBalance', -1] }, 0] } }, totalDebited: { $sum: '$totalDebited' }, totalCredited: { $sum: '$totalCredited' }, patientsWithDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, 1, 0] } }, patientsWithCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, 1, 0] } } } }])
+            PatientBalance.aggregate([{ $group: { _id: null, totalDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, '$currentBalance', 0] } }, totalCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, { $multiply: ['$currentBalance', -1] }, 0] } }, totalDebited: { $sum: '$totalDebited' }, totalCredited: { $sum: '$totalCredited' }, patientsWithDebt: { $sum: { $cond: [{ $gt: ['$currentBalance', 0] }, 1, 0] } }, patientsWithCredit: { $sum: { $cond: [{ $lt: ['$currentBalance', 0] }, 1, 0] } } } }]),
+            // Pipeline: payments pending/billed no período (para compatibilidade)
+            Payment.aggregate([
+                {
+                    $match: {
+                        status: { $in: ['pending', 'billed', 'partial'] },
+                        kind: { $ne: 'package_consumed' },
+                        paymentDate: { $gte: rangeStart, $lte: rangeEnd }
+                    }
+                },
+                { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+            ])
         ]);
 
-        const p = paymentResult[0] || {};
         const exp = expenseResult[0] || {};
         const pkg = packageResult[0] || {};
         const bal = balanceResult[0] || {};
-        
-        const totalReceived = p.totalReceived || 0;
+        const pipe = pipelineResult[0] || {};
+
+        const totalReceived = cashResult.total || 0;
         const totalExpenses = exp.totalExpenses || 0;
         const profit = totalReceived - totalExpenses;
 
         const totals = {
             totalReceived,
-            totalProduction: p.totalProduction || 0,
-            totalPending: p.totalPending || 0,
-            countReceived: p.countReceived || 0,
-            countPending: p.countPending || 0,
-            particularReceived: p.particularReceived || 0,
+            totalProduction: productionResult.total || 0,
+            totalPending: pipe.total || 0,
+            countReceived: cashResult.count || 0,
+            countPending: pipe.count || 0,
+            particularReceived: cashResult.byMethod?.particular?.total || cashResult.byMethod?.pix?.total || 0,
             insurance: { pendingBilling: 0, billed: 0, received: 0 },
             packageCredit: { contractedRevenue: pkg.contractedRevenue || 0, cashReceived: pkg.cashReceived || 0, deferredRevenue: Math.max(0, pkg.deferredRevenue || 0), deferredSessions: Math.max(0, pkg.deferredSessions || 0), recognizedRevenue: pkg.recognizedRevenue || 0, recognizedSessions: pkg.recognizedSessions || 0, totalSessions: pkg.totalSessions || 0, activePackages: pkg.activePackages || 0 },
             patientBalance: { totalDebt: bal.totalDebt || 0, totalCredit: bal.totalCredit || 0, totalDebited: bal.totalDebited || 0, totalCredited: bal.totalCredited || 0, patientsWithDebt: bal.patientsWithDebt || 0, patientsWithCredit: bal.patientsWithCredit || 0 },
             expenses: { total: totalExpenses, pending: exp.totalExpensesPending || 0, count: exp.countExpenses || 0 },
             profit,
-            profitMargin: totalReceived > 0 ? Math.round((profit / totalReceived) * 100 * 100) / 100 : 0
+            profitMargin: totalReceived > 0 ? Math.round((profit / totalReceived) * 100 * 100) / 100 : 0,
+            // 🆕 Camadas semânticas (novo contrato)
+            _semantic: {
+                cash: cashResult,
+                production: productionResult,
+                pipeline: { total: pipe.total || 0, count: pipe.count || 0 }
+            }
         };
 
         await TotalsSnapshot.findOneAndUpdate(

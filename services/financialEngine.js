@@ -1,19 +1,25 @@
 /**
  * ==============================================================================
- * FINANCIAL ENGINE - Source of Truth for Financial Calculations
+ * FINANCIAL ENGINE — PIPELINE / RECEIVABLES ONLY
  * ==============================================================================
- * 
- * 🏛️ REGRA DE DOMÍNIO DEFINITIVA (V2 PURA):
- * 
- *   💰 Payment  = dinheiro real  →  SOURCE OF TRUTH FINANCEIRA
- *   📅 Session  = execução clínica →  NUNCA fonte de cálculo financeiro
- *   📊 Ledger   = histórico interno →  APENAS referência, não verdade
- * 
- * ⚠️  PROIBIDO usar Session.sessionValue para qualquer cálculo financeiro.
- * ⚠️  PROIBIDO usar Session.status como proxy de status financeiro.
- * 
- * Este engine é o CORE FINANCEIRO da aplicação. TODAS as rotas V2 devem
- * usá-lo. A V1 é legado e será progressivamente desativada.
+ *
+ * ⚠️  ESTE ARQUIVO NÃO CALCULA CAIXA NEM PRODUÇÃO.
+ *
+ * Para CAIXA e PRODUÇÃO use: unifiedFinancialService.v2.js
+ *   → calculateCash(start, end)
+ *   → calculateProduction(start, end)
+ *
+ * Este engine calcula:
+ *   → PENDÊNCIAS (pending, partial)
+ *   → A RECEBER (receivables pipeline)
+ *   → Snapshot financeiro de dívidas/pendências por paciente
+ *
+ * 🏛️ REGRA DE DOMÍNIO:
+ *   💰 Payment  = dinheiro real  →  use unifiedFinancialService
+ *   📅 Session  = execução clínica →  use unifiedFinancialService
+ *   📊 Este engine = pipeline/receivables ONLY
+ *
+ * ⚠️  PROIBIDO usar este engine para calcular caixa ou produção.
  * ==============================================================================
  */
 

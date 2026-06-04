@@ -17,6 +17,7 @@ import { invalidateDailyClosingCache, invalidateCacheForPayment } from '../servi
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { recordPaymentReceived, recordInsuranceBilled, recordInsuranceReceived } from '../services/financialLedgerService.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 
 const router = express.Router();
 
@@ -3453,7 +3454,6 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
             : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
 
         payment.amount = finalAmount;
-        payment.status = 'paid';
         payment.insurance.status = isGlosa ? 'partial' : 'received';
         payment.insurance.receivedAt = receiptDate;
         payment.insurance.receivedAmount = finalAmount;
@@ -3463,6 +3463,16 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
         }
 
         await payment.save({ session: mongoSession });
+
+        // 🎯 STATUS TRANSITION: usa paymentStatusService para mudança de status
+        await transitionPaymentStatus(payment._id, 'paid', {
+            session: mongoSession,
+            paymentMethod: 'convenio',
+            financialDate: receiptDate,
+            paidAt: new Date(),
+            userId: req.user?._id,
+            reason: 'insurance_received'
+        });
 
         // Atualiza sessão como paga
         if (payment.session) {

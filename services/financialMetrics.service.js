@@ -16,6 +16,7 @@ import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
+import unifiedFinancialService from './unifiedFinancialService.v2.js';
 
 class FinancialMetricsService {
   
@@ -49,36 +50,28 @@ class FinancialMetricsService {
 
   /**
    * 💵 CAIXA (Cash)
-   * 
-   * Dinheiro efetivamente recebido no período.
-   * Fontes:
-   * 1. Payment.insurance.receivedAt (convênio avulso)
-   * 2. Payment.date (particular)
-   * 3. Session.paidAt (convênio pacote - FASE 1, com proteção)
+   *
+   * 🎯 WRAPPER — Fonte única: unifiedFinancialService.v2.js
+   *
+   * NUNCA altere este método diretamente.
+   * A lógica real está em unifiedFinancialService.calculateCash().
    */
   async calculateCash(period) {
     const start = period.startDate;
     const end = period.endDate;
 
-    // 1️⃣ Cash de Payments (convênio avulso + particular)
-    const paymentCash = await this._calculateCashFromPayments(start, end);
-
-    // 2️⃣ Cash de Sessions de pacote (FASE 1 - híbrido)
-    // APENAS sessões SEM paymentId (proteção contra dupla contagem futura)
-    const sessionCash = await this._calculateCashFromSessions(start, end);
-
-    const total = paymentCash.total + sessionCash.total;
+    const cash = await unifiedFinancialService.calculateCash(start, end);
 
     return {
-      total,
+      total: cash.total,
       bySource: {
-        payments: paymentCash,
-        sessions: sessionCash
+        payments: cash,
+        sessions: { total: 0, count: 0 }  // Sessions NUNCA são fonte de caixa
       },
       breakdown: {
-        particular: paymentCash.byType.particular || 0,
-        convenioAvulso: paymentCash.byType.convenio || 0,
-        convenioPacote: sessionCash.total
+        particular: cash.particular || 0,
+        convenioAvulso: cash.convenio || 0,
+        convenioPacote: cash.pacote || 0
       }
     };
   }
@@ -525,79 +518,22 @@ class FinancialMetricsService {
 
   /**
    * 🏭 PRODUÇÃO (Production)
-   * 
-   * Valor dos serviços realizados no período.
-   * Base: Session.status = 'completed' na data de realização.
-   * 
-   * IMPORTANTE: Produção ≠ Caixa (podem estar em meses diferentes)
+   *
+   * 🎯 WRAPPER — Fonte única: unifiedFinancialService.v2.js
+   *
+   * NUNCA altere este método diretamente.
+   * A lógica real está em unifiedFinancialService.calculateProduction().
    */
   async calculateProduction(period) {
     const start = period.startDate;
     const end = period.endDate;
 
-    // Valor real de uma sessão: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
-    const valorReal = {
-      $cond: {
-        if: { $gt: ['$sessionValue', 0] },
-        then: '$sessionValue',
-        else: {
-          $cond: {
-            if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
-            then: '$pkg.insuranceGrossAmount',
-            else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
-          }
-        }
-      }
-    };
-
-    const byPaymentMethod = await Session.aggregate([
-      {
-        $match: {
-          status: 'completed',
-          date: { $gte: start, $lte: end }
-        }
-      },
-      {
-        $lookup: {
-          from: 'packages',
-          localField: 'package',
-          foreignField: '_id',
-          as: 'pkg'
-        }
-      },
-      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
-      // Fallback: busca o grossAmount no Payment vinculado
-      {
-        $lookup: {
-          from: 'payments',
-          let: { sid: '$_id' },
-          pipeline: [
-            { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
-            { $project: { grossAmount: '$insurance.grossAmount' } },
-            { $limit: 1 }
-          ],
-          as: 'linkedPayment'
-        }
-      },
-      {
-        $group: {
-          _id: '$paymentMethod',
-          total: { $sum: valorReal },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const total = byPaymentMethod.reduce((sum, item) => sum + (item.total || 0), 0);
-    const count = byPaymentMethod.reduce((sum, item) => sum + (item.count || 0), 0);
+    const production = await unifiedFinancialService.calculateProduction(start, end);
 
     return {
-      total,
-      count,
-      byPaymentMethod: byPaymentMethod.reduce((acc, item) => {
-        acc[item._id || 'unknown'] = { total: item.total || 0, count: item.count || 0 };
-        return acc;
-      }, {})
+      total: production.total,
+      count: production.count || 0,
+      byPaymentMethod: production.byMethod || {}
     };
   }
 

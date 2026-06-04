@@ -389,7 +389,9 @@ router.get('/', auth, async (req, res) => {
                 despesas,
                 metas,
                 profissionais: profissionais.ranking,
-                indicadores
+                indicadores,
+                // 🆕 NOVA ARQUITETURA SEMÂNTICA V3
+                visaoSemantica: data.visaoSemantica,
             },
             data: {
                 period: { month: targetMonth, year: targetYear },
@@ -420,9 +422,31 @@ router.get('/', auth, async (req, res) => {
                 recebimentoProducao: data.recebimentoProducao,
                 retroativos: data.retroativos,
                 aReceberProducao: data.aReceberProducao,
-                metas,
+                // 🆕 Metas separadas por camada
+                metas: {
+                    ...metas,
+                    // Sobrescreve com valores calculados pelas camadas semânticas
+                    tipoPrincipal: metas.configuracao?.tipoMeta || 'producao',
+                    producao: {
+                        meta: metas.configuracao?.metaMensal || 0,
+                        atingido: metas.camadas?.producao?.atingido || data.producao || 0,
+                        percentual: metas.camadas?.producao?.percentual || 0,
+                    },
+                    caixa: {
+                        meta: metas.configuracao?.metaMensal || 0,
+                        atingido: metas.camadas?.caixa?.atingido || data.caixa || 0,
+                        percentual: metas.camadas?.caixa?.percentual || 0,
+                    },
+                    receitaProjetada: {
+                        meta: metas.configuracao?.metaMensal || 0,
+                        atingido: metas.camadas?.receitaProjetada?.atingido || data.receitaReconhecida || 0,
+                        percentual: metas.camadas?.receitaProjetada?.percentual || 0,
+                    }
+                },
                 profissionais,
                 insights,
+                // 🆕 Nova visão semântica
+                visaoSemantica: data.visaoSemantica,
                 comparativos,
                 riscoOperacional,
                 acoesExecutivas,
@@ -468,7 +492,7 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
             console.log(`[DashboardV3] Snapshots deletados: ${deleted.deletedCount} (${startStr} → ${endStr})`);
         }
 
-        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
+        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.v2.js');
 
         // 1. Reprocessar Sessions completed
         const startDateObj = moment.tz(startDate, TIMEZONE).startOf('day').toDate();
@@ -656,40 +680,55 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const diasUteis = goal.diasUteis;
     const metaDiariaNecessaria = metaMensal / diasUteis;
 
-    // 🎯 REALIZADO MÊS = caixa recebido + produção ainda não paga
-    //   - data.caixa         → Payments status='paid' no mês (particular, pacote per-session, liminar, venda de pacote)
-    //   - data.aReceberProducao → Sessões completadas sem pagamento recebido:
-    //       • convenio atendido → entra via calculateNovaReceita.convenioProduction (Sessions.status=completed)
-    //       • particular pendente → Isis, "vai mandar os dados", etc.
-    // NÃO usa novaReceitaMes aqui — ela exclui retroativos e sessões particulares pendentes.
+    // ─── LEGADO: REALIZADO MÊS = caixa + aReceber (mantido para compatibilidade) ───
+    // ⚠️ NÃO use realizadoMes como base de ritmo/status — ele é receita PROJETADA, não produção
     const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-
-    // 🎯 REALIZADO DIA = caixa hoje + convênio produzido hoje + particular pendente hoje
-    // Garante que convenios atendidos entram na meta do dia mesmo sem pagamento recebido.
     const realizadoDia = (data.caixaHoje || 0) + (data.convenioHoje || 0) + (data.particularPendenteHoje || 0);
     const producaoDia  = data.producaoHoje || 0;
 
-    const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
-    const projecaoFinal = isMonthClosed ? realizadoMes : mediaDiariaAtual * daysInMonth;
+    // ─── 🆕 NOVO: Métricas separadas por camada semântica ───
+    // 🎯 Meta principal = PRODUÇÃO — todas as métricas de ritmo usam produção
+    const caixaRealizadoMes = data.caixa || 0;
+    const producaoRealizadaMes = data.producao || 0;
+    const receitaProjetadaMes = data.visaoSemantica?.projecao?.total || realizadoMes;
 
-    const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
+    // ─── RITMO baseado em PRODUÇÃO (não em caixa ou receita projetada) ───
+    const mediaDiariaAtual = daysPassed > 0 ? producaoRealizadaMes / daysPassed : 0;
+    const projecaoFinal = isMonthClosed ? producaoRealizadaMes : mediaDiariaAtual * daysInMonth;
+
+    // 🎯 Projeção ESPERADA (conservadora): já realizada + 70% do pipeline + 60% da média nos dias restantes
+    const pipelineAtual = data.aReceberProducao || 0;
+    const projecaoEsperada = isMonthClosed
+      ? producaoRealizadaMes
+      : Math.min(
+          projecaoFinal,
+          producaoRealizadaMes + (pipelineAtual * 0.7) + ((mediaDiariaAtual * daysRemaining) * 0.6)
+        );
+
+    const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - producaoRealizadaMes, 0);
     const gapPorDia = daysRemaining > 0 ? gapValor / daysRemaining : 0;
 
     const ritmoEsperado = (daysPassed / daysInMonth) * metaMensal;
-    const diferencaRitmo = realizadoMes - ritmoEsperado;
+    const diferencaRitmo = producaoRealizadaMes - ritmoEsperado;
 
     const percentualEsperado = (daysPassed / daysInMonth) * 100;
-    const percentualRealizado = metaMensal > 0 ? (realizadoMes / metaMensal) * 100 : 0;
+    // 🎯 percentualRealizado agora = percentual de PRODUÇÃO (não receita projetada)
+    const percentualRealizado = metaMensal > 0 ? (producaoRealizadaMes / metaMensal) * 100 : 0;
+
+    // 🆕 Percentuais por camada semântica (mantidos para referência)
+    const percentualProducao = percentualRealizado; // mesma coisa agora
+    const percentualCaixa = metaMensal > 0 ? (caixaRealizadoMes / metaMensal) * 100 : 0;
+    const percentualProjetada = metaMensal > 0 ? (receitaProjetadaMes / metaMensal) * 100 : 0;
 
     let statusMeta = 'vermelho';
-    if (percentualRealizado >= 100) statusMeta = 'verde';
-    else if (percentualRealizado >= 80) statusMeta = 'amarelo-verde';
-    else if (percentualRealizado >= 60) statusMeta = 'amarelo';
+    if (percentualProducao >= 100) statusMeta = 'verde';
+    else if (percentualProducao >= 80) statusMeta = 'amarelo-verde';
+    else if (percentualProducao >= 60) statusMeta = 'amarelo';
 
     const alertas = {
-        atrasado: metaMensal > 0 && realizadoMes < ritmoEsperado,
-        critico: metaMensal > 0 && realizadoDia < (metaDiariaNecessaria * 0.7),
-        ok: metaMensal > 0 && realizadoMes >= metaMensal,
+        atrasado: metaMensal > 0 && producaoRealizadaMes < ritmoEsperado,
+        critico: metaMensal > 0 && producaoDia < (metaDiariaNecessaria * 0.7),
+        ok: metaMensal > 0 && producaoRealizadaMes >= metaMensal,
         mensagem: []
     };
 
@@ -698,11 +737,11 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     } else if (alertas.ok) {
         alertas.mensagem.push('🎉 Meta mensal batida!');
     } else if (alertas.critico) {
-        alertas.mensagem.push('⚠️ Dia crítico: caixa abaixo de 70% da meta diária.');
+        alertas.mensagem.push('⚠️ Dia crítico: produção abaixo de 70% da meta diária.');
     } else if (alertas.atrasado) {
-        alertas.mensagem.push('🐢 Ritmo abaixo do necessário para bater meta.');
+        alertas.mensagem.push('🐢 Ritmo de produção abaixo do necessário para bater meta.');
     } else {
-        alertas.mensagem.push('✅ Ritmo adequado para meta mensal.');
+        alertas.mensagem.push('✅ Ritmo de produção adequado para meta mensal.');
     }
 
     if (metaMensal > 0) {
@@ -717,24 +756,35 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
         configuracao: {
             metaMensal,
             diasUteis,
-            metaDiariaNecessaria: parseFloat(metaDiariaNecessaria.toFixed(2))
+            metaDiariaNecessaria: parseFloat(metaDiariaNecessaria.toFixed(2)),
+            // 🆕 Indica qual é a base da meta principal
+            tipoMeta: 'producao',  // Meta principal = PRODUÇÃO (não caixa)
         },
         realizado: {
+            // 🎯 realizado.mes agora = PRODUÇÃO (não receita projetada)
+            mes: parseFloat(producaoRealizadaMes.toFixed(2)),
+            hoje: parseFloat(producaoDia.toFixed(2))
+        },
+        // Legado: mantém caixa + aReceber em campo separado para compat
+        realizadoLegado: {
             mes: parseFloat(realizadoMes.toFixed(2)),
             hoje: parseFloat(realizadoDia.toFixed(2))
         },
-        producaoHoje: parseFloat(producaoDia.toFixed(2)),
         ritmo: {
             esperadoAteAgora: parseFloat(ritmoEsperado.toFixed(2)),
-            realizadoAteAgora: parseFloat(realizadoMes.toFixed(2)),
+            // 🎯 realizadoAteAgora = PRODUÇÃO (fonte da verdade)
+            realizadoAteAgora: parseFloat(producaoRealizadaMes.toFixed(2)),
             diferenca: parseFloat(diferencaRitmo.toFixed(2)),
             mediaDiariaAtual: parseFloat(mediaDiariaAtual.toFixed(2)),
             percentualEsperado: parseFloat(percentualEsperado.toFixed(1)),
+            // 🎯 percentualRealizado = % de PRODUÇÃO contra meta
             percentualRealizado: parseFloat(percentualRealizado.toFixed(1))
         },
         projecao: {
             final: parseFloat(projecaoFinal.toFixed(2)),
-            bateMeta: projecaoFinal >= metaMensal
+            esperada: parseFloat(projecaoEsperada.toFixed(2)),
+            bateMeta: projecaoEsperada >= metaMensal,
+            bateMetaOtimista: projecaoFinal >= metaMensal
         },
         gap: {
             valor: parseFloat(gapValor.toFixed(2)),
@@ -763,6 +813,21 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
                 meta: parseFloat((goal.breakdown.liminar || 0).toFixed(2)),
                 realizado: parseFloat((data.producaoDetalhe.liminar || 0).toFixed(2)),
                 percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.liminar || 0) / data.producao * 100).toFixed(1)) : 0
+            }
+        },
+        // 🆕 CAMADAS SEMÂNTICAS para preenchimento do data.metas
+        camadas: {
+            producao: {
+                atingido: parseFloat(producaoRealizadaMes.toFixed(2)),
+                percentual: parseFloat(percentualProducao.toFixed(1)),
+            },
+            caixa: {
+                atingido: parseFloat(caixaRealizadoMes.toFixed(2)),
+                percentual: parseFloat(percentualCaixa.toFixed(1)),
+            },
+            receitaProjetada: {
+                atingido: parseFloat(receitaProjetadaMes.toFixed(2)),
+                percentual: parseFloat(percentualProjetada.toFixed(1)),
             }
         }
     };
@@ -1276,16 +1341,23 @@ async function calculateRealTime(year, month) {
     const pacotePendente     = production.pacotePendente     || 0;
 
     // ──────────────────────────────────────────────────────────────
-    // VISÃO OPERACIONAL — derivada de produção e pendentes
-    // Não depende de serviceDate (dado histórico corrompido no banco)
+    // 🏗️ ARQUITETURA SEMÂNTICA V3 — 3 camadas explícitas
     //
-    //   aReceber    = tudo que foi produzido mas ainda não pago
-    //   recebido    = produção - aReceber  (o que já virou caixa DESSE mês)
-    //   retroativos = caixa total - recebido  (recebimentos de outros meses)
+    // 1. FINANCEIRO (dinheiro que entrou): payments.status === 'paid'
+    // 2. OPERAÇÃO   (trabalho realizado):  sessions.status === 'completed'
+    // 3. PIPELINE   (dinheiro a entrar):   payments.status === 'pending'/'billed'
+    //
+    // Esses conceitos acontecem em momentos diferentes e NÃO devem ser confundidos.
+    // Ex: pacote prepaid entra no caixa na VENDA, mas na produção no CONSUMO.
     // ──────────────────────────────────────────────────────────────
+
     const aReceberProducao   = convenioAReceber + particularPendente + pacotePendente + liminarAReceber;
     const recebidoProducao   = Math.max(0, (production.total || 0) - aReceberProducao);
     const retroativos        = Math.max(0, cash.total - recebidoProducao);
+
+    // 🆕 RECEITA PROJETADA = caixa realizado + a receber
+    // Representa "quanto a clínica vai ter se todo mundo pagar"
+    const receitaProjetada = cash.total + aReceberProducao;
 
     const caixaBlock = buildCaixaBlock({
         total: cash.total,
@@ -1306,7 +1378,12 @@ async function calculateRealTime(year, month) {
         liminar: production.liminar,
     });
 
+    // 🆕 Cálculo de dias decorridos para contexto da meta
+    const diasDecorridos = Math.max(1, now.date());
+    const diasUteis = META_CONFIG.diasUteis;
+
     return {
+        // ─── LEGADO (mantido para compatibilidade com frontend antigo) ───
         caixa: caixaBlock.total,
         receitaReal: cash.receitaReal,
         receitaDiferida: cash.receitaDiferida,
@@ -1333,7 +1410,6 @@ async function calculateRealTime(year, month) {
         particularPendente,
         pacotePendente,
         saldo: cash.total,
-        // VISÃO OPERACIONAL — recebimento da produção deste mês
         recebimentoProducao: {
             total: recebidoProducao,
             particular: Math.max(0, (production.particular || 0) - particularPendente),
@@ -1343,8 +1419,74 @@ async function calculateRealTime(year, month) {
         },
         retroativos,
         aReceberProducao,
-        receitaReconhecida: cash.total + aReceberProducao,
+        receitaReconhecida: receitaProjetada,  // 🆕 agora = caixa + a_receber
         novaReceitaMes,
+
+        // ─── 🆕 NOVA ARQUITETURA SEMÂNTICA V3 ───
+        visaoSemantica: {
+            financeiro: {
+                label: 'Caixa Realizado',
+                descricao: 'Dinheiro que REALMENTE entrou no caixa/banco',
+                total: cash.total,
+                hoje: todayCash.total,
+                particular: cash.particular,
+                pacote: cash.pacote,
+                convenio: cash.convenio,
+                liminar: cash.liminar,
+                porMetodo: cash.byMethod,
+            },
+            operacao: {
+                label: 'Produção Realizada',
+                descricao: 'Trabalho que a clínica REALMENTE executou',
+                total: production.total,
+                hoje: todayProduction.total || 0,
+                particular: production.particular,
+                pacote: production.pacote,
+                convenio: production.convenio,
+                liminar: production.liminar,
+                quantidadeAtendimentos: production.count,
+                ticketMedio: production.count > 0 ? production.total / production.count : 0,
+            },
+            pipeline: {
+                label: 'A Receber',
+                descricao: 'Dinheiro já "ganho" mas ainda não recebido',
+                total: aReceberProducao,
+                convenio: convenioAReceber,
+                particular: particularPendente,
+                pacote: pacotePendente,
+                liminar: liminarAReceber,
+            },
+            projecao: {
+                label: 'Receita Projetada',
+                descricao: 'Quanto a clínica vai ter se todo mundo pagar (caixa + a receber)',
+                total: receitaProjetada,
+            },
+            contextoTemporal: {
+                diasDecorridos,
+                diasUteis,
+                percentualMes: Math.round((diasDecorridos / diasUteis) * 100),
+            }
+        },
+
+        // ─── METAS SEPARADAS ───
+        metas: {
+            tipoPrincipal: 'producao',  // 🆕 Meta principal = PRODUÇÃO (não caixa)
+            producao: {
+                meta: null,  // preenchido pelo calculateMetas
+                atingido: production.total,
+                percentual: 0,
+            },
+            caixa: {
+                meta: null,  // preenchido pelo calculateMetas
+                atingido: cash.total,
+                percentual: 0,
+            },
+            receitaProjetada: {
+                meta: null,
+                atingido: receitaProjetada,
+                percentual: 0,
+            }
+        },
     };
 }
 
@@ -1978,6 +2120,94 @@ router.get('/sanity-check', auth, async (req, res) => {
             timestamp: new Date().toISOString()
         });
     } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * POST /v2/financial/dashboard/rebuild-snapshot
+ * Reconstrói o FinancialDailySnapshot para um range de datas.
+ * Usa unifiedFinancialService como fonte determinística da verdade.
+ */
+import { rebuildSnapshotRange } from '../workers/financialSnapshotWorker.v2.js';
+
+router.post('/rebuild-snapshot', auth, async (req, res) => {
+    try {
+        const { startDate, endDate } = req.body;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'startDate e endDate são obrigatórios (YYYY-MM-DD)'
+            });
+        }
+
+        console.log(`[DashboardV3] 🔄 Rebuild solicitado: ${startDate} → ${endDate} por ${req.user?.name || req.user?.email}`);
+
+        const results = await rebuildSnapshotRange(startDate, endDate);
+
+        const ok = results.filter(r => r.status === 'ok');
+        const errors = results.filter(r => r.status === 'error');
+
+        res.json({
+            success: true,
+            message: `Rebuild concluído: ${ok.length} dias OK, ${errors.length} erros`,
+            range: { startDate, endDate },
+            results,
+            errors: errors.length > 0 ? errors : undefined,
+            executedBy: req.user?.name || req.user?.email
+        });
+    } catch (err) {
+        console.error('[DashboardV3] ❌ Erro no rebuild:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * POST /v2/financial/dashboard/validate-snapshot
+ * 🔍 SHADOW VALIDATION: compara snapshot vs realtime
+ * Não altera dados — apenas lê e reporta divergências.
+ */
+import { validateSnapshotVsRealtime, validateSnapshotRange } from '../workers/financialSnapshotWorker.v2.js';
+
+router.post('/validate-snapshot', auth, async (req, res) => {
+    try {
+        const { startDate, endDate, date } = req.body;
+
+        if (date) {
+            // Validação de um dia específico
+            const result = await validateSnapshotVsRealtime(date);
+            return res.json({
+                success: true,
+                mode: 'shadow_validation',
+                date,
+                ...result,
+                action: result.hasDivergence
+                    ? 'Divergência detectada — considere rebuild-snapshot para este dia'
+                    : 'Snapshot alinhado com realtime'
+            });
+        }
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Informe date (YYYY-MM-DD) ou startDate+endDate'
+            });
+        }
+
+        const result = await validateSnapshotRange(startDate, endDate);
+
+        res.json({
+            success: true,
+            mode: 'shadow_validation',
+            ...result,
+            healthy: result.divergenceCount === 0,
+            action: result.divergenceCount > 0
+                ? `${result.divergenceCount} dias com divergência — considere rebuild`
+                : 'Todos os snapshots alinhados com realtime'
+        });
+    } catch (err) {
+        console.error('[DashboardV3] ❌ Erro na validação:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });

@@ -96,26 +96,24 @@ class PaymentService {
      */
     static async markAsPaid(paymentId, dados = {}) {
         const { paymentMethod, paidAt = new Date(), userId } = dados;
-        
-        const update = {
-            status: 'paid',
+
+        // 🎯 USA paymentStatusService — ÚNICO caminho para mudança de status
+        const { transitionPaymentStatus } = await import('./paymentStatusService.js');
+        const { payment } = await transitionPaymentStatus(paymentId, 'paid', {
             paidAt: new Date(paidAt),
-            confirmedAt: new Date(),
-            financialDate: new Date(paidAt),  // 🎯 Fonte única de verdade
-            ...(paymentMethod && { paymentMethod }),
-            ...(userId && { confirmedBy: userId })
-        };
-        
-        const payment = await Payment.findByIdAndUpdate(
-            paymentId,
-            { $set: update },
-            { new: true }
-        );
-        
-        if (!payment) throw new Error(`[PaymentService] Payment não encontrado: ${paymentId}`);
-        
+            financialDate: new Date(paidAt),
+            paymentMethod,
+            userId,
+            reason: 'paymentService_markAsPaid'
+        });
+
+        // Campos adicionais que não são gerenciados pelo paymentStatusService
+        if (userId && !payment.confirmedBy) {
+            payment.confirmedBy = userId;
+            await payment.save();
+        }
+
         console.log(`[PaymentService] Pago: ${paymentId} | R$${payment.amount}`);
-        
         return payment;
     }
     

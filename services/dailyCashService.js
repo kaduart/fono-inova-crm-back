@@ -1,42 +1,22 @@
-// services/dailyCashService.js ou na rota de relatório
+// services/dailyCashService.js
+// 🎯 FONTE ÚNICA DE VERDADE — Wrapper sobre unifiedFinancialService.v2.js
+
+import moment from 'moment-timezone';
+import unifiedFinancialService from './unifiedFinancialService.v2.js';
 
 const getDailyCash = async (date) => {
     const startOfDay = moment(date).startOf('day').toDate();
     const endOfDay = moment(date).endOf('day').toDate();
 
-    return Payment.aggregate([
-        {
-            $match: {
-                $and: [
-                    // Data do pagamento efetivo
-                    {
-                        $or: [
-                            // Particular: data normal
-                            { billingType: 'particular', paymentDate: { $gte: startOfDay, $lte: endOfDay } },
-                            // Convênio: só quando recebeu
-                            {
-                                billingType: 'convenio',
-                                'insurance.status': 'received',
-                                'insurance.receivedAt': { $gte: startOfDay, $lte: endOfDay }
-                            }
-                        ]
-                    },
-                    { status: { $ne: 'cancelled' } },
-                    { kind: { $ne: 'package_consumed' } }
-                ]
-            }
-        },
-        {
-            $group: {
-                _id: null,
-                totalParticular: {
-                    $sum: { $cond: [{ $eq: ['$billingType', 'particular'] }, '$amount', 0] }
-                },
-                totalConvenio: {
-                    $sum: { $cond: [{ $eq: ['$billingType', 'convenio'] }, '$insurance.receivedAmount', 0] }
-                },
-                total: { $sum: '$amount' }
-            }
-        }
-    ]);
+    const cash = await unifiedFinancialService.calculateCash(startOfDay, endOfDay);
+
+    return [{
+        totalParticular: cash.particular || 0,
+        totalConvenio: cash.convenio || 0,
+        totalPacote: cash.pacote || 0,
+        totalLiminar: cash.liminar || 0,
+        total: cash.total || 0
+    }];
 };
+
+export default getDailyCash;

@@ -1342,10 +1342,13 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
   const result = await cloudinary.uploader.upload(base64, {
     folder: 'fono-inova/gmb',
     public_id: `${especialidadeId}_${Date.now()}`,
-    transformation: [{ width: 1024, height: 1024, crop: 'fill', quality: 'auto' }],
+    transformation: [{ width: 1024, height: 1024, crop: 'fill', quality: 'auto', format: 'jpg' }],
+    eager: [{ width: 800, quality: 'auto:low', format: 'jpg', crop: 'limit' }],
+    eager_async: false,
   });
 
-  return optimizeCloudinaryUrl(result.secure_url);
+  // Usa URL eager (pré-processada e cacheada) — evita redirect on-demand que o GMB API não segue
+  return result.eager?.[0]?.secure_url || result.secure_url;
 }
 
 // ─────────────────────────────────────────────
@@ -1422,8 +1425,11 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         resource_type: 'image',
         type:          'upload',
         access_mode:   'public',
+        eager: [{ width: 800, quality: 'auto:low', format: 'jpg', crop: 'limit' }],
+        eager_async: false,
       });
-      const optimizedUrl = optimizeCloudinaryUrl(result.secure_url);
+      // Usa URL eager (pré-processada e cacheada) — evita redirect on-demand que o GMB API não segue
+      const optimizedUrl = result.eager?.[0]?.secure_url || result.secure_url;
       console.log('✅ Upload OK:', optimizedUrl.substring(0, 60) + '...');
       return optimizedUrl;
     } catch (e) {

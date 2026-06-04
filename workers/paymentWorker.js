@@ -14,6 +14,7 @@ import {
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
 import { withLock } from '../utils/redisLock.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 
 /**
  * Payment Worker - Processa pagamentos com Saga Pattern
@@ -89,7 +90,7 @@ export function startPaymentWorker() {
 
             // 🆕 V2: atualiza snapshot financeiro de forma não-bloqueante
             try {
-                const { processFinancialEvent } = await import('./financialSnapshotWorker.js');
+                const { processFinancialEvent } = await import('./financialSnapshotWorker.v2.js');
                 processFinancialEvent(eventType, payload).catch(err =>
                     log.error('snapshot_update_error', err.message, { eventId, eventType })
                 );
@@ -229,11 +230,11 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         });
 
         // ✅ CONFIRMA PAYMENT IMEDIATAMENTE (sessão já foi completada antes deste evento)
-        await Payment.findByIdAndUpdate(payment._id, {
-            status: 'paid',
+        await transitionPaymentStatus(payment._id, 'paid', {
+            paymentMethod: payment.paymentMethod || 'pix',
+            financialDate: payment.paymentDate || new Date(),
             paidAt: new Date(),
-            confirmedAt: new Date(),
-            updatedAt: new Date()
+            reason: 'payment_link_confirmed'
         });
         log.info('payment_confirmed', `Pagamento confirmado como paid: ${payment._id}`);
 
@@ -891,22 +892,21 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
         const isPartial = updated.receivedAmount > 0 && !isFullyPaid;
         const newStatus = isFullyPaid ? 'paid' : (isPartial ? 'partial' : 'pending');
 
-        // 3. Atualiza status e metadados (apenas se mudou)
-        if (newStatus !== updated.status || isFullyPaid) {
-            const updateFields = { status: newStatus };
-            if (isFullyPaid) {
-                updateFields.paidAt = new Date();
-                updateFields.paymentMethod = paymentMethod;
-            }
-            if (notes) {
-                updateFields.notes = updated.notes 
-                    ? `${updated.notes} | ${notes}` 
-                    : notes;
-            }
-
+        // 3. Atualiza status via paymentStatusService (apenas se mudou)
+        if (newStatus !== updated.status) {
+            await transitionPaymentStatus(updated._id, newStatus, {
+                session: mongoSession,
+                paymentMethod: isFullyPaid ? paymentMethod : undefined,
+                paidAt: isFullyPaid ? new Date() : undefined,
+                financialDate: updated.paymentDate || new Date(),
+                reason: isFullyPaid ? 'payment_received_full' : 'payment_received_partial'
+            });
+        }
+        // Notes é atualizado separadamente (não afeta status)
+        if (notes) {
             await Payment.updateOne(
                 { _id: updated._id },
-                { $set: updateFields },
+                { $set: { notes: updated.notes ? `${updated.notes} | ${notes}` : notes } },
                 { session: mongoSession }
             );
         }
@@ -1115,11 +1115,13 @@ async function confirmPaymentFlow(payment, appointment, correlationId, log) {
         await mongoSession.startTransaction();
         
         // 1. Atualiza pagamento para 'paid'
-        await Payment.findByIdAndUpdate(payment._id, {
-            status: 'paid',
+        await transitionPaymentStatus(payment._id, 'paid', {
+            session: mongoSession,
+            paymentMethod: payment.paymentMethod || 'pix',
+            financialDate: payment.paymentDate || new Date(),
             paidAt: new Date(),
-            confirmedAt: new Date()
-        }, { session: mongoSession });
+            reason: 'saga_confirm'
+        });
         
         // 2. Confirma agendamento
         await Appointment.findByIdAndUpdate(appointment._id, {
@@ -1311,19 +1313,22 @@ async function handlePaymentConfirmed(payload, eventId, correlationId, log) {
     }
     
     // Atualiza com dados da transação
-    await Payment.findByIdAndUpdate(paymentId, {
-        status: 'paid',
-        paidAt: new Date(),
-        confirmedAt: new Date(),
-        transactionId,
-        $push: {
-            history: {
-                action: 'confirmed_via_webhook',
-                transactionId,
-                timestamp: new Date()
-            }
-        }
-    });
+    const payment = await Payment.findById(paymentId);
+    if (payment) {
+        await transitionPaymentStatus(paymentId, 'paid', {
+            paymentMethod: payment.paymentMethod || 'pix',
+            financialDate: payment.paymentDate || new Date(),
+            paidAt: new Date(),
+            reason: 'webhook_confirmed'
+        });
+        payment.transactionId = transactionId;
+        payment.history.push({
+            action: 'confirmed_via_webhook',
+            transactionId,
+            timestamp: new Date()
+        });
+        await payment.save();
+    }
     
     // Confirma agendamento
     await Appointment.findByIdAndUpdate(payment.appointment, {

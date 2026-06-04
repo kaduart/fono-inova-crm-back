@@ -1,6 +1,7 @@
 // domain/payment/cancelPayment.js
 import Payment from '../../models/Payment.js';
 import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
+import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
 
 /**
  * Cancela um pagamento (se aplicável)
@@ -52,12 +53,15 @@ export async function cancelPayment(paymentId, options = {}) {
     }
 
     // ❌ CANCELA PAYMENT
-    payment.status = 'canceled';
-    payment.canceledAt = new Date();
-    payment.canceledReason = reason;
-    payment.updatedAt = new Date();
+    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
+        session: sessionOptions?.session,
+        reason: reason || 'manual_cancel'
+    });
 
-    await payment.save(sessionOptions);
+    updatedPayment.canceledAt = new Date();
+    updatedPayment.canceledReason = reason;
+    updatedPayment.updatedAt = new Date();
+    await updatedPayment.save(sessionOptions);
 
     // Invalida cache do daily-closing para a data do pagamento
     await invalidateCacheForPayment(payment);

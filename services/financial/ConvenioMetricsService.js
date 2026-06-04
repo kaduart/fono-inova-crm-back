@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import Session from '../../models/Session.js';
 import Package from '../../models/Package.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
+import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -815,10 +816,14 @@ class ConvenioMetricsService {
             }
             
             // Marca como pago - ISSO FAZ APARECER NO CAIXA DO DIA DO RECEBIMENTO!
-            payment.status = 'paid';
-            payment.paidAt = new Date(dataRecebimento);
+            await transitionPaymentStatus(payment._id, 'paid', {
+                paymentMethod: 'convenio',
+                financialDate: new Date(dataRecebimento),
+                paidAt: new Date(dataRecebimento),
+                reason: 'convenio_metrics_receipt'
+            });
+            // Atualiza paymentDate separadamente (não gerenciado pelo paymentStatusService)
             payment.paymentDate = dataRecebimento;
-
             await payment.save();
 
             console.log(`[ConvenioMetrics] Recebimento registrado no caixa de ${dataRecebimento} - Valor: R$${valorEfetivo}`);

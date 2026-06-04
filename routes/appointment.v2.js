@@ -23,6 +23,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
 import Doctor from '../models/Doctor.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
 // 🔒 LOCK V2: Não usar appointmentCompleteService (legado)
@@ -695,10 +696,12 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
         ? await Payment.findById(appointment.payment).session(mongoSession)
         : await Payment.findOne({ appointment: id, status: { $ne: 'canceled' } }).session(mongoSession);
       if (orphanPayment && orphanPayment.status !== 'canceled') {
-        orphanPayment.status = 'canceled';
+        await transitionPaymentStatus(orphanPayment._id, 'canceled', {
+          session: mongoSession,
+          reason: reason || 'cleanup_on_already_canceled'
+        });
         orphanPayment.canceledAt = new Date();
         orphanPayment.canceledReason = reason || 'cleanup_on_already_canceled';
-        orphanPayment.updatedAt = new Date();
         await orphanPayment.save({ session: mongoSession });
         console.log(`[cancel] 🔧 Orphan payment ${orphanPayment._id} cancelado no cleanup`);
       }
@@ -817,10 +820,12 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
           console.log(`[cancel] 🔧 Self-healing: appointment.payment restaurado → ${payment._id}`);
         }
         if (payment.status !== 'canceled') {
-          payment.status = 'canceled';
+          await transitionPaymentStatus(payment._id, 'canceled', {
+            session: mongoSession,
+            reason: reason || 'appointment_cancel'
+          });
           payment.canceledAt = new Date();
           payment.canceledReason = reason;
-          payment.updatedAt = new Date();
           await payment.save({ session: mongoSession });
           console.log(`[cancel] 💰 Payment ${payment._id} cancelado`);
         }
@@ -3039,10 +3044,12 @@ router.post('/:id/revert-complete', flexibleAuth, asyncHandler(async (req, res) 
       const paymentId = appointment.payment._id || appointment.payment;
       const payment = await Payment.findById(paymentId).session(mongoSession);
       if (payment && payment.status !== 'canceled') {
-        payment.status = 'canceled';
+        await transitionPaymentStatus(payment._id, 'canceled', {
+          session: mongoSession,
+          reason: reason || 'appointment_uncomplete'
+        });
         payment.canceledAt = new Date();
         payment.canceledReason = reason;
-        payment.updatedAt = new Date();
         await payment.save({ session: mongoSession });
         paymentCanceled = true;
       }

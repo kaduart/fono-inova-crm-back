@@ -16,7 +16,7 @@ import dotenv from 'dotenv';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Appointment from '../models/Appointment.js';
-import { processFinancialEvent } from '../workers/financialSnapshotWorker.js';
+import { processFinancialEvent } from '../workers/financialSnapshotWorker.v2.js';
 import { createContextLogger } from '../utils/logger.js';
 
 dotenv.config();

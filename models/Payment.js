@@ -116,6 +116,11 @@ paymentSchema.pre('validate', function(next) {
 
 // ============ BLINDAGEM FINANCEIRA ============
 paymentSchema.pre('save', async function(next) {
+    // 🎯 CAPTURA STATUS ANTES de qualquer modificação (para safety net post-save)
+    if (!this.isNew && this.isModified('status')) {
+        this.$locals.previousStatus = this.$locals.previousStatus || this._doc.status;
+    }
+
     const ctx = FinancialContext.get();
     if (ctx === 'session' || ctx === 'appointment') {
         console.error(`[SECURITY BLOCK] Tentativa de save em Payment por ${ctx} bloqueada`);
@@ -168,6 +173,62 @@ paymentSchema.pre('save', async function(next) {
     }
     
     next();
+});
+
+// ============ SAFETY NET: Emite evento se status mudou via save() direto ============
+// Detecta bypass de transitionPaymentStatus e emite evento automaticamente.
+// O snapshot worker V2 tem idempotência via processedEvents, então duplicatas são seguras.
+paymentSchema.post('save', async function(doc) {
+    const previousStatus = doc.$locals?.previousStatus;
+    const currentStatus = doc.status;
+
+    if (!previousStatus || previousStatus === currentStatus) {
+        return;
+    }
+
+    // Se transitionPaymentService já emitiu, pula
+    if (doc.__statusChangedEmitted) {
+        return;
+    }
+
+    try {
+        await publishEvent(
+            EventTypes.PAYMENT_STATUS_CHANGED,
+            {
+                paymentId: doc._id.toString(),
+                patientId: doc.patient?.toString?.(),
+                appointmentId: doc.appointment?.toString?.(),
+                sessionId: doc.session?.toString?.(),
+                packageId: doc.package?.toString?.(),
+                from: previousStatus,
+                to: currentStatus,
+                amount: doc.amount,
+                paymentMethod: doc.paymentMethod,
+                financialDate: doc.financialDate,
+                paidAt: doc.paidAt,
+                kind: doc.kind,
+                billingType: doc.billingType,
+                isFromPackage: doc.isFromPackage,
+                reason: 'post_save_safety_net',
+                userId: null,
+                _safetyNet: true  // marca como evento de segurança
+            },
+            {
+                correlationId: `safety_net_${doc._id}_${previousStatus}_${currentStatus}_${Date.now()}`,
+                idempotencyKey: `${doc._id}_${previousStatus}_${currentStatus}_${new Date().toISOString().split('T')[0]}`,
+                aggregateType: 'payment',
+                aggregateId: doc._id.toString(),
+                metadata: { source: 'Payment.post_save_safety_net', autoEmitted: true }
+            }
+        );
+        console.log(`[Payment Safety Net] ${doc._id}: ${previousStatus} → ${currentStatus} (evento emitido automaticamente)`);
+    } catch (err) {
+        console.error(`[Payment Safety Net] Falha ao emitir evento: ${err.message}`, {
+            paymentId: doc._id,
+            from: previousStatus,
+            to: currentStatus
+        });
+    }
 });
 
 // ============ INDEXES PARA PERFORMANCE ============

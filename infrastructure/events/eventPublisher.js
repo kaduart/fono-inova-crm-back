@@ -668,22 +668,24 @@ if (size > 5000) {
         }
     }
 
-    // 🆕 V2: atualiza snapshot financeiro de forma não-bloqueante para eventos relevantes
+    // 🆕 V2.5: atualiza snapshot financeiro de forma não-bloqueante
     const snapshotEventTypes = [
-        EventTypes.PAYMENT_PROCESS_REQUESTED,
-        EventTypes.PAYMENT_COMPLETED,
-        EventTypes.PAYMENT_PARTIAL,
-        EventTypes.PAYMENT_FAILED,
-        EventTypes.PAYMENT_CANCELLED,
+        EventTypes.PAYMENT_STATUS_CHANGED,
         EventTypes.SESSION_COMPLETED,
         EventTypes.APPOINTMENT_CONFIRMED,
         EventTypes.APPOINTMENT_SCHEDULED,
         EventTypes.APPOINTMENT_CANCELED,
+        // Legados (mantidos para compatibilidade)
+        EventTypes.PAYMENT_COMPLETED,
+        EventTypes.PAYMENT_PROCESS_REQUESTED,
+        EventTypes.PAYMENT_PARTIAL,
+        EventTypes.PAYMENT_FAILED,
+        EventTypes.PAYMENT_CANCELLED,
     ];
     if (snapshotEventTypes.includes(eventType)) {
         (async () => {
             try {
-                const { processFinancialEvent } = await import('../../workers/financialSnapshotWorker.js');
+                const { processFinancialEvent } = await import('../../workers/financialSnapshotWorker.v2.js');
                 let lastErr;
                 for (let attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -695,24 +697,6 @@ if (size > 5000) {
                     }
                 }
                 log.error('snapshot_hook_failed', `Snapshot falhou após 3 tentativas: ${lastErr?.message}`, { eventId, eventType });
-                // Fallback: persiste no Outbox para retry via worker
-                try {
-                    const OutboxModel = (await import('../../models/Outbox.js')).default;
-                    const entry = new OutboxModel({
-                        eventType: 'SNAPSHOT_UPDATE',
-                        payload: { _originalEventType: eventType, ...payload },
-                        status: 'pending'
-                    });
-                    await entry.save();
-                    const queue = getQueue('outbox-processor');
-                    await queue.add('process-outbox', { outboxId: entry._id.toString() }, {
-                        attempts: 5,
-                        backoff: { type: 'exponential', delay: 1000 }
-                    });
-                    log.info('snapshot_queued_to_outbox', 'Snapshot salvo no outbox para retry', { eventId, eventType, outboxId: entry._id });
-                } catch (outboxErr) {
-                    log.error('snapshot_outbox_save_failed', outboxErr.message, { eventId, eventType });
-                }
             } catch (importErr) {
                 log.warn('snapshot_import_failed', importErr.message, { eventId, eventType });
             }

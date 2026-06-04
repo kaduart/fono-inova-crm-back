@@ -13,6 +13,7 @@ import Patient from '../../models/Patient.js';
 import Sale from '../../models/Sale.js';
 import FinancialInsightsEngine from './FinancialInsightsEngine.js';
 import ConvenioMetricsService from './ConvenioMetricsService.js';
+import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -131,46 +132,23 @@ class FinancialOverviewService {
     async _calculateMetrics(periodo) {
         const { start, end, startDateTime, endDateTime } = periodo;
 
-        // Agregações em paralelo - reutilizando lógica do cashflow.js
+        // 🎯 FONTE ÚNICA DE VERDADE: unifiedFinancialService para caixa
+        const cashResult = await unifiedFinancialService.calculateCash(startDateTime, endDateTime);
+
+        // Agregações em paralelo - métricas auxiliares
         const [
-            receitasAgg,
             receitasPorTipo,
             despesasAgg,
             aReceberAgg,
             pagamentosPendentes
         ] = await Promise.all([
-            // Receitas pagas (total)
-            Payment.aggregate([
-                {
-                    $match: {
-                        status: 'paid',
-                        paymentDate: { $gte: start, $lte: end }
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        total: { $sum: '$amount' },
-                        count: { $sum: 1 }
-                    }
-                }
-            ]),
-
-            // NOVO: Receitas separadas por tipo (particular vs convênio recebido)
-            Payment.aggregate([
-                {
-                    $match: {
-                        status: 'paid',
-                        paymentDate: { $gte: start, $lte: end }
-                    }
-                },
-                {
-                    $group: {
-                        _id: '$billingType',
-                        total: { $sum: '$amount' },
-                        count: { $sum: 1 }
-                    }
-                }
+            // Receitas separadas por tipo (particular vs convênio recebido)
+            // Wrapper sobre unifiedFinancialService breakdown
+            Promise.resolve([
+                { _id: 'particular', total: cashResult.particular || 0, count: 0 },
+                { _id: 'convenio', total: cashResult.convenio || 0, count: 0 },
+                { _id: 'pacote', total: cashResult.pacote || 0, count: 0 },
+                { _id: 'liminar', total: cashResult.liminar || 0, count: 0 }
             ]),
 
             // Despesas pagas
@@ -225,7 +203,7 @@ class FinancialOverviewService {
             ])
         ]);
 
-        const receita = receitasAgg[0]?.total || 0;
+        const receita = cashResult.total || 0;
         const despesas = despesasAgg[0]?.total || 0;
         const lucro = receita - despesas;
         const margem = receita > 0 ? lucro / receita : 0;
@@ -242,7 +220,7 @@ class FinancialOverviewService {
         const particularRecebido = receitasPorTipo.find(r => r._id === 'particular')?.total || 0;
         const convenioRecebido = receitasPorTipo.find(r => r._id === 'convenio')?.total || 0;
 
-        const countReceitas = receitasAgg[0]?.count || 0;
+        const countReceitas = cashResult.count || 0;
         const ticketMedio = countReceitas > 0 ? receita / countReceitas : 0;
 
         return {

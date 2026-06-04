@@ -1,4 +1,7 @@
-// cashflow.js - VERSÃO CORRIGIDA COMPLETA
+// cashflow.js - ⛔ DEPRECATED — Use /api/v2/cashflow (cashflow.v2.js)
+// Este arquivo é mantido para compatibilidade legada.
+// Toda a lógica financeira foi consolidada em unifiedFinancialService.v2.js
+
 import express from 'express';
 import moment from 'moment-timezone';
 import { auth } from '../../middleware/auth.js';
@@ -9,6 +12,12 @@ import Package from '../../models/Package.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
+
+// 🚨 DEPRECATION WARNING em TODAS as requisições
+router.use((req, res, next) => {
+    console.warn(`[DEPRECATED] /api/cashflow/summary foi chamado. Use /api/v2/cashflow. Client: ${req.headers['user-agent']?.slice(0, 50)}`);
+    next();
+});
 
 /**
  * @route   GET /api/cashflow/summary

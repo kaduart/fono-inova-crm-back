@@ -127,7 +127,21 @@ const FinancialDailySnapshotSchema = new mongoose.Schema({
     type: [String],
     default: [],
     index: true
-  }
+  },
+
+  // 🔍 Contribuições individuais (para rebuild determinístico e reversão)
+  contributions: [{
+    eventId:      { type: String, required: true },
+    eventType:    { type: String, required: true },
+    paymentId:    { type: mongoose.Schema.Types.ObjectId },
+    sessionId:    { type: mongoose.Schema.Types.ObjectId },
+    category:     { type: String, enum: ['cash', 'production', 'receivable', 'billing'] },
+    amount:       { type: Number, required: true },
+    operation:    { type: String, enum: ['add', 'remove'], required: true },
+    billingType:  { type: String },
+    paymentMethod:{ type: String },
+    timestamp:    { type: Date, default: Date.now }
+  }]
 }, {
   timestamps: { createdAt: true, updatedAt: false },
   versionKey: false,

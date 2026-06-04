@@ -12,6 +12,7 @@ import Patient from '../../models/Patient.js';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
+import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -55,29 +56,11 @@ export async function buildStats() {
       status: { $in: ['pending', 'partial'] }
     }),
 
-    // Receita do mês (pagamentos confirmados, exclui consumo de pacote)
-    Payment.aggregate([
-      {
-        $match: {
-          status: 'paid',
-          paymentDate: { $gte: startOfMonth.toDate() },
-          kind: { $ne: 'package_consumed' }
-        }
-      },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]),
+    // Receita do mês (fonte única de verdade)
+    unifiedFinancialService.calculateCash(startOfMonth.toDate(), todayEnd.toDate()),
 
-    // Receita de hoje
-    Payment.aggregate([
-      {
-        $match: {
-          status: 'paid',
-          paymentDate: { $gte: today.toDate(), $lte: todayEnd.toDate() },
-          kind: { $ne: 'package_consumed' }
-        }
-      },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]),
+    // Receita de hoje (fonte única de verdade)
+    unifiedFinancialService.calculateCash(today.toDate(), todayEnd.toDate()),
 
     // Leads do mês
     Lead.countDocuments({
@@ -112,8 +95,8 @@ export async function buildStats() {
     activePatients: totalPatients, // TODO: definir critério de "ativo"
     todayAppointments,
     weekAppointments,
-    todayRevenue: todayRevenueAgg[0]?.total || 0,
-    monthRevenue: monthRevenueAgg[0]?.total || 0,
+    todayRevenue: todayRevenueAgg?.total || 0,
+    monthRevenue: monthRevenueAgg?.total || 0,
     pendingPayments,
     monthLeads,
     leadsByStatus: leadsStatusMap,

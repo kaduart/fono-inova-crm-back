@@ -7,6 +7,7 @@ import InsuranceBatch from '../models/InsuranceBatch.js';
 import Payment from '../models/Payment.js';
 import { v4 as uuidv4 } from 'uuid';
 import { recordInsuranceBilled, recordInsuranceReceived } from './financialLedgerService.js';
+import { batchTransitionStatus, transitionPaymentStatus } from './paymentStatusService.js';
 
 // 🔄 Importação dinâmica do cache para evitar circular dependency
 let dashboardCache;
@@ -134,7 +135,8 @@ export async function sendBatch(batchId, userId) {
   
   // Atualizar insurance.status dos payments vinculados
   const sessionIds = batch.sessions.map(s => s.session.toString());
-  
+
+  // 🎯 Atualiza campos não-status via updateMany (performance)
   await Payment.updateMany(
     {
       session: { $in: sessionIds },
@@ -142,7 +144,6 @@ export async function sendBatch(batchId, userId) {
     },
     {
       $set: {
-        status: 'billed',
         'insurance.status': 'billed',
         'insurance.billedAt': new Date(),
         updatedAt: new Date()
@@ -150,11 +151,20 @@ export async function sendBatch(batchId, userId) {
     }
   );
 
-  // 🏦 LEDGER: registrar insurance_billed para cada payment
+  // 🎯 Transiciona status via paymentStatusService (emite eventos)
   const billedPayments = await Payment.find({
     session: { $in: sessionIds },
-    billingType: 'convenio'
+    billingType: 'convenio',
+    status: { $ne: 'billed' }
   }).lean();
+
+  if (billedPayments.length > 0) {
+    await batchTransitionStatus(
+      billedPayments.map(p => p._id.toString()),
+      'billed',
+      { reason: 'insurance_batch_sent' }
+    );
+  }
 
   for (const payment of billedPayments) {
     try {
@@ -279,16 +289,24 @@ export async function processReturn(batchId, returnData) {
       'insurance.receivedAt': new Date().toISOString().split('T')[0]
     };
     
-    // Se convênio pagou, atualizar status principal também
-    // financialDate = data da sessão (regime de competência): o recebimento é atribuído
-    // ao mês em que a sessão foi realizada, não ao mês do processReturn
+    // Se convênio pagou, atualizar status principal via paymentStatusService
     if (item.status === 'paid') {
       const mapKey = item.paymentId || item.sessionId;
-      paymentUpdate.status = 'paid';
-      paymentUpdate.paidAt = new Date();
-      paymentUpdate.financialDate = sessionDateMap.get(mapKey) || new Date();
+      const existingPayment = await Payment.findOne(query);
+      if (existingPayment && existingPayment.status !== 'paid') {
+        await transitionPaymentStatus(existingPayment._id, 'paid', {
+          paymentMethod: 'convenio',
+          financialDate: sessionDateMap.get(mapKey) || new Date(),
+          paidAt: new Date(),
+          reason: 'insurance_return_paid'
+        });
+      }
+      // Remove status/paidAt/financialDate do paymentUpdate pois já tratado
+      delete paymentUpdate.status;
+      delete paymentUpdate.paidAt;
+      delete paymentUpdate.financialDate;
     }
-    
+
     await Payment.updateOne(
       query,
       {

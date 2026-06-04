@@ -37,7 +37,7 @@ export function startOutboxWorker() {
 
       // Rota especial: snapshot que falhou no fire-and-forget
       if (outbox.eventType === 'SNAPSHOT_UPDATE') {
-        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.js');
+        const { processFinancialEvent } = await import('../workers/financialSnapshotWorker.v2.js');
         const { _originalEventType, ...snapshotPayload } = outbox.payload;
         await processFinancialEvent(_originalEventType, snapshotPayload);
         outbox.status = 'published';

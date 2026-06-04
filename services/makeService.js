@@ -45,9 +45,16 @@ function sanitizePermanentMedia(mediaUrl, postId) {
 
 /**
  * Garante que URLs do Cloudinary sejam compatíveis com Google Business Profile.
- * O GMB exige:
- *  1. Formato JPEG explicito (f_jpg) — evita WebP que o GMB rejeita
- *  2. Extensao .jpg no final do path — senao da "Fetching image failed"
+ *
+ * Causa raiz do "Fetching image failed": URLs com transforms on-demand causam redirect
+ * no Cloudinary — o crawler do GMB API não segue redirects, resultando em 400.
+ *
+ * Fix: remove os segments de transform da URL, deixando a URL limpa apontando
+ * direto para o asset no CDN (sem redirect). A imagem já foi upada como JPEG,
+ * então não precisamos de f_jpg na URL.
+ *
+ * Para novos uploads, eager transformations já garantem URL pré-cacheada sem redirect.
+ * Para posts antigos no DB, esta função sanitiza a URL antes de enviar ao Make.
  */
 function ensureGmbCompatibleUrl(url) {
   if (!url || !url.includes('res.cloudinary.com')) return url;
@@ -55,19 +62,15 @@ function ensureGmbCompatibleUrl(url) {
   try {
     const urlObj = new URL(url);
 
-    // Forca formato JPEG se ainda nao estiver presente
-    if (!urlObj.pathname.includes('f_jpg')) {
-      const hasOtherTransforms = /\/image\/upload\/[^/]+,/.test(urlObj.pathname);
-      if (hasOtherTransforms) {
-        // Ja tem transformacoes — adiciona f_jpg no inicio delas
-        urlObj.pathname = urlObj.pathname.replace('/image/upload/', '/image/upload/f_jpg,');
-      } else {
-        // URL crua sem transformacoes
-        urlObj.pathname = urlObj.pathname.replace('/image/upload/', '/image/upload/f_jpg/');
-      }
-    }
+    // Remove segments de transform on-demand entre /image/upload/ e /v{version}/
+    // Ex: /image/upload/q_auto:low,w_800,f_jpg/v177408.../file.jpg
+    //  → /image/upload/v177408.../file.jpg
+    urlObj.pathname = urlObj.pathname.replace(
+      /(\/image\/upload\/)(?:[^/]+\/)*?(v\d{8,}\/)/,
+      '$1$2'
+    );
 
-    // Garante extensao .jpg no final do path
+    // Garante extensao .jpg para forçar formato JPEG no CDN
     const lastSegment = urlObj.pathname.split('/').pop();
     if (lastSegment && !/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lastSegment)) {
       urlObj.pathname = urlObj.pathname + '.jpg';

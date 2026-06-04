@@ -1,0 +1,164 @@
+{
+  "periodo": "2026-06",
+  "geradoEm": "2026-06-04T14:09:33.370Z",
+  "dias": [
+    {
+      "dia": "2026-06-01",
+      "caixa": 900,
+      "producao": 1880,
+      "particular": 900,
+      "convenio": 0,
+      "pacote": 0,
+      "liminar": 0,
+      "snapshotCash": 900,
+      "snapshotProd": 1880,
+      "diffProdCash": 980
+    },
+    {
+      "dia": "2026-06-02",
+      "caixa": 1930,
+      "producao": 2705,
+      "particular": 590,
+      "convenio": 0,
+      "pacote": 720,
+      "liminar": 620,
+      "snapshotCash": 1930,
+      "snapshotProd": 2705,
+      "diffProdCash": 775
+    },
+    {
+      "dia": "2026-06-03",
+      "caixa": 1320,
+      "producao": 1960,
+      "particular": 600,
+      "convenio": 0,
+      "pacote": 720,
+      "liminar": 0,
+      "snapshotCash": 1140,
+      "snapshotProd": 1960,
+      "diffProdCash": 640
+    },
+    {
+      "dia": "2026-06-04",
+      "caixa": 0,
+      "producao": 0,
+      "particular": 0,
+      "convenio": 0,
+      "pacote": 0,
+      "liminar": 0,
+      "snapshotCash": null,
+      "snapshotProd": null,
+      "diffProdCash": 0
+    }
+  ],
+  "edgeCases": {
+    "pacotePrepaid": {
+      "sessoes": 19,
+      "payments": 0,
+      "comStatusPaid": 0,
+      "comFinancialDate": 0
+    },
+    "convenioNaoRecebido": {
+      "total": 11,
+      "naoRecebidas": 11,
+      "valorTotal": 1200
+    },
+    "particularPending": {
+      "count": 5,
+      "valorTotal": 770
+    },
+    "vendasPacote": {
+      "count": 2,
+      "valorTotal": 1260
+    },
+    "cancelamentos": {
+      "count": 12
+    },
+    "partialPayments": {
+      "count": 0,
+      "detalhes": []
+    }
+  },
+  "divergencias": [
+    {
+      "dia": "2026-06-03",
+      "tipo": "SNAPSHOT_CASH_DRIFT",
+      "esperado": "R$ 1320.00",
+      "obtido": "R$ 1140.00",
+      "delta": "R$ 180.00",
+      "detalhe": "Snapshot cash=1140 vs Realtime cash=1320"
+    }
+  ],
+  "warnings": [
+    {
+      "dia": "2026-06-04",
+      "tipo": "SNAPSHOT_MISSING",
+      "mensagem": "Não existe snapshot para este dia"
+    },
+    {
+      "dia": "2026-03-09",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69aefac669352e6006119f5d cancelado mas snapshot 2026-03-09 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-03-16",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69b7f4217c7e8bd1b3b90944 cancelado mas snapshot 2026-03-16 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-04-06",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69d857e1938c5ff3b8bd487c cancelado mas snapshot 2026-04-06 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-04-20",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69e63afa32b30f47364f3c78 cancelado mas snapshot 2026-04-20 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-04-20",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69e63b1532b30f47364f3cec cancelado mas snapshot 2026-04-20 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-04-20",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69e6536cf50dc984beb7eb0a cancelado mas snapshot 2026-04-20 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-04-22",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 69e8c8a0e52ed393a2581246 cancelado mas snapshot 2026-04-22 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-05-22",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 6a1068c1aa87388cdac1e0ab cancelado mas snapshot 2026-05-22 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-05-27",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 6a16d20f328e5f4ee5883c4e cancelado mas snapshot 2026-05-27 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-06-01",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 6a1d7ffa4bafb710ab1570b5 cancelado mas snapshot 2026-06-01 não tem evento de reversão"
+    },
+    {
+      "dia": "2026-06-02",
+      "tipo": "CANCELAMENTO_SEM_REVERSAO_SNAPSHOT",
+      "mensagem": "Payment 6a1ee72012d0f97a7a855d80 cancelado mas snapshot 2026-06-02 não tem evento de reversão"
+    }
+  ],
+  "resumo": {
+    "diasAuditados": 4,
+    "totalCaixa": 4150,
+    "totalProducao": 6545,
+    "totalSnapshotCash": 3970,
+    "totalSnapshotProd": 6545,
+    "divergenciasSnapshot": 1,
+    "warnings": 12,
+    "divergenciasCriticas": 0
+  }
+}

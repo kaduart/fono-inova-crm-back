@@ -27,6 +27,7 @@ import { recordPaymentReceived } from '../services/financialLedgerService.js';
 import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 
 const router = express.Router();
 
@@ -961,7 +962,25 @@ router.patch('/:id', auth, async (req, res) => {
             updateData.paidAt = new Date();
         }
 
-        await Payment.findByIdAndUpdate(id, { $set: updateData }, { session: mongoSession });
+        // 🎯 STATUS TRANSITION: usa paymentStatusService se status mudou
+        if (status !== undefined && status !== payment.status) {
+            await transitionPaymentStatus(id, status, {
+                session: mongoSession,
+                paymentMethod: updateData.paymentMethod,
+                financialDate: updateData.financialDate,
+                paidAt: updateData.paidAt,
+                userId: req.user?._id,
+                reason: 'admin_manual_patch'
+            });
+            // Remove status do updateData pois já foi tratado pelo serviço
+            delete updateData.status;
+            delete updateData.paidAt;  // já setado pelo serviço
+        }
+
+        // Atualiza demais campos (se houver algo além de status)
+        if (Object.keys(updateData).length > 0) {
+            await Payment.findByIdAndUpdate(id, { $set: updateData }, { session: mongoSession });
+        }
 
         // Commit antes de side-effects (evento + populate de retorno)
         await mongoSession.commitTransaction();
@@ -1062,13 +1081,16 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         }
 
-        // 1. Marca cada sessão como paga — preserva paymentDate (data da sessão)
+        // 1. Marca cada payment como pago — usa paymentStatusService (blindagem)
         for (const p of payments) {
-            p.status = 'paid';
-            p.paidAt = now;
-            // NÃO altera p.paymentDate — mantém data original da sessão
-            if (paymentMethod) p.paymentMethod = paymentMethod;
-            await p.save({ session: mongoSession });
+            await transitionPaymentStatus(p._id, 'paid', {
+                session: mongoSession,
+                paymentMethod: paymentMethod || p.paymentMethod,
+                paidAt: now,
+                financialDate: p.paymentDate || now,
+                userId: req.user?._id,
+                reason: 'bulk_settle'
+            });
         }
 
         // 2. Atualiza appointments vinculados

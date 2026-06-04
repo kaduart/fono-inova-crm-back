@@ -16,6 +16,7 @@ import Payment from "../models/Payment.js";
 import Patient from "../models/Patient.js";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
+import { transitionPaymentStatus } from "../services/paymentStatusService.js";
 
 const router = express.Router();
 
@@ -1040,17 +1041,19 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
     // 4) Atualizar Pagamento relacionado
     if (appointment.payment) {
-      const paymentUpdate = { updatedAt: new Date() };
       if (operationalStatus === 'canceled') {
-        paymentUpdate.status = 'canceled';
-        paymentUpdate.canceledAt = new Date();
-      } else {
+        await transitionPaymentStatus(appointment.payment, 'canceled', {
+          reason: 'import_sync_cancel'
+        });
+      }
+      const paymentUpdate = { updatedAt: new Date() };
+      if (operationalStatus !== 'canceled') {
         paymentUpdate.amount = crm.paymentAmount || appointment.paymentAmount;
         paymentUpdate.paymentMethod = crm.paymentMethod || appointment.paymentMethod;
         paymentUpdate.paymentDate = date || appointment.date;
       }
       await Payment.findByIdAndUpdate(appointment.payment, { $set: paymentUpdate });
-      console.log(`[SYNC-UPDATE] ✅ Payment ${appointment.payment} atualizado (status: ${paymentUpdate.status || 'mantido'})`);
+      console.log(`[SYNC-UPDATE] ✅ Payment ${appointment.payment} atualizado (status: ${operationalStatus === 'canceled' ? 'canceled' : 'mantido'})`);
     }
 
     // 5) Atualizar Appointment principal

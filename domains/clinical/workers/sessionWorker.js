@@ -145,7 +145,7 @@ async function handleSessionCompleted(payload, deps, correlationId) {
 
   // 🆕 V2: atualiza snapshot financeiro
   try {
-    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.js');
+    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.v2.js');
     processFinancialEvent('SESSION_COMPLETED', payload).catch(() => {});
   } catch {}
 
@@ -209,7 +209,7 @@ async function handleSessionCancelled(payload, deps, correlationId) {
 
   // 🆕 V2: compensa snapshot financeiro
   try {
-    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.js');
+    const { processFinancialEvent } = await import('../../../workers/financialSnapshotWorker.v2.js');
     processFinancialEvent('SESSION_CANCELLED', payload).catch(() => {});
   } catch {}
 

@@ -6,6 +6,7 @@
  */
 
 import { calcularProvisionamento } from '../services/provisionamentoService.js';
+import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 import moment from 'moment-timezone';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -38,59 +39,27 @@ export const getDashboard = async (req, res) => {
     if (fimMes.isBefore(hoje, 'day')) status = 'PASSADO';
     if (inicioMes.isAfter(hoje, 'day')) status = 'FUTURO';
     
-    // Produção = garantido (caixa) + sessões realizadas mas não pagas
-    // Vamos buscar a produção real das sessões completed
-    const Session = (await import('../models/Session.js')).default;
-    const sessoesRealizadas = await Session.find({
-      status: 'completed',
-      date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() }
-    }).populate('package', 'insuranceGrossAmount type').lean();
+    // 🎯 FONTE ÚNICA DE VERDADE: unifiedFinancialService para produção e caixa
+    const start = inicioMes.toDate();
+    const end = fimMes.toDate();
 
-    let producaoParticular = 0;
-    let producaoPacotes = 0;
-    let producaoConvenio = 0;
-
-    sessoesRealizadas.forEach(s => {
-      const valor = s.sessionValue || s.package?.insuranceGrossAmount || 0;
-      if (s.paymentMethod === 'convenio') {
-        producaoConvenio += valor;
-      } else if (s.package) {
-        producaoPacotes += valor;
-      } else {
-        producaoParticular += valor;
-      }
-    });
-
-    const producaoTotal = producaoParticular + producaoPacotes + producaoConvenio;
-    const caixaTotal = camadas.garantido?.valor || 0;
-
-    // A Receber do mês: sessões feitas NESTE mês que ainda não foram pagas
-    // Query direta por sessão — evita histórico de outros meses
-    const [sessoesConvenioNaoPagas, sessoesParticularNaoPagas] = await Promise.all([
-      // Convênio: completadas no mês, ainda não recebidas do plano
-      Session.find({
-        date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() },
-        status: 'completed',
-        paymentMethod: 'convenio',
-        $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
-      }).populate('package', 'insuranceGrossAmount').lean(),
-
-      // Particular: completadas no mês, ainda não pagas pelo paciente
-      Session.find({
-        date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() },
-        status: 'completed',
-        paymentMethod: { $ne: 'convenio' },
-        $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
-      }).lean()
+    const [cashResult, productionResult] = await Promise.all([
+      unifiedFinancialService.calculateCash(start, end),
+      unifiedFinancialService.calculateProduction(start, end)
     ]);
 
-    const aReceberConvenio = sessoesConvenioNaoPagas.reduce(
-      (sum, s) => sum + (s.sessionValue || s.package?.insuranceGrossAmount || 0), 0
-    );
-    const aReceberParticular = sessoesParticularNaoPagas.reduce(
-      (sum, s) => sum + (s.sessionValue || 0), 0
-    );
-    const aReceberTotal = aReceberConvenio + aReceberParticular;
+    const producaoTotal = productionResult.total || 0;
+    const producaoParticular = productionResult.particular || 0;
+    const producaoPacotes = productionResult.pacote || 0;
+    const producaoConvenio = productionResult.convenio || 0;
+    const caixaTotal = cashResult.total || 0;
+
+    // A Receber = produção - caixa (do mesmo período, mesma fonte)
+    // Particular pendente já calculado pelo unifiedFinancialService
+    const aReceberParticular = productionResult.particularPendente || 0;
+    // Convenio pendente = produção convenio - caixa convenio - caixa pacote (aproximação)
+    const aReceberConvenio = Math.max(0, (productionResult.pendente || 0) - aReceberParticular);
+    const aReceberTotal = productionResult.pendente || 0;
 
     // A Receber HISTÓRICO (todos os meses, acumulado) — card informativo separado
     const Payment = (await import('../models/Payment.js')).default;

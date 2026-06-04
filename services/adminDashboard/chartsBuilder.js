@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
+import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -63,23 +64,8 @@ export async function buildCharts() {
       { $limit: 6 }
     ]),
 
-    // Receita por dia (últimos 7 dias)
-    Payment.aggregate([
-      {
-        $match: {
-          status: 'paid',
-          paymentDate: { $gte: last7Days.toDate() },
-          kind: { $ne: 'package_consumed' }
-        }
-      },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$paymentDate' } },
-          total: { $sum: '$amount' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]),
+    // Receita por dia (últimos 7 dias) — fonte única de verdade
+    unifiedFinancialService.calculateCashByDay(last7Days.toDate(), today.toDate()),
 
     // Pacientes por especialidade (últimos 30 dias)
     Appointment.aggregate([
@@ -106,10 +92,16 @@ export async function buildCharts() {
     return acc;
   }, {});
 
-  const revenueMap = revenueByDay.reduce((acc, item) => {
-    acc[item._id] = item.total;
-    return acc;
-  }, {});
+  const revenueMap = {};
+  if (revenueByDay instanceof Map) {
+    revenueByDay.forEach((value, key) => {
+      revenueMap[key] = value.caixa || 0;
+    });
+  } else {
+    revenueByDay.forEach(item => {
+      revenueMap[item._id] = item.total;
+    });
+  }
 
   return {
     appointmentsChart: dates7Days.map(date => ({

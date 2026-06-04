@@ -2,6 +2,7 @@
 // 💵 Guard para regras financeiras de PARTICULAR (per-session)
 
 import Payment from '../../../models/Payment.js';
+import { transitionPaymentStatus } from '../../../services/paymentStatusService.js';
 
 /**
  * Particular Guard - Regras financeiras de particular
@@ -48,12 +49,14 @@ export default {
     }
 
     // Cancela payment
-    payment.status = 'canceled';
-    payment.canceledAt = new Date();
-    payment.canceledReason = reason;
-    payment.updatedAt = new Date();
+    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
+        session,
+        reason: reason || 'guard_cancel'
+    });
 
-    await payment.save({ session });
+    updatedPayment.canceledAt = new Date();
+    updatedPayment.canceledReason = reason;
+    await updatedPayment.save({ session });
 
     console.log(`[ParticularGuard] Payment ${paymentId} cancelado`, {
       amount: payment.amount,
