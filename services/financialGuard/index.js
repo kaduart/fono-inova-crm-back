@@ -5,6 +5,7 @@ import packageGuard from './guards/package.guard.js';
 import particularGuard from './guards/particular.guard.js';
 import settleGuard from './guards/settle.guard.js';
 import liminarGuard from './guards/liminar.guard.js';
+import convenioGuard from './guards/convenio.guard.js';
 import FinancialGuardError from './FinancialGuardError.js';
 
 const guardMap = {
@@ -12,7 +13,7 @@ const guardMap = {
   particular: particularGuard,
   settle: settleGuard,
   liminar: liminarGuard,
-  // 🔜 insurance: insuranceGuard (futuro)
+  convenio: convenioGuard,
 };
 
 /**

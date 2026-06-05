@@ -121,7 +121,7 @@ const expenseSchema = new mongoose.Schema({
   
   notes: {
     type: String,
-    maxlength: 500,
+    maxlength: 2000,
     default: ''
   },
   

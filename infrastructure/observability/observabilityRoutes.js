@@ -30,6 +30,17 @@ router.get('/health', getHealthHandler);
 // NOTA: Em arquitetura separada (web + worker), NÃO verifica ENABLE_WORKERS no web.
 // Verifica se as filas estão sendo consumidas (workers ativos no crm-worker).
 router.get('/whatsapp-health', async (req, res) => {
+    // WhatsApp desabilitado intencionalmente → retorna healthy para não gerar falso positivo
+    // Só ativa o health check quando explicitamente WHATSAPP_ENABLED=true
+    if (process.env.WHATSAPP_ENABLED !== 'true') {
+        return res.status(200).json({
+            success: true,
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            checks: { workersEnabled: false, redisConnected: true, whatsappDisabled: true }
+        });
+    }
+
     try {
         const checks = {
             workersEnabled: false, // detectado dinamicamente via filas

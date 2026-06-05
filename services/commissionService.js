@@ -232,7 +232,7 @@ export const generateMonthlyCommissions = async (month, year) => {
         const existing = await Expense.findOne({
           category: 'commission',
           relatedDoctor: doctor._id,
-          description: `Comissão ${doctor.fullName} - ${monthRef}`
+          description: `${doctor.fullName} - ${monthRef}`
         }).session(session);
 
         if (existing) {
@@ -247,24 +247,21 @@ export const generateMonthlyCommissions = async (month, year) => {
         };
 
         const expense = await Expense.create([{
-          description: `Comissão ${doctor.fullName} - ${monthRef}`,
+          description: `${doctor.fullName} - ${monthRef}`,
           category: 'commission',
           subcategory: 'salary',
           amount: commission.totalCommission,
           date: target.clone().endOf('month').format('YYYY-MM-DD'),
           relatedDoctor: doctor._id,
           workPeriod: {
-            start: startDate,
-            end: endDate,
+            start: target.clone().startOf('month').format('YYYY-MM-DD'),
+            end: target.clone().endOf('month').format('YYYY-MM-DD'),
             sessionsCount: commission.totalSessions,
             revenueGenerated: 0
           },
           paymentMethod: 'transferencia_bancaria',
           status: 'pending',
-          notes: (commission.commissionModel === 'neuropediatria_percentage'
-            ? `Comissão ${monthRef} [Neuropediatria 80%] | Sessões: ${commission.breakdown.standardSessions.count} | Clínica retém 20% | Total profissional: R$${commission.totalCommission.toFixed(2)}`
-            : `Comissão ${monthRef} | Sessões: ${commission.breakdown.standardSessions.count} | Aval: ${commission.breakdown.evaluations.count} | Total: R$${commission.totalCommission.toFixed(2)}`
-          ).slice(0, 500),
+          notes: JSON.stringify(notes),
           createdBy: new mongoose.Types.ObjectId('000000000000000000000000'),
           createdByRole: 'system'
         }], { session });
