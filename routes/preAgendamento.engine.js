@@ -365,6 +365,7 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             time,
             specialty: pre.specialty || 'fonoaudiologia',
             serviceType: pre.serviceType || 'evaluation', // Respeita o tipo de atendimento original (consulta, avaliação, etc)
+            isJointSession: pre.serviceType === 'joint_session',
             billingType: 'particular',
             paymentMethod: req.body.paymentMethod || 'pix',
             amount: Number(sessionValue),

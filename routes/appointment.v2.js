@@ -483,6 +483,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       notes,
       responsible: req.body.responsible || '',
       createdBy: req.user?._id,
+      isJointSession: req.body.isJointSession === true,
 
       patientInfo: req.body.patientInfo ? {
         fullName: req.body.patientInfo.fullName || '',

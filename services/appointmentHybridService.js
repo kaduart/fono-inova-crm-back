@@ -45,7 +45,8 @@ export class AppointmentHybridService {
             amount = 0,
             forcePayment = false, // Força criação de payment (ex: upgrade de pacote)
             notes = '',
-            userId = null
+            userId = null,
+            isJointSession = false
         } = data;
 
         // 0. Se tem pacote, busca informações dele
@@ -82,6 +83,7 @@ export class AppointmentHybridService {
             time,
             specialty,
             serviceType,
+            isJointSession,
             package: packageId,
             insuranceGuide: insuranceGuideId,
             

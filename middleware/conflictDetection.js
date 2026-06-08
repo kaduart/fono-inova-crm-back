@@ -130,7 +130,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
         ...excludeSelf,
       })
-        .select("time duration patient")
+        .select("time duration patient operationalStatus _id")
         .populate("patient", "fullName")
         .lean(),
 
@@ -142,7 +142,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
             ...excludeSelf,
           })
-            .select("time duration doctor")
+            .select("time duration doctor operationalStatus _id")
             .populate("doctor", "fullName")
             .lean()
         : Promise.resolve([]),
@@ -189,7 +189,11 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       const overlaps = newStartMinutes < apptEnd && newEndMinutes > apptStart;
       
       if (overlaps) {
-        console.log(`[checkAppointmentConflicts] CONFLITO MÉDICO: Novo ${timeHHmm}-${newEndMinutes} sobrepõe existente ${apptTime}-${apptEnd}`);
+        console.log(
+          `[checkAppointmentConflicts] CONFLITO MÉDICO: Novo ${timeHHmm}-${newEndMinutes}min` +
+          ` sobrepõe existente ${apptTime}-${apptEnd}min` +
+          ` | _id=${appt._id} status=${appt.operationalStatus} paciente="${appt.patient?.fullName || '?'}"`
+        );
       }
       
       return overlaps;
