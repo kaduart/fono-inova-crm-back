@@ -142,10 +142,8 @@ export const getAppointmentsByType = async (req, res) => {
         if (specialty) {
             extraFilters.specialty = specialty.toLowerCase();
         }
-        // No modo operacional (date), excluímos cancelados para não poluir a agenda
-        if (mode === 'date') {
-            extraFilters.operationalStatus = { $nin: ['canceled', 'cancelled', 'converted'] };
-        }
+        // Excluímos cancelados/convertidos em qualquer modo — não são agendamentos válidos para métricas
+        extraFilters.operationalStatus = { $nin: ['canceled', 'cancelled', 'converted'] };
 
         const filter = { ...dateFilter, ...extraFilters };
 

@@ -139,6 +139,22 @@ export const scheduleGmbCron = () => {
         try {
             if (!makeService.isMakeConfigured()) return;
 
+            // Limpa posts travados em publishing_retry sem callback do Make (timeout 40min)
+            const stuck = await GmbPost.updateMany(
+                {
+                    status: 'publishing_retry',
+                    nextRetryAt: { $lte: new Date() },
+                    publishedAt: { $exists: false }, // não tem publishedAt = não foi confirmado
+                },
+                {
+                    $set: { status: 'scheduled', nextRetryAt: null },
+                    $inc: { retryCount: 1 },
+                }
+            );
+            if (stuck.modifiedCount > 0) {
+                console.log(`🔄 [GMB] ${stuck.modifiedCount} post(s) resetado(s) para retry (sem confirmação Make em 40min)`);
+            }
+
             console.log('🔗 [GMB] Enviando posts agendados ao Make...');
 
             const posts = await GmbPost.findScheduledForPublish(5);
@@ -151,16 +167,18 @@ export const scheduleGmbCron = () => {
                         console.error(`❌ [GMB] Post ${post._id} não tem imagem. Pulando.`);
                         continue;
                     }
-                    
+
                     await makeService.sendPostToMake(post);
-                    post.status = 'published';
-                    post.publishedAt = new Date();
+                    // Webhook aceito pelo Make (200 OK) — aguarda confirmação real do GMB via makeCallback
+                    // NÃO marca como published aqui: 200 = recibo do webhook, não = post criado no GMB
+                    post.status = 'publishing_retry';
+                    post.nextRetryAt = new Date(Date.now() + 40 * 60 * 1000); // timeout 40min
                     post.publishedBy = 'cron';
                     await post.save();
                     console.log(`✅ [GMB] Enviado ao Make: ${post.title?.substring(0, 40)}`);
                 } catch (err) {
                     const isQueueFull = err.message?.toLowerCase().includes('queue') && err.message?.toLowerCase().includes('full');
-                    
+
                     if (isQueueFull) {
                         // 🔄 Fila cheia - adiciona à fila de retry local
                         console.log(`🔄 [GMB] Fila Make cheia, adicionando à retry queue: ${post.title?.substring(0, 40)}`);
@@ -168,16 +186,21 @@ export const scheduleGmbCron = () => {
                             postId: post._id.toString(),
                             channel: 'gmb'
                         }, {
-                            delay: 60000 * (post.retryCount || 1), // Espera aumenta a cada tentativa
+                            delay: 60000 * (post.retryCount || 1),
                             attempts: 5,
                             backoff: { type: 'exponential', delay: 60000 }
                         });
                         post.status = 'publishing_retry';
+                        post.nextRetryAt = new Date(Date.now() + 60000 * (post.retryCount || 1));
                         await post.save();
                     } else {
-                        // Outro erro - marca como falho
-                        await post.markFailed(err.message);
-                        console.error(`❌ [GMB] Falha Make: ${err.message}`);
+                        // Erro no backend antes de chegar ao Make — reseta para scheduled (retry próximo cron)
+                        post.status = 'scheduled';
+                        post.error = err.message?.slice(0, 500);
+                        post.retryCount = (post.retryCount || 0) + 1;
+                        post.lastErrorAt = new Date();
+                        await post.save();
+                        console.error(`❌ [GMB] Falha Make (será retentado): ${err.message}`);
                     }
                 }
                 await new Promise(r => setTimeout(r, 10000));

@@ -130,9 +130,16 @@ const appointmentSchema = new mongoose.Schema({
       'evaluation', 'session', 'package_session',
       'individual_session', 'meet', 'alignment', 'return',
       'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session', 'liminar_session',
-      'consultation'
+      'consultation', 'joint_session'
     ],
     required: false
+  },
+
+  // Sessão Conjunta: mesmo profissional atende dois pacientes no mesmo horário
+  isJointSession: {
+    type: Boolean,
+    default: false,
+    index: true
   },
   sessionType: {
     type: String,
@@ -374,15 +381,21 @@ appointmentSchema.index(
   { name: 'reschedule_idempotency' }
 );
 
+// ⚠️ MongoDB não suporta $nin/$ne em partialFilterExpression — usar $in com statuses bloqueantes
+// e isJointSession: false (equality) para excluir sessões conjuntas do constraint único.
+// Após alterar esta definição, rodar: node scripts/migrate-joint-session-index.js
 appointmentSchema.index(
   { doctor: 1, date: 1, time: 1 },
   {
     unique: true,
     name: 'unique_appointment_slot',
     partialFilterExpression: {
-      // 🚨 APENAS canceled não bloqueia o slot (pre_agendado agora BLOQUEIA para evitar duplicatas)
-      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-      doctor: { $exists: true, $ne: null }
+      operationalStatus: { $in: [
+        'pre_agendado', 'scheduled', 'confirmed', 'pending', 'paid',
+        'missed', 'processing_create', 'processing_complete', 'processing_cancel', 'force_cancelled'
+      ]},
+      doctor: { $exists: true },
+      isJointSession: false   // joint_session fica fora do constraint — mesmo prof, dois pacientes
     }
   }
 );

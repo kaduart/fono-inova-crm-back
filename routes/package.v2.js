@@ -452,6 +452,81 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
 
 // ============================================
 // DELETE /api/v2/packages/:id
+// ============================================
+// PATCH /api/v2/packages/:id/appointments/bulk
+// Bulk-atualiza terapeuta e/ou horário de todos os
+// appointments pre_agendado/scheduled do pacote.
+// Confirmed/completed NÃO são alterados.
+// Body: { doctorId?, time? } — ao menos um obrigatório.
+// ============================================
+
+router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { doctorId, time, dayOfWeek } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'ID inválido' });
+  }
+  if (!doctorId && !time && dayOfWeek === undefined) {
+    return res.status(400).json({ success: false, message: 'Informe doctorId, time e/ou dayOfWeek' });
+  }
+  if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
+    return res.status(400).json({ success: false, message: 'doctorId inválido' });
+  }
+  if (time && !/^\d{2}:\d{2}$/.test(time)) {
+    return res.status(400).json({ success: false, message: 'time deve estar no formato HH:MM' });
+  }
+  if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
+    return res.status(400).json({ success: false, message: 'dayOfWeek deve ser 0 (dom) a 6 (sab)' });
+  }
+
+  // Resolve o packageId real (pode vir como PackagesView._id)
+  const viewId = new mongoose.Types.ObjectId(id);
+  const view = await PackagesView.findById(viewId).lean();
+  const realPackageId = view?.packageId ? new mongoose.Types.ObjectId(view.packageId) : viewId;
+
+  const pendingStatuses = ['pre_agendado', 'scheduled'];
+
+  // Se dayOfWeek foi fornecido, precisa recalcular a data de cada appointment individualmente
+  if (dayOfWeek !== undefined) {
+    const appointments = await Appointment.find(
+      { package: realPackageId, operationalStatus: { $in: pendingStatuses } }
+    ).select('_id date').lean();
+
+    let updated = 0;
+    for (const appt of appointments) {
+      const current = new Date(appt.date);
+      const currentDay = current.getDay(); // 0=dom … 6=sab
+      let diff = dayOfWeek - currentDay;
+      if (diff <= 0) diff += 7; // próxima ocorrência futura do dia
+      const newDate = new Date(current);
+      newDate.setDate(newDate.getDate() + diff);
+      const newDateStr = newDate.toISOString().substring(0, 10);
+
+      const setFields = { date: newDateStr };
+      if (time) setFields.time = time;
+      if (doctorId) setFields.doctor = new mongoose.Types.ObjectId(doctorId);
+
+      const r = await Appointment.updateOne({ _id: appt._id }, { $set: setFields });
+      updated += r.modifiedCount;
+    }
+    return res.json({ success: true, data: { updated } });
+  }
+
+  // Sem dayOfWeek: updateMany simples (mais eficiente)
+  const patch = {};
+  if (doctorId) patch.doctor = new mongoose.Types.ObjectId(doctorId);
+  if (time) patch.time = time;
+
+  const result = await Appointment.updateMany(
+    { package: realPackageId, operationalStatus: { $in: pendingStatuses } },
+    { $set: patch }
+  );
+
+  return res.json({ success: true, data: { updated: result.modifiedCount } });
+}));
+
+// ============================================
 // Cancela/deleta pacote (event-driven)
 // ============================================
 

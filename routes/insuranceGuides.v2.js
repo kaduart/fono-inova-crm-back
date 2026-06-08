@@ -460,6 +460,73 @@ router.get('/:id/appointments', auth, async (req, res) => {
 });
 
 /**
+ * PATCH /api/v2/insurance-guides/:id/appointments/doctor
+ * Bulk-atualiza terapeuta e/ou horário de todos os appointments pre_agendado/scheduled da guia.
+ * Appointments confirmed/completed NÃO são alterados.
+ * Body: { doctorId?, time? } — pelo menos um dos dois obrigatório.
+ */
+router.patch('/:id/appointments/doctor', auth, async (req, res) => {
+  const { id } = req.params;
+  const { doctorId, time, dayOfWeek } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'ID inválido' });
+  }
+  if (!doctorId && !time && dayOfWeek === undefined) {
+    return res.status(400).json({ success: false, message: 'Informe doctorId, time e/ou dayOfWeek' });
+  }
+  if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
+    return res.status(400).json({ success: false, message: 'doctorId inválido' });
+  }
+  if (time && !/^\d{2}:\d{2}$/.test(time)) {
+    return res.status(400).json({ success: false, message: 'time deve estar no formato HH:MM' });
+  }
+  if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
+    return res.status(400).json({ success: false, message: 'dayOfWeek deve ser 0 (dom) a 6 (sab)' });
+  }
+
+  const guideObjId = new mongoose.Types.ObjectId(id);
+  const linkedPackages = await Package.find({ insuranceGuide: guideObjId }).select('_id').lean();
+  const packageIds = linkedPackages.map(p => p._id);
+
+  const baseQuery = packageIds.length > 0
+    ? { $or: [{ insuranceGuide: guideObjId }, { package: { $in: packageIds } }] }
+    : { insuranceGuide: guideObjId };
+
+  const pendingFilter = { ...baseQuery, operationalStatus: { $in: ['pre_agendado', 'scheduled'] } };
+
+  // Se dayOfWeek fornecido: recalcula data de cada appointment individualmente
+  if (dayOfWeek !== undefined) {
+    const appointments = await Appointment.find(pendingFilter).select('_id date').lean();
+    let updated = 0;
+    for (const appt of appointments) {
+      const current = new Date(appt.date);
+      const currentDay = current.getDay();
+      let diff = dayOfWeek - currentDay;
+      if (diff <= 0) diff += 7;
+      const newDate = new Date(current);
+      newDate.setDate(newDate.getDate() + diff);
+
+      const setFields = { date: newDate.toISOString().substring(0, 10) };
+      if (time) setFields.time = time;
+      if (doctorId) setFields.doctor = new mongoose.Types.ObjectId(doctorId);
+
+      const r = await Appointment.updateOne({ _id: appt._id }, { $set: setFields });
+      updated += r.modifiedCount;
+    }
+    return res.json({ success: true, data: { updated } });
+  }
+
+  // Sem dayOfWeek: updateMany simples
+  const patch = {};
+  if (doctorId) patch.doctor = new mongoose.Types.ObjectId(doctorId);
+  if (time) patch.time = time;
+
+  const result = await Appointment.updateMany(pendingFilter, { $set: patch });
+  return res.json({ success: true, data: { updated: result.modifiedCount } });
+});
+
+/**
  * POST /api/v2/insurance-guides/:id/inactivate
  * Inativa guia de convênio: cancela pendências, mantém histórico.
  * Mesmo padrão do pacote (POST /v2/packages/:id/inactivate).

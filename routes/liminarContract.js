@@ -9,7 +9,8 @@ import {
   getActivePlan,
   generateSessions,
   getCommittedBalance,
-  getContractSessions
+  getContractSessions,
+  updateTherapy
 } from '../controllers/liminarContractController.js';
 
 const router = express.Router();
@@ -27,5 +28,6 @@ router.post('/:id/plans',                          createTherapeuticPlan);
 router.get('/:id/plans',                           listTherapeuticPlans);
 router.get('/:id/plans/active',                    getActivePlan);
 router.post('/:id/plans/:planId/generate-sessions', generateSessions);
+router.patch('/:id/plans/:planId/therapies/:specialty', updateTherapy);
 
 export default router;

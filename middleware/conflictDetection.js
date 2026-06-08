@@ -64,7 +64,7 @@ function getDayKeyFromYMD(dateYMD) {
 // ✅ MIDDLEWARE: conflicts (doctor + patient)
 // ======================================================
 export const checkAppointmentConflicts = async (req, res, next) => {
-  const { doctorId, patientId, date, time, operationalStatus, isNewPatient } = req.body;
+  const { doctorId, patientId, date, time, operationalStatus, isNewPatient, isJointSession } = req.body;
   const appointmentId = req.params?.id;
 
   // 🔥 Pré-agendamentos podem não ter patientId (paciente ainda não cadastrado)
@@ -213,7 +213,8 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       return overlaps;
     });
 
-    if (doctorConflict) {
+    // Sessão Conjunta: mesmo profissional pode ter dois pacientes no mesmo horário
+    if (doctorConflict && !isJointSession) {
       return res.status(409).json({
         error: "Conflito de agenda médica",
         message: "O médico já possui um compromisso neste horário",

@@ -334,6 +334,63 @@ export async function getCommittedBalance(req, res) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// PATCH /api/v2/liminar-contracts/:id/plans/:planId/therapies/:specialty
+// Troca o terapeuta de uma especialidade no plano ativo e atualiza
+// os appointments ainda pendentes (pre_agendado/scheduled) da especialidade.
+// Appointments confirmed/completed NÃO são alterados.
+// ──────────────────────────────────────────────────────────────
+export async function updateTherapy(req, res) {
+  const { id: contractId, planId, specialty } = req.params;
+  const { doctorId, sessionValue, sessionDurationMinutes, slots } = req.body;
+
+  const plan = await TherapeuticPlan.findOne({
+    _id: planId,
+    liminarContract: contractId,
+    status: 'active'
+  });
+
+  if (!plan) {
+    return res.status(404).json({ error: 'Plano ativo não encontrado' });
+  }
+
+  const therapy = plan.therapies.get(specialty);
+  if (!therapy) {
+    return res.status(404).json({ error: `Especialidade "${specialty}" não encontrada no plano` });
+  }
+
+  if (doctorId !== undefined) therapy.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
+  if (sessionValue !== undefined) therapy.sessionValue = sessionValue;
+  if (sessionDurationMinutes !== undefined) therapy.sessionDurationMinutes = sessionDurationMinutes;
+  if (slots !== undefined) therapy.slots = slots;
+
+  await plan.save();
+
+  // Atualiza appointments pendentes (pre_agendado/scheduled) com os campos alterados
+  const appointmentPatch = {};
+  if (doctorId !== undefined) appointmentPatch.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
+  if (sessionValue !== undefined) appointmentPatch.sessionValue = sessionValue;
+
+  let appointmentsUpdated = 0;
+  if (Object.keys(appointmentPatch).length > 0) {
+    const result = await Appointment.updateMany(
+      {
+        liminarContract: new mongoose.Types.ObjectId(contractId),
+        specialty,
+        operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+      },
+      { $set: appointmentPatch }
+    );
+    appointmentsUpdated = result.modifiedCount;
+  }
+
+  logger.info('Terapia atualizada no plano liminar', {
+    contractId, planId, specialty, appointmentsUpdated
+  });
+
+  return res.json({ plan, appointmentsUpdated });
+}
+
+// ──────────────────────────────────────────────────────────────
 // GET /api/v2/liminar-contracts/:id/sessions
 // Lista appointments do contrato, opcionalmente filtradas por specialty
 // ──────────────────────────────────────────────────────────────
@@ -364,6 +421,8 @@ export async function getContractSessions(req, res) {
   }
 
   const sessions = await Appointment.find(filter)
+    .populate('doctor', 'fullName specialty')
+    .populate('patient', 'fullName')
     .sort({ date: 1 })
     .lean();
 

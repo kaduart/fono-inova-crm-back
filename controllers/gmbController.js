@@ -496,12 +496,20 @@ export async function makeCallback(req, res) {
     if (status === 'published') {
       post.status = 'published';
       post.publishedAt = new Date();
+      post.nextRetryAt = null;
       if (gmbPostId) post.gmbPostId = gmbPostId;
+      await post.save();
     } else if (status === 'failed') {
-      await post.markFailed(makeError || 'Falha reportada pelo Make');
+      // Não marca como 'failed' permanente — reseta para 'scheduled' para retry automático no próximo cron
+      post.status = 'scheduled';
+      post.nextRetryAt = null;
+      post.error = (makeError || 'Falha GMB reportada pelo Make')?.slice(0, 500);
+      post.retryCount = (post.retryCount || 0) + 1;
+      post.lastErrorAt = new Date();
+      await post.save();
+    } else {
+      return res.status(400).json({ success: false, error: `status inválido: ${status}` });
     }
-
-    await post.save();
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
