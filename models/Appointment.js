@@ -169,6 +169,11 @@ const appointmentSchema = new mongoose.Schema({
   insuranceValue: { type: Number, min: 0, default: 0 },
   authorizationCode: { type: String, default: null },
   insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
+  paymentForms: [{
+    amount: { type: Number, min: 0 },
+    date: { type: Date },
+    method: { type: String }
+  }],
 
   // ─── REFERÊNCIAS ───────────────────────────────────────────
   payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: false },

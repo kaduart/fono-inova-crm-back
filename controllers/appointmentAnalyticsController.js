@@ -44,11 +44,14 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         const isFirstVisit = earlierAppointments.length === 0;
 
         // 🔥 Fonte de verdade para lead:
-        // Lead = paciente que NUNCA teve nenhum agendamento no sistema e está
-        // entrando pelo funil de aquisição (pre_agendado ou scheduled).
-        // Agendamentos pre_agendado de pacientes COM histórico (ex: convênio gerado
-        // automaticamente) NÃO são leads.
-        const isLead = isFirstVisit && (apt.operationalStatus === 'pre_agendado' || apt.operationalStatus === 'scheduled');
+        // - pre_agendado particular → funil de aquisição clássico (sempre lead)
+        // - scheduled + isFirstVisit → agendamento direto de paciente novo
+        // - convênio excluído: sessões geradas pelo plano NÃO são leads
+        const isConvenioSession = apt.billingType === 'convenio' || apt.paymentMethod === 'convenio';
+        const isLead = !isConvenioSession && (
+            apt.operationalStatus === 'pre_agendado' ||
+            (apt.operationalStatus === 'scheduled' && isFirstVisit)
+        );
 
         if (isLead) {
             return { ...apt, isLead: true, isFirstVisit, isReturningAfter45Days: false };

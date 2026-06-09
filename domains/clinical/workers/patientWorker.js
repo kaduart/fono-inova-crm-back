@@ -253,7 +253,9 @@ async function handleUpdatePatient(payload, correlationId) {
     const allowedFields = [
       'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
       'gender', 'address', 'healthPlan', 'mainComplaint',
-      'emergencyContact', 'clinicalHistory', 'medications', 'allergies'
+      'emergencyContact', 'clinicalHistory', 'medications', 'allergies',
+      'legalGuardian', 'familyHistory', 'placeOfBirth', 'profession',
+      'maritalStatus', 'birthCertificate', 'imageAuthorization'
     ];
     
     const sanitizedUpdates = {};

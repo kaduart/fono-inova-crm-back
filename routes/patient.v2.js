@@ -346,74 +346,33 @@ router.post('/', flexibleAuth, async (req, res) => {
       fullName: fullName.substring(0, 50)
     });
     
-    // 🚀 Fallback síncrono se workers estiverem desabilitados
-    if (!isWorkersEnabled()) {
-      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
-      
-      const patient = await Patient.create({
-        _id: new mongoose.Types.ObjectId(patientId),
-        fullName: fullName.trim(),
-        dateOfBirth,
-        phone: req.body.phone?.replace(/\D/g, ''),
-        email: req.body.email?.toLowerCase(),
-        cpf: req.body.cpf?.replace(/\D/g, ''),
-        rg: req.body.rg,
-        gender: req.body.gender,
-        address: req.body.address,
-        healthPlan: req.body.healthPlan,
-        mainComplaint: req.body.mainComplaint,
-        emergencyContact: req.body.emergencyContact,
-        createdBy: req.user?.id
-      });
-      
-      const view = await buildPatientView(patient._id.toString(), { correlationId, force: true });
-      
-      return res.status(201).json(
-        formatSuccess({
-          patientId: patient._id.toString(),
-          status: 'completed',
-          patientView: view
-        }, { message: 'Paciente criado' })
-      );
-    }
-
-    // Publica evento
-    const event = await publishEvent(
-      EventTypes.PATIENT_CREATE_REQUESTED,
-      {
-        patientId,
-        fullName: fullName.trim(),
-        dateOfBirth,
-        phone: req.body.phone?.replace(/\D/g, ''),
-        email: req.body.email?.toLowerCase(),
-        cpf: req.body.cpf?.replace(/\D/g, ''),
-        rg: req.body.rg,
-        gender: req.body.gender,
-        address: req.body.address,
-        healthPlan: req.body.healthPlan,
-        mainComplaint: req.body.mainComplaint,
-        emergencyContact: req.body.emergencyContact,
-        createdBy: req.user?.id,
-        createdAt: new Date().toISOString()
-      },
-      { correlationId }
-    );
-    
-    logger.info(`[${correlationId}] ✅ Event published`, {
-      eventId: event.eventId,
-      patientId
+    // Cria paciente diretamente no MongoDB (síncrono sempre)
+    const patient = await Patient.create({
+      _id: new mongoose.Types.ObjectId(patientId),
+      fullName: fullName.trim(),
+      dateOfBirth,
+      phone: req.body.phone?.replace(/\D/g, ''),
+      email: req.body.email?.toLowerCase(),
+      cpf: req.body.cpf?.replace(/\D/g, ''),
+      rg: req.body.rg,
+      gender: req.body.gender,
+      address: req.body.address,
+      healthPlan: req.body.healthPlan,
+      mainComplaint: req.body.mainComplaint,
+      emergencyContact: req.body.emergencyContact,
+      createdBy: req.user?.id
     });
-    
-    return res.status(202).json(
+
+    logger.info(`[${correlationId}] ✅ Patient created`, { patientId: patient._id.toString() });
+
+    const view = await buildPatientView(patient._id.toString(), { correlationId, force: true });
+
+    return res.status(201).json(
       formatSuccess({
-        eventId: event.eventId,
-        correlationId,
-        jobId: event.jobId,
-        patientId,
-        status: 'pending',
-        checkStatusUrl: `/api/v2/patients/status/${event.eventId}`,
-        estimatedTime: '1-2s'
-      }, { message: 'Paciente em processamento' })
+        patientId: patient._id.toString(),
+        status: 'completed',
+        patientView: view
+      }, { message: 'Paciente criado' })
     );
     
   } catch (error) {
@@ -441,62 +400,40 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       patientId = view.patientId;
     }
 
-    // 🚀 Fallback síncrono se workers estiverem desabilitados
-    if (!isWorkersEnabled()) {
-      logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
-      
-      const allowedFields = [
-        'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
-        'gender', 'address', 'healthPlan', 'mainComplaint',
-        'emergencyContact', 'clinicalHistory', 'medications', 'allergies',
-        'familyHistory', 'placeOfBirth', 'profession', 'maritalStatus',
-        'birthCertificate', 'legalGuardian', 'imageAuthorization'
-      ];
-      
-      const updates = {};
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
-        }
+    // Atualiza MongoDB diretamente (síncrono sempre)
+    const allowedFields = [
+      'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
+      'gender', 'address', 'healthPlan', 'mainComplaint',
+      'emergencyContact', 'clinicalHistory', 'medications', 'allergies',
+      'familyHistory', 'placeOfBirth', 'profession', 'maritalStatus',
+      'birthCertificate', 'legalGuardian', 'imageAuthorization'
+    ];
+
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
       }
-      
-      if (updates.fullName) updates.fullName = updates.fullName.trim();
-      if (updates.phone) updates.phone = updates.phone.replace(/\D/g, '');
-      if (updates.email) updates.email = updates.email.toLowerCase();
-      
-      await Patient.findByIdAndUpdate(patientId, {
-        ...updates,
-        updatedAt: new Date()
-      });
-      
-      const view = await buildPatientView(patientId, { correlationId, force: true });
-      
-      return res.json(formatSuccess({
-        status: 'completed',
-        patientView: view
-      }, { message: 'Paciente atualizado' }));
     }
 
-    const event = await publishEvent(
-      EventTypes.PATIENT_UPDATE_REQUESTED,
-      {
-        patientId,
-        updates: req.body,
-        updatedBy: req.user?.id,
-        updatedAt: new Date().toISOString()
-      },
-      { correlationId }
-    );
-    
-    return res.status(202).json(
-      formatSuccess({
-        eventId: event.eventId,
-        correlationId,
-        jobId: event.jobId,
-        status: 'pending',
-        checkStatusUrl: `/api/v2/patients/status/${event.eventId}`
-      }, { message: 'Atualização em processamento' })
-    );
+    if (updates.fullName) updates.fullName = updates.fullName.trim();
+    if (updates.phone) updates.phone = updates.phone.replace(/\D/g, '');
+    if (updates.email) updates.email = updates.email.toLowerCase();
+
+    await Patient.findByIdAndUpdate(patientId, {
+      ...updates,
+      updatedBy: req.user?.id,
+      updatedAt: new Date()
+    });
+
+    logger.info(`[${correlationId}] ✅ Patient updated`, { patientId });
+
+    const view = await buildPatientView(patientId, { correlationId, force: true });
+
+    return res.json(formatSuccess({
+      status: 'completed',
+      patientView: view
+    }, { message: 'Paciente atualizado' }));
     
   } catch (error) {
     logger.error(`[${correlationId}] Update error`, { error: error.message });

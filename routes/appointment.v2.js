@@ -1056,7 +1056,12 @@ async function hasActiveJobInQueue(appointmentId) {
  */
 router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { notes = '', evolution = '', addToBalance, balanceAmount, balanceDescription } = req.body;
+  const {
+    notes = '', evolution = '', addToBalance, balanceAmount, balanceDescription,
+    billingType, paymentMethod, paymentAmount, sessionValue: reqSessionValue,
+    insuranceProvider, insuranceValue, authorizationCode,
+    payments
+  } = req.body;
 
   // 🚀 LOCK V2 MODE - Sempre usa V2, sem dualidade
   console.log(`[complete] 🔒 LOCK V2 - Completando ${id}`, { body: req.body });
@@ -1076,6 +1081,21 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
       await Appointment.findByIdAndUpdate(id, { $set: { patient: resolvedPatient._id } });
       console.log(`[complete] ${isNew ? '🆕 Patient criado' : '🔍 Patient resolvido'} via PatientService: ${resolvedPatient._id}`);
     }
+  }
+
+  // Pre-set billing fields from this call before completeSessionV2 reads the appointment
+  const billingUpdate = {};
+  if (billingType) billingUpdate.billingType = billingType;
+  if (paymentMethod) billingUpdate.paymentMethod = paymentMethod;
+  if (reqSessionValue != null) billingUpdate.sessionValue = reqSessionValue;
+  if (paymentAmount != null) billingUpdate.paymentAmount = paymentAmount;
+  if (insuranceProvider != null) billingUpdate.insuranceProvider = insuranceProvider;
+  if (insuranceValue != null) billingUpdate.insuranceValue = insuranceValue;
+  if (authorizationCode != null) billingUpdate.authorizationCode = authorizationCode;
+  if (payments?.length) billingUpdate.paymentForms = payments;
+  if (Object.keys(billingUpdate).length > 0) {
+    await Appointment.findByIdAndUpdate(id, { $set: billingUpdate });
+    console.log(`[complete] 💳 Billing fields pre-updated:`, Object.keys(billingUpdate));
   }
 
   const result = await completeSessionV2(id, {
