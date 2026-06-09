@@ -197,7 +197,7 @@ router.post('/', flexibleAuth, async (req, res) => {
             date: new Date(`${effectiveDate}T00:00:00-03:00`),
             time: effectiveTime,
             specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
-            serviceType: req.body.serviceType || 'evaluation',
+            serviceType: req.body.serviceType || req.body.crm?.serviceType || 'individual_session',
             notes,
             doctor: doctor?._id || undefined,
             professionalName: doctor?.fullName || professionalName || '',
@@ -364,7 +364,7 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
             date: new Date(resolvedDateStr + 'T12:00:00-03:00'),
             time,
             specialty: pre.specialty || 'fonoaudiologia',
-            serviceType: pre.serviceType || 'evaluation', // Respeita o tipo de atendimento original (consulta, avaliação, etc)
+            serviceType: pre.serviceType || 'individual_session', // Respeita o tipo de atendimento original (consulta, avaliação, etc)
             isJointSession: pre.serviceType === 'joint_session',
             billingType: 'particular',
             paymentMethod: req.body.paymentMethod || 'pix',

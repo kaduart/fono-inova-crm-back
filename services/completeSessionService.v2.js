@@ -1044,6 +1044,18 @@ function determineBillingType(appointment, packageData) {
         return 'convenio';
     }
 
+    // 🛡️ GUARD: paymentMethod=convenio com billingType inconsistente = dado corrompido.
+    // Particular nunca usa paymentMethod='convenio' — se aparecer aqui é dado errado.
+    // Self-heal: roteamos para convenio para evitar que particularHandler marque como paid.
+    if (appointment?.paymentMethod === 'convenio') {
+        console.error('[determineBillingType] INCONSISTENT_BILLING: paymentMethod=convenio mas billingType!=convenio — corrigindo para convenio', {
+            appointmentId: appointment._id,
+            billingType: appointment.billingType,
+            paymentMethod: appointment.paymentMethod
+        });
+        return 'convenio';
+    }
+
     // 🎯 PRIORIDADE 2: Package model/type (fallback legado — apenas para particular)
     // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
     // Esses fallbacks só existem para dados antigos (backfill pendente).

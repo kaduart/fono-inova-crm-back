@@ -119,14 +119,18 @@ export async function generateInsurancePlanSessions({
         operationalStatus: { $ne: 'canceled' }
       },
       update: {
+        $set: {
+          // Sempre enforça billingType/paymentMethod mesmo em appointments existentes.
+          // $setOnInsert não corrigia appointments criados antes do plano (causa do bug 2026-06-09).
+          billingType: 'convenio',
+          paymentMethod: 'convenio'
+        },
         $setOnInsert: {
           patient: plan.patient,
           doctor: plan.doctor,
           specialty: plan.specialty,
           date: slot.date,
           time: slot.time,
-          billingType: 'convenio',
-          paymentMethod: 'convenio',
           insuranceProvider: guide.insurance,
           insuranceGuide: guide._id,
           insurancePlan: plan._id,
