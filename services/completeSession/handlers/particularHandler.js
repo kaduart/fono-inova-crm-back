@@ -182,6 +182,10 @@ export const ParticularHandler = {
                 const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
                 if (existingPayment?.status === 'paid') {
+                    // ⛔⛔⛔ NUNCA ALTERAR financialDate / paidAt / paymentDate AQUI ⛔⛔⛔
+                    // Payment já foi pago (pré-registrado pelo usuário — pode ter sido ontem, semana passada, etc).
+                    // Sobrescrever datas = caixa errado. Apenas sincroniza campos de classificação.
+                    // Bug confirmado 2026-06-10: completar appointment hoje movia caixa de ontem para hoje.
                     _existingWasPaid = true;
                     paymentCreated = await Payment.findByIdAndUpdate(
                         existingPaymentId,
@@ -192,6 +196,7 @@ export const ParticularHandler = {
                                 billingType:   'particular',
                                 updatedAt:     now,
                                 ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                                // ⛔ NÃO adicionar financialDate, paidAt, paymentDate aqui ⛔
                             }
                         },
                         { session: mongoSession, new: true }
@@ -202,7 +207,7 @@ export const ParticularHandler = {
                         { $set: { isPaid: true, paymentStatus: 'paid', paidAt: existingPayment.paidAt || existingPayment.financialDate || now } },
                         { session: mongoSession }
                     );
-                    console.log(`[ParticularHandler] [PER_SESSION] Payment pre-registrado — sincronizados: ${paymentCreated._id}`);
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment já pago — datas PRESERVADAS: ${paymentCreated._id} (financialDate=${existingPayment.financialDate})`);
                 } else {
                     paymentCreated = await Payment.findByIdAndUpdate(
                         existingPaymentId,
@@ -232,27 +237,70 @@ export const ParticularHandler = {
                     console.log(`[ParticularHandler] [PER_SESSION] Payment pending→paid: ${paymentCreated._id}`);
                 }
             } else {
-                const [paymentDoc] = await Payment.create([{
-                    patient:       appointment.patient?._id,
-                    amount:        sessionValue,
-                    status:        'paid',
-                    type:          'service',
-                    serviceType:   'session',
-                    paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
-                    paymentDate:   now,
-                    paidAt:        now,
-                    financialDate: now,
-                    description:   `Sessao per-session realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment:   appointmentId,
-                    session:       sessionId,
-                    createdBy:     userId,
-                    kind:          'session_payment',
-                    billingType:   'particular',
-                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
-                }], { session: mongoSession });
-                paymentCreated = paymentDoc;
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[ParticularHandler] [PER_SESSION] Payment paid criado: ${paymentCreated._id}`);
+                // ⛔⛔⛔ NUNCA REMOVER ESTE GUARD ⛔⛔⛔
+                // Per-session pré-registrado via tabela financeira (create-sync ou outro fluxo)
+                // pode não ter linkado appointment.payment por falha de sincronização.
+                // Sem este lookup, particularHandler criaria um NOVO payment com financialDate=hoje,
+                // duplicando o caixa e ignorando a data real de recebimento (ontem, semana passada, etc).
+                // Bug confirmado 2026-06-10: Henre pagou ontem mas aparecia no caixa de hoje.
+                // ⛔ NÃO substituir por `financialDate: now` sem antes rodar este lookup. ⛔
+                const preRegistered = await Payment.findOne({
+                    $or: [
+                        { appointment: appointmentId },
+                        ...(sessionId ? [{ session: sessionId }] : [])
+                    ],
+                    status: 'paid',
+                    billingType: { $in: ['particular', null, undefined] }
+                }).sort({ createdAt: -1 }).session(mongoSession).lean();
+
+                if (preRegistered) {
+                    // Payment pré-registrado encontrado — sincroniza campos sem sobrescrever datas.
+                    // financialDate/paymentDate/paidAt NÃO são alterados: o caixa fica no dia real do recebimento.
+                    paymentCreated = await Payment.findByIdAndUpdate(
+                        preRegistered._id,
+                        {
+                            $set: {
+                                amount:      sessionValue,
+                                kind:        'session_payment',
+                                billingType: 'particular',
+                                updatedAt:   now,
+                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                            }
+                        },
+                        { session: mongoSession, new: true }
+                    );
+                    appointmentUpdate.$set.payment = preRegistered._id;
+                    appointmentUpdate.$set.paymentStatus = 'paid';
+                    await Session.findByIdAndUpdate(
+                        sessionId,
+                        { $set: { isPaid: true, paymentStatus: 'paid', paidAt: preRegistered.paidAt || preRegistered.financialDate || now } },
+                        { session: mongoSession }
+                    );
+                    _existingWasPaid = true;
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment pré-registrado via lookup — datas PRESERVADAS: ${preRegistered._id} (financialDate=${preRegistered.financialDate})`);
+                } else {
+                    const [paymentDoc] = await Payment.create([{
+                        patient:       appointment.patient?._id,
+                        amount:        sessionValue,
+                        status:        'paid',
+                        type:          'service',
+                        serviceType:   'session',
+                        paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                        paymentDate:   now,
+                        paidAt:        now,
+                        financialDate: now,
+                        description:   `Sessao per-session realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                        appointment:   appointmentId,
+                        session:       sessionId,
+                        createdBy:     userId,
+                        kind:          'session_payment',
+                        billingType:   'particular',
+                        ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                    }], { session: mongoSession });
+                    paymentCreated = paymentDoc;
+                    appointmentUpdate.$set.payment = paymentCreated._id;
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment paid criado (sem pré-registro): ${paymentCreated._id}`);
+                }
             }
 
             if (!_existingWasPaid && packageId && paymentCreated?.status === 'paid') {
