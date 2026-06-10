@@ -51,7 +51,13 @@ export class CreateAppointmentService {
         const eventId = crypto.randomUUID();
         const correlationId = data.correlationId || `apt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-        // 1. Cria agendamento (status: pending)
+        // 1. Classifica jornada do paciente (snapshot imutável)
+        // Liminar = tratamento judicial contínuo — nunca conta como aquisição
+        let patientJourneyType = (serviceType === 'liminar_session' || data.billingType === 'liminar')
+            ? 'continuous_treatment'
+            : await this.classifyJourney(patientId, specialty, session);
+
+        // 2. Cria agendamento (status: pending)
         const appointment = new this.Appointment({
             patient: patientId,
             doctor: doctorId,
@@ -60,6 +66,7 @@ export class CreateAppointmentService {
             specialty,
             serviceType,
             package: packageId,
+            patientJourneyType,
             
             // Status inicial (state machine)
             operationalStatus: 'pending',
@@ -169,6 +176,24 @@ export class CreateAppointmentService {
 
     isValidTime(time) {
         return /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+    }
+
+    /**
+     * Classifica a jornada do paciente no momento do agendamento.
+     * Snapshot imutável — não muda mesmo que novos appointments sejam criados depois.
+     */
+    async classifyJourney(patientId, specialty, session) {
+        if (!patientId) return 'new_patient';
+        const opts = session ? { session } : {};
+        const baseFilter = {
+            patient: patientId,
+            operationalStatus: { $nin: ['canceled', 'cancelado'] }
+        };
+        const priorCount = await this.Appointment.countDocuments(baseFilter, opts);
+        if (priorCount === 0) return 'new_patient';
+        const priorInSpecialty = await this.Appointment.countDocuments({ ...baseFilter, specialty }, opts);
+        if (priorInSpecialty === 0) return 'new_specialty';
+        return 'returning_patient';
     }
 }
 

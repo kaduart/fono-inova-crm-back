@@ -74,7 +74,18 @@ const paymentSchema = new mongoose.Schema({
         grossAmount: { type: Number, default: 0 }
     },
     insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
-    insurancePlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',  default: null }
+    insurancePlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',  default: null },
+    splitGroupId: {
+        type: String,
+        default: null,
+        index: true,
+        description: 'ID de grupo para vincular payments de um mesmo split (multi-forma)'
+    },
+    source: {
+        type: String,
+        default: null,
+        description: 'Origem/fluxo que gerou o payment (ex: appointment_split, complete_session, manual_entry)'
+    }
 }, { timestamps: true });
 
 // ============ SCHEMA GUARD - PROTEÇÃO CONSISTÊNCIA ============
@@ -174,6 +185,10 @@ paymentSchema.pre('save', async function(next) {
     
     next();
 });
+
+// ============ ÍNDICES DE PERFORMANCE (ledger multi-entry) ============
+paymentSchema.index({ appointment: 1, splitGroupId: 1, status: 1 }, { name: 'ledger_split_lookup' });
+paymentSchema.index({ source: 1, createdAt: -1 }, { name: 'source_audit_trail' });
 
 // ============ SAFETY NET: Emite evento se status mudou via save() direto ============
 // Detecta bypass de transitionPaymentStatus e emite evento automaticamente.

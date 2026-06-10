@@ -165,6 +165,12 @@ const appointmentSchema = new mongoose.Schema({
     enum: ['particular', 'convenio', 'liminar'],
     default: 'particular'
   },
+  patientJourneyType: {
+    type: String,
+    enum: ['new_patient', 'new_specialty', 'returning_patient', 'continuous_treatment'],
+    default: null,
+    index: true
+  },
   insuranceProvider: { type: String, default: null },
   insuranceValue: { type: Number, min: 0, default: 0 },
   authorizationCode: { type: String, default: null },

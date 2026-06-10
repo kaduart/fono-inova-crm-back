@@ -15,6 +15,7 @@ import Payment from '../../../models/Payment.js';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
 import LegacyFinanceWriteGuard from '../../financialGuard/LegacyFinanceWriteGuard.js';
+import { normalizePaymentMethod } from '../../../utils/paymentResolver.js';
 
 export const ParticularHandler = {
     /**
@@ -174,7 +175,7 @@ export const ParticularHandler = {
         // Sub-caso 3: per-session (pago no ato — fiado foi tratado no sub-caso 2)
         if (isPerSession) {
             let paymentCreated;
-            let _existingWasPaid = false; // guard para não duplicar totalPaid no caso pré-registrado
+            let _existingWasPaid = false;
 
             if (appointment.payment) {
                 const existingPaymentId = appointment.payment._id || appointment.payment;
@@ -182,7 +183,6 @@ export const ParticularHandler = {
 
                 if (existingPayment?.status === 'paid') {
                     _existingWasPaid = true;
-                    // Já foi pago anteriormente — mantém paid (re-complete ou pagamento antecipado)
                     paymentCreated = await Payment.findByIdAndUpdate(
                         existingPaymentId,
                         {
@@ -196,16 +196,14 @@ export const ParticularHandler = {
                         },
                         { session: mongoSession, new: true }
                     );
-                    // Pagamento pre-registrado (ex: tabela financeira) — sincroniza appointment e session
                     appointmentUpdate.$set.paymentStatus = 'paid';
                     await Session.findByIdAndUpdate(
                         sessionId,
                         { $set: { isPaid: true, paymentStatus: 'paid', paidAt: existingPayment.paidAt || existingPayment.financialDate || now } },
                         { session: mongoSession }
                     );
-                    console.log(`[ParticularHandler] [PER_SESSION] Payment pre-registrado — appointment e session sincronizados: ${paymentCreated._id}`);
+                    console.log(`[ParticularHandler] [PER_SESSION] Payment pre-registrado — sincronizados: ${paymentCreated._id}`);
                 } else {
-                    // Existia pending — atualiza para paid com financialDate
                     paymentCreated = await Payment.findByIdAndUpdate(
                         existingPaymentId,
                         {
@@ -234,7 +232,6 @@ export const ParticularHandler = {
                     console.log(`[ParticularHandler] [PER_SESSION] Payment pending→paid: ${paymentCreated._id}`);
                 }
             } else {
-                // Sem payment existente — cria paid (per-session sem fiado = pago no ato)
                 const [paymentDoc] = await Payment.create([{
                     patient:       appointment.patient?._id,
                     amount:        sessionValue,
@@ -258,8 +255,6 @@ export const ParticularHandler = {
                 console.log(`[ParticularHandler] [PER_SESSION] Payment paid criado: ${paymentCreated._id}`);
             }
 
-            // Atualiza totalPaid do pacote per-session quando dinheiro entra agora
-            // _existingWasPaid=true significa pré-registro (financialDate já contabilizado na compra)
             if (!_existingWasPaid && packageId && paymentCreated?.status === 'paid') {
                 const pkgPerSession = await Package.findById(packageId).session(mongoSession).lean();
                 if (pkgPerSession && (pkgPerSession.model === 'per_session' || pkgPerSession.paymentType === 'per-session')) {
@@ -294,8 +289,6 @@ export const ParticularHandler = {
             const existingPaymentId = appointment.payment._id || appointment.payment;
             const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
-            // Se o payment já estava paid (pré-pago), preserva datas originais — imutabilidade financeira.
-            // Só usa `now` se o payment ainda estava pending (primeiro recebimento na sessão).
             const alreadyPaid = existingPayment?.status === 'paid';
             const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : now;
             const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : now;
@@ -319,7 +312,7 @@ export const ParticularHandler = {
                 },
                 { session: mongoSession, new: true }
             );
-            console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id} (paymentDate preservado: ${preservePaymentDate})`);
+            console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id}`);
         } else {
             const [paymentDoc] = await Payment.create([{
                 patient:       appointment.patient?._id,
@@ -344,15 +337,11 @@ export const ParticularHandler = {
             console.log(`[ParticularHandler] [PAGO] Payment criado: ${paymentCreated._id}`);
         }
 
-        // Per-session package: atualiza totalPaid e recalcula balance
-        // ⚠️ Só incrementa totalPaid quando dinheiro REALMENTE entrou (status === 'paid')
-        // CORRECAO: nao incrementa no complete se o payment ficou pending
         if (packageId && paymentCreated && !isBalanceOrigin && paymentCreated.status === 'paid') {
             const pkgAtual = await Package.findById(packageId).session(mongoSession).lean();
             if (pkgAtual && (pkgAtual.model === 'per_session' || pkgAtual.paymentType === 'per-session')) {
                 const novoTotalPaid    = (pkgAtual.totalPaid || 0) + sessionValue;
                 const novoPaidSessions = (pkgAtual.paidSessions || 0) + 1;
-
                 const sessionsDone    = pkgAtual.sessionsDone || 0;
                 const currentBalance  = (sessionsDone * sessionValue) - novoTotalPaid;
                 await Package.findByIdAndUpdate(

@@ -304,7 +304,8 @@ router.get('/', auth, async (req, res) => {
                 package: !!p.package || !!appt?.package,
                 isPackageSale: tipo === 'Pacote' && !!p.package,
                 isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
-                appointmentStatus: appt?.operationalStatus || '-'
+                appointmentStatus: appt?.operationalStatus || '-',
+                paymentForms: appt?.paymentForms || []
             };
         }).filter(Boolean);
 
@@ -591,8 +592,10 @@ router.get('/month', auth, async (req, res) => {
         const [year, monthNum] = month.split('-').map(Number);
         const monthStart = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day');
         const monthEnd = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day');
+        const today = moment.tz('America/Sao_Paulo').endOf('day');
         const start = monthStart.clone().utc().toDate();
-        const end = monthEnd.clone().utc().toDate();
+        // Para o mês atual, não buscar além de hoje — evita pagamentos futuros pré-registrados
+        const end = moment.min(monthEnd, today).utc().toDate();
 
         // 🎯 Fonte única de verdade V2
         const [cashMap, productionResult, productionTotals] = await Promise.all([

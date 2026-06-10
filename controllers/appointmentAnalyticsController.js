@@ -47,14 +47,29 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
         // - pre_agendado particular → funil de aquisição clássico (sempre lead)
         // - scheduled + isFirstVisit → agendamento direto de paciente novo
         // - convênio excluído: sessões geradas pelo plano NÃO são leads
+        // Liminar = tratamento judicial contínuo — nunca é lead nem aquisição
+        const isLiminar = apt.billingType === 'liminar' || apt.serviceType === 'liminar_session'
+            || apt.patientJourneyType === 'continuous_treatment';
+        if (isLiminar) {
+            return { ...apt, isLead: false, isFirstVisit: false, isFirstVisitInSpecialty: false, isReturningAfter45Days: false, isContinuousTreatment: true };
+        }
+
+        // package_session pressupõe pacote já comprado — nunca é 1ª visita.
+        // Sessões do pacote são criadas com mesmo createdAt, causando falso-positivo de isFirstVisit.
+        if (apt.serviceType === 'package_session' && isFirstVisit) {
+            return { ...apt, isLead: false, isFirstVisit: false, isFirstVisitInSpecialty: false, isReturningAfter45Days: false, isContinuousTreatment: false };
+        }
+
         const isConvenioSession = apt.billingType === 'convenio' || apt.paymentMethod === 'convenio';
-        const isLead = !isConvenioSession && (
+        // Desde 2026-05-07 TODOS os appointments nascem como pre_agendado — inclusive retornos.
+        // Lead = genuinamente nova pessoa na clínica (isFirstVisit obrigatório).
+        const isLead = !isConvenioSession && isFirstVisit && (
             apt.operationalStatus === 'pre_agendado' ||
-            (apt.operationalStatus === 'scheduled' && isFirstVisit)
+            apt.operationalStatus === 'scheduled'
         );
 
         if (isLead) {
-            return { ...apt, isLead: true, isFirstVisit, isReturningAfter45Days: false };
+            return { ...apt, isLead: true, isFirstVisit, isReturningAfter45Days: false, isContinuousTreatment: false };
         }
 
         // isReturningAfter45Days: olhar histórico na MESMA especialidade (por date)
@@ -87,7 +102,7 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
             isReturningAfter45Days = diffDays >= 45;
         }
 
-        return { ...apt, isLead: false, isFirstVisit, isFirstVisitInSpecialty, isReturningAfter45Days };
+        return { ...apt, isLead: false, isFirstVisit, isFirstVisitInSpecialty, isReturningAfter45Days, isContinuousTreatment: false };
     });
 }
 
@@ -216,11 +231,17 @@ export const getAppointmentsByType = async (req, res) => {
         console.log(`[analytics/by-type] 📋 Appointments do período: ${appointments.length} | Criados hoje (único): ${uniqueCriadosHoje.length} | Total pool: ${allAppointments.length}`);
 
         // ─── 4. Buscar histórico completo dos pacientes envolvidos ───
+        // Suporta patient populado (objeto) OU não populado (string/ObjectId)
         const patientIds = [
             ...new Set(
                 allAppointments
-                    .filter(a => a.patient && typeof a.patient === 'object' && a.patient._id)
-                    .map(a => a.patient._id.toString())
+                    .map(a => {
+                        if (!a.patient) return null;
+                        if (typeof a.patient === 'object') return a.patient._id?.toString() || null;
+                        if (typeof a.patient === 'string') return a.patient;
+                        return a.patient?.toString?.() || null;
+                    })
+                    .filter(Boolean)
             )
         ];
 
@@ -270,17 +291,20 @@ export const getAppointmentsByType = async (req, res) => {
             }
         }
 
-        const novos = enrichedAppointments.filter(a => a.isFirstVisit && !a.isLead);
-        const novosEspecialidade = enrichedAppointments.filter(
+        const continuousTreatment = enrichedAppointments.filter(a => a.isContinuousTreatment);
+        const acquisitionPool = enrichedAppointments.filter(a => !a.isContinuousTreatment);
+
+        const novos = acquisitionPool.filter(a => a.isFirstVisit && !a.isLead);
+        const novosEspecialidade = acquisitionPool.filter(
             a => !a.isLead && !a.isFirstVisit && a.isFirstVisitInSpecialty && !a.isReturningAfter45Days
         );
-        const retornos45 = enrichedAppointments.filter(a => a.isReturningAfter45Days);
-        const recorrentes = enrichedAppointments.filter(
+        const retornos45 = acquisitionPool.filter(a => a.isReturningAfter45Days);
+        const recorrentes = acquisitionPool.filter(
             a => !a.isLead && !a.isFirstVisit && !a.isFirstVisitInSpecialty && !a.isReturningAfter45Days
         );
 
         const total = enrichedAppointments.length;
-        console.log(`[analytics/by-type] ✅ Resultado: total=${total} | leads=${leads.length} | novos=${novos.length} | novosEspecialidade=${novosEspecialidade.length} | retornos45=${retornos45.length} | recorrentes=${recorrentes.length}`);
+        console.log(`[analytics/by-type] ✅ Resultado: total=${total} | leads=${leads.length} | novos=${novos.length} | novosEspecialidade=${novosEspecialidade.length} | retornos45=${retornos45.length} | recorrentes=${recorrentes.length} | continuousTreatment=${continuousTreatment.length}`);
 
         res.json({
             success: true,
@@ -312,6 +336,10 @@ export const getAppointmentsByType = async (req, res) => {
                 recorrentes: {
                     count: recorrentes.length,
                     percentage: total > 0 ? Math.round((recorrentes.length / total) * 100) : 0
+                },
+                continuousTreatment: {
+                    count: continuousTreatment.length,
+                    percentage: total > 0 ? Math.round((continuousTreatment.length / total) * 100) : 0
                 }
             },
             details: {
@@ -320,6 +348,7 @@ export const getAppointmentsByType = async (req, res) => {
                 novosEspecialidade,
                 retornos45,
                 recorrentes,
+                continuousTreatment,
                 all: enrichedAppointments
             }
         });

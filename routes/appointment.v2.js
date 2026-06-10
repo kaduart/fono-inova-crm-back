@@ -1624,7 +1624,16 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       isReturningAfter45Days = diffDays >= 45;
     }
     
-    return { isFirstVisit, isReturningAfter45Days };
+    // Liminar = tratamento judicial contínuo — fora das métricas de aquisição
+    const patientJourneyType = (appt.billingType === 'liminar' || appt.serviceType === 'liminar_session')
+      ? 'continuous_treatment'
+      : isFirstVisit
+        ? 'new_patient'
+        : earlierSameSpecialty.length === 0
+          ? 'new_specialty'
+          : 'returning_patient';
+
+    return { isFirstVisit, isReturningAfter45Days, patientJourneyType };
   }
   
   // 🔥 DTO único: nunca mais construir response inline
@@ -2358,6 +2367,7 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     }
 
     await Promise.all(updatePromises);
+
     await mongoSession.commitTransaction();
     transactionCommitted = true;  // ✅ Marca como commitado
 
