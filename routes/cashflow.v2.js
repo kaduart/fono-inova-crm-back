@@ -71,7 +71,7 @@ router.get('/', auth, async (req, res) => {
         const [appointmentsMap, doctorsMap, patientMap] = await Promise.all([
             allApptIds.length > 0
                 ? Appointment.find({ _id: { $in: allApptIds } })
-                    .select('_id time date doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms')
+                    .select('_id time date doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
                     .populate('patient', 'fullName phone')
                     .populate('doctor', 'fullName specialty')
                     .populate('package', 'paymentType sessionValue totalValue totalSessions model')
@@ -126,7 +126,7 @@ router.get('/', auth, async (req, res) => {
         const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
         const yesterdayAppointmentsMap = yesterdayAllApptIds.length > 0
             ? await Appointment.find({ _id: { $in: yesterdayAllApptIds } })
-                .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms')
+                .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
                 .populate('patient', 'fullName phone')
                 .populate('doctor', 'fullName specialty')
                 .populate('package', 'paymentType sessionValue totalValue totalSessions model')

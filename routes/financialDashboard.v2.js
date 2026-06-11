@@ -258,7 +258,7 @@ router.get('/', auth, async (req, res) => {
             const _snapPacotePend        = data.producaoDetalhe?.pacotePendente     || 0;
             const _snapAReceberProducao  = _snapConvenioAReceber + _snapLiminarAReceber + _snapParticularPend + _snapPacotePend;
             const _snapRecebidoProducao  = Math.max(0, (data.producao || 0) - _snapAReceberProducao);
-            const _snapRetroativos       = Math.max(0, (data.caixa   || 0) - _snapRecebidoProducao);
+            const _snapRecebimentosAntecipados       = Math.max(0, (data.caixa   || 0) - _snapRecebidoProducao);
             const _snapResultadoCaixa    = data.caixa    || 0;
             const _snapResultadoEcon     = data.producao || 0;
             const _snapRecebimentoProd   = {
@@ -287,7 +287,7 @@ router.get('/', auth, async (req, res) => {
                     particularPendente: _snapParticularPend,
                     pacotePendente: _snapPacotePend,
                     recebimentoProducao: _snapRecebimentoProd,
-                    retroativos: _snapRetroativos,
+                    retroativos: _snapRecebimentosAntecipados,
                     aReceberProducao: _snapAReceberProducao,
                     aReceber: aReceberSnap,
                     pendentes: pendentesSnap,
@@ -325,7 +325,7 @@ router.get('/', auth, async (req, res) => {
                     particularPendente: _snapParticularPend,
                     pacotePendente: _snapPacotePend,
                     recebimentoProducao: _snapRecebimentoProd,
-                    retroativos: _snapRetroativos,
+                    retroativos: _snapRecebimentosAntecipados,
                     aReceberProducao: _snapAReceberProducao,
                     metas: metasSnap,
                     profissionais: profissionaisSnap,
@@ -381,7 +381,7 @@ router.get('/', auth, async (req, res) => {
                 particularPendente: data.particularPendente,
                 pacotePendente: data.pacotePendente,
                 recebimentoProducao: data.recebimentoProducao,
-                retroativos: data.retroativos,
+                recebimentosAntecipados: data.recebimentosAntecipados,
                 aReceberProducao: data.aReceberProducao,
                 aReceber,
                 pendentes,
@@ -420,7 +420,7 @@ router.get('/', auth, async (req, res) => {
                 particularPendente: data.particularPendente,
                 pacotePendente: data.pacotePendente,
                 recebimentoProducao: data.recebimentoProducao,
-                retroativos: data.retroativos,
+                recebimentosAntecipados: data.recebimentosAntecipados,
                 aReceberProducao: data.aReceberProducao,
                 // 🆕 Metas separadas por camada
                 metas: {
@@ -678,7 +678,8 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const goal = await loadGoal(year, month, clinicId);
     const metaMensal = goal.metaMensal;
     const diasUteis = goal.diasUteis;
-    const metaDiariaNecessaria = metaMensal / diasUteis;
+    const _gapRestante = isMonthClosed ? 0 : Math.max(metaMensal - (data.producao || 0), 0);
+    const metaDiariaNecessaria = daysRemaining > 0 ? _gapRestante / daysRemaining : 0;
 
     // ─── LEGADO: REALIZADO MÊS = caixa + aReceber (mantido para compatibilidade) ───
     // ⚠️ NÃO use realizadoMes como base de ritmo/status — ele é receita PROJETADA, não produção
@@ -1353,7 +1354,9 @@ async function calculateRealTime(year, month) {
 
     const aReceberProducao   = convenioAReceber + particularPendente + pacotePendente + liminarAReceber;
     const recebidoProducao   = Math.max(0, (production.total || 0) - aReceberProducao);
-    const retroativos        = Math.max(0, cash.total - recebidoProducao);
+    // dinheiro recebido em caixa que NÃO corresponde à produção do mês
+    // (em junho/2026 auditado: 100% vendas de pacotes antecipadas — zero sessões de meses anteriores)
+    const recebimentosAntecipados = Math.max(0, cash.total - recebidoProducao);
 
     // 🆕 RECEITA PROJETADA = caixa realizado + a receber
     // Representa "quanto a clínica vai ter se todo mundo pagar"
@@ -1417,7 +1420,7 @@ async function calculateRealTime(year, month) {
             convenio:   Math.max(0, (production.convenio   || 0) - convenioAReceber),
             liminar:    Math.max(0, (production.liminar    || 0) - liminarAReceber),
         },
-        retroativos,
+        recebimentosAntecipados,
         aReceberProducao,
         receitaReconhecida: receitaProjetada,  // 🆕 agora = caixa + a_receber
         novaReceitaMes,
