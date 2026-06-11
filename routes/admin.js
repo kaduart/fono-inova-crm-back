@@ -13,7 +13,7 @@ dotenv.config();
 const router = express.Router();
 
 router.post('/add-doctor', auth, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (!['admin', 'secretary'].includes(req.user.role)) {
     return res.status(403).send({ error: 'Não autorizado add Profissional.' });
   }
 

@@ -15,7 +15,7 @@ const router = express.Router();
 // Add new patient
 router.post('/add', flexibleAuth, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (!['admin', 'secretary'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
         message: 'Você não está autorizado a adicionar paciente!'
