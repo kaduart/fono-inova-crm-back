@@ -15,6 +15,7 @@ import { createContextLogger } from '../../../utils/logger.js';
 import { buildPatientView } from '../services/patientProjectionService.js';
 import PatientsView from '../../../models/PatientsView.js';
 import Appointment from '../../../models/Appointment.js';
+import Payment from '../../../models/Payment.js';
 import DLQManager from '../../../infra/queue/dlqSystem.js';
 
 const logger = createContextLogger('PatientProjectionWorker');
@@ -394,41 +395,69 @@ async function handlePaymentCreated(payload, correlationId) {
 }
 
 /**
- * PAYMENT_STATUS_CHANGED → atualiza appointment.paymentStatus + rebuilda view
+ * PAYMENT_STATUS_CHANGED → agrega todos os payments do appointment e atualiza
+ * paymentStatus + isPaid + visualFlag de forma consistente.
  *
- * Cobre o ciclo: attended → paid (recebimento confirmado via webhook/manual)
- * PAYMENT_COMPLETED cuida do WhatsApp; este cuida do estado interno do DB.
- *
- * Mapa de status (igual ao hook removido):
- *   paid       → 'paid'
- *   pending    → 'pending'
- *   canceled   → 'canceled'
- *   recognized → 'recognized'
- *   default    → 'pending'
+ * Regra de agregação:
+ *   - session_charge (quando existe) é a fonte de verdade do total
+ *   - sem session_charge: agrega todos os session_payments válidos
+ *   - todos paid    → paid    / isPaid=true  / visualFlag=ok
+ *   - mix paid+pend → partial / isPaid=false / visualFlag=partial
+ *   - todos pending → pending / isPaid=false / visualFlag=pending
  */
 async function handlePaymentStatusChanged(payload, correlationId) {
-    const { patientId, appointmentId, status, paymentId } = payload;
+    const { patientId, appointmentId, paymentId } = payload;
 
-    const STATUS_MAP = {
-        paid:       'paid',
-        pending:    'pending',
-        canceled:   'canceled',
-        recognized: 'recognized',
-        attended:   'pending',  // attended = realizado, aguarda pagamento
-    };
-    const mappedStatus = STATUS_MAP[status] ?? 'pending';
-
-    // Atualiza appointment se disponível
     if (appointmentId) {
+        // Busca todos os payments válidos do appointment
+        const allPayments = await Payment.find({
+            $or: [
+                { appointment: appointmentId },
+                { appointmentId: appointmentId.toString() }
+            ],
+            isFromPackage: { $ne: true },
+            status: { $nin: ['canceled', 'refunded', 'converted_to_package'] }
+        }).lean();
+
+        let paymentStatus = 'pending';
+        let isPaid = false;
+        let visualFlag = 'pending';
+
+        if (allPayments.length > 0) {
+            // session_charge é a fonte de verdade quando existir
+            const charge = allPayments.find(p => p.kind === 'session_charge');
+            const authoritative = charge ? [charge] : allPayments;
+
+            const allPaid = authoritative.every(p => p.status === 'paid');
+            const anyPaid = authoritative.some(p => p.status === 'paid');
+
+            if (allPaid) {
+                paymentStatus = 'paid';
+                isPaid = true;
+                visualFlag = 'ok';
+            } else if (anyPaid) {
+                paymentStatus = 'partial';
+                isPaid = false;
+                visualFlag = 'partial';
+            } else {
+                paymentStatus = 'pending';
+                isPaid = false;
+                visualFlag = 'pending';
+            }
+        }
+
         await Appointment.findByIdAndUpdate(
             appointmentId,
-            { paymentStatus: mappedStatus },
+            { paymentStatus, isPaid, visualFlag },
             { new: false }
         );
 
-        logger.info(`[${correlationId}] PAYMENT_STATUS_CHANGED → appointment ${appointmentId} = ${mappedStatus}`, {
+        logger.info(`[${correlationId}] PAYMENT_STATUS_CHANGED → appointment ${appointmentId}`, {
             paymentId,
-            status,
+            paymentStatus,
+            isPaid,
+            visualFlag,
+            paymentsEvaluated: allPayments.length,
         });
     }
 
@@ -438,7 +467,7 @@ async function handlePaymentStatusChanged(payload, correlationId) {
     return {
         operation:     'payment_status_changed',
         appointmentId: appointmentId || null,
-        mappedStatus,
+        paymentStatus: appointmentId ? undefined : 'no_appointment',
         viewVersion:   view?.snapshot?.version,
     };
 }
