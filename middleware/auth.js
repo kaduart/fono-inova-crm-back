@@ -26,8 +26,7 @@ export const auth = async (req, res, next) => {
         }
 
         // Verificação otimizada de usuário
-        const userModel = mongoose.model(decoded.role === 'admin' ? 'Admin' :
-            decoded.role === 'secretary' ? 'Secretary' : 'Doctor');
+        const userModel = mongoose.model(decoded.role === 'admin' || decoded.role === 'secretary' ? 'Admin' : 'Doctor');
 
         const userExists = await userModel.exists({ _id: decoded.id });
 
