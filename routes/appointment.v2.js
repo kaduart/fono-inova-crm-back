@@ -710,10 +710,11 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
         ? await Session.findById(appointment.session).session(mongoSession)
         : await Session.findOne({ appointmentId: id, status: { $nin: ['canceled', 'completed'] } }).session(mongoSession);
       if (orphanSession && orphanSession.status !== 'canceled' && orphanSession.status !== 'completed') {
-        orphanSession.status = 'canceled';
-        orphanSession.canceledAt = new Date();
-        orphanSession.cancelReason = reason || 'cleanup_on_already_canceled';
-        await orphanSession.save({ session: mongoSession });
+        await Session.findByIdAndUpdate(
+          orphanSession._id,
+          { $set: { status: 'canceled', canceledAt: new Date(), cancelReason: reason || 'cleanup_on_already_canceled' } },
+          { session: mongoSession }
+        );
         console.log(`[cancel] 🔧 Orphan session ${orphanSession._id} cancelada no cleanup`);
       }
       // Garante paymentStatus sincronizado
@@ -851,10 +852,11 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
         if (sessionDoc.status === 'completed') {
           console.log(`[cancel] 📋 Session ${sessionDoc._id} já completada — não cancelada para preservar histórico`);
         } else if (sessionDoc.status !== 'canceled') {
-          sessionDoc.status = 'canceled';
-          sessionDoc.canceledAt = new Date();
-          sessionDoc.cancelReason = reason;
-          await sessionDoc.save({ session: mongoSession });
+          await Session.findByIdAndUpdate(
+            sessionDoc._id,
+            { $set: { status: 'canceled', canceledAt: new Date(), cancelReason: reason } },
+            { session: mongoSession }
+          );
           console.log(`[cancel] 📋 Session ${sessionDoc._id} cancelada`);
         }
       }

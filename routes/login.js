@@ -25,7 +25,9 @@ router.post('/', async (req, res) => {
         .select('+password')
         .populate('specialty', 'name');
     } else if (role === 'admin') {
-      user = await Admin.findOne({ email }).select('+password');
+      user = await Admin.findOne({ email, role: 'admin' }).select('+password');
+    } else if (role === 'secretary') {
+      user = await Admin.findOne({ email, role: 'secretary' }).select('+password');
     } else {
       user = await User.findOne({ email, role }).select('+password');
     }

@@ -36,10 +36,12 @@ router.post('/add-admin', auth, async (req, res) => {
     return res.status(403).send({ error: 'Não autorizado add admins' });
   }
 
-  const { fullName, email, password } = req.body;
+  const { fullName, email, password, role } = req.body;
+  const allowedRoles = ['admin', 'secretary'];
+  const resolvedRole = allowedRoles.includes(role) ? role : 'admin';
 
   try {
-    const admin = new Admin({ fullName, email, password });
+    const admin = new Admin({ fullName, email, password, role: resolvedRole });
     await admin.save();
     res.status(201).send({ message: 'Admin adicionado com successo' });
   } catch (error) {
