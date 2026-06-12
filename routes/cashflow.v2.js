@@ -302,6 +302,7 @@ router.get('/', auth, async (req, res) => {
                 billingType: p.billingType || '-',
                 kind: p.kind || '-',
                 package: !!p.package || !!appt?.package,
+                packageId: p.package ? p.package.toString() : (appt?.package ? appt.package.toString() : null),
                 isPackageSale: tipo === 'Pacote' && !!p.package,
                 isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
                 appointmentStatus: appt?.operationalStatus || '-',

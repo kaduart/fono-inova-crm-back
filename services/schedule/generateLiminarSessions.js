@@ -45,7 +45,8 @@ export async function generateLiminarSessions({
   weeks = 4,
   startDate,
   endDate,
-  skipHolidays = true
+  skipHolidays = true,
+  specialties,       // optional string[] — quando presente, processa só essas especialidades
 }) {
   // ── 1. Carrega plano e contrato ────────────────────────────────
   const plan = await TherapeuticPlan.findById(planId).lean();
@@ -63,6 +64,15 @@ export async function generateLiminarSessions({
 
   const therapyEntries = Object.entries(therapies);
   if (therapyEntries.length === 0) {
+    return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
+  }
+
+  // Filtra por especialidades selecionadas (se informado)
+  const activeEntries = specialties?.length
+    ? therapyEntries.filter(([sp]) => specialties.includes(sp))
+    : therapyEntries;
+
+  if (activeEntries.length === 0) {
     return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
   }
 
@@ -95,21 +105,50 @@ export async function generateLiminarSessions({
     weekStart = getWeekStart(startDate);
     globalEnd = new Date(endDate); globalEnd.setHours(23, 59, 59, 999);
   } else {
-    // append: descobre última semana com sessão e começa a seguinte
-    const lastSession = await Appointment.findOne({
-      patient: contract.patient,
-      liminarContract: contract._id,
-      operationalStatus: { $ne: 'canceled' }
-    }).sort({ date: -1 }).lean();
+    const todayAnchor = new Date(); todayAnchor.setHours(0, 0, 0, 0);
+    const planAnchor  = new Date(plan.startDate); planAnchor.setHours(0, 0, 0, 0);
+    const baseAnchor  = todayAnchor > planAnchor ? todayAnchor : planAnchor;
 
-    if (lastSession) {
-      weekStart = getWeekStart(lastSession.date);
-      weekStart.setDate(weekStart.getDate() + 7); // próxima semana completa
+    // Detecta gaps: verifica se algum slot do plano atual não tem appointments futuros.
+    // Se sim → mudança de plano ou slot novo → começa de hoje para preencher.
+    // Se não → tudo em ordem → estende a partir do último appointment.
+    const slotChecks = await Promise.all(
+      activeEntries.flatMap(([specialty, config]) =>
+        (config.slots ?? []).map(slot =>
+          Appointment.findOne({
+            patient:           contract.patient,
+            liminarContract:   contract._id,
+            specialty,
+            time:              slot.time,
+            date:              { $gte: todayAnchor },
+            operationalStatus: { $ne: 'canceled' }
+          }).lean()
+        )
+      )
+    );
+
+    const hasGap = slotChecks.some(appt => !appt);
+
+    if (hasGap) {
+      // Slot sem appointment futuro → preenche gaps a partir de hoje
+      weekStart = getWeekStart(baseAnchor);
+      console.log('[generateLiminarSessions] 🔍 Gap detectado — weekStart = hoje:', weekStart.toISOString().split('T')[0]);
     } else {
-      // Usa plan.startDate como âncora (igual ao convenio) — nunca gera no passado
-      const anchor = new Date(plan.startDate);
-      anchor.setHours(0, 0, 0, 0);
-      weekStart = getWeekStart(anchor);
+      // Todos slots têm appointments futuros → estende a partir do último
+      const lastSession = await Appointment.findOne({
+        patient:           contract.patient,
+        liminarContract:   contract._id,
+        specialty:         { $in: activeEntries.map(([sp]) => sp) },
+        operationalStatus: { $ne: 'canceled' }
+      }).sort({ date: -1 }).lean();
+
+      if (lastSession) {
+        weekStart = getWeekStart(lastSession.date);
+        weekStart.setDate(weekStart.getDate() + 7);
+        console.log('[generateLiminarSessions] ▶ Sem gaps — weekStart = após último:', weekStart.toISOString().split('T')[0]);
+      } else {
+        weekStart = getWeekStart(baseAnchor);
+      }
     }
 
     globalEnd = addDays(weekStart, weeks * 7 + 6);
@@ -140,7 +179,7 @@ export async function generateLiminarSessions({
     for (let w = 0; w < weeks; w++) {
       const currentWeekSunday = addDays(weekStart, w * 7);
 
-      for (const [specialty, config] of therapyEntries) {
+      for (const [specialty, config] of activeEntries) {
         for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
           const sessionDate = addDays(currentWeekSunday, slot.dayOfWeek);
           const dateStr = sessionDate.toISOString().split('T')[0];
@@ -173,7 +212,7 @@ export async function generateLiminarSessions({
       const dateStr   = walker.toISOString().split('T')[0];
 
       if (!holidays.has(dateStr)) {
-        for (const [specialty, config] of therapyEntries) {
+        for (const [specialty, config] of activeEntries) {
           for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
             if (slot.dayOfWeek === dayOfWeek) {
               slots.push({
@@ -200,6 +239,7 @@ export async function generateLiminarSessions({
 
   // ── 6. Alerta de saldo (não bloqueia) ─────────────────────────
   const totalCost = slots.reduce((s, sl) => s + sl.sessionValue, 0);
+  console.log('[generateLiminarSessions] 📋 Especialidades ativas:', activeEntries.map(([sp]) => sp));
   if (contract.creditBalance < totalCost) {
     console.warn('[generateLiminarSessions] ⚠️ Saldo insuficiente para toda a janela', {
       contractId:    contract._id,
@@ -304,6 +344,26 @@ export async function generateLiminarSessions({
 
     conflictSlots = conflictDocs;
     console.warn('[generateLiminarSessions] ⚠️ Conflitos detalhados:', conflictSlots.map(c => c.message));
+  }
+
+  // ── 7b. Sync sessionValue em appointments existentes com sv=0 ──
+  // Cobre casos criados por rota antiga sem sessionValue (independe da janela de datas)
+  for (const [specialty, config] of activeEntries) {
+    if (config.sessionValue > 0) {
+      const fixed = await Appointment.updateMany(
+        {
+          patient:         contract.patient,
+          liminarContract: contract._id,
+          specialty,
+          sessionValue:    { $in: [0, null] },
+          operationalStatus: { $nin: ['canceled', 'completed', 'force_cancelled'] }
+        },
+        { $set: { sessionValue: config.sessionValue, updatedAt: new Date() } }
+      );
+      if (fixed.modifiedCount > 0) {
+        console.log(`[generateLiminarSessions] 🔧 Fixed sessionValue=0 → ${config.sessionValue} para ${specialty}: ${fixed.modifiedCount} doc(s)`);
+      }
+    }
   }
 
   // ── 8. Cria Sessions para appointments recém-inseridos ─────────

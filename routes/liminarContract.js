@@ -10,7 +10,8 @@ import {
   generateSessions,
   getCommittedBalance,
   getContractSessions,
-  updateTherapy
+  updateTherapy,
+  getContractIntegrity,
 } from '../controllers/liminarContractController.js';
 
 const router = express.Router();
@@ -21,7 +22,8 @@ router.get('/',            listLiminarContracts);
 router.get('/:id',         getLiminarContract);
 router.patch('/:id/recharge', rechargeContract);
 router.get('/:id/committed-balance', getCommittedBalance);
-router.get('/:id/sessions', getContractSessions);
+router.get('/:id/sessions',   getContractSessions);
+router.get('/:id/integrity',  getContractIntegrity);
 
 // Planos terapêuticos
 router.post('/:id/plans',                          createTherapeuticPlan);

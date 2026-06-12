@@ -270,7 +270,8 @@ export async function generateSessions(req, res) {
     weeks        = 4,
     startDate,
     endDate,
-    skipHolidays = true
+    skipHolidays = true,
+    specialties,
   } = req.body;
 
   if (mode === 'reset' && (!startDate || !endDate)) {
@@ -287,7 +288,8 @@ export async function generateSessions(req, res) {
     weeks,
     startDate,
     endDate,
-    skipHolidays
+    skipHolidays,
+    specialties: Array.isArray(specialties) && specialties.length ? specialties : undefined,
   });
 
   logger.info('Sessões geradas', { planId, mode, ...result });
@@ -427,4 +429,103 @@ export async function getContractSessions(req, res) {
     .lean();
 
   return res.json({ sessions });
+}
+
+// ──────────────────────────────────────────────────────────────
+// GET /api/v2/liminar-contracts/:id/integrity
+// Projeção sem nova coleção: compara TherapeuticPlan (esperado)
+// vs Appointments (gerado) vs Sessions completed (executado).
+// ──────────────────────────────────────────────────────────────
+export async function getContractIntegrity(req, res) {
+  const { id } = req.params;
+
+  const contract = await LiminarContract.findById(id).lean();
+  if (!contract) return res.status(404).json({ error: 'CONTRACT_NOT_FOUND' });
+
+  const plan = await TherapeuticPlan.findOne({ liminarContract: contract._id, status: 'active' }).lean();
+  if (!plan) return res.status(404).json({ error: 'NO_ACTIVE_PLAN' });
+
+  const therapies = plan.therapies instanceof Map
+    ? Object.fromEntries(plan.therapies)
+    : (plan.therapies || {});
+
+  // Todos appointments não-cancelados do contrato
+  const appts = await Appointment.find({
+    liminarContract: contract._id,
+    operationalStatus: { $ne: 'canceled' }
+  }).select('date specialty operationalStatus sessionValue').sort({ date: 1 }).lean();
+
+  if (appts.length === 0) {
+    return res.json({
+      contractId: id, planVersion: plan.version,
+      window: null, specialties: {},
+      summary: { expected: 0, generated: 0, completed: 0, pending: 0, missing: 0 }
+    });
+  }
+
+  // Janela: do primeiro ao último appointment
+  const firstDate = new Date(appts[0].date); firstDate.setHours(0, 0, 0, 0);
+  const lastDate  = new Date(appts[appts.length - 1].date); lastDate.setHours(23, 59, 59, 999);
+
+  // Agrega appointments por especialidade
+  const bySpecialty = {};
+  for (const a of appts) {
+    const sp = a.specialty;
+    if (!bySpecialty[sp]) bySpecialty[sp] = { generated: 0, completed: 0, pending: 0 };
+    bySpecialty[sp].generated++;
+    if (a.operationalStatus === 'completed') bySpecialty[sp].completed++;
+    else bySpecialty[sp].pending++;
+  }
+
+  // Calcula esperado por especialidade: percorre cada dia da janela
+  function getWeekSunday(date) {
+    const d = new Date(date); const dow = d.getDay();
+    d.setDate(d.getDate() - dow); d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  const planStart = new Date(plan.startDate); planStart.setHours(0, 0, 0, 0);
+  const windowStart = getWeekSunday(firstDate);
+  const specialtyResults = {};
+  let [totExp, totGen, totComp, totPend] = [0, 0, 0, 0];
+
+  for (const [specialty, config] of Object.entries(therapies)) {
+    const slots = Array.isArray(config.slots) ? config.slots : [];
+    let expected = 0;
+    const walker = new Date(windowStart);
+    while (walker <= lastDate) {
+      const dow = walker.getDay();
+      for (const slot of slots) {
+        if (slot.dayOfWeek === dow && walker >= planStart) expected++;
+      }
+      walker.setDate(walker.getDate() + 1);
+    }
+
+    const c = bySpecialty[specialty] || { generated: 0, completed: 0, pending: 0 };
+    const missing = Math.max(0, expected - c.generated);
+    specialtyResults[specialty] = {
+      slotsPerWeek: slots.length,
+      sessionValue: config.sessionValue ?? 0,
+      expected, generated: c.generated,
+      completed: c.completed, pending: c.pending, missing,
+    };
+    totExp += expected; totGen += c.generated;
+    totComp += c.completed; totPend += c.pending;
+  }
+
+  const totalMissing = Math.max(0, totExp - totGen);
+  const integrityPercent = totExp > 0 ? Math.round((totGen / totExp) * 100) : 100;
+
+  return res.json({
+    contractId: id,
+    planVersion: plan.version,
+    window: { from: firstDate.toISOString().split('T')[0], to: lastDate.toISOString().split('T')[0] },
+    specialties: specialtyResults,
+    summary: {
+      expected: totExp, generated: totGen,
+      completed: totComp, pending: totPend,
+      missing: totalMissing,
+      integrityPercent,
+    }
+  });
 }
