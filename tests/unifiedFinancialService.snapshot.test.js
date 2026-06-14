@@ -24,18 +24,18 @@ const TARGET_MONTH = 5;
 // ── Snapshots verificados manualmente no BD ──
 const SNAPSHOT = {
     caixa: {
-        total: 22040,
-        particular: 8630,
-        pacote: 11000,
-        convenio: 80,
-        liminar: 2330,
+        total: 35940.8,
+        particular: 14070,
+        pacote: 17820.8,
+        convenio: 0,
+        liminar: 4050,
     },
     producao: {
-        total: 20440,
-        particular: 5320,
-        pacote: 10110,
-        convenio: 2680,
-        liminar: 2330,
+        total: 36140.2,
+        particular: 8550,
+        pacote: 18750.2,
+        convenio: 4790,
+        liminar: 4050,
     }
 };
 

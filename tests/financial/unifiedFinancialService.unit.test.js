@@ -228,6 +228,8 @@ describe('anti-double-counting — CRÍTICO', () => {
       return [];
     });
     mockPaymentFind.mockReturnValue({
+      select:   vi.fn().mockReturnThis(),
+      limit:    vi.fn().mockReturnThis(),
       populate: vi.fn().mockReturnThis(),
       lean:     vi.fn().mockResolvedValue([
         { amount: 160, billingType: 'liminar', patient: { fullName: 'Paciente Liminar' } }
@@ -244,6 +246,8 @@ describe('anti-double-counting — CRÍTICO', () => {
       return [];
     });
     mockSessionFind.mockReturnValue({
+      select:   vi.fn().mockReturnThis(),
+      limit:    vi.fn().mockReturnThis(),
       populate: vi.fn().mockReturnThis(),
       lean:     vi.fn().mockResolvedValue([]),
     });
@@ -276,6 +280,7 @@ describe('anti-double-counting — CRÍTICO', () => {
       return [];
     });
     mockPaymentFind.mockReturnValue({
+      select:   vi.fn().mockReturnThis(),
       populate: vi.fn().mockReturnThis(),
       lean:     vi.fn().mockResolvedValue([]),
     });

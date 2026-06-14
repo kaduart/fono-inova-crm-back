@@ -340,26 +340,27 @@ router.put('/:id', flexibleAuth, async (req, res) => {
   try {
     const updateData = req.body;
     
-    // Validação: pacote existe
-    const existing = await PackagesView.findOne({ packageId: id });
+    // Validação: pacote existe (aceita tanto packageId real quanto _id da view)
+    const existing = await PackagesView.findOne({ $or: [{ packageId: id }, { _id: id }] });
     if (!existing) {
       return res.status(404).json(formatError('Pacote não encontrado', 404, { correlationId }));
     }
-    
-    logger.info('[PackageV2] Updating package', { correlationId, packageId: id });
+    const realPackageId = existing.packageId?.toString() || id;
+
+    logger.info('[PackageV2] Updating package', { correlationId, packageId: realPackageId });
     
     // Publica evento para processamento assíncrono
     await publishEvent('PACKAGE_UPDATE_REQUESTED', {
-      packageId: id,
+      packageId: realPackageId,
       updates: updateData,
       updatedBy: req.user?._id
     }, { correlationId });
-    
+
     const duration = Date.now() - startTime;
-    
+
     res.status(202).json(formatSuccess({
       message: 'Atualização em processamento',
-      packageId: id,
+      packageId: realPackageId,
       correlationId,
       status: 'processing'
     }, {

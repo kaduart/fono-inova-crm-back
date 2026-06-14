@@ -7,6 +7,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import unifiedFinancialService from './unifiedFinancialService.v2.js';
+import { recalculateFutureTargets } from './planningAutoService.js';
 
 /**
  * Atualiza automaticamente o progresso do planejamento
@@ -82,6 +83,20 @@ export const updatePlanningProgress = async (planningId) => {
         console.log(`[Planning Update]    - Breakdown raw:`, JSON.stringify(productionResult.byPaymentMethod, null, 2));
 
         await planning.save(); // Middleware calcula progresso automaticamente
+
+        // Se for planejamento mensal do mês atual/futuro, recalcular metas futuras
+        if (planning.type === 'monthly') {
+            const today = new Date().toISOString().split('T')[0];
+            if (planning.period.end >= today) {
+                try {
+                    const month = parseInt(planning.period.start.split('-')[1]);
+                    const year = parseInt(planning.period.start.split('-')[0]);
+                    await recalculateFutureTargets(month, year);
+                } catch (recalcErr) {
+                    console.error('[Planning Update] ❌ Erro ao recalcular metas futuras:', recalcErr.message);
+                }
+            }
+        }
 
         return planning;
 

@@ -1,82 +1,142 @@
 #!/usr/bin/env node
 /**
- * 🔗 Roda o Financial Reconciliation Engine
+ * 🔍 RUN RECONCILIATION
+ *
+ * Executa a reconciliação financeira global e por profissional.
  *
  * Uso:
  *   node scripts/run-reconciliation.js
- *   node scripts/run-reconciliation.js --json > reconciliation.json
+ *   node scripts/run-reconciliation.js --start=2026-06-01 --end=2026-06-30
+ *   node scripts/run-reconciliation.js --start=2026-06-01 --end=2026-06-30 --issues=20
  */
 
 import mongoose from 'mongoose';
-import { FinancialReconciliationEngine } from '../services/financialGuard/reconciliationEngine.js';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import '../models/index.js';
+import { getGlobalReconciliation, getTopFinancialIssues } from '../services/reconciliation.service.js';
 
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error('❌ MONGO_URI não definida');
-  process.exit(1);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const result = {};
+  for (const arg of args) {
+    if (arg.startsWith('--start=')) result.startDate = arg.split('=')[1];
+    if (arg.startsWith('--end=')) result.endDate = arg.split('=')[1];
+    if (arg.startsWith('--issues=')) result.issuesLimit = parseInt(arg.split('=')[1], 10);
+  }
+  return result;
 }
 
-const JSON_MODE = process.argv.includes('--json');
+function formatCurrency(value) {
+  return `R$ ${(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-async function run() {
-  console.log('🔗 Iniciando Financial Reconciliation Engine...');
-  console.log('⚠️  MODO SIMULAÇÃO — nenhum dado será alterado\n');
-  console.time('⏱️ Tempo de execução');
-
-  const result = await FinancialReconciliationEngine.run({ mongoUri: MONGO_URI });
-
-  console.timeEnd('⏱️ Tempo de execução');
-
-  if (JSON_MODE) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
+async function connect() {
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!uri) {
+    console.error('❌ MONGODB_URI ou MONGO_URI não encontrado no .env');
+    process.exit(1);
   }
+  await mongoose.connect(uri);
+  console.log('✅ MongoDB conectado\n');
+}
 
-  const { summary } = result;
+async function disconnect() {
+  await mongoose.disconnect();
+  console.log('\n👋 MongoDB desconectado');
+}
 
-  console.log('\n╔════════════════════════════════════════════════════════════════╗');
-  console.log('║  🔗 RELATÓRIO DE RECONCILIAÇÃO FINANCEIRA                    ║');
-  console.log('╚════════════════════════════════════════════════════════════════╝');
-  console.log(`\nPackages com divergência: ${summary.totalPackages}`);
-  console.log(`Matches encontrados: ${summary.totalMatches}`);
-  console.log(`  🟢 Alta confiança (>80%): ${summary.highConfidence}`);
-  console.log(`  🟡 Média confiança (60-80%): ${summary.mediumConfidence}`);
-  console.log(`  🔴 Baixa confiança (30-60%): ${summary.lowConfidence}`);
+async function main() {
+  const { startDate, endDate, issuesLimit = 20 } = parseArgs();
 
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('DETALHES POR PACOTE (ordenado por confiança):');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  await connect();
 
-  // Ordenar packages pelo maior score
-  const sortedPackages = result.packages.sort((a, b) => {
-    const maxA = a.matches[0]?.score || 0;
-    const maxB = b.matches[0]?.score || 0;
-    return maxB - maxA;
-  });
+  try {
+    console.log('================================================');
+    console.log('RECONCILIAÇÃO FINANCEIRA');
+    console.log(`Período: ${startDate || 'mês atual'} - ${endDate || 'mês atual'}`);
+    console.log('================================================\n');
 
-  for (const pkg of sortedPackages.slice(0, 50)) {
-    console.log(`📦 ${pkg.packageId}`);
-    console.log(`   👤 ${pkg.patientName} (${pkg.patientId})`);
-    console.log(`   🏥 ${pkg.specialty} | Session Value: R$ ${pkg.sessionValue}`);
-    console.log(`   💡 Matches (${pkg.matches.length}):`);
+    const result = await getGlobalReconciliation(startDate, endDate);
+    const { global, byDoctor, period, metadata } = result;
 
-    for (const m of pkg.matches) {
-      const icon = m.confidence === 'HIGH' ? '🟢' : m.confidence === 'MEDIUM' ? '🟡' : '🔴';
-      console.log(`      ${icon} [${m.score}%] Payment ${m.paymentId}`);
-      console.log(`         R$ ${m.paymentAmount} | ${m.paymentMethod} | ${new Date(m.paymentDate).toLocaleDateString('pt-BR')}`);
-      console.log(`         → ${m.reason}`);
+    console.log(`Período analisado: ${period.start} → ${period.end}`);
+    console.log(`Gerado em: ${metadata.generatedAt}`);
+    console.log(`Tempo de execução: ${metadata.executionTimeMs}ms\n`);
+
+    console.log('────────────────────────────────────────────────');
+    console.log('RESUMO GLOBAL');
+    console.log('────────────────────────────────────────────────');
+    console.log(`Produção:           ${formatCurrency(global.production)}`);
+    console.log(`Recebido:           ${formatCurrency(global.received)}`);
+    console.log(`Diferença:          ${formatCurrency(global.difference)}`);
+    console.log(`Comissão:           ${formatCurrency(global.commission)}`);
+    console.log(`Sessões realizadas: ${global.completedSessions}`);
+    console.log(`Sessões com pagto:  ${global.sessionsWithPayment}`);
+    console.log(`Sessões sem pagto:  ${global.sessionsWithoutPayment}`);
+    console.log(`  ├─ Pacotes:       ${global.sessionsWithoutPaymentBreakdown?.package || 0}`);
+    console.log(`  ├─ Convênios:     ${global.sessionsWithoutPaymentBreakdown?.insurance || 0}`);
+    console.log(`  ├─ Part. pendente: ${global.sessionsWithoutPaymentBreakdown?.privatePending || 0}`);
+    console.log(`  ├─ Liminar:       ${global.sessionsWithoutPaymentBreakdown?.liminar || 0}`);
+    console.log(`  └─ Problema real: ${global.sessionsWithoutPaymentBreakdown?.realIssue || 0}`);
+    console.log(`A receber:          ${formatCurrency(global.receivables?.total)}`);
+    console.log(`  ├─ Pacotes:       ${formatCurrency(global.receivables?.packageConsumed)}`);
+    console.log(`  ├─ Convênios:     ${formatCurrency(global.receivables?.insurance)}`);
+    console.log(`  ├─ Part. pendente: ${formatCurrency(global.receivables?.particular)}`);
+    console.log(`  └─ Liminar:       ${formatCurrency(global.receivables?.liminar)}`);
+    console.log(`Pagamentos órfãos:  ${global.orphanPayments}`);
+    console.log(`Sem profissional:   ${global.missingDoctor}`);
+
+    console.log('\n────────────────────────────────────────────────');
+    console.log('TOP 10 PROFISSIONAIS COM MAIOR DIVERGÊNCIA');
+    console.log('────────────────────────────────────────────────');
+
+    const topDoctors = byDoctor.slice(0, 10);
+    if (topDoctors.length === 0) {
+      console.log('Nenhum profissional encontrado no período.');
+    } else {
+      console.log(`${'Profissional'.padEnd(30)} ${'Produção'.padStart(14)} ${'Recebido'.padStart(14)} ${'Diferença'.padStart(14)}`);
+      console.log('-'.repeat(74));
+      for (const doc of topDoctors) {
+        const name = doc.doctorName.padEnd(30);
+        const production = formatCurrency(doc.production).padStart(14);
+        const received = formatCurrency(doc.received).padStart(14);
+        const difference = formatCurrency(doc.difference).padStart(14);
+        console.log(`${name} ${production} ${received} ${difference}`);
+      }
     }
-    console.log('');
-  }
 
-  if (sortedPackages.length > 50) {
-    console.log(`... e mais ${sortedPackages.length - 50} packages (use --json para ver todos)`);
-  }
+    console.log('\n────────────────────────────────────────────────');
+    console.log(`TOP ${issuesLimit} PROBLEMAS FINANCEIROS`);
+    console.log('────────────────────────────────────────────────');
 
-  console.log('\n✅ Reconciliação completa. Nenhum dado foi alterado.');
+    const issues = await getTopFinancialIssues(startDate, endDate, issuesLimit);
+    if (issues.length === 0) {
+      console.log('Nenhum problema encontrado. 🎉');
+    } else {
+      for (const issue of issues) {
+        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
+        console.log(`${icon} [${issue.type}] ${issue.description}`);
+        console.log(`   Profissional: ${issue.doctorName || 'N/A'} | Paciente: ${issue.patientName || 'N/A'} | Valor: ${formatCurrency(issue.amount)} | Data: ${issue.date}`);
+      }
+    }
+
+    console.log('\n================================================');
+    console.log('FIM DA RECONCILIAÇÃO');
+    console.log('================================================');
+
+  } catch (error) {
+    console.error('\n❌ Erro ao executar reconciliação:', error.message);
+    console.error(error.stack);
+    process.exitCode = 1;
+  } finally {
+    await disconnect();
+  }
 }
 
-run().catch(err => {
-  console.error('❌ Erro:', err);
-  process.exit(1);
-});
+main();

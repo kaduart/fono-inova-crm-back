@@ -15,9 +15,38 @@ import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../utils/logger.js';
 import mongoose from 'mongoose';
 import { getSnapshot } from '../orchestrators/decision/decisionMetricsService.js';
+import { auth } from '../middleware/auth.js';
+import { logMetric } from '../utils/logMetric.js';
 
 const router = express.Router();
 const logger = createContextLogger('MetricsDashboard');
+
+/**
+ * POST /api/metrics/usage
+ * Recebe eventos de uso do frontend e persiste via logMetric.
+ * Usado para observabilidade de funcionalidades críticas (ex: aba Projeção & Cenários).
+ */
+router.post('/usage', auth, async (req, res) => {
+  try {
+    const { service, operation, data } = req.body || {};
+    if (!service || !operation) {
+      return res.status(400).json({ success: false, error: 'service e operation são obrigatórios' });
+    }
+
+    logMetric(service, operation, {
+      userId: req.user?._id?.toString?.() || req.user?.id,
+      role: req.user?.role,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+      ...data
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    logger.error('usage_metric_error', 'Erro ao registrar métrica de uso', { error: error.message });
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Filas monitoradas - EXPANDIDO: inclui appointment e DLQ
 // Usa getQueue para reaproveitar instâncias e evitar multiplicação de conexões

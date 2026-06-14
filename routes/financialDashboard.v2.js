@@ -8,7 +8,7 @@
 
 import express from 'express';
 import moment from 'moment-timezone';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
@@ -27,6 +27,7 @@ import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
+import { logMetric } from '../utils/logMetric.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -678,58 +679,54 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const goal = await loadGoal(year, month, clinicId);
     const metaMensal = goal.metaMensal;
     const diasUteis = goal.diasUteis;
-    const _gapRestante = isMonthClosed ? 0 : Math.max(metaMensal - (data.producao || 0), 0);
-    const metaDiariaNecessaria = daysRemaining > 0 ? _gapRestante / daysRemaining : 0;
-
-    // ─── LEGADO: REALIZADO MÊS = caixa + aReceber (mantido para compatibilidade) ───
-    // ⚠️ NÃO use realizadoMes como base de ritmo/status — ele é receita PROJETADA, não produção
+    // ─── BASE DE CÁLCULO: caixa + a receber da produção do mês (regra de negócio da clínica) ───
     const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
     const realizadoDia = (data.caixaHoje || 0) + (data.convenioHoje || 0) + (data.particularPendenteHoje || 0);
     const producaoDia  = data.producaoHoje || 0;
 
-    // ─── 🆕 NOVO: Métricas separadas por camada semântica ───
-    // 🎯 Meta principal = PRODUÇÃO — todas as métricas de ritmo usam produção
-    const caixaRealizadoMes = data.caixa || 0;
+    const _gapRestante = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
+    const metaDiariaNecessaria = daysRemaining > 0 ? _gapRestante / daysRemaining : 0;
+
+    // ─── Camadas semânticas (mantidas para referência/análise) ───
+    const caixaRealizadoMes    = data.caixa || 0;
     const producaoRealizadaMes = data.producao || 0;
-    const receitaProjetadaMes = data.visaoSemantica?.projecao?.total || realizadoMes;
+    const receitaProjetadaMes  = data.visaoSemantica?.projecao?.total || realizadoMes;
 
-    // ─── RITMO baseado em PRODUÇÃO (não em caixa ou receita projetada) ───
-    const mediaDiariaAtual = daysPassed > 0 ? producaoRealizadaMes / daysPassed : 0;
-    const projecaoFinal = isMonthClosed ? producaoRealizadaMes : mediaDiariaAtual * daysInMonth;
+    // ─── RITMO baseado em caixa + a receber ───
+    const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
+    const projecaoFinal = isMonthClosed ? realizadoMes : mediaDiariaAtual * daysInMonth;
 
-    // 🎯 Projeção ESPERADA (conservadora): já realizada + 70% do pipeline + 60% da média nos dias restantes
-    const pipelineAtual = data.aReceberProducao || 0;
+    // Projeção ESPERADA (conservadora): realizadoMes já inclui pipeline; projeta 60% da média nos dias restantes
     const projecaoEsperada = isMonthClosed
-      ? producaoRealizadaMes
+      ? realizadoMes
       : Math.min(
           projecaoFinal,
-          producaoRealizadaMes + (pipelineAtual * 0.7) + ((mediaDiariaAtual * daysRemaining) * 0.6)
+          realizadoMes + ((mediaDiariaAtual * daysRemaining) * 0.6)
         );
 
-    const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - producaoRealizadaMes, 0);
+    const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
     const gapPorDia = daysRemaining > 0 ? gapValor / daysRemaining : 0;
 
     const ritmoEsperado = (daysPassed / daysInMonth) * metaMensal;
-    const diferencaRitmo = producaoRealizadaMes - ritmoEsperado;
+    const diferencaRitmo = realizadoMes - ritmoEsperado;
 
     const percentualEsperado = (daysPassed / daysInMonth) * 100;
-    // 🎯 percentualRealizado agora = percentual de PRODUÇÃO (não receita projetada)
-    const percentualRealizado = metaMensal > 0 ? (producaoRealizadaMes / metaMensal) * 100 : 0;
+    const percentualRealizado = metaMensal > 0 ? (realizadoMes / metaMensal) * 100 : 0;
 
-    // 🆕 Percentuais por camada semântica (mantidos para referência)
-    const percentualProducao = percentualRealizado; // mesma coisa agora
-    const percentualCaixa = metaMensal > 0 ? (caixaRealizadoMes / metaMensal) * 100 : 0;
+    // Percentuais por camada semântica (para análise separada)
+    const percentualProducao  = metaMensal > 0 ? (producaoRealizadaMes / metaMensal) * 100 : 0;
+    const percentualCaixa     = metaMensal > 0 ? (caixaRealizadoMes / metaMensal) * 100 : 0;
     const percentualProjetada = metaMensal > 0 ? (receitaProjetadaMes / metaMensal) * 100 : 0;
 
     let statusMeta = 'vermelho';
-    if (percentualProducao >= 100) statusMeta = 'verde';
-    else if (percentualProducao >= 80) statusMeta = 'amarelo-verde';
-    else if (percentualProducao >= 60) statusMeta = 'amarelo';
+    if (percentualRealizado >= 100) statusMeta = 'verde';
+    else if (percentualRealizado >= 80) statusMeta = 'amarelo-verde';
+    else if (percentualRealizado >= 60) statusMeta = 'amarelo';
 
     const alertas = {
-        atrasado: metaMensal > 0 && producaoRealizadaMes < ritmoEsperado,
-        critico: metaMensal > 0 && producaoDia < (metaDiariaNecessaria * 0.7),
-        ok: metaMensal > 0 && producaoRealizadaMes >= metaMensal,
+        atrasado: metaMensal > 0 && realizadoMes < ritmoEsperado,
+        critico: metaMensal > 0 && realizadoDia < (metaDiariaNecessaria * 0.7),
+        ok: metaMensal > 0 && realizadoMes >= metaMensal,
         mensagem: []
     };
 
@@ -738,11 +735,11 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     } else if (alertas.ok) {
         alertas.mensagem.push('🎉 Meta mensal batida!');
     } else if (alertas.critico) {
-        alertas.mensagem.push('⚠️ Dia crítico: produção abaixo de 70% da meta diária.');
+        alertas.mensagem.push('⚠️ Dia crítico: recebimento abaixo de 70% da meta diária.');
     } else if (alertas.atrasado) {
-        alertas.mensagem.push('🐢 Ritmo de produção abaixo do necessário para bater meta.');
+        alertas.mensagem.push('🐢 Ritmo abaixo do necessário para bater a meta.');
     } else {
-        alertas.mensagem.push('✅ Ritmo de produção adequado para meta mensal.');
+        alertas.mensagem.push('✅ Ritmo adequado para meta mensal.');
     }
 
     if (metaMensal > 0) {
@@ -758,23 +755,19 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             metaMensal,
             diasUteis,
             metaDiariaNecessaria: parseFloat(metaDiariaNecessaria.toFixed(2)),
-            // 🆕 Indica qual é a base da meta principal
-            tipoMeta: 'producao',  // Meta principal = PRODUÇÃO (não caixa)
+            tipoMeta: 'receitaProjetada',
         },
         realizado: {
-            // 🎯 realizado.mes agora = PRODUÇÃO (não receita projetada)
-            mes: parseFloat(producaoRealizadaMes.toFixed(2)),
-            hoje: parseFloat(producaoDia.toFixed(2))
-        },
-        // Legado: mantém caixa + aReceber em campo separado para compat
-        realizadoLegado: {
             mes: parseFloat(realizadoMes.toFixed(2)),
             hoje: parseFloat(realizadoDia.toFixed(2))
         },
+        realizadoLegado: {
+            mes: parseFloat(producaoRealizadaMes.toFixed(2)),
+            hoje: parseFloat(producaoDia.toFixed(2))
+        },
         ritmo: {
             esperadoAteAgora: parseFloat(ritmoEsperado.toFixed(2)),
-            // 🎯 realizadoAteAgora = PRODUÇÃO (fonte da verdade)
-            realizadoAteAgora: parseFloat(producaoRealizadaMes.toFixed(2)),
+            realizadoAteAgora: parseFloat(realizadoMes.toFixed(2)),
             diferenca: parseFloat(diferencaRitmo.toFixed(2)),
             mediaDiariaAtual: parseFloat(mediaDiariaAtual.toFixed(2)),
             percentualEsperado: parseFloat(percentualEsperado.toFixed(1)),
@@ -2212,6 +2205,48 @@ router.post('/validate-snapshot', auth, async (req, res) => {
     } catch (err) {
         console.error('[DashboardV3] ❌ Erro na validação:', err);
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /v2/financial/dashboard/debitos
+// Fonte única de débitos pendentes — substitui /api/financial/dashboard/debitos
+// Query opcional: ?month=&year= (filtro por mês)
+router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { default: Payment } = await import('../models/Payment.js');
+        const { month, year } = req.query;
+
+        const query = { status: 'pending', billingType: { $nin: ['convenio', 'liminar'] } };
+        if (month && year) {
+            const start = moment.tz([parseInt(year), parseInt(month) - 1, 1], TIMEZONE).startOf('day').toDate();
+            const end = moment.tz([parseInt(year), parseInt(month) - 1, 1], TIMEZONE).endOf('month').endOf('day').toDate();
+            query.paymentDate = { $gte: start, $lte: end };
+        }
+
+        const payments = await Payment.find(query)
+            .populate('patient', 'fullName')
+            .populate('appointment', 'date time')
+            .sort({ paymentDate: -1 })
+            .lean();
+
+        const debitos = payments.map(p => ({
+            _id: p._id,
+            date: p.appointment?.date || (p.serviceDate ? p.serviceDate.toISOString().split('T')[0] : (p.paymentDate ? p.paymentDate.toISOString().split('T')[0] : null)),
+            time: p.appointment?.time || null,
+            paymentStatus: p.status,
+            paciente: p.patient?.fullName || 'Paciente',
+            valor: p.amount,
+            tipo: p.paymentMethod || p.billingType || 'N/A'
+        }));
+
+        const total = debitos.reduce((s, d) => s + (d.valor || 0), 0);
+
+        logMetric('FinancialDashboardV2', 'debitos', { count: debitos.length, total });
+
+        res.json({ success: true, data: debitos, total });
+    } catch (err) {
+        console.error('[DashboardV2] Erro /debitos:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

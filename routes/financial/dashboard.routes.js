@@ -20,9 +20,22 @@ import financialMetricsService from '../../services/financialMetrics.service.js'
 import historicalRatesService from '../../services/historicalRates.service.js';
 import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
 import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
+import { logMetric } from '../../utils/logMetric.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
+
+// 🚨 Auditoria de uso: dashboard financeiro legado (v1)
+router.use((req, res, next) => {
+  const client = req.headers['user-agent']?.slice(0, 100) || 'unknown';
+  console.warn(`[DEPRECATED] /api/financial/dashboard${req.path} foi chamado. Use /api/v2/financial/dashboard. Client: ${client}`);
+  logMetric('LegacyFinancialDashboard', 'request', {
+    path: req.path,
+    originalUrl: req.originalUrl,
+    client
+  });
+  next();
+});
 
 // Cache: TTL 5 minutos, verificação a cada 2 minutos
 const dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 120 });
@@ -525,6 +538,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
  */
 router.get('/projection-daily', auth, authorize(['admin', 'secretary']), async (req, res) => {
   try {
+    logMetric('LegacyFinancialDashboard', 'projection-daily-request', {
+      path: req.path,
+      userId: req.user?._id?.toString?.() || req.user?.id,
+      role: req.user?.role,
+      month: req.query.month,
+      year: req.query.year
+    });
+
     const { month, year, projecaoFinal: projecaoParam } = req.query;
     const mes = parseInt(month) || moment().tz(TIMEZONE).month() + 1;
     const ano = parseInt(year)  || moment().tz(TIMEZONE).year();

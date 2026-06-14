@@ -91,6 +91,7 @@ import { auth } from "./middleware/auth.js";
 // ======================================================
 import adminRoutes from "./routes/admin.js";
 import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOVO: Admin Dashboard V2
+import adminFinancialMetricsRoutes from './routes/admin/financialMetrics.routes.js';  // 📊 Métricas financeiras internas
 import adminSystemRoutes, { serverAdapter as bullBoardAdapter } from './routes/adminSystem.js';  // 🖥️ Monitor de filas + Bull Board
 import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
@@ -128,10 +129,10 @@ import diagnosticRouter from './routes/whatsapp/diagnostic.js';
 import protocolRoutes from './routes/protocol.js';
 import expenseRoutes from './routes/financial/expense.js';
 import cashflowRoutes from './routes/financial/cashflow.js';
-import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import financialDashboardRoutes from './routes/financial/dashboard.routes.js';
 import financialAuditV2Routes from './routes/financial/audit.routes.js';
+import financialReconciliationRoutes from './routes/internal/financial/reconciliation.routes.js';
 import financialSSERoutes from './routes/financial/sse.routes.js';
 import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
@@ -192,6 +193,7 @@ import financialFeatureFlag from './middleware/financialFeatureFlag.js';
 import appointmentV2Routes from './routes/appointment.v2.js';
 import patientV2Routes from './routes/patient.v2.js';
 import doctorV2Routes from './routes/doctor.v2.js';  // 🚀 NOVO: Doctors V2
+import professionalFinancialRoutes from './routes/professionalFinancial.routes.js';  // 💰 Centro de Resultado do Profissional
 import packageV2Routes from './routes/package.v2.js';
 import balanceV2Routes from './routes/balance.v2.js';
 import dailySummaryV2Routes from './routes/dailySummary.v2.js';  // 🚀 NOVO: Daily Summary V2
@@ -484,6 +486,7 @@ app.use("/api/v2/payments", paymentV2Routes);  // 🚀 NOVO: Payment V2 (Event-D
 app.use("/api/v2/appointments", appointmentV2Routes);
 app.use("/api/v2/patients", patientV2Routes);
 app.use("/api/v2/doctors", doctorV2Routes);  // 🚀 NOVO: Doctors V2
+app.use("/api/v2/professionals", professionalFinancialRoutes);  // 💰 Centro de Resultado do Profissional
 app.use("/api/v2/packages", packageV2Routes);
 app.use("/api/v2/balance", balanceV2Routes);
 app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
@@ -519,10 +522,10 @@ app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
-app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
 app.use('/api/v2/financial/audit', financialAuditV2Routes);  // 🔍 Auditoria V1 vs V2
+app.use('/api/internal/financial', financialReconciliationRoutes);  // 🔍 Reconciliação financeira por profissional
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2
@@ -555,15 +558,10 @@ app.use('/api/insurance-guides', (req, res) => {
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
 
-// 🆕 Totals que usa cashflow (funciona!)
-import totalsWrapperRoutes from './routes/financial/totals-wrapper.routes.js';
-app.use('/api/v2', totalsWrapperRoutes);
-
 app.use('/api/v2', insuranceV2Routes);
 app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
 app.use('/api/v2/insurance-plans', insurancePlansV2Routes);
 app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
-app.use('/api/v2/financial', financialOverviewRoutes);
 app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
@@ -584,6 +582,7 @@ app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/v2/financial', financialSummaryRoutes);  // 💰 Fonte de verdade financeira (Payment-based)
 app.use('/api/observability', observabilityRoutes);  // 🚀 NOVO: Dashboard de Observabilidade
+app.use('/api/v2/admin/financial-metrics', adminFinancialMetricsRoutes);  // 📊 Métricas financeiras internas
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
@@ -816,6 +815,7 @@ server.listen(PORT, '0.0.0.0', () => {
           w: 'majority',
           serverSelectionTimeoutMS: 10000, // 10s timeout
           socketTimeoutMS: 45000,
+          autoIndex: process.env.NODE_ENV !== 'production',
         });
         
         mongoConnected = true;

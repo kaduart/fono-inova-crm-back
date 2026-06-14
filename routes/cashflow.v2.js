@@ -8,12 +8,14 @@ import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
 import Session from '../models/Session.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
+import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 
 const router = express.Router();
 
 // GET /api/v2/cashflow?date=2026-04-10 OU ?startDate=2026-04-10&endDate=2026-04-16
 router.get('/', auth, async (req, res) => {
+    const startedAt = Date.now();
     try {
         const { date, startDate, endDate } = req.query;
 
@@ -576,7 +578,21 @@ router.get('/', auth, async (req, res) => {
             }
         });
 
+        logMetric('CashflowV2', 'getCashflow', {
+          executionTimeMs: Date.now() - startedAt,
+          date: targetDate,
+          cash: totalCaixaFiltrado,
+          production: production.total,
+          paymentCount: countCaixaFiltrado,
+          sessionCount: production.count
+        });
+
     } catch (err) {
+        logMetric('CashflowV2', 'getCashflow', {
+          executionTimeMs: Date.now() - startedAt,
+          date: targetDate,
+          error: err.message
+        });
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -584,6 +600,7 @@ router.get('/', auth, async (req, res) => {
 // GET /api/v2/cashflow/month?month=2026-04
 // Retorna resumo diário do mês inteiro em UMA requisição (substitui 30 chamadas diárias)
 router.get('/month', auth, async (req, res) => {
+    const startedAt = Date.now();
     try {
         const { month } = req.query;
         if (!month || !/^\d{4}-\d{2}$/.test(month)) {
@@ -641,7 +658,19 @@ router.get('/month', auth, async (req, res) => {
             }
         });
 
+        logMetric('CashflowV2', 'getCashflowMonth', {
+          executionTimeMs: Date.now() - startedAt,
+          month,
+          caixaBruto,
+          producaoTotal: productionTotals.total || 0
+        });
+
     } catch (err) {
+        logMetric('CashflowV2', 'getCashflowMonth', {
+          executionTimeMs: Date.now() - startedAt,
+          month,
+          error: err.message
+        });
         res.status(500).json({ success: false, error: err.message });
     }
 });

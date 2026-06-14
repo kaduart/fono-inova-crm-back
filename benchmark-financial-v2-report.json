@@ -1,0 +1,116 @@
+{
+  "generatedAt": "2026-06-13T15:25:04.547Z",
+  "database": "fono_inova_prod",
+  "period": {
+    "start": "2026-03-01T03:00:00.000Z",
+    "end": "2026-04-01T02:59:59.000Z"
+  },
+  "doctor": {
+    "id": "684072213830f473da1b0b0b",
+    "name": "Lorrany Siqueira Marques"
+  },
+  "runs": 3,
+  "results": [
+    {
+      "label": "unifiedFinancialService.calculateCash",
+      "avg": 1314.13,
+      "min": 724.220672,
+      "max": 2460.657759,
+      "p50": 757.497451,
+      "p95": 2460.657759,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 12
+    },
+    {
+      "label": "unifiedFinancialService.calculateProduction",
+      "avg": 6484.99,
+      "min": 2224.017016,
+      "max": 9014.591049,
+      "p50": 8216.36073,
+      "p95": 9014.591049,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 11
+    },
+    {
+      "label": "financialMetricsService.getOverview",
+      "avg": 1522.6,
+      "min": 1188.965459,
+      "max": 1738.819378,
+      "p50": 1640.025165,
+      "p95": 1738.819378,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 6
+    },
+    {
+      "label": "professionalFinancial.getProfessionalSummary",
+      "avg": 235.01,
+      "min": 162.58435,
+      "max": 271.999858,
+      "p50": 270.450823,
+      "p95": 271.999858,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 16
+    },
+    {
+      "label": "professionalFinancial.getProfessionalPatientsBreakdown",
+      "avg": 294.15,
+      "min": 216.71436,
+      "max": 369.965993,
+      "p50": 295.760472,
+      "p95": 369.965993,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 32
+    },
+    {
+      "label": "professionalFinancial.getProfessionalRanking",
+      "avg": 114.87,
+      "min": 0.526258,
+      "max": 343.289189,
+      "p50": 0.795961,
+      "p95": 343.289189,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 14
+    },
+    {
+      "label": "professionalFinancial.getCommissionAudit",
+      "avg": 215.52,
+      "min": 157.875642,
+      "max": 268.357338,
+      "p50": 220.329649,
+      "p95": 268.357338,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 7
+    },
+    {
+      "label": "commissionService.calculateDoctorCommission",
+      "avg": 436.31,
+      "min": 372.139036,
+      "max": 556.598635,
+      "p50": 380.18434,
+      "p95": 556.598635,
+      "runs": 3,
+      "error": null,
+      "sampleSize": 7
+    }
+  ],
+  "alerts": [
+    {
+      "label": "unifiedFinancialService.calculateCash",
+      "p95": 2460.657759,
+      "threshold": 2000
+    },
+    {
+      "label": "unifiedFinancialService.calculateProduction",
+      "p95": 9014.591049,
+      "threshold": 2000
+    }
+  ],
+  "passed": false
+}

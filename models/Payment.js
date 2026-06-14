@@ -251,6 +251,10 @@ paymentSchema.index({ status: 1, billingType: 1, paymentDate: -1 });
 paymentSchema.index({ financialDate: -1, status: 1 });
 paymentSchema.index({ patientId: 1, status: 1 });
 
+// 💰 Índices para dashboards financeiros V2 (cash / production / receivables)
+paymentSchema.index({ status: 1, financialDate: -1, amount: 1, kind: 1 }, { name: 'financial_cash_status_date' });
+paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financial_doctor_cash_status_date' });
+
 // ============ MÉTODOS ============
 paymentSchema.methods.toDTO = function() {
     return {

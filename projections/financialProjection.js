@@ -7,6 +7,7 @@
  */
 
 import FinancialProjection from '../models/FinancialProjection.js';
+import { logMetric } from '../utils/logMetric.js';
 
 class FinancialProjectionHandler {
     
@@ -47,6 +48,8 @@ class FinancialProjectionHandler {
      * 📊 Query otimizada para dashboard
      */
     static async getDashboardData(month) {
+        logMetric('FinancialProjection', 'read', { operation: 'getDashboardData', month });
+
         const projection = await FinancialProjection.findOne({
             month,
             type: 'cash'

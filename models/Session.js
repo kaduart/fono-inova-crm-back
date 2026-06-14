@@ -163,13 +163,75 @@ const sessionSchema = new mongoose.Schema({
     commissionRate: {
         type: Number,
         default: null,
-        description: 'Percentual de comissão do profissional (ex: 0.5 para 50%)'
+        description: 'LEGADO: Percentual de comissão do profissional. Não usar como fonte de verdade.'
     },
-    
+
     commissionValue: {
         type: Number,
         default: null,
-        description: 'Valor calculado da comissão (sessionValue * commissionRate)'
+        description: 'LEGADO: Valor calculado da comissão. Não usar como fonte de verdade.'
+    },
+
+    // 🆕 Snapshot da comissão aplicada no momento do complete
+    commissionSnapshot: {
+        ruleId: {
+            type: mongoose.Schema.Types.ObjectId,
+            default: null,
+            description: 'ID da regra de comissão aplicada'
+        },
+        version: {
+            type: Number,
+            default: null,
+            description: 'Versão das regras de comissão no momento do cálculo'
+        },
+        commissionType: {
+            type: String,
+            enum: ['fixed', 'percentage', null],
+            default: null
+        },
+        value: {
+            type: Number,
+            default: null,
+            description: 'Valor bruto da regra (R$ ou %)'
+        },
+        minValue: {
+            type: Number,
+            default: null,
+            description: 'Valor mínimo da sessão para aplicação da regra'
+        },
+        maxValue: {
+            type: Number,
+            default: null,
+            description: 'Valor máximo da sessão para aplicação da regra'
+        },
+        effectiveDate: {
+            type: Date,
+            default: null,
+            description: 'Data de vigência da regra no momento do snapshot'
+        },
+        calculatedCommission: {
+            type: Number,
+            default: null,
+            description: 'Valor final da comissão calculada para esta sessão'
+        },
+        calculatedAt: {
+            type: Date,
+            default: null
+        },
+        migrated: {
+            type: Boolean,
+            default: false,
+            description: 'Indica se o snapshot foi gerado por backfill/migração'
+        },
+        migratedAt: {
+            type: Date,
+            default: null
+        },
+        originalRuleVersion: {
+            type: Number,
+            default: null,
+            description: 'Versão das regras de comissão vigente na época da migração'
+        }
     },
     
     statusHistory: [{
@@ -208,6 +270,10 @@ const sessionSchema = new mongoose.Schema({
 // 🔍 Índice essencial para busca de sessões pendentes por especialidade
 sessionSchema.index({ patient: 1, sessionType: 1, paymentStatus: 1, status: 1 });
 sessionSchema.index({ patient: 1, paymentStatus: 1, status: 1 });
+
+// 💰 Índices para dashboards financeiros V2 (produção / caixa do profissional)
+sessionSchema.index({ doctor: 1, date: -1, status: 1 }, { name: 'financial_doctor_date_status' });
+sessionSchema.index({ date: -1, status: 1 }, { name: 'financial_date_status' });
 
 // 🆕 V4: Índice para appointmentId (1 appointment = 1 session)
 // NOTA: Índice unique removido temporariamente devido a compatibilidade V1
@@ -422,7 +488,7 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
     }
 });
 
-// 🏗️ Hook para gerenciar statusHistory, commission e sessionConsumed
+// 🏗️ Hook para gerenciar statusHistory e sessionConsumed
 sessionSchema.pre('save', function(next) {
     if (this.isModified('status')) {
         // Adicionar ao histórico
@@ -431,16 +497,11 @@ sessionSchema.pre('save', function(next) {
             status: this.status,
             at: new Date()
         });
-        
+
         // Atualizar sessionConsumed baseado no status
         if (this.status === 'completed') {
             this.sessionConsumed = true;
-            
-            // Calcular comissão se temos rate e value
-            if (this.commissionRate && this.sessionValue && !this.commissionValue) {
-                this.commissionValue = this.sessionValue * this.commissionRate;
-            }
-            
+
             // Marcar revenue recognized
             if (!this.revenueRecognizedAt) {
                 this.revenueRecognizedAt = new Date();
@@ -451,11 +512,6 @@ sessionSchema.pre('save', function(next) {
         } else if (this.status === 'canceled') {
             // Cancelamento não consome
             this.sessionConsumed = false;
-            
-            // Zerar comissão se estava completed antes
-            if (this.commissionValue) {
-                this.commissionValue = 0;
-            }
         }
     }
     next();
@@ -464,11 +520,11 @@ sessionSchema.pre('save', function(next) {
 sessionSchema.pre('findOneAndUpdate', async function(next) {
     const update = this.getUpdate();
     const doc = await this.model.findOne(this.getQuery());
-    
+
     if (update.$set && update.$set.status && doc && doc.status !== update.$set.status) {
         const newStatus = update.$set.status;
         const oldStatus = doc.status;
-        
+
         // Adicionar ao histórico
         if (!update.$push) update.$push = {};
         if (!update.$push.statusHistory) update.$push.statusHistory = {};
@@ -476,26 +532,18 @@ sessionSchema.pre('findOneAndUpdate', async function(next) {
             status: newStatus,
             at: new Date()
         };
-        
+
         // Detectar reversão (completed → canceled)
         if (oldStatus === 'completed' && newStatus === 'canceled') {
             console.warn(`🔄 REVERSÃO: Sessão ${doc._id} de completed para canceled`);
             update.$set.sessionConsumed = false;
-            update.$set.commissionValue = 0;
             // Aqui poderia gerar uma entrada de reversão no ledger
         }
-        
+
         // Novo completed
         if (newStatus === 'completed') {
             update.$set.sessionConsumed = true;
-            
-            // Calcular comissão
-            const sessionValue = update.$set.sessionValue || doc.sessionValue;
-            const commissionRate = update.$set.commissionRate || doc.commissionRate;
-            if (commissionRate && sessionValue) {
-                update.$set.commissionValue = sessionValue * commissionRate;
-            }
-            
+
             if (!doc.revenueRecognizedAt) {
                 update.$set.revenueRecognizedAt = new Date();
             }

@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
+import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
 
 // ============================================================
@@ -23,6 +24,7 @@ import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } f
 // ============================================================
 
 export async function calculateCash(start, end) {
+    const startedAt = Date.now();
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     // NÃO usar filtragem manual. NÃO usar heurística de texto.
     const match = {
@@ -58,17 +60,22 @@ export async function calculateCash(start, end) {
     console.log(`[calculateCash] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
 
     // 1. Total geral
+    const totalAggStartedAt = Date.now();
     const totalAgg = await Payment.aggregate([
         { $match: match },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]);
+    const totalAggMs = Date.now() - totalAggStartedAt;
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
     console.log(`[calculateCash] Encontrados: ${count} payments, total=${total}`);
 
-    // Diagnóstico extra: listar primeiros payments do período
-    if (count > 0) {
+    // Diagnóstico extra: listar primeiros payments do período (apenas desenvolvimento)
+    let samplesMs = 0;
+    if (count > 0 && process.env.NODE_ENV === 'development') {
+        const samplesStartedAt = Date.now();
         const samples = await Payment.find(match).select('amount paymentDate financialDate billingType paymentMethod kind').limit(5).lean();
+        samplesMs = Date.now() - samplesStartedAt;
         console.log(`[calculateCash] Amostras:`, samples.map(p => ({
             amount: p.amount,
             paymentDate: p.paymentDate,
@@ -80,6 +87,7 @@ export async function calculateCash(start, end) {
     }
 
     // 2. Por método de pagamento
+    const methodAggStartedAt = Date.now();
     const methodAgg = await Payment.aggregate([
         { $match: match },
         { $group: {
@@ -97,9 +105,11 @@ export async function calculateCash(start, end) {
         }}
     ]);
     const byMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
+    const methodAggMs = Date.now() - methodAggStartedAt;
     methodAgg.forEach(r => { byMethod[r._id] = r.total; });
 
     // 3. Por tipo (particular / pacote / convenio / liminar)
+    const typeAggStartedAt = Date.now();
     // Campos disponíveis em Payment: billingType, paymentMethod, serviceType, kind, package
     const typeAgg = await Payment.aggregate([
         { $match: match },
@@ -128,17 +138,41 @@ export async function calculateCash(start, end) {
             total: { $sum: '$amount' }
         }}
     ]);
+    const typeAggMs = Date.now() - typeAggStartedAt;
     const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
     const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
     const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
     const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
     // 4. Buscar payments completos para compatibilidade com endpoints legados
+    const paymentsStartedAt = Date.now();
     let payments = await Payment.find(match).populate('patient', 'fullName').lean();
+    const paymentsQueryMs = Date.now() - paymentsStartedAt;
+    const paymentsFilterStartedAt = Date.now();
+    payments = payments.filter(p => {
+        const nome = (p.patient?.fullName || '').toLowerCase();
+        return !nome.includes('teste') && !nome.includes('test ');
+    });
+    const paymentsFilterMs = Date.now() - paymentsFilterStartedAt;
     // Filtro de nome de teste (não expressível eficientemente em aggregation)
     payments = payments.filter(p => {
         const nome = (p.patient?.fullName || '').toLowerCase();
         return !nome.includes('teste') && !nome.includes('test ');
+    });
+
+    const executionTimeMs = Date.now() - startedAt;
+    logMetric('UnifiedFinancialService', 'calculateCash', {
+      executionTimeMs,
+      paymentCount: count,
+      total,
+      stages: {
+        totalAggMs,
+        samplesMs,
+        methodAggMs,
+        typeAggMs,
+        paymentsQueryMs,
+        paymentsFilterMs
+      }
     });
 
     return {
@@ -259,6 +293,7 @@ const pkgLookupStages = [
  * 🚨 NÃO filtra por paciente deletado — a sessão foi realizada.
  */
 export async function calculateProduction(start, end) {
+    const startedAt = Date.now();
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     const match = {
         date: { $gte: start, $lte: end },
@@ -269,18 +304,23 @@ export async function calculateProduction(start, end) {
     console.log(`[calculateProduction] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
 
     // 1. Total geral
+    const totalAggStartedAt = Date.now();
     const totalAgg = await Session.aggregate([
         { $match: match },
         ...pkgLookupStages,
         { $group: { _id: null, total: { $sum: '$effectiveValue' }, count: { $sum: 1 } } }
     ]);
+    const totalAggMs = Date.now() - totalAggStartedAt;
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
     console.log(`[calculateProduction] Encontradas: ${count} sessions, total=${total}`);
 
-    // Diagnóstico extra: listar primeiras sessions do período
-    if (count > 0) {
+    // Diagnóstico extra: listar primeiras sessions do período (apenas desenvolvimento)
+    let samplesMs = 0;
+    if (count > 0 && process.env.NODE_ENV === 'development') {
+        const samplesStartedAt = Date.now();
         const samples = await Session.find(match).select('date sessionValue package status paymentMethod paymentOrigin').limit(5).lean();
+        samplesMs = Date.now() - samplesStartedAt;
         console.log(`[calculateProduction] Amostras:`, samples.map(s => ({
             date: s.date,
             sessionValue: s.sessionValue,
@@ -294,6 +334,7 @@ export async function calculateProduction(start, end) {
     // 2. Por tipo (particular / pacote / convenio / liminar)
     // Campos disponíveis em Session: paymentMethod, paymentOrigin, package
     // Session NÃO tem billingType.
+    const typeAggStartedAt = Date.now();
     const typeAgg = await Session.aggregate([
         { $match: match },
         ...pkgLookupStages,
@@ -323,12 +364,14 @@ export async function calculateProduction(start, end) {
             total: { $sum: '$effectiveValue' }
         }}
     ]);
+    const typeAggMs = Date.now() - typeAggStartedAt;
     const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
     const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
     const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
     const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
     // 3. Recebido vs Pendente (para compatibilidade com sanity-check e consumers)
+    const recebidoAggStartedAt = Date.now();
     const recebidoAgg = await Session.aggregate([
         { $match: {
             date: { $gte: start, $lte: end },
@@ -344,10 +387,12 @@ export async function calculateProduction(start, end) {
         ...pkgLookupStages,
         { $group: { _id: null, total: { $sum: '$effectiveValue' } } }
     ]);
+    const recebidoAggMs = Date.now() - recebidoAggStartedAt;
     const recebido = recebidoAgg[0]?.total || 0;
     const pendente = total - recebido;
 
     // 4. Particular Pendente vs Pacote Pendente — fonte: Session (nao Payment)
+    const particularPendenteAggStartedAt = Date.now();
     // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
     // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
     const particularPendenteAgg = await Session.aggregate([
@@ -373,6 +418,7 @@ export async function calculateProduction(start, end) {
         ]}},
         { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
     ]);
+    const particularPendenteAggMs = Date.now() - particularPendenteAggStartedAt;
     const particularPendente = particularPendenteAgg[0]?.total || 0;
 
     // Pacote Pendente: para pacotes prepaid/full, o dinheiro entrou na venda.
@@ -381,10 +427,27 @@ export async function calculateProduction(start, end) {
     const pacotePendente = 0;
 
     // 5. Buscar sessions completas para compatibilidade com endpoints legados
+    const sessionsStartedAt = Date.now();
     const sessions = await Session.find({
         date: { $gte: start, $lte: end },
         status: 'completed'
     }).populate('package', 'sessionValue totalValue totalSessions').lean();
+    const sessionsMs = Date.now() - sessionsStartedAt;
+
+    const executionTimeMs = Date.now() - startedAt;
+    logMetric('UnifiedFinancialService', 'calculateProduction', {
+      executionTimeMs,
+      sessionCount: count,
+      total,
+      stages: {
+        totalAggMs,
+        samplesMs,
+        typeAggMs,
+        recebidoAggMs,
+        particularPendenteAggMs,
+        sessionsMs
+      }
+    });
 
     return {
         total,

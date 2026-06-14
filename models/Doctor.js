@@ -41,6 +41,13 @@ const doctorSchema = new mongoose.Schema({
   // 🔑 reset de senha
   passwordResetToken: { type: String, index: true, select: false },
   passwordResetExpires: { type: Date, select: false },
+  // 🆕 Versão das regras de comissão — incrementada a cada alteração
+  commissionRuleVersion: {
+    type: Number,
+    default: 1,
+    min: 1
+  },
+
   commissionRules: {
     standardSession: {
       type: Number,
@@ -71,6 +78,75 @@ const doctorSchema = new mongoose.Schema({
       serviceType: { type: String },  // ex: 'tongue_tie_test'
       value: { type: Number },
       condition: { type: String }     // ex: 'per_session', 'per_completed_package'
+    }],
+
+    // 🆕 MOTOR DE REGRAS DE COMISSÃO (Sprint 3.7)
+    // Array flexível de regras por tipo de atendimento, convênio e período de vigência.
+    rules: [{
+      _id: { type: Schema.Types.ObjectId, auto: true },
+      serviceType: {
+        type: String,
+        enum: ['session', 'evaluation', 'neuropsychological', 'aba', 'psychology', 'speech'],
+        default: 'session'
+      },
+      billingType: {
+        type: String,
+        enum: ['particular', 'convenio', 'liminar', 'package'],
+        default: 'particular'
+      },
+      insurance: {
+        type: String,
+        default: null,
+        description: 'Nome do convênio quando billingType = convenio'
+      },
+      commissionType: {
+        type: String,
+        enum: ['fixed', 'percentage'],
+        default: 'fixed'
+      },
+      value: {
+        type: Number,
+        default: 0,
+        min: 0
+      },
+      minValue: {
+        type: Number,
+        default: null,
+        min: 0,
+        description: 'Valor mínimo da sessão para que esta regra se aplique (ex: acima de R$ 100)'
+      },
+      maxValue: {
+        type: Number,
+        default: null,
+        min: 0,
+        description: 'Valor máximo da sessão para que esta regra se aplique (ex: até R$ 100)'
+      },
+      startDate: {
+        type: Date,
+        default: null
+      },
+      endDate: {
+        type: Date,
+        default: null
+      },
+      effectiveDate: {
+        type: Date,
+        default: null,
+        description: 'Data a partir da qual a regra passa a valer para reajustes futuros'
+      },
+      active: {
+        type: Boolean,
+        default: true
+      },
+      priority: {
+        type: Number,
+        default: 0,
+        description: 'Maior valor = maior prioridade no matching'
+      },
+      notes: {
+        type: String,
+        default: ''
+      }
     }]
   },
 

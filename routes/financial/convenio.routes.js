@@ -2,6 +2,7 @@
 // Rotas para métricas de convênio - SEPARA receita realizada de caixa
 
 import express from 'express';
+import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 import { auth, authorize } from '../../middleware/auth.js';
 import ConvenioMetricsService from '../../services/financial/ConvenioMetricsService.js';
@@ -296,12 +297,7 @@ router.put('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
         }
 
         const Doctor = (await import('../../models/Doctor.js')).default;
-        
-        const doctor = await Doctor.findByIdAndUpdate(
-            doctorId,
-            { $set: { 'commissionRules.byInsurance': byInsurance } },
-            { new: true }
-        );
+        const doctor = await Doctor.findById(doctorId);
 
         if (!doctor) {
             return res.status(404).json({
@@ -310,13 +306,35 @@ router.put('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
             });
         }
 
+        // 🆕 Converte byInsurance em regras do motor novo
+        const existingRules = doctor.commissionRules?.rules || [];
+        const otherRules = existingRules.filter(r => !(r.billingType === 'convenio' && r.serviceType === 'session'));
+        const newRules = Object.entries(byInsurance).map(([insurance, value]) => ({
+            _id: new mongoose.Types.ObjectId(),
+            serviceType: 'session',
+            billingType: 'convenio',
+            insurance,
+            commissionType: 'fixed',
+            value,
+            active: true,
+            priority: 0,
+            notes: 'Migrado de byInsurance via endpoint legado'
+        }));
+
+        doctor.commissionRules = doctor.commissionRules || {};
+        doctor.commissionRules.rules = [...otherRules, ...newRules];
+        doctor.commissionRuleVersion = (doctor.commissionRuleVersion || 1) + 1;
+        await doctor.save();
+
         res.json({
             success: true,
             message: 'Regras de comissão atualizadas',
             data: {
                 doctorId: doctor._id,
                 doctorName: doctor.fullName,
-                commissionRules: doctor.commissionRules
+                commissionRules: {
+                    rules: doctor.commissionRules.rules
+                }
             }
         });
 
@@ -351,13 +369,20 @@ router.get('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
             });
         }
 
+        const convenioRules = (doctor.commissionRules?.rules || [])
+            .filter(r => r.billingType === 'convenio' && r.serviceType === 'session')
+            .reduce((acc, r) => {
+                acc[r.insurance || 'convenio'] = r.value;
+                return acc;
+            }, {});
+
         res.json({
             success: true,
             data: {
                 doctorId: doctor._id,
                 doctorName: doctor.fullName,
-                standardSession: doctor.commissionRules?.standardSession || 60,
-                byInsurance: doctor.commissionRules?.byInsurance || {}
+                standardSession: 0,
+                byInsurance: convenioRules
             }
         });
 

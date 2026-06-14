@@ -98,7 +98,10 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
                         $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$effectiveValue', 0] }
                     },
                     totalCommission: {
-                        $sum: '$commissionValue'
+                        // TODO: remover fallback $commissionValue após backfill 100% em produção
+                        $sum: {
+                            $ifNull: ['$commissionSnapshot.calculatedCommission', { $ifNull: ['$commissionValue', 0] }, 0]
+                        }
                     }
                 }
             }
@@ -129,7 +132,12 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
                     _id: '$doctor',
                     sessionsCount: { $sum: 1 },
                     totalRevenue: { $sum: '$effectiveValue' },
-                    totalCommission: { $sum: '$commissionValue' }
+                    totalCommission: {
+                        // TODO: remover fallback $commissionValue após backfill 100% em produção
+                        $sum: {
+                            $ifNull: ['$commissionSnapshot.calculatedCommission', { $ifNull: ['$commissionValue', 0] }, 0]
+                        }
+                    }
                 }
             },
             {

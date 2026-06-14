@@ -3,6 +3,7 @@ import express from 'express';
 import { auth, authorize } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
+import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
 
 const router = express.Router();
 
@@ -306,6 +307,71 @@ router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req
 
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/planning/auto-generate
+ * @desc    Criar planejamento mensal e gerar automaticamente semanais e diários
+ *          proporcionais aos dias úteis (seg–sex, exceto feriados nacionais).
+ */
+router.post('/auto-generate', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const { month, year, targets, bySpecialty, notes } = req.body;
+
+    if (!month || !year || !targets || !targets.expectedRevenue) {
+      return res.status(400).json({
+        success: false,
+        message: 'month, year e targets.expectedRevenue são obrigatórios'
+      });
+    }
+
+    const result = await generateMonthlyCascade(month, year, targets, req.user.id, {
+      notes,
+      bySpecialty,
+      force: true
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Cascata criada: 1 mensal, ${result.weekly.length} semanais e ${result.daily.length} diários`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('[Planning Auto-Generate] ❌ Erro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar planejamentos automaticamente',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PATCH /api/planning/:month/:year/recalculate
+ * @desc    Recalcular metas de dias/semanas futuras com base no gap realizado
+ */
+router.patch('/:month/:year/recalculate', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const month = parseInt(req.params.month);
+    const year = parseInt(req.params.year);
+
+    const result = await recalculateFutureTargets(month, year);
+
+    res.json({
+      success: true,
+      message: `${result.updated.length} planejamentos futuros recalculados`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('[Planning Recalculate] ❌ Erro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao recalcular metas futuras',
+      error: error.message
+    });
   }
 });
 

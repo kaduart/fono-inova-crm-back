@@ -219,6 +219,9 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       active: doctor.active,
       role: doctor.role || 'doctor',
       weeklyAvailability: doctor.weeklyAvailability || [],
+      commissionRules: {
+        rules: doctor.commissionRules?.rules || []
+      },
       createdAt: doctor.createdAt,
       updatedAt: doctor.updatedAt
     }));
@@ -257,6 +260,7 @@ router.post('/', flexibleAuth, async (req, res) => {
       phoneNumber,
       active: active !== undefined ? active : true,
       role: 'doctor',
+      commissionRules: { rules: [] },
       createdBy: req.user?.id
     });
 
@@ -285,9 +289,18 @@ router.put('/:id', flexibleAuth, async (req, res) => {
   const correlationId = `doc_upd_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
+    const updatePayload = { ...req.body, updatedAt: new Date(), updatedBy: req.user?.id };
+
+    // 🧹 Garante que campos legados não sejam mais persistidos
+    if (updatePayload.commissionRules) {
+      updatePayload.commissionRules = {
+        rules: updatePayload.commissionRules.rules || []
+      };
+    }
+
     const doctor = await Doctor.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedAt: new Date(), updatedBy: req.user?.id },
+      updatePayload,
       { new: true }
     );
 

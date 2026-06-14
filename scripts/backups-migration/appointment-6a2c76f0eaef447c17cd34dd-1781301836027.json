@@ -1,0 +1,102 @@
+{
+  "_id": "6a2c76f0eaef447c17cd34dd",
+  "patient": "6a285cfa7681a873d5c6a00b",
+  "patientInfo": {
+    "fullName": "ana teste 2",
+    "phone": "6299999999",
+    "email": "",
+    "birthDate": "2026-05-28",
+    "ageUnit": "anos"
+  },
+  "doctor": "688c053930c7cc9720a2ee64",
+  "professionalName": "Ricardo Maia Santos",
+  "date": "2026-06-12T13:00:00.000Z",
+  "time": "10:00",
+  "preferredPeriod": null,
+  "duration": 40,
+  "operationalStatus": "missed",
+  "clinicalStatus": "missed",
+  "urgency": "critica",
+  "attemptCount": 0,
+  "serviceType": "evaluation",
+  "isJointSession": false,
+  "sessionType": "fonoaudiologia",
+  "sessionValue": 12,
+  "paymentMethod": "pix",
+  "billingType": "particular",
+  "patientJourneyType": null,
+  "insuranceProvider": null,
+  "insuranceValue": 0,
+  "authorizationCode": null,
+  "insuranceGuide": null,
+  "package": null,
+  "liminarContract": null,
+  "therapeuticPlan": null,
+  "insurancePlan": null,
+  "planVersion": null,
+  "advancedSessions": [],
+  "importedAt": null,
+  "visualFlag": null,
+  "addedToBalance": false,
+  "balanceAmount": 0,
+  "notes": "",
+  "responsible": "",
+  "specialty": "fonoaudiologia",
+  "history": [
+    {
+      "action": "create_requested",
+      "newStatus": "scheduled",
+      "timestamp": "2026-06-12T21:15:28.317Z",
+      "context": "Criação via 4.0",
+      "_id": "6a2c76f0eaef447c17cd34de"
+    },
+    {
+      "action": "auto_expired",
+      "newStatus": "missed",
+      "timestamp": "2026-06-12T21:30:00.221Z",
+      "context": "Pré-agendamento expirado automaticamente — horário não convertido (margem: 15min)",
+      "_id": "6a2c7a58f08632e3783386b7"
+    }
+  ],
+  "lead": null,
+  "leadSnapshot": {
+    "source": null,
+    "campaign": null,
+    "origin": null,
+    "conversionScore": null,
+    "capturedAt": null
+  },
+  "isFirstAppointment": false,
+  "patientType": null,
+  "patientTypeMonthsInactive": null,
+  "metadata": {
+    "origin": {
+      "source": "web_app"
+    }
+  },
+  "paymentOrigin": null,
+  "isProcessing": false,
+  "processingStartedAt": null,
+  "originalAppointmentId": null,
+  "rescheduledFrom": null,
+  "rootAppointmentId": null,
+  "rescheduleReason": "",
+  "rescheduledAt": null,
+  "canceledAt": null,
+  "cancelReason": "",
+  "forceCancelAudit": {
+    "forceCancelledBy": null,
+    "forceCancelledAt": null,
+    "forceCancelledReason": null,
+    "reverseFinancial": false
+  },
+  "contactAttempts": [],
+  "paymentForms": [],
+  "createdAt": "2026-06-12T21:15:28.320Z",
+  "updatedAt": "2026-06-12T21:30:00.222Z",
+  "startDateTime": "2026-06-12T13:00:00.000Z",
+  "endDateTime": "2026-06-12T13:40:00.000Z",
+  "expiresAt": "2026-07-12T21:15:28.320Z",
+  "__v": 0,
+  "session": "6a2c76f0eaef447c17cd34e1"
+}

@@ -31,6 +31,8 @@ import {
     recordSessionRevenue
 } from './financialLedgerService.js';
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
+import { createCommissionSnapshot } from './commissionRule.service.js';
+import Doctor from '../models/Doctor.js';
 
 /**
  * Completa uma sessão - Mutação primária de estado
@@ -322,14 +324,33 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 ctx.sessionDoc = sessionDoc;
             }
             
-            // 🎯 Atualiza Session com dados de pagamento baseado no tipo
-            sessionUpdate = {
-                status: 'completed',
-                completedAt: new Date(),
-                notes: notes || undefined,
-                evolution: evolution || undefined,
-                correlationId
-            };
+            // 📐 Snapshot da comissão aplicada no momento do complete
+            const doctorForCommission = await Doctor.findById(appointment.doctor?._id)
+                .select('specialty commissionRules commissionRuleVersion')
+                .lean();
+            if (doctorForCommission) {
+                const commissionSnapshot = createCommissionSnapshot(
+                    doctorForCommission,
+                    sessionDoc,
+                    new Date()
+                );
+                sessionUpdate = {
+                    status: 'completed',
+                    completedAt: new Date(),
+                    notes: notes || undefined,
+                    evolution: evolution || undefined,
+                    correlationId,
+                    commissionSnapshot
+                };
+            } else {
+                sessionUpdate = {
+                    status: 'completed',
+                    completedAt: new Date(),
+                    notes: notes || undefined,
+                    evolution: evolution || undefined,
+                    correlationId
+                };
+            }
             
             // 💰 REGRA UNIFICADA: isPaid = !isBalanceOrigin (para todos os tipos)
             const paidNow = !isBalanceOrigin;

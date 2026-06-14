@@ -16,7 +16,10 @@ import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
+import Doctor from '../models/Doctor.js';
 import unifiedFinancialService from './unifiedFinancialService.v2.js';
+import { calculateDoctorCommission } from './commissionService.js';
+import { logMetric } from '../utils/logMetric.js';
 
 class FinancialMetricsService {
   
@@ -27,6 +30,11 @@ class FinancialMetricsService {
    * @returns {Object} { cash, production, billing, receivable, convenioDetail }
    */
   async getOverview(period) {
+    const startedAt = Date.now();
+    logMetric('LegacyFinancialMetrics', 'getOverview', {
+      periodStart: period.startDate?.toISOString?.(),
+      periodEnd: period.endDate?.toISOString?.()
+    });
     const [cash, production, billing, receivable, convenioDetail] = await Promise.all([
       this.calculateCash(period),
       this.calculateProduction(period),
@@ -539,60 +547,54 @@ class FinancialMetricsService {
 
   /**
    * 👨‍⚕️ COMISSÕES (Commissions)
-   * 
-   * Calcula comissões por profissional baseado nas sessões realizadas.
-   * Usa commissionValue que foi travado no momento da sessão.
+   *
+   * Calcula comissões por profissional usando o motor oficial de comissão.
+   * Não usa mais Session.commissionValue como fonte de verdade.
    */
   async calculateCommissions(period, doctorId = null) {
+    const startedAt = Date.now();
+    logMetric('LegacyFinancialMetrics', 'calculateCommissions', {
+      doctorId: doctorId?.toString?.() || null,
+      periodStart: period.startDate?.toISOString?.(),
+      periodEnd: period.endDate?.toISOString?.()
+    });
     const start = period.startDate;
     const end = period.endDate;
 
-    const matchStage = {
-      status: 'completed',
-      sessionConsumed: true,
-      commissionValue: { $gt: 0 },  // ⭐ Só sessões com comissão calculada
-      date: { $gte: start, $lte: end }
-    };
-
+    let doctorIds = [];
     if (doctorId) {
-      matchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+      doctorIds = [doctorId.toString()];
+    } else {
+      const doctors = await Doctor.find({ active: true }).select('_id').lean();
+      doctorIds = doctors.map(d => d._id.toString());
     }
 
-    const commissions = await Session.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: '$doctor',
-          totalCommission: { $sum: '$commissionValue' },
-          totalSessions: { $sum: 1 },
-          totalProduction: { $sum: '$sessionValue' }
+    const results = await Promise.all(
+      doctorIds.map(async id => {
+        try {
+          const result = await calculateDoctorCommission(
+            new mongoose.Types.ObjectId(id),
+            start,
+            end
+          );
+          return {
+            doctorId: id,
+            doctorName: result.doctorName,
+            totalCommission: result.totalCommission,
+            totalSessions: result.totalSessions,
+            totalProduction: 0, // Produção vem de calculateProduction separadamente
+            averageCommissionPerSession: result.totalSessions > 0
+              ? result.totalCommission / result.totalSessions
+              : 0
+          };
+        } catch (err) {
+          console.error(`[financialMetrics.calculateCommissions] Erro ao calcular comissão para ${id}:`, err.message);
+          return null;
         }
-      },
-      {
-        $lookup: {
-          from: 'doctors',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'doctor'
-        }
-      },
-      {
-        $unwind: {
-          path: '$doctor',
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        $project: {
-          doctorId: '$_id',
-          doctorName: '$doctor.fullName',
-          totalCommission: 1,
-          totalSessions: 1,
-          totalProduction: 1,
-          averageCommissionPerSession: { $divide: ['$totalCommission', '$totalSessions'] }
-        }
-      }
-    ]);
+      })
+    );
+
+    const commissions = results.filter(Boolean).filter(r => r.totalCommission > 0 || r.totalSessions > 0);
 
     return {
       byDoctor: commissions,

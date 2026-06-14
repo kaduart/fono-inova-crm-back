@@ -20,6 +20,7 @@ import FinancialProjection from '../models/FinancialProjection.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import mongoose from 'mongoose';
+import { logMetric } from '../utils/logMetric.js';
 
 const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
 
@@ -232,6 +233,7 @@ async function reconcilePaymentProjection(results, month) {
     ]).then(r => r[0]?.total || 0);
     
     // Total na projection
+    logMetric('FinancialProjection', 'read', { operation: 'reconcilePaymentProjection', month: targetMonth });
     const projection = await FinancialProjection.findOne({
         month: targetMonth,
         type: 'cash'

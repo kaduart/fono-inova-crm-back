@@ -5,6 +5,7 @@
 import express from 'express';
 import moment from 'moment-timezone';
 import { auth } from '../../middleware/auth.js';
+import { logMetric } from '../../utils/logMetric.js';
 import Payment from '../../models/Payment.js';
 import Expense from '../../models/Expense.js';
 import Appointment from '../../models/Appointment.js';
@@ -15,7 +16,13 @@ const TIMEZONE = 'America/Sao_Paulo';
 
 // 🚨 DEPRECATION WARNING em TODAS as requisições
 router.use((req, res, next) => {
-    console.warn(`[DEPRECATED] /api/cashflow/summary foi chamado. Use /api/v2/cashflow. Client: ${req.headers['user-agent']?.slice(0, 50)}`);
+    const client = req.headers['user-agent']?.slice(0, 100) || 'unknown';
+    console.warn(`[DEPRECATED] /api/cashflow${req.path} foi chamado. Use /api/v2/cashflow. Client: ${client}`);
+    logMetric('LegacyCashflow', 'request', {
+      path: req.path,
+      originalUrl: req.originalUrl,
+      client
+    });
     next();
 });
 

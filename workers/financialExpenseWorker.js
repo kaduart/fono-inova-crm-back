@@ -14,6 +14,7 @@ import Expense from '../models/Expense.js';
 import Session from '../models/Session.js';
 import Doctor from '../models/Doctor.js';
 import { createContextLogger } from '../utils/logger.js';
+import { calculateSessionCommission } from '../services/commissionRule.service.js';
 
 const log = createContextLogger(null, 'FinancialExpenseWorker');
 
@@ -132,39 +133,6 @@ export async function onExpenseCreated(payload) {
 
 // ─── SESSION COMMISSION PROVISION ───────────────────────────────────────────
 
-async function calculateSessionCommission(session) {
-  if (!session || !session.doctor) return 0;
-
-  const doctor = await Doctor.findById(session.doctor).select('commissionRules').lean();
-  if (!doctor || !doctor.commissionRules) return 0;
-
-  const sessionType = session.sessionType || session.package?.sessionType;
-
-  // Avaliação regular ou consulta médica (ticket maior)
-  if (sessionType === 'evaluation' || session.serviceType === 'evaluation' || session.serviceType === 'consultation') {
-    return doctor.commissionRules.evaluationSession || doctor.commissionRules.standardSession || 60;
-  }
-
-  // Neuropsicologia é paga em lote (pacote) — não provisionamos por sessão individual
-  if (sessionType === 'neuropsych_evaluation') {
-    return 0;
-  }
-
-  // Sessão padrão: verificar convênio específico
-  const insuranceName = getInsuranceName(session);
-  const byInsuranceRules = doctor.commissionRules.byInsurance || {};
-  const insuranceValue = byInsuranceRules[insuranceName?.toLowerCase()];
-
-  return insuranceValue || doctor.commissionRules.standardSession || 60;
-}
-
-function getInsuranceName(session) {
-  if (session.insuranceGuide?.insurance) return session.insuranceGuide.insurance;
-  if (session.package?.insuranceProvider) return session.package.insuranceProvider;
-  if (session.paymentMethod === 'convenio') return 'convenio';
-  return null;
-}
-
 export async function onSessionCompletedForExpense(payload) {
   let session;
   if (payload.doctor && payload.date && payload.package && typeof payload.package === 'object') {
@@ -183,7 +151,10 @@ export async function onSessionCompletedForExpense(payload) {
   const dateStr = toDateStr(session.date);
   if (!dateStr) return;
 
-  const commissionValue = await calculateSessionCommission(session);
+  const doctor = await Doctor.findById(session.doctor).select('specialty commissionRules').lean();
+  if (!doctor) return;
+
+  const commissionValue = calculateSessionCommission(doctor, session, session.date);
   if (commissionValue <= 0) return;
 
   const inc = {
