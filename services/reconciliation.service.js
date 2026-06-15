@@ -704,7 +704,7 @@ export async function getTopFinancialIssues(startDate, endDate, limit = 20) {
         severity: 'medium',
         doctorId: extractDoctorId(payment),
         doctorName: extractDoctorName(payment),
-        patientId: payment.patient?.toString?.() || payment.patientId || null,
+        patientId: extractPatientId(payment),
         amount: payment.amount,
         description: 'Pagamento sem sessão vinculada',
         date: toDateString(payment.financialDate || payment.paymentDate || payment.createdAt),

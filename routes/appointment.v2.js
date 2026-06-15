@@ -665,7 +665,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { reason, confirmedAbsence = false, forceCancel = false, reverseFinancial = false, notes, observations, responsible } = req.body;
+    const { reason, confirmedAbsence = false, forceCancel = false, reverseFinancial = false, notes, observations, responsible, paymentMethod, billingType, sessionValue } = req.body;
 
     if (!reason) {
       throw createBusinessError(Messages.VALIDATION.REASON_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
@@ -747,6 +747,9 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
     appointment.cancellationReason = reason;
     if (notes != null || observations != null) appointment.notes = notes ?? observations;
     if (responsible != null) appointment.responsible = responsible;
+    if (paymentMethod != null) appointment.paymentMethod = paymentMethod;
+    if (billingType != null) appointment.billingType = billingType;
+    if (sessionValue != null) appointment.sessionValue = sessionValue;
 
     if (forceCancel) {
       appointment.forceCancelAudit = {
@@ -2042,19 +2045,26 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     }
     
     // 🛡️ PROTEÇÃO CRÍTICA: appointment completed só pode ter campos não-financeiros editados
+    // ✅ Permitir reabertura (completed → scheduled) ignorando demais campos do body
     if (appointment.operationalStatus === 'completed') {
-      const allowedFieldsWhenCompleted = ['notes', 'clinicalStatus', 'cancellationReason', 'metadata'];
-      const attemptedChanges = Object.keys(req.body);
-      const disallowedChanges = attemptedChanges.filter(f => !allowedFieldsWhenCompleted.includes(f));
-      
-      if (disallowedChanges.length > 0) {
-        await mongoSession.abortTransaction();
-        transactionAborted = true;
-        throw createBusinessError(
-          'Este atendimento já foi finalizado e não pode mais ser alterado.',
-          409,
-          'CANNOT_EDIT_COMPLETED_APPOINTMENT'
-        );
+      const isReopening = req.body.operationalStatus === 'scheduled';
+
+      if (isReopening) {
+        req.body = { operationalStatus: 'scheduled' };
+      } else {
+        const allowedFieldsWhenCompleted = ['notes', 'clinicalStatus', 'cancellationReason', 'metadata'];
+        const attemptedChanges = Object.keys(req.body);
+        const disallowedChanges = attemptedChanges.filter(f => !allowedFieldsWhenCompleted.includes(f));
+
+        if (disallowedChanges.length > 0) {
+          await mongoSession.abortTransaction();
+          transactionAborted = true;
+          throw createBusinessError(
+            'Este atendimento já foi finalizado e não pode mais ser alterado.',
+            409,
+            'CANNOT_EDIT_COMPLETED_APPOINTMENT'
+          );
+        }
       }
     }
     
