@@ -562,6 +562,10 @@ router.get('/status/:eventId', auth, async (req, res) => {
 // ============================================
 // POST /api/v2/payments/create-sync
 // Cria payment SÍNCRONO (para mark-as-paid de appointment sem payment)
+// PADRÃO PER-SESSION: paciente por sessão paga NO DIA via tabela financeira.
+// Antes de 2026-06-15: appointmentId NÃO era enviado → session_payment sem link de session/appointment
+//   → aparecia como orphan_payment na reconciliação (ver reconciliation.service.js).
+// A partir de 2026-06-15: appointmentId obrigatório quando é registro de appointment.
 // ============================================
 router.post('/create-sync', auth, async (req, res) => {
     const {
@@ -570,6 +574,7 @@ router.post('/create-sync', auth, async (req, res) => {
         amount,
         paymentMethod = 'dinheiro',
         paymentDate,
+        serviceDate,
         appointmentId,
         serviceType = 'session',
         notes,
@@ -618,6 +623,8 @@ router.post('/create-sync', auth, async (req, res) => {
             paymentMethod,
             paymentDate: paymentDate ? new Date(paymentDate) : now,
             financialDate: financialDateBrasilia,
+            // serviceDate = data da sessão (regime de competência). Distinto de paymentDate (caixa).
+            serviceDate: serviceDate ? new Date(serviceDate) : null,
             status,
             serviceType,
             notes: notes || '',
@@ -874,7 +881,7 @@ router.get('/queue/status', auth, async (req, res) => {
 // ============================================
 router.patch('/:id', auth, async (req, res) => {
     const { id } = req.params;
-    const { amount, paymentMethod, status, serviceType, specialty, paymentDate, notes, doctor } = req.body;
+    const { amount, paymentMethod, status, serviceType, specialty, paymentDate, notes, doctor, splitMethods, financialDate: financialDateBody } = req.body;
 
     // 1. Fail fast: ID válido?
     if (!isValidObjectId(id)) {
@@ -885,6 +892,19 @@ router.patch('/:id', auth, async (req, res) => {
         });
     }
 
+    // Validação split
+    if (splitMethods !== undefined) {
+        if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
+            return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
+        }
+        if (amount !== undefined) {
+            const splitTotal = splitMethods.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+            if (Math.abs(splitTotal - amount) > 0.01) {
+                return res.status(400).json({ success: false, error: `Total do split (${splitTotal}) não corresponde ao amount (${amount})`, code: 'SPLIT_AMOUNT_MISMATCH' });
+            }
+        }
+    }
+
     // 2. Fail fast: payload vazio?
     const hasChanges = amount !== undefined ||
                        paymentMethod !== undefined ||
@@ -893,7 +913,9 @@ router.patch('/:id', auth, async (req, res) => {
                        specialty !== undefined ||
                        paymentDate !== undefined ||
                        notes !== undefined ||
-                       doctor !== undefined;
+                       doctor !== undefined ||
+                       splitMethods !== undefined ||
+                       financialDateBody !== undefined;
 
     if (!hasChanges) {
         return res.status(400).json({
@@ -943,15 +965,25 @@ router.patch('/:id', auth, async (req, res) => {
         // 4. Montar update
         const updateData = {
             ...(amount !== undefined && { amount }),
-            ...(paymentMethod !== undefined && { paymentMethod }),
+            // splitMethods: admin pode registrar múltiplas formas de pagamento
+            ...(splitMethods !== undefined && {
+                splitMethods,
+                paymentMethod: splitMethods[0]?.method ?? payment.paymentMethod,
+            }),
+            ...(paymentMethod !== undefined && splitMethods === undefined && { paymentMethod }),
+            ...(splitMethods === undefined && paymentMethod === undefined && {}),
             ...(status !== undefined && { status }),
             ...(serviceType !== undefined && { serviceType }),
             ...(specialty !== undefined && { specialty }),
             ...(notes !== undefined && { notes }),
             ...(doctor !== undefined && isValidObjectId(doctor) && { doctor }),
             ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
-            // financialDate: usa startOf('day') em Brasília para alinhar com o range do cashflow
-            ...(paymentDate !== undefined && !payment.isFromPackage && {
+            // financialDate explícito (admin edit) tem prioridade sobre paymentDate
+            ...(financialDateBody !== undefined && !payment.isFromPackage && {
+                financialDate: moment.tz(financialDateBody, 'America/Sao_Paulo').startOf('day').toDate(),
+                paymentDate:   moment.tz(financialDateBody, 'America/Sao_Paulo').startOf('day').toDate(),
+            }),
+            ...(paymentDate !== undefined && financialDateBody === undefined && !payment.isFromPackage && {
                 financialDate: moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
             }),
             updatedAt: new Date()
@@ -985,7 +1017,31 @@ router.patch('/:id', auth, async (req, res) => {
         // Commit antes de side-effects (evento + populate de retorno)
         await mongoSession.commitTransaction();
 
-        // 5. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
+        // 5a. Sync appointment.paymentForms quando payment/split/data mudou (side-effect)
+        if (splitMethods !== undefined || amount !== undefined || paymentMethod !== undefined || financialDateBody !== undefined) {
+            const appointmentId = payment.appointment || payment.appointmentId;
+            if (appointmentId) {
+                try {
+                    const payDate = updateData.financialDate || payment.financialDate || new Date();
+                    let newPaymentForms;
+                    if (splitMethods !== undefined) {
+                        newPaymentForms = splitMethods.map(s => ({ amount: Number(s.amount), date: payDate, method: s.method }));
+                    } else {
+                        newPaymentForms = [{
+                            amount: updateData.amount ?? payment.amount,
+                            date: payDate,
+                            method: updateData.paymentMethod ?? payment.paymentMethod,
+                        }];
+                    }
+                    await Appointment.findByIdAndUpdate(appointmentId, { $set: { paymentForms: newPaymentForms } });
+                    console.log('[PATCH payment] paymentForms sincronizado:', JSON.stringify(newPaymentForms));
+                } catch (syncErr) {
+                    console.error('[PATCH payment] Falha ao sincronizar paymentForms:', syncErr.message);
+                }
+            }
+        }
+
+        // 5b. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
         try {
             await publishEvent(
                 EventTypes.PAYMENT_UPDATED,
@@ -1193,6 +1249,73 @@ router.post('/bulk-settle', auth, async (req, res) => {
         await mongoSession.abortTransaction();
         logger.error('[V2 bulk-settle] Erro:', error.message);
         res.status(500).json({ success: false, error: error.message });
+    } finally {
+        mongoSession.endSession();
+    }
+});
+
+// ============================================
+// DELETE /api/v2/payments/:paymentId — ADMIN ONLY
+// Remove payment com cascade: limpa appointment.payment + session.isPaid
+// ============================================
+router.delete('/:paymentId', auth, async (req, res) => {
+    const { paymentId } = req.params;
+
+    if (req.user?.role !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Acesso restrito a administradores', code: 'FORBIDDEN' });
+    }
+    if (!isValidObjectId(paymentId)) {
+        return res.status(400).json({ success: false, error: 'paymentId inválido', code: 'INVALID_PAYMENT_ID' });
+    }
+
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
+    try {
+        const payment = await Payment.findById(paymentId).session(mongoSession).lean();
+        if (!payment) {
+            await mongoSession.abortTransaction();
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado', code: 'PAYMENT_NOT_FOUND' });
+        }
+
+        const cascade = { appointment: null, session: null };
+
+        // 1. Limpa vínculo no appointment
+        if (payment.appointment) {
+            const appt = await Appointment.findById(payment.appointment).session(mongoSession).lean();
+            if (appt && appt.payment?.toString() === paymentId) {
+                await Appointment.findByIdAndUpdate(
+                    payment.appointment,
+                    { $set: { payment: null, paymentStatus: 'pending', isPaid: false } },
+                    { session: mongoSession }
+                );
+                cascade.appointment = payment.appointment.toString();
+            }
+        }
+
+        // 2. Limpa vínculo na session
+        if (payment.session) {
+            const Session = (await import('../models/Session.js')).default;
+            await Session.findByIdAndUpdate(
+                payment.session,
+                { $set: { isPaid: false, paymentStatus: 'unpaid', payment: null } },
+                { session: mongoSession }
+            );
+            cascade.session = payment.session.toString();
+        }
+
+        // 3. Remove o payment
+        await Payment.deleteOne({ _id: paymentId }, { session: mongoSession });
+
+        await mongoSession.commitTransaction();
+        logger.info(`[DELETE payment] Admin ${req.user?._id} removeu payment ${paymentId}`, { cascade });
+
+        return res.json({ success: true, message: 'Pagamento removido com sucesso', data: { paymentId, cascade } });
+
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        logger.error(`[DELETE payment] Erro: ${error.message}`);
+        return res.status(500).json({ success: false, error: error.message, code: 'DELETE_PAYMENT_ERROR' });
     } finally {
         mongoSession.endSession();
     }

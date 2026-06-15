@@ -304,7 +304,7 @@ export async function generateLiminarSessions({
   // ── Enriquece conflitos: busca quem ocupa cada slot ────────────
   let conflictSlots = [];
   if (rawConflicts.length > 0) {
-    const Patient = (await import('../models/Patient.js')).default;
+    const Patient = (await import('../../models/Patient.js')).default;
     const Doctor  = (await import('../models/Doctor.js')).default;
 
     const conflictDocs = await Promise.all(rawConflicts.map(async slot => {

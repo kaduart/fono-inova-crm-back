@@ -240,6 +240,32 @@ export async function retryPost(req, res) {
   }
 }
 
+// Health — posts com problema (badge no header do CRM)
+export async function getHealth(req, res) {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [stuckPublished, failed, noImage] = await Promise.all([
+      // published mas sem gmbPostId = Make nunca confirmou o GMB
+      GmbPost.countDocuments({
+        status: 'published',
+        gmbPostId: { $exists: false },
+        createdAt: { $gte: sevenDaysAgo },
+      }),
+      GmbPost.countDocuments({ status: 'failed' }),
+      GmbPost.countDocuments({
+        status: 'scheduled',
+        $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
+      }),
+    ]);
+
+    const total = stuckPublished + failed + noImage;
+    res.json({ success: true, data: { stuckPublished, failed, noImage, total } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 // Stats
 export async function getStats(req, res) {
   try {

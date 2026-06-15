@@ -12,6 +12,7 @@
 
 import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
+import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 
 const NEUROPED_PERCENTAGE = 0.80;
 const NEUROPSYCH_THRESHOLD = 10;
@@ -108,21 +109,46 @@ export function findApplicableCommissionRule(doctor, session, sessionDate = null
     return candidates[0];
   }
 
-  // Fallback menos específico: mesmo billingType + qualquer serviceType
+  const sortByPriority = (a, b) => {
+    if ((b.priority || 0) !== (a.priority || 0)) return (b.priority || 0) - (a.priority || 0);
+    const aEff = a.effectiveDate || a.startDate || 0;
+    const bEff = b.effectiveDate || b.startDate || 0;
+    return new Date(bEff) - new Date(aEff);
+  };
+
+  // Fallback 2: mesmo billingType, qualquer serviceType
   const fallbackBilling = activeRules.filter(r =>
     r.billingType === billingType && (!r.serviceType || r.serviceType === 'session')
   );
-
   if (fallbackBilling.length > 0) {
-    fallbackBilling.sort((a, b) => {
-      if ((b.priority || 0) !== (a.priority || 0)) {
-        return (b.priority || 0) - (a.priority || 0);
-      }
-      const aEffective = a.effectiveDate || a.startDate || 0;
-      const bEffective = b.effectiveDate || b.startDate || 0;
-      return new Date(bEffective) - new Date(aEffective);
-    });
+    fallbackBilling.sort(sortByPriority);
     return fallbackBilling[0];
+  }
+
+  // Fallback 3: sessões de pacote → tenta regras de 'particular'
+  // Pacotes são pagamentos particulares — a regra de 'particular' deve se aplicar.
+  if (billingType === 'package') {
+    const partCandidates = activeRules.filter(r =>
+      r.billingType === 'particular' && r.serviceType === serviceType
+    );
+    if (partCandidates.length > 0) {
+      partCandidates.sort(sortByPriority);
+      return partCandidates[0];
+    }
+    const partFallback = activeRules.filter(r =>
+      r.billingType === 'particular' && (!r.serviceType || r.serviceType === 'session')
+    );
+    if (partFallback.length > 0) {
+      partFallback.sort(sortByPriority);
+      return partFallback[0];
+    }
+  }
+
+  // Catch-all: usa a regra ativa de maior prioridade configurada no perfil
+  // (garante que a regra personalizada do profissional sempre se aplica)
+  if (activeRules.length > 0) {
+    const catchAll = [...activeRules].sort(sortByPriority);
+    return catchAll[0];
   }
 
   return null;
@@ -132,7 +158,9 @@ export function findApplicableCommissionRule(doctor, session, sessionDate = null
  * Calcula a comissão de UMA sessão.
  */
 export function calculateSessionCommission(doctor, session, sessionDate = null) {
-  const value = session.sessionValue || 0;
+  // Usa o mesmo valor base da produção (package.sessionValue > prorata > session.sessionValue)
+  // Evita divergência entre produção e comissão quando session.sessionValue ≠ package.sessionValue
+  const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
   const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
   const isNeuropediatria = ['neuroped', 'neuropediatria'].includes(
     (doctor.specialty || '').toLowerCase().trim()

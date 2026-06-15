@@ -110,7 +110,8 @@ async function fetchPaidPayments(start, end) {
   return Payment.find({
     status: 'paid',
     amount: { $gt: 0 },
-    kind: { $ne: 'package_consumed' },
+    kind: { $nin: ['package_consumed', 'package_receipt'] },
+    isFromPackage: { $ne: true },
     $or: [
       { financialDate: { $gte: start, $lte: end } },
       { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
@@ -694,7 +695,18 @@ export async function getTopFinancialIssues(startDate, endDate, limit = 20) {
   const issues = [];
 
   // Sessões órfãs
+  // ATENÇÃO — PADRÃO PER-SESSION:
+  // Pacientes por sessão pagam NO DIA da sessão via tabela financeira.
+  // Isso cria um `session_payment` (kind) sem `session` nem `appointment` no banco
+  // porque o fluxo antigo de create-sync não salvava a referência.
+  // Esses payments APARECEM AQUI como orphan_payment mas são legítimos.
+  // Fix da fonte: create-sync agora envia appointmentId (a partir de 2026-06-15).
+  // Fix histórico: script fix-orphan-paid-payments.js marca isFromPackage onde aplicável;
+  // per-session histórico sem link ainda aparece como orphan_payment — não é erro financeiro.
   for (const payment of payments) {
+    // debt_settlement e credit_balance são recebimentos autônomos — não se vinculam a sessão por design
+    if (payment.kind === 'debt_settlement' || payment.kind === 'credit_balance') continue;
+
     const session = linkPaymentToSession(payment, sessionMapById, sessionMapByAppointment);
     if (session) {
       paidSessionIds.add(session._id.toString());

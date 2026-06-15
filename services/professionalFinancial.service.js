@@ -462,9 +462,8 @@ export async function getProfessionalPatientsBreakdown({ doctorId, startDate, en
     if (session.status === 'completed') {
       patient.completedSessions += 1;
       patient.production += effectiveValue;
-      const commission = session.commissionSnapshot?.calculatedCommission
-        ?? session.commissionValue
-        ?? (doctor ? calculateSessionCommission(doctor, session, session.date) : 0);
+      // Sempre recalcula pela regra atual — snapshot pode estar desatualizado
+      const commission = doctor ? calculateSessionCommission(doctor, session, session.date) : 0;
       patient.commission += commission || 0;
 
       const sid = session._id.toString();
@@ -522,6 +521,31 @@ function calculateCommissionForDoctor(doctor, sessions) {
   return totalCommission;
 }
 
+function buildCommissionRates(doctor) {
+  const isNeuroped = ['neuroped', 'neuropediatria'].includes((doctor.specialty || '').toLowerCase().trim());
+  const rules = (doctor.commissionRules?.rules || []).filter(r => r.active !== false);
+
+  if (rules.length === 0) {
+    if (isNeuroped) return [{ billingType: 'all', commissionType: 'percentage', value: 80 }];
+    return [];
+  }
+
+  // Por billingType, mantém a regra de maior prioridade
+  const byBillingType = {};
+  for (const rule of rules) {
+    const bt = rule.billingType || 'particular';
+    if (!byBillingType[bt] || (rule.priority || 0) > (byBillingType[bt].priority || 0)) {
+      byBillingType[bt] = rule;
+    }
+  }
+
+  return Object.entries(byBillingType).map(([bt, rule]) => ({
+    billingType: bt,
+    commissionType: rule.commissionType,
+    value: rule.value
+  }));
+}
+
 /**
  * ─────────────────────────────────────────────────────────────────
  * Ranking de profissionais (otimizado — query única por entidade)
@@ -559,7 +583,7 @@ export async function getProfessionalRanking({ startDate, endDate }) {
 
   const [sessions, payments, advances, patientCountsMap] = await Promise.all([
     Session.find({ date: { $gte: start, $lte: end }, status: 'completed', doctor: { $in: doctorIds } })
-      .select('doctor sessionValue paymentMethod paymentOrigin paymentStatus package insuranceGuide sessionType serviceType')
+      .select('doctor patient sessionValue paymentMethod paymentOrigin paymentStatus package insuranceGuide sessionType serviceType')
       .lean(),
     Payment.find({
       status: 'paid',
@@ -697,13 +721,14 @@ export async function getProfessionalRanking({ startDate, endDate }) {
 
     const commission = calculateCommissionForDoctor(doctor, doctorSessions);
     const advancesTotal = doctorAdvances.reduce((sum, a) => sum + (a.amount || 0), 0);
+    const uniquePatientsThisPeriod = new Set(doctorSessions.map(s => s.patient?.toString()).filter(Boolean)).size;
 
     summaries.push({
       doctorId,
       doctorName: doctor.fullName || 'Desconhecido',
       specialty: doctor.specialty || null,
       period: { start: toDateString(start), end: toDateString(end) },
-      patients: patientCounts,
+      patients: { ...patientCounts, activePeriod: uniquePatientsThisPeriod },
       sessions: {
         completed: doctorSessions.length,
         withoutImmediatePayment: doctorSessions.length - paidSessionIds.size,
@@ -726,6 +751,7 @@ export async function getProfessionalRanking({ startDate, endDate }) {
         packageConsumed: round(receivables.packageConsumed)
       },
       commission: round(commission),
+      commissionRates: buildCommissionRates(doctor),
       advances: round(advancesTotal),
       balance: round(commission - advancesTotal),
       advancesBreakdown: {
@@ -741,9 +767,12 @@ export async function getProfessionalRanking({ startDate, endDate }) {
     });
   }
 
+  const clinicUniquePatientsThisPeriod = new Set(sessions.map(s => s.patient?.toString()).filter(Boolean)).size;
+  const clinicSessionsThisPeriod = sessions.length;
+
   const result = summaries
     .sort((a, b) => b.production.total - a.production.total)
-    .map((s, index) => ({ ...s, rank: index + 1 }));
+    .map((s, index) => ({ ...s, rank: index + 1, clinicPatientsThisPeriod: clinicUniquePatientsThisPeriod, clinicSessionsThisPeriod }));
 
   const totalSessions = sessions.length;
   const totalPayments = payments.length;

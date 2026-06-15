@@ -20,7 +20,8 @@ router.use(auth);
 // Posts CRUD
 router.get('/posts', gmbController.listPosts);
 router.post('/posts', gmbController.createPost);
-router.get('/posts/stats', gmbController.getStats);
+router.get('/posts/stats', gmbController.getStats)
+router.get('/posts/health', gmbController.getHealth);
 router.get('/posts/:id', gmbController.getPost);
 router.put('/posts/:id', gmbController.updatePost);
 router.delete('/posts/:id', gmbController.deletePost);

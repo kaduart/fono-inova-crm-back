@@ -81,6 +81,13 @@ const paymentSchema = new mongoose.Schema({
         index: true,
         description: 'ID de grupo para vincular payments de um mesmo split (multi-forma)'
     },
+    splitMethods: [{
+        method: {
+            type: String,
+            enum: ['pix', 'cartão', 'dinheiro', 'bank_transfer', 'outro'],
+        },
+        amount: { type: Number, min: 0 }
+    }],
     source: {
         type: String,
         default: null,

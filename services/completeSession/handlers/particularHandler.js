@@ -244,10 +244,23 @@ export const ParticularHandler = {
                 // duplicando o caixa e ignorando a data real de recebimento (ontem, semana passada, etc).
                 // Bug confirmado 2026-06-10: Henre pagou ontem mas aparecia no caixa de hoje.
                 // ⛔ NÃO substituir por `financialDate: now` sem antes rodar este lookup. ⛔
+                // Janela de hoje (Brasília) para capturar orphans do dia
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
                 const preRegistered = await Payment.findOne({
                     $or: [
                         { appointment: appointmentId },
-                        ...(sessionId ? [{ session: sessionId }] : [])
+                        ...(sessionId ? [{ session: sessionId }] : []),
+                        // Orphan: payment criado via /create-sync sem appointmentId linkado.
+                        // Sem esta condição, appointment.payment=null + lookup sem resultado = Payment.create() duplicado.
+                        // Bug confirmado 2026-06-15: Helena pagou Pix 14:00 (orphan), complete 14:40 criou Dinheiro novo.
+                        {
+                            patient:       appointment.patient?._id,
+                            amount:        sessionValue,
+                            status:        'paid',
+                            appointment:   null,
+                            financialDate: { $gte: startOfToday }
+                        }
                     ],
                     status: 'paid',
                     billingType: { $in: ['particular', null, undefined] }
@@ -264,6 +277,9 @@ export const ParticularHandler = {
                                 kind:        'session_payment',
                                 billingType: 'particular',
                                 updatedAt:   now,
+                                // Adota orphan: linka ao appointment e session se ainda não linkado
+                                ...(!preRegistered.appointment && appointmentId ? { appointment: appointmentId } : {}),
+                                ...(!preRegistered.session && sessionId ? { session: sessionId } : {}),
                                 ...(isPrepaidFallback ? { isFromPackage: true } : {})
                             }
                         },
@@ -362,27 +378,56 @@ export const ParticularHandler = {
             );
             console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id}`);
         } else {
-            const [paymentDoc] = await Payment.create([{
+            // Guard orphan: mesma lógica do per-session — evita duplicata se payment já existe sem appointmentId
+            const startOfTodayAvulso = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const orphanAvulso = await Payment.findOne({
                 patient:       appointment.patient?._id,
                 amount:        sessionValue,
                 status:        'paid',
-                type:          'service',
-                serviceType:   'session',
-                paymentMethod: appointment.paymentMethod || 'cash',
-                paymentDate:   now,
-                paidAt:        now,
-                financialDate: now,
-                description:   `Sessao realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                appointment:   appointmentId,
-                session:       sessionId,
-                createdBy:     userId,
-                kind:          'session_payment',
-                billingType:   'particular',
-                ...(isPrepaidFallback ? { isFromPackage: true } : {})
-            }], { session: mongoSession });
-            paymentCreated = paymentDoc;
-            appointmentUpdate.$set.payment = paymentCreated._id;
-            console.log(`[ParticularHandler] [PAGO] Payment criado: ${paymentCreated._id}`);
+                appointment:   null,
+                financialDate: { $gte: startOfTodayAvulso }
+            }).sort({ createdAt: -1 }).session(mongoSession).lean();
+
+            if (orphanAvulso) {
+                paymentCreated = await Payment.findByIdAndUpdate(
+                    orphanAvulso._id,
+                    {
+                        $set: {
+                            appointment:   appointmentId,
+                            ...(sessionId ? { session: sessionId } : {}),
+                            kind:          'session_payment',
+                            billingType:   'particular',
+                            updatedAt:     now,
+                            ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                appointmentUpdate.$set.payment = orphanAvulso._id;
+                console.log(`[ParticularHandler] [PAGO] Orphan adotado (sem criar novo): ${orphanAvulso._id} (financialDate=${orphanAvulso.financialDate})`);
+            } else {
+                const [paymentDoc] = await Payment.create([{
+                    patient:       appointment.patient?._id,
+                    amount:        sessionValue,
+                    status:        'paid',
+                    type:          'service',
+                    serviceType:   'session',
+                    paymentMethod: appointment.paymentMethod || 'cash',
+                    paymentDate:   now,
+                    paidAt:        now,
+                    financialDate: now,
+                    description:   `Sessao realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment:   appointmentId,
+                    session:       sessionId,
+                    createdBy:     userId,
+                    kind:          'session_payment',
+                    billingType:   'particular',
+                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                }], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[ParticularHandler] [PAGO] Payment criado: ${paymentCreated._id}`);
+            }
         }
 
         if (packageId && paymentCreated && !isBalanceOrigin && paymentCreated.status === 'paid') {
