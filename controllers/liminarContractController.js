@@ -341,55 +341,169 @@ export async function getCommittedBalance(req, res) {
 // os appointments ainda pendentes (pre_agendado/scheduled) da especialidade.
 // Appointments confirmed/completed NÃO são alterados.
 // ──────────────────────────────────────────────────────────────
+// Statuses que bloqueiam o slot (mesmo conjunto do índice unique_appointment_slot)
+const SLOT_BLOCKING_STATUSES = [
+  'pre_agendado', 'scheduled', 'confirmed', 'pending', 'paid',
+  'missed', 'processing_create', 'processing_complete', 'processing_cancel', 'force_cancelled'
+];
+
 export async function updateTherapy(req, res) {
   const { id: contractId, planId, specialty } = req.params;
   const { doctorId, sessionValue, sessionDurationMinutes, slots } = req.body;
 
-  const plan = await TherapeuticPlan.findOne({
-    _id: planId,
-    liminarContract: contractId,
-    status: 'active'
-  });
+  const session = await mongoose.startSession();
 
-  if (!plan) {
-    return res.status(404).json({ error: 'Plano ativo não encontrado' });
+  try {
+    await session.startTransaction();
+
+    const plan = await TherapeuticPlan.findOne({
+      _id: planId,
+      liminarContract: contractId,
+      status: 'active'
+    }).session(session);
+
+    if (!plan) {
+      await session.abortTransaction();
+      return res.status(404).json({ error: 'Plano ativo não encontrado' });
+    }
+
+    const therapy = plan.therapies.get(specialty);
+    if (!therapy) {
+      await session.abortTransaction();
+      return res.status(404).json({ error: `Especialidade "${specialty}" não encontrada no plano` });
+    }
+
+    // Appointments pendentes que seriam reatribuídos ao trocar o profissional
+    const affected = await Appointment.find({
+      liminarContract: new mongoose.Types.ObjectId(contractId),
+      specialty,
+      operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+    }).select('_id date time').session(session).lean();
+
+    // 🔄 Sincronização de horário: se o slot mudou, todo appointment pendente cujo dia da
+    // semana ainda existe nos NOVOS slots é atualizado pro horário daquele dia.
+    // Não depende do slot antigo salvo no plano — esse dado pode estar dessincronizado
+    // de bugs/edições anteriores (o appointment é a fonte real do horário atual).
+    // Se o dia da semana foi removido do plano, o appointment NÃO é tocado (decisão manual).
+    // Não cria appointment novo — isso é responsabilidade do "Gerar" (generateLiminarSessions).
+    const timeSyncMap = new Map(); // appointmentId (string) -> novo time
+    if (slots !== undefined) {
+      const newDayToTime = new Map((slots || []).map(s => [s.dayOfWeek, s.time]));
+
+      for (const a of affected) {
+        const dow = new Date(a.date).getDay();
+        const newTime = newDayToTime.get(dow);
+        if (newTime && newTime !== a.time) {
+          timeSyncMap.set(String(a._id), newTime);
+        }
+      }
+
+      if (timeSyncMap.size > 0) {
+        logger.info('Sincronizando horário de appointments pendentes (slot alterado)', {
+          contractId, planId, specialty,
+          changes: Array.from(timeSyncMap.entries())
+        });
+      }
+    }
+
+    // 🚨 Pré-checagem: o novo profissional já tem algum desses slots ocupados com outro paciente?
+    // Usa o horário JÁ SINCRONIZADO (se houver) — é pra onde o appointment vai, não de onde ele vem.
+    // Evita o E11000 (unique_appointment_slot) e atualização parcial — só escreve se não houver conflito.
+    if (doctorId && affected.length > 0) {
+      const newDoctorObjId = new mongoose.Types.ObjectId(doctorId);
+      const movingIds = affected.map(a => a._id);
+
+      const conflicts = await Appointment.find({
+        _id: { $nin: movingIds },
+        doctor: newDoctorObjId,
+        isJointSession: false,
+        operationalStatus: { $in: SLOT_BLOCKING_STATUSES },
+        $or: affected.map(a => ({
+          date: a.date,
+          time: timeSyncMap.get(String(a._id)) || a.time
+        }))
+      }).select('date time patient').populate('patient', 'fullName').session(session).lean();
+
+      if (conflicts.length > 0) {
+        await session.abortTransaction();
+
+        const detalhes = conflicts.map(c => {
+          const dataFmt = new Date(c.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          const nomePaciente = c.patient?.fullName || 'paciente não identificado';
+          return `${dataFmt} às ${c.time} (já ocupado com ${nomePaciente})`;
+        });
+
+        return res.status(409).json({
+          error: `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`,
+          code: 'CONFLITO_AGENDA',
+          conflicts: conflicts.map(c => ({
+            date: c.date,
+            time: c.time,
+            patientName: c.patient?.fullName || null
+          }))
+        });
+      }
+    }
+
+    if (doctorId !== undefined) therapy.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
+    if (sessionValue !== undefined) therapy.sessionValue = sessionValue;
+    if (sessionDurationMinutes !== undefined) therapy.sessionDurationMinutes = sessionDurationMinutes;
+    if (slots !== undefined) therapy.slots = slots;
+
+    await plan.save({ session });
+
+    // Atualiza appointments pendentes (pre_agendado/scheduled) com os campos alterados.
+    // bulkWrite (não updateMany) porque o time pode variar por appointment (timeSyncMap).
+    const baseSet = {};
+    if (doctorId !== undefined) baseSet.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
+    if (sessionValue !== undefined) baseSet.sessionValue = sessionValue;
+
+    let appointmentsUpdated = 0;
+    if (affected.length > 0 && (Object.keys(baseSet).length > 0 || timeSyncMap.size > 0)) {
+      const bulkOps = affected
+        .map(a => {
+          const set = { ...baseSet };
+          const newTime = timeSyncMap.get(String(a._id));
+          if (newTime) set.time = newTime;
+          return Object.keys(set).length > 0
+            ? { updateOne: { filter: { _id: a._id }, update: { $set: set } } }
+            : null;
+        })
+        .filter(Boolean);
+
+      if (bulkOps.length > 0) {
+        const result = await Appointment.bulkWrite(bulkOps, { session });
+        appointmentsUpdated = result.modifiedCount;
+      }
+    }
+
+    await session.commitTransaction();
+
+    logger.info('Terapia atualizada no plano liminar', {
+      contractId, planId, specialty, appointmentsUpdated
+    });
+
+    return res.json({ plan, appointmentsUpdated });
+
+  } catch (err) {
+    await session.abortTransaction();
+
+    // Defesa extra: condição de corrida rara (slot ocupado entre o pré-check e o write)
+    if (err.code === 11000) {
+      logger.warn('Conflito de slot ao trocar profissional da terapia (race condition)', {
+        contractId, planId, specialty, err: err.message
+      });
+      return res.status(409).json({
+        error: 'O horário ficou indisponível durante a operação. Tente novamente.',
+        code: 'CONFLITO_AGENDA'
+      });
+    }
+
+    logger.error('Erro ao atualizar terapia do plano liminar', { contractId, planId, specialty, err: err.message });
+    return res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
-
-  const therapy = plan.therapies.get(specialty);
-  if (!therapy) {
-    return res.status(404).json({ error: `Especialidade "${specialty}" não encontrada no plano` });
-  }
-
-  if (doctorId !== undefined) therapy.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
-  if (sessionValue !== undefined) therapy.sessionValue = sessionValue;
-  if (sessionDurationMinutes !== undefined) therapy.sessionDurationMinutes = sessionDurationMinutes;
-  if (slots !== undefined) therapy.slots = slots;
-
-  await plan.save();
-
-  // Atualiza appointments pendentes (pre_agendado/scheduled) com os campos alterados
-  const appointmentPatch = {};
-  if (doctorId !== undefined) appointmentPatch.doctor = doctorId ? new mongoose.Types.ObjectId(doctorId) : null;
-  if (sessionValue !== undefined) appointmentPatch.sessionValue = sessionValue;
-
-  let appointmentsUpdated = 0;
-  if (Object.keys(appointmentPatch).length > 0) {
-    const result = await Appointment.updateMany(
-      {
-        liminarContract: new mongoose.Types.ObjectId(contractId),
-        specialty,
-        operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
-      },
-      { $set: appointmentPatch }
-    );
-    appointmentsUpdated = result.modifiedCount;
-  }
-
-  logger.info('Terapia atualizada no plano liminar', {
-    contractId, planId, specialty, appointmentsUpdated
-  });
-
-  return res.json({ plan, appointmentsUpdated });
 }
 
 // ──────────────────────────────────────────────────────────────
