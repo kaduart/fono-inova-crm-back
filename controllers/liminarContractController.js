@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import LiminarContract from '../models/LiminarContract.js';
 import TherapeuticPlan from '../models/TherapeuticPlan.js';
 import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
 import { generateLiminarSessions } from '../services/schedule/generateLiminarSessions.js';
 import { createContextLogger } from '../utils/logger.js';
 
@@ -384,17 +385,23 @@ export async function updateTherapy(req, res) {
     // semana ainda existe nos NOVOS slots é atualizado pro horário daquele dia.
     // Não depende do slot antigo salvo no plano — esse dado pode estar dessincronizado
     // de bugs/edições anteriores (o appointment é a fonte real do horário atual).
-    // Se o dia da semana foi removido do plano, o appointment NÃO é tocado (decisão manual).
-    // Não cria appointment novo — isso é responsabilidade do "Gerar" (generateLiminarSessions).
+    // Se o dia da semana foi REMOVIDO do plano, o appointment fica órfão (nenhum slot novo
+    // o reivindica) e é cancelado abaixo — ele nunca seria gerado de novo nesse dia, e se
+    // ficasse "scheduled" mascararia o gap-check do generateLiminarSessions (mesmo specialty
+    // + mesmo time de um slot novo → o algoritmo acha que já existe sessão futura pro slot
+    // novo e ancora a próxima geração na sessão mais distante da especialidade, pulando meses).
     const timeSyncMap = new Map(); // appointmentId (string) -> novo time
+    const toCancelIds = [];        // appointments cujo dia da semana saiu do plano
     if (slots !== undefined) {
       const newDayToTime = new Map((slots || []).map(s => [s.dayOfWeek, s.time]));
 
       for (const a of affected) {
         const dow = new Date(a.date).getDay();
         const newTime = newDayToTime.get(dow);
-        if (newTime && newTime !== a.time) {
-          timeSyncMap.set(String(a._id), newTime);
+        if (newTime) {
+          if (newTime !== a.time) timeSyncMap.set(String(a._id), newTime);
+        } else {
+          toCancelIds.push(a._id);
         }
       }
 
@@ -402,6 +409,12 @@ export async function updateTherapy(req, res) {
         logger.info('Sincronizando horário de appointments pendentes (slot alterado)', {
           contractId, planId, specialty,
           changes: Array.from(timeSyncMap.entries())
+        });
+      }
+      if (toCancelIds.length > 0) {
+        logger.info('Cancelando appointments órfãos (dia da semana removido do plano)', {
+          contractId, planId, specialty,
+          appointmentIds: toCancelIds.map(String)
         });
       }
     }
@@ -477,13 +490,41 @@ export async function updateTherapy(req, res) {
       }
     }
 
+    // 🧹 Cancela appointments cujo dia da semana saiu do plano (órfãos).
+    // Sessão liminar não tem Payment no provisioning (nasce só no settlement/completed),
+    // então não há reversão financeira a fazer aqui — só liberar o slot e tirar do "comprometido".
+    let appointmentsCanceled = 0;
+    if (toCancelIds.length > 0) {
+      const cancelRes = await Appointment.updateMany(
+        { _id: { $in: toCancelIds } },
+        {
+          $set: {
+            operationalStatus: 'canceled',
+            clinicalStatus: 'canceled',
+            paymentStatus: 'canceled',
+            canceledAt: new Date(),
+            cancelReason: `Dia da semana removido da terapia "${specialty}" (plano atualizado)`,
+            updatedAt: new Date()
+          }
+        },
+        { session }
+      );
+      appointmentsCanceled = cancelRes.modifiedCount;
+
+      await Session.updateMany(
+        { appointmentId: { $in: toCancelIds }, status: { $ne: 'completed' } },
+        { $set: { status: 'canceled', updatedAt: new Date() } },
+        { session }
+      );
+    }
+
     await session.commitTransaction();
 
     logger.info('Terapia atualizada no plano liminar', {
-      contractId, planId, specialty, appointmentsUpdated
+      contractId, planId, specialty, appointmentsUpdated, appointmentsCanceled
     });
 
-    return res.json({ plan, appointmentsUpdated });
+    return res.json({ plan, appointmentsUpdated, appointmentsCanceled });
 
   } catch (err) {
     await session.abortTransaction();

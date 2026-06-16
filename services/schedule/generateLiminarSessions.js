@@ -104,69 +104,30 @@ export async function generateLiminarSessions({
 
     weekStart = getWeekStart(startDate);
     globalEnd = new Date(endDate); globalEnd.setHours(23, 59, 59, 999);
-  } else {
-    const todayAnchor = new Date(); todayAnchor.setHours(0, 0, 0, 0);
-    const planAnchor  = new Date(plan.startDate); planAnchor.setHours(0, 0, 0, 0);
-    const baseAnchor  = todayAnchor > planAnchor ? todayAnchor : planAnchor;
+  }
+  // Para 'append' não existe mais um weekStart/globalEnd global: cada slot calcula
+  // sua própria janela na seção 5 ("garante as próximas N ocorrências REAIS desse
+  // slot", preenchendo qualquer buraco histórico no caminho em vez de só estender
+  // a partir do último appointment já existente de QUALQUER slot da especialidade —
+  // era essa âncora compartilhada que causava o salto de meses e, mesmo corrigida
+  // pra não ser "mascarada" por dia errado, ainda não reparava buracos antigos.
 
-    // Detecta gaps: verifica se algum slot do plano atual não tem appointments futuros.
-    // Se sim → mudança de plano ou slot novo → começa de hoje para preencher.
-    // Se não → tudo em ordem → estende a partir do último appointment.
-    const slotChecks = await Promise.all(
-      activeEntries.flatMap(([specialty, config]) =>
-        (config.slots ?? []).map(slot =>
-          Appointment.findOne({
-            patient:           contract.patient,
-            liminarContract:   contract._id,
-            specialty,
-            time:              slot.time,
-            date:              { $gte: todayAnchor },
-            operationalStatus: { $ne: 'canceled' }
-          }).lean()
-        )
-      )
-    );
-
-    const hasGap = slotChecks.some(appt => !appt);
-
-    if (hasGap) {
-      // Slot sem appointment futuro → preenche gaps a partir de hoje
-      weekStart = getWeekStart(baseAnchor);
-      console.log('[generateLiminarSessions] 🔍 Gap detectado — weekStart = hoje:', weekStart.toISOString().split('T')[0]);
-    } else {
-      // Todos slots têm appointments futuros → estende a partir do último
-      const lastSession = await Appointment.findOne({
-        patient:           contract.patient,
-        liminarContract:   contract._id,
-        specialty:         { $in: activeEntries.map(([sp]) => sp) },
-        operationalStatus: { $ne: 'canceled' }
-      }).sort({ date: -1 }).lean();
-
-      if (lastSession) {
-        weekStart = getWeekStart(lastSession.date);
-        weekStart.setDate(weekStart.getDate() + 7);
-        console.log('[generateLiminarSessions] ▶ Sem gaps — weekStart = após último:', weekStart.toISOString().split('T')[0]);
-      } else {
-        weekStart = getWeekStart(baseAnchor);
-      }
+  // ── 4. Feriados — lookup por ano, sob demanda ──────────────────
+  // Lazy em vez de pré-computar um range fixo: no modo append, o loop de
+  // compensação (seção 5) pode precisar avançar além do `globalEnd` original
+  // pra repor uma semana perdida por feriado/passado, e um Set fixo não
+  // cobriria essa data extra.
+  const holidaysByYear = new Map();
+  function isHoliday(dateStr) {
+    if (!skipHolidays) return false;
+    const year = Number(dateStr.slice(0, 4));
+    if (!holidaysByYear.has(year)) {
+      holidaysByYear.set(year, new Set(getHolidaysWithNames(year).map(h => h.date)));
     }
-
-    globalEnd = addDays(weekStart, weeks * 7 + 6);
-    globalEnd.setHours(23, 59, 59, 999);
+    return holidaysByYear.get(year).has(dateStr);
   }
 
-  // ── 4. Feriados do período ─────────────────────────────────────
-  const holidays = new Set();
-  if (skipHolidays) {
-    const years = new Set();
-    const cur = new Date(weekStart);
-    while (cur <= globalEnd) { years.add(cur.getFullYear()); cur.setDate(cur.getDate() + 1); }
-    for (const year of years) {
-      for (const h of getHolidaysWithNames(year)) holidays.add(h.date);
-    }
-  }
-
-  // ── 5. Gera slots semana a semana ──────────────────────────────
+  // ── 5. Gera slots ────────────────────────────────────────────
   const slots = [];
 
   if (mode === 'append') {
@@ -174,23 +135,46 @@ export async function generateLiminarSessions({
     anchorDate.setHours(0, 0, 0, 0);
 
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    const minDate = anchorDate > today ? anchorDate : today;
 
-    // Gera N semanas completas — cada semana contém TODOS os slots do plano
-    for (let w = 0; w < weeks; w++) {
-      const currentWeekSunday = addDays(weekStart, w * 7);
+    // Por slot (não por especialidade inteira nem por uma âncora global):
+    // 1. Levanta as datas já existentes desse slot específico a partir de hoje.
+    // 2. Caminha semana a semana a partir da 1ª ocorrência válida (>= minDate).
+    // 3. Pula datas já existentes (cobertura atual) e feriados — SEM contar pra cota.
+    // 4. Cria as que estiverem faltando até fechar `weeks` sessões NOVAS.
+    //
+    // Isso resolve dois problemas de uma vez: "gerar N semanas" sempre cria N sessões
+    // reais (não N blocos de calendário que podem cair no passado/feriado), e qualquer
+    // buraco histórico entre hoje e uma sessão futura já existente é preenchido primeiro,
+    // em vez de só estender a partir do que já está mais adiante.
+    for (const [specialty, config] of activeEntries) {
+      for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
+        const existingDocs = await Appointment.find({
+          patient:           contract.patient,
+          liminarContract:   contract._id,
+          specialty,
+          time:              slot.time,
+          date:              { $gte: minDate },
+          operationalStatus: { $ne: 'canceled' }
+        }).select('date').lean();
 
-      for (const [specialty, config] of activeEntries) {
-        for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
-          const sessionDate = addDays(currentWeekSunday, slot.dayOfWeek);
-          const dateStr = sessionDate.toISOString().split('T')[0];
+        const existingDates = new Set(
+          existingDocs
+            .filter(d => new Date(d.date).getDay() === slot.dayOfWeek)
+            .map(d => new Date(d.date).toISOString().split('T')[0])
+        );
 
-          // Pula datas antes do startDate do plano (igual ao convenio)
-          if (sessionDate < anchorDate) continue;
+        let candidate = addDays(getWeekStart(minDate), slot.dayOfWeek);
+        while (candidate < minDate) candidate = addDays(candidate, 7);
 
-          // Proteção extra: nunca gera slot no passado
-          if (sessionDate < today) continue;
+        let created = 0;
+        let guard = 0; // segurança: nunca itera indefinidamente (~5 anos de margem)
+        const maxGuard = 260;
+        while (created < weeks && guard < maxGuard) {
+          guard++;
+          const dateStr = candidate.toISOString().split('T')[0];
 
-          if (!holidays.has(dateStr)) {
+          if (!isHoliday(dateStr) && !existingDates.has(dateStr)) {
             slots.push({
               specialty,
               dateStr,
@@ -200,7 +184,9 @@ export async function generateLiminarSessions({
               duration:     config.sessionDurationMinutes || 40,
               doctor:       config.doctor || contract.doctor
             });
+            created++;
           }
+          candidate = addDays(candidate, 7);
         }
       }
     }
@@ -211,7 +197,7 @@ export async function generateLiminarSessions({
       const dayOfWeek = walker.getDay();
       const dateStr   = walker.toISOString().split('T')[0];
 
-      if (!holidays.has(dateStr)) {
+      if (!isHoliday(dateStr)) {
         for (const [specialty, config] of activeEntries) {
           for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
             if (slot.dayOfWeek === dayOfWeek) {
@@ -399,13 +385,15 @@ export async function generateLiminarSessions({
     }
   }
 
+  const actualStart = slots.reduce((min, s) => !min || s.dateStr < min ? s.dateStr : min, '');
+  const actualEnd    = slots.reduce((max, s) => s.dateStr > max ? s.dateStr : max, slots[0]?.dateStr ?? '');
   console.log('[generateLiminarSessions] ✅ Concluído', {
     contractId: contract._id.toString(),
     planId:     plan._id.toString(),
     version:    plan.version,
     mode,
     weeks,
-    window:     `${weekStart.toISOString().split('T')[0]} → ${globalEnd.toISOString().split('T')[0]}`,
+    window:     `${actualStart} → ${actualEnd}`,
     created:         result.upsertedCount,
     skipped:         result.matchedCount,
     total:           slots.length,

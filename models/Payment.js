@@ -84,7 +84,7 @@ const paymentSchema = new mongoose.Schema({
     splitMethods: [{
         method: {
             type: String,
-            enum: ['pix', 'cartão', 'dinheiro', 'bank_transfer', 'outro'],
+            enum: ['pix', 'cartão', 'dinheiro', 'bank_transfer', 'outro', 'credit_card', 'debit_card', 'other'],
         },
         amount: { type: Number, min: 0 }
     }],

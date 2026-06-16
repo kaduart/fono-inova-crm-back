@@ -46,7 +46,8 @@ router.post('/', auth, async (req, res) => {
       insurance,
       totalSessions,
       expiresAt,
-      notes
+      notes,
+      sessionValue
     } = req.body;
 
     // Validações básicas
@@ -131,6 +132,7 @@ router.post('/', auth, async (req, res) => {
       totalSessions,
       expiresAt,
       notes,
+      ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
       createdBy: req.user._id
     });
 
@@ -289,7 +291,7 @@ router.get('/:id', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { specialty, insurance, totalSessions, expiresAt, notes } = req.body;
+    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -366,6 +368,7 @@ router.put('/:id', auth, async (req, res) => {
     if (totalSessions !== undefined) guide.totalSessions = totalSessions;
     if (expiresAt) guide.expiresAt = expiresAt;
     if (notes !== undefined) guide.notes = notes;
+    if (sessionValue !== undefined) guide.sessionValue = sessionValue != null ? Number(sessionValue) : null;
 
     await guide.save();
 

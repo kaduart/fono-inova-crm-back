@@ -87,6 +87,23 @@ const insuranceGuideSchema = new mongoose.Schema({
     }
   },
 
+  sessionValue: {
+    type: Number,
+    min: [0, 'Valor da sessão não pode ser negativo'],
+    default: null
+  },
+
+  doctorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Doctor',
+    default: null
+  },
+
+  issuedAt: {
+    type: Date,
+    default: null
+  },
+
   // ======================================================================
   // TEMPO E STATUS
   // ======================================================================

@@ -14,6 +14,7 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
 import InsurancePlan from '../models/InsurancePlan.js';
+import Doctor from '../models/Doctor.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 
@@ -55,7 +56,9 @@ router.post('/', auth, async (req, res) => {
       insurance,
       totalSessions,
       expiresAt,
-      valor,
+      sessionValue,
+      doctorId,
+      issuedAt,
       notes
     } = req.body;
 
@@ -88,7 +91,9 @@ router.post('/', auth, async (req, res) => {
       sessionsUsed: 0,
       sessionsRemaining: parseInt(totalSessions),
       expiresAt: expiresAt ? new Date(expiresAt) : null,
-      valor: valor || 0,
+      ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
+      ...(doctorId && { doctorId }),
+      ...(issuedAt && { issuedAt: new Date(issuedAt) }),
       notes,
       status: 'active',
       createdBy: req.user?.id,
@@ -133,7 +138,7 @@ router.post('/', auth, async (req, res) => {
         sessionsRemaining: guide.sessionsRemaining,
         status: guide.status,
         expiresAt: guide.expiresAt,
-        valor: guide.valor,
+        sessionValue: guide.sessionValue ?? null,
         correlationId
       },
       meta: {
@@ -198,6 +203,7 @@ router.get('/', auth, async (req, res) => {
     const [guides, total] = await Promise.all([
       InsuranceGuide.find(query)
         .populate('patientId', 'fullName cpf')
+        .populate('doctorId', 'fullName')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
@@ -219,6 +225,11 @@ router.get('/', auth, async (req, res) => {
           remaining: Math.max(0, (g.totalSessions || 0) - (g.usedSessions || 0)),
           status: g.status,
           expiresAt: g.expiresAt,
+          sessionValue: g.sessionValue ?? null,
+          totalValue: (g.sessionValue != null && g.totalSessions) ? g.sessionValue * g.totalSessions : null,
+          doctor: g.doctorId ? { _id: g.doctorId._id?.toString(), fullName: g.doctorId.fullName } : null,
+          issuedAt: g.issuedAt || null,
+          notes: g.notes || null,
           createdAt: g.createdAt
         })),
         pagination: {
@@ -257,7 +268,7 @@ router.get('/:id', auth, async (req, res) => {
       });
     }
 
-    const guide = await InsuranceGuide.findById(id).lean();
+    const guide = await InsuranceGuide.findById(id).populate('doctorId', 'fullName').lean();
     
     if (!guide) {
       return res.status(404).json({
@@ -281,7 +292,10 @@ router.get('/:id', auth, async (req, res) => {
         sessionsRemaining: (guide.totalSessions || 0) - (guide.usedSessions || 0),
         status: guide.status,
         expiresAt: guide.expiresAt,
-        valor: guide.valor,
+        sessionValue: guide.sessionValue ?? null,
+        totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
+        doctor: guide.doctorId ? { _id: guide.doctorId._id?.toString(), fullName: guide.doctorId.fullName } : null,
+        issuedAt: guide.issuedAt || null,
         notes: guide.notes,
         createdAt: guide.createdAt
       },
@@ -337,6 +351,68 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
       errorCode: 'INTERNAL_ERROR',
       message: error.message
     });
+  }
+});
+
+/**
+ * PUT /api/v2/insurance-guides/:id
+ * Atualiza guia (specialty, insurance, totalSessions, expiresAt, notes, sessionValue)
+ */
+router.put('/:id', auth, async (req, res) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido', correlationId });
+    }
+
+    const guide = await InsuranceGuide.findById(id);
+    if (!guide) {
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada', correlationId });
+    }
+
+    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt } = req.body;
+
+    if (specialty) {
+      if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
+        return res.status(400).json({ success: false, errorCode: 'INVALID_SPECIALTY', message: `Especialidade inválida`, correlationId });
+      }
+      guide.specialty = specialty.toLowerCase().trim();
+    }
+    if (insurance) guide.insurance = insurance.toLowerCase().replace(' ', '-');
+    if (totalSessions !== undefined) guide.totalSessions = parseInt(totalSessions);
+    if (expiresAt) guide.expiresAt = new Date(expiresAt);
+    if (notes !== undefined) guide.notes = notes;
+    if (sessionValue !== undefined) guide.sessionValue = sessionValue != null ? Number(sessionValue) : null;
+    if (doctorId !== undefined) guide.doctorId = doctorId || null;
+    if (issuedAt !== undefined) guide.issuedAt = issuedAt ? new Date(issuedAt) : null;
+
+    await guide.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Guia atualizada com sucesso',
+      data: {
+        _id: guide._id.toString(),
+        number: guide.number,
+        specialty: guide.specialty,
+        insurance: guide.insurance,
+        totalSessions: guide.totalSessions,
+        usedSessions: guide.usedSessions,
+        remaining: Math.max(0, guide.totalSessions - guide.usedSessions),
+        expiresAt: guide.expiresAt,
+        sessionValue: guide.sessionValue ?? null,
+        totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
+        doctorId: guide.doctorId || null,
+        issuedAt: guide.issuedAt || null,
+        notes: guide.notes,
+        status: guide.status
+      },
+      meta: { version: '2.0', correlationId }
+    });
+  } catch (error) {
+    console.error('[InsuranceGuidesV2] Erro ao atualizar:', error);
+    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message, correlationId });
   }
 });
 
