@@ -112,8 +112,10 @@ async function runAudit() {
 export function scheduleFinancialSnapshotAudit() {
   // Roda a cada 6h: 00:00, 06:00, 12:00, 18:00
   const task = cron.schedule('0 */6 * * *', async () => {
+    const startedAt = Date.now();
     log.info('snapshot_audit_start', 'Iniciando auditoria automática V1 vs V2');
-    await runAudit();
+    const result = await runAudit();
+    log.info('snapshot_audit_done', `Auditoria concluída em ${Date.now() - startedAt}ms`, { status: result.status });
   }, {
     timezone: TIMEZONE,
     scheduled: false

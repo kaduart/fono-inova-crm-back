@@ -12,15 +12,21 @@ import Patient from '../../models/Patient.js';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
-import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
+import unifiedFinancialService, { calculateCashTotal } from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
 export async function buildStats() {
+  const t0 = Date.now();
   const today = moment().tz(TIMEZONE).startOf('day');
   const todayEnd = moment().tz(TIMEZONE).endOf('day');
   const startOfMonth = moment().tz(TIMEZONE).startOf('month');
   const startOfWeek = moment().tz(TIMEZONE).startOf('week');
+
+  const timeit = (label, promise) => {
+    const start = Date.now();
+    return promise.then(r => { console.log(`[buildStats] ${label} = ${Date.now() - start}ms`); return r; });
+  };
 
   const [
     totalDoctors,
@@ -33,42 +39,25 @@ export async function buildStats() {
     monthLeads,
     leadsByStatus
   ] = await Promise.all([
-    // Total profissionais ativos
-    Doctor.countDocuments({ active: true }),
-
-    // Total pacientes
-    Patient.estimatedDocumentCount(),
-
-    // Agendamentos de hoje (exclui cancelados e pré-agendados)
-    Appointment.countDocuments({
+    timeit('doctors.count',        Doctor.countDocuments({ active: true })),
+    timeit('patients.estimated',   Patient.estimatedDocumentCount()),
+    timeit('appointments.today',   Appointment.countDocuments({
       date: { $gte: today.toDate(), $lte: todayEnd.toDate() },
       operationalStatus: { $nin: ['canceled', 'pre_agendado'] }
-    }),
-
-    // Agendamentos da semana
-    Appointment.countDocuments({
+    })),
+    timeit('appointments.week',    Appointment.countDocuments({
       date: { $gte: startOfWeek.toDate(), $lte: todayEnd.toDate() },
       operationalStatus: { $nin: ['canceled', 'pre_agendado'] }
-    }),
-
-    // Pagamentos pendentes ou parciais
-    Payment.countDocuments({
+    })),
+    timeit('payments.pending',     Payment.countDocuments({
       status: { $in: ['pending', 'partial'] }
-    }),
-
-    // Receita do mês (fonte única de verdade)
-    unifiedFinancialService.calculateCash(startOfMonth.toDate(), todayEnd.toDate()),
-
-    // Receita de hoje (fonte única de verdade)
-    unifiedFinancialService.calculateCash(today.toDate(), todayEnd.toDate()),
-
-    // Leads do mês
-    Lead.countDocuments({
+    })),
+    timeit('cash.month',           calculateCashTotal(startOfMonth.toDate(), todayEnd.toDate())),
+    timeit('cash.today',           calculateCashTotal(today.toDate(), todayEnd.toDate())),
+    timeit('leads.count',          Lead.countDocuments({
       createdAt: { $gte: startOfMonth.toDate() }
-    }),
-
-    // Leads por status (mês atual)
-    Lead.aggregate([
+    })),
+    timeit('leads.byStatus',       Lead.aggregate([
       {
         $match: {
           createdAt: { $gte: startOfMonth.toDate() }
@@ -80,7 +69,7 @@ export async function buildStats() {
           count: { $sum: 1 }
         }
       }
-    ])
+    ]))
   ]);
 
   // Mapear leads por status
@@ -89,10 +78,12 @@ export async function buildStats() {
     return acc;
   }, {});
 
+  console.log(`[buildStats] TOTAL = ${Date.now() - t0}ms`);
+
   return {
     totalDoctors,
     totalPatients,
-    activePatients: totalPatients, // TODO: definir critério de "ativo"
+    activePatients: totalPatients,
     todayAppointments,
     weekAppointments,
     todayRevenue: todayRevenueAgg?.total || 0,

@@ -1720,5 +1720,5 @@ export function startSilenceMonitor() {
     logger.info(`[GUARD-SILENCE] Monitor iniciado (threshold: ${SILENCE_THRESHOLD_MINUTES}min, check: 5min)`);
 }
 
-// Inicia automaticamente
-startSilenceMonitor();
+// Inicia automaticamente (desabilitado temporariamente para diagnóstico de lag)
+// startSilenceMonitor();

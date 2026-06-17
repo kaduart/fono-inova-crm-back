@@ -29,11 +29,14 @@ class AdminDashboardCacheService {
       
       if (cached) {
         const data = JSON.parse(cached);
-        
+
         // 🔥 VERIFICA SE PRECISA REBUILD (TTL/2 = 2.5min)
-        const shouldRebuild = !data._cachedAt || 
+        const shouldRebuild = !data._cachedAt ||
           (Date.now() - new Date(data._cachedAt).getTime() > (ttl * 1000 / 2));
-        
+
+        const ageMs = data._cachedAt ? Date.now() - new Date(data._cachedAt).getTime() : null;
+        console.log(`[DashboardCache] HIT ${key} age=${ageMs != null ? Math.round(ageMs/1000)+'s' : '?'} rebuild=${shouldRebuild}`);
+
         if (shouldRebuild && !this.revalidating.has(key)) {
           // 🔥 ANTI-STAMPEDE: Só 1 rebuild por vez por chave
           this.revalidating.add(key);
@@ -56,7 +59,10 @@ class AdminDashboardCacheService {
       }
       
       // 🔥 MISS: Executa mas com timeout de segurança
+      console.log(`[DashboardCache] MISS ${key} — executando builder...`);
+      const t0 = Date.now();
       const data = await this._fetchWithTimeout(fetchFn, 5000); // max 5s
+      console.log(`[DashboardCache] MISS ${key} resolvido em ${Date.now() - t0}ms`);
       data._cachedAt = new Date().toISOString();
       
       // Salva no cache (não bloqueia)

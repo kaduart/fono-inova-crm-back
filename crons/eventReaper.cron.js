@@ -7,12 +7,12 @@
  * (para retry) ou 'failed' (se já tentou muitas vezes).
  */
 
-import cron from 'node-cron';
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
 
 const log = createContextLogger(null, 'event_reaper');
 let isRunning = false;
+let intervalId = null;
 
 const STUCK_THRESHOLD_MINUTES = 15;
 const MAX_ATTEMPTS_FOR_RETRY = 3;
@@ -98,51 +98,61 @@ async function reapStuckEvents() {
     return { reset: resetCount, failed: failCount, total: stuckEvents.length, details };
 }
 
+async function runOnce() {
+    if (isRunning) {
+        console.log('[EventReaper] ⏭️ Já está rodando, pulando...');
+        return;
+    }
+
+    isRunning = true;
+    const startedAt = Date.now();
+    console.log(`[EventReaper] 🔁 [${new Date().toISOString()}] Verificando eventos travados...`);
+
+    try {
+        const result = await reapStuckEvents();
+
+        if (result.total > 0) {
+            console.log(`[EventReaper] ✅ ${result.reset} resetados | ❌ ${result.failed} falhados | Total: ${result.total} em ${Date.now() - startedAt}ms`);
+        } else {
+            console.log(`[EventReaper] ✅ nada a reaper em ${Date.now() - startedAt}ms`);
+        }
+    } catch (error) {
+        console.error('[EventReaper] ❌ Erro:', error.message);
+    } finally {
+        isRunning = false;
+    }
+}
+
 /**
  * Inicializa o cron de reaper de eventos
  */
 export function initEventReaperCron() {
+    if (intervalId) {
+        console.log('[EventReaper] ⚠️ Já inicializado, ignorando');
+        return { stop: () => clearInterval(intervalId) };
+    }
+
     console.log('🔄 Inicializando Event Reaper Cron...');
 
-    // Roda a cada 5 minutos
-    cron.schedule('*/5 * * * *', async () => {
-        if (isRunning) {
-            console.log('[EventReaper] ⏭️ Já está rodando, pulando...');
-            return;
-        }
-
-        isRunning = true;
-        console.log(`[EventReaper] 🔁 [${new Date().toISOString()}] Verificando eventos travados...`);
-
-        try {
-            const result = await reapStuckEvents();
-
-            if (result.total > 0) {
-                console.log(`[EventReaper] ✅ ${result.reset} resetados | ❌ ${result.failed} falhados | Total: ${result.total}`);
-            }
-        } catch (error) {
-            console.error('[EventReaper] ❌ Erro:', error.message);
-        } finally {
-            isRunning = false;
-        }
-    }, {
-        timezone: 'America/Sao_Paulo'
-    });
+    // Roda a cada 5 minutos usando setInterval — evita overhead do node-cron/timezone
+    intervalId = setInterval(runOnce, 5 * 60 * 1000);
 
     // Primeira execução após 2 minutos do startup
-    setTimeout(async () => {
+    setTimeout(() => {
         console.log('[EventReaper] 🚀 Primeira execução (warmup)...');
-        try {
-            const result = await reapStuckEvents();
-            if (result.total > 0) {
-                console.log(`[EventReaper] 🚀 Warmup: ${result.reset} resetados, ${result.failed} falhados`);
-            }
-        } catch (e) {
-            console.error('[EventReaper] Erro no warmup:', e.message);
-        }
+        runOnce().catch(e => console.error('[EventReaper] Erro no warmup:', e.message));
     }, 2 * 60 * 1000);
 
     console.log('✅ Event Reaper Cron inicializado (a cada 5 min)');
+
+    return {
+        stop: () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+    };
 }
 
 export default { initEventReaperCron };

@@ -15,6 +15,7 @@ import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
 import { withLock } from '../utils/redisLock.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
+import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 
 /**
  * Payment Worker - Processa pagamentos com Saga Pattern
@@ -29,6 +30,18 @@ import { transitionPaymentStatus } from '../services/paymentStatusService.js';
  * SUCCESS: PAYMENT_REQUESTED → PAYMENT_CONFIRMED → APPOINTMENT_CONFIRMED
  * FAILURE: PAYMENT_REQUESTED → PAYMENT_FAILED → APPOINTMENT_CANCELLED (compensação)
  */
+
+/**
+ * Invalida caches financeiros após mutação.
+ * Centralizado para garantir que dashboard/cashflow reflitam dados atualizados.
+ */
+function invalidateFinancialCaches() {
+    try {
+        invalidateDashboardCache();
+    } catch (err) {
+        console.warn('[PaymentWorker] Falha ao invalidar cache financeiro:', err.message);
+    }
+}
 
 export function startPaymentWorker() {
     const worker = new Worker('payment-processing', async (job) => {
@@ -276,6 +289,9 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
     }
 
+    // 🔄 INVALIDA CACHE FINANCEIRO
+    invalidateFinancialCaches();
+
     return {
         status: 'payment_created_paid',
         paymentId: payment._id,
@@ -434,6 +450,9 @@ async function processStandalonePayment(payload, eventId, correlationId, log) {
     } catch (projError) {
         log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
     }
+
+    // 🔄 INVALIDA CACHE FINANCEIRO
+    invalidateFinancialCaches();
 
     // 📊 Solicita recálculo de totais e daily closing
     try {
@@ -722,6 +741,9 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             { correlationId }
         );
 
+        // 🔄 INVALIDA CACHE FINANCEIRO
+        invalidateFinancialCaches();
+
         // 5. Notificação
         await publishEvent(
             EventTypes.NOTIFICATION_REQUESTED,
@@ -1002,6 +1024,9 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
         } catch (projError) {
             log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
         }
+
+        // 🔄 INVALIDA CACHE FINANCEIRO
+        invalidateFinancialCaches();
 
         // 5. Publica eventos (para PaymentStore frontend e outros consumidores)
         await publishEvent(
@@ -1306,14 +1331,13 @@ async function handlePaymentConfirmed(payload, eventId, correlationId, log) {
     if (!payment) {
         throw new Error(`PAYMENT_NOT_FOUND: ${paymentId}`);
     }
-    
+
     // Já está confirmado?
     if (payment.status === 'paid') {
         return { status: 'already_confirmed', paymentId };
     }
-    
+
     // Atualiza com dados da transação
-    const payment = await Payment.findById(paymentId);
     if (payment) {
         await transitionPaymentStatus(paymentId, 'paid', {
             paymentMethod: payment.paymentMethod || 'pix',
@@ -1344,6 +1368,9 @@ async function handlePaymentConfirmed(payload, eventId, correlationId, log) {
     } catch (ledgerError) {
         log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
     }
+
+    // 🔄 INVALIDA CACHE FINANCEIRO
+    invalidateFinancialCaches();
     
     log.info('confirmed_via_webhook', `Pagamento ${paymentId} confirmado via webhook`);
     

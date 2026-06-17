@@ -11,7 +11,7 @@ export function startCron(name, startFn) {
         console.log(`[CronManager] ⚠️ Cron '${name}' já está rodando, ignorando duplicação`);
         return activeCrons.get(name);
     }
-    
+
     console.log(`[CronManager] ✅ Iniciando cron: ${name}`);
     const cronInstance = startFn();
     activeCrons.set(name, cronInstance);
@@ -43,4 +43,28 @@ export function listActiveCrons() {
     return Array.from(activeCrons.keys());
 }
 
-export default { startCron, stopCron, stopAllCrons, listActiveCrons };
+/**
+ * Inicia todos os crons críticos da aplicação.
+ * Pode ser chamado tanto pelo server.js (modo monolítico legado)
+ * quanto pelo cron-worker dedicado.
+ */
+export async function startAllCrons() {
+    const { initAppointmentRecoveryCron } = await import("../crons/appointmentRecovery.cron.js");
+    startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
+
+    const { initEventReaperCron } = await import("../crons/eventReaper.cron.js");
+    startCron('eventReaper', () => initEventReaperCron());
+
+    const { scheduleFinancialSnapshotAudit } = await import("../crons/financialSnapshotAudit.cron.js");
+    startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
+
+    const { schedulePatientConsistency } = await import("../crons/patientConsistency.cron.js");
+    startCron('patientConsistency', () => schedulePatientConsistency());
+
+    const { schedulePreAgendamentoExpiration } = await import("../crons/preAgendamentoExpiration.cron.js");
+    startCron('preAgendamentoExpiration', () => schedulePreAgendamentoExpiration());
+
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration)");
+}
+
+export default { startCron, stopCron, stopAllCrons, listActiveCrons, startAllCrons };

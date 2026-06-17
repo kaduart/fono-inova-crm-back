@@ -81,7 +81,7 @@ import { etagMiddleware } from './middleware/etagCache.js';
 import salesRoutes from './routes/sales.js';
 import { startLearningCron } from "./crons/learningCron.js";
 import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
-import { startCron } from './config/cronManager.js';
+import { startCron, startAllCrons } from './config/cronManager.js';
 
 import "./models/index.js";
 import jwt from "jsonwebtoken";
@@ -653,6 +653,26 @@ app.get("*", (req, res) => {
 });
 
 // ======================================================
+// ⏱️ Event Loop Lag Monitor
+// ======================================================
+function startEventLoopMonitor() {
+  const INTERVAL_MS = 1000;
+  const THRESHOLD_MS = 100;
+  let last = Date.now();
+
+  setInterval(() => {
+    const now = Date.now();
+    const lag = now - last - INTERVAL_MS;
+    last = now;
+    if (lag > THRESHOLD_MS) {
+      console.warn(`[event-loop] LAG DETECTED: ${lag}ms (threshold ${THRESHOLD_MS}ms)`);
+    }
+  }, INTERVAL_MS);
+
+  console.log('⏱️  Event loop monitor iniciado');
+}
+
+// ======================================================
 // 👀 Watcher de Followups (Socket.IO) - OTIMIZADO
 // ======================================================
 function initFollowupWatcher() {
@@ -839,14 +859,11 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log("🟢 WhatsApp Web no worker dedicado — API web livre");
 
     // 👉 CRONS CRÍTICOS HABILITADOS
-    const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
-    startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
-    const { initEventReaperCron } = await import("./crons/eventReaper.cron.js");
-    startCron('eventReaper', () => initEventReaperCron());
-    startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
-    startCron('patientConsistency', () => schedulePatientConsistency());
-    const { schedulePreAgendamentoExpiration } = await import("./crons/preAgendamentoExpiration.cron.js");
-    startCron('preAgendamentoExpiration', () => schedulePreAgendamentoExpiration());
+    if (process.env.ENABLE_CRONS !== 'false') {
+      await startAllCrons();
+    } else {
+      console.log("⏭️ Crons desabilitados no processo API — use o cron-worker dedicado");
+    }
 
     // Crons opcionais desligados (modo memória otimizada)
     // startCron('learning', () => startLearningCron());
@@ -859,14 +876,13 @@ server.listen(PORT, '0.0.0.0', () => {
     // const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
     // startScheduledPublisher();
     // Inicializar worker de retry GMB/Instagram/Facebook
-    try {
-      initGmbRetryWorker();
-      console.log("🔄 GMB Retry Worker iniciado");
-    } catch (gmbWorkerErr) {
-      console.warn("⚠️ Falha ao iniciar GMB Retry Worker:", gmbWorkerErr.message);
-    }
-
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + gmb.cron)");
+    // GMB Retry Worker desabilitado temporariamente para diagnóstico de lag
+    // try {
+    //   initGmbRetryWorker();
+    //   console.log("🔄 GMB Retry Worker iniciado");
+    // } catch (gmbWorkerErr) {
+    //   console.warn("⚠️ Falha ao iniciar GMB Retry Worker:", gmbWorkerErr.message);
+    // }
 
     // Registrar Webhook PIX no Sicoob
     try {
@@ -876,7 +892,10 @@ server.listen(PORT, '0.0.0.0', () => {
       console.warn("⚠️ Falha ao registrar webhook PIX:", err.message);
     }
 
-    initFollowupWatcher();
+    // 🎯 Monitor de event loop lag — detecta bloqueios que causam NODE-CRON missed execution
+    startEventLoopMonitor();
+
+    // initFollowupWatcher(); // desabilitado temporariamente para diagnóstico de lag
     
     console.log("✅ Sistema inicializado!");
     

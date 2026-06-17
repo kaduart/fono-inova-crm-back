@@ -13,9 +13,40 @@ import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialVa
 
 const router = express.Router();
 
+// Cache server-side para CashflowV2 — reduz recálculo na abertura da tela financeira
+const _cashflowCache = new Map();
+const CASHFLOW_CURRENT_TTL = 30_000;   // 30s para dia atual / range atual
+const CASHFLOW_PAST_TTL    = 300_000;  // 5min para períodos passados
+
+function _cashflowCacheKey(date, startDate, endDate, month = '') {
+    return `${date || ''}_${startDate || ''}_${endDate || ''}_${month || ''}`;
+}
+
+function _getCashflowCached(key, ttl) {
+    const entry = _cashflowCache.get(key);
+    if (entry && Date.now() - entry.ts < ttl) {
+        console.log(`[cashflow.v2] CACHE HIT ${key} (age=${Date.now() - entry.ts}ms ttl=${ttl}ms)`);
+        return entry.data;
+    }
+    return null;
+}
+
+function _setCashflowCached(key, data) {
+    if (_cashflowCache.size > 50) _cashflowCache.clear();
+    _cashflowCache.set(key, { data, ts: Date.now() });
+    console.log(`[cashflow.v2] CACHE SET ${key}`);
+}
+
 // GET /api/v2/cashflow?date=2026-04-10 OU ?startDate=2026-04-10&endDate=2026-04-16
 router.get('/', auth, async (req, res) => {
     const startedAt = Date.now();
+    const _timers = {};
+    const _tick = (label) => {
+        const now = Date.now();
+        const prev = _timers[label]?.at || startedAt;
+        _timers[label] = { at: now, elapsed: now - prev };
+        return _timers[label].elapsed;
+    };
     try {
         const { date, startDate, endDate } = req.query;
 
@@ -33,12 +64,30 @@ router.get('/', auth, async (req, res) => {
             end = moment.tz(targetDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
         }
 
+        const todayStr = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const cacheKey = _cashflowCacheKey(targetDate, startDate, endDate);
+        const isCurrent = (startDate && endDate)
+            ? endDate === todayStr
+            : targetDate === todayStr;
+        const cached = _getCashflowCached(cacheKey, isCurrent ? CASHFLOW_CURRENT_TTL : CASHFLOW_PAST_TTL);
+        if (cached) {
+            res.set('X-Cache-Hit', 'true');
+            return res.json(cached);
+        }
+
         // ============================================================
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
+        const _tCashflowBase = Date.now();
         const [cash, production, convenioAppts] = await Promise.all([
-            unifiedFinancialService.calculateCash(start, end),
-            unifiedFinancialService.calculateProduction(start, end),
+            unifiedFinancialService.calculateCash(start, end).then(r => {
+                console.log(`[cashflow.v2] calculateCash = ${Date.now() - _tCashflowBase}ms`);
+                return r;
+            }),
+            unifiedFinancialService.calculateProduction(start, end).then(r => {
+                console.log(`[cashflow.v2] calculateProduction = ${Date.now() - _tCashflowBase}ms`);
+                return r;
+            }),
             Appointment.find({
                 date: { $gte: start, $lte: end },
                 operationalStatus: 'completed',
@@ -53,6 +102,7 @@ router.get('/', auth, async (req, res) => {
         // ============================================================
         // 🎯 BUSCA DESPESAS DO PERÍODO
         // ============================================================
+        const _tExpenses = Date.now();
         const expenseQuery = {
             status: { $nin: ['canceled', 'cancelado'] }
         };
@@ -62,10 +112,12 @@ router.get('/', auth, async (req, res) => {
             expenseQuery.date = targetDate;
         }
         const expenses = await Expense.find(expenseQuery).lean();
+        console.log(`[cashflow.v2] expenses.find = ${Date.now() - _tExpenses}ms (${expenses.length} docs)`);
 
         // ============================================================
         // 🔧 DADOS AUXILIARES PARA EXIBIÇÃO (transações detalhadas)
         // ============================================================
+        const _tAuxMaps = Date.now();
         const appointmentIds = cash.payments.map(p => p.appointment?.toString()).filter(Boolean);
         const sessionApptIds = production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean);
         const allApptIds = Array.from(new Set([...appointmentIds, ...sessionApptIds]));
@@ -81,18 +133,23 @@ router.get('/', auth, async (req, res) => {
                     .then(list => new Map(list.map(a => [a._id.toString(), a])))
                 : new Map(),
             (async () => {
+                const _tDoctors = Date.now();
                 const doctorIds = Array.from(new Set(production.sessions.map(s => s.doctor?.toString()).filter(Boolean)));
                 if (doctorIds.length === 0) return new Map();
                 const docs = await (await import('../models/Doctor.js')).default.find({ _id: { $in: doctorIds } }).select('_id fullName specialty').lean();
+                console.log(`[cashflow.v2] doctorsMap = ${Date.now() - _tDoctors}ms (${docs.length} docs)`);
                 return new Map(docs.map(d => [d._id.toString(), d]));
             })(),
             (async () => {
+                const _tPatients = Date.now();
                 const patientIds = Array.from(new Set(production.sessions.map(s => s.patient?.toString()).filter(Boolean)));
                 if (patientIds.length === 0) return new Map();
                 const pts = await (await import('../models/Patient.js')).default.find({ _id: { $in: patientIds } }).select('_id fullName phone').lean();
+                console.log(`[cashflow.v2] patientMap = ${Date.now() - _tPatients}ms (${pts.length} docs)`);
                 return new Map(pts.map(p => [p._id.toString(), p]));
             })()
         ]);
+        console.log(`[cashflow.v2] auxMaps = ${Date.now() - _tAuxMaps}ms (appts=${allApptIds.length})`);
 
         // sessionId → appointmentId — fallback para payments sem p.appointment direto
         const sessionToApptIdMap = new Map(
@@ -114,10 +171,13 @@ router.get('/', auth, async (req, res) => {
         // ============================================================
         // 🎯 COMPARATIVOS: ONTEM E MÊS
         // ============================================================
+        const _tComparativos = Date.now();
         const yesterdayStart = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').startOf('day').utc().toDate();
         const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
 
+        const _tYesterdayCash = Date.now();
         const yesterdayCash = await unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd);
+        console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
         // 🎯 O caixa de ontem deve usar os MESMOS filtros do caixa de hoje
         // Busca appointments/sessions de ontem para aplicar filtros consistentes
         const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
@@ -166,15 +226,19 @@ router.get('/', auth, async (req, res) => {
         const yesterdayTotal = yesterdayTransacoes.reduce((s, t) => s + t.valor, 0);
 
         const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
+        const _tMonthCash = Date.now();
         const monthCash = await unifiedFinancialService.calculateCash(monthStart, end);
+        console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tMonthCash}ms`);
         const totalMes = monthCash.total;
         const dayOfMonth = moment.tz(targetDate, 'America/Sao_Paulo').date();
         const mediaDiariaMes = dayOfMonth > 0 ? totalMes / dayOfMonth : 0;
         const projecaoMes = mediaDiariaMes * 30;
+        console.log(`[cashflow.v2] comparativos = ${Date.now() - _tComparativos}ms`);
 
         // ============================================================
         // ========== TRANSAÇÕES DE CAIXA ==========
         // ============================================================
+        const _tTransacoesCaixa = Date.now();
         let qtdPix = 0, qtdDinheiro = 0, qtdCartao = 0;
         const porEspecialidadeCaixa = {};
 
@@ -311,6 +375,7 @@ router.get('/', auth, async (req, res) => {
                 paymentForms: appt?.paymentForms || []
             };
         }).filter(Boolean);
+        console.log(`[cashflow.v2] transacoesCaixa.process = ${Date.now() - _tTransacoesCaixa}ms (${transacoesCaixa.length} items)`);
 
         transacoesCaixa.sort((a, b) => b.hora.localeCompare(a.hora));
 
@@ -335,6 +400,7 @@ router.get('/', auth, async (req, res) => {
         const saldoLiquido = totalCaixaFiltrado - totalDespesas;
 
         // ========== PRODUÇÃO DO DIA ==========
+        const _tTransacoesProducao = Date.now();
         let producaoLiquidada = 0;
         let aReceber = 0;
         const porEspecialidade = {};
@@ -416,6 +482,8 @@ router.get('/', auth, async (req, res) => {
             };
         });
 
+        console.log(`[cashflow.v2] transacoesProducao.process = ${Date.now() - _tTransacoesProducao}ms (${transacoesProducao.length} items)`);
+
         // Appointments convênio sem Session document — injetar como entradas sintéticas
         const sessionCoveredApptIds = new Set(
             production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean)
@@ -473,7 +541,9 @@ router.get('/', auth, async (req, res) => {
             ticketMedio: dados.quantidade > 0 ? (dados.total / dados.quantidade).toFixed(2) : 0
         })).sort((a, b) => b.total - a.total);
 
-        res.json({
+        console.log(`[cashflow.v2] TOTAL = ${Date.now() - startedAt}ms`);
+
+        const cashflowResponsePayload = {
             success: true,
             data: {
                 data: targetDate,
@@ -576,7 +646,11 @@ router.get('/', auth, async (req, res) => {
                         };
                     })
             }
-        });
+        };
+
+        _setCashflowCached(cacheKey, cashflowResponsePayload);
+
+        res.json(cashflowResponsePayload);
 
         logMetric('CashflowV2', 'getCashflow', {
           executionTimeMs: Date.now() - startedAt,
@@ -605,6 +679,15 @@ router.get('/month', auth, async (req, res) => {
         const { month } = req.query;
         if (!month || !/^\d{4}-\d{2}$/.test(month)) {
             return res.status(400).json({ success: false, error: 'Parâmetro month obrigatório (formato: YYYY-MM)' });
+        }
+
+        const cacheKey = _cashflowCacheKey(undefined, undefined, undefined, month);
+        const currentMonthStr = moment.tz('America/Sao_Paulo').format('YYYY-MM');
+        const isCurrent = month === currentMonthStr;
+        const cached = _getCashflowCached(cacheKey, isCurrent ? CASHFLOW_CURRENT_TTL : CASHFLOW_PAST_TTL);
+        if (cached) {
+            res.set('X-Cache-Hit', 'true');
+            return res.json(cached);
         }
 
         const [year, monthNum] = month.split('-').map(Number);
@@ -641,7 +724,7 @@ router.get('/month', auth, async (req, res) => {
 
         const caixaBruto = result.reduce((s, d) => s + d.caixa, 0);
 
-        res.json({
+        const responsePayload = {
             success: true,
             month,
             data: result,
@@ -656,7 +739,11 @@ router.get('/month', auth, async (req, res) => {
                     liminar: productionTotals.liminar || 0
                 }
             }
-        });
+        };
+
+        _setCashflowCached(cacheKey, responsePayload);
+
+        res.json(responsePayload);
 
         logMetric('CashflowV2', 'getCashflowMonth', {
           executionTimeMs: Date.now() - startedAt,

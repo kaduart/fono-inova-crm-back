@@ -16,6 +16,7 @@ import {
 } from '../infrastructure/events/eventStoreService.js';
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
+import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 
 let mongoConnected = false;
 async function ensureMongoConnection() {
@@ -267,6 +268,13 @@ async function processCancelJobV2({ job, eventId, correlationId, idempotencyKey,
         // 🎯 PÓS-COMMIT: Side Effects (não-críticos)
         // ============================================================
         
+        // 🔄 INVALIDA CACHE FINANCEIRO (cancelamento pode estornar caixa/produção)
+        try {
+            invalidateDashboardCache();
+        } catch (cacheErr) {
+            console.warn('[CancelOrchestratorV2] ⚠️ Erro ao invalidar cache financeiro (não crítico):', cacheErr.message);
+        }
+
         // 🔄 REBUILD da view do pacote (se houver)
         if (appointment?.package) {
             try {

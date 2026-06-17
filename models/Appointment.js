@@ -429,6 +429,8 @@ appointmentSchema.index({ clinicId: 1, date: 1 });
 appointmentSchema.index({ clinicId: 1, date: 1, operationalStatus: 1 });
 // Query por paciente + período (histórico, listagem de sessões)
 appointmentSchema.index({ patient: 1, date: 1 });
+// Analytics by-type: histórico de paciente filtrado por createdAt (isFirstVisit) + status
+appointmentSchema.index({ patient: 1, createdAt: -1, operationalStatus: 1 });
 // Query por data sem filtro de clínica (fallback/global)
 appointmentSchema.index({ date: 1, operationalStatus: 1 });
 // 🔥 OTIMIZAÇÃO: Query calendário por doutor (mais comum)

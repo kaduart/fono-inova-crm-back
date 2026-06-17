@@ -2,6 +2,7 @@
 import Payment from '../../models/Payment.js';
 import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
 import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
+import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
 
 /**
  * Cancela um pagamento (se aplicável)
@@ -66,6 +67,9 @@ export async function cancelPayment(paymentId, options = {}) {
     // Invalida cache do daily-closing para a data do pagamento
     await invalidateCacheForPayment(payment);
 
+    // Invalida cache financeiro do dashboard
+    invalidateDashboardCache();
+
     console.log(`[cancelPayment] Payment ${paymentId} cancelado`);
 
     return { 
@@ -126,6 +130,9 @@ export async function createPaymentForComplete(data) {
     // Invalida cache do daily-closing para a data do pagamento (mesmo pendente)
     await invalidateCacheForPayment(payment);
 
+    // Invalida cache financeiro do dashboard (novo débito/pendente)
+    invalidateDashboardCache();
+
     console.log(`[createPaymentForComplete] Payment criado: ${payment._id}`, {
         amount,
         paymentOrigin,
@@ -158,6 +165,8 @@ export async function confirmPayment(paymentId) {
     if (payment) {
         // Invalida cache do daily-closing quando pagamento é confirmado
         await invalidateCacheForPayment(payment);
+        // Invalida cache financeiro do dashboard
+        invalidateDashboardCache();
         console.log(`[confirmPayment] Payment ${paymentId} confirmado`);
     }
 

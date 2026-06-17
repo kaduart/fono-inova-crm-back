@@ -7,6 +7,22 @@ import Session from '../models/Session.js';
 import { expenseCache } from '../routes/expenses.v2.js';
 import { calculateCommissionBatch } from './commissionRule.service.js';
 
+// Cache: 60s por (doctorId, startDate, endDate) — evita N×2 queries em calculateProfissionais
+const _commCache = new Map();
+const COMM_TTL = 60_000;
+function _commCacheGet(key) {
+    const entry = _commCache.get(key);
+    if (entry && Date.now() - entry.ts < COMM_TTL) return entry.data;
+    return null;
+}
+function _commCacheSet(key, data) {
+    _commCache.set(key, { data, ts: Date.now() });
+    if (_commCache.size > 200) {
+        const oldest = _commCache.keys().next().value;
+        _commCache.delete(oldest);
+    }
+}
+
 /**
  * Calcula comissão personalizada por profissional
  *
@@ -17,6 +33,10 @@ import { calculateCommissionBatch } from './commissionRule.service.js';
  * 4. Avaliação neuropsicológica: valor ao completar N sessões.
  */
 export const calculateDoctorCommission = async (doctorId, startDate, endDate) => {
+  const cacheKey = `${doctorId}_${startDate instanceof Date ? startDate.toISOString() : startDate}_${endDate instanceof Date ? endDate.toISOString() : endDate}`;
+  const cached = _commCacheGet(cacheKey);
+  if (cached) return cached;
+
   try {
     const doctor = await Doctor.findById(doctorId)
       .select('fullName specialty commissionRules')
@@ -49,7 +69,7 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       (doctor.specialty || '').toLowerCase().trim()
     );
 
-    return {
+    const result = {
       doctorId,
       doctorName: doctor.fullName,
       totalCommission,
@@ -58,6 +78,8 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       period: { startDate, endDate },
       commissionModel: isNeuropediatria ? 'neuropediatria_percentage' : 'rule_based'
     };
+    _commCacheSet(cacheKey, result);
+    return result;
 
   } catch (error) {
     console.error(`Erro ao calcular comissão do Dr. ${doctorId}:`, error);

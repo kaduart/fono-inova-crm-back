@@ -32,6 +32,7 @@ import { buildPackageView } from '../domains/billing/services/PackageProjectionS
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import LegacyFinanceWriteGuard from '../services/financialGuard/LegacyFinanceWriteGuard.js';
+import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import moment from 'moment-timezone';
 
 const logger = createContextLogger('PackageV2');
@@ -1135,6 +1136,9 @@ export const createPackageV2 = async (req, res) => {
       }
     }
 
+    // 🔄 INVALIDA CACHE FINANCEIRO (venda/quitacao de pacote altera caixa)
+    invalidateDashboardCache();
+
     // ========================================
     // 6️⃣ EVENTOS (fora da transaction)
     // ========================================
@@ -1560,6 +1564,9 @@ export const settlePackagePayments = async (req, res) => {
     );
 
     await mongoSession.commitTransaction();
+
+    // 🔄 INVALIDA CACHE FINANCEIRO (quitação de débitos altera caixa)
+    invalidateDashboardCache();
 
     // Rebuild síncrono da packages_view (fora da transação)
     try {

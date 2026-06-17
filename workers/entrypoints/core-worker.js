@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { startWorkerGroup, stopAllWorkers } from '../index.js';
+import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 import { bootstrapEventContracts } from '../../infrastructure/events/bootstrapContracts.js';
 
 dotenv.config();
@@ -44,7 +44,7 @@ async function main() {
 
         const workers = [];
         for (const group of CORE_GROUPS) {
-            await startWorkerGroup(group, workers);
+            await startWorkersByGroup(group, workers);
         }
 
         console.log('\n🎉 Core Worker pronto!');

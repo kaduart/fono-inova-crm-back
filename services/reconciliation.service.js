@@ -25,6 +25,14 @@ import { logMetric } from '../utils/logMetric.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
+// Cache curto para top issues — reduz recálculo pesado em intervalos de polling
+const _issuesCache = new Map();
+const ISSUES_CACHE_TTL = 30_000; // 30s
+
+function _issuesCacheKey(startDate, endDate, limit) {
+    return `${startDate}_${endDate}_${limit}`;
+}
+
 function parseRange(startDate, endDate) {
   const start = startDate
     ? moment.tz(startDate, TIMEZONE).startOf('day').toDate()
@@ -675,6 +683,20 @@ export async function getDoctorRankingDifferences(startDate, endDate) {
  */
 export async function getTopFinancialIssues(startDate, endDate, limit = 20) {
   const startedAt = Date.now();
+  const cacheKey = _issuesCacheKey(startDate, endDate, limit);
+  const cached = _issuesCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < ISSUES_CACHE_TTL) {
+    logMetric('ReconciliationService', 'getTopFinancialIssues', {
+      startDate,
+      endDate,
+      limit,
+      executionTimeMs: Date.now() - startedAt,
+      cacheHit: true,
+      issueCount: cached.data.length
+    });
+    return cached.data;
+  }
+
   const { start, end } = parseRange(startDate, endDate);
 
   const [sessions, payments] = await Promise.all([
@@ -794,6 +816,9 @@ export async function getTopFinancialIssues(startDate, endDate, limit = 20) {
       return b.amount - a.amount;
     })
     .slice(0, limit);
+
+  if (_issuesCache.size > 50) _issuesCache.clear();
+  _issuesCache.set(cacheKey, { data: result, ts: Date.now() });
 
   logMetric('ReconciliationService', 'getTopFinancialIssues', {
     startDate,

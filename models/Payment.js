@@ -262,6 +262,12 @@ paymentSchema.index({ patientId: 1, status: 1 });
 paymentSchema.index({ status: 1, financialDate: -1, amount: 1, kind: 1 }, { name: 'financial_cash_status_date' });
 paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financial_doctor_cash_status_date' });
 
+// 💰 Cobertura dos ramos de fallback do calculateCashTotal ($or com paymentDate/createdAt)
+// Ramo 2/3: financialDate=null → paymentDate como data primária (legado)
+paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
+// Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
+paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
+
 // ============ MÉTODOS ============
 paymentSchema.methods.toDTO = function() {
     return {

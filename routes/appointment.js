@@ -959,21 +959,15 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // Removido limit default para garantir que todos os appointments do período venham
         const appointments = await Appointment.find(filter)
+            .limit(limit)
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type liminarProcessNumber liminarCourt' })
-            .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
-            .sort({ date: -1, time: 1 }) // Mais recentes primeiro, depois por hora
+            .sort({ date: -1, time: 1 })
             .lean();
-
-        // Verificar se o appointment específico está aqui
-        const targetAppt = appointments.find(a => {
-            const id = a._id?.toString?.() || a._id;
-            return id === '69964dc81e0e9b385928bb06';
-        });
 
         // pre_agendados agora são Appointments — já incluídos na query acima
 

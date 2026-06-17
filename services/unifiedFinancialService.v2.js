@@ -19,11 +19,45 @@ import Package from '../models/Package.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
 
+// Cache interno para funções dashboard-optimized — reduz recálculo quando múltiplos callers
+// pedem o mesmo período (ex: calculateRealTime pede month + today).
+const _ufsCache = new Map();
+const UFS_DASHBOARD_TTL = 30_000; // 30s — dados financeiros de curto prazo são estáveis o suficiente
+
+function _ufsCacheKey(fnName, start, end) {
+    return `${fnName}_${start?.toISOString?.()}_${end?.toISOString?.()}`;
+}
+
+function _getUfsCached(key) {
+    const entry = _ufsCache.get(key);
+    if (entry && Date.now() - entry.ts < UFS_DASHBOARD_TTL) {
+        console.log(`[unifiedFinancialService] CACHE HIT ${key} age=${Date.now() - entry.ts}ms`);
+        return entry.data;
+    }
+    return null;
+}
+
+function _setUfsCached(key, data) {
+    if (_ufsCache.size > 100) _ufsCache.clear();
+    _ufsCache.set(key, { data, ts: Date.now() });
+    console.log(`[unifiedFinancialService] CACHE SET ${key}`);
+}
+
+/**
+ * Invalida todo o cache interno do Unified Financial Service.
+ * Deve ser chamado após mutações financeiras para evitar dados stale no dashboard.
+ */
+export function invalidateUFSCache() {
+    const size = _ufsCache.size;
+    _ufsCache.clear();
+    console.log(`[unifiedFinancialService] Cache invalidado (${size} entradas limpas)`);
+}
+
 // ============================================================
 // 1) CAIXA — Payment only (imutável)
 // ============================================================
 
-export async function calculateCash(start, end) {
+export async function calculateCash(start, end, { skipPayments = false } = {}) {
     const startedAt = Date.now();
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     // NÃO usar filtragem manual. NÃO usar heurística de texto.
@@ -56,9 +90,6 @@ export async function calculateCash(start, end) {
         ]
     };
 
-    // 🔍 DIAGNÓSTICO: logar range e resultados
-    console.log(`[calculateCash] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
-
     // 1. Total geral
     const totalAggStartedAt = Date.now();
     const totalAgg = await Payment.aggregate([
@@ -68,7 +99,6 @@ export async function calculateCash(start, end) {
     const totalAggMs = Date.now() - totalAggStartedAt;
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
-    console.log(`[calculateCash] Encontrados: ${count} payments, total=${total}`);
 
     // Diagnóstico extra: listar primeiros payments do período (apenas desenvolvimento)
     let samplesMs = 0;
@@ -144,21 +174,21 @@ export async function calculateCash(start, end) {
     const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
     const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
-    // 4. Buscar payments completos para compatibilidade com endpoints legados
-    const paymentsStartedAt = Date.now();
-    let payments = await Payment.find(match).populate('patient', 'fullName').lean();
-    const paymentsQueryMs = Date.now() - paymentsStartedAt;
-    const paymentsFilterStartedAt = Date.now();
-    payments = payments.filter(p => {
-        const nome = (p.patient?.fullName || '').toLowerCase();
-        return !nome.includes('teste') && !nome.includes('test ');
-    });
-    const paymentsFilterMs = Date.now() - paymentsFilterStartedAt;
-    // Filtro de nome de teste (não expressível eficientemente em aggregation)
-    payments = payments.filter(p => {
-        const nome = (p.patient?.fullName || '').toLowerCase();
-        return !nome.includes('teste') && !nome.includes('test ');
-    });
+    // 4. Buscar payments completos — apenas quando caller precisa da lista (endpoints legados)
+    let payments = [];
+    let paymentsQueryMs = 0;
+    let paymentsFilterMs = 0;
+    if (!skipPayments) {
+        const paymentsStartedAt = Date.now();
+        payments = await Payment.find(match).populate('patient', 'fullName').lean();
+        paymentsQueryMs = Date.now() - paymentsStartedAt;
+        const paymentsFilterStartedAt = Date.now();
+        payments = payments.filter(p => {
+            const nome = (p.patient?.fullName || '').toLowerCase();
+            return !nome.includes('teste') && !nome.includes('test ');
+        });
+        paymentsFilterMs = Date.now() - paymentsFilterStartedAt;
+    }
 
     const executionTimeMs = Date.now() - startedAt;
     logMetric('UnifiedFinancialService', 'calculateCash', {
@@ -226,6 +256,150 @@ async function _calcReceitaReal(payments) {
 
     const totalCaixa = payments.reduce((s, p) => s + p.amount, 0);
     return { receitaReal: totalCaixa - receitaDiferida, receitaDiferida };
+}
+
+/**
+ * Versão do calculateCash otimizada para o dashboard V3.
+ * Elimina Payment.find().populate('patient') desnecessário — o dashboard não usa a lista de payments.
+ * Mantém receitaReal/receitaDiferida calculando apenas sobre pacotes full pré-pagos.
+ */
+export async function calculateCashForDashboard(start, end) {
+    const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateCashForDashboard', start, end);
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
+
+    const match = {
+        status: 'paid',
+        amount: { $gt: 0 },
+        kind: { $ne: 'package_consumed' },
+        $and: [
+            {
+                $or: [
+                    { isFromPackage: { $ne: true } },
+                    { kind: 'session_payment' }
+                ]
+            },
+            {
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
+                ]
+            }
+        ]
+    };
+
+    const [totalAgg, methodAgg, typeAgg] = await Promise.all([
+        Payment.aggregate([
+            { $match: match },
+            { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        ]),
+        Payment.aggregate([
+            { $match: match },
+            { $group: {
+                _id: {
+                    $switch: {
+                        branches: [
+                            { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /^pix$/ } }, then: 'pix' },
+                            { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /cartao|card|crédito|debito|credit|debit/ } }, then: 'cartao' },
+                            { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /dinheiro|cash/ } }, then: 'dinheiro' }
+                        ],
+                        default: 'outros'
+                    }
+                },
+                total: { $sum: '$amount' }
+            }}
+        ]),
+        Payment.aggregate([
+            { $match: match },
+            { $group: {
+                _id: {
+                    $switch: {
+                        branches: [
+                            { case: { $eq: [{ $toLower: '$billingType' }, 'liminar'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$billingType' }, 'convenio'] }, then: 'convenio' },
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' }
+                        ],
+                        default: {
+                            $cond: {
+                                if: { $or: [
+                                    { $ifNull: ['$package', false] },
+                                    { $eq: [{ $toLower: '$serviceType' }, 'package_session'] },
+                                    { $eq: ['$kind', 'package_receipt'] }
+                                ]},
+                                then: 'pacote',
+                                else: 'particular'
+                            }
+                        }
+                    }
+                },
+                total: { $sum: '$amount' }
+            }}
+        ])
+    ]);
+
+    const total = totalAgg[0]?.total || 0;
+    const count = totalAgg[0]?.count || 0;
+
+    const byMethod = { pix: 0, dinheiro: 0, cartao: 0, outros: 0 };
+    methodAgg.forEach(r => { byMethod[r._id] = r.total; });
+
+    const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
+    const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
+    const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
+
+    // Receita real/diferida: só precisa dos pagamentos de pacotes full pré-pagos
+    const pkgPayments = await Payment.find({
+        status: 'paid',
+        amount: { $gt: 0 },
+        package: { $exists: true, $ne: null },
+        $or: [
+            { session: { $exists: false } },
+            { session: null }
+        ],
+        $or: [
+            { appointment: { $exists: false } },
+            { appointment: null }
+        ],
+        $and: [
+            {
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
+                ]
+            }
+        ]
+    }).select('amount package').lean();
+
+    const { receitaReal, receitaDiferida } = await _calcReceitaReal(pkgPayments);
+
+    const result = {
+        total,
+        particular,
+        pacote,
+        convenio,
+        liminar,
+        pix: byMethod.pix,
+        dinheiro: byMethod.dinheiro,
+        cartao: byMethod.cartao,
+        outros: byMethod.outros,
+        byMethod,
+        count,
+        receitaReal,
+        receitaDiferida
+    };
+
+    _setUfsCached(cacheKey, result);
+    console.log(`[calculateCashForDashboard] ${Date.now() - startedAt}ms (payments=${count})`);
+    return result;
 }
 
 export async function calculateCashByDay(start, end) {
@@ -300,9 +474,6 @@ export async function calculateProduction(start, end) {
         status: 'completed'
     };
 
-    // 🔍 DIAGNÓSTICO: logar range e resultados
-    console.log(`[calculateProduction] Range: ${start?.toISOString?.()} → ${end?.toISOString?.()}`);
-
     // 1. Total geral
     const totalAggStartedAt = Date.now();
     const totalAgg = await Session.aggregate([
@@ -313,7 +484,6 @@ export async function calculateProduction(start, end) {
     const totalAggMs = Date.now() - totalAggStartedAt;
     const total = totalAgg[0]?.total || 0;
     const count = totalAgg[0]?.count || 0;
-    console.log(`[calculateProduction] Encontradas: ${count} sessions, total=${total}`);
 
     // Diagnóstico extra: listar primeiras sessions do período (apenas desenvolvimento)
     let samplesMs = 0;
@@ -464,6 +634,128 @@ export async function calculateProduction(start, end) {
     };
 }
 
+/**
+ * Versão do calculateProduction otimizada para o dashboard V3.
+ * Elimina Session.find().populate('package') desnecessário — o dashboard não usa a lista de sessions.
+ */
+export async function calculateProductionForDashboard(start, end) {
+    const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateProductionForDashboard', start, end);
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
+
+    const match = {
+        date: { $gte: start, $lte: end },
+        status: 'completed'
+    };
+
+    const [totalAgg, typeAgg, recebidoAgg, particularPendenteAgg] = await Promise.all([
+        Session.aggregate([
+            { $match: match },
+            ...pkgLookupStages,
+            { $group: { _id: null, total: { $sum: '$effectiveValue' }, count: { $sum: 1 } } }
+        ]),
+        Session.aggregate([
+            { $match: match },
+            ...pkgLookupStages,
+            { $group: {
+                _id: {
+                    $switch: {
+                        branches: [
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'liminar'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'liminar_credit'] }, then: 'liminar' },
+                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' },
+                            { case: { $eq: [{ $toLower: '$paymentOrigin' }, 'convenio'] }, then: 'convenio' },
+                            { case: { $and: [
+                                { $ne: [{ $ifNull: ['$insuranceGuide', null] }, null] },
+                                { $ne: [{ $ifNull: ['$insuranceGuide', ''] }, ''] }
+                            ] }, then: 'convenio' }
+                        ],
+                        default: {
+                            $cond: {
+                                if: { $ifNull: ['$package', false] },
+                                then: 'pacote',
+                                else: 'particular'
+                            }
+                        }
+                    }
+                },
+                total: { $sum: '$effectiveValue' }
+            }}
+        ]),
+        Session.aggregate([
+            { $match: {
+                date: { $gte: start, $lte: end },
+                status: 'completed',
+                $or: [
+                    { isPaid: true },
+                    { paymentStatus: { $in: ['paid', 'package_paid'] } },
+                    { paymentOrigin: 'package_prepaid' },
+                    { paymentMethod: 'convenio' },
+                    { paymentOrigin: 'convenio' }
+                ]
+            }},
+            ...pkgLookupStages,
+            { $group: { _id: null, total: { $sum: '$effectiveValue' } } }
+        ]),
+        Session.aggregate([
+            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+            { $unwind: '$appt' },
+            { $match: {
+                'appt.billingType': { $nin: ['convenio', 'liminar'] },
+                'appt.operationalStatus': 'completed'
+            }},
+            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+            { $match: { $or: [
+                { 'appt.package': { $exists: false } },
+                { 'appt.package': null },
+                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+                { 'pkg.model': 'per_session' },
+                { pkg: { $size: 0 } }
+            ]}},
+            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+            { $match: { $or: [
+                { payment: { $size: 0 } },
+                { 'payment.status': { $ne: 'paid' } }
+            ]}},
+            { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+        ])
+    ]);
+
+    const total = totalAgg[0]?.total || 0;
+    const count = totalAgg[0]?.count || 0;
+
+    const particular = typeAgg.find(r => r._id === 'particular')?.total || 0;
+    const pacote = typeAgg.find(r => r._id === 'pacote')?.total || 0;
+    const convenio = typeAgg.find(r => r._id === 'convenio')?.total || 0;
+    const liminar = typeAgg.find(r => r._id === 'liminar')?.total || 0;
+
+    const recebido = recebidoAgg[0]?.total || 0;
+    const pendente = total - recebido;
+    const particularPendente = particularPendenteAgg[0]?.total || 0;
+    const pacotePendente = 0;
+
+    const result = {
+        total,
+        particular,
+        pacote,
+        convenio,
+        liminar,
+        recebido,
+        pendente,
+        particularPendente,
+        pacotePendente,
+        count,
+        sessions: []
+    };
+
+    _setUfsCached(cacheKey, result);
+    console.log(`[calculateProductionForDashboard] ${Date.now() - startedAt}ms (sessions=${count})`);
+    return result;
+}
+
 export async function calculateProductionByDay(start, end) {
     const agg = await Session.aggregate([
         { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
@@ -500,6 +792,11 @@ export async function calculateProductionByDay(start, end) {
  * A diferença (caixaFinanceiro - recebimentoProducao) = "recebimentos retroativos"
  */
 export async function calculateCashByCompetencia(start, end) {
+    const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateCashByCompetencia', start, end);
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
+
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
@@ -545,13 +842,57 @@ export async function calculateCashByCompetencia(start, end) {
     const convenio   = typeAgg.find(r => r._id === 'convenio')?.total || 0;
     const liminar    = typeAgg.find(r => r._id === 'liminar')?.total || 0;
 
-    return { total, count, particular, pacote, convenio, liminar };
+    const result = { total, count, particular, pacote, convenio, liminar };
+    _setUfsCached(cacheKey, result);
+    console.log(`[calculateCashByCompetencia] ${Date.now() - startedAt}ms (payments=${count})`);
+    return result;
+}
+
+/**
+ * Versão leve de calculateCash: retorna apenas o total.
+ * Usar quando o caller só precisa do somatório (ex: buildStats do dashboard).
+ * Elimina 3 aggregations extras + Payment.find().populate() desnecessários.
+ */
+export async function calculateCashTotal(start, end) {
+    const match = {
+        status: 'paid',
+        amount: { $gt: 0 },
+        kind: { $ne: 'package_consumed' },
+        $and: [
+            {
+                $or: [
+                    { isFromPackage: { $ne: true } },
+                    { kind: 'session_payment' }
+                ]
+            },
+            {
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
+                ]
+            }
+        ]
+    };
+
+    const agg = await Payment.aggregate([
+        { $match: match },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+
+    return { total: agg[0]?.total || 0 };
 }
 
 export default {
     calculateCash,
+    calculateCashForDashboard,
     calculateCashByDay,
     calculateProduction,
+    calculateProductionForDashboard,
     calculateProductionByDay,
-    calculateCashByCompetencia
+    calculateCashByCompetencia,
+    calculateCashTotal,
+    invalidateUFSCache
 };

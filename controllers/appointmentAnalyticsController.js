@@ -2,13 +2,36 @@ import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import mongoose from 'mongoose';
 
-/**
- * 📊 Analytics de Agendamentos - Novos vs Retornos
- * Endpoint específico para secretaria/recepção identificar
- * agendamentos do dia que precisam de atenção especial.
- */
-
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+// Cache TTL: 30s para período que inclui hoje, 24h para períodos passados
+// Mês fechado é imutável — não há razão para recalcular em minutos
+const BY_TYPE_CURRENT_TTL = 30_000;
+const BY_TYPE_PAST_TTL    = 24 * 60 * 60 * 1000;
+const _byTypeCache = new Map();
+
+function _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty) {
+    return `${mode}_${startDate || ''}_${endDate || ''}_${date || ''}_${doctorId || ''}_${specialty || ''}`;
+}
+
+function _byTypeCacheGet(key, ttl) {
+    const entry = _byTypeCache.get(key);
+    if (entry && Date.now() - entry.ts < ttl) {
+        console.log(`[by-type] CACHE HIT ${key} (age=${Date.now() - entry.ts}ms ttl=${ttl}ms)`);
+        return entry.data;
+    }
+    return null;
+}
+
+function _byTypeCacheSet(key, data) {
+    _byTypeCache.set(key, { data, ts: Date.now() });
+    console.log(`[by-type] CACHE SET ${key}`);
+    // Evita crescimento ilimitado — mantém no máximo 50 entradas
+    if (_byTypeCache.size > 50) {
+        const oldest = _byTypeCache.keys().next().value;
+        _byTypeCache.delete(oldest);
+    }
+}
 
 /**
  * Calcula flags de lifecycle para uma lista de agendamentos.
@@ -123,6 +146,14 @@ export const getAppointmentsByType = async (req, res) => {
     try {
         const { date, startDate, endDate, doctorId, specialty, mode = 'createdAt' } = req.query;
 
+        // Cache: 30s se período inclui hoje, 5min para períodos passados
+        const periodEnd = endDate || date || new Date().toISOString().split('T')[0];
+        const isPast = new Date(periodEnd) < new Date(new Date().toISOString().split('T')[0]);
+        const cacheTTL = isPast ? BY_TYPE_PAST_TTL : BY_TYPE_CURRENT_TTL;
+        const cacheKey = _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty);
+        const cached = _byTypeCacheGet(cacheKey, cacheTTL);
+        if (cached) return res.json(cached);
+
         // mode = 'createdAt' → visão comercial (quando o lead entrou)
         // mode = 'date'      → visão operacional (quando será atendido)
         const dateField = mode === 'date' ? 'date' : 'createdAt';
@@ -164,16 +195,15 @@ export const getAppointmentsByType = async (req, res) => {
         extraFilters.operationalStatus = { $nin: ['canceled', 'cancelled', 'converted'] };
 
         const filter = { ...dateFilter, ...extraFilters };
+        const _t0 = Date.now();
 
         // ─── 3. Buscar agendamentos do período (com população completa) ───
         const appointments = await Appointment.find(filter)
             .populate('patient', 'fullName phone email dateOfBirth cpf')
             .populate('doctor', 'fullName specialty phoneNumber')
-            .populate('session', 'status notes')
-            .populate('package', 'totalSessions sessionsDone totalPaid totalValue financialStatus sessionValue type')
-            .populate('payment', 'status amount paymentMethod billingType kind insuranceValue')
             .sort({ date: 1, time: 1 })
             .lean();
+        console.log(`[by-type] appointments.find+populate = ${Date.now() - _t0}ms (${appointments.length} docs)`);
 
         // 🎯 FIX: No modo 'date' a intenção é uma visão OPERACIONAL + AQUISIÇÃO:
         // buscamos os agendamentos do período (date) E os agendamentos criados
@@ -210,9 +240,6 @@ export const getAppointmentsByType = async (req, res) => {
             criadosHoje = await Appointment.find(criadosFilter)
                 .populate('patient', 'fullName phone email dateOfBirth cpf')
                 .populate('doctor', 'fullName specialty phoneNumber')
-                .populate('session', 'status notes')
-                .populate('package', 'totalSessions sessionsDone totalPaid totalValue financialStatus sessionValue type')
-                .populate('payment', 'status amount paymentMethod billingType kind insuranceValue')
                 .sort({ date: 1, time: 1 })
                 .lean();
         }
@@ -227,9 +254,6 @@ export const getAppointmentsByType = async (req, res) => {
             ...appointments,
             ...uniqueCriadosHoje
         ];
-        console.log(`[analytics/by-type] 📅 Período: ${date || startDate} ~ ${endDate || date} | mode=${mode}`);
-        console.log(`[analytics/by-type] 📋 Appointments do período: ${appointments.length} | Criados hoje (único): ${uniqueCriadosHoje.length} | Total pool: ${allAppointments.length}`);
-
         // ─── 4. Buscar histórico completo dos pacientes envolvidos ───
         // Suporta patient populado (objeto) OU não populado (string/ObjectId)
         const patientIds = [
@@ -247,12 +271,26 @@ export const getAppointmentsByType = async (req, res) => {
 
         let patientHistoryMap = new Map();
         if (patientIds.length > 0) {
+            // Olhar só 46 dias antes do appointment mais antigo do período:
+            // - isFirstVisit: paciente novo no período não tem anterior
+            // - retorno 45+: gap mínimo é 45 dias
+            // - isFirstVisitInSpecialty: só importa agendamentos nos últimos 45 dias
+            const minAptDate = allAppointments.reduce((min, a) => {
+                const d = a.date ? new Date(a.date) : null;
+                return d && d < min ? d : min;
+            }, new Date());
+            const historyLookback = new Date(minAptDate);
+            historyLookback.setDate(historyLookback.getDate() - 46);
+
+            const _tHistory = Date.now();
             const histories = await Appointment.find({
                 patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) },
-                operationalStatus: { $nin: ['canceled', 'cancelled'] }
+                operationalStatus: { $nin: ['canceled', 'cancelled'] },
+                createdAt: { $gte: historyLookback }
             })
                 .select('patient date specialty createdAt operationalStatus')
                 .lean();
+            console.log(`[by-type] patientHistory = ${Date.now() - _tHistory}ms (${histories.length} docs, ${patientIds.length} patients)`);
 
             histories.forEach(h => {
                 const pid = h.patient?.toString?.();
@@ -260,22 +298,12 @@ export const getAppointmentsByType = async (req, res) => {
                 if (!patientHistoryMap.has(pid)) patientHistoryMap.set(pid, []);
                 patientHistoryMap.get(pid).push(h);
             });
-            console.log(`[analytics/by-type] 📚 Histórico: ${patientIds.length} pacientes, ${histories.length} agendamentos históricos`);
-            patientIds.forEach(pid => {
-                const h = patientHistoryMap.get(pid) || [];
-                const specialties = [...new Set(h.map(x => x.specialty).filter(Boolean))];
-                console.log(`[analytics/by-type]    → paciente ${pid}: ${h.length} históricos, especialidades: [${specialties.join(', ')}]`);
-            });
         }
 
         // ─── 5. Calcular flags de lifecycle ───
+        const _tFlags = Date.now();
         const enrichedAppointments = computeLifecycleFlags(allAppointments, patientHistoryMap);
-        console.log(`[analytics/by-type] 🔍 Flags calculadas:`);
-        enrichedAppointments.forEach(a => {
-            const pid = a.patient?._id?.toString?.() || a.patient?.toString?.() || 'sem-paciente';
-            const nome = a.patient?.fullName || 'Sem nome';
-            console.log(`[analytics/by-type]    → ${nome} (${pid}) | specialty=${a.specialty} | isFirstVisit=${a.isFirstVisit} | isFirstVisitInSpecialty=${a.isFirstVisitInSpecialty} | isReturningAfter45Days=${a.isReturningAfter45Days} | status=${a.operationalStatus}`);
-        });
+        console.log(`[by-type] computeLifecycleFlags = ${Date.now() - _tFlags}ms (${allAppointments.length} appointments)`);
 
         // ─── 6. Separar categorias ───
         // Leads (pré-agendados novos) contam pela data em que foram CRIADOS no sistema.
@@ -304,9 +332,9 @@ export const getAppointmentsByType = async (req, res) => {
         );
 
         const total = enrichedAppointments.length;
-        console.log(`[analytics/by-type] ✅ Resultado: total=${total} | leads=${leads.length} | novos=${novos.length} | novosEspecialidade=${novosEspecialidade.length} | retornos45=${retornos45.length} | recorrentes=${recorrentes.length} | continuousTreatment=${continuousTreatment.length}`);
+        console.log(`[analytics/by-type] ✅ Resultado: total=${total} | leads=${leads.length} | novos=${novos.length} | novosEspecialidade=${novosEspecialidade.length} | retornos45=${retornos45.length} | recorrentes=${recorrentes.length} | continuousTreatment=${continuousTreatment.length} | TOTAL=${Date.now() - _t0}ms`);
 
-        res.json({
+        const responseBody = {
             success: true,
             mode,
             dateField,
@@ -351,7 +379,10 @@ export const getAppointmentsByType = async (req, res) => {
                 continuousTreatment,
                 all: enrichedAppointments
             }
-        });
+        };
+
+        _byTypeCacheSet(cacheKey, responseBody);
+        res.json(responseBody);
 
     } catch (error) {
         console.error('❌ Erro em getAppointmentsByType:', error);

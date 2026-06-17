@@ -45,7 +45,9 @@ async function runConsistencyCheck() {
   try {
     // 1. Busca IDs de views e aggregates em batches (evita carregar tudo em memória)
     const viewPatientIds = await fetchPatientIdsInBatches(PatientsView, 'patientId');
+    await new Promise(resolve => setImmediate(resolve)); // yield ao event loop
     const patientIds = await fetchPatientIdsInBatches(Patient, '_id');
+    await new Promise(resolve => setImmediate(resolve));
     
     // 2. Detecta órfãos e aggregates sem view em batches também
     const orphanViews = [];
@@ -61,6 +63,7 @@ async function runConsistencyCheck() {
       }
       if (views.length < BATCH_SIZE) break;
       skip += BATCH_SIZE;
+      await new Promise(resolve => setImmediate(resolve)); // yield ao event loop
     }
     
     const orphanAggregates = [];
@@ -75,6 +78,7 @@ async function runConsistencyCheck() {
       }
       if (patients.length < BATCH_SIZE) break;
       skip += BATCH_SIZE;
+      await new Promise(resolve => setImmediate(resolve)); // yield ao event loop
     }
     
     log.info(`[${correlationId}] 📊 Resumo`, {

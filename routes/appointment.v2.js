@@ -1530,21 +1530,21 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   
   // 🔥 OTIMIZAÇÃO: Query base com populate essencial
   let queryBuilder = Appointment.find(filter)
-    .select(light === 'true' 
-      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment liminarContract responsible'
-      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment liminarContract responsible'
+    .select(light === 'true'
+      ? 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes patientInfo professionalName metadata payment responsible'
+      : 'date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package serviceType specialty paymentMethod insuranceValue authorizationCode notes createdAt patientInfo professionalName metadata payment responsible'
     )
     .populate('payment', 'status amount paymentMethod')
     .sort(patientId ? { date: -1, time: -1 } : { date: 1, time: 1 })
     .skip(skip)
     .limit(limitNum)
     .lean();
-  
+
   // 🎯 SEMPRE popula nomes (essencial para o frontend identificar agendamentos)
+  // liminarContract omitido aqui — carregado on-demand no GET /:id (modal de detalhe)
   queryBuilder = queryBuilder
     .populate('patient', 'fullName phone dateOfBirth email')
-    .populate('doctor', 'fullName specialty')
-    .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status');
+    .populate('doctor', 'fullName specialty');
   
   // 💰 POPULA PACKAGE para valor dinâmico e status financeiro real
   queryBuilder = queryBuilder

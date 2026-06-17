@@ -19,29 +19,31 @@ import Planning from '../models/Planning.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import mongoose from 'mongoose';
 import { calculateDoctorCommission } from '../services/commissionService.js';
+import { calculateCommissionBatch } from '../services/commissionRule.service.js';
 import financialMetricsService from '../services/financialMetrics.service.js';
 import financialSnapshotService from '../services/financialSnapshot.service.js';
 import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
-import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
+import unifiedFinancialService, { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
 import { logMetric } from '../utils/logMetric.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
 
-// Cache server-side: mensal apenas. Real-time diário NUNCA é cacheado.
+// Cache server-side com TTL diferenciado por tipo de mês
 // Invalidação explícita via invalidateDashboardCache() em mutações financeiras
 const _dashCache = new Map();
 const _dashPending = new Map();
-const DASH_CACHE_TTL = 5_000;
+const DASH_CURRENT_MONTH_TTL = 30_000;  // 30s — mês atual (near real-time)
+const DASH_PAST_MONTH_TTL    = 300_000; // 5min — meses passados (imutáveis)
 
-function getDashCached(key) {
+function getDashCached(key, ttl = DASH_PAST_MONTH_TTL) {
     const entry = _dashCache.get(key);
-    if (entry && Date.now() - entry.ts < DASH_CACHE_TTL) {
-        console.log(`[DashboardV3] SERVINDO CACHE: ${key} (idade=${Date.now() - entry.ts}ms)`);
+    if (entry && Date.now() - entry.ts < ttl) {
+        console.log(`[DashboardV3] CACHE HIT: ${key} age=${Date.now() - entry.ts}ms ttl=${ttl}ms`);
         return entry.data;
     }
     return null;
@@ -61,6 +63,7 @@ export function invalidateDashboardCache() {
     const size = _dashCache.size;
     _dashCache.clear();
     _dashPending.clear();
+    invalidateUFSCache();
     console.log(`[DashboardV3] Cache invalidado (${size} entradas limpas)`);
 }
 
@@ -68,6 +71,42 @@ const paymentBaseFilter = {
     status: { $in: ['paid', 'completed', 'confirmed'] },
     amount: { $gte: 1 }
 };
+
+// Cache server-side para calculateProfissionais — evita recalcular produção/comissões a cada request
+const _profCache = new Map();
+const PROF_CURRENT_MONTH_TTL = 30_000;   // 30s — mês atual
+const PROF_PAST_MONTH_TTL    = 300_000;  // 5min — meses passados
+
+function getProfCached(key, ttl) {
+    const entry = _profCache.get(key);
+    if (entry && Date.now() - entry.ts < ttl) {
+        console.log(`[profissionais] CACHE HIT ${key} age=${Date.now() - entry.ts}ms ttl=${ttl}ms`);
+        return entry.data;
+    }
+    return null;
+}
+function setProfCached(key, data) {
+    if (_profCache.size > 50) _profCache.clear();
+    _profCache.set(key, { data, ts: Date.now() });
+    console.log(`[profissionais] CACHE SET ${key}`);
+}
+
+const _pendentesCache = new Map();
+const PENDENTES_CURRENT_TTL = 60_000;
+const PENDENTES_PAST_TTL    = 300_000;
+function getPendentesCached(key, ttl) {
+    const entry = _pendentesCache.get(key);
+    if (entry && Date.now() - entry.ts < ttl) {
+        console.log(`[pendentes] CACHE HIT ${key} age=${Date.now() - entry.ts}ms`);
+        return entry.data;
+    }
+    return null;
+}
+function setPendentesCached(key, data) {
+    if (_pendentesCache.size > 50) _pendentesCache.clear();
+    _pendentesCache.set(key, { data, ts: Date.now() });
+    console.log(`[pendentes] CACHE SET ${key}`);
+}
 
 const META_CONFIG = {
     diasUteis: 26
@@ -142,11 +181,10 @@ router.get('/', auth, async (req, res) => {
         const isCurrentMonth = targetMonth === (now.month() + 1) && targetYear === now.year();
         const cacheKey = monthKey;
         
-        // 🚫 NUNCA cacheia mês atual — caixaHoje/producaoHoje precisam ser real-time
-        const useCache = !isCurrentMonth;
-        
-        if (useCache) {
-            const cachedRes = getDashCached(cacheKey);
+        const cacheTTL = isCurrentMonth ? DASH_CURRENT_MONTH_TTL : DASH_PAST_MONTH_TTL;
+
+        {
+            const cachedRes = getDashCached(cacheKey, cacheTTL);
             if (cachedRes) {
                 res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
                 res.setHeader('Pragma', 'no-cache');
@@ -180,12 +218,6 @@ router.get('/', auth, async (req, res) => {
                 res.setHeader('X-Cache-Status', 'MISS');
                 return _origJson(body);
             };
-        } else {
-            console.log(`[DashboardV3] RECALCULANDO REAL-TIME: ${cacheKey} (mês atual — sem cache)`);
-            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            res.setHeader('Expires', '0');
-            res.setHeader('X-Cache-Status', 'BYPASS');
         }
 
         // 🆕 PROJEÇÃO V2: tenta usar snapshot primeiro
@@ -341,22 +373,29 @@ router.get('/', auth, async (req, res) => {
             });
         }
 
+        const _t0 = Date.now();
+        const _timeit = (label, promise) => {
+            const s = Date.now();
+            return promise.then(r => { console.log(`[FinancialDashboard] ${label} = ${Date.now() - s}ms`); return r; });
+        };
+
         // Fase 1: queries independentes em paralelo
-        const [dataRt, aReceber, despesas, comparativos, pendentes] = await Promise.all([
-            calculateRealTime(targetYear, targetMonth),
-            calculateAReceber(targetYear, targetMonth),
-            calculateDespesas(targetYear, targetMonth),
-            calculateComparativos(targetYear, targetMonth),
-            calculatePendentes(targetYear, targetMonth),
+        const [dataRt, aReceber, despesas, pendentes] = await Promise.all([
+            _timeit('realTime',    calculateRealTime(targetYear, targetMonth)),
+            _timeit('aReceber',    calculateAReceber(targetYear, targetMonth)),
+            _timeit('despesas',    calculateDespesas(targetYear, targetMonth)),
+            _timeit('pendentes',   calculatePendentes(targetYear, targetMonth)),
         ]);
         data = dataRt;
 
-        // Fase 2: dependem de `data`
-        const [metas, profissionaisRt] = await Promise.all([
-            calculateMetas(data, targetYear, targetMonth),
-            calculateProfissionais(data, targetYear, targetMonth),
+        // Fase 2: dependem de `data`; comparativos recebe preComputed para evitar recompute do mês atual
+        const [metas, profissionaisRt, comparativos] = await Promise.all([
+            _timeit('metas',         calculateMetas(data, targetYear, targetMonth)),
+            _timeit('profissionais', calculateProfissionais(data, targetYear, targetMonth)),
+            _timeit('comparativos',  calculateComparativos(targetYear, targetMonth, { currentRealTime: dataRt, currentDespesas: despesas })),
         ]);
         profissionais = profissionaisRt;
+        console.log(`[FinancialDashboard] TOTAL real-time = ${Date.now() - _t0}ms`);
 
         const insights = generateInsights(data, metas, profissionais);
         const riscoOperacional = calculateRiscoOperacional(data, metas, profissionais);
@@ -831,20 +870,32 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
  * 👩‍⚕️ Calcula performance por profissional — ALINHADO COM ARQUITETURA V2 (Session)
  */
 async function calculateProfissionais(data, year, month) {
+    const _t0 = Date.now();
+    const now = moment.tz(TIMEZONE);
+    const isCurrentMonth = year === now.year() && month === now.month() + 1;
+    const profCacheKey = `profissionais_${year}_${month}`;
+    const profCached = getProfCached(profCacheKey, isCurrentMonth ? PROF_CURRENT_MONTH_TTL : PROF_PAST_MONTH_TTL);
+    if (profCached) return profCached;
+
     const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
     const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
 
+    const _tDoctors = Date.now();
     const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName specialty commissionRules').lean();
+    console.log(`[profissionais] doctors.find = ${Date.now() - _tDoctors}ms (${doctors.length} docs)`);
 
     // Produção = Sessions completadas no mês (V2)
+    const _tSessions = Date.now();
     const sessions = await Session.find({
         date: { $gte: start, $lte: end },
         status: 'completed'
-    }).select('doctor sessionValue paymentMethod package paymentOrigin')
+    }).select('doctor sessionValue paymentMethod package paymentOrigin sessionType date insuranceGuide')
       .populate('package', 'sessionValue totalValue totalSessions')
       .lean();
+    console.log(`[profissionais] sessions.find+populate = ${Date.now() - _tSessions}ms (${sessions.length} docs)`);
 
     // Caixa real = Payments do mês vinculados a sessões
+    const _tPayments = Date.now();
     const startStr = start.toISOString().split('T')[0];
     const endStr = end.toISOString().split('T')[0];
     const [particularPayments, convenioPayments] = await Promise.all([
@@ -861,6 +912,7 @@ async function calculateProfissionais(data, year, month) {
             session: { $exists: true, $ne: null }
         }).select('session amount insurance.receivedAmount').lean()
     ]);
+    console.log(`[profissionais] payments.find = ${Date.now() - _tPayments}ms (${particularPayments.length + convenioPayments.length} docs)`);
 
     const paymentMap = new Map();
     [...particularPayments, ...convenioPayments].forEach(p => {
@@ -871,6 +923,7 @@ async function calculateProfissionais(data, year, month) {
     });
 
     // Sessões de pacote convênio pagas (sem Payment vinculado)
+    const _tSessionCash = Date.now();
     const sessionCashResult = await Session.aggregate([
         {
             $match: {
@@ -921,6 +974,7 @@ async function calculateProfissionais(data, year, month) {
     sessionCashResult.forEach(s => {
         paymentMap.set(s._id.toString(), (paymentMap.get(s._id.toString()) || 0) + (s.amount || 0));
     });
+    console.log(`[profissionais] sessionCash.aggregate = ${Date.now() - _tSessionCash}ms (${sessionCashResult.length} docs)`);
 
     const profMap = new Map();
     doctors.forEach(d => {
@@ -971,27 +1025,39 @@ async function calculateProfissionais(data, year, month) {
     let lista = Array.from(profMap.values()).filter(p => p.quantidade > 0 || p.realizado > 0);
 
     // 💰 Calcular comissões dos profissionais que tiveram atendimento
-    const commissionResults = await Promise.all(
-        lista.map(async (p) => {
-            try {
-                const comm = await calculateDoctorCommission(p.id, start, end);
-                return {
-                    id: p.id,
-                    comissao: {
-                        total: parseFloat(comm.totalCommission.toFixed(2)),
-                        sessoes: comm.totalSessions,
-                        breakdown: comm.breakdown
-                    }
-                };
-            } catch (err) {
-                return {
-                    id: p.id,
-                    comissao: { total: 0, sessoes: 0, breakdown: null }
-                };
+    // Otimização: evita N+1 de calculateDoctorCommission — usa sessions/doctors já carregados
+    const _tCommissions = Date.now();
+    const sessionsByDoctor = new Map();
+    sessions.forEach(s => {
+        const docId = s.doctor?.toString?.();
+        if (!docId) return;
+        if (!sessionsByDoctor.has(docId)) sessionsByDoctor.set(docId, []);
+        sessionsByDoctor.get(docId).push(s);
+    });
+
+    const commissionResults = lista.map(p => {
+        try {
+            const doctor = doctors.find(d => d._id.toString() === p.id);
+            if (!doctor) {
+                return { id: p.id, comissao: { total: 0, sessoes: 0, breakdown: null } };
             }
-        })
-    );
+            const doctorSessions = sessionsByDoctor.get(p.id) || [];
+            const comm = calculateCommissionBatch(doctor, doctorSessions);
+            return {
+                id: p.id,
+                comissao: {
+                    total: parseFloat(comm.totalCommission.toFixed(2)),
+                    sessoes: doctorSessions.length,
+                    breakdown: comm.breakdown
+                }
+            };
+        } catch (err) {
+            console.error(`[profissionais] Erro ao calcular comissão do Dr. ${p.id}:`, err);
+            return { id: p.id, comissao: { total: 0, sessoes: 0, breakdown: null } };
+        }
+    });
     const commissionMap = new Map(commissionResults.map(c => [c.id, c.comissao]));
+    console.log(`[profissionais] commissions.calculateCommissionBatch = ${Date.now() - _tCommissions}ms (${lista.length} profissionais)`);
 
     const mediaProducao = lista.length > 0 ? lista.reduce((s, p) => s + p.producao, 0) / lista.length : 0;
 
@@ -1014,7 +1080,9 @@ async function calculateProfissionais(data, year, month) {
     const rankingPorProducao = [...lista].sort((a, b) => b.producao - a.producao);
     const rankingPorLucro = [...lista].sort((a, b) => b.lucro - a.lucro);
 
-    return {
+    console.log(`[profissionais] TOTAL = ${Date.now() - _t0}ms (${lista.length} profissionais)`);
+
+    const profResult = {
         lista,
         ranking: rankingPorRealizado.slice(0, 10),
         rankingPorProducao: rankingPorProducao.slice(0, 10),
@@ -1022,6 +1090,9 @@ async function calculateProfissionais(data, year, month) {
         mediaProducao: parseFloat(mediaProducao.toFixed(2)),
         totalProfissionais: lista.length
     };
+
+    setProfCached(profCacheKey, profResult);
+    return profResult;
 }
 
 /**
@@ -1266,6 +1337,7 @@ async function calculateNovaReceita(start, end) {
  * Breakdowns manuais são calculados sobre a MESMA base de dados do V2.
  */
 async function calculateRealTime(year, month) {
+    const _t0 = Date.now();
     const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
     const now = moment.tz(TIMEZONE);
     const isCurrentMonth = year === now.year() && month === now.month() + 1;
@@ -1279,28 +1351,74 @@ async function calculateRealTime(year, month) {
     // ───────────────────────────────────────────────
     // 🎯 Fonte única de verdade V2 (unificada)
     // ───────────────────────────────────────────────
+    const _tUnified = Date.now();
+
+    const _tCash = Date.now();
+    const cashPromise = unifiedFinancialService.calculateCashForDashboard(start, end).then(r => {
+        console.log(`[realTime] calculateCashForDashboard(month) = ${Date.now() - _tCash}ms`);
+        return r;
+    });
+
+    const _tProduction = Date.now();
+    const productionPromise = unifiedFinancialService.calculateProductionForDashboard(start, end).then(r => {
+        console.log(`[realTime] calculateProductionForDashboard(month) = ${Date.now() - _tProduction}ms`);
+        return r;
+    });
+
+    const _tTodayCash = Date.now();
+    const todayCashPromise = unifiedFinancialService.calculateCashForDashboard(todayStart, todayEnd).then(r => {
+        console.log(`[realTime] calculateCashForDashboard(today) = ${Date.now() - _tTodayCash}ms`);
+        return r;
+    });
+
+    const _tTodayProduction = Date.now();
+    const todayProductionPromise = unifiedFinancialService.calculateProductionForDashboard(todayStart, todayEnd).then(r => {
+        console.log(`[realTime] calculateProductionForDashboard(today) = ${Date.now() - _tTodayProduction}ms`);
+        return r;
+    });
+
+    const _tCompetencia = Date.now();
+    const competenciaPromise = unifiedFinancialService.calculateCashByCompetencia(start, end).then(r => {
+        console.log(`[realTime] calculateCashByCompetencia = ${Date.now() - _tCompetencia}ms`);
+        return r;
+    });
+
+    const _tPackageSales = Date.now();
+    const packageSalesPromise = Payment.aggregate([
+        { $match: {
+            status: 'paid',
+            kind: 'package_receipt',
+            $or: [
+                { financialDate: { $gte: start, $lte: end } },
+                { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                { financialDate: null, paymentDate: { $gte: start, $lte: end } }
+            ]
+        }},
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]).then(r => {
+        console.log(`[realTime] packageSales.aggregate = ${Date.now() - _tPackageSales}ms`);
+        return r;
+    });
+
+    const _tNovaReceita = Date.now();
+    const novaReceitaPromise = calculateNovaReceita(start, end).then(r => {
+        console.log(`[realTime] calculateNovaReceita = ${Date.now() - _tNovaReceita}ms`);
+        return r;
+    });
+
     const [cash, production, todayCash, todayProduction, competencia, packageSalesAgg, novaReceitaMes] = await Promise.all([
-        unifiedFinancialService.calculateCash(start, end),
-        unifiedFinancialService.calculateProduction(start, end),
-        unifiedFinancialService.calculateCash(todayStart, todayEnd),
-        unifiedFinancialService.calculateProduction(todayStart, todayEnd),
-        unifiedFinancialService.calculateCashByCompetencia(start, end),
-        Payment.aggregate([
-            { $match: {
-                status: 'paid',
-                kind: 'package_receipt',
-                $or: [
-                    { financialDate: { $gte: start, $lte: end } },
-                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-                    { financialDate: null, paymentDate: { $gte: start, $lte: end } }
-                ]
-            }},
-            { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-        ]),
-        calculateNovaReceita(start, end)
+        cashPromise,
+        productionPromise,
+        todayCashPromise,
+        todayProductionPromise,
+        competenciaPromise,
+        packageSalesPromise,
+        novaReceitaPromise
     ]);
+    console.log(`[realTime] unifiedFinancialService parallel = ${Date.now() - _tUnified}ms (cash+production+today+competencia+packages+novaReceita)`);
 
     // 🛡️ Particular pendente do dia — fonte: sessions completed sem payment paid (exclui pré-pago)
+    const _tParticularPendente = Date.now();
     const particularPendenteHojeAgg = await Session.aggregate([
         { $match: { date: { $gte: todayStart, $lte: todayEnd }, status: 'completed' } },
         { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
@@ -1325,7 +1443,9 @@ async function calculateRealTime(year, month) {
         { $group: { _id: null, total: { $sum: '$sessionValue' } } }
     ]);
     const particularPendenteHoje = particularPendenteHojeAgg[0]?.total || 0;
+    console.log(`[realTime] particularPendenteHoje.aggregate = ${Date.now() - _tParticularPendente}ms`);
 
+    const _tBuildBlocks = Date.now();
     const packageSalesTotal = packageSalesAgg[0]?.total || 0;
     const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
@@ -1373,10 +1493,13 @@ async function calculateRealTime(year, month) {
         pacote: production.pacote,
         liminar: production.liminar,
     });
+    console.log(`[realTime] buildBlocks = ${Date.now() - _tBuildBlocks}ms`);
 
     // 🆕 Cálculo de dias decorridos para contexto da meta
     const diasDecorridos = Math.max(1, now.date());
     const diasUteis = META_CONFIG.diasUteis;
+
+    console.log(`[realTime] TOTAL = ${Date.now() - _t0}ms`);
 
     return {
         // ─── LEGADO (mantido para compatibilidade com frontend antigo) ───
@@ -1567,7 +1690,7 @@ async function calculateDespesas(year, month) {
  *
  * Regra arquitetural: usa snapshot quando disponível; fallback para runtime.
  */
-async function calculateComparativos(year, month) {
+async function calculateComparativos(year, month, preComputed = {}) {
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
 
@@ -1576,56 +1699,57 @@ async function calculateComparativos(year, month) {
         return parseFloat((((atual - anterior) / anterior) * 100).toFixed(1));
     };
 
-    // Tenta snapshot para mês anterior
-    let prevCaixa = 0, prevProducao = 0, prevDespesas = 0;
-    const prevSnapReady = await financialSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
-    const prevExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
-    if (prevSnapReady) {
-        const prevSnap = await financialSnapshotService.getMonthlyAggregate(prevYear, prevMonth);
-        prevCaixa = prevSnap.caixa;
-        prevProducao = prevSnap.producao;
-    } else {
-        const prevRt = await calculateRealTime(prevYear, prevMonth);
-        prevCaixa = prevRt.caixa;
-        prevProducao = prevRt.producao;
-    }
-    if (prevExpReady) {
-        const prevExp = await financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth);
-        prevDespesas = prevExp.total;
-    } else {
-        const prevDp = await calculateDespesas(prevYear, prevMonth);
-        prevDespesas = prevDp.total;
-    }
+    // Mês anterior — checks em paralelo, depois fetches em paralelo
+    const [prevSnapReady, prevExpReady] = await Promise.all([
+        financialSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth),
+        financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth),
+    ]);
+    const [prevFinancial, prevExpData] = await Promise.all([
+        prevSnapReady
+            ? financialSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
+            : calculateRealTime(prevYear, prevMonth),
+        prevExpReady
+            ? financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
+            : calculateDespesas(prevYear, prevMonth),
+    ]);
+    const prevCaixa = prevFinancial.caixa;
+    const prevProducao = prevFinancial.producao;
+    const prevDespesas = prevExpData.total;
 
-    // Mês atual: sempre real-time — snapshot pode estar desatualizado pois o mês ainda está aberto
+    // Mês atual — usa preComputed do Phase 1 quando disponível (evita recompute)
     let currentCaixa = 0, currentProducao = 0, currentDespesas = 0;
     const nowMoment = moment.tz(TIMEZONE);
     const isCurrentMonth = year === nowMoment.year() && month === nowMoment.month() + 1;
 
-    if (!isCurrentMonth) {
-        const currentSnapReady = await financialSnapshotService.isMonthlySnapshotReady(year, month);
-        const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
-        if (currentSnapReady) {
-            const currSnap = await financialSnapshotService.getMonthlyAggregate(year, month);
-            currentCaixa = currSnap.caixa;
-            currentProducao = currSnap.producao;
-        } else {
-            const currRt = await calculateRealTime(year, month);
-            currentCaixa = currRt.caixa;
-            currentProducao = currRt.producao;
-        }
-        if (currentExpReady) {
-            const currExp = await financialExpenseSnapshotService.getMonthlyAggregate(year, month);
-            currentDespesas = currExp.total;
-        } else {
-            const currDp = await calculateDespesas(year, month);
-            currentDespesas = currDp.total;
-        }
+    if (isCurrentMonth && preComputed.currentRealTime) {
+        currentCaixa = preComputed.currentRealTime.caixa;
+        currentProducao = preComputed.currentRealTime.producao;
+        currentDespesas = preComputed.currentDespesas?.total || 0;
+    } else if (!isCurrentMonth) {
+        // Mês passado — checks em paralelo, depois fetches em paralelo
+        const [currentSnapReady, currentExpReady] = await Promise.all([
+            financialSnapshotService.isMonthlySnapshotReady(year, month),
+            financialExpenseSnapshotService.isMonthlySnapshotReady(year, month),
+        ]);
+        const [currFinancial, currExpData] = await Promise.all([
+            currentSnapReady
+                ? financialSnapshotService.getMonthlyAggregate(year, month)
+                : calculateRealTime(year, month),
+            currentExpReady
+                ? financialExpenseSnapshotService.getMonthlyAggregate(year, month)
+                : calculateDespesas(year, month),
+        ]);
+        currentCaixa = currFinancial.caixa;
+        currentProducao = currFinancial.producao;
+        currentDespesas = currExpData.total;
     } else {
-        const currRt = await calculateRealTime(year, month);
+        // Fallback: isCurrentMonth sem preComputed
+        const [currRt, currDp] = await Promise.all([
+            calculateRealTime(year, month),
+            calculateDespesas(year, month),
+        ]);
         currentCaixa = currRt.caixa;
         currentProducao = currRt.producao;
-        const currDp = await calculateDespesas(year, month);
         currentDespesas = currDp.total;
     }
 
@@ -1862,21 +1986,25 @@ async function calculatePendentes(year, month) {
     const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
     const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
 
-    // 🆕 VALIDAÇÃO: Busca TODOS os pendentes para auditoria
-    const allPendingRaw = await Payment.find({ status: 'pending' })
-        .select('_id amount paymentDate serviceDate createdAt appointment patient billingType paymentMethod')
-        .lean();
-    
-    const allPendingTotal = allPendingRaw.reduce((s, p) => s + (p.amount || 0), 0);
+    const now = moment().tz(TIMEZONE);
+    const isCurrentMonth = now.year() === year && now.month() + 1 === month;
+    const cacheKey = `pendentes_${year}_${month}`;
+    const cacheTTL = isCurrentMonth ? PENDENTES_CURRENT_TTL : PENDENTES_PAST_TTL;
+    const cached = getPendentesCached(cacheKey, cacheTTL);
+    if (cached) return cached;
 
-    // 🆕 Fonte de verdade: Payment (V1) — BUSCA AMPLA para não perder dados
-    // Problema: payments criados em meses anteriores para sessões deste mês
-    // Solução: busca todos os pending e filtra no JS pela data do appointment/payment
+    const _t0 = Date.now();
+
+    // Única query: busca todos os pending com populates necessários para processamento
+    // allPendingTotal e allParticularTotal são calculados do mesmo dataset
     const paymentsAll = await Payment.find({ status: 'pending' })
         .populate('patient', 'fullName')
         .populate('doctor', 'fullName specialty')
         .populate('appointment', 'date time')
         .lean();
+    console.log(`[pendentes] paymentsAll.find+populate = ${Date.now() - _t0}ms (${paymentsAll.length} docs)`);
+
+    const allPendingTotal = paymentsAll.reduce((s, p) => s + (p.amount || 0), 0);
 
     let convenioTotal = 0;
     let particularTotal = 0;
@@ -2023,11 +2151,13 @@ async function calculatePendentes(year, month) {
     }
 
     // Total de débitos de particular/pacote independente do mês (inclui dívidas antigas)
-    const allParticularTotal = allPendingRaw
+    const allParticularTotal = paymentsAll
         .filter(p => p.billingType !== 'convenio' && p.paymentMethod !== 'convenio')
         .reduce((s, p) => s + (p.amount || 0), 0);
 
-    return {
+    console.log(`[pendentes] TOTAL = ${Date.now() - _t0}ms`);
+
+    const result = {
         total: parseFloat(total.toFixed(2)),
         allPendingTotal: parseFloat(allPendingTotal.toFixed(2)),
         allParticularTotal: parseFloat(allParticularTotal.toFixed(2)),
@@ -2065,6 +2195,8 @@ async function calculatePendentes(year, month) {
             byBillingType
         }
     };
+    setPendentesCached(cacheKey, result);
+    return result;
 }
 
 // GET /v2/financial/dashboard/sanity-check

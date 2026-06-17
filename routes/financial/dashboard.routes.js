@@ -161,7 +161,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const period     = { startDate: inicioDate, endDate: fimDate };
 
     const [cashResult, prodResult, overview] = await Promise.all([
-      unifiedFinancialService.calculateCash(inicioDate, fimDate),
+      unifiedFinancialService.calculateCash(inicioDate, fimDate, { skipPayments: true }),
       unifiedFinancialService.calculateProduction(inicioDate, fimDate),
       financialMetricsService.getOverview(period)
     ]);
