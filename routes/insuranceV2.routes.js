@@ -23,7 +23,4 @@ router.patch('/insurance/session/:sessionId/bill', auth, controller.billSession)
 // PATCH /api/v2/insurance/session/:sessionId/receive
 router.patch('/insurance/session/:sessionId/receive', auth, controller.receiveSession);
 
-// GET /api/v2/insurance/guides/pending-billing
-router.get('/insurance/guides/pending-billing', auth, controller.listPendingGuides);
-
 export default router;
