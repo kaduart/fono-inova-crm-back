@@ -573,6 +573,11 @@ export async function calculateProduction(start, end) {
             'appt.billingType': { $nin: ['convenio', 'liminar'] },
             'appt.operationalStatus': 'completed'
         }},
+        // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
+        { $match: {
+            paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+            paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
+        }},
         { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
         { $match: { $or: [
             { 'appt.package': { $exists: false } },
@@ -706,6 +711,10 @@ export async function calculateProductionForDashboard(start, end) {
             { $match: {
                 'appt.billingType': { $nin: ['convenio', 'liminar'] },
                 'appt.operationalStatus': 'completed'
+            }},
+            { $match: {
+                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
             }},
             { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
             { $match: { $or: [
