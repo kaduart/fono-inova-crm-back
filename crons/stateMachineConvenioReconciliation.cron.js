@@ -1,36 +1,31 @@
 // crons/stateMachineConvenioReconciliation.cron.js
 // 🔄 Reconciliação diária de state machine para convênio
+// Padrão: DRY-RUN — apenas monitora e reporta drift, sem alterar dados.
+// Para execução real, use o script CLI: reconciliador-diario-state-machine-convenio.js --execute
 
 import cron from 'node-cron';
 import mongoose from 'mongoose';
 import {
   StateMachineConvenioReconciler,
   measureStateMachineDrift,
-  loadBaseline,
-  saveBaseline
+  loadBaseline
 } from '../services/stateMachineConvenioReconciliation.service.js';
 import { createContextLogger } from '../utils/logger.js';
 
 const log = createContextLogger('cron', 'StateMachineConvenioReconciliation');
 const TIMEZONE = 'America/Sao_Paulo';
 
-// Modo inicial: dry-run por padrão até validação em produção.
-// Mudar para true quando quiser auto-correção ativa.
-const AUTO_EXECUTE = process.env.CRON_CONVENIO_RECONCILIATION_EXECUTE === 'true';
-// Threshold do cron: tolera drift residual histórico/conhecido (ex: manualReview)
-// CI deve usar threshold=0 via flag --threshold=0
-const ALERT_THRESHOLD = parseInt(process.env.CRON_CONVENIO_RECONCILIATION_THRESHOLD || '5', 10);
-
 async function runReconciliation() {
   const startedAt = Date.now();
-  log.info('convenio_reconciliation_start', 'Iniciando reconciliação de state machine de convênio');
+  log.info('convenio_reconciliation_start', 'Iniciando reconciliação de state machine de convênio (dry-run)');
 
   try {
     const db = mongoose.connection.db;
     const baseline = await loadBaseline();
     const driftBefore = await measureStateMachineDrift(db);
 
-    const reconciler = new StateMachineConvenioReconciler(db, { execute: AUTO_EXECUTE });
+    // Sempre dry-run no cron — correções manuais via CLI
+    const reconciler = new StateMachineConvenioReconciler(db, { execute: false });
     const report = await reconciler.runSafeCorrections();
 
     const driftAfter = await measureStateMachineDrift(db);
@@ -43,22 +38,22 @@ async function runReconciliation() {
       : null;
 
     log.info('convenio_reconciliation_done', `Reconciliação concluída em ${Date.now() - startedAt}ms`, {
-      modo: AUTO_EXECUTE ? 'AUTO' : 'DRY-RUN',
+      modo: 'DRY-RUN',
       estatisticas: report.estatisticas,
       driftAntes: driftBefore.total,
       driftDepois: driftAfter.total,
       delta,
-      threshold: ALERT_THRESHOLD
+      acoesAutomaticas: report.estatisticas.sessionsReverted
+        + report.estatisticas.paymentPointersFixed
+        + report.estatisticas.sessionPointersFixed
+        + report.estatisticas.guidesRecalculated
+        + report.estatisticas.appointmentLinksCleaned
     });
 
-    if (AUTO_EXECUTE) {
-      await saveBaseline(driftAfter);
-    }
-
-    if (driftAfter.total > ALERT_THRESHOLD) {
-      log.error('convenio_reconciliation_drift_alert', `Drift residual acima do limite: ${driftAfter.total}`, {
+    if (delta !== null && delta > 0) {
+      log.error('convenio_reconciliation_drift_alert', `Drift aumentou em ${delta} — revisar fluxos de convênio`, {
         driftAfter,
-        threshold: ALERT_THRESHOLD
+        baseline: baseline.drift.total
       });
     }
 
