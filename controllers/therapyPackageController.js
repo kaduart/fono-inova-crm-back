@@ -1579,7 +1579,7 @@ export const packageOperations = {
                             sessionDoc.paymentStatus = 'pending';
                             sessionDoc.visualFlag = 'pending';
                         } else if (isConvenio) {
-                            // Buscar e remover recebível de convênio
+                            // 🏥 CONVÊNIO: cancelar recebível e restaurar guia (simetria do complete)
                             const recebivelConvenio = await Payment.findOne({
                                 session: sessionDoc._id,
                                 billingType: 'convenio',
@@ -1587,11 +1587,26 @@ export const packageOperations = {
                             }).session(mongoSession);
 
                             if (recebivelConvenio) {
-                                await Payment.deleteOne({ _id: recebivelConvenio._id })
-                                    .session(mongoSession);
-                                console.log(`🏥 Recebível de convênio removido: ${recebivelConvenio._id}`);
+                                recebivelConvenio.status = 'canceled';
+                                recebivelConvenio.canceledAt = new Date();
+                                recebivelConvenio.canceledReason = 'session_uncompleted';
+                                await recebivelConvenio.save({ session: mongoSession });
+                                console.log(`🏥 Recebível de convênio cancelado: ${recebivelConvenio._id}`);
                             }
-                            
+
+                            // 🔄 Restaurar guia de convênio consumida
+                            if (sessionDoc.guideConsumed && sessionDoc.insuranceGuide) {
+                                await InsuranceGuide.findByIdAndUpdate(
+                                    sessionDoc.insuranceGuide,
+                                    { $inc: { usedSessions: -1 } },
+                                    { session: mongoSession }
+                                );
+                                console.log(`🏥 Guia ${sessionDoc.insuranceGuide} restaurada (usedSessions -1)`);
+                            }
+
+                            // 🧹 Limpar vínculos de pagamento na sessão
+                            sessionDoc.paymentId = null;
+                            sessionDoc.guideConsumed = false;
                             sessionDoc.isPaid = false;
                             sessionDoc.paymentStatus = 'pending';
                             sessionDoc.visualFlag = 'pending';

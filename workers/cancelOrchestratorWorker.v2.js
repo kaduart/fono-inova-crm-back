@@ -191,7 +191,7 @@ async function processCancelJobV2({ job, eventId, correlationId, idempotencyKey,
             // 2. Cancela sessão (core)
             if (sessionId) {
                 try {
-                    await cancelSession(sessionId, { mongoSession, reason, confirmedAbsence });
+                    await cancelSession(sessionId, {}, { mongoSession, reason, confirmedAbsence });
                 } catch (sessionErr) {
                     console.warn('[CancelOrchestratorV2] ⚠️ Erro ao cancelar sessão:', sessionErr.message);
                 }

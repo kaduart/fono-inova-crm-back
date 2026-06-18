@@ -239,23 +239,25 @@ export async function cancelSession(sessionId, data = {}, context = {}) {
     userId, 
     correlationId = crypto.randomUUID(),
     reason = '',
-    cancelledBy = 'user'
+    cancelledBy = 'user',
+    mongoSession = null
   } = context;
   
   log.info({ correlationId, sessionId, reason }, 'Cancelando sessão');
   
-  const session = await Session.findByIdAndUpdate(
-    sessionId,
-    {
-      status: 'cancelled',
-      cancelledAt: new Date(),
-      cancelledBy,
-      cancelReason: reason,
-      updatedBy: userId,
-      updatedAt: new Date()
-    },
-    { new: true }
-  );
+  const update = {
+    status: 'canceled',
+    canceledAt: new Date(),
+    canceledBy: cancelledBy,
+    cancelReason: reason,
+    updatedBy: userId,
+    updatedAt: new Date()
+  };
+  
+  const options = { new: true };
+  if (mongoSession) options.session = mongoSession;
+  
+  const session = await Session.findByIdAndUpdate(sessionId, update, options);
   
   if (!session) {
     throw new Error('SESSAO_NAO_ENCONTRADA');

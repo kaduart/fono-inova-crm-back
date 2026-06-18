@@ -2,6 +2,8 @@
 // 🏥 Guard para regras financeiras de CONVÊNIO
 
 import Payment from '../../../models/Payment.js';
+import Session from '../../../models/Session.js';
+import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import { transitionPaymentStatus } from '../../../services/paymentStatusService.js';
 
 /**
@@ -9,6 +11,7 @@ import { transitionPaymentStatus } from '../../../services/paymentStatusService.
  *
  * Contextos suportados:
  * - CANCEL_APPOINTMENT: Cancela payment pending ao cancelar agendamento de convênio
+ *                        e reverte session.completed + guia consumida
  */
 export default {
   async handle({ context, payload, session }) {
@@ -46,11 +49,51 @@ export default {
 
     console.log(`[ConvenioGuard] Payment ${paymentId} cancelado`, { amount: payment.amount, reason });
 
+    // 🔄 SIMETRIA: reverter session completed e guia consumida
+    const revertedSession = await revertSessionAndGuide(payment, { session, reason });
+
     return {
       handled: true,
       paymentId: payment._id.toString(),
       amount: payment.amount,
-      status: 'canceled'
+      status: 'canceled',
+      sessionReverted: revertedSession
     };
   }
 };
+
+async function revertSessionAndGuide(payment, { session, reason }) {
+  if (!payment.session) return false;
+
+  const sessionDoc = await Session.findById(payment.session).session(session);
+  if (!sessionDoc) return false;
+
+  // Só reverte se estiver completed; outros estados são mantidos
+  if (sessionDoc.status !== 'completed') {
+    return false;
+  }
+
+  sessionDoc.status = 'canceled';
+  sessionDoc.canceledAt = new Date();
+  sessionDoc.cancelReason = reason || 'convenio_cancel';
+  sessionDoc.paymentId = null;
+  sessionDoc.guideConsumed = false;
+  sessionDoc.isPaid = false;
+  sessionDoc.paymentStatus = 'pending';
+  sessionDoc.visualFlag = 'pending';
+
+  await sessionDoc.save({ session });
+  console.log(`[ConvenioGuard] Session ${sessionDoc._id} revertida de completed → canceled`);
+
+  // Restaurar guia
+  if (sessionDoc.insuranceGuide) {
+    await InsuranceGuide.findByIdAndUpdate(
+      sessionDoc.insuranceGuide,
+      { $inc: { usedSessions: -1 } },
+      { session }
+    );
+    console.log(`[ConvenioGuard] Guia ${sessionDoc.insuranceGuide} restaurada (usedSessions -1)`);
+  }
+
+  return true;
+}

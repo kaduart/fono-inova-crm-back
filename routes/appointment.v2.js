@@ -21,6 +21,7 @@ import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Package from '../models/Package.js';
+import InsuranceGuide from '../models/InsuranceGuide.js';
 import PatientsView from '../models/PatientsView.js';
 import Doctor from '../models/Doctor.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
@@ -834,6 +835,9 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
           await payment.save({ session: mongoSession });
           console.log(`[cancel] 💰 Payment ${payment._id} cancelado`);
         }
+        // 🧹 Limpa vínculo do appointment com payment cancelado
+        appointment.payment = null;
+        needsAppointmentResave = true;
       }
     } else {
       console.log(`[cancel] ⏭️ Payment preservado (forceCancel sem reverseFinancial)`);
@@ -853,7 +857,31 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
           console.log(`[cancel] 🔧 Self-healing: appointment.session restaurado → ${sessionDoc._id}`);
         }
         if (sessionDoc.status === 'completed') {
-          console.log(`[cancel] 📋 Session ${sessionDoc._id} já completada — não cancelada para preservar histórico`);
+          if (forceCancel && reverseFinancial) {
+            // 🔄 SIMETRIA: reverte completed → canceled e restaura guia
+            sessionDoc.status = 'canceled';
+            sessionDoc.canceledAt = new Date();
+            sessionDoc.cancelReason = reason || 'appointment_force_cancel';
+            sessionDoc.paymentId = null;
+            sessionDoc.guideConsumed = false;
+            sessionDoc.isPaid = false;
+            sessionDoc.paymentStatus = 'pending';
+            sessionDoc.visualFlag = 'pending';
+            await sessionDoc.save({ session: mongoSession });
+
+            if (sessionDoc.insuranceGuide) {
+              await InsuranceGuide.findByIdAndUpdate(
+                sessionDoc.insuranceGuide,
+                { $inc: { usedSessions: -1 } },
+                { session: mongoSession }
+              );
+              console.log(`[cancel] 📋 Guia ${sessionDoc.insuranceGuide} restaurada (usedSessions -1)`);
+            }
+
+            console.log(`[cancel] 📋 Session ${sessionDoc._id} revertida de completed → canceled`);
+          } else {
+            console.log(`[cancel] 📋 Session ${sessionDoc._id} já completada — não cancelada para preservar histórico`);
+          }
         } else if (sessionDoc.status !== 'canceled') {
           await Session.findByIdAndUpdate(
             sessionDoc._id,
@@ -980,7 +1008,8 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
   const {
     notes, responsible, assignedTo, adminReason,
     sessionValue, paymentMethod, serviceType, sessionType,
-    specialty, date, time, observations
+    specialty, date, time, observations,
+    billingType, insuranceProvider, insuranceValue, insurance
   } = req.body;
 
   if (!adminReason) {
@@ -997,7 +1026,11 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
     sessionType,
     specialty,
     date,
-    time
+    time,
+    billingType,
+    insuranceProvider,
+    insuranceValue: insuranceValue != null ? Number(insuranceValue) : undefined,
+    insurance: insurance ?? undefined
   };
   const updates = Object.fromEntries(
     Object.entries(ALLOWED_FIELDS).filter(([, v]) => v !== undefined)

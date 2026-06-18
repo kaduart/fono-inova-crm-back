@@ -51,7 +51,7 @@ whatsapp-session/
 **/Cache/
 **/Code Cache/
 **/DawnGraphiteCache/
-**/DawnWebGPUCache/
+**/DawnGraphiteCache/
 **/Extension State/
 **/GCM Store/
 **/GPUCache/
@@ -98,14 +98,8 @@ coverage/
 .git/
 
 # NUNCA versionar: assets 3D pesados
-*.blend
-*.fbx
-*.obj
-*.gltf
-*.glb
 
-# NUNCA versionar: dumps de banco
-*.dump
-*.sql
-*.sqlite
-*.sqlite3
+# ─── AUDITORIA E LOGS ───
+# Outputs de auditoria, relatórios e logs de análise
+auditoria-output/
+logs-archive/

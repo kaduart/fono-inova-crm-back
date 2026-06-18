@@ -11,6 +11,7 @@
  *  - financialSnapshotAudit
  *  - patientConsistency
  *  - preAgendamentoExpiration
+ *  - stateMachineConvenioReconciliation
  */
 
 import dotenv from 'dotenv';
