@@ -74,14 +74,20 @@ export class StateMachineConvenioReconciler {
       if (!session) continue;
       if (session.status === 'completed' && !session.paymentId) {
         if (this.execute) {
+          const update = { $set: { paymentId: payment._id } };
+          if (payment.insurance?.guideId && !session.insuranceGuide) {
+            update.$set.insuranceGuide = payment.insurance.guideId;
+            update.$set.guideConsumed = true;
+          }
           await this.db.collection('sessions').updateOne(
             { _id: session._id },
-            { $set: { paymentId: payment._id } }
+            update
           );
         }
         this.addCorrection('fix_session_paymentId',
           'Preencheu session.paymentId com payment ativo',
-          { sessionId: fmtId(session._id), paymentId: fmtId(payment._id) }
+          { sessionId: fmtId(session._id), paymentId: fmtId(payment._id) },
+          { guideVinculado: !!payment.insurance?.guideId }
         );
         fixed++;
       }

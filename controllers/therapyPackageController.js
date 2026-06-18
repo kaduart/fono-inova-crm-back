@@ -1426,9 +1426,24 @@ export const packageOperations = {
                             console.log(`💳 Saldo de crédito restante: R$ ${updatedPackage.liminarCreditBalance - sessionRevenue}`);
 
                         } else if (isConvenio) {
-                            // 🏥 Criar recebível de convênio
-                            await criarRecebivelConvenio(sessionDoc, sessionDoc.package, mongoSession);
-                            
+                            // 🏥 Criar recebível de convênio e vincular à sessão
+                            const recebivelConvenio = await criarRecebivelConvenio(sessionDoc, sessionDoc.package, mongoSession);
+
+                            if (recebivelConvenio) {
+                                sessionDoc.paymentId = recebivelConvenio._id;
+
+                                const guideId = sessionDoc.package?.insuranceGuide;
+                                if (guideId) {
+                                    sessionDoc.insuranceGuide = guideId;
+                                    sessionDoc.guideConsumed = true;
+                                    await InsuranceGuide.findByIdAndUpdate(
+                                        guideId,
+                                        { $inc: { usedSessions: 1 } },
+                                        { session: mongoSession }
+                                    );
+                                }
+                            }
+
                             // Marcar sessão como aguardando recebimento do convênio
                             sessionDoc.isPaid = false;
                             sessionDoc.paymentStatus = 'pending_receipt';
