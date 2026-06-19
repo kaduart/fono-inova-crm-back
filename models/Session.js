@@ -151,7 +151,30 @@ const sessionSchema = new mongoose.Schema({
         default: null,
         description: 'Referência ao Payment associado (futuro: unificação financeira)'
     },
-    
+
+    // 🏥 Insurance Billing V2: idempotência e rastreabilidade
+    insuranceBillingProcessed: {
+        type: Boolean,
+        default: false,
+        description: 'Flag de idempotência: true se a sessão já gerou billing/payment'
+    },
+    insuranceBillingProcessedAt: {
+        type: Date,
+        default: null,
+        description: 'Momento do processamento do insurance billing'
+    },
+    insuranceAppointmentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Appointment',
+        default: null,
+        description: 'Appointment V2 gerado a partir da sessão'
+    },
+    _billingEventId: {
+        type: String,
+        default: null,
+        description: 'Correlation ID do último evento de billing processado'
+    },
+
     // ⭐ CAMPOS PARA ARQUITETURA FINANCEIRA ROBUSTA
     
     sessionConsumed: {

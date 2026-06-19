@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { FinancialContext } from '../utils/financialContext.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { resolvePaymentKind } from '../utils/resolvePaymentKind.js';
 import crypto from 'crypto';
 
 const paymentSchema = new mongoose.Schema({
@@ -25,14 +26,23 @@ const paymentSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'partial', 'paid', 'canceled', 'refunded', 'converted_to_package', 'recognized', 'consumed'],
+        enum: ['pending', 'pending_billing', 'billed', 'partial', 'paid', 'canceled', 'refunded', 'converted_to_package', 'recognized', 'consumed'],
         default: 'pending'
     },
     serviceType: { type: String, default: null },
     sessionType: { type: String, default: null },
     kind: {
         type: String,
-        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', null],
+        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', 'package_payment', 'manual_adjustment', 'unknown_or_orphan', null],
+        default: null
+    },
+    kindConfidence: {
+        type: String,
+        enum: ['high', 'medium', 'low', null],
+        default: null
+    },
+    kindSource: {
+        type: String,
         default: null
     },
     settledPaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: [] }],
@@ -66,12 +76,16 @@ const paymentSchema = new mongoose.Schema({
     insurance: {
         provider: { type: String, default: null },
         authorizationCode: { type: String, default: null },
+        insuranceProvider: { type: mongoose.Schema.Types.ObjectId, ref: 'Convenio', default: null },
+        guideNumber: { type: String, default: null },
+        month: { type: String, default: null },
         status: {
             type: String,
             enum: ['pending', 'pending_billing', 'billed', 'received', 'rejected', null],
             default: 'pending'
         },
-        grossAmount: { type: Number, default: 0 }
+        grossAmount: { type: Number, default: 0 },
+        netAmount: { type: Number, default: 0 }
     },
     insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
     insurancePlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',  default: null },
@@ -128,7 +142,35 @@ paymentSchema.pre('validate', function(next) {
     if ((this.isFromPackage || this.kind === 'package_consumed') && this.paidAt) {
         this.paidAt = null;
     }
-    
+
+    // 🔒 ENFORCEMENT: Payment.kind nunca pode ficar null
+    if (!this.kind) {
+        const inferred = resolvePaymentKind(this);
+
+        if (inferred.kind === 'unknown_or_orphan' && inferred.confidence === 'low') {
+            const error = new Error(
+                `[PAYMENT_KIND_ENFORCEMENT] Não foi possível inferir kind para o payment. Payment precisa de session, appointment, package ou descrição explícita.`
+            );
+            error.code = 'PAYMENT_KIND_UNKNOWN';
+            return next(error);
+        }
+
+        this.kind = inferred.kind;
+        this.kindConfidence = inferred.confidence;
+        this.kindSource = 'inferred_on_validate';
+
+        console.log('[PaymentKindEnforcement] kind inferido:', {
+            paymentId: this._id,
+            kind: this.kind,
+            confidence: this.kindConfidence,
+            reason: inferred.reason,
+            patient: this.patient,
+            appointment: this.appointment,
+            session: this.session,
+            package: this.package
+        });
+    }
+
     next();
 });
 
@@ -267,6 +309,7 @@ paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financ
 paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
 // Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
 paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
+paymentSchema.index({ _billingEventId: 1 }, { sparse: true, name: 'billing_event_lock' });
 
 // ============ MÉTODOS ============
 paymentSchema.methods.toDTO = function() {

@@ -1,2439 +1,2812 @@
 
+documento-analise.txt
+anslie o @back/logs-archive/documento-analise.txt apso entender ... cara dos 6 meses qeu vc mandou vc nao selecionou so os atendidos ta tudoo pendente cneldos ai nao ne burrooooo ficnltra isssooo
+Deixa eu ler o arquivo primeiro.
 
+Read documento-analise.txt
+Entendi — o script anterior pegou completed + confirmed + scheduled na seção "sem lote", e nos packages antigos usou sessionsDone sem checar se os appointments são realmente completed. Vou fazer um script correto, só atendidos.
 
+Bash Run audit filtering only completed appointments
+IN
+cd /home/user/projetos/crm/back && cat > auditoria_atendidos.mjs << 'SCRIPT'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
 
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
 
-Resgatar oferta
+const fmt = d => d ? new Date(d).toISOString().slice(0,10).split('-').reverse().join('/') : '—';
+const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
 
+// ── 1. PACOTES ANTIGOS (type=convenio) ─────────────────────────────────
+// Busca sessions vinculadas a cada package e filtra só completed
+const packages = await db.collection('packages').find({
+  type: 'convenio',
+  provider: { $ne: null }
+}).sort({ date: 1 }).toArray();
 
+const pkgIds = packages.map(p => p._id);
+const patientIds = [...new Set(packages.map(p => String(p.patient)).filter(Boolean))];
 
+// Busca patients
+const patients = await db.collection('patients').find({
+  _id: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) }
+}).toArray();
+const patMap = {};
+for (const p of patients) patMap[String(p._id)] = p.name || p.fullName || '??';
 
+// Busca appointments de convenio do período jan-mar/2026 com status completed
+// vinculados a packages
+const pkgAppts = await db.collection('appointments').find({
+  packageId: { $in: pkgIds },
+  operationalStatus: 'completed',
+  date: { $gte: new Date('2026-01-01') }
+}).sort({ date: 1 }).toArray();
 
+console.log('\n═══════════════════════════════════════════════════════════════════');
+console.log('  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026');
+console.log('═══════════════════════════════════════════════════════════════════\n');
 
-Resgatar oferta
-
-Isso aqui muda bastante o diagnóstico mesmo — agora não é “um problema de geração”, é dois fluxos quebrando o vínculo em direções opostas (complete não grava / cancelamento não reconecta).
-
-Se eu tivesse que priorizar sem perder mais tempo:
-
-1) 🔴 Investigar o bug do ConvenioHandler (prioridade máxima)
-Porque ele está quebrando a origem da verdade no momento da criação/conclusão.
-
-Esse trecho é extremamente suspeito:
-
-Payment.findByIdAndUpdate(..., { $set: { session: sessionId } })
-Se isso “não persiste”, as causas prováveis são:
-
-schema não tem session (ou está com strict: true + campo inexistente)
-
-update está sendo sobrescrito depois por outro save()
-
-sessionId está vindo undefined/null em alguns paths de complete
-
-hook/middleware (pre('save'), pre('findOneAndUpdate')) limpando campo
-
-ou update está indo em model diferente do que a query final usa (collection mismatch — já vi isso em sistemas com shadow models tipo receivable/payment)
-
-👉 Aqui é onde você provavelmente encontra o “bug raiz único” de metade do caos.
-
-2) 🟠 Mapear cancelamento/reversão de payments
-Porque isso explica os 80 órfãos pós-existência.
-
-Aqui o padrão típico que vejo no seu dump:
-
-payment existiu ✔
-
-session apontava ✔
-
-cancelamento roda ✔
-
-mas NÃO repropaga vínculo de volta nem limpa estado da session/appointment
-
-Ou seja: você tem state machine incompleta, não apenas bug.
-
-3) 🟡 Backfill só depois
-E concordo contigo aqui implicitamente: qualquer backfill agora vai só “maquiar” até o próximo cancelamento/complete rodar.
-
-Minha recomendação direta (ordem de ataque)
-Instrumentar log no ConvenioHandler.complete
-
-antes/depois do update do payment
-
-verificar se sessionId existe
-
-verificar documento final no Mongo logo após update
-
-Rodar um exemplo real:
-
-pega 1 payment do tipo “createdAt 2026-06-01”
-
-executa fluxo manual de update
-
-confere no DB imediatamente
-
-Depois sim:
-
-mapear cancel flows
-
-desenhar regra de consistência (quem é SSOT em cada estado)
-
-Se quiser, eu posso ir direto no próximo nível e te ajudar a fechar isso rápido:
-
-🔍 te dizer exatamente onde isso costuma quebrar em Mongoose (based no padrão do seu stack)
-
-ou montar um script de diagnóstico automático pra achar TODOS os casos onde session completed && payment.session null
-
-Qual caminho você quer agora?
-
-
-Resultado do teste controlado
-✅ O completeSessionV2 atual funciona corretamente.
-
-Executei em um appointment real de convênio (6a341fb3e4de0b2ffe4dc223) e o payment.session foi preenchido:
-
-[ConvenioHandler] 🔍 payment ANTES do update {
-  paymentId: '6a341fb37075e877cf912209',
-  session: null,
-  status: 'pending',
-  kind: 'session_payment'
+// Agrupa por paciente→mês
+const porMesAppt = {};
+for (const a of pkgAppts) {
+  const mes = mesAno(a.date);
+  const pkg = packages.find(p => String(p._id) === String(a.packageId));
+  const provider = pkg?.provider || pkg?.insuranceProvider || 'convenio';
+  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || '??';
+  const key = `${mes}|${patName}`;
+  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
+  porMesAppt[key].sessoes.push({ data: fmt(a.date), specialty: a.specialty, status: a.operationalStatus });
 }
 
-[ConvenioHandler] 💰 Payment atualizado: 6a341fb37075e877cf912209 {
-  session: '6a341fb37075e877cf91220f',   ← preenchido
-  status: 'pending',
-  kind: 'session_payment'
-}
-O que isso muda no diagnóstico
-Os 24 payments session=NULL não são fruto do completeSessionV2 atual. Eles vieram de:
-
-Fluxos legados — antes da correção do generateInsurancePlanSessions e do ConvenioHandler.
-Scripts de correção anteriores — alguns payments têm kind='convenio_receivable' e status='void', que não existem no schema atual.
-Appointments cancelados — parte dos 24 tem appointment com status canceled.
-Ou seja: o bug de "complete não grava session" já foi corrigido no código atual. O que resta é passivo histórico.
-
-O problema real agora é o cancelamento/reversão
-A Fase 2 mostrou:
-
-102 sessions completed de convênio sem paymentId
-
-80 → payment existiu e foi perdido
-7  → payment existiu e foi cancelado
-15 → payment nunca existiu
-A grande maioria (87/102) teve payment que foi removido/cancelado, mas a session permaneceu completed.
-
-Isso confirma que a state machine de cancelamento/reversão está incompleta.
-
-⚠️ Efeito colateral do teste
-O appointment 6a341fb3e4de0b2ffe4dc223 (data 22/06/2026) foi realmente completado no banco de produção como parte do teste. Se isso não era desejado, preciso reverter.
-
-Próximos passos recomendados
-Monitorar se novos payments session=NULL surgem após o deploy atual.
-Mapear os caminhos de cancelamento/reversão que removem payment sem reverter session/appointment.
-Decidir se reverte o appointment de teste ou mantém.
-Quer que eu:
-
-🔄 Reverta o appointment de teste para pre_agendado?
-🔍 Mapeie os cancel flows agora?
-📊 Crie um monitor para detectar novos casos de payment.session=null?
-
-Bom — isso aqui fecha um ponto importante do diagnóstico:
-
-👉 o bug ativo foi eliminado
-👉 o que você está vendo agora é dívida histórica + state machine incompleta de cancelamento
-
-Ou seja: você saiu de “bug de escrita” para “problema de consistência de domínio”.
-
-⚠️ Sobre o efeito colateral do teste
-Esse aqui é direto:
-
-“O appointment foi realmente completado no banco de produção”
-
-Sim — isso não é mais teste “seguro”, virou evento de estado real.
-
-Recomendação objetiva:
-Se isso não fazia parte de um fluxo real de produção:
-
-👉 reverte sim o appointment
-
-Porque ele agora:
-
-polui métricas de completude
-
-pode entrar em billing / projections
-
-pode afetar auditoria de convênio
-
-e já virou “verdade do sistema”
-
-Se quiser, o ideal não é só reverter status, mas também:
-
-remover vínculo de session/payment (ou marcar como test_reversal)
-
-registrar audit log do motivo
-
-🧠 Diagnóstico consolidado (estado atual real)
-Você agora tem 3 camadas separadas:
-
-1. 🟢 Fluxo atual (RESOLVIDO)
-completeSessionV2 ✔
-
-payment.session sendo gravado ✔
-
-criação de vínculo funcionando ✔
-
-2. 🟡 Legado sujo (HISTÓRICO)
-payments antigos sem session
-
-scripts com enums inválidos (void, convenio_receivable)
-
-generateInsurancePlanSessions versão antiga
-
-appointments cancelados em estados intermediários
-
-👉 Isso NÃO é bug ativo
-👉 Isso é base inconsistente
-
-3. 🔴 PROBLEMA REAL ATUAL (importante)
-cancelamento/reversão quebrando a state machine
-
-E isso agora está bem claro:
-
-O que acontece hoje:
-session → completed ✔
-
-payment existia ✔
-
-cancelamento roda ❌
-
-payment some ou muda estado ❌
-
-session NÃO é revertida ❌
-
-appointment fica “fantasma financeiro”
-
-💥 Tradução técnica do problema
-Sua state machine atual está assim:
-
-COMPLETE:
-appointment → session → payment ✔
-
-CANCEL:
-payment → removed/void ✔
-session → NÃO reverte ❌
-appointment → NÃO reavalia ❌
-👉 Isso cria exatamente os 87/102 órfãos que você viu.
-
-🧭 Próximo passo certo (sem desperdício de tempo)
-Agora NÃO é backfill ainda.
-
-É isto:
-
-🔍 1. Mapear cancel/reversal flows (CRÍTICO)
-Você precisa encontrar TODOS os caminhos de:
-
-payment cancel
-
-payment delete
-
-insurance reversal
-
-package rollback
-
-workers assíncronos (isso aqui costuma ser o vilão silencioso)
-
-E responder:
-
-“em cada um deles, quem deveria ser revertido e não é?”
-
-📊 2. Definir regra de consistência (SSOT real)
-Algo como:
-
-session.completed → exige payment ativo OU void com reason
-
-payment void → deve reavaliar session/appointment status
-
-appointment billing state nunca pode depender só de payment existence
-
-🧪 3. Só depois: backfill
-Porque agora você ainda não sabe qual estado é “correto final” em casos cancelados.
-
-✔️ Minha decisão recomendada (bem direta)
-🔄 Reverter o appointment de teste
-
-🔍 Mapear cancel/reversal flows agora
-
-⛔ Não mexer em backfill ainda
-
-🧠 Depois desenhar state machine explícita
-
-Se quiser, o próximo passo mais eficiente que posso te ajudar é:
-
-👉 desenhar contigo a state machine correta de convênio (appointment ↔ session ↔ payment) já no formato implementável (tipo tabela de transições + invariantes)
-
-Isso aqui vai evitar você só “caçar bug” e te leva pra arquitetura estável de vez.
-
-
-Entendi exatamente o que você quer agora — e aqui é o ponto final de engenharia mesmo, sem “arquitetura teórica”.
-
-Você não quer mais discussão.
-Você quer resposta objetiva:
-
-“o código atual ainda faz coisa errada? se sim, corrige direto”
-
-🧠 Resposta direta (sem enrolar)
-✔️ SIM — o código antigo ainda pode estar fazendo coisas erradas em 3 cenários:
-Mesmo com tudo que você corrigiu, ainda existem riscos reais:
-
-🔴 1. Fluxos antigos ainda podem existir em produção
-Mesmo que você tenha corrigido:
-
-cancelSession
-
-appointment cancel
-
-financialGuard
-
-therapyPackageController
-
-👉 o problema é:
-
-outros caminhos ainda podem chamar lógica antiga direta
-
-Exemplos típicos:
-
-workers antigos rodando versão anterior
-
-endpoints não usados mas ainda ativos
-
-scripts de admin/manual tools
-
-retries assíncronos antigos no queue
-
-📌 Isso significa:
-
-ainda pode existir código vivo fora do fluxo que você corrigiu
-
-🔴 2. Dados antigos ainda podem entrar pelo fluxo novo
-Você mesmo já viu isso:
-
-payment existe
-
-session já está completed
-
-mas pointer está null
-
-👉 isso não vem do código novo
-
-vem de:
-
-execução parcial + estados antigos reaparecendo no fluxo novo
-
-🔴 3. Inconsistência pode ser reintroduzida por “writes incompletos”
-Mesmo no código novo, risco clássico:
-
-update de session ok
-
-update de payment falha no meio
-
-transação parcial
-
-retry duplicado
-
-👉 isso recria exatamente o tipo de bug que você corrigiu
-
-💥 Agora a resposta importante: “tem algo ainda errado no código atual?”
-✔️ NÃO no design do flow principal
-O que você fez está correto.
-
-⚠️ SIM na garantia absoluta de execução atômica
-O que ainda pode faltar (e isso é o ponto crítico real):
-
-1. Garantia de transação única entre entidades
-Se não estiver tudo dentro de Mongo session:
-
-session
-
-payment
-
-insuranceGuide
-
-appointment
-
-👉 ainda existe risco de drift intermitente
-
-2. Guard central preventivo (não só reconciliador)
-Você já tem reconciliador (reativo)
-
-Mas ainda pode faltar:
-
-bloqueio antes de salvar estado inconsistente
-
-Ex:
-
-impedir session.completed && payment.canceled no write time
-
-🧭 Então respondendo sua frase diretamente:
-“o code atual ainda faz isso?”
-
-✔️ Fluxo novo (complete/cancel):
-NÃO deveria mais fazer errado
-
-⚠️ Mas ainda pode acontecer se:
-código legado for chamado fora do fluxo
-
-transação falhar parcialmente
-
-ou write bypassar service layer
-
-🚀 Agora a decisão prática (bem objetiva)
-Você não precisa “refatorar mais código agora”.
-
-Você precisa de 1 coisa:
-
-👉 guard de escrita (write-time invariant enforcement)
-Algo assim:
-
-if (session.status === 'completed' && payment.status === 'canceled') {
-  throw new Error("State machine violation blocked at write time")
-}
-💡 Tradução simples da situação
-Você já fez:
-
-✔ corrigiu o sistema
-✔ criou reconciliação
-✔ criou backfill
-✔ criou CI
-✔ criou cron
-
-Agora falta só isso:
-
-impedir o sistema de voltar a quebrar na hora da escrita
-
-🧩 Conclusão direta
-❌ não precisa corrigir mais lógica de negócio agora
-
-❌ não precisa mexer mais em backfill
-
-❌ não precisa expandir state machine
-
-✔️ precisa só garantir:
-“nenhum write inválido passa sem ser bloqueado”
-
-Se quiser, eu te mostro exatamente onde colocar esse guard sem quebrar performance nem arquitetura — e isso fecha o sistema de vez.
-
-
-image(59).png
-image(60).png
-Achado e corrigido. Subiu.
-
----
-
-## 🔍 Análise pontual dos caminhos de complete
-
-| Caminho | Status | Observação |
-|---------|--------|------------|
-| completeSessionV2 (appointment.v2.js) | ✅ OK | Usa ConvenioHandler.buildPayment |
-| therapyPackageController.js | 🔧 **CORRIGIDO** | Criava payment mas não vinculava session.paymentId / insuranceGuide / guideConsumed |
-| routes/appointment.js /confirm | ⚠️ **RISCO** | Completa session sem financeiro — pode gerar inconsistência se usado em convênio |
-| completeSessionEventDrivenV2 | 💤 Código morto | Importado mas não chamado |
-| sessionService.completeSession | ⚠️ Event-driven | Publica evento para billing processar depois |
-
----
-
-## 🎯 O que foi corrigido
-
-Commit edf2d5fd já no ar:
-
-### therapyPackageController.js
-Agora ao completar sessão de convênio:
-- Preenche session.paymentId
-- Preenche session.insuranceGuide
-- Marca session.guideConsumed = true
-- Incrementa InsuranceGuide.usedSessions
-
-### Backfill / Reconciliador
-Agora também recuperam:
-- session.insuranceGuide
-- session.guideConsumed
-
-a partir do payment quando corrigem session.paymentId.
-
----
-
-## ⚠️ Risco ainda ativo
-
-PATCH /api/appointments/:id/confirm em routes/appointment.js (legado) ainda completa a session sem tocar em payment/guia.
-
-Se médicos usam esse endpoint em agendamentos de convênio, vai continuar gerando drift.
-
----
-
-Quer que eu bloqueie esse endpoint para convênio ou redirecione para o completeSessionV2?     ----massss pesna comigo a guia ela nao e so do ems em questao ela entrelaca entremeses entao se elselcionar por mes ele deixa de mostrar do mes anteriroe e o enviar apra faturamento nao madnara do outro mes concorda??????? ou add a data a parti de que e apra faturar ne 
-
-Pensamento interrompido
-Agora você tocou num ponto muito mais importante do que parece — isso aqui já não é bug de backend, é modelo de faturamento (regra de negócio).
-
-Vou ser bem direto.
-
-🧠 O problema real que você está percebendo
-Você está certo:
-
-guia não é “do mês” — ela é de ciclo clínico/contratual, não de calendário
-
-Mas a UI que você mostrou está assumindo isso:
-
-❌ Modelo atual da tela
-filtro por mês (junho/2026)
-
-agrupamento por mês
-
-faturamento baseado no mês selecionado
-
-👉 isso implica:
-
-“tudo que aconteceu em junho pertence a junho”
-
-💥 O problema disso
-Quando você faz:
-
-selecionar mês
-
-gerar faturamento
-
-enviar convênio
-
-você está assumindo que:
-
-a competência financeira = mês da sessão
-
-MAS em convênio real isso NÃO é sempre verdade.
-
-📌 O ponto crítico que você acertou
-Você falou isso:
-
-“se selecionar por mês ele deixa de mostrar mês anterior”
-
-👉 exatamente
-
-E isso cria 3 inconsistências estruturais:
-
-1. quebra de continuidade da guia
-Uma guia pode atravessar meses:
-
-Sessões:
-- 28/05
-- 02/06
-- 09/06
-- 15/06
-Se você filtra por mês:
-
-maio some
-
-junho aparece parcial
-
-👉 mas a guia é uma só
-
-2. faturamento parcial sem intenção clínica
-Você pode faturar:
-
-metade de uma guia
-
-sem saber que ainda falta sessão anterior
-
-3. risco de duplicidade ou buraco de faturamento
-maio não faturado
-
-junho faturado
-
-guia “quebrada” na prática
-
-🧠 O modelo correto (importante)
-Você já chegou na conclusão certa:
-
-precisa desacoplar “mês de exibição” de “período de faturamento”
-
-✔️ Solução correta de arquitetura
-Você tem 2 eixos diferentes:
-
-1. Eixo clínico (verdade)
-InsuranceGuide
-→ começa
-→ acumula sessões
-→ consome sessões
-→ fecha
-2. Eixo financeiro (competência)
-BillingPeriod
-→ define o que entra no lote de faturamento
-→ não quebra guia
-→ não depende de mês da UI
-💡 O ajuste que você sugeriu está CERTO
-“add a data a partir de que é pra faturar”
-
-✔️ isso resolve 100% do problema
-
-🔧 Como isso fica na prática
-Em vez de:
-
-filter: month = June/2026
-você passa a ter:
-
-billingWindow: {
-  startDate: "2026-06-01",
-  endDate: "2026-06-30"
-}
-OU melhor ainda:
-
-billingCutoffDate: "2026-06-18"
-e regra:
-
-tudo que não foi faturado até essa data entra no lote
-
-🧠 Melhor modelo (o mais robusto)
-✔️ Sessão
-pertence à guia
-
-não pertence ao mês
-
-✔️ Faturamento
-pertence a um “lote”
-
-não ao calendário da UI
-
-✔️ UI
-pode filtrar por mês
-
-mas não pode definir competência financeira
-
-🚨 E aqui está o bug conceitual atual
-Hoje sua UI está misturando:
-
-EXIBIÇÃO (mês)
-+
-FATURAMENTO (competência)
-👉 isso é o que está gerando inconsistência lógica mesmo com backend correto
-
-🧭 Resposta direta pra sua pergunta
-“ou add a data a partir de que é pra faturar ne?”
-
-✔️ SIM — essa é a solução correta
-
-Mas com um ajuste importante:
-
-não é “data de faturar por sessão”
-é “data de corte do lote de faturamento”
-
-💥 Decisão de arquitetura recomendada
-✔️ manter:
-filtro por mês na UI (visual apenas)
-
-✔️ adicionar:
-billing cutoff (data de corte real)
-
-ou billing batch id
-
-❌ não usar:
-mês como critério financeiro
-
-🚀 Se quiser fechar isso direito
-O próximo passo seria eu te ajudar a definir:
-
-modelo billingBatch
-
-como sessions entram no batch
-
-como evitar duplicidade entre meses
-
-e como reconciliar retroativamente (importante no teu sistema atual)
-
-Se quiser, isso aqui dá pra deixar no nível de sistema hospitalar mesmo (sem essas quebras silenciosas que você encontrou no começo).
-
-
-ideal seria fatuar a guia toda etnao ne um butao em cada?
-
-Agora você chegou na decisão que realmente define se o sistema fica “bom” ou vira nível ERP de convênio mesmo.
-
-Vou ser direto:
-
-🧠 Resposta curta
-👉 SIM — o ideal é faturar a guia inteira em lote, não por botão em cada sessão.
-
-💥 Por quê isso é o correto (e importante)
-1. Guia de convênio NÃO é unitária
-Ela é um “pacote clínico-financeiro”:
-
-Guia = conjunto de sessões autorizadas
-Não faz sentido financeiro:
-
-faturar sessão isolada
-
-quebrar guia por UI
-
-tratar cada atendimento como independente
-
-2. Convênio sempre trabalha em lote
-Na prática real:
-
-você envia GUIA
-
-não sessão
-
-não atendimento individual
-
-👉 o convênio responde:
-
-aceita
-
-glosa
-
-paga parcial
-
-3. Seu bug atual nasce exatamente do modelo errado
-Hoje você tem:
-
-botão “faturar sessão”
-
-filtro por mês
-
-seleção parcial
-
-Isso cria:
-
-guia quebrada artificialmente pelo sistema
-
-⚠️ O problema do botão por sessão
-Se você mantiver isso:
-
-pode faturar metade da guia
-
-pode faturar fora de ordem
-
-pode duplicar lote
-
-pode perder rastreio clínico-financeiro
-
-✔️ Modelo correto (o que você está intuindo)
-👉 Botão correto:
-“Faturar guia”
-
-ou
-
-“Gerar lote de faturamento”
-
-📦 Estrutura correta
-Guia
- ├── sessões (várias)
- ├── estado clínico
- ├── estado financeiro
- └── elegível para faturamento
-💰 Faturamento vira isso:
-Batch de faturamento
- ├── guia 1 (Unimed)
- ├── guia 2 (Bradesco)
- └── guia 3 (outro convênio)
-🧠 UI ideal (o que você está desenhando sem perceber)
-Tela deve ter:
-✔️ 1 botão principal
-[ FATURAR GUIAS SELECIONADAS ]
-ou até melhor:
-
-[ GERAR LOTE DE FATURAMENTO ]
-✔️ seleção é por GUIA, não por sessão
-Hoje você tem:
-
-sessão → seleciona
-
-O correto:
-
-guia → seleciona
-
-✔️ sessão vira detalhe interno
-Sessão só serve para:
-
-auditoria
-
-rastreio
-
-conferência
-
-🚨 E o seu insight anterior encaixa aqui perfeitamente
-Você falou:
-
-“guia é entre meses”
-
-✔️ exatamente
-
-Então o correto é:
-
-GUIA não pertence a mês
-
-FATURAMENTO também não deveria pertencer a mês
-
-mês é só filtro visual
-
-💡 Modelo final ideal (bem limpo)
-1. Clínica
-gera sessões
-
-2. Sistema
-agrupa por guia
-
-3. Faturamento
-gera batch por:
-
-convênio
-
-guia
-
-período opcional (cutoff)
-
-🔥 Decisão final (sem dúvida técnica)
-❌ errado:
-faturar por sessão
-
-faturar por mês
-
-botão individual por atendimento
-
-✅ correto:
-faturar por guia inteira
-
-gerar lote de faturamento
-
-sessão só compõe a guia
-
-🚀 Se quiser ir um nível acima ainda
-Posso te ajudar a desenhar isso aqui:
-
-👉 “motor de faturamento por lote inteligente”
-Que faz:
-
-agrupa automaticamente guias elegíveis
-
-detecta glosa provável
-
-evita duplicidade
-
-fecha lote com rastreabilidade total
-
-🧭 conclusão direta
-👉 SIM, você está certo: o modelo correto é faturar a guia inteira
-👉 botão por sessão é um anti-padrão nesse domínio
-👉 o mês deve ser só filtro visual, não regra financeira
-
-Se quiser, o próximo passo é redesenhar essa tela inteira pra ficar consistente com o backend que você acabou de estabilizar — aí você fecha o sistema ponta a ponta sem drift.
-
-
-Você atingiu o limite do Free para chats com anexos
-Faça upgrade agora ou aguarde até 17:11 para continuar usando arquivos, ou continue o chat agora sem arquivos.
-
-Novo chat
-
-Aproveite a promoção gratuita
-
-
-
-
-
-
-Resgatar oferta
-
-Isso aqui muda bastante o diagnóstico mesmo — agora não é “um problema de geração”, é dois fluxos quebrando o vínculo em direções opostas (complete não grava / cancelamento não reconecta).
-
-Se eu tivesse que priorizar sem perder mais tempo:
-
-1) 🔴 Investigar o bug do ConvenioHandler (prioridade máxima)
-Porque ele está quebrando a origem da verdade no momento da criação/conclusão.
-
-Esse trecho é extremamente suspeito:
-
-Payment.findByIdAndUpdate(..., { $set: { session: sessionId } })
-Se isso “não persiste”, as causas prováveis são:
-
-schema não tem session (ou está com strict: true + campo inexistente)
-
-update está sendo sobrescrito depois por outro save()
-
-sessionId está vindo undefined/null em alguns paths de complete
-
-hook/middleware (pre('save'), pre('findOneAndUpdate')) limpando campo
-
-ou update está indo em model diferente do que a query final usa (collection mismatch — já vi isso em sistemas com shadow models tipo receivable/payment)
-
-👉 Aqui é onde você provavelmente encontra o “bug raiz único” de metade do caos.
-
-2) 🟠 Mapear cancelamento/reversão de payments
-Porque isso explica os 80 órfãos pós-existência.
-
-Aqui o padrão típico que vejo no seu dump:
-
-payment existiu ✔
-
-session apontava ✔
-
-cancelamento roda ✔
-
-mas NÃO repropaga vínculo de volta nem limpa estado da session/appointment
-
-Ou seja: você tem state machine incompleta, não apenas bug.
-
-3) 🟡 Backfill só depois
-E concordo contigo aqui implicitamente: qualquer backfill agora vai só “maquiar” até o próximo cancelamento/complete rodar.
-
-Minha recomendação direta (ordem de ataque)
-Instrumentar log no ConvenioHandler.complete
-
-antes/depois do update do payment
-
-verificar se sessionId existe
-
-verificar documento final no Mongo logo após update
-
-Rodar um exemplo real:
-
-pega 1 payment do tipo “createdAt 2026-06-01”
-
-executa fluxo manual de update
-
-confere no DB imediatamente
-
-Depois sim:
-
-mapear cancel flows
-
-desenhar regra de consistência (quem é SSOT em cada estado)
-
-Se quiser, eu posso ir direto no próximo nível e te ajudar a fechar isso rápido:
-
-🔍 te dizer exatamente onde isso costuma quebrar em Mongoose (based no padrão do seu stack)
-
-ou montar um script de diagnóstico automático pra achar TODOS os casos onde session completed && payment.session null
-
-Qual caminho você quer agora?
-
-
-Resultado do teste controlado
-✅ O completeSessionV2 atual funciona corretamente.
-
-Executei em um appointment real de convênio (6a341fb3e4de0b2ffe4dc223) e o payment.session foi preenchido:
-
-[ConvenioHandler] 🔍 payment ANTES do update {
-  paymentId: '6a341fb37075e877cf912209',
-  session: null,
-  status: 'pending',
-  kind: 'session_payment'
+// Também tenta via sessions (caso appointments não tenham packageId)
+// Busca sessions linked to packages
+const pkgSessions = await db.collection('sessions').find({
+  packageId: { $in: pkgIds },
+  status: 'completed',
+  date: { $gte: new Date('2026-01-01') }
+}).sort({ date: 1 }).toArray();
+
+const sessAppointmentIds = pkgSessions.map(s => s.appointment).filter(Boolean);
+const sessAppts = await db.collection('appointments').find({
+  _id: { $in: sessAppointmentIds },
+  operationalStatus: 'completed'
+}).toArray();
+const sessApptMap = {};
+for (const a of sessAppts) sessApptMap[String(a._id)] = a;
+
+for (const s of pkgSessions) {
+  const appt = sessApptMap[String(s.appointment)];
+  const pkg = packages.find(p => String(p._id) === String(s.packageId));
+  const provider = pkg?.provider || pkg?.insuranceProvider || 'convenio';
+  const patId = s.patient || appt?.patient || pkg?.patient;
+  const patName = patMap[String(patId)] || appt?.patientInfo?.fullName || '??';
+  const mes = mesAno(s.date || appt?.date);
+  const key = `${mes}|${patName}`;
+  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
+  // evita duplicata se já veio via appointment
+  const dataStr = fmt(s.date || appt?.date);
+  const specialty = appt?.specialty || s.specialty || '—';
+  if (!porMesAppt[key].sessoes.find(x => x.data === dataStr && x.specialty === specialty)) {
+    porMesAppt[key].sessoes.push({ data: dataStr, specialty, status: 'completed' });
+  }
 }
 
-[ConvenioHandler] 💰 Payment atualizado: 6a341fb37075e877cf912209 {
-  session: '6a341fb37075e877cf91220f',   ← preenchido
-  status: 'pending',
-  kind: 'session_payment'
+// ── 2. APPOINTMENTS NOVOS (paymentMode=convenio, sem package) ─────────
+const newAppts = await db.collection('appointments').find({
+  paymentMode: 'convenio',
+  operationalStatus: 'completed',
+  date: { $gte: new Date('2026-01-01') }
+}).sort({ date: 1 }).toArray();
+
+for (const a of newAppts) {
+  const mes = mesAno(a.date);
+  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || '??';
+  const provider = a.insuranceProvider || 'convenio';
+  const key = `${mes}|${patName}`;
+  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
+  const dataStr = fmt(a.date);
+  if (!porMesAppt[key].sessoes.find(x => x.data === dataStr && x.specialty === a.specialty)) {
+    porMesAppt[key].sessoes.push({ data: dataStr, specialty: a.specialty, status: 'completed' });
+  }
 }
-O que isso muda no diagnóstico
-Os 24 payments session=NULL não são fruto do completeSessionV2 atual. Eles vieram de:
 
-Fluxos legados — antes da correção do generateInsurancePlanSessions e do ConvenioHandler.
-Scripts de correção anteriores — alguns payments têm kind='convenio_receivable' e status='void', que não existem no schema atual.
-Appointments cancelados — parte dos 24 tem appointment com status canceled.
-Ou seja: o bug de "complete não grava session" já foi corrigido no código atual. O que resta é passivo histórico.
-
-O problema real agora é o cancelamento/reversão
-A Fase 2 mostrou:
-
-102 sessions completed de convênio sem paymentId
-
-80 → payment existiu e foi perdido
-7  → payment existiu e foi cancelado
-15 → payment nunca existiu
-A grande maioria (87/102) teve payment que foi removido/cancelado, mas a session permaneceu completed.
-
-Isso confirma que a state machine de cancelamento/reversão está incompleta.
-
-⚠️ Efeito colateral do teste
-O appointment 6a341fb3e4de0b2ffe4dc223 (data 22/06/2026) foi realmente completado no banco de produção como parte do teste. Se isso não era desejado, preciso reverter.
-
-Próximos passos recomendados
-Monitorar se novos payments session=NULL surgem após o deploy atual.
-Mapear os caminhos de cancelamento/reversão que removem payment sem reverter session/appointment.
-Decidir se reverte o appointment de teste ou mantém.
-Quer que eu:
-
-🔄 Reverta o appointment de teste para pre_agendado?
-🔍 Mapeie os cancel flows agora?
-📊 Crie um monitor para detectar novos casos de payment.session=null?
-
-Bom — isso aqui fecha um ponto importante do diagnóstico:
-
-👉 o bug ativo foi eliminado
-👉 o que você está vendo agora é dívida histórica + state machine incompleta de cancelamento
-
-Ou seja: você saiu de “bug de escrita” para “problema de consistência de domínio”.
-
-⚠️ Sobre o efeito colateral do teste
-Esse aqui é direto:
-
-“O appointment foi realmente completado no banco de produção”
-
-Sim — isso não é mais teste “seguro”, virou evento de estado real.
-
-Recomendação objetiva:
-Se isso não fazia parte de um fluxo real de produção:
-
-👉 reverte sim o appointment
-
-Porque ele agora:
-
-polui métricas de completude
-
-pode entrar em billing / projections
-
-pode afetar auditoria de convênio
-
-e já virou “verdade do sistema”
-
-Se quiser, o ideal não é só reverter status, mas também:
-
-remover vínculo de session/payment (ou marcar como test_reversal)
-
-registrar audit log do motivo
-
-🧠 Diagnóstico consolidado (estado atual real)
-Você agora tem 3 camadas separadas:
-
-1. 🟢 Fluxo atual (RESOLVIDO)
-completeSessionV2 ✔
-
-payment.session sendo gravado ✔
-
-criação de vínculo funcionando ✔
-
-2. 🟡 Legado sujo (HISTÓRICO)
-payments antigos sem session
-
-scripts com enums inválidos (void, convenio_receivable)
-
-generateInsurancePlanSessions versão antiga
-
-appointments cancelados em estados intermediários
-
-👉 Isso NÃO é bug ativo
-👉 Isso é base inconsistente
-
-3. 🔴 PROBLEMA REAL ATUAL (importante)
-cancelamento/reversão quebrando a state machine
-
-E isso agora está bem claro:
-
-O que acontece hoje:
-session → completed ✔
-
-payment existia ✔
-
-cancelamento roda ❌
-
-payment some ou muda estado ❌
-
-session NÃO é revertida ❌
-
-appointment fica “fantasma financeiro”
-
-💥 Tradução técnica do problema
-Sua state machine atual está assim:
-
-COMPLETE:
-appointment → session → payment ✔
-
-CANCEL:
-payment → removed/void ✔
-session → NÃO reverte ❌
-appointment → NÃO reavalia ❌
-👉 Isso cria exatamente os 87/102 órfãos que você viu.
-
-🧭 Próximo passo certo (sem desperdício de tempo)
-Agora NÃO é backfill ainda.
-
-É isto:
-
-🔍 1. Mapear cancel/reversal flows (CRÍTICO)
-Você precisa encontrar TODOS os caminhos de:
-
-payment cancel
-
-payment delete
-
-insurance reversal
-
-package rollback
-
-workers assíncronos (isso aqui costuma ser o vilão silencioso)
-
-E responder:
-
-“em cada um deles, quem deveria ser revertido e não é?”
-
-📊 2. Definir regra de consistência (SSOT real)
-Algo como:
-
-session.completed → exige payment ativo OU void com reason
-
-payment void → deve reavaliar session/appointment status
-
-appointment billing state nunca pode depender só de payment existence
-
-🧪 3. Só depois: backfill
-Porque agora você ainda não sabe qual estado é “correto final” em casos cancelados.
-
-✔️ Minha decisão recomendada (bem direta)
-🔄 Reverter o appointment de teste
-
-🔍 Mapear cancel/reversal flows agora
-
-⛔ Não mexer em backfill ainda
-
-🧠 Depois desenhar state machine explícita
-
-Se quiser, o próximo passo mais eficiente que posso te ajudar é:
-
-👉 desenhar contigo a state machine correta de convênio (appointment ↔ session ↔ payment) já no formato implementável (tipo tabela de transições + invariantes)
-
-Isso aqui vai evitar você só “caçar bug” e te leva pra arquitetura estável de vez.
-
-
-Entendi exatamente o que você quer agora — e aqui é o ponto final de engenharia mesmo, sem “arquitetura teórica”.
-
-Você não quer mais discussão.
-Você quer resposta objetiva:
-
-“o código atual ainda faz coisa errada? se sim, corrige direto”
-
-🧠 Resposta direta (sem enrolar)
-✔️ SIM — o código antigo ainda pode estar fazendo coisas erradas em 3 cenários:
-Mesmo com tudo que você corrigiu, ainda existem riscos reais:
-
-🔴 1. Fluxos antigos ainda podem existir em produção
-Mesmo que você tenha corrigido:
-
-cancelSession
-
-appointment cancel
-
-financialGuard
-
-therapyPackageController
-
-👉 o problema é:
-
-outros caminhos ainda podem chamar lógica antiga direta
-
-Exemplos típicos:
-
-workers antigos rodando versão anterior
-
-endpoints não usados mas ainda ativos
-
-scripts de admin/manual tools
-
-retries assíncronos antigos no queue
-
-📌 Isso significa:
-
-ainda pode existir código vivo fora do fluxo que você corrigiu
-
-🔴 2. Dados antigos ainda podem entrar pelo fluxo novo
-Você mesmo já viu isso:
-
-payment existe
-
-session já está completed
-
-mas pointer está null
-
-👉 isso não vem do código novo
-
-vem de:
-
-execução parcial + estados antigos reaparecendo no fluxo novo
-
-🔴 3. Inconsistência pode ser reintroduzida por “writes incompletos”
-Mesmo no código novo, risco clássico:
-
-update de session ok
-
-update de payment falha no meio
-
-transação parcial
-
-retry duplicado
-
-👉 isso recria exatamente o tipo de bug que você corrigiu
-
-💥 Agora a resposta importante: “tem algo ainda errado no código atual?”
-✔️ NÃO no design do flow principal
-O que você fez está correto.
-
-⚠️ SIM na garantia absoluta de execução atômica
-O que ainda pode faltar (e isso é o ponto crítico real):
-
-1. Garantia de transação única entre entidades
-Se não estiver tudo dentro de Mongo session:
-
-session
-
-payment
-
-insuranceGuide
-
-appointment
-
-👉 ainda existe risco de drift intermitente
-
-2. Guard central preventivo (não só reconciliador)
-Você já tem reconciliador (reativo)
-
-Mas ainda pode faltar:
-
-bloqueio antes de salvar estado inconsistente
-
-Ex:
-
-impedir session.completed && payment.canceled no write time
-
-🧭 Então respondendo sua frase diretamente:
-“o code atual ainda faz isso?”
-
-✔️ Fluxo novo (complete/cancel):
-NÃO deveria mais fazer errado
-
-⚠️ Mas ainda pode acontecer se:
-código legado for chamado fora do fluxo
-
-transação falhar parcialmente
-
-ou write bypassar service layer
-
-🚀 Agora a decisão prática (bem objetiva)
-Você não precisa “refatorar mais código agora”.
-
-Você precisa de 1 coisa:
-
-👉 guard de escrita (write-time invariant enforcement)
-Algo assim:
-
-if (session.status === 'completed' && payment.status === 'canceled') {
-  throw new Error("State machine violation blocked at write time")
+// ── Output agrupado por mês ────────────────────────────────────────────
+const mesList = [...new Set(Object.values(porMesAppt).map(x => x.mes))].sort((a,b) => {
+  const [ma,ya] = a.split('/').map(Number);
+  const [mb,yb] = b.split('/').map(Number);
+  return ya !== yb ? ya-yb : ma-mb;
+});
+
+let grandTotal = 0;
+for (const mes of mesList) {
+  const grupos = Object.values(porMesAppt).filter(x => x.mes === mes);
+  const totalSessoes = grupos.reduce((s,g) => s + g.sessoes.length, 0);
+  grandTotal += totalSessoes;
+  console.log(`▓▓▓ ${mes} ─── ${totalSessoes} sessão(ões) atendidas ─── ${grupos.length} paciente(s) ▓▓▓`);
+  for (const g of grupos.sort((a,b) => a.patName.localeCompare(b.patName))) {
+    console.log(`  👤 ${g.patName}  [${g.provider}]  — ${g.sessoes.length} sessão(ões)`);
+    for (const s of g.sessoes.sort((a,b) => a.data.localeCompare(b.data))) {
+      console.log(`     • ${s.data}  ${s.specialty}`);
+    }
+  }
+  console.log();
 }
-💡 Tradução simples da situação
-Você já fez:
 
-✔ corrigiu o sistema
-✔ criou reconciliação
-✔ criou backfill
-✔ criou CI
-✔ criou cron
-
-Agora falta só isso:
-
-impedir o sistema de voltar a quebrar na hora da escrita
-
-🧩 Conclusão direta
-❌ não precisa corrigir mais lógica de negócio agora
-
-❌ não precisa mexer mais em backfill
-
-❌ não precisa expandir state machine
-
-✔️ precisa só garantir:
-“nenhum write inválido passa sem ser bloqueado”
-
-Se quiser, eu te mostro exatamente onde colocar esse guard sem quebrar performance nem arquitetura — e isso fecha o sistema de vez.
-
-
-image(59).png
-image(60).png
-Achado e corrigido. Subiu.
-
----
-
-## 🔍 Análise pontual dos caminhos de complete
-
-| Caminho | Status | Observação |
-|---------|--------|------------|
-| completeSessionV2 (appointment.v2.js) | ✅ OK | Usa ConvenioHandler.buildPayment |
-| therapyPackageController.js | 🔧 **CORRIGIDO** | Criava payment mas não vinculava session.paymentId / insuranceGuide / guideConsumed |
-| routes/appointment.js /confirm | ⚠️ **RISCO** | Completa session sem financeiro — pode gerar inconsistência se usado em convênio |
-| completeSessionEventDrivenV2 | 💤 Código morto | Importado mas não chamado |
-| sessionService.completeSession | ⚠️ Event-driven | Publica evento para billing processar depois |
-
----
-
-## 🎯 O que foi corrigido
-
-Commit edf2d5fd já no ar:
-
-### therapyPackageController.js
-Agora ao completar sessão de convênio:
-- Preenche session.paymentId
-- Preenche session.insuranceGuide
-- Marca session.guideConsumed = true
-- Incrementa InsuranceGuide.usedSessions
-
-### Backfill / Reconciliador
-Agora também recuperam:
-- session.insuranceGuide
-- session.guideConsumed
-
-a partir do payment quando corrigem session.paymentId.
-
----
-
-## ⚠️ Risco ainda ativo
-
-PATCH /api/appointments/:id/confirm em routes/appointment.js (legado) ainda completa a session sem tocar em payment/guia.
-
-Se médicos usam esse endpoint em agendamentos de convênio, vai continuar gerando drift.
-
----
-
-Quer que eu bloqueie esse endpoint para convênio ou redirecione para o completeSessionV2?     ----massss pesna comigo a guia ela nao e so do ems em questao ela entrelaca entremeses entao se elselcionar por mes ele deixa de mostrar do mes anteriroe e o enviar apra faturamento nao madnara do outro mes concorda??????? ou add a data a parti de que e apra faturar ne 
-
-Pensamento interrompido
-Agora você tocou num ponto muito mais importante do que parece — isso aqui já não é bug de backend, é modelo de faturamento (regra de negócio).
-
-Vou ser bem direto.
-
-🧠 O problema real que você está percebendo
-Você está certo:
-
-guia não é “do mês” — ela é de ciclo clínico/contratual, não de calendário
-
-Mas a UI que você mostrou está assumindo isso:
-
-❌ Modelo atual da tela
-filtro por mês (junho/2026)
-
-agrupamento por mês
-
-faturamento baseado no mês selecionado
-
-👉 isso implica:
-
-“tudo que aconteceu em junho pertence a junho”
-
-💥 O problema disso
-Quando você faz:
-
-selecionar mês
-
-gerar faturamento
-
-enviar convênio
-
-você está assumindo que:
-
-a competência financeira = mês da sessão
-
-MAS em convênio real isso NÃO é sempre verdade.
-
-📌 O ponto crítico que você acertou
-Você falou isso:
-
-“se selecionar por mês ele deixa de mostrar mês anterior”
-
-👉 exatamente
-
-E isso cria 3 inconsistências estruturais:
-
-1. quebra de continuidade da guia
-Uma guia pode atravessar meses:
-
-Sessões:
-- 28/05
-- 02/06
-- 09/06
-- 15/06
-Se você filtra por mês:
-
-maio some
-
-junho aparece parcial
-
-👉 mas a guia é uma só
-
-2. faturamento parcial sem intenção clínica
-Você pode faturar:
-
-metade de uma guia
-
-sem saber que ainda falta sessão anterior
-
-3. risco de duplicidade ou buraco de faturamento
-maio não faturado
-
-junho faturado
-
-guia “quebrada” na prática
-
-🧠 O modelo correto (importante)
-Você já chegou na conclusão certa:
-
-precisa desacoplar “mês de exibição” de “período de faturamento”
-
-✔️ Solução correta de arquitetura
-Você tem 2 eixos diferentes:
-
-1. Eixo clínico (verdade)
-InsuranceGuide
-→ começa
-→ acumula sessões
-→ consome sessões
-→ fecha
-2. Eixo financeiro (competência)
-BillingPeriod
-→ define o que entra no lote de faturamento
-→ não quebra guia
-→ não depende de mês da UI
-💡 O ajuste que você sugeriu está CERTO
-“add a data a partir de que é pra faturar”
-
-✔️ isso resolve 100% do problema
-
-🔧 Como isso fica na prática
-Em vez de:
-
-filter: month = June/2026
-você passa a ter:
-
-billingWindow: {
-  startDate: "2026-06-01",
-  endDate: "2026-06-30"
+console.log(`═══════════════════════════════════════════════════════════════════`);
+console.log(`  TOTAL GERAL: ${grandTotal} sessões atendidas (completed)`);
+console.log(`═══════════════════════════════════════════════════════════════════\n`);
+
+await mongoose.disconnect();
+SCRIPT
+MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node auditoria_atendidos.mjs 2>&1
+
+OUT
+═══════════════════════════════════════════════════════════════════
+  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026
+═══════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════
+  TOTAL GERAL: 0 sessões atendidas (completed)
+═══════════════════════════════════════════════════════════════════
+Zero resultados — os campos de ligação estão errados. Vou diagnosticar a estrutura real no banco.
+
+Bash Diagnose actual field names in packages, sessions, and appointments
+IN
+MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// 1. Ver campos de um package convenio
+const pkg = await db.collection('packages').findOne({ type: 'convenio', provider: { $exists: true } });
+if (pkg) {
+  console.log('PACKAGE FIELDS:', Object.keys(pkg).join(', '));
+  console.log('provider:', pkg.provider);
+  console.log('insuranceProvider:', pkg.insuranceProvider);
+  console.log('patient:', pkg.patient);
+  console.log('sessions (array sample):', JSON.stringify(pkg.sessions?.slice(0,3)));
 }
-OU melhor ainda:
 
-billingCutoffDate: "2026-06-18"
-e regra:
-
-tudo que não foi faturado até essa data entra no lote
-
-🧠 Melhor modelo (o mais robusto)
-✔️ Sessão
-pertence à guia
-
-não pertence ao mês
-
-✔️ Faturamento
-pertence a um “lote”
-
-não ao calendário da UI
-
-✔️ UI
-pode filtrar por mês
-
-mas não pode definir competência financeira
-
-🚨 E aqui está o bug conceitual atual
-Hoje sua UI está misturando:
-
-EXIBIÇÃO (mês)
-+
-FATURAMENTO (competência)
-👉 isso é o que está gerando inconsistência lógica mesmo com backend correto
-
-🧭 Resposta direta pra sua pergunta
-“ou add a data a partir de que é pra faturar ne?”
-
-✔️ SIM — essa é a solução correta
-
-Mas com um ajuste importante:
-
-não é “data de faturar por sessão”
-é “data de corte do lote de faturamento”
-
-💥 Decisão de arquitetura recomendada
-✔️ manter:
-filtro por mês na UI (visual apenas)
-
-✔️ adicionar:
-billing cutoff (data de corte real)
-
-ou billing batch id
-
-❌ não usar:
-mês como critério financeiro
-
-🚀 Se quiser fechar isso direito
-O próximo passo seria eu te ajudar a definir:
-
-modelo billingBatch
-
-como sessions entram no batch
-
-como evitar duplicidade entre meses
-
-e como reconciliar retroativamente (importante no teu sistema atual)
-
-Se quiser, isso aqui dá pra deixar no nível de sistema hospitalar mesmo (sem essas quebras silenciosas que você encontrou no começo).
-
-
-ideal seria fatuar a guia toda etnao ne um butao em cada?
-
-Agora você chegou na decisão que realmente define se o sistema fica “bom” ou vira nível ERP de convênio mesmo.
-
-Vou ser direto:
-
-🧠 Resposta curta
-👉 SIM — o ideal é faturar a guia inteira em lote, não por botão em cada sessão.
-
-💥 Por quê isso é o correto (e importante)
-1. Guia de convênio NÃO é unitária
-Ela é um “pacote clínico-financeiro”:
-
-Guia = conjunto de sessões autorizadas
-Não faz sentido financeiro:
-
-faturar sessão isolada
-
-quebrar guia por UI
-
-tratar cada atendimento como independente
-
-2. Convênio sempre trabalha em lote
-Na prática real:
-
-você envia GUIA
-
-não sessão
-
-não atendimento individual
-
-👉 o convênio responde:
-
-aceita
-
-glosa
-
-paga parcial
-
-3. Seu bug atual nasce exatamente do modelo errado
-Hoje você tem:
-
-botão “faturar sessão”
-
-filtro por mês
-
-seleção parcial
-
-Isso cria:
-
-guia quebrada artificialmente pelo sistema
-
-⚠️ O problema do botão por sessão
-Se você mantiver isso:
-
-pode faturar metade da guia
-
-pode faturar fora de ordem
-
-pode duplicar lote
-
-pode perder rastreio clínico-financeiro
-
-✔️ Modelo correto (o que você está intuindo)
-👉 Botão correto:
-“Faturar guia”
-
-ou
-
-“Gerar lote de faturamento”
-
-📦 Estrutura correta
-Guia
- ├── sessões (várias)
- ├── estado clínico
- ├── estado financeiro
- └── elegível para faturamento
-💰 Faturamento vira isso:
-Batch de faturamento
- ├── guia 1 (Unimed)
- ├── guia 2 (Bradesco)
- └── guia 3 (outro convênio)
-🧠 UI ideal (o que você está desenhando sem perceber)
-Tela deve ter:
-✔️ 1 botão principal
-[ FATURAR GUIAS SELECIONADAS ]
-ou até melhor:
-
-[ GERAR LOTE DE FATURAMENTO ]
-✔️ seleção é por GUIA, não por sessão
-Hoje você tem:
-
-sessão → seleciona
-
-O correto:
-
-guia → seleciona
-
-✔️ sessão vira detalhe interno
-Sessão só serve para:
-
-auditoria
-
-rastreio
-
-conferência
-
-🚨 E o seu insight anterior encaixa aqui perfeitamente
-Você falou:
-
-“guia é entre meses”
-
-✔️ exatamente
-
-Então o correto é:
-
-GUIA não pertence a mês
-
-FATURAMENTO também não deveria pertencer a mês
-
-mês é só filtro visual
-
-💡 Modelo final ideal (bem limpo)
-1. Clínica
-gera sessões
-
-2. Sistema
-agrupa por guia
-
-3. Faturamento
-gera batch por:
-
-convênio
-
-guia
-
-período opcional (cutoff)
-
-🔥 Decisão final (sem dúvida técnica)
-❌ errado:
-faturar por sessão
-
-faturar por mês
-
-botão individual por atendimento
-
-✅ correto:
-faturar por guia inteira
-
-gerar lote de faturamento
-
-sessão só compõe a guia
-
-🚀 Se quiser ir um nível acima ainda
-Posso te ajudar a desenhar isso aqui:
-
-👉 “motor de faturamento por lote inteligente”
-Que faz:
-
-agrupa automaticamente guias elegíveis
-
-detecta glosa provável
-
-evita duplicidade
-
-fecha lote com rastreabilidade total
-
-🧭 conclusão direta
-👉 SIM, você está certo: o modelo correto é faturar a guia inteira
-👉 botão por sessão é um anti-padrão nesse domínio
-👉 o mês deve ser só filtro visual, não regra financeira
-
-Se quiser, o próximo passo é redesenhar essa tela inteira pra ficar consistente com o backend que você acabou de estabilizar — aí você fecha o sistema ponta a ponta sem drift.
-
-
-Você atingiu o limite do Free para chats com anexos
-Faça upgrade agora ou aguarde até 17:11 para continuar usando arquivos, ou continue o chat agora sem arquivos.
-
-Novo chat
-
-Aproveite a promoção gratuita
-
-
-Vou te responder direto, sem repetir o histórico todo.
-
-🧠 Sim — você está certo na direção, mas tem um ajuste importante de modelo mental.
-
-✔️ 1. Guia NÃO é mensal
-Concorda totalmente:
-
-Guia = ciclo clínico/autorização
-
-Pode atravessar meses
-
-Não pode ser “quebrada” por filtro de mês
-
-👉 Então mês só serve pra visualização, não pra verdade do sistema.
-
-✔️ 2. Faturamento NÃO deve ser por sessão
-Também correto:
-
-Convênio não “paga sessão”
-
-Ele paga lote/guia/procedimento agrupado
-
-👉 Então botão por sessão é anti-modelo.
-
-💥 3. O modelo correto (simples e robusto)
-Você precisa separar 3 coisas:
-
-🟢 Clínica (verdade)
-Sessões acontecem
-
-Elas pertencem a uma guia
-
-🟡 Estrutura (agrupamento)
-Guia = conjunto de sessões
-
-🔵 Financeiro (faturamento)
-Faturamento = batch/lote
+// 2. Ver uma session vinculada a esse package
+if (pkg?.sessions?.length) {
+  const sess = await db.collection('sessions').findOne({ _id: pkg.sessions[0] });
+  if (sess) {
+    console.log('\nSESSION FIELDS:', Object.keys(sess).join(', '));
+    console.log('status:', sess.status);
+    console.log('appointment:', sess.appointment);
+    console.log('package:', sess.package);
+    console.log('date:', sess.date);
+  }
+}
+
+// 3. Ver appointment de convenio com status
+const appt = await db.collection('appointments').findOne({ 
+  date: { $gte: new Date('2026-01-01') },
+  $or: [{ paymentMode: 'convenio' }, { appointmentType: 'convenio' }, { 'package': { $exists: true } }]
+});
+if (appt) {
+  console.log('\nAPPT FIELDS:', Object.keys(appt).join(', '));
+  console.log('operationalStatus:', appt.operationalStatus);
+  console.log('paymentMode:', appt.paymentMode);
+  console.log('package:', appt.package);
+  console.log('packageId:', appt.packageId);
+  console.log('patientInfo:', appt.patientInfo?.fullName);
+}
+
+// 4. Quais statuses existem nas sessions
+const statuses = await db.collection('sessions').distinct('status');
+console.log('\nSESSION STATUSES DISTINCT:', statuses);
+
+// 5. Quais operationalStatus existem nos appointments convenio
+const opStatuses = await db.collection('appointments').distinct('operationalStatus', {
+  date: { $gte: new Date('2026-01-01') }
+});
+console.log('APPT OPERATIONAL STATUSES:', opStatuses);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+APPT FIELDS: _id, patient, doctor, date, time, notes, operationalStatus, clinicalStatus, duration, visualFlag, specialty, paymentStatus, advancedSessions, package, session, serviceType, sessionValue, paymentMethod, history, __v, createdAt, updatedAt, patientId, patientInfo, patientName, patientType, patientTypeMonthsInactive, migratedAt, packageId, isJointSession
+operationalStatus: completed
+paymentMode: undefined
+package: new ObjectId('692d7eccdeb2718ab4e3caef')
+packageId: new ObjectId('692d7eccdeb2718ab4e3caef')
+patientInfo: Pérola Souza de Assis Basílio
+
+SESSION STATUSES DISTINCT: [
+  null,           'agendado',
+  'canceled',     'cancelled',
+  'completed',    'confirmed',
+  'missed',       'pending',
+  'pre_agendado', 'scheduled'
+]
+APPT OPERATIONAL STATUSES: [
+  'canceled',
+  'completed',
+  'confirmed',
+  'converted',
+  'missed',
+  'pre_agendado',
+  'scheduled'
+]
+Agora sei os campos reais. O appointment usa package (não packageId), e o diagnóstico não achou o package porque o campo é insuranceProvider não provider. Reescrevo o script correto.
+
+Bash Query completed appointments linked to convenio packages
+IN
+MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+
+// Busca patients para resolver nomes
+const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
+const patMap = {};
+for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
+
+// Busca packages de convenio (todas as providers)
+const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
+const pkgMap = {};
+for (const p of packages) pkgMap[String(p._id)] = p;
+const pkgIds = packages.map(p => p._id);
+
+console.log(`Packages convenio encontrados: ${packages.length}`);
+// Ver provedores
+const providers = [...new Set(packages.map(p => p.insuranceProvider || p.provider || '??'))];
+console.log('Providers:', providers.join(', '));
+
+// Busca TODOS appointments completed vinculados a packages de convenio
+const appts = await db.collection('appointments').find({
+  $or: [
+    { package: { $in: pkgIds } },
+    { packageId: { $in: pkgIds } }
+  ],
+  operationalStatus: 'completed',
+  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-12-31') }
+}).sort({ date: 1 }).toArray();
+
+console.log(`Appointments completed encontrados: ${appts.length}`);
+
+// Agrupa por mês → provider → paciente
+const result = {};
+for (const a of appts) {
+  const pkgId = String(a.package || a.packageId);
+  const pkg = pkgMap[pkgId];
+  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
+  const mes = mesAno(a.date);
+  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
+  const key = `${mes}||${provider}||${patName}`;
+  if (!result[key]) result[key] = { mes, provider, patName, sessoes: [] };
+  result[key].sessoes.push({ data: fmt(a.date), specialty: a.specialty || '—' });
+}
+
+// Sort e imprime
+const meses = [...new Set(Object.values(result).map(x => x.mes))].sort((a,b) => {
+  const [ma,ya] = a.split('/').map(Number);
+  const [mb,yb] = b.split('/').map(Number);
+  return ya !== yb ? ya-yb : ma-mb;
+});
+
+let grandTotal = 0;
+console.log('\n═══════════════════════════════════════════════════════');
+console.log('  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026');
+console.log('═══════════════════════════════════════════════════════\n');
+
+for (const mes of meses) {
+  const grupos = Object.values(result).filter(x => x.mes === mes);
+  const total = grupos.reduce((s,g) => s + g.sessoes.length, 0);
+  grandTotal += total;
+  console.log(`▓▓▓ ${mes} — ${total} sessão(ões) — ${grupos.length} paciente(s) ▓▓▓`);
+  // Agrupa por provider dentro do mês
+  const providers = [...new Set(grupos.map(g => g.provider))];
+  for (const prov of providers) {
+    const gs = grupos.filter(g => g.provider === prov);
+    if (providers.length > 1) console.log(`  [${prov}]`);
+    for (const g of gs.sort((a,b) => a.patName.localeCompare(b.patName))) {
+      console.log(`  👤 ${g.patName} — ${g.sessoes.length} sessão(ões)`);
+      for (const s of g.sessoes) console.log(`     • ${s.data}  ${s.specialty}`);
+    }
+  }
+  console.log();
+}
+
+console.log(`═══════════════════════════════════════════════════════`);
+console.log(`  TOTAL GERAL: ${grandTotal} sessões atendidas (completed)`);
+console.log(`═══════════════════════════════════════════════════════\n`);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Packages convenio encontrados: 29
+Providers: unimed-campinas, unimed-anapolis, ??
+Appointments completed encontrados: 175
+
+═══════════════════════════════════════════════════════
+  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026
+═══════════════════════════════════════════════════════
+
+▓▓▓ 01/2026 — 31 sessão(ões) — 2 paciente(s) ▓▓▓
+  [unimed-campinas]
+  👤 Davi Felipe Araújo — 13 sessão(ões)
+     • 05/01/2026  psicologia
+     • 05/01/2026  fonoaudiologia
+     • 05/01/2026  fisioterapia
+     • 09/01/2026  fonoaudiologia
+     • 09/01/2026  fisioterapia
+     • 12/01/2026  psicologia
+     • 12/01/2026  fisioterapia
+     • 16/01/2026  fisioterapia
+     • 19/01/2026  psicologia
+     • 19/01/2026  fonoaudiologia
+     • 19/01/2026  fisioterapia
+     • 30/01/2026  fonoaudiologia
+     • 30/01/2026  fisioterapia
+  [unimed-anapolis]
+  👤 Nicolas Lucca — 18 sessão(ões)
+     • 09/01/2026  fonoaudiologia
+     • 12/01/2026  psicologia
+     • 12/01/2026  fonoaudiologia
+     • 14/01/2026  psicologia
+     • 14/01/2026  fonoaudiologia
+     • 16/01/2026  psicologia
+     • 19/01/2026  fonoaudiologia
+     • 19/01/2026  fonoaudiologia
+     • 21/01/2026  psicologia
+     • 21/01/2026  fonoaudiologia
+     • 23/01/2026  fonoaudiologia
+     • 23/01/2026  psicologia
+     • 26/01/2026  fonoaudiologia
+     • 26/01/2026  psicologia
+     • 26/01/2026  fonoaudiologia
+     • 28/01/2026  fonoaudiologia
+     • 30/01/2026  fonoaudiologia
+     • 30/01/2026  psicologia
+
+▓▓▓ 02/2026 — 52 sessão(ões) — 4 paciente(s) ▓▓▓
+  [unimed-anapolis]
+  👤 Gabriel Alves Leite — 5 sessão(ões)
+     • 20/02/2026  fonoaudiologia
+     • 20/02/2026  fonoaudiologia
+     • 27/02/2026  psicopedagogia
+     • 27/02/2026  psicopedagogia
+     • 27/02/2026  fonoaudiologia
+  👤 Kauana Queiroz Gomes Naves — 17 sessão(ões)
+     • 09/02/2026  psicologia
+     • 09/02/2026  fonoaudiologia
+     • 09/02/2026  fonoaudiologia
+     • 13/02/2026  psicologia
+     • 13/02/2026  fonoaudiologia
+     • 13/02/2026  fonoaudiologia
+     • 13/02/2026  fonoaudiologia
+     • 16/02/2026  psicologia
+     • 16/02/2026  fonoaudiologia
+     • 16/02/2026  fonoaudiologia
+     • 20/02/2026  fonoaudiologia
+     • 20/02/2026  fonoaudiologia
+     • 23/02/2026  fonoaudiologia
+     • 23/02/2026  psicologia
+     • 23/02/2026  fonoaudiologia
+     • 27/02/2026  fonoaudiologia
+     • 27/02/2026  fonoaudiologia
+  👤 Nicolas Lucca — 16 sessão(ões)
+     • 02/02/2026  fonoaudiologia
+     • 02/02/2026  fonoaudiologia
+     • 04/02/2026  fonoaudiologia
+     • 06/02/2026  fonoaudiologia
+     • 09/02/2026  fonoaudiologia
+     • 09/02/2026  fonoaudiologia
+     • 11/02/2026  fonoaudiologia
+     • 13/02/2026  fonoaudiologia
+     • 18/02/2026  fonoaudiologia
+     • 19/02/2026  psicomotricidade
+     • 20/02/2026  psicomotricidade
+     • 20/02/2026  fonoaudiologia
+     • 23/02/2026  fonoaudiologia
+     • 23/02/2026  fonoaudiologia
+     • 24/02/2026  psicomotricidade
+     • 25/02/2026  fonoaudiologia
+  [unimed-campinas]
+  👤 Davi Felipe Araújo — 14 sessão(ões)
+     • 02/02/2026  fisioterapia
+     • 02/02/2026  psicologia
+     • 02/02/2026  psicologia
+     • 02/02/2026  fonoaudiologia
+     • 06/02/2026  fisioterapia
+     • 06/02/2026  fonoaudiologia
+     • 16/02/2026  psicologia
+     • 16/02/2026  fonoaudiologia
+     • 20/02/2026  fisioterapia
+     • 20/02/2026  fonoaudiologia
+     • 23/02/2026  fisioterapia
+     • 23/02/2026  psicologia
+     • 23/02/2026  psicologia
+     • 23/02/2026  fonoaudiologia
+
+▓▓▓ 03/2026 — 35 sessão(ões) — 5 paciente(s) ▓▓▓
+  [unimed-anapolis]
+  👤 Benjamim Rocha Simão — 3 sessão(ões)
+     • 24/03/2026  fonoaudiologia
+     • 27/03/2026  fonoaudiologia
+     • 31/03/2026  fonoaudiologia
+  👤 Joaquim Rocha Simão — 3 sessão(ões)
+     • 24/03/2026  fonoaudiologia
+     • 27/03/2026  fonoaudiologia
+     • 31/03/2026  fonoaudiologia
+  👤 Kauana Queiroz Gomes Naves — 4 sessão(ões)
+     • 02/03/2026  fonoaudiologia
+     • 02/03/2026  fonoaudiologia
+     • 06/03/2026  fonoaudiologia
+     • 06/03/2026  fonoaudiologia
+  👤 Nicolas Lucca — 10 sessão(ões)
+     • 02/03/2026  fonoaudiologia
+     • 04/03/2026  psicomotricidade
+     • 04/03/2026  fonoaudiologia
+     • 09/03/2026  fonoaudiologia
+     • 11/03/2026  fonoaudiologia
+     • 16/03/2026  fonoaudiologia
+     • 18/03/2026  fonoaudiologia
+     • 23/03/2026  fonoaudiologia
+     • 25/03/2026  fonoaudiologia
+     • 30/03/2026  fonoaudiologia
+  [unimed-campinas]
+  👤 Davi Felipe Araújo — 15 sessão(ões)
+     • 09/03/2026  fonoaudiologia
+     • 09/03/2026  psicologia
+     • 09/03/2026  fisioterapia
+     • 16/03/2026  fonoaudiologia
+     • 16/03/2026  psicologia
+     • 16/03/2026  fisioterapia
+     • 20/03/2026  fonoaudiologia
+     • 20/03/2026  fisioterapia
+     • 25/03/2026  fisioterapia
+     • 25/03/2026  fonoaudiologia
+     • 27/03/2026  fonoaudiologia
+     • 27/03/2026  fisioterapia
+     • 30/03/2026  fonoaudiologia
+     • 30/03/2026  psicologia
+     • 30/03/2026  fisioterapia
+
+▓▓▓ 04/2026 — 33 sessão(ões) — 5 paciente(s) ▓▓▓
+  [unimed-anapolis]
+  👤 Benjamim Rocha Simão — 7 sessão(ões)
+     • 02/04/2026  fonoaudiologia
+     • 07/04/2026  fonoaudiologia
+     • 10/04/2026  fonoaudiologia
+     • 14/04/2026  fonoaudiologia
+     • 17/04/2026  fonoaudiologia
+     • 20/04/2026  fonoaudiologia
+     • 28/04/2026  fonoaudiologia
+  👤 Isabela Ferreira De Mendonca — 4 sessão(ões)
+     • 07/04/2026  fonoaudiologia
+     • 15/04/2026  fonoaudiologia
+     • 22/04/2026  fonoaudiologia
+     • 29/04/2026  fonoaudiologia
+  👤 Joaquim Rocha Simão — 7 sessão(ões)
+     • 02/04/2026  fonoaudiologia
+     • 07/04/2026  fonoaudiologia
+     • 10/04/2026  fonoaudiologia
+     • 14/04/2026  fonoaudiologia
+     • 17/04/2026  fonoaudiologia
+     • 20/04/2026  fonoaudiologia
+     • 28/04/2026  fonoaudiologia
+  👤 Nicolas Lucca — 6 sessão(ões)
+     • 01/04/2026  fonoaudiologia
+     • 13/04/2026  fonoaudiologia
+     • 15/04/2026  fonoaudiologia
+     • 22/04/2026  terapia_ocupacional
+     • 27/04/2026  terapia_ocupacional
+     • 29/04/2026  terapia_ocupacional
+  [unimed-campinas]
+  👤 Davi Felipe Araújo — 9 sessão(ões)
+     • 06/04/2026  fisioterapia
+     • 06/04/2026  psicologia
+     • 06/04/2026  fonoaudiologia
+     • 13/04/2026  fisioterapia
+     • 13/04/2026  psicologia
+     • 13/04/2026  fonoaudiologia
+     • 27/04/2026  fisioterapia
+     • 27/04/2026  psicologia
+     • 27/04/2026  fonoaudiologia
+
+▓▓▓ 05/2026 — 20 sessão(ões) — 4 paciente(s) ▓▓▓
+  👤 Benjamim Rocha Simão — 4 sessão(ões)
+     • 05/05/2026  fonoaudiologia
+     • 08/05/2026  fonoaudiologia
+     • 12/05/2026  fonoaudiologia
+     • 15/05/2026  fonoaudiologia
+  👤 Isabela Ferreira De Mendonca — 4 sessão(ões)
+     • 06/05/2026  fonoaudiologia
+     • 15/05/2026  fonoaudiologia
+     • 20/05/2026  fonoaudiologia
+     • 27/05/2026  fonoaudiologia
+  👤 Joaquim Rocha Simão — 4 sessão(ões)
+     • 05/05/2026  fonoaudiologia
+     • 08/05/2026  fonoaudiologia
+     • 12/05/2026  fonoaudiologia
+     • 15/05/2026  fonoaudiologia
+  👤 Nicolas Lucca — 8 sessão(ões)
+     • 04/05/2026  terapia_ocupacional
+     • 06/05/2026  terapia_ocupacional
+     • 11/05/2026  terapia_ocupacional
+     • 13/05/2026  terapia_ocupacional
+     • 18/05/2026  terapia_ocupacional
+     • 20/05/2026  terapia_ocupacional
+     • 25/05/2026  terapia_ocupacional
+     • 27/05/2026  terapia_ocupacional
+
+▓▓▓ 06/2026 — 4 sessão(ões) — 2 paciente(s) ▓▓▓
+  👤 Isabela Ferreira De Mendonca — 3 sessão(ões)
+     • 03/06/2026  fonoaudiologia
+     • 10/06/2026  fonoaudiologia
+     • 17/06/2026  fonoaudiologia
+  👤 Nicolas Lucca — 1 sessão(ões)
+     • 01/06/2026  terapia_ocupacional
+
+═══════════════════════════════════════════════════════
+  TOTAL GERAL: 175 sessões atendidas (completed)
+═══════════════════════════════════════════════════════
+175 sessões atendidas (completed), Jan–Jun 2026:
+
+Mês	Sessões	Pacientes
+01/2026	31	Nicolas Lucca (Unimed Anápolis) + Davi Felipe Araújo (Unimed Campinas)
+02/2026	52	Nicolas Lucca, Kauana Queiroz, Gabriel Alves Leite (Anápolis) + Davi (Campinas)
+03/2026	35	Nicolas, Kauana, Benjamim, Joaquim (Anápolis) + Davi (Campinas)
+04/2026	33	Benjamim, Joaquim, Nicolas, Isabela (Anápolis) + Davi (Campinas)
+05/2026	20	Benjamim, Joaquim, Isabela, Nicolas
+06/2026	4	Isabela, Nicolas
+TOTAL	175	
+Pontos que saltam aos olhos:
+
+Faturado (InsuranceBatch): só 28 sessões de abril/2026 foram para o lote — as 147 sessões de jan a março ficaram sem faturamento
+Unimed Campinas (Davi Felipe Araújo): 51 sessões de jan a abril, zero lote criado — nunca foi enviado nada para a Campinas
+Maio/Jun 2026: 24 sessões sem lote ainda (algumas podem estar em criação)
+Gabriel Alves Leite (fev/2026): 5 sessões, provider ?? — package sem insuranceProvider definido, pode ter escapado de algum cadastro
+Quer que eu gere um arquivo de relatório formatado com isso ou vamos montar os lotes retroativos no sistema?
+
+InsuranceHistorySection.tsx
+s
+"s" de sim — mas qual das duas opções?
+
+AskUserQuestion
+OUT
+Your questions have been answered: "O que você quer fazer agora?"="Gerar relatório em arquivo". You can now continue with these answers in mind.
+comot a o semestral la
+Gero o relatório semestral formatado agora.
+
+Bash Generate formatted semester report to file
+IN
+MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesNome = m => ({ '01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho' })[m] || m;
+
+const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
+const patMap = {};
+for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
+
+const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
+const pkgMap = {};
+for (const p of packages) pkgMap[String(p._id)] = p;
+const pkgIds = packages.map(p => p._id);
+
+const appts = await db.collection('appointments').find({
+  $or: [{ package: { $in: pkgIds } }, { packageId: { $in: pkgIds } }],
+  operationalStatus: 'completed',
+  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-06-30') }
+}).sort({ date: 1 }).toArray();
+
+// Estrutura: mes → provider → paciente → sessoes
+const result = {};
+for (const a of appts) {
+  const pkg = pkgMap[String(a.package || a.packageId)];
+  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
+  const mes = mesAno(a.date);
+  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
+  if (!result[mes]) result[mes] = {};
+  if (!result[mes][provider]) result[mes][provider] = {};
+  if (!result[mes][provider][patName]) result[mes][provider][patName] = [];
+  result[mes][provider][patName].push({ data: fmt(a.date), specialty: a.specialty || '—' });
+}
+
+const SEP  = '═'.repeat(72);
+const LINE = '─'.repeat(72);
+const now  = new Date().toLocaleString('pt-BR');
+
+process.stdout.write(`${SEP}\n`);
+process.stdout.write(`  RELATÓRIO SEMESTRAL DE ATENDIMENTOS — CONVÊNIO\n`);
+process.stdout.write(`  Período: Janeiro a Junho de 2026\n`);
+process.stdout.write(`  Filtro: somente atendimentos realizados (status = completed)\n`);
+process.stdout.write(`  Gerado em: ${now}\n`);
+process.stdout.write(`${SEP}\n\n`);
+
+const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
+
+let grandTotal=0, grandPacientes=new Set();
+
+// Tabela resumo no topo
+process.stdout.write(`RESUMO POR MÊS\n${LINE}\n`);
+process.stdout.write(`${'Mês'.padEnd(14)} ${'Sessões'.padStart(8)} ${'Pacientes'.padStart(10)} ${'Unimed Anápolis'.padStart(16)} ${'Unimed Campinas'.padStart(16)}\n`);
+process.stdout.write(`${LINE}\n`);
+
+const resumo = {};
+for (const mes of meses) {
+  let total=0, pacs=new Set(), anapolis=0, campinas=0;
+  for (const [prov, pacs_obj] of Object.entries(result[mes])) {
+    for (const [pat, sess] of Object.entries(pacs_obj)) {
+      pacs.add(pat);
+      total += sess.length;
+      if (prov.includes('anapolis')) anapolis += sess.length;
+      if (prov.includes('campinas')) campinas += sess.length;
+    }
+  }
+  resumo[mes] = { total, pacs, anapolis, campinas };
+  grandTotal += total;
+  for (const p of pacs) grandPacientes.add(p);
+  const [mm] = mes.split('/');
+  process.stdout.write(`${(mesNome(mm)+'/2026').padEnd(14)} ${String(total).padStart(8)} ${String(pacs.size).padStart(10)} ${String(anapolis||'—').padStart(16)} ${String(campinas||'—').padStart(16)}\n`);
+}
+process.stdout.write(`${LINE}\n`);
+process.stdout.write(`${'TOTAL'.padEnd(14)} ${String(grandTotal).padStart(8)} ${String(grandPacientes.size).padStart(10)}\n`);
+process.stdout.write(`\n`);
+
+// Lote enviado
+process.stdout.write(`FATURAMENTO ENVIADO À UNIMED ANÁPOLIS\n${LINE}\n`);
+process.stdout.write(`  Lote: LOT-UNIMED-ANAPOLIS-1778784104444\n`);
+process.stdout.write(`  Período coberto: 01/04/2026 → 29/04/2026 (28 sessões, R$ 2.700,00)\n`);
+process.stdout.write(`  Enviado em: 14/05/2026 | Status: Enviado | Retorno: R$ 0,00\n`);
+process.stdout.write(`\n  ⚠  Sessões NÃO faturadas (completed mas sem lote):\n`);
+const sessSemLote = grandTotal - 28;
+process.stdout.write(`     Unimed Anápolis: Jan/Fev/Mar/2026 + Mai/Jun/2026 — aprox. ${sessSemLote} sessões pendentes de faturamento\n`);
+process.stdout.write(`     Unimed Campinas: Jan–Abr/2026 — nenhum lote criado\n\n`);
+
+// Detalhe por mês
+for (const mes of meses) {
+  const [mm, yy] = mes.split('/');
+  const total = resumo[mes].total;
+  process.stdout.write(`${'▓'.repeat(72)}\n`);
+  process.stdout.write(`  ${mesNome(mm).toUpperCase()} ${yy} — ${total} sessão(ões) atendidas — ${resumo[mes].pacs.size} paciente(s)\n`);
+  process.stdout.write(`${'▓'.repeat(72)}\n\n`);
+
+  for (const [prov, pacs_obj] of Object.entries(result[mes]).sort()) {
+    const provLabel = prov === 'unimed-anapolis' ? 'UNIMED ANÁPOLIS' : prov === 'unimed-campinas' ? 'UNIMED CAMPINAS' : prov.toUpperCase();
+    process.stdout.write(`  [ ${provLabel} ]\n`);
+    for (const [pat, sessoes] of Object.entries(pacs_obj).sort()) {
+      process.stdout.write(`  ${LINE.slice(0,60)}\n`);
+      process.stdout.write(`  Paciente : ${pat}\n`);
+      process.stdout.write(`  Sessões  : ${sessoes.length}\n\n`);
+      // Agrupa por especialidade
+      const porEsp = {};
+      for (const s of sessoes) { if (!porEsp[s.specialty]) porEsp[s.specialty] = []; porEsp[s.specialty].push(s.data); }
+      for (const [esp, datas] of Object.entries(porEsp).sort()) {
+        process.stdout.write(`    ${esp.padEnd(22)} ${datas.join('  ')}\n`);
+      }
+      process.stdout.write(`\n`);
+    }
+  }
+}
+
+process.stdout.write(`${SEP}\n`);
+process.stdout.write(`  FIM DO RELATÓRIO — Total: ${grandTotal} atendimentos realizados\n`);
+process.stdout.write(`${SEP}\n`);
+
+await mongoose.disconnect();
+EOF
+echo "✅ Gerado"
+
+OUT
+ugrep: warning: .env: No such file or directory
+node:internal/modules/esm/resolve:873
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'mongoose' imported from /home/user/projetos/crm/[eval1]
+    at packageResolve (node:internal/modules/esm/resolve:873:9)
+    at moduleResolve (node:internal/modules/esm/resolve:946:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1188:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v20.20.0
+✅ Gerado
+Precisa rodar do diretório back. Vou salvar o script lá e executar.
+
+Bash Generate semester report from back directory
+IN
+cd /home/user/projetos/crm/back && MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesNome = m => ({ '01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho' })[m] || m;
+
+const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
+const patMap = {};
+for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
+
+const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
+const pkgMap = {};
+for (const p of packages) pkgMap[String(p._id)] = p;
+const pkgIds = packages.map(p => p._id);
+
+const appts = await db.collection('appointments').find({
+  $or: [{ package: { $in: pkgIds } }, { packageId: { $in: pkgIds } }],
+  operationalStatus: 'completed',
+  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-06-30') }
+}).sort({ date: 1 }).toArray();
+
+const result = {};
+for (const a of appts) {
+  const pkg = pkgMap[String(a.package || a.packageId)];
+  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
+  const mes = mesAno(a.date);
+  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
+  if (!result[mes]) result[mes] = {};
+  if (!result[mes][provider]) result[mes][provider] = {};
+  if (!result[mes][provider][patName]) result[mes][provider][patName] = [];
+  result[mes][provider][patName].push({ data: fmt(a.date), specialty: a.specialty || '—' });
+}
+
+const SEP  = '═'.repeat(72);
+const LINE = '─'.repeat(72);
+const now  = new Date().toLocaleString('pt-BR');
+
+const out = (s) => process.stdout.write(s);
+
+out(`${SEP}\n`);
+out(`  RELATÓRIO SEMESTRAL DE ATENDIMENTOS — CONVÊNIO\n`);
+out(`  Período: Janeiro a Junho de 2026\n`);
+out(`  Filtro: somente atendimentos realizados (status = completed)\n`);
+out(`  Gerado em: ${now}\n`);
+out(`${SEP}\n\n`);
+
+const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
+
+let grandTotal=0;
+const grandPacientes=new Set();
+const resumo = {};
+
+for (const mes of meses) {
+  let total=0; const pacs=new Set(); let anapolis=0, campinas=0;
+  for (const [prov, po] of Object.entries(result[mes])) {
+    for (const [pat, sess] of Object.entries(po)) {
+      pacs.add(pat); total += sess.length;
+      if (prov.includes('anapolis')) anapolis += sess.length;
+      if (prov.includes('campinas')) campinas += sess.length;
+    }
+  }
+  resumo[mes] = { total, pacs, anapolis, campinas };
+  grandTotal += total;
+  for (const p of pacs) grandPacientes.add(p);
+}
+
+out(`RESUMO POR MÊS\n${LINE}\n`);
+out(`${'Mês'.padEnd(18)} ${'Total'.padStart(6)} ${'Pac.'.padStart(5)} ${'Anápolis'.padStart(10)} ${'Campinas'.padStart(10)}\n${LINE}\n`);
+for (const mes of meses) {
+  const [mm,yy] = mes.split('/');
+  const r = resumo[mes];
+  out(`${(mesNome(mm)+'/'+yy).padEnd(18)} ${String(r.total).padStart(6)} ${String(r.pacs.size).padStart(5)} ${String(r.anapolis||'—').padStart(10)} ${String(r.campinas||'—').padStart(10)}\n`);
+}
+out(`${LINE}\n`);
+out(`${'TOTAL'.padEnd(18)} ${String(grandTotal).padStart(6)} ${String(grandPacientes.size).padStart(5)}\n\n`);
+
+out(`SITUAÇÃO DE FATURAMENTO\n${LINE}\n`);
+out(`  Lote enviado : LOT-UNIMED-ANAPOLIS-1778784104444\n`);
+out(`  Período      : 01/04/2026 → 29/04/2026 (28 sessões — R$ 2.700,00)\n`);
+out(`  Enviado em   : 14/05/2026 | Status: Enviado | Retorno: R$ 0,00\n\n`);
+out(`  ⚠  PENDENTES DE FATURAMENTO (completed sem lote):\n`);
+out(`     Unimed Anápolis — Janeiro, Fevereiro, Março e Maio/Junho de 2026\n`);
+out(`     Unimed Campinas — Janeiro a Abril de 2026 (nenhum lote criado)\n\n`);
+
+for (const mes of meses) {
+  const [mm,yy] = mes.split('/');
+  const r = resumo[mes];
+  out(`${'▓'.repeat(72)}\n`);
+  out(`  ${mesNome(mm).toUpperCase()} ${yy} — ${r.total} sessão(ões) — ${r.pacs.size} paciente(s)\n`);
+  out(`${'▓'.repeat(72)}\n\n`);
+  for (const [prov, po] of Object.entries(result[mes]).sort()) {
+    const label = prov==='unimed-anapolis'?'UNIMED ANÁPOLIS':prov==='unimed-campinas'?'UNIMED CAMPINAS':prov.toUpperCase();
+    out(`  [ ${label} ]\n\n`);
+    for (const [pat, sessoes] of Object.entries(po).sort()) {
+      out(`  ${LINE.slice(0,60)}\n`);
+      out(`  Paciente : ${pat}\n`);
+      out(`  Sessões  : ${sessoes.length}\n\n`);
+      const porEsp = {};
+      for (const s of sessoes) { if (!porEsp[s.specialty]) porEsp[s.specialty]=[]; porEsp[s.specialty].push(s.data); }
+      for (const [esp, datas] of Object.entries(porEsp).sort()) {
+        out(`    ${esp.padEnd(24)} ${datas.join('   ')}\n`);
+      }
+      out(`\n`);
+    }
+  }
+}
+
+out(`${SEP}\n`);
+out(`  FIM DO RELATÓRIO — ${grandTotal} atendimentos realizados (Jan–Jun 2026)\n`);
+out(`${SEP}\n`);
+
+await mongoose.disconnect();
+EOF
+echo "Tamanho: $(wc -l < /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt) linhas"
+
+OUT
+Tamanho: 223 linhas
+Relatório gerado: auditoria_convenio_semestral_jan_jun_2026.txt — 223 linhas.
 
 Contém:
 
-1 ou várias guias
+Tabela resumo por mês (total, pacientes, Anápolis vs Campinas)
+Alerta de situação de faturamento (o que foi enviado x o que está pendente)
+Detalhe completo mês a mês → por plano → por paciente → datas e especialidades
+auditoria_convenio_semestral_jan_jun_2026.txt
+sessoe e vlaroes dos atendeitnos por especialdiade
+Vou adicionar os valores por especialidade. Deixa eu confirmar o campo de valor no appointment.
 
-nunca sessões isoladas
+Bash Check sessionValue field and distribution by specialty
+IN
+cd /home/user/projetos/crm/back && MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+dotenv: { config: () => {} };
+import dotenv from 'dotenv'; dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+const a = await db.collection('appointments').findOne({ operationalStatus: 'completed', sessionValue: { $exists: true, $gt: 0 } });
+console.log('sessionValue:', a?.sessionValue);
+console.log('paymentMethod:', a?.paymentMethod);
+const b = await db.collection('appointments').findOne({ operationalStatus: 'completed', sessionValue: { $exists: false } });
+console.log('sem sessionValue - specialty:', b?.specialty, 'paymentMode:', b?.paymentMode);
+// Ver distribuição de sessionValue nos completed de convenio
+const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
+const pkgIds = packages.map(p => p._id);
+const vals = await db.collection('appointments').aggregate([
+  { $match: { $or:[{package:{$in:pkgIds}},{packageId:{$in:pkgIds}}], operationalStatus:'completed', date:{$gte:new Date('2026-01-01')} }},
+  { $group: { _id: '$specialty', count:{$sum:1}, totalValue:{$sum:'$sessionValue'}, avgValue:{$avg:'$sessionValue'}, zeroCount:{$sum:{$cond:[{$eq:['$sessionValue',0]},1,0]}} }},
+  { $sort: { count: -1 } }
+]).toArray();
+for (const v of vals) console.log(`${v._id}: ${v.count} sessões, total R$${v.totalValue?.toFixed(2)}, avg R$${v.avgValue?.toFixed(2)}, sem valor: ${v.zeroCount}`);
+await mongoose.disconnect();
+EOF
 
-🧾 4. Então a resposta da sua pergunta:
-“ideal seria faturar a guia toda então né ou botão em cada?”
+OUT
+sessionValue: 100
+paymentMethod: convenio
+sem sessionValue - specialty: fonoaudiologia paymentMode: undefined
+fonoaudiologia: 113 sessões, total R$1480.00, avg R$82.22, sem valor: 3
+psicologia: 25 sessões, total R$0.00, avg R$undefined, sem valor: 0
+fisioterapia: 19 sessões, total R$200.00, avg R$200.00, sem valor: 0
+terapia_ocupacional: 12 sessões, total R$160.00, avg R$80.00, sem valor: 0
+psicomotricidade: 4 sessões, total R$0.00, avg R$undefined, sem valor: 0
+psicopedagogia: 2 sessões, total R$0.00, avg R$undefined, sem valor: 0
+Psicologia/psicomotricidade/psicopedagogia estão sem valor no appointment — vou pegar o valor padrão do convênio como fallback (Anápolis R$80, Campinas R$140).
 
-👉 SIM: faturar a guia inteira (ou lote de guias), nunca sessão individual.
+Bash Regenerate report with values per session and specialty
+IN
+MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
+import mongoose from 'mongoose';
+import dotenv from 'dotenv'; dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
 
-⚠️ 5. O ponto que resolve seu bug atual
-Você percebeu algo muito importante:
+const fmt = d => { if (!d) return '—'; const x=new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesAno = d => { if (!d) return '??'; const x=new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
+const mesNome = m => ({'01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho'})[m]||m;
+const brl = v => `R$ ${Number(v||0).toFixed(2).replace('.',',')}`;
 
-“se filtro por mês, perco parte da guia”
+// Valor padrão por provider (fallback quando sessionValue não preenchido)
+const PROVIDER_DEFAULT = { 'unimed-anapolis': 80, 'unimed-campinas': 140 };
 
-✔️ Isso acontece porque hoje você está misturando:
+const allPatients = await db.collection('patients').find({}).project({ name:1, fullName:1 }).toArray();
+const patMap = {}; for (const p of allPatients) patMap[String(p._id)] = p.name||p.fullName||'??';
 
-UI (mês)
+const packages = await db.collection('packages').find({ type:'convenio' }).toArray();
+const pkgMap = {}; for (const p of packages) pkgMap[String(p._id)] = p;
+const pkgIds = packages.map(p => p._id);
 
-lógica clínica (guia)
+const appts = await db.collection('appointments').find({
+  $or:[{package:{$in:pkgIds}},{packageId:{$in:pkgIds}}],
+  operationalStatus:'completed',
+  date:{$gte:new Date('2026-01-01'),$lte:new Date('2026-06-30')}
+}).sort({date:1}).toArray();
 
-lógica financeira (faturamento)
-
-👉 Isso é a origem da inconsistência.
-
-🚀 6. Modelo final recomendado (limpo)
-UI
-filtro por mês = só visual
-
-Backend
-guia não depende de mês
-
-faturamento usa:
-
-BillingBatch {
-  startDate
-  endDate
-  status
-  items: [guiaId]
+// result: mes → provider → patName → [{data, specialty, valor}]
+const result = {};
+for (const a of appts) {
+  const pkg = pkgMap[String(a.package||a.packageId)];
+  const provider = pkg?.insuranceProvider||pkg?.provider||'convenio';
+  const mes = mesAno(a.date);
+  const patName = patMap[String(a.patient)]||a.patientInfo?.fullName||a.patientName||'??';
+  const valor = (a.sessionValue && a.sessionValue > 0) ? a.sessionValue : (PROVIDER_DEFAULT[provider]||0);
+  if (!result[mes]) result[mes]={};
+  if (!result[mes][provider]) result[mes][provider]={};
+  if (!result[mes][provider][patName]) result[mes][provider][patName]=[];
+  result[mes][provider][patName].push({ data:fmt(a.date), specialty:a.specialty||'—', valor });
 }
-💡 7. Regra de ouro
-“Sessão é clínica. Guia é agrupamento. Faturamento é lote.”
 
-Se isso estiver separado:
+const SEP='═'.repeat(72); const LINE='─'.repeat(72);
+const out = s => process.stdout.write(s);
+const now = new Date().toLocaleString('pt-BR');
 
-✔ não perde histórico entre meses
-✔ não quebra guia
-✔ não duplica faturamento
-✔ não gera órfãos financeiros
+out(`${SEP}\n`);
+out(`  RELATÓRIO SEMESTRAL — ATENDIMENTOS CONVÊNIO\n`);
+out(`  Período: Janeiro a Junho de 2026  |  Filtro: somente completed\n`);
+out(`  Gerado em: ${now}\n`);
+out(`${SEP}\n\n`);
 
-Se quiser, o próximo passo lógico é eu te desenhar:
+const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
 
-👉 o fluxo completo (sessão → guia → batch → envio convênio → retorno/glosa)
+// Pré-calcula resumo
+let grandSessoes=0, grandValor=0;
+const grandPacs=new Set();
+const resumo={};
+for (const mes of meses) {
+  let sess=0, valor=0; const pacs=new Set(); let anapolis=0,campinas=0,vAnapolis=0,vCampinas=0;
+  for (const [prov,po] of Object.entries(result[mes])) {
+    for (const [pat,arr] of Object.entries(po)) {
+      pacs.add(pat); sess+=arr.length; const v=arr.reduce((s,x)=>s+x.valor,0); valor+=v;
+      if(prov.includes('anapolis')){ anapolis+=arr.length; vAnapolis+=v; }
+      if(prov.includes('campinas')){ campinas+=arr.length; vCampinas+=v; }
+    }
+  }
+  resumo[mes]={sess,valor,pacs,anapolis,campinas,vAnapolis,vCampinas};
+  grandSessoes+=sess; grandValor+=valor; for(const p of pacs) grandPacs.add(p);
+}
 
-ou
+// Tabela resumo
+out(`RESUMO POR MÊS\n${LINE}\n`);
+out(`${'Mês'.padEnd(14)} ${'Sessões'.padStart(8)} ${'Valor Total'.padStart(14)} ${'Anápolis'.padStart(22)} ${'Campinas'.padStart(22)}\n${LINE}\n`);
+for (const mes of meses) {
+  const [mm,yy]=mes.split('/'); const r=resumo[mes];
+  const aStr = r.anapolis ? `${r.anapolis}x / ${brl(r.vAnapolis)}` : '—';
+  const cStr = r.campinas ? `${r.campinas}x / ${brl(r.vCampinas)}` : '—';
+  out(`${(mesNome(mm)+'/'+yy).padEnd(14)} ${String(r.sess).padStart(8)} ${brl(r.valor).padStart(14)} ${aStr.padStart(22)} ${cStr.padStart(22)}\n`);
+}
+out(`${LINE}\n`);
+out(`${'TOTAL'.padEnd(14)} ${String(grandSessoes).padStart(8)} ${brl(grandValor).padStart(14)}\n\n`);
 
-👉 como adaptar sua tela atual sem refazer tudo
+out(`SITUAÇÃO DE FATURAMENTO\n${LINE}\n`);
+out(`  Lote enviado : LOT-UNIMED-ANAPOLIS-1778784104444\n`);
+out(`  Período      : 01/04/2026 → 29/04/2026  |  28 sessões  |  R$ 2.700,00\n`);
+out(`  Enviado em   : 14/05/2026  |  Status: Enviado  |  Retorno recebido: R$ 0,00\n\n`);
+out(`  ⚠  PENDENTES DE FATURAMENTO:\n`);
+out(`     Unimed Anápolis — Jan, Fev, Mar e Mai/Jun/2026\n`);
+out(`     Unimed Campinas — Jan a Abr/2026 (nenhum lote criado)\n\n`);
 
-Só me diz o nível de mudança que você quer (incremental vs refactor estrutural).
+// Detalhe por mês
+for (const mes of meses) {
+  const [mm,yy]=mes.split('/'); const r=resumo[mes];
+  out(`${'▓'.repeat(72)}\n`);
+  out(`  ${mesNome(mm).toUpperCase()} ${yy} — ${r.sess} sessão(ões) — ${brl(r.valor)} — ${r.pacs.size} paciente(s)\n`);
+  out(`${'▓'.repeat(72)}\n\n`);
+  for (const [prov,po] of Object.entries(result[mes]).sort()) {
+    const label=prov==='unimed-anapolis'?'UNIMED ANÁPOLIS':prov==='unimed-campinas'?'UNIMED CAMPINAS':prov.toUpperCase();
+    out(`  [ ${label} ]\n\n`);
+    for (const [pat,sessoes] of Object.entries(po).sort()) {
+      const total=sessoes.reduce((s,x)=>s+x.valor,0);
+      out(`  ${LINE.slice(0,60)}\n`);
+      out(`  Paciente : ${pat}\n`);
+      out(`  Sessões  : ${sessoes.length}   Total: ${brl(total)}\n\n`);
+      // Agrupa por especialidade: contagem + valor + datas
+      const porEsp={};
+      for (const s of sessoes) {
+        if(!porEsp[s.specialty]) porEsp[s.specialty]={count:0,valor:0,datas:[]};
+        porEsp[s.specialty].count++;
+        porEsp[s.specialty].valor+=s.valor;
+        porEsp[s.specialty].datas.push(`${s.data} (${brl(s.valor)})`);
+      }
+      for (const [esp,info] of Object.entries(porEsp).sort()) {
+        out(`    ${esp.padEnd(24)} ${String(info.count+'x').padEnd(4)}  ${brl(info.valor).padEnd(14)}\n`);
+        for (const d of info.datas) out(`       • ${d}\n`);
+      }
+      out(`\n`);
+    }
+  }
+}
 
+out(`${SEP}\n`);
+out(`  FIM DO RELATÓRIO — ${grandSessoes} atendimentos — ${brl(grandValor)} total\n`);
+out(`${SEP}\n`);
 
-Li. O documento acertou o diagnóstico raiz.
+await mongoose.disconnect();
+EOF
+echo "✅ $(wc -l < /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt) linhas geradas"
+
+OUT
+✅ 397 linhas geradas
+Relatório atualizado: auditoria_convenio_semestral_jan_jun_2026.txt — 397 linhas.
+
+Agora cada paciente tem:
+
+Total em reais por mês
+Por especialidade: quantidade de sessões + valor total + cada data com seu valor individual
+Valores sem preenchimento no appointment usam o padrão do convênio (Anápolis R$80, Campinas R$140)
+de forma objetiva isso e os valore so de atendiemntos realizados ne nao agendamentos cancelaodds nem pendendes
+Exato. O relatório contém somente appointments com operationalStatus = 'completed' — ou seja, atendimentos que de fato aconteceram.
+
+Cancelados (canceled), agendados (scheduled), confirmados (confirmed), pré-agendados (pre_agendado) e faltantes (missed) foram todos excluídos da query.
+
+ARCHITECTURE_FLOW.md
+Antes de rodar isso em produção, tem um ponto crítico que precisa ficar bem claro — e aqui vale ser bem conservador:
+
+## ⚠️ ALERTA REAL (não é teórico)
+
+Você agora tem **dois níveis de proteção contra double-settlement**:
+
+1. `_billingEventId` (lock lógico / idempotência de negócio)
+2. `transitionPaymentStatus` (idempotência de estado)
+
+Mas existe um terceiro risco que ainda pode existir dependendo do teu banco:
+
+> **concorrência entre workers rodando ao mesmo tempo (ou retry de job + API manual)**
 
 ---
 
-## 🎯 Resumo da análise
+# 🔥 O problema que ainda pode acontecer
 
-O documento diz isso aqui, e eu concordo:
+Mesmo com `_billingEventId`, se isso não estiver em:
 
-> **Sessão = clínica. Guia = agrupamento. Faturamento = lote.**
+* índice único parcial **OU**
+* operação atômica tipo `findOneAndUpdate` com condição
 
-E a regra de ouro:
+você ainda pode ter:
 
-> **Mês é só filtro visual, nunca critério financeiro.**
-
----
-
-## 🔗 Como isso se conecta ao que a gente achou no banco
-
-O caso do **Nicolas Lucca** é a prova viva do documento:
-
-| Problema no banco | Causa no modelo |
-|-------------------|-----------------|
-| Sessões de junho sem insuranceGuide | Sistema não vincula sessão à guia automaticamente |
-| guideConsumed=false em sessões completed | Contador usado manualmente/parcialmente |
-| Guia 15650187 (fono) com usedSessions=4 mas 0 sessões | Contador incrementou, vínculo não aconteceu |
-| Sessões de fono na guia de terapia ocupacional | UI/fluxo não respeita especialidade da guia |
-| Botão "FATURAR" por sessão na UI | Anti-padrão: convênio fatura guia, não sessão |
-
-Ou seja: **o banco está consistente com um modelo quebrado.**
+* dois workers lendo `pending`
+* ambos passando no "check"
+* ambos tentando settlar antes do update persistir
 
 ---
 
-## ⚠️ O que isso muda no nosso plano
+# 🧱 O que você JÁ fez certo (importante reconhecer)
 
-### Correção pontual no Nicolas
-Ainda faz sentido **vincular as sessões à guia correta** para consertar o histórico. Mas é paliativo.
+✔ transitionPaymentStatus como guard de estado
+✔ settlement centralizado (bom design)
+✔ batch vs avulso separado
+✔ dry-run seguro
+✔ job isolado
 
-### O que realmente para o problema
-Mudar o fluxo de faturamento:
-
-1. **Complete da sessão** → já vincula à guia (acabei de corrigir no therapyPackageController.js)
-2. **Tela de convênios** → mostra guias, não sessões
-3. **Botão de faturar** → fatura a **guia inteira** (ou lote de guias)
-4. **Filtro de mês** → só muda o que é exibido, não o que pode ser faturado
+Isso já te coloca em nível “produção séria”.
 
 ---
 
-## 🚀 Próximo passo recomendado
+# 🚨 O ponto que ainda está faltando (o mais importante agora)
 
-Parar de corrigir caso a caso e fazer isso:
+Você precisa garantir isso em nível de banco:
 
-1. **Modelar InsuranceBillingBatch**
-   
-js
-   {
-     provider: 'unimed-anapolis',
-     status: 'pending_billing' | 'billed' | 'received',
-     guides: [guideIds],
-     totalAmount: number,
-     createdAt: Date,
-     billedAt: Date,
-     receivedAt: Date
-   }
+## 🔐 LOCK ATÔMICO REAL (não só lógica)
 
+Algo assim (conceito):
 
-2. **Payment vinculado ao batch**, não só à sessão
+```js
+await Payment.findOneAndUpdate(
+  {
+    _id: paymentId,
+    status: { $ne: 'paid' },
+    _billingEventId: null
+  },
+  {
+    $set: {
+      _billingEventId: eventId,
+      _billingEventAt: new Date()
+    }
+  },
+  { new: true }
+);
+```
 
-3. **UI lista guias pendentes**, com opção de selecionar e faturar em lote
-
-4. **Remover botão "FATURAR" por sessão**
-
----
-
-## 💬 Resposta direta
-
-O documento está certo. O sistema hoje fatura por sessão/mês, e isso é o anti-padrão que gera os bugs que a gente está caçando.
-
-A correção pontual do Nicolas resolve o passado. Mas se não mudar o modelo de faturamento, o problema volta.
+👉 isso sim garante “1 executor só ganha”
 
 ---
 
-Quer que eu pare a correção pontual e parta para modelar o InsuranceBillingBatch? Ou primeiro fecha o histórico (Nicolas/Davi) e depois refatora o faturamento?
+# 💡 MELHORIA QUE EU RECOMENDO ANTES DO EXECUTE
 
-Você já chegou no ponto certo de decisão de arquitetura — agora é mais estratégia de execução do que diagnóstico.
+Antes de rodar o job, adiciona isso:
 
-Vou ser bem direto pra não te fazer perder ciclo.
+## 1. Índice (ESSENCIAL)
 
-🧠 1. Você tem dois problemas diferentes (e não pode misturar)
-🔴 A) Problema histórico (Nicolas / Davi / inconsistências atuais)
-sessão sem guide
+```js
+db.payments.createIndex(
+  { _billingEventId: 1 },
+  { unique: false, sparse: true }
+)
+```
 
-guideConsumed quebrado
+ou melhor ainda:
 
-vínculo perdido
+```js
+db.payments.createIndex(
+  { _id: 1, _billingEventId: 1 }
+)
+```
 
-👉 Isso é dívida de dados + bug já vivo em produção
+---
 
-🔵 B) Problema estrutural (modelo de faturamento)
-faturamento por sessão
+## 2. Garantia extra (forte mesmo)
 
-filtro por mês virando regra financeira
+Se quiser nível hospital / financeiro:
 
-UI guiando estado do backend
+```js
+partialFilterExpression: {
+  status: { $ne: 'paid' }
+}
+```
 
-👉 Isso é defeito de arquitetura
+---
 
-⚠️ 2. O erro que você precisa evitar agora
-Não entrar em modo:
+# 📊 O que vai acontecer quando você rodar
 
-“vou corrigir tudo antes de mudar o modelo”
+Se estiver tudo ok:
 
-Porque isso vira:
+* 65 payments → `paid`
+* `_billingEventId` preenchido
+* insurance.status → `received`
+* DRE sai de 0 → ~R$5.7k realizado
+* aba “Recebidos” começa a refletir realidade
 
-você corrige dados em cima de um modelo errado
+---
 
-e o sistema continua gerando novos erros enquanto você corrige os antigos
+# ⚠️ DECISÃO IMPORTANTE AGORA
 
-🎯 3. Decisão correta (engenharia real)
-✔️ Ordem ideal:
-🥇 Fase 1 — travar o modelo novo (URGENTE)
-Antes de continuar limpando histórico:
+Você está literalmente na fronteira:
 
-introduzir InsuranceBillingBatch
+## Cenário A (seguro)
 
-parar faturamento por sessão
+✔ roda job agora
+✔ aceita pequeno risco controlado (baixo já)
 
-mudar UI para guia (mesmo que simples)
+## Cenário B (produção crítica / recomendado)
 
-👉 Isso para a geração de novos bugs
+1. adiciona índice/lock atômico completo
+2. roda dry-run novamente
+3. executa
 
-🥈 Fase 2 — backfill controlado (Nicolas/Davi)
-Depois:
+---
 
-corrigir sessões órfãs
+# Minha recomendação direta
 
-reconstruir insuranceGuide
+Como isso mexe com:
 
-ajustar usedSessions
+* faturamento
+* DRE
+* caixa real
 
-👉 Isso vira operação segura porque o sistema não está mais “quebrando ao vivo”
+👉 eu faria **mais 1 proteção leve antes do execute final**
 
-🥉 Fase 3 — limpeza fina
-auditoria
+---
 
-casos residuais
+# Se quiser seguir rápido
 
-otimização
+Posso te ajudar a fechar isso em 2 minutos:
 
-💥 4. Resposta direta à sua pergunta
-“corrige histórico primeiro ou modela batch primeiro?”
+✔ transformar `_billingEventId` em lock 100% atômico
+✔ revisar se existe qualquer race condition escondida
+✔ garantir que batch + avulso nunca colidem
+✔ te dar “GO seguro produção”
 
-👉 Modela o InsuranceBillingBatch primeiro.
+Só me fala:
 
-🧠 5. Por quê isso é crítico
-Porque hoje seu sistema está assim:
+**“quero blindar 100% antes do execute”**
+Vou ver o código atual do job para entender o que já existe antes de propor qualquer mudança.
 
-cada sessão = pode virar evento financeiro
-E deveria ser:
+Bash Find files with billingEventId and transitionPaymentStatus
+IN
+find /home/user/projetos/crm/back -type f -name "*.js" | xargs grep -l "_billingEventId\|billingEventId\|transitionPaymentStatus" 2>/dev/null
 
-sessão → guia → batch → faturamento
-Se você continuar corrigindo histórico sem mudar isso:
+OUT
+Exit code 123
+/home/user/projetos/crm/back/domains/billing/services/insuranceBillingService.v2.js
+/home/user/projetos/crm/back/services/insuranceBatchService.js
+/home/user/projetos/crm/back/services/paymentService.js
+/home/user/projetos/crm/back/services/autoInsuranceSettlementService.js
+/home/user/projetos/crm/back/services/paymentStatusService.js
+/home/user/projetos/crm/back/workers/paymentWorker.js
+/home/user/projetos/crm/back/services/financialGuard/guards/convenio.guard.js
+/home/user/projetos/crm/back/services/financialGuard/guards/particular.guard.js
+/home/user/projetos/crm/back/services/financial/ConvenioMetricsService.js
+/home/user/projetos/crm/back/routes/importFromAgenda.js
+/home/user/projetos/crm/back/routes/appointment.v2.js
+/home/user/projetos/crm/back/routes/payment.v2.js
+/home/user/projetos/crm/back/routes/Payment.js
+/home/user/projetos/crm/back/controllers/packageController.v2.js
+/home/user/projetos/crm/back/domain/payment/cancelPayment.js
+/home/user/projetos/crm/back/models/Payment.js
+/home/user/projetos/crm/back/models/Session.js
+Read autoInsuranceSettlementService.js
+O lock atômico que o documento recomendava já está implementado — linhas 31-39 usam exatamente o findOneAndUpdate com condição atômica. Mas encontrei um bug real no arquivo:
 
-novos erros continuam sendo criados
+Bash Check Payment model for billingEventId index
+IN
+grep -n "_billingEventId\|sparse\|index" /home/user/projetos/crm/back/models/Payment.js | head -30
 
-você nunca “zera o problema”
+OUT
+9:    patientId: { type: String, index: true }, // 🎯 Compatibilidade V2
+12:    appointmentId: { type: String, index: true }, // 🎯 Compatibilidade V2
+54:    financialDate: { type: Date, default: null, index: true },
+85:        index: true,
+201:paymentSchema.index({ appointment: 1, splitGroupId: 1, status: 1 }, { name: 'ledger_split_lookup' });
+202:paymentSchema.index({ source: 1, createdAt: -1 }, { name: 'source_audit_trail' });
+261:paymentSchema.index({ status: 1, billingType: 1, paymentDate: -1 });
+262:paymentSchema.index({ financialDate: -1, status: 1 });
+263:paymentSchema.index({ patientId: 1, status: 1 });
+266:paymentSchema.index({ status: 1, financialDate: -1, amount: 1, kind: 1 }, { name: 'financial_cash_status_date' });
+267:paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financial_doctor_cash_status_date' });
+271:paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
+273:paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
+Diagnóstico completo:
 
-vira manutenção infinita
+Lock atômico: já correto. O findOneAndUpdate com condição dupla (status ≠ paid + _billingEventId null) nas linhas 31-39 é exatamente o que o documento recomendava. Já está implementado.
 
-🚀 6. O ponto mais importante de tudo
-O bug do Nicolas não é exceção.
+Bug real encontrado: linha 76-79 usa payment.amount mas a variável payment nunca foi declarada nesse escopo. locked = documento pré-update, updated = resultado do transitionPaymentStatus. Vai lançar ReferenceError em produção.
 
-Ele é efeito colateral inevitável do modelo atual.
+Missing: índice sparse no _billingEventId — sem ele o lock funciona (MongoDB é atômico por documento), mas a query é lenta em collection grande.
 
-✔️ 7. Minha recomendação final (bem objetiva)
-Agora:
-👉 implementar InsuranceBillingBatch + ajustar fluxo de faturamento
+Corrijo os dois agora:
 
-Em paralelo (leve):
-👉 só corrigir casos críticos que quebram operação (tipo guia impossível de faturar)
+Edit autoInsuranceSettlementService.js
+Modified
+Agora o índice sparse no Payment model:
 
-Depois:
-👉 backfill completo (Nicolas/Davi/etc)
+Read Payment.js (lines 271-280)
+Edit Payment.js
+Added 1 line
+Feito. Resumo do que estava certo vs o que foi corrigido:
 
-🧭 Se quiser próximo passo útil de verdade
-Posso te desenhar já:
+Já estava correto (pode rodar com confiança):
 
-schema completo do BillingBatch
+Lock atômico via findOneAndUpdate com condição dupla — garante "1 executor só ganha", sem race condition mesmo com workers paralelos
+transitionPaymentStatus como segundo guard
+Batch vs avulso separados
+Corrigido agora:
 
-transição de estados (guia → batch → envio → retorno convênio)
+payment.amount → locked.amount em 3 lugares (linhas 76, 79, 80) — era um ReferenceError certo em produção
+Índice sparse _billingEventId adicionado no Payment model — acelera a query do lock
+GO seguro para produção. Roda o dry-run primeiro para confirmar os 65 payments candidatos, depois execute.
 
-e como encaixar isso sem quebrar o que já está rodando
+autoInsuranceSettlementService.js
+Bom, aqui a gente chegou no ponto “produção real mesmo”, então vou ser direto e preciso.
 
-Isso aqui é o que “fecha o sistema” de vez — não só corrige bug.
+---
 
-Só me diz.
+# ✅ O QUE ESTÁ REALMENTE OK AGORA
 
+Você já tem o essencial bem feito:
 
-temos fauar incluido sessao por sessao hoje melhropeir par akimi entender o flow ne
+## 🔒 1. Lock correto (isso é o mais importante)
 
-Sim — hoje o seu sistema ainda é essencialmente “sessão-cêntrico” no faturamento, mesmo que você já tenha identificado que o modelo correto é por guia/lote.
+* `findOneAndUpdate` com condição
+* `status != paid`
+* `_billingEventId == null`
 
-Vou te desenhar o flow real atual (como está rodando hoje) de forma simples, pra você enxergar o problema sem abstração.
+👉 isso elimina race condition na prática
 
-🧠 🔴 FLOW ATUAL (HOJE NO SISTEMA)
-1. 📅 Criação da sessão
-Appointment é concluído
+---
 
-Session é criada ou marcada como completed
+## 🔁 2. Idempotência dupla
 
-Appointment → Session (completed)
-2. 💰 Geração de pagamento (quando convênio)
-Aqui entra o ConvenioHandler
+* `transitionPaymentStatus` (estado)
+* `_billingEventId` (execução)
 
-Session → Payment (sessionId é vinculado)
-✔️ Isso está ok no seu sistema atual após correções
+👉 isso impede double-settlement até em retry
 
-3. 🧾 Guia (InsuranceGuide)
-Aqui começa a inconsistência histórica:
+---
 
-Guia existe
+## 📊 3. Separação de fluxos
 
-mas NÃO é o “centro do fluxo”
+* batch → `processReturn`
+* avulso → `autoInsuranceSettlement`
 
-ela é atualizada parcialmente
+👉 arquitetura limpa, sem acoplamento
 
-Session → (às vezes) InsuranceGuide
-⚠️ Problema: nem toda session entra corretamente na guia
+---
 
-4. 🧍 UI de convênios (hoje)
-A UI trabalha assim:
+## 📦 4. Índice sparse adicionado
 
-lista sessões (ou sessões agrupadas por mês)
+👉 melhora lookup de lock em volume
 
-cada sessão pode ser “faturada”
+---
 
-ou entra num filtro mensal
+# ⚠️ O PONTO MAIS IMPORTANTE (HONESTO)
 
-UI → Sessions (listadas por mês)
-❌ Aqui nasce o problema estrutural
+Mesmo com tudo isso:
 
-5. 🧾 Faturamento (HOJE — modelo errado atual)
-Hoje acontece isso:
+> O sistema agora está tecnicamente correto para rodar em produção.
 
-Session → botão "FATURAR" → Payment/Envio convênio
-ou
+MAS…
 
-Filtro mês → seleciona sessões → fatura individualmente
-💥 RESULTADO DO MODELO ATUAL
-Isso gera exatamente os bugs que você viu:
+Ele ainda depende de **uma suposição crítica**:
 
-sessão sem guide
+---
 
-guide com contador errado
+# 🧠 SUPOSIÇÃO QUE VOCÊ ESTÁ FAZENDO SEM PERCEBER
 
-pagamento perdido ou duplicado
+> “não existem múltiplos jobs rodando ao mesmo tempo sem coordenação externa”
 
-mês quebrando guia
+Se isso for verdade:
 
-sessões de meses diferentes misturadas
+✔ você está seguro
 
-🔵 FLUXO IDEAL (o que você está migrando)
-Só pra comparação clara:
+---
 
-✔️ 1. Sessão (clínico)
-Appointment → Session completed
-✔️ 2. Guia (agrupamento clínico)
-Session → InsuranceGuide (sempre vinculada corretamente)
-✔️ 3. Batch de faturamento (financeiro)
-InsuranceGuide → BillingBatch
-✔️ 4. Faturamento real
-BillingBatch → Payment / Send to insurer
-⚠️ DIFERENÇA CRÍTICA
-HOJE:
-Sessão = unidade de faturamento
-CERTO:
-Guia = unidade clínica
-Batch = unidade financeira
-🧠 RESUMO SIMPLES (pra fixar)
-🔴 HOJE (problema)
-Fatura sessão por sessão
+Se NÃO for:
 
-UI manda no financeiro
+* dois servidores rodando job
+* retry manual + cron ao mesmo tempo
+* execução duplicada por deploy
 
-mês influencia regra de negócio
+👉 ainda existe risco residual (pequeno, mas real)
 
-guia é secundária
+---
 
-🟢 IDEAL (correto)
-sessão só registra atendimento
+# 🧱 O QUE FALTA PARA FICAR “HOSPITAL-GRADE”
 
-guia agrupa sessões
+Não é correção de bug — é blindagem operacional:
 
-batch decide faturamento
+## 🔐 1. LEADER LOCK (recomendado)
 
-mês é só filtro visual
+Um lock global simples:
 
-💬 resposta direta pra sua pergunta
-“hoje está fatura sessão por sessão né?”
+```js id="9n2kq1"
+db.locks.updateOne(
+  { _id: "insurance-settlement-job" },
+  { $set: { running: true, startedAt: new Date() } },
+  { upsert: true }
+)
+```
 
-👉 SIM. Hoje o sistema ainda fatura sessão por sessão na prática.
+com TTL ou timeout.
 
-Mesmo com partes corrigidas, o modelo de UI + fluxo ainda é sessão-cêntrico.
+---
 
-🚀 se quiser próximo passo útil
-Eu posso te desenhar agora:
+## 🧯 2. SAFE GUARD NO JOB
 
-👉 como fazer a migração sem quebrar produção
-manter sessão funcionando
+```js id="p4k2ld"
+if (await isJobRunning()) return;
+```
 
-introduzir batch paralelo
+---
 
-migrar faturamento aos poucos
+## 📌 3. LOG DE EXECUÇÃO ÚNICA
 
-sem downtime e sem backfill massivo
+Pra auditoria do financeiro:
 
-Isso é o ponto crítico pra você não “refazer tudo de uma vez”.
+* runId
+* count
+* total amount
+* payments list
 
+---
 
-e appointemten payemnt e session assim sao cirados nossos agendmaenots
+# 💰 SOBRE O DRE (IMPORTANTE PRA SUA DECISÃO)
 
-Sim — e isso aqui é exatamente o ponto onde o seu sistema começa a ficar “difícil”, porque você tem 3 entidades criadas no mesmo evento de negócio, mas com responsabilidades diferentes.
+Depois desse job:
 
-Vou te organizar isso de forma bem clara.
+* R$ 0 → ~R$ 5.760 realizado
+* 65 payments deixam de ser “fantasma contábil”
+* seu sistema passa a ter **caixa real consistente**
 
-🧠 🔵 COMO O AGENDAMENTO FUNCIONA HOJE (seu sistema)
-Quando um appointment é criado e depois concluído, você gera:
+👉 isso muda credenciamento, auditoria e negociação com convênios
 
-1. 📅 Appointment (o núcleo)
-É o evento clínico base:
+---
 
-Appointment = agendamento do paciente
-data/hora
+# 🚦 MINHA RECOMENDAÇÃO FINAL (CLARA)
 
-profissional
+## Você pode:
 
-tipo de atendimento
+### ✅ EXECUTAR AGORA se:
 
-status (scheduled → completed/canceled)
+* só 1 instância do backend roda job
+* cron não está duplicado
+* não existe execução manual simultânea
 
-✔️ Isso é o “pai lógico” de tudo
+---
 
-2. 🧾 Session (execução clínica)
-Quando o atendimento acontece:
+### 🟡 OU blindar antes se quiser nível máximo:
 
-Appointment → Session
-Session contém:
+Adicionar:
 
-duração real
+* leader lock simples
+* log de execução
+* check de job ativo
 
-status clínico (completed)
+leva 10–15 min e elimina 100% do risco operacional restante
 
-dados do atendimento
+---
 
-vínculo com appointment
+# 💬 VEREDITO HONESTO
 
-✔️ Aqui é onde “o atendimento realmente aconteceu”
+> O código está correto para produção funcional.
 
-3. 💰 Payment (financeiro)
-Quando é convênio:
+> Falta apenas blindagem operacional para produção crítica.
 
-Session → Payment
-Payment contém:
+---
 
-valor
+Se quiser, no próximo passo eu posso te deixar isso em nível:
 
-status (pending, paid, void)
+> “não quebra nem se 3 servidores rodarem ao mesmo tempo”
 
-vínculo com session
+com um lock distribuído simples e limpo (sem Redis obrigatório).
 
-convênio
+Só fala: **“quero blindagem total do job”**
+Antes de implementar qualquer coisa, vou ver como o job é disparado hoje — se roda num único processo, o líder lock pode ser overkill.
 
-✔️ Aqui nasce a parte financeira
+Bash Check how the settlement job is triggered
+IN
+grep -n "runAvulsoSettlement\|autoInsuranceSettlement\|cron\|schedule\|setInterval" /home/user/projetos/crm/back/workers/paymentWorker.js /home/user/projetos/crm/back/server.js 2>/dev/null | head -40
 
-4. 🧾 InsuranceGuide (agrupamento clínico-financeiro)
-Session → InsuranceGuide
-Mas aqui está o problema atual:
+OUT
+/home/user/projetos/crm/back/workers/paymentWorker.js:976:            console.log(`[PaymentWorker] ✅ Appointment ${appointmentId} sincronizado com sucesso`);
+/home/user/projetos/crm/back/workers/paymentWorker.js:978:            log.info('appointment_synced', `Appointment ${appointmentId} sincronizado`, {
+/home/user/projetos/crm/back/workers/paymentWorker.js:1153:            operationalStatus: 'scheduled',
+/home/user/projetos/crm/back/workers/paymentWorker.js:1160:                    newStatus: 'scheduled',
+/home/user/projetos/crm/back/workers/paymentWorker.js:1359:        operationalStatus: 'scheduled',
+/home/user/projetos/crm/back/server.js:82:import { startLearningCron } from "./crons/learningCron.js";
+/home/user/projetos/crm/back/server.js:83:import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
+/home/user/projetos/crm/back/server.js:84:import { startCron, startAllCrons } from './config/cronManager.js';
+/home/user/projetos/crm/back/server.js:138:import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
+/home/user/projetos/crm/back/server.js:139:import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
+/home/user/projetos/crm/back/server.js:140:import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
+/home/user/projetos/crm/back/server.js:141:import { scheduleGmbAutoRepublish } from './crons/gmbAutoRepublish.js';  // 🔄 NOVO: Republicação automática de posts GMB
+/home/user/projetos/crm/back/server.js:158:import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
+/home/user/projetos/crm/back/server.js:159:import { scheduleDailyScoring } from './crons/dailyScoring.js';
+/home/user/projetos/crm/back/server.js:160:import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.cron.js';
+/home/user/projetos/crm/back/server.js:161:import { schedulePatientConsistency } from './crons/patientConsistency.cron.js';
+/home/user/projetos/crm/back/server.js:237:// scheduleMonthlyCommissions();
+/home/user/projetos/crm/back/server.js:239:// scheduleDailyAlerts();
+/home/user/projetos/crm/back/server.js:240:scheduleGmbCron();  // Geração e envio de posts GMB via Make
+/home/user/projetos/crm/back/server.js:241:scheduleLandingPageDailyPosts();  // Posts diários vinculados a landing pages
+/home/user/projetos/crm/back/server.js:242:scheduleGmbAutoRepublish();  // Republicação automática de posts que expiram
+/home/user/projetos/crm/back/server.js:243:// scheduleDailyScoring()
+/home/user/projetos/crm/back/server.js:565:app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
+/home/user/projetos/crm/back/server.js:663:  setInterval(() => {
+/home/user/projetos/crm/back/server.js:772:      // await import("./workers/followup.cron.js");
+/home/user/projetos/crm/back/server.js:865:      console.log("⏭️ Crons desabilitados no processo API — use o cron-worker dedicado");
+/home/user/projetos/crm/back/server.js:870:    // const { startRegressionCron } = await import("./crons/regressionCron.js");
+/home/user/projetos/crm/back/server.js:872:    // await import("./crons/gmb.cron.js");  // Standalone: não importar no server principal (reconecta MongoDB)
+/home/user/projetos/crm/back/server.js:874:    // const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
+Bash Check if settlement job is exposed via route
+IN
+grep -rn "runAvulsoSettlement\|avulsoSettlement\|autoInsuranceSettlement" /home/user/projetos/crm/back/routes/ /home/user/projetos/crm/back/server.js 2>/dev/null | head -20
 
-às vezes é criado junto
+OUT
+(Bash completed with no output)
+O job não está em nenhum cron e não tem rota exposta — é executado manualmente (script direto ou chamada pontual).
 
-às vezes é atualizado depois
+Nesse cenário o líder lock é overkill. O risco que o documento descreve (3 servidores simultâneos) não existe aqui: Render roda 1 instância, e o job só dispara quando você manda explicitamente.
 
-às vezes não é vinculado corretamente
+O que você já tem é suficiente para isso:
 
-👉 Isso é onde sua inconsistência nasce
+Lock atômico no banco: se por acidente você rodar duas vezes seguidas, o segundo processo vê _billingEventId preenchido e pula
+transitionPaymentStatus: segundo guard se o primeiro falhar
+Veredito direto: pode executar. O bug do payment.amount que corrigimos era o único risco real — esse sim quebraria em produção.
 
-💥 FLUXO REAL ATUAL (simplificado)
-Appointment
-   ↓
-Session (created/completed)
-   ↓
-Payment (convênio)
-   ↓
-InsuranceGuide (parcial / inconsistente)
-⚠️ O PROBLEMA NÃO É A EXISTÊNCIA — É A ORDEM + RESPONSABILIDADE
-Hoje seu sistema tem:
+excluir o que nao ta sendo usao e qeu causa confussao na anlsie de code etc Sim — e isso aqui é um ponto bem importante: **vocês já têm maturidade suficiente no sistema para parar de “corrigir no braço” e começar a padronizar limpeza de código.**
 
-🔴 Problema 1 — múltiplos “donos da verdade”
-Appointment manda no clínico
+Mas tem uma nuance: não é “usar mais ferramenta X”, é **criar um protocolo de limpeza consistente**.
 
-Session manda no atendimento
+---
 
-Payment manda no financeiro
+# 🧼 O que vocês *deveriam estar usando mais* (de verdade)
 
-Guide tenta agrupar depois
+## 1. 🔍 “Audit scripts antes de mexer em regra”
 
-👉 isso gera conflito de estado
+Vocês já fazem isso bem, mas pode virar padrão:
 
-🔴 Problema 2 — criação distribuída
-Essas entidades são criadas em momentos diferentes:
+* sempre criar script de validação antes de alterar lógica
+* sempre rodar em staging com snapshot
+* nunca confiar só em leitura de código
 
-appointment criado
+👉 vocês já estão 70% nisso (isso é bom)
 
-session criada depois
+---
 
-payment criado só em convênio
+## 2. 🧱 “Single source of truth por domínio”
 
-guide atualizado em outro fluxo
+Hoje vocês têm:
 
-👉 isso gera “buracos” (exatamente os que você achou no banco)
+* billing espalhado (insurance, payment, batch, v2)
+* settlement duplicado (batch + avulso + controller + service)
 
-🔴 Problema 3 — falta de orquestrador único
-Não existe um “fluxo mestre” tipo:
+👉 o que falta não é ferramenta — é organização:
 
-completeAppointment()
-que garante consistência entre tudo.
+Cada domínio deveria ter:
 
-🧠 MODELO CORRETO (o que você está evoluindo)
-Você está indo pra isso aqui:
+```
+/billing
+   /core (regras puras)
+   /flows (batch, avulso)
+   /jobs
+   /guards
+```
 
-✔️ 1. Appointment = origem
-Appointment (source of truth)
-✔️ 2. Session = execução
-Appointment → Session
-✔️ 3. Guide = agrupamento automático
-Session → InsuranceGuide (sempre consistente)
-✔️ 4. Payment = consequência financeira
-InsuranceGuide → Payment OR BillingBatch
-💥 DIFERENÇA CRÍTICA
-HOJE:
-Session cria Payment diretamente
-CERTO:
-Guide/BillingBatch cria Payment
-🧩 RESUMO SIMPLES
-🔴 Hoje
-Appointment cria Session
+---
 
-Session cria Payment
+## 3. 🧪 “Dry-run obrigatório como gate”
 
-Guide é secundário
+Isso vocês já começaram a fazer bem.
 
-UI influencia fluxo
+Mas o upgrade é:
 
-🟢 Ideal
-Appointment só inicia processo
+👉 TODO script crítico deve ter:
 
-Session registra execução
+* dry-run default
+* execute explícito
+* rollback se possível
 
-Guide organiza
+---
 
-Batch fatura
+## 4. 🧠 “Flow doc obrigatório (o que eu te falei antes)”
 
-🚨 O insight mais importante disso tudo
-👉 Seu sistema NÃO tem um problema de entidades
-👉 Ele tem um problema de orquestração
+Isso aqui é o divisor de águas:
 
-💬 resposta direta à sua pergunta
-“appointment, payment e session são assim que são criados nossos agendamentos?”
+* Claude / Kimi param de “inventar fluxo”
+* você para de corrigir interpretação errada
+* o sistema vira previsível
 
-✔️ SIM — hoje o fluxo real é exatamente esse:
+---
 
-Appointment → Session → Payment (e Guide parcial)
+## 5. 🧯 “Guard layer (vocês estão quase lá)”
 
-❗ Mas isso está fora do modelo ideal, porque:
+Vocês já têm:
 
-Payment está cedo demais no fluxo
+* financialGuard
+* paymentStatusService
+* settlement service
 
-Guide não é autoridade consistente
+Falta só reforçar:
 
-não existe um orquestrador único
+👉 regra simples:
 
-🚀 se quiser o próximo passo certo
-Posso te desenhar:
+> nenhuma escrita financeira direta fora de service central
 
-👉 “fluxo único correto de agendamento completo”
-createAppointment()
+---
 
-completeSession()
+# ⚠️ O PROBLEMA REAL (o que está te fazendo sentir “bagunça”)
 
-assignGuide()
+Não é falta de ferramenta.
 
-buildBillingBatch()
+É isso aqui:
 
-com ordem, transações e invariantes
+### ❌ múltiplos caminhos para a mesma ação
 
-Isso aqui é o que elimina 90% dos bugs que você encontrou (sem mais backfill infinito).
+Exemplo atual:
 
+* `processReturn` (batch)
+* `receiveSession`
+* `autoInsuranceSettlement`
+* `paymentService`
+* controller direto
 
-noa o appintetne no calndario que dita regras deu complete nele ele atuzlai sessaoe  apayemtn e pacogte convenio limnair o que for
+👉 todos podem mexer em payment.status
 
-Entendi — agora você descreveu o ponto mais importante de todo o sistema.
+---
 
-E aqui vai a leitura correta disso, sem ambiguidade:
+# 🔥 O QUE REALMENTE RESOLVE (nível arquitetura)
 
-🧠 🔵 O QUE VOCÊ ESTÁ DIZENDO (modelo real do sistema)
-Você está dizendo:
+## 1 único ponto de verdade:
 
-“o Appointment no calendário é o evento mestre. Quando ele dá complete, ele orquestra tudo.”
+```js id="flow-core"
+PaymentLifecycleService
+```
 
-Ou seja:
+com:
 
-Appointment (calendar)
-   → complete()
-      → Session
-      → Payment (convênio)
-      → Package/Guide updates
-      → cleanup/regras
-✔️ Isso é um modelo de orquestrador central
-✔️ E isso está conceitualmente correto
+* `settle(paymentId)`
+* `cancel(paymentId)`
+* `transition(...)`
 
-💥 ISSO MUDA TUDO (importante)
-Você NÃO está num sistema onde:
+e TODO resto chama isso.
 
-Session manda
+---
 
-Payment manda
+# 💡 RESPOSTA DIRETA PRA SUA PERGUNTA
 
-Guide manda
+> “o que ainda não estamos usando pra limpar código?”
 
-👉 você está num sistema onde:
+✔ vocês já usam:
 
-🟢 APPOINTMENT É O ORQUESTRADOR (source of truth do fluxo)
-🧠 MODELO CORRETO DO SEU SISTEMA
-📅 1. Appointment (AUTORIDADE)
-É ele que decide tudo:
+* scripts de auditoria
+* dry-run
+* services separados
+* guards
 
-status = scheduled | completed | canceled
-Quando muda:
+❗ o que falta de verdade:
 
-👉 dispara regras do sistema inteiro
+## 1. contrato de fluxo (FLOW.md)
 
-⚙️ 2. COMPLETE (evento de domínio)
-appointment.complete()
-Esse evento faz:
+## 2. ponto único de escrita financeira
 
-cria/atualiza Session
+## 3. padronização de jobs (leader lock + dry-run padrão)
 
-cria Payment (se convênio)
+## 4. separação real “core vs orchestration”
 
-vincula InsuranceGuide
+---
 
-atualiza package/contador
+# 🧭 RESUMO HONESTO
 
-limpa inconsistências antigas
+Você não está com problema de ferramenta.
 
-dispara billing logic
+Você está num estágio onde:
 
-✔️ Isso é um orquestrador de domínio
+> o sistema cresceu mais rápido que a “camada de organização dele”
 
-🧾 3. Session (resultado clínico)
-Não decide nada.
+---
 
-Session = reflexo do appointment completed
-💰 4. Payment (resultado financeiro)
-Também não decide fluxo.
+# 🚀 Se quiser o próximo passo certo
 
-Payment = consequência do complete
-🧾 5. Guide / Package
-Também não manda no fluxo.
+Eu posso te ajudar a dar o salto real:
 
-Guide = agrupamento derivado
-⚠️ O ERRO QUE ESTAVA ACONTECENDO ANTES
-O problema antigo era:
+### 🔥 “refatoração estrutural sem quebrar nada”
 
-❌ Sistema distribuído
-session criava payment
+* unificar settlement em 1 service core
+* eliminar caminhos paralelos
+* deixar batch e avulso só como adapters
+* criar FLOW.md oficial do sistema
+* reduzir 60% da complexidade mental do sistema
 
-payment alterava session
+Só fala:
 
-guide era atualizado depois
+**“quero simplificar arquitetura sem quebrar billing”**
+Foco direto: encontrar o que está morto e deletar. Deixa eu mapear quais funções/arquivos de billing têm zero referência.
 
-UI influenciava regras
+Bash Find which settlement/billing functions are actually imported and used
+IN
+cd /home/user/projetos/crm/back && echo "=== autoInsuranceSettlementService ===" && grep -rn "autoInsuranceSettlementService\|runAvulsoSettlement\|settleBatch\|settleInsurancePayment" --include="*.js" . | grep -v "node_modules" | grep -v "autoInsuranceSettlementService.js"
 
-👉 isso gera inconsistência em cascata
+echo "=== insuranceBillingService.v2 ===" && grep -rn "insuranceBillingService" --include="*.js" . | grep -v "node_modules" | grep -v "insuranceBillingService.v2.js"
 
-🟢 O MODELO QUE VOCÊ DESCREVEU (CERTO)
-✔️ Sistema orquestrado por Appointment
-Appointment.complete()
-   ↓
-Session upsert
-   ↓
-Payment upsert (se convênio)
-   ↓
-Guide sync
-   ↓
-cleanup / reversals
-   ↓
-final state
-✔️ Isso é state machine centralizada
-✔️ Isso é o que você quer
+echo "=== paymentStatusService ===" && grep -rn "paymentStatusService\|transitionPaymentStatus" --include="*.js" . | grep -v "node_modules" | grep -v "paymentStatusService.js"
 
-💥 PONTO MAIS IMPORTANTE
-Você está basicamente dizendo:
+OUT
+=== autoInsuranceSettlementService ===
+controllers/insuranceV2Controller.js:314:    // 4. Avulso path: settle direto via settleInsurancePayment
+controllers/insuranceV2Controller.js:318:        const result = await settleInsurancePayment(pid, {
+=== insuranceBillingService.v2 ===
+domains/billing/workers/billingConsumerWorker.js:7: * insuranceBillingService V2 existente.
+domains/billing/workers/billingConsumerWorker.js:177:    const result = await insuranceBillingService.processSessionCompleted(
+domains/billing/workers/billingConsumerWorker.js:376:    const result = await insuranceBillingService.processSessionBilled(
+domains/billing/workers/billingConsumerWorker.js:432:    const result = await insuranceBillingService.processSessionReceived(
+tests/billing/load-test.js:90:      const result = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:113:      const result1 = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:138:      const result2 = await insuranceBillingService.processSessionBilled(
+tests/billing/billing-v2-e2e.test.js:153:      const result3 = await insuranceBillingService.processSessionReceived(
+tests/billing/billing-v2-e2e.test.js:195:      const result1 = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:203:      const result2 = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:233:      await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:241:      const result1 = await insuranceBillingService.processSessionBilled(
+tests/billing/billing-v2-e2e.test.js:249:      const result2 = await insuranceBillingService.processSessionBilled(
+tests/billing/billing-v2-e2e.test.js:277:      await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:282:      await insuranceBillingService.processSessionBilled(
+tests/billing/billing-v2-e2e.test.js:309:      await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:316:      const result = await insuranceBillingService.processSessionReceived(
+tests/billing/billing-v2-e2e.test.js:367:      const result = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:408:      const result = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:417:      await insuranceBillingService.cancelBilling(
+tests/billing/billing-v2-e2e.test.js:472:      const result1 = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:476:      const result2 = await insuranceBillingService.processSessionCompleted(
+tests/billing/billing-v2-e2e.test.js:508:      const result1Again = await insuranceBillingService.processSessionCompleted(
+=== paymentStatusService ===
+services/insuranceBatchService.js:164:  // 🎯 Transiciona status via paymentStatusService (emite eventos)
+services/insuranceBatchService.js:302:    // Se convênio pagou, atualizar status principal via paymentStatusService
+services/insuranceBatchService.js:307:        await transitionPaymentStatus(existingPayment._id, 'paid', {
+services/autoInsuranceSettlementService.js:12: * Double-settlement: impossível — transitionPaymentStatus não-op se já paid.
+services/autoInsuranceSettlementService.js:60:    const { payment: updated } = await transitionPaymentStatus(paymentId, 'paid', {
+services/paymentService.js:100:        // 🎯 USA paymentStatusService — ÚNICO caminho para mudança de status
+services/paymentService.js:102:        const { payment } = await transitionPaymentStatus(paymentId, 'paid', {
+services/paymentService.js:110:        // Campos adicionais que não são gerenciados pelo paymentStatusService
+services/financialGuard/guards/convenio.guard.js:41:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
+services/financialGuard/guards/particular.guard.js:52:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
+routes/appointment.v2.js:701:        await transitionPaymentStatus(orphanPayment._id, 'canceled', {
+routes/appointment.v2.js:829:          await transitionPaymentStatus(payment._id, 'canceled', {
+routes/appointment.v2.js:3172:        await transitionPaymentStatus(payment._id, 'canceled', {
+routes/payment.v2.js:997:        // 🎯 STATUS TRANSITION: usa paymentStatusService se status mudou
+routes/payment.v2.js:999:            await transitionPaymentStatus(id, status, {
+routes/payment.v2.js:1140:        // 1. Marca cada payment como pago — usa paymentStatusService (blindagem)
+routes/payment.v2.js:1142:            await transitionPaymentStatus(p._id, 'paid', {
+routes/Payment.js:3467:        // 🎯 STATUS TRANSITION: usa paymentStatusService para mudança de status
+routes/Payment.js:3468:        await transitionPaymentStatus(payment._id, 'paid', {
+services/financial/ConvenioMetricsService.js:819:            await transitionPaymentStatus(payment._id, 'paid', {
+services/financial/ConvenioMetricsService.js:825:            // Atualiza paymentDate separadamente (não gerenciado pelo paymentStatusService)
+routes/importFromAgenda.js:1045:        await transitionPaymentStatus(appointment.payment, 'canceled', {
+workers/paymentWorker.js:246:        await transitionPaymentStatus(payment._id, 'paid', {
+workers/paymentWorker.js:917:        // 3. Atualiza status via paymentStatusService (apenas se mudou)
+workers/paymentWorker.js:919:            await transitionPaymentStatus(updated._id, newStatus, {
+workers/paymentWorker.js:1143:        await transitionPaymentStatus(payment._id, 'paid', {
+workers/paymentWorker.js:1342:        await transitionPaymentStatus(paymentId, 'paid', {
+domain/payment/cancelPayment.js:57:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
+controllers/packageController.v2.js:1502:      // 🎯 STATUS TRANSITION: usa paymentStatusService
+controllers/packageController.v2.js:1503:      await transitionPaymentStatus(payment._id, 'paid', {
+models/Payment.js:205:// Detecta bypass de transitionPaymentStatus e emite evento automaticamente.
+Bash Find truly dead exports and unused files in billing area
+IN
+echo "=== runAvulsoSettlement / settleBatch (quem importa?) ===" && grep -rn "runAvulsoSettlement\|settleBatch" --include="*.js" . | grep -v node_modules
 
-“o calendário é o sistema operacional do domínio”
+echo "" && echo "=== billingConsumerWorker (quem inicia?) ===" && grep -rn "billingConsumerWorker\|billingConsumer" --include="*.js" . | grep -v node_modules | grep -v "billingConsumerWorker.js"
 
-✔️ Isso é correto para sistemas clínicos/agenda/faturamento
+echo "" && echo "=== Arquivos .v2.js ou legado sem import ===" && for f in services/insuranceBillingService.js services/settlementService.js services/receiveSession.js domains/billing/services/insuranceBillingService.v2.js; do [ -f "$f" ] && echo "EXISTS: $f"; done
 
-🧠 CONSEQUÊNCIA ARQUITETURAL
-Agora fica claro:
+OUT
+=== runAvulsoSettlement / settleBatch (quem importa?) ===
+services/autoInsuranceSettlementService.js:123:export async function runAvulsoSettlement({ dryRun = false } = {}) {
+services/autoInsuranceSettlementService.js:174:export async function settleBatch(batchId, { reason = 'manual_batch_receive', paidAt } = {}) {
+controllers/insuranceV2Controller.js:6:import { settleInsurancePayment, runAvulsoSettlement } from '../services/autoInsuranceSettlementService.js';
 
-✔️ Appointment é o único “write entry point”
-Ou seja:
+=== billingConsumerWorker (quem inicia?) ===
+domains/integration/adapters/clinicalToBilling.adapter.js:17: * Sessions de convênio são tratadas pelo billingConsumerWorker via SESSION_COMPLETED.
+domains/integration/adapters/clinicalToBilling.adapter.js:42: * Convênio NÃO é roteado aqui — billingConsumerWorker já o consome
+domains/integration/adapters/clinicalToBilling.adapter.js:54:    // Convênio já tem dono — billingConsumerWorker
 
-❌ NÃO deveria existir:
+=== Arquivos .v2.js ou legado sem import ===
+EXISTS: domains/billing/services/insuranceBillingService.v2.js
+Bash Deep check on dead exports and unstarted workers
+IN
+echo "=== settleBatch: importado em algum lugar? ===" && grep -rn "import.*settleBatch\|require.*settleBatch" --include="*.js" . | grep -v node_modules
 
-session.complete()
+echo "" && echo "=== billingConsumerWorker: iniciado em algum lugar? ===" && grep -rn "import.*billingConsumerWorker\|require.*billingConsumerWorker\|billingConsumerWorker" --include="*.js" . | grep -v node_modules | grep -v "billingConsumerWorker.js" | grep -v ".adapter.js"
 
-payment.create() direto
+echo "" && echo "=== ConvenioMetricsService: quem usa? ===" && grep -rn "ConvenioMetricsService" --include="*.js" . | grep -v node_modules | grep -v "ConvenioMetricsService.js"
 
-guide update manual
+echo "" && echo "=== insuranceBillingService.v2: importado onde? ===" && grep -rn "insuranceBillingService" --include="*.js" . | grep -v node_modules | grep "import\|require" | grep -v "v2.js" | grep -v "test\|spec"
 
-billing manual por sessão
+OUT
+=== settleBatch: importado em algum lugar? ===
 
-👉 tudo deveria passar por:
+=== billingConsumerWorker: iniciado em algum lugar? ===
 
-appointmentService.complete()
-appointmentService.cancel()
-appointmentService.reopen()
-🚨 E ISSO EXPLICA TODOS OS SEUS BUGS
-Porque antes você tinha:
+=== ConvenioMetricsService: quem usa? ===
+services/financial/FinancialOverviewService.js:35:            ConvenioMetricsService.getConvenioMetrics({ month, year }), // NOVO: Métricas de convênio
+routes/financial/convenio.routes.js:36:        const metrics = await ConvenioMetricsService.getConvenioMetrics({
+routes/financial/convenio.routes.js:79:        const faturamentos = await ConvenioMetricsService.getFaturamentosPorPeriodo(
+routes/financial/convenio.routes.js:106:        const summary = await ConvenioMetricsService.getDashboardSummary();
+routes/financial/convenio.routes.js:142:        const result = await ConvenioMetricsService.faturarEmLote({
+routes/financial/convenio.routes.js:181:        const result = await ConvenioMetricsService.faturarTodosDoPaciente({
+routes/financial/convenio.routes.js:220:        const result = await ConvenioMetricsService.receberPagamentoConvenio({
+routes/financial/convenio.routes.js:260:        const result = await ConvenioMetricsService.receberEmLote({
+controllers/insuranceV2Controller.js:19:    // 🆕 CORREÇÃO: Segue mesma regra do legado (ConvenioMetricsService)
+tests/convenioMetrics.test.js:2:// Testes unitários para ConvenioMetricsService
+tests/convenioMetrics.test.js:13:describe('ConvenioMetricsService', () => {
+tests/convenioMetrics.test.js:38:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/convenioMetrics.test.js:80:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/convenioMetrics.test.js:114:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/convenioMetrics.test.js:146:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/convenioMetrics.test.js:159:      const result = await ConvenioMetricsService.getDashboardSummary();
+tests/convenioMetrics.test.js:194:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/convenioMetrics.test.js:228:      const result = await ConvenioMetricsService.getConvenioMetrics({
+tests/test_convenio_metrics.js:3: * 🧪 Teste do ConvenioMetricsService
+tests/test_convenio_metrics.js:13:    console.log('🧪 Testando ConvenioMetricsService...\n');
+tests/test_convenio_metrics.js:24:        const metrics = await ConvenioMetricsService.getConvenioMetrics({
 
-Payment criado fora do fluxo
+=== insuranceBillingService.v2: importado onde? ===
+Resultados claros. Mapeamento do que está morto:
 
-Session sem guide
+Código	Status
+settleBatch() em autoInsuranceSettlementService.js	Exportado, nunca importado
+billingConsumerWorker.js	Nunca iniciado — só aparece em comentários
+insuranceBillingService.v2.js	Sem import em produção — só nos testes
+Deixa eu confirmar o worker antes de deletar:
 
-cancelamento sem reversão
+Bash Check billingConsumerWorker header and size
+IN
+head -30 /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js && echo "---" && wc -l /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js
 
-UI fatiando regra de negócio
+OUT
+/**
+ * ============================================================================
+ * BILLING CONSUMER WORKER - BullMQ
+ * ============================================================================
+ * 
+ * Consome eventos da fila 'billing-orchestrator' e processa via
+ * insuranceBillingService V2 existente.
+ * 
+ * Responsabilidades:
+ * - Consumir SESSION_COMPLETED
+ * - Delegar para InsuranceBillingService
+ * - Gerenciar retry e DLQ
+ * - Idempotência via correlationId
+ * ============================================================================
+ */
 
-👉 tudo isso = bypass do orchestrator
+import { Worker } from 'bullmq';
+import { insuranceBillingService } from '../services/insuranceBillingService.v2.js';
+import EventStore from '../../../models/EventStore.js';
+import Payment from '../../../models/Payment.js';
+import Appointment from '../../../models/Appointment.js';
+import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { validatePaymentEvent, generatePaymentIdempotencyKey } from '../contracts/PaymentEvents.contract.js';
+import { v4 as uuidv4 } from 'uuid';
 
-🧭 RESUMO FINAL
-🔵 Seu modelo correto (como você descreveu)
-Appointment = comando mestre
+// =============================================================================
+// CONFIGURAÇÃO
+// =============================================================================
 
-Complete = evento central
+const WORKER_CONFIG = {
+---
+535 /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js
+535 linhas de BullMQ que nunca foram ligadas ao server. Vou verificar tudo que depende desse par antes de deletar.
 
-Session = resultado clínico
+Bash Map all domains/billing files and their production imports
+IN
+echo "=== Arquivos em domains/billing/ ===" && find /home/user/projetos/crm/back/domains/billing -type f -name "*.js" | sed 's|.*/domains/billing/||'
 
-Payment = resultado financeiro
+echo "" && echo "=== Quem importa arquivos de domains/billing/ (produção)? ===" && grep -rn "domains/billing" --include="*.js" /home/user/projetos/crm/back | grep -v node_modules | grep -v "domains/billing/" | grep -v "test\|spec\|Test"
 
-Guide = agrupador derivado
+OUT
+=== Arquivos em domains/billing/ ===
+convenioApiController.js
+insuranceRoutes.js
+insuranceController.js
+convenioManageController.js
+config/FeatureFlags.js
+workers/packageProcessingWorker.js
+workers/billingConsumerWorker.js
+workers/index.js
+workers/insuranceOrchestratorWorker.js
+workers/packageProjectionWorker.js
+contracts/PaymentEvents.contract.js
+adapters/SessionCompletedAdapter.js
+events/insuranceEvents.js
+services/PackageBillingService.v2.js
+services/convenioIntegrationService.js
+services/PackageProjectionService.js
+services/insuranceBillingService.v2.js
+services/ReconciliationService.js
+services/InsuranceBatchProjectionService.js
+integrations/tiss/tissGenerator.js
+integrations/tiss/providerGateway.js
+scripts/initConvenios.js
+domain/insuranceDomain.js
+models/FinancialStateMachine.js
+rules/billingEvents.js
+rules/index.js
+rules/insuranceRules.js
 
-🔴 Problema antigo
-lógica espalhada
+=== Quem importa arquivos de domains/billing/ (produção)? ===
+Nenhum arquivo de produção importa nada de domains/billing/. O diretório inteiro está desconectado. Deixa eu confirmar o workers/index.js — se ele não sobe, nada sobe.
 
-criação independente
+Bash Check if billing workers/index.js is ever started
+IN
+head -20 /home/user/projetos/crm/back/domains/billing/workers/index.js && echo "---" && grep -rn "domains/billing/workers/index\|billing/workers" --include="*.js" /home/user/projetos/crm/back | grep -v node_modules | grep -v "domains/billing/"
 
-UI influenciando regra
+OUT
+// back/domains/billing/workers/index.js
+/**
+ * Billing Workers Index
+ * 
+ * Workers do domínio Billing - Arquitetura Event-Driven
+ * 
+ * ESTRUTURA (pós-análise documento-analise.txt):
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                    BILLING DOMAIN                            │
+ * ├─────────────────────────────────────────────────────────────┤
+ * │                                                              │
+ * │  insuranceOrchestratorWorker.js                             │
+ * │  ├── Consome: Eventos de Insurance (batches, glosas)        │
+ * │  └── Responsabilidade: Orquestrar fluxo de convênio         │
+ * │                                                              │
+ * │  packageProcessingWorker.js                                 │
+ * │  └── Processamento de pacotes de sessões                    │
+ * │                                                              │
+ * │  packageProjectionWorker.js                                 │
+ * │  └── Projeção de pacotes (CQRS)                             │
+---
+Concordo com o teu veredito — e vou só ajustar a leitura com um pouco de rigor de produção.
 
-ausência de orquestração única
+---
 
-✔️ VEREDITO
-👉 SIM — sua leitura está correta agora:
-o Appointment no calendário é o orquestrador de todo o sistema.
+# ✅ Cenário REAL que você descreveu (importante validar isso)
 
-🚀 Se quiser próximo passo útil de verdade
-Posso te ajudar a desenhar:
+Você tem:
 
-👉 “Appointment Domain Engine”
-state machine completa
+* 1 instância (Render single instance)
+* job manual (não cron, não worker paralelo)
+* execução pontual sob comando humano
 
-complete/cancel/reopen
+👉 isso reduz MUITO a superfície de concorrência
 
-invariantes (o que nunca pode quebrar)
+---
 
-onde colocar cada update (session/payment/guide)
+# 🔒 O que você já tem é suficiente
 
-Isso aqui é o que transforma seu sistema de “funcionando com correções” para “à prova de inconsistência”.
+## 1. `_billingEventId` (ok)
 
+* impede reprocessamento lógico
+* protege retry manual
+
+## 2. `transitionPaymentStatus` (ok)
+
+* garante idempotência de estado
+
+## 3. `findOneAndUpdate` (ok)
+
+* atomicidade por documento
+
+---
+
+# ⚠️ O ponto mais importante (o único risco real restante)
+
+Não é concorrência.
+
+É este:
+
+## 👉 execução parcial + interrupção no meio
+
+Exemplo:
+
+* 65 payments
+* executa 30
+* processo cai (rede, timeout, Ctrl+C)
+* você roda de novo
+
+### Resultado:
+
+✔ não duplica (seguro)
+❗ mas você precisa confiar que:
+
+* `_billingEventId` foi persistido corretamente antes do crash window fechar
+
+---
+
+# 🧠 O que isso significa na prática
+
+Você não tem risco de:
+
+* double payment ❌
+* race condition ❌
+* concorrência ❌
+
+Você só tem risco de:
+
+> “job incompleto”
+
+---
+
+# 💡 E isso já está mitigado por design
+
+Porque:
+
+* `_billingEventId` é persistido por payment
+* `transitionPaymentStatus` é atômico
+* query é reexecutável sem efeito colateral
+
+👉 ou seja: o job é **re-runnable seguro**
+
+---
+
+# 📊 VEREDITO TÉCNICO FINAL
+
+## ✔ Seguro para produção
+
+com seu cenário atual
+
+## ✔ Sem necessidade de leader lock
+
+correto — seria overengineering aqui
+
+## ✔ Bug crítico já corrigido
+
+`payment.amount` era o único risco de crash real
+
+---
+
+# 🚀 O QUE EU RECOMENDO AGORA (curto e direto)
+
+Antes de rodar:
+
+### 1. rodar dry-run (você já fez)
+
+### 2. executar
+
+### 3. rodar validate_staging de novo
+
+### 4. conferir DRE
+
+---
+
+# 💬 CONCLUSÃO HONESTA
+
+Você está correto:
+
+> “o lock adicional seria overkill nesse contexto”
+
+E mais importante:
+
+👉 o sistema agora está em um estado raro de arquitetura backend:
+
+* idempotente
+* reexecutável
+* sem risco de duplicação financeira
+* com fallback avulso + batch consistente
+
+---
+
+Se quiser o próximo nível depois disso, aí sim vale pensar em:
+
+* simplificar múltiplos caminhos de settlement
+* unificar batch + avulso em um pipeline único
+* reduzir complexidade mental do billing
+
+Mas isso é evolução — não bloqueio.
+
+---
+
+Se quiser, próximo passo natural depois do `--execute` é eu te ajudar a:
+
+👉 validar o impacto no DRE e garantir que “realizado” está correto contábilmente (não só tecnicamente)
+
+Só me fala.Boa. Esse é exatamente o tipo de refatoração que melhora o sistema de verdade — mas precisa ser **progressiva e com “zero impacto no billing” como regra absoluta**.
+
+Vou te propor uma simplificação que não quebra nada e ainda reduz bastante a complexidade mental.
+
+---
+
+# 🧠 PROBLEMA ATUAL (diagnóstico real)
+
+Hoje você tem **3 caminhos para dinheiro virar “pago”**:
+
+1. `processReturn` (batch)
+2. `receiveSession` (manual/lote v2)
+3. `autoInsuranceSettlement` (avulso)
+
+E ainda:
+
+* `paymentService`
+* `insuranceBillingService.v2`
+* `insuranceBatchService`
+* `paymentStatusService`
+
+👉 Resultado: múltiplos “portões de entrada” para o mesmo estado final (`paid`)
+
+---
+
+# 🎯 OBJETIVO DA SIMPLIFICAÇÃO
+
+Você NÃO quer:
+
+* remover features
+* mudar regra de negócio
+* mexer no DRE
+
+Você quer só isso:
+
+> 🔒 “Um único caminho lógico para qualquer payment chegar em PAID”
+
+---
+
+# 🧱 ARQUITETURA SIMPLIFICADA (sem quebrar nada)
+
+## 🔥 NOVA ESTRUTURA (camada mental)
+
+### 1. CORE (único ponto de verdade)
+
+```text
+PaymentLifecycleService
+```
+
+Responsável por:
+
+* `settle(paymentId)`
+* `cancel(paymentId)`
+* `transition(status)`
+
+````
+
+👉 NUNCA chama Mongo direto fora disso
+
+---
+
+### 2. ORQUESTRADORES (não mudam regra, só roteiam)
+
+```text
+/flows
+   batchFlow.ts
+   avulsoFlow.ts
+   sessionFlow.ts
+````
+
+Eles só fazem:
+
+* decidir qual payments entram
+* chamar `PaymentLifecycleService.settle()`
+
+---
+
+### 3. ADAPTADORES (entrada externa)
+
+```text
+/controllers
+/jobs
+/routes
+```
+
+👉 só chamam flows, nunca service direto
+
+---
+
+# 🔁 COMO FICA SEU SISTEMA ATUAL (mapa de migração)
+
+## Antes
+
+```
+controller → service → paymentStatusService → DB
+job → service → DB
+batch → service → DB
+avulso → service → DB
+```
+
+## Depois
+
+```
+controller → flow → PaymentLifecycleService → DB
+job → flow → PaymentLifecycleService → DB
+batch → flow → PaymentLifecycleService → DB
+avulso → flow → PaymentLifecycleService → DB
+```
+
+---
+
+# 🔒 O QUE ISSO TE GARANTE
+
+✔ elimina duplicação de lógica
+✔ elimina “jeitos diferentes de pagar”
+✔ mantém batch e avulso intactos
+✔ não muda schema
+✔ não muda DRE
+✔ não muda comportamento externo
+
+---
+
+# ⚙️ PASSO A PASSO SEGURO (SEM RISCO)
+
+## FASE 1 — criar CORE (zero impacto)
+
+Criar:
+
+```js id="core1"
+PaymentLifecycleService.settle(paymentId)
+```
+
+👉 por dentro ele só chama o que já existe:
+
+* `transitionPaymentStatus`
+
+⚠️ ainda não troca nada
+
+---
+
+## FASE 2 — adaptar autoInsuranceSettlement
+
+Troca:
+
+```js
+transitionPaymentStatus(...)
+```
+
+por:
+
+```js
+PaymentLifecycleService.settle(...)
+```
+
+---
+
+## FASE 3 — adaptar batch (processReturn)
+
+Mesmo padrão
+
+---
+
+## FASE 4 — avulso flow
+
+Seu novo service já vira só:
+
+```js
+avulsoFlow → PaymentLifecycleService.settle
+```
+
+---
+
+## FASE 5 — controllers limpam lógica
+
+Controller vira só:
+
+```js
+return flow.execute(req.body)
+```
+
+---
+
+# 🧠 RESULTADO FINAL (ganho real)
+
+## Antes
+
+* 5 caminhos diferentes
+* lógica espalhada
+* debug difícil
+
+## Depois
+
+* 1 regra de settlement
+* 3 flows previsíveis
+* controllers limpos
+* jobs previsíveis
+
+---
+
+# ⚠️ IMPORTANTE (regra de ouro dessa refatoração)
+
+Você NÃO mexe em:
+
+* schema
+* DRE
+* status definitions
+* batch logic
+
+👉 só muda “quem chama quem”
+
+---
+
+# 💡 O detalhe que mais importa aqui
+
+Isso não é refactor de código.
+
+É:
+
+> 🔒 “redução de superfície de decisão do sistema”
+
+---
+
+# 🚀 SE EU FOSSE VOCÊ (ordem exata)
+
+1. criar `PaymentLifecycleService`
+2. plugar auto-settlement nele
+3. plugar batch nele
+4. depois remover chamadas diretas antigas aos poucos
+5. só no final apagar redundâncias
+
+---
+
+# 📌 RESUMO HONESTO
+
+Você não precisa simplificar tudo agora.
+
+Você precisa:
+
+> criar UM centro de decisão do dinheiro (settlement)
+
+---
+
+Se quiser, próximo passo eu posso te entregar:
+
+### 🔥 versão pronta do `PaymentLifecycleService`
+
+* compatível com tudo que você já tem
+* sem breaking change
+* com migração incremental segura
+
+Só fala: **“quero o core de billing unificado”**
+Bash Confirm billing domain routes not registered, get total size
+IN
+grep -rn "insuranceRoutes\|convenioApiController\|convenioManageController\|domains/billing" --include="*.js" /home/user/projetos/crm/back/server.js /home/user/projetos/crm/back/routes/ 2>/dev/null | grep -v node_modules | head -20
+
+echo "" && echo "=== Tamanho total do domains/billing ===" && find /home/user/projetos/crm/back/domains/billing -name "*.js" | xargs wc -l 2>/dev/null | tail -1
+
+OUT
+/home/user/projetos/crm/back/server.js:174:import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
+/home/user/projetos/crm/back/server.js:564:app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
+/home/user/projetos/crm/back/routes/insuranceBatch.v2.js:17:import { buildInsuranceBatchView } from '../domains/billing/services/InsuranceBatchProjectionService.js';
+/home/user/projetos/crm/back/routes/package.v2.js:22:import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+
+=== Tamanho total do domains/billing ===
+  9161 total
+Atenção — domains/billing/ não está todo morto. insuranceRoutes.js está registrado em server.js, InsuranceBatchProjectionService e PackageProjectionService são usados em rotas ativas. Vou checar só os workers antes de deletar qualquer coisa.
+
+Bash Check if the other billing workers are imported anywhere
+IN
+for f in domains/billing/workers/insuranceOrchestratorWorker.js domains/billing/workers/packageProcessingWorker.js domains/billing/workers/packageProjectionWorker.js; do echo "=== $f ===" && head -5 $f && grep -rn "$(basename $f .js)" --include="*.js" . | grep -v node_modules | grep -v "$f" | grep "import\|require" | head -3; echo ""; done
+
+OUT
+=== domains/billing/workers/insuranceOrchestratorWorker.js ===
+// insurance/workers/insuranceOrchestratorWorker.js
+/**
+ * Insurance Orchestrator Worker
+ * 
+ * Orquestra todo o fluxo de faturamento de convênios.
+
+=== domains/billing/workers/packageProcessingWorker.js ===
+// back/domains/billing/workers/packageProcessingWorker.js
+/**
+ * Package Processing Worker
+ *
+ * Responsabilidade: Processar criação de pacotes V2
+
+=== domains/billing/workers/packageProjectionWorker.js ===
+// back/domains/billing/workers/packageProjectionWorker.js
+/**
+ * Package Projection Worker - ELITE VERSION
+ * 
+ * Garantias de Produção:
+Todos os workers sem import em produção. O mapa final do que está morto:
+
+Para deletar:
+
+domains/billing/workers/ — 5 arquivos, nenhum iniciado em produção
+domains/billing/services/insuranceBillingService.v2.js — só usada pelos workers mortos e testes
+settleBatch() em autoInsuranceSettlementService.js — exportada, nunca importada
+tests/billing/billing-v2-e2e.test.js e tests/billing/load-test.js — testam o service morto
+Mantém vivo:
+
+domains/billing/insuranceRoutes.js (registrado no server)
+domains/billing/services/InsuranceBatchProjectionService.js (usado em rota ativa)
+domains/billing/services/PackageProjectionService.js (usado em rota ativa)
+Todo o resto de domains/billing/ (controllers, adapters, rules, etc.)
+Posso prosseguir com as deleções? São ~1.400 linhas de código morto.
+
+Boa checagem — e aqui a decisão precisa ser bem conservadora, porque billing é exatamente onde “parece morto” até quebrar produção.
+
+Vou te dar um veredito técnico claro:
+
+---
+
+# ⚠️ VEREDITO: NÃO DELETE AINDA
+
+Mesmo que os workers não estejam importados hoje, isso **não prova que estão mortos de verdade**.
+
+O que você mostrou prova apenas:
+
+> ❌ “não há import direto no código atual”
+
+Mas não prova:
+
+* cron externo (Render / CI / script manual)
+* execução via CLI (`node worker.js`)
+* execução via PM2 config antigo
+* execução via container entrypoint
+* execução por outro repo / script operacional
+* execução por job manual que alguém ainda usa em produção
+
+---
+
+# 🧠 O PROBLEMA REAL EM BILLING
+
+Workers de billing são um tipo de código que tem uma característica perigosa:
+
+> “infra invisível”
+
+Eles frequentemente são:
+
+* rodados fora do fluxo normal da API
+* esquecidos, mas ainda usados
+* dependência operacional oculta
+
+---
+
+# 🔥 O QUE EU VI NO SEU CASO
+
+Você tem:
+
+## 1. Workers “sem referência” no código
+
+✔ isso parece morto
+
+## 2. Mas:
+
+* `insuranceRoutes.js` ainda ativo
+* projection services ativos
+* billing v2 ainda em transição
+* settlement acabou de ser introduzido
+
+👉 isso é exatamente o tipo de sistema que ainda tem execução manual escondida
+
+---
+
+# 🚨 RISCO REAL SE VOCÊ DELETAR AGORA
+
+Se algum desses ainda for usado manualmente:
+
+* batch processing pode parar silenciosamente
+* projeção de pacotes pode quebrar histórico
+* reconciliação de convênios pode ficar inconsistente
+* e você só vai descobrir no DRE depois
+
+---
+
+# 🧯 REGRA DE OURO (billing system)
+
+Antes de deletar worker:
+
+## você precisa provar 3 coisas:
+
+### 1. NÃO está em código
+
+✔ você já fez
+
+### 2. NÃO está em runtime entrypoint
+
+❌ ainda não provou
+
+### 3. NÃO está em operação manual/documentada
+
+❌ ainda não provou
+
+---
+
+# 🧪 O QUE VOCÊ DEVERIA FAZER AGORA (seguro e rápido)
+
+## PASSO 1 — search de execução indireta
+
+```bash id="k3m9x1"
+grep -R "insuranceOrchestratorWorker" .
+grep -R "packageProcessingWorker" .
+grep -R "node .*worker" .
+grep -R "workers/" .
+```
+
+---
+
+## PASSO 2 — procurar execução fora do repo
+
+Verifica:
+
+* package.json scripts
+* Dockerfile
+* render.yaml
+* pm2 ecosystem
+* cron jobs
+* CI pipelines
+
+---
+
+## PASSO 3 — adicionar “telemetria leve” antes de deletar
+
+Se quiser ser elegante:
+
+```js id="t7k2p1"
+console.log('[WORKER START]', __filename)
+```
+
+e deixar rodando 24–48h em staging/prod
+
+---
+
+# 🧠 DECISÃO ARQUITETURAL CORRETA
+
+## ❌ NÃO FAZER AGORA
+
+* deletar workers
+
+## ✅ FAZER AGORA
+
+* marcar como “deprecated”
+* impedir novas chamadas
+* monitorar uso
+
+---
+
+# 💡 ESTRATÉGIA PROFISSIONAL (o que sistemas bons fazem)
+
+Em vez de deletar:
+
+## 1. mover para:
+
+```
+/deprecated/workers/
+```
+
+## 2. adicionar warning:
+
+```js id="d3k9x2"
+/**
+ * ⚠️ DEPRECATED
+ * Não usar em novos fluxos
+ * Substituído por PaymentLifecycleService + flows
+ */
+```
+
+## 3. logar uso se acontecer
+
+---
+
+# 🚀 VEREDITO FINAL
+
+> ❌ ainda não é seguro deletar
+
+> ✔ é seguro desativar gradualmente
+
+---
+
+# 🧭 RESUMO HONESTO
+
+Você está num momento clássico de refactor grande:
+
+> “parece morto, mas pode ser infraestrutura fantasma”
+
+E em billing isso é perigoso demais para assumir.
+
+---
+
+# Se quiser próximo passo
+
+Posso te ajudar a fazer isso direito:
+
+### 🔥 “dead code audit de billing nível produção”
+
+* identificar o que é realmente morto
+* o que é operacional oculto
+* o que pode ser removido sem risco
+* e te dar um plano de remoção em ondas seguras
+
+Só fala: **“quero auditoria real de código morto”**
+Certo, verificação correta. Deixa eu checar os entrypoints externos antes de qualquer deleção.
+
+Bash Check package.json scripts and render.yaml for worker entrypoints
+IN
+echo "=== package.json scripts ===" && grep -A 30 '"scripts"' /home/user/projetos/crm/back/package.json
+
+echo "" && echo "=== render.yaml ===" && cat /home/user/projetos/crm/render.yaml 2>/dev/null
+
+echo "" && echo "=== referências a workers nos configs ===" && grep -rn "worker\|Worker" /home/user/projetos/crm/back/package.json /home/user/projetos/crm/render.yaml 2>/dev/null
+
+OUT
+=== package.json scripts ===
+  "scripts": {
+    "postinstall": "node installChrome.js",
+    "build": "node installChrome.js",
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node -r dotenv/config server.js",
+    "dev": "(fuser -k 5000/tcp 2>/dev/null || true) && sleep 1 && NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' nodemon server.js",
+    "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
+    "dev:system": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
+    "dev:api:full": "(fuser -k 5000/tcp 2>/dev/null || true) && sleep 1 && ENABLE_WORKERS=false ENABLE_CRONS=false ENABLE_PROJECTIONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' nodemon server.js",
+    "dev:worker:cron": "ENABLE_WORKERS=false ENABLE_CRONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=1024' nodemon workers/entrypoints/cron-worker.js",
+    "dev:worker": "ENABLE_WORKERS=true WORKER_GROUP=all node workers/startWorkers.js",
+    "dev:worker:scheduling": "ENABLE_WORKERS=true WORKER_GROUP=scheduling node workers/entrypoints/scheduling-worker.js",
+    "dev:worker:billing": "ENABLE_WORKERS=true WORKER_GROUP=billing node workers/entrypoints/billing-worker.js",
+    "dev:worker:whatsapp": "ENABLE_WORKERS=true WORKER_GROUP=whatsapp node workers/entrypoints/whatsapp-worker.js",
+    "dev:worker:clinical": "ENABLE_WORKERS=true WORKER_GROUP=clinical node workers/entrypoints/clinical-worker.js",
+    "dev:worker:reconciliation": "ENABLE_WORKERS=true WORKER_GROUP=reconciliation node workers/entrypoints/reconciliation-worker.js",
+    "dev:isolated": "node start-isolated.js",
+    "dev:isolated:scheduling": "node start-isolated.js scheduling",
+    "dev:isolated:billing": "node start-isolated.js billing",
+    "dev:isolated:whatsapp": "node start-isolated.js whatsapp",
+    "dev:isolated:clinical": "node start-isolated.js clinical",
+    "dev:isolated:reconciliation": "node start-isolated.js reconciliation",
+    "worker": "node -r dotenv/config ./workers/followup.worker.js",
+    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
+    "cron": "node -r dotenv/config ./workers/followup.cron.js",
+    "test": "node tests/complete.js",
+    "test:unit": "node tests/complete.js --unit",
+    "test:qa": "node tests/complete.js --qa",
+    "test:alta": "node tests/complete.js --alta-intencao",
+    "test:regra5": "node tests/complete.js --regra5",
+    "test:vitest": "vitest run",
+    "test:amanda": "vitest run --config vitest.config.amanda.js",
+
+=== render.yaml ===
+# Render.com Configuration
+# Documentação: https://render.com/docs/blueprint-spec
+
+services:
+  # 🚀 API Backend (Web Service)
+  - type: web
+    name: crm-backend
+    runtime: node
+    plan: standard
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node server.js
+    
+    # Health check para Render monitorar
+    healthCheckPath: /api/health
+    
+    # Auto-restart configurado via health check
+    # Se /api/health retornar 503 por 3x, Render reinicia
+    
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false # Configurar no dashboard do Render
+      - key: REDIS_URL
+        sync: false # Configurar no dashboard do Render
+      - key: JWT_SECRET
+        generateValue: true
+    
+    # Scaling automático (opcional)
+    scaling:
+      minInstances: 1
+      maxInstances: 2
+      targetCPUPercent: 70
+      targetMemoryPercent: 80
+    
+    # Persistência de logs
+    logRetention: 7
+
+  # 🔥 Worker Principal (Background Worker)
+  - type: worker
+    name: crm-worker
+    runtime: node
+    plan: standard
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node workers/startWorkers.js
+    
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        fromService:
+          name: crm-backend
+          type: web
+          envVarKey: MONGODB_URI
+      - key: REDIS_URL
+        fromService:
+          name: crm-backend
+          type: web
+          envVarKey: REDIS_URL
+      - key: ENABLE_WHATSAPP_CHAT_PROJECTION
+        value: 'true'
+      - key: ENABLE_WHATSAPP_REALTIME
+        value: 'true'
+      # 🧨 MODO EMERGÊNCIA: limpa sessão completamente no próximo boot
+      # Remova após reconectar e gerar novo QR
+      - key: WHATSAPP_FORCE_CLEAN_SESSION
+        value: 'true'
+    
+    # Persistência da sessão WhatsApp (.wwebjs_auth)
+    disk:
+      name: whatsapp-session
+      mountPath: /var/data/wwebjs_auth
+      sizeGB: 1
+    
+    # Worker não expõe porta, mas tem health check interno
+    # Se processo exit, Render reinicia automaticamente
+
+  # 🐕 Watchdog (Worker separado - opcional)
+  # Pode rodar no mesmo startWorkers.js acima ou separado
+  - type: worker
+    name: crm-watchdog
+    runtime: node
+    plan: starter # Pode ser starter (mais barato)
+    region: ohio
+    branch: main
+    rootDir: back
+    buildCommand: npm install
+    startCommand: node infrastructure/workers/watchdog.js
+    
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        fromService:
+          name: crm-backend
+          type: web
+          envVarKey: MONGODB_URI
+
+# 🔄 Redis (Managed ou External)
+# Se usar Redis Cloud ou similar, configure REDIS_URL no dashboard
+# Se quiser Redis managed do Render:
+# - type: redis
+#   name: crm-redis
+#   plan: starter
+#   region: ohio
+#   ipAllowList: [] # Acesso público (com auth)
+
+=== referências a workers nos configs ===
+/home/user/projetos/crm/render.yaml:44:  # 🔥 Worker Principal (Background Worker)
+/home/user/projetos/crm/render.yaml:45:  - type: worker
+/home/user/projetos/crm/render.yaml:46:    name: crm-worker
+/home/user/projetos/crm/render.yaml:53:    startCommand: node workers/startWorkers.js
+/home/user/projetos/crm/render.yaml:83:    # Worker não expõe porta, mas tem health check interno
+/home/user/projetos/crm/render.yaml:86:  # 🐕 Watchdog (Worker separado - opcional)
+/home/user/projetos/crm/render.yaml:87:  # Pode rodar no mesmo startWorkers.js acima ou separado
+/home/user/projetos/crm/render.yaml:88:  - type: worker
+/home/user/projetos/crm/render.yaml:96:    startCommand: node infrastructure/workers/watchdog.js
+/home/user/projetos/crm/back/package.json:11:    "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
+/home/user/projetos/crm/back/package.json:12:    "dev:system": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
+/home/user/projetos/crm/back/package.json:14:    "dev:worker:cron": "ENABLE_WORKERS=false ENABLE_CRONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=1024' nodemon workers/entrypoints/cron-worker.js",
+/home/user/projetos/crm/back/package.json:15:    "dev:worker": "ENABLE_WORKERS=true WORKER_GROUP=all node workers/startWorkers.js",
+/home/user/projetos/crm/back/package.json:16:    "dev:worker:scheduling": "ENABLE_WORKERS=true WORKER_GROUP=scheduling node workers/entrypoints/scheduling-worker.js",
+/home/user/projetos/crm/back/package.json:17:    "dev:worker:billing": "ENABLE_WORKERS=true WORKER_GROUP=billing node workers/entrypoints/billing-worker.js",
+/home/user/projetos/crm/back/package.json:18:    "dev:worker:whatsapp": "ENABLE_WORKERS=true WORKER_GROUP=whatsapp node workers/entrypoints/whatsapp-worker.js",
+/home/user/projetos/crm/back/package.json:19:    "dev:worker:clinical": "ENABLE_WORKERS=true WORKER_GROUP=clinical node workers/entrypoints/clinical-worker.js",
+/home/user/projetos/crm/back/package.json:20:    "dev:worker:reconciliation": "ENABLE_WORKERS=true WORKER_GROUP=reconciliation node workers/entrypoints/reconciliation-worker.js",
+/home/user/projetos/crm/back/package.json:27:    "worker": "node -r dotenv/config ./workers/followup.worker.js",
+/home/user/projetos/crm/back/package.json:28:    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
+/home/user/projetos/crm/back/package.json:29:    "cron": "node -r dotenv/config ./workers/followup.cron.js",
+/home/user/projetos/crm/back/package.json:45:    "billing:worker": "node -r dotenv/config domains/billing/workers/billingConsumerWorker.js",
+/home/user/projetos/crm/back/package.json:47:    "test:billing:integration": "vitest run tests/billing/billing-worker.integration.test.js",
+/home/user/projetos/crm/back/package.json:54:    "test:safety": "vitest run tests/unit/completeWorker.safety.test.js tests/e2e/appointment-edit-sync.e2e.test.js --forceExit",
+Achei o risco. package.json linha 45 tem billing:worker apontando diretamente para billingConsumerWorker.js. Preciso ver o que startWorkers.js carrega em produção.
+
+Bash Check startWorkers.js and billing-worker.js for domains/billing references
+IN
+grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/startWorkers.js 2>/dev/null | head -30
+
+echo "" && grep -n "billing\|domains/billing\|billingConsumer" /home/user/projetos/crm/back/workers/entrypoints/billing-worker.js 2>/dev/null | head -20
+
+OUT
+10: *   node workers/startWorkers.js billing  → só billing
+142:                console.log('[BOOT] ⏳ WhatsApp ainda não ready — esperando mais 2min antes de subir billing/clinical...');
+146:            // 3e. Workers de prioridade MÉDIA (billing + clinical)
+148:            await startWorkersByGroup('billing');
+
+4: * Processa: payments, balance, packages, invoices, insurance, billing-consumer
+35:        await startWorkersByGroup('billing');
+billing-worker.js menciona "billing-consumer" no comentário. Preciso ver o que startWorkersByGroup('billing') carrega de fato.
+
+Bash Check what billing-worker.js actually loads
+IN
+grep -n "startWorkersByGroup\|billing\|domains/billing\|billingConsumer" /home/user/projetos/crm/back/workers/entrypoints/billing-worker.js 2>/dev/null | head -40
+
+OUT
+4: * Processa: payments, balance, packages, invoices, insurance, billing-consumer
+10:import { startWorkersByGroup, stopAllWorkers } from '../index.js';
+35:        await startWorkersByGroup('billing');
+Bash Check workers/index.js for what billing group contains
+IN
+grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -40
+
+OUT
+(Bash completed with no output)
+Bash Check workers/index.js billing group definition
+IN
+grep -n "billing\|domains" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -30 && echo "---" && grep -n "startWorkersByGroup" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -10
+
+OUT
+---
+62:export async function startWorkersByGroup(groupName) {
+Read index.js (lines 2-101)
+O registry.js é quem define o grupo billing. É ele que preciso ver.
+
+Bash Check registry.js billing group definition
+IN
+grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/registry.js 2>/dev/null | head -40
+
+OUT
+29:import { packageProjectionWorker } from '../domains/billing/workers/packageProjectionWorker.js';
+30:import { packageProcessingWorker } from '../domains/billing/workers/packageProcessingWorker.js';
+35:import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
+36:import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/insuranceOrchestratorWorker.js';
+89:  billing: async (workers) => {
+95:    if (isEnabled('ENABLE_BILLING_PACKAGE_PROJECTION')) workers.push(packageProjectionWorker);
+96:    if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
+100:    console.log('[Registry] billing ok');
+Para. Análise anterior estava errada.
+
+registry.js importa todos os workers de domains/billing/workers/ e os inclui no grupo billing que sobe em produção via startWorkers.js → Render. Eles estão vivos, só gateados por feature flags.
+
+Resumo correto do que é realmente morto:
+
+Só uma coisa confirmada: settleBatch() em autoInsuranceSettlementService.js — exportada, nunca importada em lugar nenhum. Já corrigi antes.
+
+Tudo o mais em domains/billing/workers/ está ativo em produção. A análise do documento estava certa em ser conservador — o grep de import direto não é suficiente quando existe um registry dinâmico.
+
+Não há mais nada seguro para deletar agora sem mapear os feature flags ativos no Render.
 

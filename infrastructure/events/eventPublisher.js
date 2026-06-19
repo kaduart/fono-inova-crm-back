@@ -125,6 +125,13 @@ export const EventTypes = {
     INSURANCE_ITEM_REJECTED: 'INSURANCE_ITEM_REJECTED',
     INSURANCE_PAYMENT_RECEIVED: 'INSURANCE_PAYMENT_RECEIVED',
     INSURANCE_GLOSA: 'INSURANCE_GLOSA',
+
+    // 🏥 Insurance Billing V2 (eventos internos — sem fila por enquanto)
+    INSURANCE_BILLING_CREATED: 'INSURANCE_BILLING_CREATED',
+    INSURANCE_BILLING_FAILED: 'INSURANCE_BILLING_FAILED',
+    INSURANCE_GUIDE_LOCKED: 'INSURANCE_GUIDE_LOCKED',
+    INSURANCE_APPOINTMENT_LINKED: 'INSURANCE_APPOINTMENT_LINKED',
+    INSURANCE_DUPLICATE_DETECTED: 'INSURANCE_DUPLICATE_DETECTED',
     
     // 🔄 Notificações
     NOTIFICATION_REQUESTED: 'NOTIFICATION_REQUESTED',
@@ -326,6 +333,13 @@ export const eventToQueueMap = {
     [EventTypes.INSURANCE_ITEM_APPROVED]: 'insurance-orchestrator',
     [EventTypes.INSURANCE_ITEM_REJECTED]: 'insurance-orchestrator',
     [EventTypes.INSURANCE_PAYMENT_RECEIVED]: 'insurance-orchestrator',
+
+    // Insurance Billing V2 (eventos internos — sem fila por enquanto)
+    [EventTypes.INSURANCE_BILLING_CREATED]: [],
+    [EventTypes.INSURANCE_BILLING_FAILED]: [],
+    [EventTypes.INSURANCE_GUIDE_LOCKED]: [],
+    [EventTypes.INSURANCE_APPOINTMENT_LINKED]: [],
+    [EventTypes.INSURANCE_DUPLICATE_DETECTED]: [],
     
     [EventTypes.NOTIFICATION_REQUESTED]: 'notification',
     [EventTypes.SYNC_MEDICAL_EVENT]: 'sync-medical',

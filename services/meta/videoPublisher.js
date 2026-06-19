@@ -135,7 +135,7 @@ async function _criarAdCreative(videoId, copy) {
           call_to_action: {
             type: 'WHATSAPP_MESSAGE',
             value: { 
-              whatsapp_number: process.env.WHATSAPP_NUMBER || '+5562993377726' 
+              whatsapp_number: process.env.WHATSAPP_NUMBER || '+5562992013573' 
             }
           }
         }
@@ -159,7 +159,7 @@ async function _criarAdCreative(videoId, copy) {
         call_to_action: {
           type: 'WHATSAPP_MESSAGE',
           value: { 
-            whatsapp_number: process.env.WHATSAPP_NUMBER || '+5562993377726' 
+            whatsapp_number: process.env.WHATSAPP_NUMBER || '+5562992013573' 
           }
         }
       }

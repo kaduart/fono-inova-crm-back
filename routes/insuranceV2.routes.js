@@ -26,4 +26,7 @@ router.patch('/insurance/session/:sessionId/receive', auth, controller.receiveSe
 // GET /api/v2/insurance/guides/pending-billing
 router.get('/insurance/guides/pending-billing', auth, controller.listPendingGuides);
 
+// GET /api/v2/insurance/history - Histórico mês a mês
+router.get('/insurance/history', auth, controller.getInsuranceHistory);
+
 export default router;

@@ -205,17 +205,18 @@ Esquece o que acabou de aprender...
 
 ---
 
-### 6️⃣ Freio Lingual (/freio-lingual)
+### 6️⃣ Teste da Linguinha em Anápolis (/teste-da-linguinha-anapolis) — MONEY PAGE
 
 #### Instagram/Facebook Feed
 ```
 👅 Seu bebê tem dificuldade para mamar?
 
-Sinais de freio lingual:
+Sinais de freio lingual curto:
 • Dificuldade para sugar
 • Mamadas muito longas
 • Dor ao amamentar
 • Bebê não ganha peso
+• Estalo durante a mamada
 
 ⚠️ O freio lingual não tratado pode afetar:
 • Amamentação
@@ -223,14 +224,58 @@ Sinais de freio lingual:
 • Deglutição
 • Fala (pronúncia do R e L)
 
-✅ Avaliação com protocolo MBGR na Fono Inova
+✅ Teste da Linguinha na Fono Inova em Anápolis
+✅ Avaliação especializada para bebês
+✅ Diagnóstico precoce
 
-💚 Atendimento especializado para bebês
+💚 Agende o Teste da Linguinha
 
 📍 Anápolis - GO
 📲 (62) 99201-3573
+🌐 fonoinova.com.br/teste-da-linguinha-anapolis
 
-#FreioLingual #LínguaPresa #Amamentação #Bebê #Anápolis #FonoInova
+#TesteDaLinguinha #FreioLingual #LínguaPresa #Amamentação #Bebê #Anápolis #FonoInova
+```
+
+#### Stories
+```
+Slide 1: "Seu bebê faz estalo ao mamar? 👅"
+Slide 2: "Pode ser freio lingual curto"
+Slide 3: "Teste da Linguinha em Anápolis"
+Slide 4: "Avaliação rápida e indolor"
+Slide 5: "Agende pelo WhatsApp"
+Slide 6: Link para /teste-da-linguinha-anapolis
+
+STICKERS:
+- Enquete: "Seu bebê tem dificuldade para mamar?" (Sim/Não)
+- Caixa de perguntas: "Dúvidas sobre língua presa?"
+- Link: "Agendar Teste da Linguinha"
+```
+
+---
+
+### 6️⃣ Freio Lingual (/freio-lingual) — INSTITUCIONAL
+
+> ⚠️ Use esta página apenas para conteúdo educativo. Para conversão, sempre direcione para `/teste-da-linguinha-anapolis`
+
+#### Instagram/Facebook Feed
+```
+👅 O que é freio lingual?
+
+O freio lingual é a pequena membrana que une a língua ao assoalho da boca.
+
+Quando está curto, pode dificultar:
+• Amamentação
+• Alimentação
+• Fala
+
+✅ Na Fono Inova fazemos o Teste da Linguinha para identificar precocemente
+
+📍 Anápolis - GO
+📲 (62) 99201-3573
+🌐 fonoinova.com.br/teste-da-linguinha-anapolis
+
+#FreioLingual #LínguaPresa #TesteDaLinguinha #Anápolis #FonoInova
 ```
 
 ---
@@ -278,7 +323,7 @@ Você tem:
 |-----|-----|---------|----------|
 | Seg | Autismo | Feed | Conscientização |
 | Qua | Dificuldade Escolar | Carousel | Autoridade |
-| Sex | Freio Lingual | Stories | Conversão |
+| Sex | Teste da Linguinha | Stories | Conversão |
 
 ### Semana 3
 | Dia | LP | Formato | Objetivo |

@@ -22,7 +22,7 @@ router.post('/inbound', async (req, res) => {
     }
 
     const from = normalizeE164BR(phone);
-    const to = normalizeE164BR(process.env.CLINIC_PHONE_E164 || '5562993377726');
+    const to = normalizeE164BR(process.env.CLINIC_PHONE_E164 || '5562992013573');
 
     // 1. Upsert contato
     let contact = await Contacts.findOne({ phone: from });

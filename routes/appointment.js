@@ -937,6 +937,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             filter.operationalStatus = { $ne: 'pre_agendado' };
             filter.appointmentId = { $exists: false };
         }
+        console.log('[GET /appointments] Filtro montado:', JSON.stringify(filter));
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
         // 🔹 Filtro por período
@@ -968,6 +969,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
             .sort({ date: -1, time: 1 })
             .lean();
+        console.log(`[GET /appointments] MongoDB retornou ${appointments.length} documentos`);
 
         // pre_agendados agora são Appointments — já incluídos na query acima
 
@@ -1014,6 +1016,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         finalResults.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 
+        console.log(`[GET /appointments] Retornando ${finalResults.length} eventos`);
         res.json(finalResults);
     } catch (error) {
         console.error('Erro ao buscar agendamentos:', error);

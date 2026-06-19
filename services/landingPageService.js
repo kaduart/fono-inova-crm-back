@@ -38,8 +38,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação gratuita',
-      link: 'https://wa.me/5562993377726?text=Olá! Vi a página sobre criança de 2 anos não fala e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Vi a página sobre criança de 2 anos não fala e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança de 2 anos não fala | Fonoaudiólogo em Anápolis | Fono Inova',
@@ -74,8 +74,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Quero avaliar meu filho',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de saber mais sobre atraso na fala infantil.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de saber mais sobre atraso na fala infantil.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Atraso na Fala Infantil | Tratamento em Anápolis | Fono Inova',
@@ -110,8 +110,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança troca letras e gostaria de uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança troca letras e gostaria de uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Troca Letras | Fonoaudiologia Anápolis | Fono Inova',
@@ -146,8 +146,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Quero ajuda para meu filho',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança não forma frases e preciso de ajuda.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança não forma frases e preciso de ajuda.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Não Forma Frases | Fonoaudiólogo Anápolis | Fono Inova',
@@ -182,8 +182,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança fala enrolado e gostaria de ajuda.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança fala enrolado e gostaria de ajuda.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Fala Enrolada em Criança | Tratamento Anápolis | Fono Inova',
@@ -218,8 +218,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Quero corrigir a fala do meu filho',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança não fala o R direito, pode me ajudar?',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança não fala o R direito, pode me ajudar?',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Não Fala o R | Fonoaudiologia Anápolis | Fono Inova',
@@ -254,8 +254,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Iniciar tratamento',
-      link: 'https://wa.me/5562993377726?text=Olá! Preciso de ajuda com gagueira infantil.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Preciso de ajuda com gagueira infantil.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Gagueira Infantil | Tratamento em Anápolis | Fono Inova',
@@ -294,8 +294,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Avaliação especializada',
-      link: 'https://wa.me/5562993377726?text=Olá! Suspeito de autismo no meu bebê e gostaria de uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Suspeito de autismo no meu bebê e gostaria de uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Sinais de Autismo no Bebê | Avaliação em Anápolis | Fono Inova',
@@ -330,8 +330,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação TEA',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar uma avaliação para autismo.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar uma avaliação para autismo.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Sinais de Autismo aos 2 Anos | Diagnóstico Anápolis | Fono Inova',
@@ -366,8 +366,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Quero uma avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança não responde ao nome, preciso de ajuda.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança não responde ao nome, preciso de ajuda.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Não Responde ao Nome | Avaliação Anápolis | Fono Inova',
@@ -402,8 +402,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança não olha nos olhos e gostaria de uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança não olha nos olhos e gostaria de uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Não Olha nos Olhos | Avaliação Anápolis | Fono Inova',
@@ -438,8 +438,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação TEA',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar uma avaliação para autismo/TEA.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar uma avaliação para autismo/TEA.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Avaliação de Autismo em Anápolis | Diagnóstico TEA | Fono Inova',
@@ -479,8 +479,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar com psicólogo',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança é agressiva e preciso de ajuda.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança é agressiva e preciso de ajuda.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Agressiva | Psicólogo Infantil Anápolis | Fono Inova',
@@ -515,8 +515,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Suspeito de ansiedade na minha criança.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Suspeito de ansiedade na minha criança.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Ansiedade Infantil | Psicólogo em Anápolis | Fono Inova',
@@ -555,8 +555,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança tem dificuldade para ler.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança tem dificuldade para ler.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Não Aprende a Ler | Psicopedagogia Anápolis | Fono Inova',
@@ -591,8 +591,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Avaliação de dislexia',
-      link: 'https://wa.me/5562993377726?text=Olá! Suspeito de dislexia na minha criança.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Suspeito de dislexia na minha criança.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Sinais de Dislexia | Avaliação em Anápolis | Fono Inova',
@@ -627,8 +627,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança troca letras na escrita.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança troca letras na escrita.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Criança Troca Letras na Escrita | Psicopedagogia | Fono Inova',
@@ -667,8 +667,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação TO',
-      link: 'https://wa.me/5562993377726?text=Olá! Minha criança tem dificuldade de coordenação motora.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Minha criança tem dificuldade de coordenação motora.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Dificuldade de Coordenação Motora | TO em Anápolis | Fono Inova',
@@ -707,8 +707,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação gratuita',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar uma avaliação fonoaudiológica em Anápolis.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar uma avaliação fonoaudiológica em Anápolis.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Fonoaudiólogo em Anápolis | Avaliação Gratuita | Fono Inova',
@@ -744,8 +744,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar com psicólogo',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar com psicólogo infantil em Anápolis.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar com psicólogo infantil em Anápolis.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Psicólogo Infantil em Anápolis | Fono Inova',
@@ -781,8 +781,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação TO',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar terapia ocupacional em Anápolis.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar terapia ocupacional em Anápolis.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Terapia Ocupacional em Anápolis | Fono Inova',
@@ -827,8 +827,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar Avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação neuropsicológica e gostaria de agendar.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre avaliação neuropsicológica e gostaria de agendar.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Avaliação Neuropsicológica Infantil em Anápolis | Dificuldade Escolar',
@@ -871,8 +871,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação gratuita',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Fala Tardia Infantil | Fonoaudiólogo em Anápolis | Fono Inova',
@@ -914,8 +914,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Avaliação especializada',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Avaliação de Autismo Infantil | Diagnóstico TEA em Anápolis | Fono Inova',
@@ -956,8 +956,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Dificuldade Escolar | Avaliação em Anápolis | Fono Inova',
@@ -1012,8 +1012,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação de dislexia',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Dislexia Infantil | Tratamento em Anápolis | Fono Inova',
@@ -1071,8 +1071,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação TDAH',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'TDAH Infantil | Avaliação em Anápolis | Fono Inova',
@@ -1109,8 +1109,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre acompanhamento para Síndrome de Down.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, gostaria de informações sobre acompanhamento para Síndrome de Down.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Síndrome de Down | Acompanhamento em Anápolis | Fono Inova',
@@ -1147,8 +1147,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre acompanhamento para prematuridade.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, gostaria de informações sobre acompanhamento para prematuridade.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Prematuridade | Acompanhamento em Anápolis | Fono Inova',
@@ -1185,8 +1185,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre seletividade alimentar.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, gostaria de informações sobre seletividade alimentar.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Seletividade Alimentar | Tratamento em Anápolis | Fono Inova',
@@ -1224,8 +1224,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Freio Lingual | Avaliação em Anápolis | Fono Inova',
@@ -1261,8 +1261,8 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar avaliação',
-      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.',
-      phone: '62993377726'
+      link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.',
+      phone: '62992013573'
     },
     seo: {
       title: 'Fonoaudiologia Adulto | Atendimento em Anápolis | Fono Inova',

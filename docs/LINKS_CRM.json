@@ -1,11 +1,12 @@
 {
   "meta": {
-    "versao": "2.0",
-    "data_atualizacao": "2024-03-19",
+    "versao": "3.0",
+    "data_atualizacao": "2026-06-19",
     "clinica": "Fono Inova - Centro de Desenvolvimento Infantil",
     "whatsapp": "(62) 99201-3573",
     "cidade": "Anápolis - GO",
-    "total_lps": 7
+    "total_lps": 8,
+    "fonte_de_verdade": "https://github.com/fonoinova/site/blob/main/src/data/landingPageRegistry.ts"
   },
   "landing_pages": [
     {
@@ -16,7 +17,7 @@
       "categoria": "fonoaudiologia",
       "prioridade_campanha": "alta",
       "mensagem_whatsapp": "Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "fala tardia",
         "atraso fala infantil",
@@ -43,7 +44,7 @@
       "categoria": "autismo",
       "prioridade_campanha": "alta",
       "mensagem_whatsapp": "Oi, vi no site sobre avaliação de autismo e gostaria de agendar.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.",
       "keywords_seo": [
         "autismo infantil",
         "avaliação autismo",
@@ -70,7 +71,7 @@
       "categoria": "aprendizagem",
       "prioridade_campanha": "alta",
       "mensagem_whatsapp": "Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "dislexia infantil",
         "troca b/d",
@@ -97,7 +98,7 @@
       "categoria": "neuropsicologia",
       "prioridade_campanha": "alta",
       "mensagem_whatsapp": "Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "TDAH infantil",
         "hiperatividade",
@@ -124,7 +125,7 @@
       "categoria": "aprendizagem",
       "prioridade_campanha": "media",
       "mensagem_whatsapp": "Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "dificuldade escolar",
         "baixo rendimento",
@@ -144,6 +145,36 @@
       }
     },
     {
+      "id": "teste-da-linguinha-anapolis",
+      "nome": "Teste da Linguinha em Anápolis",
+      "url_completa": "https://www.clinicafonoinova.com.br/teste-da-linguinha-anapolis",
+      "url_curta": "fonoinova.com.br/teste-da-linguinha-anapolis",
+      "categoria": "fonoaudiologia",
+      "prioridade_campanha": "alta",
+      "mensagem_whatsapp": "Oi, vi no site sobre Teste da Linguinha em Anápolis e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre Teste da Linguinha em Anápolis e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "teste da linguinha anápolis",
+        "freio lingual anápolis",
+        "língua presa bebê anápolis",
+        "bebê não mama anápolis",
+        "frenotomia anápolis",
+        "freio curto anápolis",
+        "fono para bebê anápolis"
+      ],
+      "gancho": "Seu bebê tem dificuldade para mamar ou língua presa?",
+      "publico_alvo": "Mães de bebês e crianças em Anápolis com suspeita de freio lingual",
+      "indicadores": {
+        "idade_ideal": "0-3 anos",
+        "sinais": [
+          "Dificuldade para fazer a pega",
+          "Dor ao amamentar",
+          "Estalo durante a mamada",
+          "Língua em formato de coração"
+        ]
+      }
+    },
+    {
       "id": "freio-lingual",
       "nome": "Freio Lingual",
       "url_completa": "https://www.clinicafonoinova.com.br/freio-lingual",
@@ -151,7 +182,7 @@
       "categoria": "fonoaudiologia",
       "prioridade_campanha": "media",
       "mensagem_whatsapp": "Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "freio lingual",
         "língua presa",
@@ -167,7 +198,8 @@
           "Mamadas prolongadas",
           "Dor ao amamentar"
         ]
-      }
+      },
+      "nota": "Página institucional educativa. Para posts de conversão, usar 'teste-da-linguinha-anapolis'"
     },
     {
       "id": "fonoaudiologia-adulto",
@@ -177,7 +209,7 @@
       "categoria": "fonoaudiologia",
       "prioridade_campanha": "baixa",
       "mensagem_whatsapp": "Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.",
-      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562992013573?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.",
       "keywords_seo": [
         "fonoaudiologia adulto",
         "problemas voz",
@@ -201,21 +233,21 @@
       "id": "sindrome-de-down",
       "nome": "Síndrome de Down",
       "url_completa": "https://www.clinicafonoinova.com.br/sindrome-de-down",
-      "status": "em_construcao",
+      "status": "ativo",
       "prioridade": "media"
     },
     {
       "id": "prematuridade-desenvolvimento",
       "nome": "Prematuridade e Desenvolvimento",
       "url_completa": "https://www.clinicafonoinova.com.br/prematuridade-desenvolvimento",
-      "status": "em_construcao",
+      "status": "ativo",
       "prioridade": "media"
     },
     {
       "id": "seletividade-alimentar",
       "nome": "Seletividade Alimentar Infantil",
-      "url_completa": "https://www.clinicafonoinova.com.br/seletividade-alimentar",
-      "status": "em_construcao",
+      "url_completa": "https://www.clinicafonoinova.com.br/seletividade-alimentar-anapolis",
+      "status": "ativo",
       "prioridade": "alta"
     }
   ],
@@ -249,10 +281,27 @@
       "url_antiga": "/lp/crianca-troca-letras-escrita",
       "url_nova": "/dificuldade-escolar",
       "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/teste-linguinha",
+      "url_nova": "/teste-da-linguinha-anapolis",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/freio-lingual",
+      "url_nova": "/teste-da-linguinha-anapolis",
+      "tipo": "redirect_301"
     }
   ],
+  "regras_governanca": {
+    "uma_url_por_intencao": true,
+    "whatsapp_padrao_unico": "5562992013573",
+    "pagina_primaria_freio_lingual": "/teste-da-linguinha-anapolis",
+    "pagina_institucional_freio_lingual": "/freio-lingual",
+    "regra_posts_gmb": "Sempre usar a money page primária para posts de conversão. Páginas institucionais só para conteúdo educativo."
+  },
   "whatsapp_padrao": {
-    "numero": "5562993377726",
+    "numero": "5562992013573",
     "formatado": "(62) 99201-3573",
     "mensagem_base": "Oi, vi no site sobre {tema} e gostaria de agendar uma avaliação."
   }

@@ -140,6 +140,7 @@ const PROBLEMAS_REAIS = {
     'lingua presa bebe',
     'teste da linguinha anapolis'
   ],
+  // ⚠️ OBS: 'freio_lingual' institucional foi consolidado na money page abaixo
   psicopedagogia: [
     'criança não tem interesse estudar',
     'não consegue se organizar lição',
@@ -294,10 +295,11 @@ export const ESPECIALIDADES = [
   {
     id: 'freio_lingual',
     nome: 'Freio Lingual',
-    url: 'https://www.clinicafonoinova.com.br/freio-lingual',
+    url: 'https://www.clinicafonoinova.com.br/teste-da-linguinha-anapolis',
     foco: 'Língua presa, sucção, mastigação, amamentação, fala',
     publico: 'bebês e crianças com freio curto',
-    gancho: 'Seu bebê tem dificuldade para mamar ou engolir?'
+    gancho: 'Seu bebê tem dificuldade para mamar ou engolir?',
+    nota: 'Página institucional /freio-lingual redireciona para money page /teste-da-linguinha-anapolis'
   },
   {
     id: 'neuropsicologia',
@@ -2057,7 +2059,7 @@ export async function createDailyPost(options = {}) {
         .toString('base64url');
       
       // 🎯 Embute ctx DENTRO da mensagem (WhatsApp não passa params de URL)
-      const whatsappNumber = '5562993377726';
+      const whatsappNumber = '5562992013573';
       const whatsappText = `Oi! Vi o conteúdo sobre ${problema.substring(0, 30)} e quero agendar [ctx:${encodedContext}]`;
       const whatsappMessage = encodeURIComponent(whatsappText);
       const whatsappLink = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
@@ -2309,7 +2311,7 @@ export async function createAssistedPost(options = {}) {
     const especialidadeNome = especialidade.nome.toLowerCase();
     const whatsappText = `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor [ctx:${encodedContext}]`;
     const whatsappMessage = encodeURIComponent(whatsappText);
-    const whatsappLink = `https://wa.me/5562993377726?text=${whatsappMessage}`;
+    const whatsappLink = `https://wa.me/5562992013573?text=${whatsappMessage}`;
     
     const copyText = `${postData.content}
 

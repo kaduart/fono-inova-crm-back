@@ -17,6 +17,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import EventStore from '../../../models/EventStore.js';
+import { appendEvent } from '../../../infrastructure/events/eventStoreService.js';
 import { publishEvent, publishEvents } from '../../../infrastructure/events/eventPublisher.js';
 import guideService from '../../../services/billing/guideService.js';
 import { createError, ERROR_CODES } from '../../../utils/errorUtils.js';
@@ -78,7 +79,7 @@ async function checkIdempotency(operationType, entityId, correlationId) {
 }
 
 async function markProcessing(eventType, aggregateId, payload, idempotencyKey, correlationId) {
-  return await EventStore.appendEvent({
+  return await appendEvent({
     eventId: uuidv4(),
     eventType: `${eventType}_PROCESSING`,
     aggregateType: 'InsuranceBilling',
@@ -94,11 +95,11 @@ async function markProcessing(eventType, aggregateId, payload, idempotencyKey, c
 // LOCK DE GUIA
 // =============================================================================
 
-async function acquireGuideLock(guideId, sessionId, lockedBy) {
+async function acquireGuideLock(guideId, sessionId, lockedBy, mongoSession = null) {
   const Guide = mongoose.model('InsuranceGuide');
   const lockId = uuidv4();
   const expiresAt = new Date(Date.now() + LOCK_CONFIG.TTL_SECONDS * 1000);
-  
+
   for (let attempt = 1; attempt <= LOCK_CONFIG.RETRY_ATTEMPTS; attempt++) {
     try {
       const guide = await Guide.findOneAndUpdate(
@@ -118,7 +119,7 @@ async function acquireGuideLock(guideId, sessionId, lockedBy) {
             lockedAt: new Date()
           }
         },
-        { new: true }
+        { new: true, session: mongoSession }
       );
       
       if (guide) {
@@ -234,7 +235,7 @@ export class InsuranceBillingService {
       // 3. Busca sessão com dados necessários
       const session = await Session.findById(sessionId)
         .populate('patient')
-        .populate('professional')
+        .populate('doctor')
         .session(mongoSession);
       
       if (!session) {
@@ -242,7 +243,7 @@ export class InsuranceBillingService {
       }
       
       // Validações
-      if (session.paymentType !== 'convenio') {
+      if (session.paymentMethod !== 'convenio') {
         return { success: true, skipped: true, reason: 'NOT_INSURANCE_SESSION' };
       }
       
@@ -266,34 +267,10 @@ export class InsuranceBillingService {
         };
       }
       
-      // 4. CHECAGEM FORTE: Busca por business key (prevenção de duplicata)
-      const existingCheck = await Session.existsByContext(
-        session.patient._id,
-        session.professional._id,
-        session.date,
-        session.time || '00:00',
-        session.specialty,
-        session.insuranceGuide
-      );
-      
-      // Se existe outra sessão com mesmo contexto (não é a atual)
-      if (existingCheck.exists && existingCheck.session._id.toString() !== sessionId) {
-        console.log(`[InsuranceBilling] Duplicate context found: ${existingCheck.session._id}`);
-        
-        // Reutiliza a existente
-        return {
-          success: true,
-          duplicate: true,
-          source: 'business_key',
-          existingSessionId: existingCheck.session._id,
-          billingId: existingCheck.appointmentId,
-          correlationId
-        };
-      }
-      
-      // 5. BUSCA E LOCK DA GUIA
-      const guide = await this.findAndLockGuide(session, mongoSession, correlationId);
-      lockResult = guide.lockResult;
+      // 4. BUSCA E LOCK DA GUIA
+      const guideLock = await this.findAndLockGuide(session, mongoSession, correlationId);
+      const guide = guideLock.guide;
+      lockResult = guideLock.lockResult;
       
       if (!lockResult.success) {
         await publishEvent(INSURANCE_BILLING_EVENTS.INSURANCE_GUIDE_LOCK_FAILED, {
@@ -453,11 +430,12 @@ export class InsuranceBillingService {
   // =========================================================================
   
   async findAndLockGuide(session, mongoSession, correlationId) {
-    const guide = await guideService.findValidGuide(
-      session.patient._id,
-      session.specialty,
-      { session: mongoSession }
-    );
+    const guide = await guideService.findValidGuide({
+      patientId: session.patient._id,
+      specialty: session.sessionType,
+      date: session.date,
+      session: mongoSession
+    });
     
     if (!guide) {
       throw createError('No valid insurance guide available', ERROR_CODES.GUIDE_NOT_FOUND, 400);
@@ -466,9 +444,10 @@ export class InsuranceBillingService {
     const lockResult = await acquireGuideLock(
       guide._id,
       session._id.toString(),
-      'InsuranceBillingService'
+      'InsuranceBillingService',
+      mongoSession
     );
-    
+
     return { guide, lockResult };
   }
   
@@ -478,7 +457,7 @@ export class InsuranceBillingService {
       _id: guide._id,
       lockId: lockId
     }).session(mongoSession);
-    
+
     if (!currentGuide) {
       throw createError('Guide lock lost during processing', ERROR_CODES.LOCK_LOST, 423);
     }
@@ -501,7 +480,7 @@ export class InsuranceBillingService {
         sessionId: session._id,
         sessionNumber,
         consumedAt: new Date(),
-        professionalId: session.professional?._id,
+        professionalId: session.doctor?._id,
         notes: `Consumed by billing service: ${session._id}`
       });
     }
@@ -516,19 +495,22 @@ export class InsuranceBillingService {
   }
   
   async calculateSessionValue(session, guide) {
-    const convenioService = (await import('../../../services/convenioIntegrationService.js')).default;
+    const convenioService = (await import('./convenioIntegrationService.js')).default;
     
     const procedureCode = guide.procedureCode || '201040';
-    const insuranceCode = guide.insuranceProvider?.code || guide.insuranceProvider;
+    const insuranceCode = guide.insuranceProvider?.code || guide.insuranceProvider || guide.insurance;
     
     const value = await convenioService.getConvenioSessionValue(
       insuranceCode,
       procedureCode,
-      session.specialty
+      session.sessionType
     );
-    
+
+    // getConvenioSessionValue pode retornar número (legado) ou objeto { grossAmount }
+    const grossAmount = typeof value === 'number' ? value : (value?.grossAmount || 0);
+
     return {
-      grossAmount: value.grossAmount || 0,
+      grossAmount,
       procedureCode
     };
   }
@@ -568,9 +550,10 @@ export class InsuranceBillingService {
     
     const appointment = new Appointment({
       patient: session.patient._id,
-      professional: session.professional?._id,
+      professional: session.doctor?._id,
+      date: session.date,
       dateTime: session.date,
-      specialty: session.specialty,
+      specialty: session.sessionType,
       status: 'confirmed',
       
       // Campos do legado (compatibilidade)
@@ -634,94 +617,54 @@ export class InsuranceBillingService {
    */
   async createOrUpdateInsurancePayment(session, appointment, amount, guide, mongoSession) {
     const month = new Date(session.date).toISOString().slice(0, 7);
-    
-    // 🔥 IDEMPOTÊNCIA: Checa se appointment já está em algum payment
-    const existingPaymentWithAppointment = await Payment.findOne({
-      'appointments.appointment': appointment._id
-    }).session(mongoSession);
-    
-    if (existingPaymentWithAppointment) {
-      console.log(`[createOrUpdateInsurancePayment] Appointment already in payment: ${existingPaymentWithAppointment._id}`);
-      return existingPaymentWithAppointment;
-    }
-    
-    // 🔥 IDEMPOTÊNCIA: Checa se já existe payment para esta session (pacote legado)
+
+    // 🔒 IDEMPOTÊNCIA ESTRITA: 1 session = 1 payment
+    // NUNCA agrupar sessões no mesmo payment; isso causava o bug de
+    // "ghost aggregation" onde grossAmount era incrementado sem rastreabilidade.
     const existingPaymentForSession = await Payment.findOne({
-      session: session._id
+      session: session._id,
+      billingType: 'convenio'
     }).session(mongoSession);
-    
+
     if (existingPaymentForSession) {
-      console.log(`[createOrUpdateInsurancePayment] Found legacy payment for session: ${existingPaymentForSession._id}`);
-      // Adiciona o appointment ao payment existente (pacote legado)
-      const alreadyLinked = existingPaymentForSession.appointments.some(
-        a => a.appointment?.toString() === appointment._id.toString()
-      );
-      if (!alreadyLinked) {
-        existingPaymentForSession.appointments.push({
-          appointment: appointment._id,
-          amount,
-          guideNumber: guide.number
-        });
-        await existingPaymentForSession.save({ session: mongoSession });
-      }
+      console.log(`[createOrUpdateInsurancePayment] Payment already exists for session ${session._id}: ${existingPaymentForSession._id}`);
       return existingPaymentForSession;
     }
-    
-    let payment = await Payment.findOne({
+
+    const payment = new Payment({
       patient: session.patient._id,
-      'insurance.month': month,
-      'insurance.insuranceProvider': guide.insuranceProvider._id || guide.insuranceProvider,
-      status: { $in: ['pending', 'billed'] }
-    }).session(mongoSession);
-    
-    if (payment) {
-      payment.appointments.push({
-        appointment: appointment._id,
-        amount,
-        guideNumber: guide.number
-      });
-      payment.insurance.grossAmount += amount;
-      payment.insurance.netAmount += amount;
-      await payment.save({ session: mongoSession });
-    } else {
-      payment = new Payment({
-        patient: session.patient._id,
-        professional: session.professional?._id,
-        date: session.date,
-        
-        // Campos do legado (compatibilidade)
-        session: session._id,                            // ← LEGADO: vínculo Session
-        appointment: appointment._id,                    // ← LEGADO: vínculo Appointment
-        serviceType: 'session',                          // ← LEGADO
-        amount: amount,                                  // ← LEGADO: preenchido V2
-        paymentMethod: 'convenio',                       // ← LEGADO
-        billingType: 'convenio',                         // ← LEGADO
-        serviceDate: session.date,                       // ← LEGADO
-        notes: `Aguardando faturamento - Guia ${guide.number}`, // ← LEGADO
-        
-        insurance: {
-          provider: guide.insurance,                     // ← LEGADO: string
-          authorizationCode: guide.number,               // ← LEGADO
-          month,
-          insuranceProvider: guide.insuranceProvider?._id || guide.insuranceProvider,
-          guideNumber: guide.number,
-          grossAmount: amount,
-          netAmount: amount,
-          status: 'pending'
-        },
-        
-        appointments: [{
-          appointment: appointment._id,
-          amount,
-          guideNumber: guide.number
-        }],
-        
-        status: 'pending_billing'
-      });
-      
-      await payment.save({ session: mongoSession });
-    }
-    
+      professional: session.doctor?._id,
+      date: session.date,
+      paymentDate: session.date,
+
+      // Campos de compatibilidade
+      session: session._id,                            // ← vínculo Session
+      sessions: [session._id],                         // ← array de vínculos Session
+      appointment: appointment._id,                    // ← vínculo Appointment (legado)
+      serviceType: 'session',                          // ← LEGADO
+      amount: amount,                                  // ← LEGADO: preenchido V2
+      paymentMethod: 'convenio',                       // ← LEGADO
+      billingType: 'convenio',                         // ← LEGADO
+      serviceDate: session.date,                       // ← LEGADO
+      notes: `Aguardando faturamento - Guia ${guide.number}`, // ← LEGADO
+
+      insurance: {
+        provider: guide.insurance,                     // ← LEGADO: string
+        authorizationCode: guide.number,               // ← LEGADO
+        month,
+        insuranceProvider: guide.insuranceProvider?._id || guide.insuranceProvider,
+        guideNumber: guide.number,
+        grossAmount: amount,
+        netAmount: amount,
+        status: 'pending'
+      },
+
+      status: 'pending_billing'
+    });
+
+    await payment.save({ session: mongoSession });
+
+    console.log(`[createOrUpdateInsurancePayment] Created payment ${payment._id} for session ${session._id} amount=${amount}`);
     return payment;
   }
 

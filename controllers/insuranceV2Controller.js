@@ -3,6 +3,7 @@ import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
+import { settleInsurancePayment, runAvulsoSettlement } from '../services/autoInsuranceSettlementService.js';
 import { createBatch, sendBatch, processReturn } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
@@ -271,28 +272,35 @@ export async function faturarLote(req, res) {
 export async function receberLote(req, res) {
   try {
     const { paymentIds, dataRecebimento } = req.body;
-    
+
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0 || !dataRecebimento) {
       return res.status(400).json({ success: false, error: 'paymentIds e dataRecebimento obrigatórios' });
     }
-    
-    // Buscar batch que contém esses payments
-    const batches = await InsuranceBatch.find({
-      'sessions.payment': { $in: paymentIds.map(id => new mongoose.Types.ObjectId(id)) }
-    });
-    
-    // Montar returnData
-    const returnItems = await Promise.all(paymentIds.map(async (pid) => {
-      const payment = await Payment.findById(pid);
+
+    const paidAt = dataRecebimento ? new Date(dataRecebimento) : new Date();
+    const oids = paymentIds.map(id => new mongoose.Types.ObjectId(id));
+
+    // 1. Identifica quais estão em algum batch
+    const batches = await InsuranceBatch.find({ 'sessions.payment': { $in: oids } });
+    const inBatchSet = new Set(
+      batches.flatMap(b => b.sessions.map(s => s.payment?.toString()).filter(Boolean))
+    );
+
+    // 2. Separa batch path vs avulso path
+    const inBatch  = paymentIds.filter(id => inBatchSet.has(id));
+    const avulsos  = paymentIds.filter(id => !inBatchSet.has(id));
+
+    // 3. Batch path: processReturn para cada batch afetado
+    const returnItems = await Promise.all(inBatch.map(async (pid) => {
+      const p = await Payment.findById(pid).select('session insurance amount').lean();
       return {
         paymentId: pid,
-        sessionId: payment?.session?.toString(),
+        sessionId: p?.session?.toString(),
         status: 'paid',
-        returnAmount: payment?.insurance?.grossAmount || payment?.amount || 0
+        returnAmount: p?.insurance?.grossAmount || p?.amount || 0
       };
     }));
-    
-    // Processar retorno em cada batch afetado
+
     const processedBatches = [];
     for (const batch of batches) {
       const result = await processReturn(batch._id, {
@@ -302,13 +310,36 @@ export async function receberLote(req, res) {
       });
       processedBatches.push(result);
     }
-    
+
+    // 4. Avulso path: settle direto via settleInsurancePayment
+    const avulsoResults = [];
+    for (const pid of avulsos) {
+      try {
+        const result = await settleInsurancePayment(pid, {
+          reason: 'manual_receive_avulso',
+          paidAt
+        });
+        avulsoResults.push(result);
+      } catch (err) {
+        avulsoResults.push({ paymentId: pid, error: err.message });
+      }
+    }
+
+    const totalSettled = inBatch.length + avulsoResults.filter(r => r.settled).length;
+    const errors = avulsoResults.filter(r => r.error).length;
+
     res.json({
       success: true,
-      message: `${paymentIds.length} pagamentos recebidos`,
-      data: { recebidos: paymentIds.length, batches: processedBatches.length }
+      message: `${totalSettled} pagamento(s) recebido(s)${errors ? `, ${errors} erro(s)` : ''}`,
+      data: {
+        recebidos: totalSettled,
+        batches: processedBatches.length,
+        avulsos: avulsoResults.filter(r => r.settled).length,
+        errors
+      }
     });
   } catch (error) {
+    console.error('[InsuranceV2][receberLote] Erro:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -403,11 +434,169 @@ export async function listPendingGuides(req, res) {
   }
 }
 
+// GET /api/v2/insurance/history
+// Histórico acumulado mês a mês: Packages (legado) + InsuranceBatches (novo)
+export async function getInsuranceHistory(req, res) {
+  try {
+    const { provider, year } = req.query;
+    const filterYear = year ? parseInt(year) : new Date().getFullYear();
+
+    const startDate = new Date(`${filterYear}-01-01T00:00:00-03:00`);
+    const endDate   = new Date(`${filterYear}-12-31T23:59:59-03:00`);
+
+    // ── 1. BATCHES (novo motor) — carrega primeiro para saber quais
+    //    appointments já estão cobertos (evita dupla contagem no legado)
+    const batchBaseFilter = {};
+    if (provider) batchBaseFilter.insuranceProvider = provider;
+    const batches = await InsuranceBatch.find(batchBaseFilter).lean();
+
+    // Appointment IDs presentes em algum batch
+    const apptIdsInBatches = new Set(
+      batches.flatMap(b => (b.sessions || []).map(s => String(s.appointment)).filter(Boolean))
+    );
+
+    // Carrega appointments dos batches para nome/especialidade/data
+    const batchApptOids = [...apptIdsInBatches];
+    const batchAppts = batchApptOids.length
+      ? await Appointment.find({ _id: { $in: batchApptOids } })
+          .select('patientInfo specialty date')
+          .lean()
+      : [];
+    const bApptMap = {};
+    for (const a of batchAppts) bApptMap[String(a._id)] = a;
+
+    // ── 2. PACKAGES LEGADOS (type=convenio) ──────────────────────────
+    // Sem filtro de data no package — usamos a data de cada appointment individual
+    const pkgFilter = { type: 'convenio' };
+    if (provider) pkgFilter.insuranceProvider = provider;
+    const packages = await Package.find(pkgFilter)
+      .populate('patient', 'fullName name phone')
+      .lean();
+
+    // Carrega todos os appointments dos packages (data + status + especialidade)
+    const allPkgApptIds = packages.flatMap(p => p.appointments || []);
+    const pkgAppts = allPkgApptIds.length
+      ? await Appointment.find({
+          _id: { $in: allPkgApptIds },
+          operationalStatus: 'completed',
+          date: { $gte: startDate, $lte: endDate }
+        }).select('_id date specialty operationalStatus').lean()
+      : [];
+    const pkgApptMap = {};
+    for (const a of pkgAppts) pkgApptMap[String(a._id)] = a;
+
+    // ── 3. AGRUPA por mês → provider → paciente → especialidade ──────
+    const byMonth = {};
+
+    function addEntry(monthKey, prov, patientName, phone, specialty, value, source, batchStatus) {
+      if (!byMonth[monthKey]) byMonth[monthKey] = {};
+      if (!byMonth[monthKey][prov]) byMonth[monthKey][prov] = {};
+      if (!byMonth[monthKey][prov][patientName]) byMonth[monthKey][prov][patientName] = { phone, specialties: {} };
+      if (!byMonth[monthKey][prov][patientName].specialties[specialty])
+        byMonth[monthKey][prov][patientName].specialties[specialty] = { sessions: 0, value: 0, source, batchStatus };
+      byMonth[monthKey][prov][patientName].specialties[specialty].sessions += 1;
+      byMonth[monthKey][prov][patientName].specialties[specialty].value   += value;
+      // Prioriza status mais avançado
+      const rank = { received: 3, billed: 2, pending_batch: 1 };
+      const cur = byMonth[monthKey][prov][patientName].specialties[specialty].batchStatus;
+      if ((rank[batchStatus] || 0) > (rank[cur] || 0))
+        byMonth[monthKey][prov][patientName].specialties[specialty].batchStatus = batchStatus;
+    }
+
+    // Packages legados: 1 entrada por appointment completed no período
+    for (const pkg of packages) {
+      const prov     = pkg.insuranceProvider || 'outros';
+      const patName  = pkg.patient?.fullName || pkg.patient?.name || 'Desconhecido';
+      const phone    = pkg.patient?.phone || '';
+      const specialty = pkg.specialty || 'outros';
+      const value    = pkg.sessionValue || 80;
+      const status   = pkg.insuranceBillingStatus || 'pending_batch';
+
+      for (const apptId of (pkg.appointments || [])) {
+        if (apptIdsInBatches.has(String(apptId))) continue; // já contado no batch
+        const appt = pkgApptMap[String(apptId)];
+        if (!appt) continue; // fora do período ou não completed
+        const d  = new Date(appt.date);
+        const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        addEntry(mk, prov, patName, phone, specialty, value, 'legado', status);
+      }
+    }
+
+    // Batches: 1 entrada por sessão, só do ano filtrado
+    for (const batch of batches) {
+      const prov = batch.insuranceProvider || 'outros';
+      const batchStatus = batch.status === 'received' ? 'received'
+        : (batch.status === 'sent' || batch.status === 'processing') ? 'billed'
+        : 'pending_batch';
+      for (const s of batch.sessions || []) {
+        const appt = bApptMap[String(s.appointment)];
+        const sessionDate = s.sessionDate || appt?.date;
+        if (!sessionDate) continue;
+        const d = new Date(sessionDate);
+        if (d.getFullYear() !== filterYear) continue;
+        const mk       = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const patName  = appt?.patientInfo?.fullName || appt?.patientInfo?.name || 'Desconhecido';
+        const phone    = appt?.patientInfo?.phone || '';
+        const specialty = appt?.specialty || 'outros';
+        addEntry(mk, prov, patName, phone, specialty, s.grossAmount || 0, 'lote', batchStatus);
+      }
+    }
+
+    // ── 4. Serializa ─────────────────────────────────────────────────
+    const result = Object.keys(byMonth).sort().map(mk => {
+      const [y, m] = mk.split('-');
+      const monthLabel = new Date(Number(y), Number(m)-1, 1)
+        .toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+      const providers = Object.keys(byMonth[mk]).map(prov => {
+        const provData = byMonth[mk][prov];
+        const patients = Object.keys(provData).map(patName => {
+          const pd = provData[patName];
+          const specialties = Object.keys(pd.specialties).map(sp => ({
+            specialty: sp,
+            sessions: pd.specialties[sp].sessions,
+            value: pd.specialties[sp].value,
+            source: pd.specialties[sp].source,
+            batchStatus: pd.specialties[sp].batchStatus,
+          }));
+          const totSess  = specialties.reduce((s, x) => s + x.sessions, 0);
+          const totValue = specialties.reduce((s, x) => s + x.value, 0);
+          return { name: patName, phone: pd.phone, specialties, totalSessions: totSess, totalValue: totValue };
+        }).sort((a, b) => a.name.localeCompare(b.name));
+
+        const totalSessions = patients.reduce((s, p) => s + p.totalSessions, 0);
+        const totalValue    = patients.reduce((s, p) => s + p.totalValue, 0);
+
+        // Status geral do provider no mês
+        const allStatuses = patients.flatMap(p => p.specialties.map(s => s.batchStatus));
+        const providerStatus = allStatuses.every(s => s === 'received') ? 'received'
+          : allStatuses.some(s => s === 'billed') ? 'billed' : 'pending_batch';
+
+        const provLabel = prov.split('-').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ')
+          .replace('Anapolis', 'Anápolis').replace('Goiania', 'Goiânia').replace('Saude', 'Saúde');
+
+        return { provider: prov, providerLabel: provLabel, patients, totalSessions, totalValue, status: providerStatus };
+      });
+
+      const monthTotal = providers.reduce((s, p) => s + p.totalValue, 0);
+      const monthSessions = providers.reduce((s, p) => s + p.totalSessions, 0);
+
+      return { monthKey: mk, monthLabel, providers, totalSessions: monthSessions, totalValue: monthTotal };
+    });
+
+    res.json({ success: true, data: result, year: filterYear });
+  } catch (error) {
+    console.error('[InsuranceV2][getInsuranceHistory] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getInsuranceReceivables,
   faturarLote,
   receberLote,
   billSession,
   receiveSession,
-  listPendingGuides
+  listPendingGuides,
+  getInsuranceHistory
 };

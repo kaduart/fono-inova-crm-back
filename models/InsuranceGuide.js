@@ -143,7 +143,60 @@ const insuranceGuideSchema = new mongoose.Schema({
     ref: 'Package',
     default: null,
     description: 'ID do pacote de convênio (se guia foi convertida em pacote)'
-  }
+  },
+
+  // ======================================================================
+  // 🔒 LOCK OTIMISTA (usado pelo InsuranceBillingService V2)
+  // ======================================================================
+  lockId: {
+    type: String,
+    index: true,
+    description: 'ID do lock atual da guia'
+  },
+  lockSessionId: {
+    type: String,
+    description: 'ID da sessão que detém o lock'
+  },
+  lockLockedBy: {
+    type: String,
+    description: 'Identificador do serviço que adquiriu o lock'
+  },
+  lockExpiresAt: {
+    type: Date,
+    description: 'Expiração do lock'
+  },
+  lockedAt: {
+    type: Date,
+    description: 'Momento em que o lock foi adquirido'
+  },
+
+  // ======================================================================
+  // 📋 HISTÓRICO DE CONSUMO DE SESSÕES
+  // ======================================================================
+  consumptionHistory: [{
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Session',
+      required: true
+    },
+    sessionNumber: {
+      type: Number,
+      required: true
+    },
+    consumedAt: {
+      type: Date,
+      default: Date.now
+    },
+    professionalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Doctor',
+      default: null
+    },
+    notes: {
+      type: String,
+      default: ''
+    }
+  }]
 
 }, {
   timestamps: true,
