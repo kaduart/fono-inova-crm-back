@@ -1048,6 +1048,13 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
     throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
   }
 
+  // Para convenio, sessionValue do appointment deve refletir insuranceValue (valor de billing).
+  // O form sempre manda sessionValue=<valor antigo>; sobrescrevemos para manter consistência.
+  const effectiveBillingType = updates.billingType ?? appointment.billingType;
+  if (effectiveBillingType === 'convenio' && updates.insuranceValue != null) {
+    updates.sessionValue = updates.insuranceValue;
+  }
+
   // findByIdAndUpdate: mantém o casting de tipos do Mongoose (ex: date string → Date)
   // e NÃO dispara pre/post('save') — evita o event-system que causava re-consumo de guia.
   const historyEntry = {
@@ -1084,7 +1091,7 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
     const [paymentResult, sessionResult] = await Promise.allSettled([
       Payment.collection.updateOne(
         { appointmentId: id, insurance: { $exists: true } },
-        { $set: { 'insurance.grossAmount': newBillingAmount, updatedAt: new Date() } }
+        { $set: { 'insurance.grossAmount': newBillingAmount, amount: newBillingAmount, updatedAt: new Date() } }
       ),
       Session.collection.updateOne(
         { appointmentId: appointment._id },
