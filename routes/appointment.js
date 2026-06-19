@@ -2139,4 +2139,21 @@ export const bookFromAmanda = async (req, res) => {
     }
 };
 
+router.patch('/:id/post-appointment', validateId, flexibleAuth, async (req, res) => {
+    try {
+        const { step } = req.body; // 'msg1' | 'msg2'
+        const field = step === 'msg2' ? 'reviewRequestSentAt' : 'postAppointmentSentAt';
+        const appointment = await Appointment.findByIdAndUpdate(
+            req.params.id,
+            { [field]: new Date() },
+            { new: true, select: `${field}` }
+        );
+        if (!appointment) return res.status(404).json({ error: 'Agendamento não encontrado' });
+        res.json({ ok: true, [field]: appointment[field] });
+    } catch (err) {
+        console.error('[PATCH /appointments/:id/post-appointment]', err);
+        res.status(500).json({ error: 'Erro ao registrar envio' });
+    }
+});
+
 export default router;

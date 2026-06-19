@@ -165,6 +165,10 @@ export function mapAppointmentDTO(appointment) {
         // Flags extras (se presentes)
         isFirstVisit: appointment.isFirstVisit ?? null,
         isReturningAfter45Days: appointment.isReturningAfter45Days ?? null,
+
+        // Pós-atendimento WhatsApp
+        postAppointmentSentAt: appointment.postAppointmentSentAt || null,
+        reviewRequestSentAt: appointment.reviewRequestSentAt || null,
     };
 }
 

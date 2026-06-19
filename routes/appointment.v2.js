@@ -3280,4 +3280,16 @@ router.post('/:id/revert-complete', flexibleAuth, asyncHandler(async (req, res) 
   }
 }));
 
+router.patch('/:id/post-appointment', flexibleAuth, asyncHandler(async (req, res) => {
+  const { step } = req.body; // 'msg1' | 'msg2'
+  const field = step === 'msg2' ? 'reviewRequestSentAt' : 'postAppointmentSentAt';
+  const appointment = await Appointment.findByIdAndUpdate(
+    req.params.id,
+    { [field]: new Date() },
+    { new: true, select: field }
+  );
+  if (!appointment) return res.status(404).json({ error: 'Agendamento não encontrado' });
+  res.json({ ok: true, [field]: appointment[field] });
+}));
+
 export default router;

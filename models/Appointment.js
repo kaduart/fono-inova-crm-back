@@ -193,6 +193,8 @@ const appointmentSchema = new mongoose.Schema({
   appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: false, description: 'ID do appointment real criado a partir deste pré-agendamento' },
   importedAt: { type: Date, default: null },
   importedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+  postAppointmentSentAt: { type: Date, default: null },
+  reviewRequestSentAt: { type: Date, default: null },
 
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
