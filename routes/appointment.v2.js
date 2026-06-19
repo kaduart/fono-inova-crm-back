@@ -1036,6 +1036,9 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
     Object.entries(ALLOWED_FIELDS).filter(([, v]) => v !== undefined)
   );
 
+  console.log('[admin-edit] req.body:', JSON.stringify(req.body));
+  console.log('[admin-edit] updates:', JSON.stringify(updates));
+
   if (Object.keys(updates).length === 0) {
     throw createBusinessError('Nenhum campo editável informado', 400, ErrorCodes.MISSING_REQUIRED_FIELD);
   }
@@ -1045,17 +1048,56 @@ router.patch('/:id/admin-edit', flexibleAuth, asyncHandler(async (req, res) => {
     throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
   }
 
-  Object.assign(appointment, updates);
-  appointment.history.push({
+  // findByIdAndUpdate: mantém o casting de tipos do Mongoose (ex: date string → Date)
+  // e NÃO dispara pre/post('save') — evita o event-system que causava re-consumo de guia.
+  const historyEntry = {
     action: 'admin_edit',
     newStatus: appointment.operationalStatus,
-    changedBy: req.user?._id,
+    changedBy: req.user?._id || null,
     timestamp: new Date(),
     context: `[ADMIN EDIT] Motivo: ${adminReason} | Campos: ${Object.keys(updates).join(', ')}`
-  });
+  };
 
-  await appointment.save();
+  await Appointment.findByIdAndUpdate(
+    appointment._id,
+    {
+      $set: { ...updates, updatedAt: new Date() },
+      $push: { history: historyEntry }
+    },
+    { runValidators: false }
+  );
   clearCache();
+
+  // Propagar sessionValue/insuranceValue para payment.insurance.grossAmount e session.sessionValue
+  // quando o agendamento é convenio. Só atualiza o grossAmount (valor de billing), NÃO toca
+  // payment.amount, payment.status, nem fluxo de caixa.
+  // Nota: appointment.billingType é o valor PRÉ-edição (objeto JS não mutado); também checa updates.
+  const newBillingAmount = updates.insuranceValue ?? updates.sessionValue;
+  const isConvenio = (updates.billingType || appointment.billingType) === 'convenio'
+    || (updates.paymentMethod || appointment.paymentMethod) === 'convenio';
+  if (newBillingAmount != null && isConvenio) {
+    console.log(`[admin-edit] 🔍 Buscando payment/session para appointmentId=${id} | valor alvo: R$${newBillingAmount}`);
+    // Usa collection.updateOne (driver nativo) para bypassar todos os hooks Mongoose.
+    // Session.post('findOneAndUpdate') chama provisionamentoService.realizarSessao —
+    // efeito colateral destrutivo que não deve rodar em admin-edit.
+    // Payment.appointmentId = String; Session.appointmentId = ObjectId.
+    const [paymentResult, sessionResult] = await Promise.allSettled([
+      Payment.collection.updateOne(
+        { appointmentId: id, insurance: { $exists: true } },
+        { $set: { 'insurance.grossAmount': newBillingAmount, updatedAt: new Date() } }
+      ),
+      Session.collection.updateOne(
+        { appointmentId: appointment._id },
+        { $set: { sessionValue: newBillingAmount, updatedAt: new Date() } }
+      )
+    ]);
+    const paymentModified = paymentResult.value?.modifiedCount > 0;
+    const sessionModified = sessionResult.value?.modifiedCount > 0;
+    console.log(`[admin-edit] 💰 grossAmount R$${newBillingAmount}`
+      + ` | payment: ${paymentModified ? '✅ atualizado' : '⚠️ não encontrado'}`
+      + ` | session: ${sessionModified ? '✅ atualizado' : '⚠️ não encontrado'}`
+    );
+  }
 
   console.log(`[admin-edit] ✏️ Appointment ${id} editado administrativamente | campos: ${Object.keys(updates).join(', ')} | motivo: ${adminReason}`);
 

@@ -57,7 +57,9 @@ export async function generateInsurancePlanSessions({
   const startDate = new Date(plan.startDate);
   startDate.setHours(0, 0, 0, 0);
 
-  const weeksNeeded = Math.ceil(remaining / plan.slots.length);
+  // +1 de buffer: quando startDate cai no meio da semana, slots anteriores
+  // ao startDate são pulados na semana 0, consumindo uma semana sem gerar sessão
+  const weeksNeeded = Math.ceil(remaining / plan.slots.length) + 1;
   const weekStart = getWeekStart(startDate);
   const globalEnd = addDays(weekStart, weeksNeeded * 7 + 6);
   globalEnd.setHours(23, 59, 59, 999);
@@ -157,12 +159,16 @@ export async function generateInsurancePlanSessions({
     operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
   }).session(mongoSession).lean();
 
-  // ── 7. Cria payments pendentes (apenas para novos) ─────────────
+  // ── 7. Cria payments pendentes (apenas para appointments sem payment convenio ativo) ─────
+  // Busca por appointment._id (não por insurancePlan) para detectar payments de planos anteriores.
+  // Bug anterior: lookup por insurancePlan._id falhava na renovação de guia — novo plan não
+  // encontrava payment do plan anterior, sobrescrevia appointment.payment e deixava session=null.
   const existingPayments = await Payment.find({
-    insurancePlan: plan._id,
-    status: 'pending'
-  }).session(mongoSession).lean();
-  const existingAppointmentIds = new Set(existingPayments.map(p => p.appointment?.toString()));
+    appointment: { $in: createdAppointments.map(a => a._id) },
+    billingType: 'convenio',
+    status: { $ne: 'canceled' }
+  }, { appointment: 1 }).session(mongoSession).lean();
+  const existingAppointmentIds = new Set(existingPayments.map(p => p.appointment?.toString()).filter(Boolean));
 
   const newAppointments = createdAppointments.filter(a => !existingAppointmentIds.has(a._id.toString()));
 

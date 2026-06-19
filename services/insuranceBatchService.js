@@ -53,16 +53,24 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
   }
   
   const sessions = await Session.find(query).populate('patient appointmentId insuranceGuide paymentId');
-  
+
   console.log(`[InsuranceBatch] Encontradas ${sessions.length} sessões elegíveis (billingBatchId: null)`);
-  
+
   if (sessions.length === 0) {
     throw new Error('Nenhuma sessão elegível para faturamento no período (todas já em lotes ou não completadas)');
   }
-  
+
+  // Buscar paymentId por sessão (Session.paymentId geralmente null — usar Payment.session)
+  const sessionIdList = sessions.map(s => s._id);
+  const linkedPayments = await Payment.find(
+    { session: { $in: sessionIdList }, billingType: 'convenio', status: { $ne: 'canceled' } },
+    { _id: 1, session: 1 }
+  ).lean();
+  const paymentBySession = new Map(linkedPayments.map(p => [p.session.toString(), p._id]));
+
   // 2. Criar o lote
   const batchNumber = `LOT-${insuranceProvider.toUpperCase()}-${Date.now()}`;
-  
+
   const batch = await InsuranceBatch.create({
     batchNumber,
     insuranceProvider,
@@ -73,7 +81,7 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
       sessionDate: s.date,   // data da sessão para regime de competência no processReturn
       appointment: s.appointmentId,
       guide: s.insuranceGuide,
-      payment: s.paymentId,
+      payment: s.paymentId || paymentBySession.get(s._id.toString()) || null,
       protocolItemId: null,
       grossAmount: s.sessionValue || 0,
       netAmount: s.sessionValue || 0,
@@ -135,21 +143,23 @@ export async function sendBatch(batchId, userId) {
   
   // Atualizar insurance.status dos payments vinculados
   const sessionIds = batch.sessions.map(s => s.session.toString());
+  const linkedPaymentIds = batch.sessions.map(s => s.payment).filter(Boolean);
 
-  // 🎯 Atualiza campos não-status via updateMany (performance)
-  await Payment.updateMany(
-    {
-      session: { $in: sessionIds },
-      billingType: 'convenio'
-    },
-    {
-      $set: {
-        'insurance.status': 'billed',
-        'insurance.billedAt': new Date(),
-        updatedAt: new Date()
-      }
-    }
-  );
+  // 🎯 Atualiza por paymentId quando disponível (mais confiável que session lookup)
+  if (linkedPaymentIds.length > 0) {
+    await Payment.updateMany(
+      { _id: { $in: linkedPaymentIds }, billingType: 'convenio' },
+      { $set: { 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+    );
+  }
+  // Fallback: atualiza por session para payments sem link direto no batch
+  const sessionsWithoutPayment = batch.sessions.filter(s => !s.payment).map(s => s.session.toString());
+  if (sessionsWithoutPayment.length > 0) {
+    await Payment.updateMany(
+      { session: { $in: sessionsWithoutPayment }, billingType: 'convenio' },
+      { $set: { 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+    );
+  }
 
   // 🎯 Transiciona status via paymentStatusService (emite eventos)
   const billedPayments = await Payment.find({

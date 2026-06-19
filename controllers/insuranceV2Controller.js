@@ -8,6 +8,7 @@ import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
 import { isConvenioSession, buildInsuranceReceivableFilter } from '../utils/billingHelpers.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
+import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
 
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
@@ -150,11 +151,50 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
 // POST /api/v2/financial/convenio/faturar-lote
 export async function faturarLote(req, res) {
   try {
-    const { paymentIds, dataFaturamento, notaFiscal } = req.body;
+    const { paymentIds, guideIds, dataFaturamento, notaFiscal } = req.body;
     const userId = req.user?._id;
-    
+
+    // 🆕 GUIDE-BASED: novo modelo correto (InsuranceGuide -> InsuranceBatch)
+    if (guideIds && Array.isArray(guideIds) && guideIds.length > 0) {
+      const adapterResult = await buildBatchFromGuides(guideIds);
+
+      if (adapterResult.sessionIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Nenhuma sessão elegível encontrada nas guias selecionadas'
+        });
+      }
+
+      const batch = await createBatch({
+        insuranceProvider: adapterResult.provider,
+        startDate: adapterResult.startDate,
+        endDate: adapterResult.endDate,
+        userId,
+        sessionIds: adapterResult.sessionIds
+      });
+
+      await sendBatch(batch._id, userId);
+
+      return res.json({
+        success: true,
+        message: `${adapterResult.sessionIds.length} atendimentos faturados a partir de ${adapterResult.guides.length} guia(s)`,
+        data: {
+          batchId: batch._id,
+          batchNumber: batch.batchNumber,
+          provider: adapterResult.provider,
+          sessionsFaturadas: adapterResult.sessionIds.length,
+          guidesFaturadas: adapterResult.guides.length,
+          guides: adapterResult.guides,
+          ignoredGuides: adapterResult.ignoredGuides,
+          startDate: adapterResult.startDate,
+          endDate: adapterResult.endDate
+        }
+      });
+    }
+
+    // LEGACY: fallback para paymentIds (sessão-cêntrico)
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
-      return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
+      return res.status(400).json({ success: false, error: 'guideIds ou paymentIds obrigatório' });
     }
     
     // Buscar payments reais (paymentIds que são de Payment documents)
@@ -330,10 +370,44 @@ export async function receiveSession(req, res) {
   }
 }
 
+/**
+ * GET /api/v2/insurance/guides/pending-billing
+ * Lista guias com sessões completed pendentes de faturamento.
+ */
+export async function listPendingGuides(req, res) {
+  try {
+    const { insurance, patientId, month, page, limit } = req.query;
+
+    const result = await listGuidesPendingBilling({
+      insurance,
+      patientId,
+      month,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 50
+    });
+
+    res.json({
+      success: true,
+      data: result.guides,
+      orphanSessions: result.orphanSessions,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        pages: Math.ceil(result.total / result.limit)
+      }
+    });
+  } catch (error) {
+    console.error('[InsuranceV2][listPendingGuides] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export default {
   getInsuranceReceivables,
   faturarLote,
   receberLote,
   billSession,
-  receiveSession
+  receiveSession,
+  listPendingGuides
 };

@@ -238,7 +238,7 @@ router.get('/:id', validateId, auth, async (req, res) => {
 });
 
 // Atualizar paciente por ID
-router.put('/:id', validateId, auth, async (req, res) => {
+router.put('/:id', validateId, flexibleAuth, async (req, res) => {
   try {
     const patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!patient) return res.status(404).json({ error: 'Paciente não encontrado' });

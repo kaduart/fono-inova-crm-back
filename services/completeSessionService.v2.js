@@ -169,7 +169,22 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         appointment = await Appointment.findById(appointmentId).populate('session payment package');
     }
 
-    const sessionId = appointment.session?._id;
+    // 🩹 FALLBACK CRÍTICO: session pode não estar populada (replica lag / lean inconsistency)
+    let sessionId = appointment.session?._id || appointment.session;
+    if (appointment.session && !sessionId) {
+        const rawSessionId = appointment.session._id || appointment.session;
+        if (rawSessionId) {
+            const loadedSession = await Session.findById(rawSessionId).lean();
+            if (loadedSession) {
+                sessionId = loadedSession._id;
+                appointment.session = loadedSession;
+                console.log(`[CompleteSessionV2] 🛡️ Session carregada via fallback`, {
+                    sessionId: sessionId?.toString?.()
+                });
+            }
+        }
+    }
+
     let packageId = appointment.package?._id;
     let packageData = appointment.package;
     
@@ -667,6 +682,26 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             // LEGACY (kept for reference — ver handlers/convenioHandler.js para lógica completa):
             // guia search, consumeSession, paymentData build, Payment.create/findByIdAndUpdate
             paymentCreated = await ConvenioHandler.buildPayment(appointmentUpdate, ctx);
+
+            // CRÍTICO: vincular session.insuranceGuide obrigatoriamente após ConvenioHandler.
+            //
+            // Historicamente o fluxo preenchia appointment.insuranceGuide e payment.insurance.guideId
+            // mas NÃO preenchia session.insuranceGuide. Resultado: a listagem de "A Faturar"
+            // (insuranceBatchGuideAdapter.listGuidesPendingBilling) agrupa sessões por
+            // session.insuranceGuide. Sem esse campo, a sessão vira falsa "órfã" mesmo tendo
+            // guia e payment corretos — visualmente some do faturamento por guia.
+            //
+            // Em junho/2026 foi necessário backfill de 40 sessões afetadas (todas tinham
+            // appointment.insuranceGuide preenchido mas session.insuranceGuide = null).
+            // NÃO remover este bloco.
+            if (sessionId && paymentCreated?.insurance?.guideId) {
+                await Session.findByIdAndUpdate(
+                    sessionId,
+                    { $set: { insuranceGuide: paymentCreated.insurance.guideId } },
+                    { session: mongoSession }
+                );
+                console.log(`[CompleteSessionV2] Session ${sessionId} vinculada à guia ${paymentCreated.insurance.guideId}`);
+            }
         }
 
         // Sync paymentStatus from payment for service types without Session (evaluation, tongue_tie_test, etc)

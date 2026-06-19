@@ -19,6 +19,7 @@ import { resolveSessionType } from '../../utils/sessionTypeResolver.js';
  * @param {Boolean} options.isPaid - Se já está paga
  * @param {String} options.paymentStatus - Status de pagamento
  * @param {String} options.paymentOrigin - Origem do pagamento
+ * @param {String|ObjectId} options.insuranceGuide - Guia de convênio vinculada
  * @returns {Object} - Dados prontos para Session.create()
  */
 export function buildSessionFromAppointment(appointment, options = {}) {
@@ -31,7 +32,8 @@ export function buildSessionFromAppointment(appointment, options = {}) {
         notes = null,
         packageId = null,
         paymentId = null,
-        correlationId = null
+        correlationId = null,
+        insuranceGuide = appointment.insuranceGuide || null
     } = options;
 
     // 🔒 GARANTIA: sessionType sempre vem do resolver
@@ -63,7 +65,8 @@ export function buildSessionFromAppointment(appointment, options = {}) {
         
         package: packageId,
         payment: paymentId,
-        
+        insuranceGuide,
+
         notes: notes || `Sessão criada via factory em ${new Date().toISOString()}`,
         
         correlationId,

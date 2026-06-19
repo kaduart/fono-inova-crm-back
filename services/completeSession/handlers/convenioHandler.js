@@ -38,8 +38,21 @@ export const ConvenioHandler = {
     async buildPayment(appointmentUpdate, ctx) {
         const { appointment, sessionId, sessionValue, mongoSession, userId, appointmentId } = ctx;
         const now = new Date();
-        const insuranceValue = appointment.insuranceValue || sessionValue || 0;
+        const insuranceValue = appointment.insuranceValue || sessionValue || ctx.sessionDoc?.sessionValue || 0;
+        if (insuranceValue <= 0) {
+            throw new Error('INVALID_INSURANCE_VALUE: nenhuma fonte de valor encontrada (appointment.insuranceValue, sessionValue, session.sessionValue)');
+        }
         const specialty = appointment.specialty || 'fonoaudiologia';
+
+        // 🩹 DEFENSIVO: sessionId é obrigatório para convenio
+        if (!sessionId) {
+            console.error('[ConvenioHandler] ❌ sessionId ausente no contexto', {
+                appointmentId: appointmentId?.toString?.(),
+                appointmentSession: appointment.session?._id?.toString?.() || appointment.session?.toString?.(),
+                sessionDocId: ctx.sessionDoc?._id?.toString?.()
+            });
+            throw new Error('INVALID_SESSION_ID: sessionId é obrigatório para criar/atualizar payment de convênio');
+        }
 
         // 1. Buscar guia ativa
         // Filtro primário: appointment vinculado à guia correta evita consumir guia errada
@@ -99,21 +112,44 @@ export const ConvenioHandler = {
 
         let paymentCreated;
 
+        // 🔍 Log de diagnóstico: dados que serão persistidos
+        console.log('[ConvenioHandler] 🔍 paymentData preparado', {
+            sessionId: sessionId?.toString?.(),
+            appointmentId: appointmentId?.toString?.(),
+            existingPaymentId: appointment.payment?._id?.toString?.() || appointment.payment?.toString?.(),
+            paymentDataSession: paymentData.session?.toString?.(),
+            paymentDataKeys: Object.keys(paymentData)
+        });
+
         if (appointment.payment) {
             // Payment pré-criado pelo generateInsurancePlanSessions — atualiza
             const existingPaymentId = appointment.payment._id || appointment.payment;
+            const beforePayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+            console.log('[ConvenioHandler] 🔍 payment ANTES do update', {
+                paymentId: existingPaymentId?.toString?.(),
+                session: beforePayment?.session?.toString?.() || beforePayment?.session,
+                status: beforePayment?.status,
+                kind: beforePayment?.kind
+            });
+
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,
                 { $set: paymentData },
                 { session: mongoSession, new: true }
             );
-            console.log(`[ConvenioHandler] 💰 Payment atualizado: ${paymentCreated._id}`);
+            console.log(`[ConvenioHandler] 💰 Payment atualizado: ${paymentCreated._id}`, {
+                session: paymentCreated.session?.toString?.(),
+                status: paymentCreated.status,
+                kind: paymentCreated.kind
+            });
         } else {
             // Fallback: appointment sem payment pré-linkado (plano legado)
             const [paymentDoc] = await Payment.create([paymentData], { session: mongoSession });
             paymentCreated = paymentDoc;
             appointmentUpdate.$set.payment = paymentCreated._id;
-            console.log(`[ConvenioHandler] 💰 Payment criado (produção): ${paymentCreated._id}`);
+            console.log(`[ConvenioHandler] 💰 Payment criado (produção): ${paymentCreated._id}`, {
+                session: paymentCreated.session?.toString?.()
+            });
         }
 
         return paymentCreated;
