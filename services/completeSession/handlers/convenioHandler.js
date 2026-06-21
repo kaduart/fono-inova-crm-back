@@ -10,6 +10,7 @@
 
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import Payment from '../../../models/Payment.js';
+import Session from '../../../models/Session.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 
 export const ConvenioHandler = {
@@ -84,7 +85,15 @@ export const ConvenioHandler = {
         await guide.consumeSession(mongoSession);
         console.log(`[ConvenioHandler] 📋 Guia consumida: ${guide._id} (${guide.usedSessions}/${guide.totalSessions})`);
 
-        // 3. Payment de produção — financialDate null = não entra no caixa imediato
+        // 3. Vincular guia à Session — causa raiz de sessões órfãs no billing
+        await Session.findByIdAndUpdate(
+            sessionId,
+            { $set: { insuranceGuide: guide._id, guideConsumed: true } },
+            { session: mongoSession }
+        );
+        console.log(`[ConvenioHandler] 📋 Session ${sessionId} vinculada à guia ${guide._id}`);
+
+        // 4. Payment de produção — financialDate null = não entra no caixa imediato
         const paymentData = {
             patient:       appointment.patient?._id,
             amount:        insuranceValue,

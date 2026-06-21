@@ -32,4 +32,16 @@ router.get('/insurance/history', auth, controller.getInsuranceHistory);
 // GET /api/v2/insurance/patient-sessions - Sessões individuais de paciente (lazy expand)
 router.get('/insurance/patient-sessions', auth, controller.getPatientInsuranceSessions);
 
+// POST /api/v2/insurance/guides/auto-link-orphans - Vincular órfãs automaticamente
+router.post('/insurance/guides/auto-link-orphans', auth, controller.autoLinkOrphanSessions);
+
+// POST /api/v2/insurance/guides/auto-link-orphans/preview - Pré-visualizar vínculos automáticos
+router.post('/insurance/guides/auto-link-orphans/preview', auth, controller.previewAutoLinkOrphanSessions);
+
+// POST /api/v2/insurance/guides/create-from-orphan - Criar guia a partir de sessão órfã
+router.post('/insurance/guides/create-from-orphan', auth, controller.createGuideFromOrphan);
+
+// POST /api/v2/insurance/guides/link-orphan-sessions - Vincular órfãs a guia existente
+router.post('/insurance/guides/link-orphan-sessions', auth, controller.linkOrphanSessionsToGuide);
+
 export default router;

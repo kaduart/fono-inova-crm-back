@@ -6,7 +6,6 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import mongoose from 'mongoose';
-import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
 import Appointment from '../../../models/Appointment.js';
 import Patient from '../../../models/Patient.js';
 import Doctor from '../../../models/Doctor.js';
@@ -17,12 +16,12 @@ import { startRedis } from '../../../services/redisClient.js';
 import { v4 as uuidv4 } from 'uuid';
 import { completeSessionV2 } from '../../../services/completeSessionService.v2.js';
 import Session from '../../../models/Session.js';
-import { consumeInsuranceGuide } from '../../../domain/insurance/consumeInsuranceGuide.js';
 
 // Test data
 let createdPatientId;
 let createdGuideId;
 let createdAppointmentId;
+let createdSessionId;
 let testDoctorId;
 
 const timestamp = Date.now();
@@ -70,6 +69,7 @@ describe('🧪 V2 E2E - Convênio Flow', () => {
   afterAll(async () => {
     console.log(`${testContext} Cleanup...`);
     if (createdAppointmentId) await Appointment.deleteOne({ _id: createdAppointmentId });
+    if (createdSessionId) await Session.deleteOne({ _id: createdSessionId });
     if (createdGuideId) await InsuranceGuide.deleteOne({ _id: createdGuideId });
     if (createdPatientId) await Patient.deleteOne({ _id: createdPatientId });
     
@@ -136,13 +136,32 @@ describe('🧪 V2 E2E - Convênio Flow', () => {
       clinicalStatus: 'pending',
       paymentStatus: 'pending_receipt'
     });
-    
+
+    // Cria a Session vinculada ao appointment (o completeSessionV2 precisa dela)
+    const session = await Session.create({
+      patient: createdPatientId,
+      doctor: testDoctorId,
+      date: new Date('2026-04-25T15:00:00-03:00'),
+      time: '15:00',
+      sessionType: 'fonoaudiologia',
+      sessionValue: 350,
+      appointmentId: appointmentId,
+      status: 'scheduled',
+      paymentMethod: 'convenio',
+      paymentStatus: 'pending_receipt'
+    });
+    createdSessionId = session._id;
+
+    // Vincula session ao appointment
+    await Appointment.findByIdAndUpdate(appointmentId, { $set: { session: createdSessionId } });
+
     expect(appointment).toBeTruthy();
     expect(appointment.serviceType).toBe('convenio_session');
     expect(appointment.billingType).toBe('convenio');
-    
-    console.log(`${testContext} ✅ Agendamento criado:`, {
+
+    console.log(`${testContext} ✅ Agendamento e sessão criados:`, {
       appointmentId: appointment._id.toString(),
+      sessionId: createdSessionId.toString(),
       status: appointment.operationalStatus
     });
   }, 10000);
@@ -166,20 +185,24 @@ describe('🧪 V2 E2E - Convênio Flow', () => {
     expect(apt.operationalStatus).toBe('completed');
     console.log(`${testContext} Appointment status:`, apt.operationalStatus);
 
-    // Consome guia diretamente (simula o que o worker faria)
-    const session = await Session.findOne({ appointment: createdAppointmentId });
-    await consumeInsuranceGuide(createdGuideId.toString(), session?._id?.toString());
+    // Verifica que a Session foi vinculada à guia (causa raiz corrigida no handler)
+    const session = await Session.findById(createdSessionId);
+    expect(session).toBeTruthy();
+    expect(session.insuranceGuide?.toString()).toBe(createdGuideId.toString());
+    expect(session.guideConsumed).toBe(true);
+    console.log(`${testContext} Session insuranceGuide:`, session.insuranceGuide?.toString());
 
-    // Verifica guia
+    // Verifica guia consumida pelo ConvenioHandler
     const guide = await InsuranceGuide.findById(createdGuideId);
     expect(guide).toBeTruthy();
     expect(guide.usedSessions).toBe(1);
     console.log(`${testContext} Guide usedSessions:`, guide.usedSessions);
-    
+
     console.log(`${testContext} ✅ Complete realizado:`, {
       appointmentStatus: apt.operationalStatus,
       guideUsedSessions: guide.usedSessions,
-      guideStatus: guide.status
+      guideStatus: guide.status,
+      sessionInsuranceGuide: session.insuranceGuide?.toString()
     });
   }, 25000);
 });

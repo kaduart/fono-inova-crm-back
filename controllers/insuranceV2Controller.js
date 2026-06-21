@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import { isConvenioSession, buildInsuranceReceivableFilter } from '../utils/billingHelpers.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
 import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
+import InsuranceGuide from '../models/InsuranceGuide.js';
 
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
@@ -434,6 +435,395 @@ export async function listPendingGuides(req, res) {
   }
 }
 
+/**
+ * POST /api/v2/insurance/guides/auto-link-orphans
+ * Tenta vincular sessões órfãs a guias ativas do mesmo paciente/especialidade.
+ */
+export async function autoLinkOrphanSessions(req, res) {
+  const mongoSession = await mongoose.startSession();
+  mongoSession.startTransaction();
+  try {
+    const { month } = req.body;
+    let periodStart, periodEnd;
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number);
+      periodStart = new Date(y, m - 1, 1);
+      periodEnd = new Date(y, m, 0, 23, 59, 59, 999);
+    }
+
+    const orphanMatch = {
+      status: 'completed',
+      $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
+      $and: [
+        { $or: [{ billingBatchId: { $exists: false } }, { billingBatchId: null }] },
+        { $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }
+      ]
+    };
+    if (periodStart && periodEnd) orphanMatch.date = { $gte: periodStart, $lte: periodEnd };
+
+    const orphanSessions = await Session.find(orphanMatch)
+      .populate('appointmentId', 'specialty insuranceProvider')
+      .session(mongoSession)
+      .lean();
+
+    const linked = [];
+    const skipped = [];
+
+    for (const session of orphanSessions) {
+      const patientId = session.patient;
+      if (!patientId) {
+        skipped.push({ sessionId: session._id.toString(), reason: 'Paciente não encontrado' });
+        continue;
+      }
+
+      const specialty = (session.sessionType || session.appointmentId?.specialty || '').toLowerCase().trim();
+      if (!specialty) {
+        skipped.push({ sessionId: session._id.toString(), reason: 'Especialidade não encontrada' });
+        continue;
+      }
+
+      const guide = await InsuranceGuide.findOne({
+        patientId: new mongoose.Types.ObjectId(patientId.toString()),
+        specialty,
+        status: { $in: ['active', 'linked'] },
+        expiresAt: { $gte: session.date || new Date() },
+        $expr: { $lt: ['$usedSessions', '$totalSessions'] }
+      })
+        .sort({ expiresAt: 1 })
+        .session(mongoSession);
+
+      if (!guide) {
+        skipped.push({ sessionId: session._id.toString(), reason: 'Nenhuma guia ativa compatível' });
+        continue;
+      }
+
+      // Consome sessão na guia
+      guide.usedSessions += 1;
+      if (guide.usedSessions >= guide.totalSessions) guide.status = 'exhausted';
+      guide.consumptionHistory.push({
+        sessionId: session._id,
+        sessionNumber: guide.usedSessions,
+        consumedAt: new Date(),
+        notes: 'Auto-link de sessão órfã'
+      });
+      await guide.save({ session: mongoSession });
+
+      // Atualiza sessão
+      await Session.findByIdAndUpdate(
+        session._id,
+        { $set: { insuranceGuide: guide._id, guideConsumed: true } },
+        { session: mongoSession }
+      );
+
+      // Atualiza payment se existir
+      await Payment.updateMany(
+        { session: session._id, billingType: 'convenio' },
+        { $set: { 'insurance.guideId': guide._id, insuranceGuide: guide._id } },
+        { session: mongoSession }
+      );
+
+      linked.push({ sessionId: session._id.toString(), guideId: guide._id.toString(), guideNumber: guide.number });
+    }
+
+    await mongoSession.commitTransaction();
+
+    res.json({
+      success: true,
+      linked,
+      skipped,
+      linkedCount: linked.length,
+      skippedCount: skipped.length
+    });
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    console.error('[InsuranceV2][autoLinkOrphanSessions] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    mongoSession.endSession();
+  }
+}
+
+/**
+ * POST /api/v2/insurance/guides/auto-link-orphans/preview
+ * Pré-visualiza quais sessões órfãs seriam vinculadas a quais guias,
+ * sem efetivar alterações no banco.
+ */
+export async function previewAutoLinkOrphanSessions(req, res) {
+  try {
+    const { month } = req.body;
+    let periodStart, periodEnd;
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number);
+      periodStart = new Date(y, m - 1, 1);
+      periodEnd = new Date(y, m, 0, 23, 59, 59, 999);
+    }
+
+    const orphanMatch = {
+      status: 'completed',
+      $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
+      $and: [
+        { $or: [{ billingBatchId: { $exists: false } }, { billingBatchId: null }] },
+        { $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }
+      ]
+    };
+    if (periodStart && periodEnd) orphanMatch.date = { $gte: periodStart, $lte: periodEnd };
+
+    const orphanSessions = await Session.find(orphanMatch)
+      .populate('patient', 'fullName')
+      .populate('appointmentId', 'specialty insuranceProvider')
+      .lean();
+
+    const linked = [];
+    const skipped = [];
+
+    for (const session of orphanSessions) {
+      const rawPatientId = session.patient?._id || session.patient;
+      const patientName = session.patient?.fullName || 'Paciente não identificado';
+      const specialty = (session.sessionType || session.appointmentId?.specialty || '').toLowerCase().trim();
+
+      if (!rawPatientId) {
+        skipped.push({
+          sessionId: session._id.toString(),
+          patientName,
+          specialty,
+          date: session.date,
+          reason: 'Paciente não encontrado'
+        });
+        continue;
+      }
+
+      if (!specialty) {
+        skipped.push({
+          sessionId: session._id.toString(),
+          patientName,
+          specialty,
+          date: session.date,
+          reason: 'Especialidade não encontrada'
+        });
+        continue;
+      }
+
+      const guide = await InsuranceGuide.findOne({
+        patientId: new mongoose.Types.ObjectId(rawPatientId.toString()),
+        specialty,
+        status: { $in: ['active', 'linked'] },
+        expiresAt: { $gte: session.date || new Date() },
+        $expr: { $lt: ['$usedSessions', '$totalSessions'] }
+      })
+        .sort({ expiresAt: 1 })
+        .lean();
+
+      if (!guide) {
+        skipped.push({
+          sessionId: session._id.toString(),
+          patientName,
+          specialty,
+          date: session.date,
+          reason: 'Nenhuma guia ativa compatível'
+        });
+        continue;
+      }
+
+      linked.push({
+        sessionId: session._id.toString(),
+        patientName,
+        specialty,
+        date: session.date,
+        guideId: guide._id.toString(),
+        guideNumber: guide.number,
+        guideInsurance: guide.insurance,
+        guideTotalSessions: guide.totalSessions,
+        guideUsedSessions: guide.usedSessions,
+        guideExpiresAt: guide.expiresAt
+      });
+    }
+
+    res.json({
+      success: true,
+      linked,
+      skipped,
+      linkedCount: linked.length,
+      skippedCount: skipped.length
+    });
+  } catch (error) {
+    console.error('[InsuranceV2][previewAutoLinkOrphanSessions] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * POST /api/v2/insurance/guides/create-from-orphan
+ * Cria uma nova guia a partir de uma sessão órfã e já a vincula.
+ */
+export async function createGuideFromOrphan(req, res) {
+  const mongoSession = await mongoose.startSession();
+  mongoSession.startTransaction();
+  try {
+    const { sessionId, number, totalSessions, expiresAt, sessionValue } = req.body;
+
+    if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+    }
+    if (!number || !totalSessions || !expiresAt) {
+      return res.status(400).json({ success: false, error: 'number, totalSessions e expiresAt são obrigatórios' });
+    }
+
+    const session = await Session.findById(sessionId)
+      .populate('patient', 'fullName')
+      .populate('appointmentId', 'specialty insuranceProvider')
+      .session(mongoSession);
+
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Sessão não encontrada' });
+    }
+
+    if (session.insuranceGuide) {
+      return res.status(400).json({ success: false, error: 'Sessão já possui guia vinculada' });
+    }
+
+    const patientId = session.patient?._id || session.patient;
+    const specialty = (session.sessionType || session.appointmentId?.specialty || '').toLowerCase().trim();
+    const insurance = session.appointmentId?.insuranceProvider || 'nao_identificado';
+
+    if (!patientId || !specialty) {
+      return res.status(400).json({ success: false, error: 'Paciente ou especialidade ausente na sessão' });
+    }
+
+    const existingGuide = await InsuranceGuide.findOne({ number: number.toUpperCase().trim() }).session(mongoSession).lean();
+    if (existingGuide) {
+      return res.status(409).json({ success: false, error: 'Já existe uma guia com este número' });
+    }
+
+    const guide = new InsuranceGuide({
+      number: number.toUpperCase().trim(),
+      patientId,
+      specialty,
+      insurance,
+      totalSessions: Number(totalSessions),
+      usedSessions: 1,
+      sessionValue: sessionValue ? Number(sessionValue) : (session.sessionValue || 0),
+      expiresAt: new Date(expiresAt),
+      status: Number(totalSessions) <= 1 ? 'exhausted' : 'active',
+      consumptionHistory: [{
+        sessionId: session._id,
+        sessionNumber: 1,
+        consumedAt: new Date(),
+        notes: 'Criada a partir de sessão órfã'
+      }]
+    });
+
+    await guide.save({ session: mongoSession });
+
+    session.insuranceGuide = guide._id;
+    session.guideConsumed = true;
+    await session.save({ session: mongoSession });
+
+    await Payment.updateMany(
+      { session: session._id, billingType: 'convenio' },
+      { $set: { 'insurance.guideId': guide._id, insuranceGuide: guide._id } },
+      { session: mongoSession }
+    );
+
+    await mongoSession.commitTransaction();
+
+    res.json({
+      success: true,
+      data: {
+        guideId: guide._id.toString(),
+        number: guide.number,
+        sessionId: session._id.toString()
+      }
+    });
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    console.error('[InsuranceV2][createGuideFromOrphan] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    mongoSession.endSession();
+  }
+}
+
+/**
+ * POST /api/v2/insurance/guides/link-orphan-sessions
+ * Vincula sessões órfãs a uma guia existente.
+ */
+export async function linkOrphanSessionsToGuide(req, res) {
+  const mongoSession = await mongoose.startSession();
+  mongoSession.startTransaction();
+  try {
+    const { guideId, guideNumber, sessionIds } = req.body;
+
+    if (!guideId && !guideNumber) {
+      return res.status(400).json({ success: false, error: 'guideId ou guideNumber é obrigatório' });
+    }
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'sessionIds deve ser um array não vazio' });
+    }
+
+    let guide;
+    if (guideId && mongoose.Types.ObjectId.isValid(guideId)) {
+      guide = await InsuranceGuide.findById(guideId).session(mongoSession);
+    }
+    if (!guide && guideNumber) {
+      guide = await InsuranceGuide.findOne({ number: guideNumber.toUpperCase().trim() }).session(mongoSession);
+    }
+    if (!guide) {
+      return res.status(404).json({ success: false, error: 'Guia não encontrada' });
+    }
+
+    const available = guide.totalSessions - guide.usedSessions;
+    if (available < sessionIds.length) {
+      return res.status(400).json({ success: false, error: `Guia tem apenas ${available} sessão(ões) disponível(eis)` });
+    }
+
+    const sessions = await Session.find({
+      _id: { $in: sessionIds.map(id => new mongoose.Types.ObjectId(id)) },
+      status: 'completed',
+      $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }]
+    }).session(mongoSession);
+
+    if (sessions.length === 0) {
+      return res.status(400).json({ success: false, error: 'Nenhuma sessão órfã válida encontrada' });
+    }
+
+    const linked = [];
+    for (const session of sessions) {
+      guide.usedSessions += 1;
+      guide.consumptionHistory.push({
+        sessionId: session._id,
+        sessionNumber: guide.usedSessions,
+        consumedAt: new Date(),
+        notes: 'Vínculo manual de sessão órfã'
+      });
+
+      session.insuranceGuide = guide._id;
+      session.guideConsumed = true;
+      await session.save({ session: mongoSession });
+
+      await Payment.updateMany(
+        { session: session._id, billingType: 'convenio' },
+        { $set: { 'insurance.guideId': guide._id, insuranceGuide: guide._id } },
+        { session: mongoSession }
+      );
+
+      linked.push(session._id.toString());
+    }
+
+    if (guide.usedSessions >= guide.totalSessions) guide.status = 'exhausted';
+    await guide.save({ session: mongoSession });
+
+    await mongoSession.commitTransaction();
+
+    res.json({ success: true, linked, guideId });
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    console.error('[InsuranceV2][linkOrphanSessionsToGuide] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    mongoSession.endSession();
+  }
+}
+
 // GET /api/v2/insurance/history
 // Histórico acumulado mês a mês: Packages (legado) + InsuranceBatches (novo)
 export async function getInsuranceHistory(req, res) {
@@ -837,5 +1227,9 @@ export default {
   receiveSession,
   listPendingGuides,
   getInsuranceHistory,
-  getPatientInsuranceSessions
+  getPatientInsuranceSessions,
+  autoLinkOrphanSessions,
+  previewAutoLinkOrphanSessions,
+  createGuideFromOrphan,
+  linkOrphanSessionsToGuide
 };
