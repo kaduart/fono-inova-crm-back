@@ -1,5 +1,5 @@
 /**
- * 🚨 LegacyFinanceWriteGuard
+ * 🚨 FinanceWriteGuard
  *
  * Intercepta writes financeiros V1 (isPaid, paymentStatus) e:
  * 1. Loga com stack trace
@@ -13,13 +13,13 @@
  * - 'noop': loga warning, ignora write (transforma em no-op)
  *
  * Uso:
- *   LegacyFinanceWriteGuard.setSessionPaid(session, true, { reason: 'complete' })
- *   LegacyFinanceWriteGuard.setAppointmentStatus(appointment, 'paid', { reason: 'settle' })
+ *   FinanceWriteGuard.setSessionPaid(session, true, { reason: 'complete' })
+ *   FinanceWriteGuard.setAppointmentStatus(appointment, 'paid', { reason: 'settle' })
  */
 
 const MODE = process.env.LEGACY_GUARD_MODE || 'warn';
 
-class LegacyFinanceWriteGuard {
+class FinanceWriteGuard {
   static log(action, entity, field, value, meta = {}) {
     const entry = {
       timestamp: new Date().toISOString(),
@@ -130,4 +130,4 @@ class LegacyFinanceWriteGuard {
   }
 }
 
-export default LegacyFinanceWriteGuard;
+export default FinanceWriteGuard;

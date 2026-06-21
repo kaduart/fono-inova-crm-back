@@ -190,6 +190,140 @@ class FinancialAnalyticsService {
     }
 
     /**
+     * 1b. Detalhamento de uma especialidade — itens individuais + agregações
+     */
+    async getSpecialtyDetails({ from, to, specialty, doctorId = null }) {
+        const target = specialty || 'Outros';
+        const doctorFilter = doctorId ? [{ $match: { doctor: new mongoose.Types.ObjectId(doctorId) } }] : [];
+
+        // --- Particular: Payment model ---
+        const paymentPipeline = [
+            { $match: { status: 'paid', kind: { $ne: 'package_consumed' }, ...this._getDateMatch(from, to) } },
+            ...doctorFilter,
+            {
+                $lookup: {
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doc'
+                }
+            },
+            { $unwind: { path: '$doc', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: 'patients', localField: 'patient', foreignField: '_id', as: 'pat'
+                }
+            },
+            { $unwind: { path: '$pat', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: { $toString: '$_id' },
+                    date: { $ifNull: ['$paymentDate', '$createdAt'] },
+                    patient: { _id: { $toString: '$patient' }, fullName: { $ifNull: ['$pat.fullName', '$pat.name'] } },
+                    doctor: { _id: { $toString: '$doctor' }, fullName: '$doc.fullName', specialty: '$doc.specialty' },
+                    rawSpecialty: { $ifNull: ['$sessionType', '$serviceType', '$doc.specialty'] },
+                    specialty: { $ifNull: ['$sessionType', '$doc.specialty', 'Outros'] },
+                    amount: '$amount',
+                    source: 'payment',
+                    paymentMethod: '$paymentMethod',
+                    serviceType: '$serviceType',
+                    kind: '$kind',
+                    billingType: '$billingType'
+                }
+            },
+            { $match: { specialty: target } }
+        ];
+
+        // --- Convênio: Session model ---
+        const sessionPipeline = [
+            {
+                $match: {
+                    status: 'completed',
+                    date: { $gte: from, $lte: to },
+                    $or: [
+                        { paymentMethod: 'convenio' },
+                        { package: { $exists: true, $ne: null } }
+                    ]
+                }
+            },
+            ...doctorFilter,
+            {
+                $lookup: {
+                    from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg'
+                }
+            },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doc'
+                }
+            },
+            { $unwind: { path: '$doc', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: 'patients', localField: 'patient', foreignField: '_id', as: 'pat'
+                }
+            },
+            { $unwind: { path: '$pat', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: { $toString: '$_id' },
+                    date: '$date',
+                    patient: { _id: { $toString: '$patient' }, fullName: { $ifNull: ['$pat.fullName', '$pat.name'] } },
+                    doctor: { _id: { $toString: '$doctor' }, fullName: '$doc.fullName', specialty: '$doc.specialty' },
+                    rawSpecialty: { $ifNull: ['$sessionType', '$doc.specialty'] },
+                    specialty: { $ifNull: ['$sessionType', '$doc.specialty', 'Outros'] },
+                    amount: this._valorConvenio(),
+                    source: 'session',
+                    paymentMethod: '$paymentMethod',
+                    serviceType: '$sessionType',
+                    kind: '$paymentOrigin',
+                    billingType: { $cond: { if: { $eq: ['$paymentMethod', 'convenio'] }, then: 'convenio', else: 'package' } }
+                }
+            },
+            { $match: { specialty: target } }
+        ];
+
+        const [paymentItems, sessionItems] = await Promise.all([
+            Payment.aggregate(paymentPipeline),
+            Session.aggregate(sessionPipeline)
+        ]);
+
+        const items = [...paymentItems, ...sessionItems].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Agregações
+        const byPaymentMethod = {};
+        const byDoctorMap = new Map();
+        const bySessionType = {};
+        let totalRevenue = 0;
+
+        for (const item of items) {
+            totalRevenue += item.amount || 0;
+
+            const method = item.paymentMethod || item.billingType || 'Não informado';
+            byPaymentMethod[method] = (byPaymentMethod[method] || 0) + (item.amount || 0);
+
+            const type = item.serviceType || item.kind || 'Não informado';
+            bySessionType[type] = (bySessionType[type] || 0) + (item.amount || 0);
+
+            const docId = item.doctor?._id || 'unknown';
+            if (!byDoctorMap.has(docId)) {
+                byDoctorMap.set(docId, { doctorId: docId, doctorName: item.doctor?.fullName || 'Desconhecido', value: 0, sessions: 0 });
+            }
+            const docEntry = byDoctorMap.get(docId);
+            docEntry.value += item.amount || 0;
+            docEntry.sessions += 1;
+        }
+
+        return {
+            specialty: target,
+            totalRevenue: Math.round(totalRevenue * 100) / 100,
+            totalSessions: items.length,
+            items,
+            byPaymentMethod,
+            byDoctor: Array.from(byDoctorMap.values()).sort((a, b) => b.value - a.value),
+            bySessionType
+        };
+    }
+
+    /**
      * 2. Revenue por Profissional — Payment (particular) + Session (convênio)
      */
     async getRevenueByDoctor({ from, to, sessionType = null }) {
@@ -424,7 +558,7 @@ class FinancialAnalyticsService {
 
         // --- Particular: Payment model ---
         const paymentPipeline = [
-            { $match: { status: 'paid', kind: { $ne: 'package_consumed' } } },
+            { $match: { status: 'paid', kind: { $ne: 'package_consumed' }, patient: { $exists: true, $ne: null } } },
             {
                 $group: {
                     _id: '$patient',
@@ -440,6 +574,7 @@ class FinancialAnalyticsService {
             {
                 $match: {
                     status: 'completed',
+                    patient: { $exists: true, $ne: null },
                     $or: [
                         { paymentMethod: 'convenio' },
                         { package: { $exists: true, $ne: null } }
@@ -477,6 +612,7 @@ class FinancialAnalyticsService {
         // Merge por patient ID
         const map = new Map();
         for (const p of paymentData) {
+            if (!p._id) continue;
             const id = p._id.toString();
             map.set(id, {
                 patientId: p._id,
@@ -486,6 +622,7 @@ class FinancialAnalyticsService {
             });
         }
         for (const s of convenioData) {
+            if (!s._id) continue;
             const id = s._id.toString();
             const existing = map.get(id);
             if (existing) {
@@ -514,6 +651,7 @@ class FinancialAnalyticsService {
 
         const enriched = merged
             .map(m => {
+                if (!m.patientId) return null;
                 const info = patientMap.get(m.patientId.toString());
                 if (!info) return null;
                 return {

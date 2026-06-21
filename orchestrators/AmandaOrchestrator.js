@@ -45,13 +45,14 @@ import {
 import { logBookingGate, mapFlagsToBookingProduct } from "../utils/bookingProductMapper.js";
 import { extractPreferredDateFromText } from "../utils/dateParser.js";
 import { getWisdomForContext, TESTE_LINGUINHA_WISDOM } from "../utils/clinicWisdom.js";
-import ensureSingleHeart from "../utils/helpers.js";
+import ensureSingleHeart, { normalizeResponse } from "../utils/helpers.js";
 import { extractAgeFromText, extractBirth, extractComplaint, extractName, extractPeriodFromText, isValidPatientName } from "../utils/patientDataExtractor.js";
 import { safeAgeUpdate } from "../utils/safeDataUpdate.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
+import { generateRichResponse, decideEnrichmentLevel, ENRICHMENT_LEVEL } from '../services/ResponseEnricher.js';
 import {
   resolveDecision,
   extractDetectorResults,
@@ -2339,14 +2340,42 @@ async function _getOptimizedAmandaResponseInternal({
                 const response = buildResponseFromFlags(flags, {
                     therapyArea: lead?.therapyArea || flags.therapyArea
                 });
-                if (response) return ensureSingleHeart(response);
+                if (response) return normalizeResponse(response, { decision, flags });
             }
             // Se ResponseBuilder não retornou, continua para fluxo legado
             break;
         }
         case 'HYBRID': {
-            // HYBRID: Injeta contexto para IA
+            // HYBRID: injeta decisão no contexto e aplica enriquecimento para casos prioritários.
+            // hotLead e emotional saem aqui com resposta enriquecida (não chegam ao FSM).
             enrichedContext.decision = decision;
+            const enrichmentLevel = decideEnrichmentLevel(flags, lead?.state, lead);
+
+            if (enrichmentLevel !== ENRICHMENT_LEVEL.NONE && (flags.isHotLead || flags.isEmotional || flags.mentionsPriceObjection || flags.mentionsOtherClinicObjection)) {
+                const baseTemplate = flags.isHotLead || flags.wantsFastSolution
+                    ? `Ótimo! 💚 Temos horários disponíveis esta semana. Qual período funciona melhor pra você — manhã, tarde ou noite?`
+                    : flags.isEmotional
+                    ? `Entendo que pode ser um momento difícil. 💚 Me conta um pouquinho o que você está observando?`
+                    : flags.mentionsPriceObjection || flags.mentionsOtherClinicObjection
+                    ? `Entendo sua dúvida. 💚 Posso te explicar melhor como funciona o processo aqui?`
+                    : null;
+
+                if (baseTemplate) {
+                    try {
+                        const enriched = await generateRichResponse({
+                            text,
+                            lead,
+                            state: lead?.state,
+                            stateData: lead?.stateData || {},
+                            baseTemplate,
+                            flags
+                        });
+                        return normalizeResponse(enriched, { decision, flags });
+                    } catch (err) {
+                        console.warn('[HYBRID] Enrichment falhou, continuando para FSM:', err.message);
+                    }
+                }
+            }
             break;
         }
         case 'AI':

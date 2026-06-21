@@ -31,7 +31,7 @@ import { recordPackageMetric } from '../routes/package.metrics.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
-import LegacyFinanceWriteGuard from '../services/financialGuard/LegacyFinanceWriteGuard.js';
+import FinanceWriteGuard from '../services/financialGuard/FinanceWriteGuard.js';
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import moment from 'moment-timezone';
 
@@ -774,8 +774,8 @@ export const createPackageV2 = async (req, res) => {
         reuseAppt.billingType = pkg.type === 'convenio' ? 'convenio' :
                                 pkg.type === 'liminar' ? 'liminar' : 'particular';
         const isPrepaidPackage = pkg.paymentType !== 'per-session';
-        LegacyFinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, isPrepaidPackage ? 'package_paid' : 'unpaid', { reason: 'reuse_appointment_v2' });
-        LegacyFinanceWriteGuard.setAppointmentPaid(reuseAppt, isPrepaidPackage, { reason: 'reuse_appointment_v2' });
+        FinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, isPrepaidPackage ? 'package_paid' : 'unpaid', { reason: 'reuse_appointment_v2' });
+        FinanceWriteGuard.setAppointmentPaid(reuseAppt, isPrepaidPackage, { reason: 'reuse_appointment_v2' });
         reuseAppt.paymentOrigin = isPrepaidPackage ? 'package_prepaid' : 'auto_per_session';
         // 🔧 FIX: limpa referência ao payment avulso anterior — agora é do pacote
         const previousPaymentId = reuseAppt.payment;
@@ -858,7 +858,7 @@ export const createPackageV2 = async (req, res) => {
 
           if (debitToSettle) {
             debitToSettle.settledByPackageId = pkg._id;
-            LegacyFinanceWriteGuard.setSessionPaid(debitToSettle, true, { reason: 'reuse_appointment_v2_settle' });
+            FinanceWriteGuard.setSessionPaid(debitToSettle, true, { reason: 'reuse_appointment_v2_settle' });
             debitToSettle.paidAmount = debitToSettle.amount;
 
             patientBalance.transactions.push({
@@ -983,7 +983,7 @@ export const createPackageV2 = async (req, res) => {
 
             for (const debit of debitsToSettle) {
               debit.settledByPackageId = pkg._id;
-              LegacyFinanceWriteGuard.setSessionPaid(debit, true, { reason: 'package_settle_balance' });
+              FinanceWriteGuard.setSessionPaid(debit, true, { reason: 'package_settle_balance' });
               debit.paidAmount = debit.amount;
             }
 

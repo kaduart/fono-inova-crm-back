@@ -28,6 +28,25 @@ router.get('/specialties', async (req, res) => {
 });
 
 /**
+ * GET /api/analytics/specialties/:specialty/details
+ * Query: from (YYYY-MM-DD), to (YYYY-MM-DD), doctorId (opcional)
+ */
+router.get('/specialties/:specialty/details', async (req, res) => {
+    try {
+        const { from, to, doctorId } = req.query;
+        if (!from || !to) {
+            return res.status(400).json({ success: false, error: 'Datas (from/to) são obrigatórias' });
+        }
+
+        const data = await analytics.getSpecialtyDetails({ from, to, specialty: req.params.specialty, doctorId });
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('Analytics specialty details error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
  * GET /api/analytics/doctors
  * Query: from, to, sessionType (opcional)
  */

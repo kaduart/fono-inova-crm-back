@@ -10,7 +10,7 @@
 
 import Payment from '../../../models/Payment.js';
 import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
-import LegacyFinanceWriteGuard from '../../financialGuard/LegacyFinanceWriteGuard.js';
+import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 
 export const LiminarHandler = {
     /**
@@ -21,8 +21,8 @@ export const LiminarHandler = {
      * @param {import('../shared/context.js').CompleteContext} ctx
      */
     buildSessionUpdate(sessionUpdate, ctx) {
-        LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
-        LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'liminar_complete' });
+        FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
+        FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'liminar_complete' });
         sessionUpdate.paymentOrigin = 'liminar_credit';
         sessionUpdate.paymentMethod = 'liminar_credit';
         sessionUpdate.paidAt = new Date();

@@ -20,7 +20,7 @@ import InsuranceGuide from '../models/InsuranceGuide.js';
 import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
-import LegacyFinanceWriteGuard from './financialGuard/LegacyFinanceWriteGuard.js';
+import FinanceWriteGuard from './financialGuard/FinanceWriteGuard.js';
 import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
 import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
@@ -556,8 +556,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
         // 🎯 Fonte da verdade: Session define o pagamento, Appointment espelha
         if (sessionId && sessionUpdate) {
-            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
-            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
+            FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
+            FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
             const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
             const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
             appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
@@ -586,8 +586,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
              * TODO: remover após backfill completo de Session em todos os appointments.
              */
             const isPaid = billingType === 'liminar';
-            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, isPaid, { reason: 'fallback_no_session' });
-            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, isPaid ? 'paid' : 'pending', { reason: 'fallback_no_session' });
+            FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, isPaid, { reason: 'fallback_no_session' });
+            FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, isPaid ? 'paid' : 'pending', { reason: 'fallback_no_session' });
             appointmentUpdate.$set.paymentMethod = billingType === 'liminar' ? 'liminar_credit' :
                                                    billingType === 'convenio' ? 'convenio' :
                                                    packageId ? 'package_prepaid' : 'cash';
@@ -709,8 +709,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const derivedStatus = paymentCreated.status === 'paid' ? 'paid'
                 : paymentCreated.status === 'pending' ? 'pending'
                 : 'unpaid';
-            LegacyFinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, derivedStatus, { reason: 'sync_from_payment' });
-            LegacyFinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, paymentCreated.status === 'paid', { reason: 'sync_from_payment' });
+            FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, derivedStatus, { reason: 'sync_from_payment' });
+            FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, paymentCreated.status === 'paid', { reason: 'sync_from_payment' });
             console.log(`[CompleteSessionV2] Synced paymentStatus from payment (no session):`, derivedStatus);
         }
 

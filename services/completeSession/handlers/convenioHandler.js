@@ -10,19 +10,19 @@
 
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import Payment from '../../../models/Payment.js';
-import LegacyFinanceWriteGuard from '../../financialGuard/LegacyFinanceWriteGuard.js';
+import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 
 export const ConvenioHandler = {
     /**
      * Fase 1 — campos de pagamento na Session.
-     * Mutates sessionUpdate in-place (padrão do LegacyFinanceWriteGuard).
+     * Mutates sessionUpdate in-place (padrão do FinanceWriteGuard).
      *
      * @param {Object} sessionUpdate - objeto mutável que será $set na Session
      * @param {import('../shared/context.js').CompleteContext} ctx
      */
     buildSessionUpdate(sessionUpdate, ctx) {
-        LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'convenio_complete' });
-        LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'pending_receipt', { reason: 'convenio_complete' });
+        FinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'convenio_complete' });
+        FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'pending_receipt', { reason: 'convenio_complete' });
         sessionUpdate.paymentOrigin = 'convenio';
         sessionUpdate.paymentMethod = 'convenio';
     },
@@ -143,13 +143,38 @@ export const ConvenioHandler = {
                 kind: paymentCreated.kind
             });
         } else {
-            // Fallback: appointment sem payment pré-linkado (plano legado)
-            const [paymentDoc] = await Payment.create([paymentData], { session: mongoSession });
-            paymentCreated = paymentDoc;
-            appointmentUpdate.$set.payment = paymentCreated._id;
-            console.log(`[ConvenioHandler] 💰 Payment criado (produção): ${paymentCreated._id}`, {
-                session: paymentCreated.session?.toString?.()
-            });
+            // Fallback: appointment sem payment pré-linkado
+            // 🔍 GUARD idempotente: busca orphan no banco antes de criar.
+            // Garante 1 Payment ativo por appointment+billingType (evita double-counting).
+            const orphan = await Payment.findOne({
+                $or: [
+                    { appointment: appointmentId },
+                    { session: sessionId }
+                ],
+                billingType: 'convenio',
+                status: { $nin: ['cancelled', 'canceled'] }
+            }).session(mongoSession).lean();
+
+            if (orphan) {
+                // Adota orphan: atualiza dados e garante link correto
+                paymentCreated = await Payment.findByIdAndUpdate(
+                    orphan._id,
+                    { $set: { ...paymentData, session: sessionId, appointment: appointmentId } },
+                    { session: mongoSession, new: true }
+                );
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[ConvenioHandler] ♻️ Orphan adoptado (sem double-count): ${paymentCreated._id}`, {
+                    orphanId: orphan._id?.toString?.(),
+                    session: paymentCreated.session?.toString?.()
+                });
+            } else {
+                const [paymentDoc] = await Payment.create([paymentData], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[ConvenioHandler] 💰 Payment criado (produção): ${paymentCreated._id}`, {
+                    session: paymentCreated.session?.toString?.()
+                });
+            }
         }
 
         return paymentCreated;

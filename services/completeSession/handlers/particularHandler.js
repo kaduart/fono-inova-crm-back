@@ -14,7 +14,7 @@
 import Payment from '../../../models/Payment.js';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
-import LegacyFinanceWriteGuard from '../../financialGuard/LegacyFinanceWriteGuard.js';
+import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 import { normalizePaymentMethod } from '../../../utils/paymentResolver.js';
 
 export const ParticularHandler = {
@@ -30,28 +30,28 @@ export const ParticularHandler = {
         const isPerSession = packageData?.model === 'per_session' || packageData?.paymentType === 'per-session';
 
         if (isPrepaid) {
-            LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
-            LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
+            FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
+            FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
             sessionUpdate.paymentOrigin = 'package_prepaid';
             sessionUpdate.paymentMethod = 'package_prepaid';
             sessionUpdate.paidAt = new Date();
         } else if (isBalanceOrigin) {
             // Fiado / addToBalance
-            LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
-            LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'unpaid', { reason: 'per_session_complete' });
+            FinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
+            FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'unpaid', { reason: 'per_session_complete' });
             sessionUpdate.paymentOrigin = 'manual_balance';
             sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
         } else if (isPerSession) {
             // Per-session sem fiado (isBalanceOrigin=false já garantido acima) = pago no ato
-            LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
-            LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
+            FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
+            FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
             sessionUpdate.paymentOrigin = 'auto_per_session';
             sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
             sessionUpdate.paidAt = new Date();
         } else {
             // Pago no ato (avulso)
-            LegacyFinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
-            LegacyFinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
+            FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
+            FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
             sessionUpdate.paymentOrigin = 'auto_per_session';
             sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
             sessionUpdate.paidAt = new Date();

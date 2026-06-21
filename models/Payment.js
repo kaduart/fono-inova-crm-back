@@ -307,6 +307,22 @@ paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financ
 // 💰 Cobertura dos ramos de fallback do calculateCashTotal ($or com paymentDate/createdAt)
 // Ramo 2/3: financialDate=null → paymentDate como data primária (legado)
 paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
+
+// 🛡️ AIRBAG: 1 Payment ativo por (appointment + billingType)
+// Impede double-counting estrutural independente da lógica de aplicação.
+// partial: só aplica quando appointment existe e status != cancelled/canceled.
+paymentSchema.index(
+    { appointment: 1, billingType: 1 },
+    {
+        unique: true,
+        sparse: true,
+        partialFilterExpression: {
+            appointment: { $exists: true, $ne: null },
+            status: { $nin: ['cancelled', 'canceled'] }
+        },
+        name: 'unique_active_payment_per_appt_billingtype'
+    }
+);
 // Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
 paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
 paymentSchema.index({ _billingEventId: 1 }, { sparse: true, name: 'billing_event_lock' });

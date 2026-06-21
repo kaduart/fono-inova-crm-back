@@ -1,2812 +1,1076 @@
 
-documento-analise.txt
-anslie o @back/logs-archive/documento-analise.txt apso entender ... cara dos 6 meses qeu vc mandou vc nao selecionou so os atendidos ta tudoo pendente cneldos ai nao ne burrooooo ficnltra isssooo
-Deixa eu ler o arquivo primeiro.
+api imag 1 = > 
+{
+    "success": true,
+    "data": [
+        {
+            "monthKey": "2026-01",
+            "monthLabel": "janeiro de 2026",
+            "providers": [
+                {
+                    "provider": "unimed-campinas",
+                    "providerLabel": "Unimed Campinas",
+                    "patients": [
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 6,
+                                    "value": 840,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 4,
+                                    "value": 560,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 13,
+                            "totalValue": 1820
+                        }
+                    ],
+                    "totalSessions": 13,
+                    "totalValue": 1820,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "unimed-anapolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62991590750",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 7,
+                                    "value": 560,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 5,
+                                    "value": 400,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 18,
+                            "totalValue": 1440
+                        }
+                    ],
+                    "totalSessions": 18,
+                    "totalValue": 1440,
+                    "status": "pending_batch"
+                }
+            ],
+            "totalSessions": 31,
+            "totalValue": 3260
+        },
+        {
+            "monthKey": "2026-02",
+            "monthLabel": "fevereiro de 2026",
+            "providers": [
+                {
+                    "provider": "unimed-campinas",
+                    "providerLabel": "Unimed Campinas",
+                    "patients": [
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 5,
+                                    "value": 700,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 5,
+                                    "value": 700,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 13,
+                            "totalValue": 1820
+                        }
+                    ],
+                    "totalSessions": 13,
+                    "totalValue": 1820,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "unimed-anapolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Gabriel Alves Leite",
+                            "phone": "9581215041",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 2,
+                                    "value": 160,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicopedagogia",
+                                    "sessions": 2,
+                                    "value": 160,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 400
+                        },
+                        {
+                            "name": "Kauana Queiroz Gomes Naves",
+                            "phone": "6195906565",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 15,
+                            "totalValue": 1200
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62991590750",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 7,
+                                    "value": 560,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicomotricidade",
+                                    "sessions": 5,
+                                    "value": 400,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 18,
+                            "totalValue": 1440
+                        }
+                    ],
+                    "totalSessions": 38,
+                    "totalValue": 3040,
+                    "status": "pending_batch"
+                }
+            ],
+            "totalSessions": 51,
+            "totalValue": 4860
+        },
+        {
+            "monthKey": "2026-03",
+            "monthLabel": "março de 2026",
+            "providers": [
+                {
+                    "provider": "unimed-campinas",
+                    "providerLabel": "Unimed Campinas",
+                    "patients": [
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "legado",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 2,
+                                    "value": 280,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 8,
+                            "totalValue": 1120
+                        }
+                    ],
+                    "totalSessions": 8,
+                    "totalValue": 1120,
+                    "status": "billed"
+                },
+                {
+                    "provider": "convenio",
+                    "providerLabel": "Convenio",
+                    "patients": [
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 3,
+                            "totalValue": 240
+                        },
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 1,
+                                    "value": 140,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 7,
+                            "totalValue": 980
+                        },
+                        {
+                            "name": "Joaquim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 3,
+                            "totalValue": 240
+                        },
+                        {
+                            "name": "Kauana Queiroz Gomes Naves",
+                            "phone": "6195906565",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 4,
+                                    "value": 320,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 4,
+                            "totalValue": 320
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62992731969",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 9,
+                                    "value": 720,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicomotricidade",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 10,
+                            "totalValue": 800
+                        }
+                    ],
+                    "totalSessions": 27,
+                    "totalValue": 2580,
+                    "status": "billed"
+                }
+            ],
+            "totalSessions": 35,
+            "totalValue": 3700
+        },
+        {
+            "monthKey": "2026-04",
+            "monthLabel": "abril de 2026",
+            "providers": [
+                {
+                    "provider": "convenio",
+                    "providerLabel": "Convenio",
+                    "patients": [
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 5,
+                                    "value": 400,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 400
+                        }
+                    ],
+                    "totalSessions": 5,
+                    "totalValue": 400,
+                    "status": "billed"
+                },
+                {
+                    "provider": "unimed-anapolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 2,
+                                    "value": 160,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 2,
+                            "totalValue": 160
+                        },
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 9,
+                            "totalValue": 1260
+                        },
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62992643467",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 4,
+                                    "value": 320,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 4,
+                            "totalValue": 320
+                        },
+                        {
+                            "name": "Joaquim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 7,
+                                    "value": 480,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 7,
+                            "totalValue": 480
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62992731969",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 6,
+                            "totalValue": 480
+                        }
+                    ],
+                    "totalSessions": 28,
+                    "totalValue": 2700,
+                    "status": "billed"
+                }
+            ],
+            "totalSessions": 33,
+            "totalValue": 3100
+        },
+        {
+            "monthKey": "2026-05",
+            "monthLabel": "maio de 2026",
+            "providers": [
+                {
+                    "provider": "unimed-anapolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62995190945",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 1,
+                            "totalValue": 80
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62991590750",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 1,
+                            "totalValue": 80
+                        }
+                    ],
+                    "totalSessions": 2,
+                    "totalValue": 160,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "convenio",
+                    "providerLabel": "Convenio",
+                    "patients": [
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 5,
+                                    "value": 480,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 480
+                        },
+                        {
+                            "name": "Desconhecido",
+                            "phone": "",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 10,
+                                    "value": 1100,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 2,
+                                    "value": 280,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 5,
+                                    "value": 700,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 17,
+                            "totalValue": 2080
+                        },
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62992643467",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 3,
+                            "totalValue": 240
+                        },
+                        {
+                            "name": "Joaquim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 5,
+                                    "value": 480,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 480
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62992731969",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 7,
+                                    "value": 560,
+                                    "source": "lote",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 7,
+                            "totalValue": 560
+                        }
+                    ],
+                    "totalSessions": 37,
+                    "totalValue": 3840,
+                    "status": "billed"
+                },
+                {
+                    "provider": "Unimed Anápolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 9,
+                                    "value": 1040,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 9,
+                            "totalValue": 1040
+                        },
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62995190945",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 2,
+                                    "value": 160,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 2,
+                            "totalValue": 160
+                        },
+                        {
+                            "name": "Joaquim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 9,
+                                    "value": 1040,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 9,
+                            "totalValue": 1040
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62991590750",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 7,
+                            "totalValue": 560
+                        }
+                    ],
+                    "totalSessions": 27,
+                    "totalValue": 2800,
+                    "status": "billed"
+                },
+                {
+                    "provider": "Unimed Campinas",
+                    "providerLabel": "Unimed Campinas",
+                    "patients": [
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 8,
+                                    "value": 1120,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 6,
+                                    "value": 840,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 4,
+                                    "value": 560,
+                                    "source": "avulso",
+                                    "batchStatus": "billed"
+                                }
+                            ],
+                            "totalSessions": 18,
+                            "totalValue": 2520
+                        }
+                    ],
+                    "totalSessions": 18,
+                    "totalValue": 2520,
+                    "status": "billed"
+                },
+                {
+                    "provider": "Bradesco Saúde",
+                    "providerLabel": "Bradesco Saúde",
+                    "patients": [
+                        {
+                            "name": "Evandro Marques Faustino",
+                            "phone": "6291166829",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 1,
+                                    "value": 150,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 1,
+                            "totalValue": 150
+                        }
+                    ],
+                    "totalSessions": 1,
+                    "totalValue": 150,
+                    "status": "pending_batch"
+                }
+            ],
+            "totalSessions": 85,
+            "totalValue": 9470
+        },
+        {
+            "monthKey": "2026-06",
+            "monthLabel": "junho de 2026",
+            "providers": [
+                {
+                    "provider": "unimed-anapolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62995190945",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "legado",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 3,
+                            "totalValue": 240
+                        }
+                    ],
+                    "totalSessions": 3,
+                    "totalValue": 240,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "Bradesco Saúde",
+                    "providerLabel": "Bradesco Saúde",
+                    "patients": [
+                        {
+                            "name": "Alencar Rafael Dos Santos Salgado Faria",
+                            "phone": "62985853563",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 2,
+                                    "value": 300,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicopedagogia",
+                                    "sessions": 1,
+                                    "value": 150,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 1,
+                                    "value": 150,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 1,
+                                    "value": 150,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 750
+                        },
+                        {
+                            "name": "Evandro Marques Faustino",
+                            "phone": "6291166829",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 5,
+                                    "value": 750,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 5,
+                            "totalValue": 750
+                        }
+                    ],
+                    "totalSessions": 10,
+                    "totalValue": 1500,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "Unimed Campinas",
+                    "providerLabel": "Unimed Campinas",
+                    "patients": [
+                        {
+                            "name": "Davi Felipe Araújo",
+                            "phone": "66984449284",
+                            "specialties": [
+                                {
+                                    "specialty": "fisioterapia",
+                                    "sessions": 2,
+                                    "value": 280,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 4,
+                                    "value": 560,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "psicologia",
+                                    "sessions": 3,
+                                    "value": 420,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 9,
+                            "totalValue": 1260
+                        }
+                    ],
+                    "totalSessions": 9,
+                    "totalValue": 1260,
+                    "status": "pending_batch"
+                },
+                {
+                    "provider": "Unimed Anápolis",
+                    "providerLabel": "Unimed Anápolis",
+                    "patients": [
+                        {
+                            "name": "ana teste 22",
+                            "phone": "6299999999",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 1,
+                                    "value": 80,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 1,
+                            "totalValue": 80
+                        },
+                        {
+                            "name": "Benjamim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 7,
+                                    "value": 560,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 7,
+                            "totalValue": 560
+                        },
+                        {
+                            "name": "Isabela Ferreira De Mendonca",
+                            "phone": "62995190945",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 3,
+                            "totalValue": 240
+                        },
+                        {
+                            "name": "Joaquim Rocha Simão",
+                            "phone": "6282312574",
+                            "specialties": [
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 6,
+                                    "value": 480,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 6,
+                            "totalValue": 480
+                        },
+                        {
+                            "name": "Nicolas Lucca",
+                            "phone": "62991590750",
+                            "specialties": [
+                                {
+                                    "specialty": "terapia_ocupacional",
+                                    "sessions": 5,
+                                    "value": 500,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                },
+                                {
+                                    "specialty": "fonoaudiologia",
+                                    "sessions": 3,
+                                    "value": 240,
+                                    "source": "avulso",
+                                    "batchStatus": "pending_batch"
+                                }
+                            ],
+                            "totalSessions": 8,
+                            "totalValue": 740
+                        }
+                    ],
+                    "totalSessions": 25,
+                    "totalValue": 2100,
+                    "status": "pending_batch"
+                }
+            ],
+            "totalSessions": 47,
+            "totalValue": 5100
+        }
+    ],
+    "year": 2026
+}curl 'http://localhost:5000/api/v2/insurance/history?year=2026' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgU2FudG9zIiwiaWF0IjoxNzgyMDUyMTk1LCJleHAiOjE3ODIxMzg1OTV9.6xpusZ8g-kyT0lgJN5LzxzA0HBC0McXYqQ296DsHtLc' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"37a1-NTCJtqYU/xGVUe1Fex0nQ77bziA"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1782055337296_klk2uydwz'
+  
+
+api imag 2 = > curl 'http://localhost:5000/api/v2/financial/dashboard?month=6&year=2026&_t=1782054900909' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgU2FudG9zIiwiaWF0IjoxNzgyMDUyMTk1LCJleHAiOjE3ODIxMzg1OTV9.6xpusZ8g-kyT0lgJN5LzxzA0HBC0McXYqQ296DsHtLc' \
+  -H 'Connection: keep-alive' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1782054900919_of4a1ughr'
+  curl 'http://localhost:5000/api/v2/financial/dashboard?month=6&year=2026&_t=1782054900909' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgU2FudG9zIiwiaWF0IjoxNzgyMDUyMTk1LCJleHAiOjE3ODIxMzg1OTV9.6xpusZ8g-kyT0lgJN5LzxzA0HBC0McXYqQ296DsHtLc' \
+  -H 'Connection: keep-alive' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1782054900919_of4a1ughr'
 
-Read documento-analise.txt
-Entendi — o script anterior pegou completed + confirmed + scheduled na seção "sem lote", e nos packages antigos usou sessionsDone sem checar se os appointments são realmente completed. Vou fazer um script correto, só atendidos.
 
-Bash Run audit filtering only completed appointments
-IN
-cd /home/user/projetos/crm/back && cat > auditoria_atendidos.mjs << 'SCRIPT'
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-const fmt = d => d ? new Date(d).toISOString().slice(0,10).split('-').reverse().join('/') : '—';
-const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-
-// ── 1. PACOTES ANTIGOS (type=convenio) ─────────────────────────────────
-// Busca sessions vinculadas a cada package e filtra só completed
-const packages = await db.collection('packages').find({
-  type: 'convenio',
-  provider: { $ne: null }
-}).sort({ date: 1 }).toArray();
-
-const pkgIds = packages.map(p => p._id);
-const patientIds = [...new Set(packages.map(p => String(p.patient)).filter(Boolean))];
-
-// Busca patients
-const patients = await db.collection('patients').find({
-  _id: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) }
-}).toArray();
-const patMap = {};
-for (const p of patients) patMap[String(p._id)] = p.name || p.fullName || '??';
-
-// Busca appointments de convenio do período jan-mar/2026 com status completed
-// vinculados a packages
-const pkgAppts = await db.collection('appointments').find({
-  packageId: { $in: pkgIds },
-  operationalStatus: 'completed',
-  date: { $gte: new Date('2026-01-01') }
-}).sort({ date: 1 }).toArray();
-
-console.log('\n═══════════════════════════════════════════════════════════════════');
-console.log('  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026');
-console.log('═══════════════════════════════════════════════════════════════════\n');
-
-// Agrupa por paciente→mês
-const porMesAppt = {};
-for (const a of pkgAppts) {
-  const mes = mesAno(a.date);
-  const pkg = packages.find(p => String(p._id) === String(a.packageId));
-  const provider = pkg?.provider || pkg?.insuranceProvider || 'convenio';
-  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || '??';
-  const key = `${mes}|${patName}`;
-  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
-  porMesAppt[key].sessoes.push({ data: fmt(a.date), specialty: a.specialty, status: a.operationalStatus });
-}
-
-// Também tenta via sessions (caso appointments não tenham packageId)
-// Busca sessions linked to packages
-const pkgSessions = await db.collection('sessions').find({
-  packageId: { $in: pkgIds },
-  status: 'completed',
-  date: { $gte: new Date('2026-01-01') }
-}).sort({ date: 1 }).toArray();
-
-const sessAppointmentIds = pkgSessions.map(s => s.appointment).filter(Boolean);
-const sessAppts = await db.collection('appointments').find({
-  _id: { $in: sessAppointmentIds },
-  operationalStatus: 'completed'
-}).toArray();
-const sessApptMap = {};
-for (const a of sessAppts) sessApptMap[String(a._id)] = a;
-
-for (const s of pkgSessions) {
-  const appt = sessApptMap[String(s.appointment)];
-  const pkg = packages.find(p => String(p._id) === String(s.packageId));
-  const provider = pkg?.provider || pkg?.insuranceProvider || 'convenio';
-  const patId = s.patient || appt?.patient || pkg?.patient;
-  const patName = patMap[String(patId)] || appt?.patientInfo?.fullName || '??';
-  const mes = mesAno(s.date || appt?.date);
-  const key = `${mes}|${patName}`;
-  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
-  // evita duplicata se já veio via appointment
-  const dataStr = fmt(s.date || appt?.date);
-  const specialty = appt?.specialty || s.specialty || '—';
-  if (!porMesAppt[key].sessoes.find(x => x.data === dataStr && x.specialty === specialty)) {
-    porMesAppt[key].sessoes.push({ data: dataStr, specialty, status: 'completed' });
-  }
-}
-
-// ── 2. APPOINTMENTS NOVOS (paymentMode=convenio, sem package) ─────────
-const newAppts = await db.collection('appointments').find({
-  paymentMode: 'convenio',
-  operationalStatus: 'completed',
-  date: { $gte: new Date('2026-01-01') }
-}).sort({ date: 1 }).toArray();
-
-for (const a of newAppts) {
-  const mes = mesAno(a.date);
-  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || '??';
-  const provider = a.insuranceProvider || 'convenio';
-  const key = `${mes}|${patName}`;
-  if (!porMesAppt[key]) porMesAppt[key] = { mes, patName, provider, sessoes: [] };
-  const dataStr = fmt(a.date);
-  if (!porMesAppt[key].sessoes.find(x => x.data === dataStr && x.specialty === a.specialty)) {
-    porMesAppt[key].sessoes.push({ data: dataStr, specialty: a.specialty, status: 'completed' });
-  }
-}
-
-// ── Output agrupado por mês ────────────────────────────────────────────
-const mesList = [...new Set(Object.values(porMesAppt).map(x => x.mes))].sort((a,b) => {
-  const [ma,ya] = a.split('/').map(Number);
-  const [mb,yb] = b.split('/').map(Number);
-  return ya !== yb ? ya-yb : ma-mb;
-});
-
-let grandTotal = 0;
-for (const mes of mesList) {
-  const grupos = Object.values(porMesAppt).filter(x => x.mes === mes);
-  const totalSessoes = grupos.reduce((s,g) => s + g.sessoes.length, 0);
-  grandTotal += totalSessoes;
-  console.log(`▓▓▓ ${mes} ─── ${totalSessoes} sessão(ões) atendidas ─── ${grupos.length} paciente(s) ▓▓▓`);
-  for (const g of grupos.sort((a,b) => a.patName.localeCompare(b.patName))) {
-    console.log(`  👤 ${g.patName}  [${g.provider}]  — ${g.sessoes.length} sessão(ões)`);
-    for (const s of g.sessoes.sort((a,b) => a.data.localeCompare(b.data))) {
-      console.log(`     • ${s.data}  ${s.specialty}`);
-    }
-  }
-  console.log();
-}
-
-console.log(`═══════════════════════════════════════════════════════════════════`);
-console.log(`  TOTAL GERAL: ${grandTotal} sessões atendidas (completed)`);
-console.log(`═══════════════════════════════════════════════════════════════════\n`);
-
-await mongoose.disconnect();
-SCRIPT
-MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node auditoria_atendidos.mjs 2>&1
-
-OUT
-═══════════════════════════════════════════════════════════════════
-  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026
-═══════════════════════════════════════════════════════════════════
-
-═══════════════════════════════════════════════════════════════════
-  TOTAL GERAL: 0 sessões atendidas (completed)
-═══════════════════════════════════════════════════════════════════
-Zero resultados — os campos de ligação estão errados. Vou diagnosticar a estrutura real no banco.
-
-Bash Diagnose actual field names in packages, sessions, and appointments
-IN
-MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-// 1. Ver campos de um package convenio
-const pkg = await db.collection('packages').findOne({ type: 'convenio', provider: { $exists: true } });
-if (pkg) {
-  console.log('PACKAGE FIELDS:', Object.keys(pkg).join(', '));
-  console.log('provider:', pkg.provider);
-  console.log('insuranceProvider:', pkg.insuranceProvider);
-  console.log('patient:', pkg.patient);
-  console.log('sessions (array sample):', JSON.stringify(pkg.sessions?.slice(0,3)));
-}
-
-// 2. Ver uma session vinculada a esse package
-if (pkg?.sessions?.length) {
-  const sess = await db.collection('sessions').findOne({ _id: pkg.sessions[0] });
-  if (sess) {
-    console.log('\nSESSION FIELDS:', Object.keys(sess).join(', '));
-    console.log('status:', sess.status);
-    console.log('appointment:', sess.appointment);
-    console.log('package:', sess.package);
-    console.log('date:', sess.date);
-  }
-}
-
-// 3. Ver appointment de convenio com status
-const appt = await db.collection('appointments').findOne({ 
-  date: { $gte: new Date('2026-01-01') },
-  $or: [{ paymentMode: 'convenio' }, { appointmentType: 'convenio' }, { 'package': { $exists: true } }]
-});
-if (appt) {
-  console.log('\nAPPT FIELDS:', Object.keys(appt).join(', '));
-  console.log('operationalStatus:', appt.operationalStatus);
-  console.log('paymentMode:', appt.paymentMode);
-  console.log('package:', appt.package);
-  console.log('packageId:', appt.packageId);
-  console.log('patientInfo:', appt.patientInfo?.fullName);
-}
-
-// 4. Quais statuses existem nas sessions
-const statuses = await db.collection('sessions').distinct('status');
-console.log('\nSESSION STATUSES DISTINCT:', statuses);
-
-// 5. Quais operationalStatus existem nos appointments convenio
-const opStatuses = await db.collection('appointments').distinct('operationalStatus', {
-  date: { $gte: new Date('2026-01-01') }
-});
-console.log('APPT OPERATIONAL STATUSES:', opStatuses);
-
-await mongoose.disconnect();
-EOF
-
-OUT
-APPT FIELDS: _id, patient, doctor, date, time, notes, operationalStatus, clinicalStatus, duration, visualFlag, specialty, paymentStatus, advancedSessions, package, session, serviceType, sessionValue, paymentMethod, history, __v, createdAt, updatedAt, patientId, patientInfo, patientName, patientType, patientTypeMonthsInactive, migratedAt, packageId, isJointSession
-operationalStatus: completed
-paymentMode: undefined
-package: new ObjectId('692d7eccdeb2718ab4e3caef')
-packageId: new ObjectId('692d7eccdeb2718ab4e3caef')
-patientInfo: Pérola Souza de Assis Basílio
-
-SESSION STATUSES DISTINCT: [
-  null,           'agendado',
-  'canceled',     'cancelled',
-  'completed',    'confirmed',
-  'missed',       'pending',
-  'pre_agendado', 'scheduled'
-]
-APPT OPERATIONAL STATUSES: [
-  'canceled',
-  'completed',
-  'confirmed',
-  'converted',
-  'missed',
-  'pre_agendado',
-  'scheduled'
-]
-Agora sei os campos reais. O appointment usa package (não packageId), e o diagnóstico não achou o package porque o campo é insuranceProvider não provider. Reescrevo o script correto.
-
-Bash Query completed appointments linked to convenio packages
-IN
-MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-
-// Busca patients para resolver nomes
-const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
-const patMap = {};
-for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
-
-// Busca packages de convenio (todas as providers)
-const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
-const pkgMap = {};
-for (const p of packages) pkgMap[String(p._id)] = p;
-const pkgIds = packages.map(p => p._id);
-
-console.log(`Packages convenio encontrados: ${packages.length}`);
-// Ver provedores
-const providers = [...new Set(packages.map(p => p.insuranceProvider || p.provider || '??'))];
-console.log('Providers:', providers.join(', '));
-
-// Busca TODOS appointments completed vinculados a packages de convenio
-const appts = await db.collection('appointments').find({
-  $or: [
-    { package: { $in: pkgIds } },
-    { packageId: { $in: pkgIds } }
-  ],
-  operationalStatus: 'completed',
-  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-12-31') }
-}).sort({ date: 1 }).toArray();
-
-console.log(`Appointments completed encontrados: ${appts.length}`);
-
-// Agrupa por mês → provider → paciente
-const result = {};
-for (const a of appts) {
-  const pkgId = String(a.package || a.packageId);
-  const pkg = pkgMap[pkgId];
-  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
-  const mes = mesAno(a.date);
-  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
-  const key = `${mes}||${provider}||${patName}`;
-  if (!result[key]) result[key] = { mes, provider, patName, sessoes: [] };
-  result[key].sessoes.push({ data: fmt(a.date), specialty: a.specialty || '—' });
-}
-
-// Sort e imprime
-const meses = [...new Set(Object.values(result).map(x => x.mes))].sort((a,b) => {
-  const [ma,ya] = a.split('/').map(Number);
-  const [mb,yb] = b.split('/').map(Number);
-  return ya !== yb ? ya-yb : ma-mb;
-});
-
-let grandTotal = 0;
-console.log('\n═══════════════════════════════════════════════════════');
-console.log('  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026');
-console.log('═══════════════════════════════════════════════════════\n');
-
-for (const mes of meses) {
-  const grupos = Object.values(result).filter(x => x.mes === mes);
-  const total = grupos.reduce((s,g) => s + g.sessoes.length, 0);
-  grandTotal += total;
-  console.log(`▓▓▓ ${mes} — ${total} sessão(ões) — ${grupos.length} paciente(s) ▓▓▓`);
-  // Agrupa por provider dentro do mês
-  const providers = [...new Set(grupos.map(g => g.provider))];
-  for (const prov of providers) {
-    const gs = grupos.filter(g => g.provider === prov);
-    if (providers.length > 1) console.log(`  [${prov}]`);
-    for (const g of gs.sort((a,b) => a.patName.localeCompare(b.patName))) {
-      console.log(`  👤 ${g.patName} — ${g.sessoes.length} sessão(ões)`);
-      for (const s of g.sessoes) console.log(`     • ${s.data}  ${s.specialty}`);
-    }
-  }
-  console.log();
-}
-
-console.log(`═══════════════════════════════════════════════════════`);
-console.log(`  TOTAL GERAL: ${grandTotal} sessões atendidas (completed)`);
-console.log(`═══════════════════════════════════════════════════════\n`);
-
-await mongoose.disconnect();
-EOF
-
-OUT
-Packages convenio encontrados: 29
-Providers: unimed-campinas, unimed-anapolis, ??
-Appointments completed encontrados: 175
-
-═══════════════════════════════════════════════════════
-  ATENDIMENTOS CONVÊNIO — SÓ COMPLETED — Jan–Jun 2026
-═══════════════════════════════════════════════════════
-
-▓▓▓ 01/2026 — 31 sessão(ões) — 2 paciente(s) ▓▓▓
-  [unimed-campinas]
-  👤 Davi Felipe Araújo — 13 sessão(ões)
-     • 05/01/2026  psicologia
-     • 05/01/2026  fonoaudiologia
-     • 05/01/2026  fisioterapia
-     • 09/01/2026  fonoaudiologia
-     • 09/01/2026  fisioterapia
-     • 12/01/2026  psicologia
-     • 12/01/2026  fisioterapia
-     • 16/01/2026  fisioterapia
-     • 19/01/2026  psicologia
-     • 19/01/2026  fonoaudiologia
-     • 19/01/2026  fisioterapia
-     • 30/01/2026  fonoaudiologia
-     • 30/01/2026  fisioterapia
-  [unimed-anapolis]
-  👤 Nicolas Lucca — 18 sessão(ões)
-     • 09/01/2026  fonoaudiologia
-     • 12/01/2026  psicologia
-     • 12/01/2026  fonoaudiologia
-     • 14/01/2026  psicologia
-     • 14/01/2026  fonoaudiologia
-     • 16/01/2026  psicologia
-     • 19/01/2026  fonoaudiologia
-     • 19/01/2026  fonoaudiologia
-     • 21/01/2026  psicologia
-     • 21/01/2026  fonoaudiologia
-     • 23/01/2026  fonoaudiologia
-     • 23/01/2026  psicologia
-     • 26/01/2026  fonoaudiologia
-     • 26/01/2026  psicologia
-     • 26/01/2026  fonoaudiologia
-     • 28/01/2026  fonoaudiologia
-     • 30/01/2026  fonoaudiologia
-     • 30/01/2026  psicologia
-
-▓▓▓ 02/2026 — 52 sessão(ões) — 4 paciente(s) ▓▓▓
-  [unimed-anapolis]
-  👤 Gabriel Alves Leite — 5 sessão(ões)
-     • 20/02/2026  fonoaudiologia
-     • 20/02/2026  fonoaudiologia
-     • 27/02/2026  psicopedagogia
-     • 27/02/2026  psicopedagogia
-     • 27/02/2026  fonoaudiologia
-  👤 Kauana Queiroz Gomes Naves — 17 sessão(ões)
-     • 09/02/2026  psicologia
-     • 09/02/2026  fonoaudiologia
-     • 09/02/2026  fonoaudiologia
-     • 13/02/2026  psicologia
-     • 13/02/2026  fonoaudiologia
-     • 13/02/2026  fonoaudiologia
-     • 13/02/2026  fonoaudiologia
-     • 16/02/2026  psicologia
-     • 16/02/2026  fonoaudiologia
-     • 16/02/2026  fonoaudiologia
-     • 20/02/2026  fonoaudiologia
-     • 20/02/2026  fonoaudiologia
-     • 23/02/2026  fonoaudiologia
-     • 23/02/2026  psicologia
-     • 23/02/2026  fonoaudiologia
-     • 27/02/2026  fonoaudiologia
-     • 27/02/2026  fonoaudiologia
-  👤 Nicolas Lucca — 16 sessão(ões)
-     • 02/02/2026  fonoaudiologia
-     • 02/02/2026  fonoaudiologia
-     • 04/02/2026  fonoaudiologia
-     • 06/02/2026  fonoaudiologia
-     • 09/02/2026  fonoaudiologia
-     • 09/02/2026  fonoaudiologia
-     • 11/02/2026  fonoaudiologia
-     • 13/02/2026  fonoaudiologia
-     • 18/02/2026  fonoaudiologia
-     • 19/02/2026  psicomotricidade
-     • 20/02/2026  psicomotricidade
-     • 20/02/2026  fonoaudiologia
-     • 23/02/2026  fonoaudiologia
-     • 23/02/2026  fonoaudiologia
-     • 24/02/2026  psicomotricidade
-     • 25/02/2026  fonoaudiologia
-  [unimed-campinas]
-  👤 Davi Felipe Araújo — 14 sessão(ões)
-     • 02/02/2026  fisioterapia
-     • 02/02/2026  psicologia
-     • 02/02/2026  psicologia
-     • 02/02/2026  fonoaudiologia
-     • 06/02/2026  fisioterapia
-     • 06/02/2026  fonoaudiologia
-     • 16/02/2026  psicologia
-     • 16/02/2026  fonoaudiologia
-     • 20/02/2026  fisioterapia
-     • 20/02/2026  fonoaudiologia
-     • 23/02/2026  fisioterapia
-     • 23/02/2026  psicologia
-     • 23/02/2026  psicologia
-     • 23/02/2026  fonoaudiologia
-
-▓▓▓ 03/2026 — 35 sessão(ões) — 5 paciente(s) ▓▓▓
-  [unimed-anapolis]
-  👤 Benjamim Rocha Simão — 3 sessão(ões)
-     • 24/03/2026  fonoaudiologia
-     • 27/03/2026  fonoaudiologia
-     • 31/03/2026  fonoaudiologia
-  👤 Joaquim Rocha Simão — 3 sessão(ões)
-     • 24/03/2026  fonoaudiologia
-     • 27/03/2026  fonoaudiologia
-     • 31/03/2026  fonoaudiologia
-  👤 Kauana Queiroz Gomes Naves — 4 sessão(ões)
-     • 02/03/2026  fonoaudiologia
-     • 02/03/2026  fonoaudiologia
-     • 06/03/2026  fonoaudiologia
-     • 06/03/2026  fonoaudiologia
-  👤 Nicolas Lucca — 10 sessão(ões)
-     • 02/03/2026  fonoaudiologia
-     • 04/03/2026  psicomotricidade
-     • 04/03/2026  fonoaudiologia
-     • 09/03/2026  fonoaudiologia
-     • 11/03/2026  fonoaudiologia
-     • 16/03/2026  fonoaudiologia
-     • 18/03/2026  fonoaudiologia
-     • 23/03/2026  fonoaudiologia
-     • 25/03/2026  fonoaudiologia
-     • 30/03/2026  fonoaudiologia
-  [unimed-campinas]
-  👤 Davi Felipe Araújo — 15 sessão(ões)
-     • 09/03/2026  fonoaudiologia
-     • 09/03/2026  psicologia
-     • 09/03/2026  fisioterapia
-     • 16/03/2026  fonoaudiologia
-     • 16/03/2026  psicologia
-     • 16/03/2026  fisioterapia
-     • 20/03/2026  fonoaudiologia
-     • 20/03/2026  fisioterapia
-     • 25/03/2026  fisioterapia
-     • 25/03/2026  fonoaudiologia
-     • 27/03/2026  fonoaudiologia
-     • 27/03/2026  fisioterapia
-     • 30/03/2026  fonoaudiologia
-     • 30/03/2026  psicologia
-     • 30/03/2026  fisioterapia
-
-▓▓▓ 04/2026 — 33 sessão(ões) — 5 paciente(s) ▓▓▓
-  [unimed-anapolis]
-  👤 Benjamim Rocha Simão — 7 sessão(ões)
-     • 02/04/2026  fonoaudiologia
-     • 07/04/2026  fonoaudiologia
-     • 10/04/2026  fonoaudiologia
-     • 14/04/2026  fonoaudiologia
-     • 17/04/2026  fonoaudiologia
-     • 20/04/2026  fonoaudiologia
-     • 28/04/2026  fonoaudiologia
-  👤 Isabela Ferreira De Mendonca — 4 sessão(ões)
-     • 07/04/2026  fonoaudiologia
-     • 15/04/2026  fonoaudiologia
-     • 22/04/2026  fonoaudiologia
-     • 29/04/2026  fonoaudiologia
-  👤 Joaquim Rocha Simão — 7 sessão(ões)
-     • 02/04/2026  fonoaudiologia
-     • 07/04/2026  fonoaudiologia
-     • 10/04/2026  fonoaudiologia
-     • 14/04/2026  fonoaudiologia
-     • 17/04/2026  fonoaudiologia
-     • 20/04/2026  fonoaudiologia
-     • 28/04/2026  fonoaudiologia
-  👤 Nicolas Lucca — 6 sessão(ões)
-     • 01/04/2026  fonoaudiologia
-     • 13/04/2026  fonoaudiologia
-     • 15/04/2026  fonoaudiologia
-     • 22/04/2026  terapia_ocupacional
-     • 27/04/2026  terapia_ocupacional
-     • 29/04/2026  terapia_ocupacional
-  [unimed-campinas]
-  👤 Davi Felipe Araújo — 9 sessão(ões)
-     • 06/04/2026  fisioterapia
-     • 06/04/2026  psicologia
-     • 06/04/2026  fonoaudiologia
-     • 13/04/2026  fisioterapia
-     • 13/04/2026  psicologia
-     • 13/04/2026  fonoaudiologia
-     • 27/04/2026  fisioterapia
-     • 27/04/2026  psicologia
-     • 27/04/2026  fonoaudiologia
-
-▓▓▓ 05/2026 — 20 sessão(ões) — 4 paciente(s) ▓▓▓
-  👤 Benjamim Rocha Simão — 4 sessão(ões)
-     • 05/05/2026  fonoaudiologia
-     • 08/05/2026  fonoaudiologia
-     • 12/05/2026  fonoaudiologia
-     • 15/05/2026  fonoaudiologia
-  👤 Isabela Ferreira De Mendonca — 4 sessão(ões)
-     • 06/05/2026  fonoaudiologia
-     • 15/05/2026  fonoaudiologia
-     • 20/05/2026  fonoaudiologia
-     • 27/05/2026  fonoaudiologia
-  👤 Joaquim Rocha Simão — 4 sessão(ões)
-     • 05/05/2026  fonoaudiologia
-     • 08/05/2026  fonoaudiologia
-     • 12/05/2026  fonoaudiologia
-     • 15/05/2026  fonoaudiologia
-  👤 Nicolas Lucca — 8 sessão(ões)
-     • 04/05/2026  terapia_ocupacional
-     • 06/05/2026  terapia_ocupacional
-     • 11/05/2026  terapia_ocupacional
-     • 13/05/2026  terapia_ocupacional
-     • 18/05/2026  terapia_ocupacional
-     • 20/05/2026  terapia_ocupacional
-     • 25/05/2026  terapia_ocupacional
-     • 27/05/2026  terapia_ocupacional
-
-▓▓▓ 06/2026 — 4 sessão(ões) — 2 paciente(s) ▓▓▓
-  👤 Isabela Ferreira De Mendonca — 3 sessão(ões)
-     • 03/06/2026  fonoaudiologia
-     • 10/06/2026  fonoaudiologia
-     • 17/06/2026  fonoaudiologia
-  👤 Nicolas Lucca — 1 sessão(ões)
-     • 01/06/2026  terapia_ocupacional
-
-═══════════════════════════════════════════════════════
-  TOTAL GERAL: 175 sessões atendidas (completed)
-═══════════════════════════════════════════════════════
-175 sessões atendidas (completed), Jan–Jun 2026:
-
-Mês	Sessões	Pacientes
-01/2026	31	Nicolas Lucca (Unimed Anápolis) + Davi Felipe Araújo (Unimed Campinas)
-02/2026	52	Nicolas Lucca, Kauana Queiroz, Gabriel Alves Leite (Anápolis) + Davi (Campinas)
-03/2026	35	Nicolas, Kauana, Benjamim, Joaquim (Anápolis) + Davi (Campinas)
-04/2026	33	Benjamim, Joaquim, Nicolas, Isabela (Anápolis) + Davi (Campinas)
-05/2026	20	Benjamim, Joaquim, Isabela, Nicolas
-06/2026	4	Isabela, Nicolas
-TOTAL	175	
-Pontos que saltam aos olhos:
-
-Faturado (InsuranceBatch): só 28 sessões de abril/2026 foram para o lote — as 147 sessões de jan a março ficaram sem faturamento
-Unimed Campinas (Davi Felipe Araújo): 51 sessões de jan a abril, zero lote criado — nunca foi enviado nada para a Campinas
-Maio/Jun 2026: 24 sessões sem lote ainda (algumas podem estar em criação)
-Gabriel Alves Leite (fev/2026): 5 sessões, provider ?? — package sem insuranceProvider definido, pode ter escapado de algum cadastro
-Quer que eu gere um arquivo de relatório formatado com isso ou vamos montar os lotes retroativos no sistema?
-
-InsuranceHistorySection.tsx
-s
-"s" de sim — mas qual das duas opções?
-
-AskUserQuestion
-OUT
-Your questions have been answered: "O que você quer fazer agora?"="Gerar relatório em arquivo". You can now continue with these answers in mind.
-comot a o semestral la
-Gero o relatório semestral formatado agora.
-
-Bash Generate formatted semester report to file
-IN
-MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesNome = m => ({ '01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho' })[m] || m;
-
-const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
-const patMap = {};
-for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
-
-const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
-const pkgMap = {};
-for (const p of packages) pkgMap[String(p._id)] = p;
-const pkgIds = packages.map(p => p._id);
-
-const appts = await db.collection('appointments').find({
-  $or: [{ package: { $in: pkgIds } }, { packageId: { $in: pkgIds } }],
-  operationalStatus: 'completed',
-  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-06-30') }
-}).sort({ date: 1 }).toArray();
-
-// Estrutura: mes → provider → paciente → sessoes
-const result = {};
-for (const a of appts) {
-  const pkg = pkgMap[String(a.package || a.packageId)];
-  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
-  const mes = mesAno(a.date);
-  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
-  if (!result[mes]) result[mes] = {};
-  if (!result[mes][provider]) result[mes][provider] = {};
-  if (!result[mes][provider][patName]) result[mes][provider][patName] = [];
-  result[mes][provider][patName].push({ data: fmt(a.date), specialty: a.specialty || '—' });
-}
-
-const SEP  = '═'.repeat(72);
-const LINE = '─'.repeat(72);
-const now  = new Date().toLocaleString('pt-BR');
-
-process.stdout.write(`${SEP}\n`);
-process.stdout.write(`  RELATÓRIO SEMESTRAL DE ATENDIMENTOS — CONVÊNIO\n`);
-process.stdout.write(`  Período: Janeiro a Junho de 2026\n`);
-process.stdout.write(`  Filtro: somente atendimentos realizados (status = completed)\n`);
-process.stdout.write(`  Gerado em: ${now}\n`);
-process.stdout.write(`${SEP}\n\n`);
-
-const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
-
-let grandTotal=0, grandPacientes=new Set();
-
-// Tabela resumo no topo
-process.stdout.write(`RESUMO POR MÊS\n${LINE}\n`);
-process.stdout.write(`${'Mês'.padEnd(14)} ${'Sessões'.padStart(8)} ${'Pacientes'.padStart(10)} ${'Unimed Anápolis'.padStart(16)} ${'Unimed Campinas'.padStart(16)}\n`);
-process.stdout.write(`${LINE}\n`);
-
-const resumo = {};
-for (const mes of meses) {
-  let total=0, pacs=new Set(), anapolis=0, campinas=0;
-  for (const [prov, pacs_obj] of Object.entries(result[mes])) {
-    for (const [pat, sess] of Object.entries(pacs_obj)) {
-      pacs.add(pat);
-      total += sess.length;
-      if (prov.includes('anapolis')) anapolis += sess.length;
-      if (prov.includes('campinas')) campinas += sess.length;
-    }
-  }
-  resumo[mes] = { total, pacs, anapolis, campinas };
-  grandTotal += total;
-  for (const p of pacs) grandPacientes.add(p);
-  const [mm] = mes.split('/');
-  process.stdout.write(`${(mesNome(mm)+'/2026').padEnd(14)} ${String(total).padStart(8)} ${String(pacs.size).padStart(10)} ${String(anapolis||'—').padStart(16)} ${String(campinas||'—').padStart(16)}\n`);
-}
-process.stdout.write(`${LINE}\n`);
-process.stdout.write(`${'TOTAL'.padEnd(14)} ${String(grandTotal).padStart(8)} ${String(grandPacientes.size).padStart(10)}\n`);
-process.stdout.write(`\n`);
-
-// Lote enviado
-process.stdout.write(`FATURAMENTO ENVIADO À UNIMED ANÁPOLIS\n${LINE}\n`);
-process.stdout.write(`  Lote: LOT-UNIMED-ANAPOLIS-1778784104444\n`);
-process.stdout.write(`  Período coberto: 01/04/2026 → 29/04/2026 (28 sessões, R$ 2.700,00)\n`);
-process.stdout.write(`  Enviado em: 14/05/2026 | Status: Enviado | Retorno: R$ 0,00\n`);
-process.stdout.write(`\n  ⚠  Sessões NÃO faturadas (completed mas sem lote):\n`);
-const sessSemLote = grandTotal - 28;
-process.stdout.write(`     Unimed Anápolis: Jan/Fev/Mar/2026 + Mai/Jun/2026 — aprox. ${sessSemLote} sessões pendentes de faturamento\n`);
-process.stdout.write(`     Unimed Campinas: Jan–Abr/2026 — nenhum lote criado\n\n`);
-
-// Detalhe por mês
-for (const mes of meses) {
-  const [mm, yy] = mes.split('/');
-  const total = resumo[mes].total;
-  process.stdout.write(`${'▓'.repeat(72)}\n`);
-  process.stdout.write(`  ${mesNome(mm).toUpperCase()} ${yy} — ${total} sessão(ões) atendidas — ${resumo[mes].pacs.size} paciente(s)\n`);
-  process.stdout.write(`${'▓'.repeat(72)}\n\n`);
-
-  for (const [prov, pacs_obj] of Object.entries(result[mes]).sort()) {
-    const provLabel = prov === 'unimed-anapolis' ? 'UNIMED ANÁPOLIS' : prov === 'unimed-campinas' ? 'UNIMED CAMPINAS' : prov.toUpperCase();
-    process.stdout.write(`  [ ${provLabel} ]\n`);
-    for (const [pat, sessoes] of Object.entries(pacs_obj).sort()) {
-      process.stdout.write(`  ${LINE.slice(0,60)}\n`);
-      process.stdout.write(`  Paciente : ${pat}\n`);
-      process.stdout.write(`  Sessões  : ${sessoes.length}\n\n`);
-      // Agrupa por especialidade
-      const porEsp = {};
-      for (const s of sessoes) { if (!porEsp[s.specialty]) porEsp[s.specialty] = []; porEsp[s.specialty].push(s.data); }
-      for (const [esp, datas] of Object.entries(porEsp).sort()) {
-        process.stdout.write(`    ${esp.padEnd(22)} ${datas.join('  ')}\n`);
-      }
-      process.stdout.write(`\n`);
-    }
-  }
-}
-
-process.stdout.write(`${SEP}\n`);
-process.stdout.write(`  FIM DO RELATÓRIO — Total: ${grandTotal} atendimentos realizados\n`);
-process.stdout.write(`${SEP}\n`);
-
-await mongoose.disconnect();
-EOF
-echo "✅ Gerado"
-
-OUT
-ugrep: warning: .env: No such file or directory
-node:internal/modules/esm/resolve:873
-  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
-        ^
-
-Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'mongoose' imported from /home/user/projetos/crm/[eval1]
-    at packageResolve (node:internal/modules/esm/resolve:873:9)
-    at moduleResolve (node:internal/modules/esm/resolve:946:18)
-    at defaultResolve (node:internal/modules/esm/resolve:1188:11)
-    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
-    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
-    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
-    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
-    at ModuleJob._link (node:internal/modules/esm/module_job:168:49)
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  code: 'ERR_MODULE_NOT_FOUND'
-}
-
-Node.js v20.20.0
-✅ Gerado
-Precisa rodar do diretório back. Vou salvar o script lá e executar.
-
-Bash Generate semester report from back directory
-IN
-cd /home/user/projetos/crm/back && MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-const fmt = d => { if (!d) return '—'; const x = new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesAno = d => { if (!d) return '??'; const x = new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesNome = m => ({ '01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho' })[m] || m;
-
-const allPatients = await db.collection('patients').find({}).project({ name: 1, fullName: 1 }).toArray();
-const patMap = {};
-for (const p of allPatients) patMap[String(p._id)] = p.name || p.fullName || '??';
-
-const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
-const pkgMap = {};
-for (const p of packages) pkgMap[String(p._id)] = p;
-const pkgIds = packages.map(p => p._id);
-
-const appts = await db.collection('appointments').find({
-  $or: [{ package: { $in: pkgIds } }, { packageId: { $in: pkgIds } }],
-  operationalStatus: 'completed',
-  date: { $gte: new Date('2026-01-01'), $lte: new Date('2026-06-30') }
-}).sort({ date: 1 }).toArray();
-
-const result = {};
-for (const a of appts) {
-  const pkg = pkgMap[String(a.package || a.packageId)];
-  const provider = pkg?.insuranceProvider || pkg?.provider || 'convenio';
-  const mes = mesAno(a.date);
-  const patName = patMap[String(a.patient)] || a.patientInfo?.fullName || a.patientName || '??';
-  if (!result[mes]) result[mes] = {};
-  if (!result[mes][provider]) result[mes][provider] = {};
-  if (!result[mes][provider][patName]) result[mes][provider][patName] = [];
-  result[mes][provider][patName].push({ data: fmt(a.date), specialty: a.specialty || '—' });
-}
-
-const SEP  = '═'.repeat(72);
-const LINE = '─'.repeat(72);
-const now  = new Date().toLocaleString('pt-BR');
-
-const out = (s) => process.stdout.write(s);
-
-out(`${SEP}\n`);
-out(`  RELATÓRIO SEMESTRAL DE ATENDIMENTOS — CONVÊNIO\n`);
-out(`  Período: Janeiro a Junho de 2026\n`);
-out(`  Filtro: somente atendimentos realizados (status = completed)\n`);
-out(`  Gerado em: ${now}\n`);
-out(`${SEP}\n\n`);
-
-const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
-
-let grandTotal=0;
-const grandPacientes=new Set();
-const resumo = {};
-
-for (const mes of meses) {
-  let total=0; const pacs=new Set(); let anapolis=0, campinas=0;
-  for (const [prov, po] of Object.entries(result[mes])) {
-    for (const [pat, sess] of Object.entries(po)) {
-      pacs.add(pat); total += sess.length;
-      if (prov.includes('anapolis')) anapolis += sess.length;
-      if (prov.includes('campinas')) campinas += sess.length;
-    }
-  }
-  resumo[mes] = { total, pacs, anapolis, campinas };
-  grandTotal += total;
-  for (const p of pacs) grandPacientes.add(p);
-}
-
-out(`RESUMO POR MÊS\n${LINE}\n`);
-out(`${'Mês'.padEnd(18)} ${'Total'.padStart(6)} ${'Pac.'.padStart(5)} ${'Anápolis'.padStart(10)} ${'Campinas'.padStart(10)}\n${LINE}\n`);
-for (const mes of meses) {
-  const [mm,yy] = mes.split('/');
-  const r = resumo[mes];
-  out(`${(mesNome(mm)+'/'+yy).padEnd(18)} ${String(r.total).padStart(6)} ${String(r.pacs.size).padStart(5)} ${String(r.anapolis||'—').padStart(10)} ${String(r.campinas||'—').padStart(10)}\n`);
-}
-out(`${LINE}\n`);
-out(`${'TOTAL'.padEnd(18)} ${String(grandTotal).padStart(6)} ${String(grandPacientes.size).padStart(5)}\n\n`);
-
-out(`SITUAÇÃO DE FATURAMENTO\n${LINE}\n`);
-out(`  Lote enviado : LOT-UNIMED-ANAPOLIS-1778784104444\n`);
-out(`  Período      : 01/04/2026 → 29/04/2026 (28 sessões — R$ 2.700,00)\n`);
-out(`  Enviado em   : 14/05/2026 | Status: Enviado | Retorno: R$ 0,00\n\n`);
-out(`  ⚠  PENDENTES DE FATURAMENTO (completed sem lote):\n`);
-out(`     Unimed Anápolis — Janeiro, Fevereiro, Março e Maio/Junho de 2026\n`);
-out(`     Unimed Campinas — Janeiro a Abril de 2026 (nenhum lote criado)\n\n`);
-
-for (const mes of meses) {
-  const [mm,yy] = mes.split('/');
-  const r = resumo[mes];
-  out(`${'▓'.repeat(72)}\n`);
-  out(`  ${mesNome(mm).toUpperCase()} ${yy} — ${r.total} sessão(ões) — ${r.pacs.size} paciente(s)\n`);
-  out(`${'▓'.repeat(72)}\n\n`);
-  for (const [prov, po] of Object.entries(result[mes]).sort()) {
-    const label = prov==='unimed-anapolis'?'UNIMED ANÁPOLIS':prov==='unimed-campinas'?'UNIMED CAMPINAS':prov.toUpperCase();
-    out(`  [ ${label} ]\n\n`);
-    for (const [pat, sessoes] of Object.entries(po).sort()) {
-      out(`  ${LINE.slice(0,60)}\n`);
-      out(`  Paciente : ${pat}\n`);
-      out(`  Sessões  : ${sessoes.length}\n\n`);
-      const porEsp = {};
-      for (const s of sessoes) { if (!porEsp[s.specialty]) porEsp[s.specialty]=[]; porEsp[s.specialty].push(s.data); }
-      for (const [esp, datas] of Object.entries(porEsp).sort()) {
-        out(`    ${esp.padEnd(24)} ${datas.join('   ')}\n`);
-      }
-      out(`\n`);
-    }
-  }
-}
-
-out(`${SEP}\n`);
-out(`  FIM DO RELATÓRIO — ${grandTotal} atendimentos realizados (Jan–Jun 2026)\n`);
-out(`${SEP}\n`);
-
-await mongoose.disconnect();
-EOF
-echo "Tamanho: $(wc -l < /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt) linhas"
-
-OUT
-Tamanho: 223 linhas
-Relatório gerado: auditoria_convenio_semestral_jan_jun_2026.txt — 223 linhas.
-
-Contém:
-
-Tabela resumo por mês (total, pacientes, Anápolis vs Campinas)
-Alerta de situação de faturamento (o que foi enviado x o que está pendente)
-Detalhe completo mês a mês → por plano → por paciente → datas e especialidades
-auditoria_convenio_semestral_jan_jun_2026.txt
-sessoe e vlaroes dos atendeitnos por especialdiade
-Vou adicionar os valores por especialidade. Deixa eu confirmar o campo de valor no appointment.
-
-Bash Check sessionValue field and distribution by specialty
-IN
-cd /home/user/projetos/crm/back && MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF'
-import mongoose from 'mongoose';
-dotenv: { config: () => {} };
-import dotenv from 'dotenv'; dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-const a = await db.collection('appointments').findOne({ operationalStatus: 'completed', sessionValue: { $exists: true, $gt: 0 } });
-console.log('sessionValue:', a?.sessionValue);
-console.log('paymentMethod:', a?.paymentMethod);
-const b = await db.collection('appointments').findOne({ operationalStatus: 'completed', sessionValue: { $exists: false } });
-console.log('sem sessionValue - specialty:', b?.specialty, 'paymentMode:', b?.paymentMode);
-// Ver distribuição de sessionValue nos completed de convenio
-const packages = await db.collection('packages').find({ type: 'convenio' }).toArray();
-const pkgIds = packages.map(p => p._id);
-const vals = await db.collection('appointments').aggregate([
-  { $match: { $or:[{package:{$in:pkgIds}},{packageId:{$in:pkgIds}}], operationalStatus:'completed', date:{$gte:new Date('2026-01-01')} }},
-  { $group: { _id: '$specialty', count:{$sum:1}, totalValue:{$sum:'$sessionValue'}, avgValue:{$avg:'$sessionValue'}, zeroCount:{$sum:{$cond:[{$eq:['$sessionValue',0]},1,0]}} }},
-  { $sort: { count: -1 } }
-]).toArray();
-for (const v of vals) console.log(`${v._id}: ${v.count} sessões, total R$${v.totalValue?.toFixed(2)}, avg R$${v.avgValue?.toFixed(2)}, sem valor: ${v.zeroCount}`);
-await mongoose.disconnect();
-EOF
-
-OUT
-sessionValue: 100
-paymentMethod: convenio
-sem sessionValue - specialty: fonoaudiologia paymentMode: undefined
-fonoaudiologia: 113 sessões, total R$1480.00, avg R$82.22, sem valor: 3
-psicologia: 25 sessões, total R$0.00, avg R$undefined, sem valor: 0
-fisioterapia: 19 sessões, total R$200.00, avg R$200.00, sem valor: 0
-terapia_ocupacional: 12 sessões, total R$160.00, avg R$80.00, sem valor: 0
-psicomotricidade: 4 sessões, total R$0.00, avg R$undefined, sem valor: 0
-psicopedagogia: 2 sessões, total R$0.00, avg R$undefined, sem valor: 0
-Psicologia/psicomotricidade/psicopedagogia estão sem valor no appointment — vou pegar o valor padrão do convênio como fallback (Anápolis R$80, Campinas R$140).
-
-Bash Regenerate report with values per session and specialty
-IN
-MONGO_URI="$(grep MONGO_URI .env | cut -d'"' -f2)" node --input-type=module << 'EOF' > /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt
-import mongoose from 'mongoose';
-import dotenv from 'dotenv'; dotenv.config();
-await mongoose.connect(process.env.MONGO_URI);
-const db = mongoose.connection.db;
-
-const fmt = d => { if (!d) return '—'; const x=new Date(d); return `${String(x.getUTCDate()).padStart(2,'0')}/${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesAno = d => { if (!d) return '??'; const x=new Date(d); return `${String(x.getUTCMonth()+1).padStart(2,'0')}/${x.getUTCFullYear()}`; };
-const mesNome = m => ({'01':'Janeiro','02':'Fevereiro','03':'Março','04':'Abril','05':'Maio','06':'Junho'})[m]||m;
-const brl = v => `R$ ${Number(v||0).toFixed(2).replace('.',',')}`;
-
-// Valor padrão por provider (fallback quando sessionValue não preenchido)
-const PROVIDER_DEFAULT = { 'unimed-anapolis': 80, 'unimed-campinas': 140 };
-
-const allPatients = await db.collection('patients').find({}).project({ name:1, fullName:1 }).toArray();
-const patMap = {}; for (const p of allPatients) patMap[String(p._id)] = p.name||p.fullName||'??';
-
-const packages = await db.collection('packages').find({ type:'convenio' }).toArray();
-const pkgMap = {}; for (const p of packages) pkgMap[String(p._id)] = p;
-const pkgIds = packages.map(p => p._id);
-
-const appts = await db.collection('appointments').find({
-  $or:[{package:{$in:pkgIds}},{packageId:{$in:pkgIds}}],
-  operationalStatus:'completed',
-  date:{$gte:new Date('2026-01-01'),$lte:new Date('2026-06-30')}
-}).sort({date:1}).toArray();
-
-// result: mes → provider → patName → [{data, specialty, valor}]
-const result = {};
-for (const a of appts) {
-  const pkg = pkgMap[String(a.package||a.packageId)];
-  const provider = pkg?.insuranceProvider||pkg?.provider||'convenio';
-  const mes = mesAno(a.date);
-  const patName = patMap[String(a.patient)]||a.patientInfo?.fullName||a.patientName||'??';
-  const valor = (a.sessionValue && a.sessionValue > 0) ? a.sessionValue : (PROVIDER_DEFAULT[provider]||0);
-  if (!result[mes]) result[mes]={};
-  if (!result[mes][provider]) result[mes][provider]={};
-  if (!result[mes][provider][patName]) result[mes][provider][patName]=[];
-  result[mes][provider][patName].push({ data:fmt(a.date), specialty:a.specialty||'—', valor });
-}
-
-const SEP='═'.repeat(72); const LINE='─'.repeat(72);
-const out = s => process.stdout.write(s);
-const now = new Date().toLocaleString('pt-BR');
-
-out(`${SEP}\n`);
-out(`  RELATÓRIO SEMESTRAL — ATENDIMENTOS CONVÊNIO\n`);
-out(`  Período: Janeiro a Junho de 2026  |  Filtro: somente completed\n`);
-out(`  Gerado em: ${now}\n`);
-out(`${SEP}\n\n`);
-
-const meses = Object.keys(result).sort((a,b)=>{ const [ma,ya]=a.split('/').map(Number); const [mb,yb]=b.split('/').map(Number); return ya!==yb?ya-yb:ma-mb; });
-
-// Pré-calcula resumo
-let grandSessoes=0, grandValor=0;
-const grandPacs=new Set();
-const resumo={};
-for (const mes of meses) {
-  let sess=0, valor=0; const pacs=new Set(); let anapolis=0,campinas=0,vAnapolis=0,vCampinas=0;
-  for (const [prov,po] of Object.entries(result[mes])) {
-    for (const [pat,arr] of Object.entries(po)) {
-      pacs.add(pat); sess+=arr.length; const v=arr.reduce((s,x)=>s+x.valor,0); valor+=v;
-      if(prov.includes('anapolis')){ anapolis+=arr.length; vAnapolis+=v; }
-      if(prov.includes('campinas')){ campinas+=arr.length; vCampinas+=v; }
-    }
-  }
-  resumo[mes]={sess,valor,pacs,anapolis,campinas,vAnapolis,vCampinas};
-  grandSessoes+=sess; grandValor+=valor; for(const p of pacs) grandPacs.add(p);
-}
-
-// Tabela resumo
-out(`RESUMO POR MÊS\n${LINE}\n`);
-out(`${'Mês'.padEnd(14)} ${'Sessões'.padStart(8)} ${'Valor Total'.padStart(14)} ${'Anápolis'.padStart(22)} ${'Campinas'.padStart(22)}\n${LINE}\n`);
-for (const mes of meses) {
-  const [mm,yy]=mes.split('/'); const r=resumo[mes];
-  const aStr = r.anapolis ? `${r.anapolis}x / ${brl(r.vAnapolis)}` : '—';
-  const cStr = r.campinas ? `${r.campinas}x / ${brl(r.vCampinas)}` : '—';
-  out(`${(mesNome(mm)+'/'+yy).padEnd(14)} ${String(r.sess).padStart(8)} ${brl(r.valor).padStart(14)} ${aStr.padStart(22)} ${cStr.padStart(22)}\n`);
-}
-out(`${LINE}\n`);
-out(`${'TOTAL'.padEnd(14)} ${String(grandSessoes).padStart(8)} ${brl(grandValor).padStart(14)}\n\n`);
-
-out(`SITUAÇÃO DE FATURAMENTO\n${LINE}\n`);
-out(`  Lote enviado : LOT-UNIMED-ANAPOLIS-1778784104444\n`);
-out(`  Período      : 01/04/2026 → 29/04/2026  |  28 sessões  |  R$ 2.700,00\n`);
-out(`  Enviado em   : 14/05/2026  |  Status: Enviado  |  Retorno recebido: R$ 0,00\n\n`);
-out(`  ⚠  PENDENTES DE FATURAMENTO:\n`);
-out(`     Unimed Anápolis — Jan, Fev, Mar e Mai/Jun/2026\n`);
-out(`     Unimed Campinas — Jan a Abr/2026 (nenhum lote criado)\n\n`);
-
-// Detalhe por mês
-for (const mes of meses) {
-  const [mm,yy]=mes.split('/'); const r=resumo[mes];
-  out(`${'▓'.repeat(72)}\n`);
-  out(`  ${mesNome(mm).toUpperCase()} ${yy} — ${r.sess} sessão(ões) — ${brl(r.valor)} — ${r.pacs.size} paciente(s)\n`);
-  out(`${'▓'.repeat(72)}\n\n`);
-  for (const [prov,po] of Object.entries(result[mes]).sort()) {
-    const label=prov==='unimed-anapolis'?'UNIMED ANÁPOLIS':prov==='unimed-campinas'?'UNIMED CAMPINAS':prov.toUpperCase();
-    out(`  [ ${label} ]\n\n`);
-    for (const [pat,sessoes] of Object.entries(po).sort()) {
-      const total=sessoes.reduce((s,x)=>s+x.valor,0);
-      out(`  ${LINE.slice(0,60)}\n`);
-      out(`  Paciente : ${pat}\n`);
-      out(`  Sessões  : ${sessoes.length}   Total: ${brl(total)}\n\n`);
-      // Agrupa por especialidade: contagem + valor + datas
-      const porEsp={};
-      for (const s of sessoes) {
-        if(!porEsp[s.specialty]) porEsp[s.specialty]={count:0,valor:0,datas:[]};
-        porEsp[s.specialty].count++;
-        porEsp[s.specialty].valor+=s.valor;
-        porEsp[s.specialty].datas.push(`${s.data} (${brl(s.valor)})`);
-      }
-      for (const [esp,info] of Object.entries(porEsp).sort()) {
-        out(`    ${esp.padEnd(24)} ${String(info.count+'x').padEnd(4)}  ${brl(info.valor).padEnd(14)}\n`);
-        for (const d of info.datas) out(`       • ${d}\n`);
-      }
-      out(`\n`);
-    }
-  }
-}
-
-out(`${SEP}\n`);
-out(`  FIM DO RELATÓRIO — ${grandSessoes} atendimentos — ${brl(grandValor)} total\n`);
-out(`${SEP}\n`);
-
-await mongoose.disconnect();
-EOF
-echo "✅ $(wc -l < /home/user/projetos/crm/auditoria-output/auditoria_convenio_semestral_jan_jun_2026.txt) linhas geradas"
-
-OUT
-✅ 397 linhas geradas
-Relatório atualizado: auditoria_convenio_semestral_jan_jun_2026.txt — 397 linhas.
-
-Agora cada paciente tem:
-
-Total em reais por mês
-Por especialidade: quantidade de sessões + valor total + cada data com seu valor individual
-Valores sem preenchimento no appointment usam o padrão do convênio (Anápolis R$80, Campinas R$140)
-de forma objetiva isso e os valore so de atendiemntos realizados ne nao agendamentos cancelaodds nem pendendes
-Exato. O relatório contém somente appointments com operationalStatus = 'completed' — ou seja, atendimentos que de fato aconteceram.
-
-Cancelados (canceled), agendados (scheduled), confirmados (confirmed), pré-agendados (pre_agendado) e faltantes (missed) foram todos excluídos da query.
-
-ARCHITECTURE_FLOW.md
-Antes de rodar isso em produção, tem um ponto crítico que precisa ficar bem claro — e aqui vale ser bem conservador:
-
-## ⚠️ ALERTA REAL (não é teórico)
-
-Você agora tem **dois níveis de proteção contra double-settlement**:
-
-1. `_billingEventId` (lock lógico / idempotência de negócio)
-2. `transitionPaymentStatus` (idempotência de estado)
-
-Mas existe um terceiro risco que ainda pode existir dependendo do teu banco:
-
-> **concorrência entre workers rodando ao mesmo tempo (ou retry de job + API manual)**
-
----
-
-# 🔥 O problema que ainda pode acontecer
-
-Mesmo com `_billingEventId`, se isso não estiver em:
-
-* índice único parcial **OU**
-* operação atômica tipo `findOneAndUpdate` com condição
-
-você ainda pode ter:
-
-* dois workers lendo `pending`
-* ambos passando no "check"
-* ambos tentando settlar antes do update persistir
-
----
-
-# 🧱 O que você JÁ fez certo (importante reconhecer)
-
-✔ transitionPaymentStatus como guard de estado
-✔ settlement centralizado (bom design)
-✔ batch vs avulso separado
-✔ dry-run seguro
-✔ job isolado
-
-Isso já te coloca em nível “produção séria”.
-
----
-
-# 🚨 O ponto que ainda está faltando (o mais importante agora)
-
-Você precisa garantir isso em nível de banco:
-
-## 🔐 LOCK ATÔMICO REAL (não só lógica)
-
-Algo assim (conceito):
-
-```js
-await Payment.findOneAndUpdate(
-  {
-    _id: paymentId,
-    status: { $ne: 'paid' },
-    _billingEventId: null
-  },
-  {
-    $set: {
-      _billingEventId: eventId,
-      _billingEventAt: new Date()
-    }
-  },
-  { new: true }
-);
-```
-
-👉 isso sim garante “1 executor só ganha”
-
----
-
-# 💡 MELHORIA QUE EU RECOMENDO ANTES DO EXECUTE
-
-Antes de rodar o job, adiciona isso:
-
-## 1. Índice (ESSENCIAL)
-
-```js
-db.payments.createIndex(
-  { _billingEventId: 1 },
-  { unique: false, sparse: true }
-)
-```
-
-ou melhor ainda:
-
-```js
-db.payments.createIndex(
-  { _id: 1, _billingEventId: 1 }
-)
-```
-
----
-
-## 2. Garantia extra (forte mesmo)
-
-Se quiser nível hospital / financeiro:
-
-```js
-partialFilterExpression: {
-  status: { $ne: 'paid' }
-}
-```
-
----
-
-# 📊 O que vai acontecer quando você rodar
-
-Se estiver tudo ok:
-
-* 65 payments → `paid`
-* `_billingEventId` preenchido
-* insurance.status → `received`
-* DRE sai de 0 → ~R$5.7k realizado
-* aba “Recebidos” começa a refletir realidade
-
----
-
-# ⚠️ DECISÃO IMPORTANTE AGORA
-
-Você está literalmente na fronteira:
-
-## Cenário A (seguro)
-
-✔ roda job agora
-✔ aceita pequeno risco controlado (baixo já)
-
-## Cenário B (produção crítica / recomendado)
-
-1. adiciona índice/lock atômico completo
-2. roda dry-run novamente
-3. executa
-
----
-
-# Minha recomendação direta
-
-Como isso mexe com:
-
-* faturamento
-* DRE
-* caixa real
-
-👉 eu faria **mais 1 proteção leve antes do execute final**
-
----
-
-# Se quiser seguir rápido
-
-Posso te ajudar a fechar isso em 2 minutos:
-
-✔ transformar `_billingEventId` em lock 100% atômico
-✔ revisar se existe qualquer race condition escondida
-✔ garantir que batch + avulso nunca colidem
-✔ te dar “GO seguro produção”
-
-Só me fala:
-
-**“quero blindar 100% antes do execute”**
-Vou ver o código atual do job para entender o que já existe antes de propor qualquer mudança.
-
-Bash Find files with billingEventId and transitionPaymentStatus
-IN
-find /home/user/projetos/crm/back -type f -name "*.js" | xargs grep -l "_billingEventId\|billingEventId\|transitionPaymentStatus" 2>/dev/null
-
-OUT
-Exit code 123
-/home/user/projetos/crm/back/domains/billing/services/insuranceBillingService.v2.js
-/home/user/projetos/crm/back/services/insuranceBatchService.js
-/home/user/projetos/crm/back/services/paymentService.js
-/home/user/projetos/crm/back/services/autoInsuranceSettlementService.js
-/home/user/projetos/crm/back/services/paymentStatusService.js
-/home/user/projetos/crm/back/workers/paymentWorker.js
-/home/user/projetos/crm/back/services/financialGuard/guards/convenio.guard.js
-/home/user/projetos/crm/back/services/financialGuard/guards/particular.guard.js
-/home/user/projetos/crm/back/services/financial/ConvenioMetricsService.js
-/home/user/projetos/crm/back/routes/importFromAgenda.js
-/home/user/projetos/crm/back/routes/appointment.v2.js
-/home/user/projetos/crm/back/routes/payment.v2.js
-/home/user/projetos/crm/back/routes/Payment.js
-/home/user/projetos/crm/back/controllers/packageController.v2.js
-/home/user/projetos/crm/back/domain/payment/cancelPayment.js
-/home/user/projetos/crm/back/models/Payment.js
-/home/user/projetos/crm/back/models/Session.js
-Read autoInsuranceSettlementService.js
-O lock atômico que o documento recomendava já está implementado — linhas 31-39 usam exatamente o findOneAndUpdate com condição atômica. Mas encontrei um bug real no arquivo:
-
-Bash Check Payment model for billingEventId index
-IN
-grep -n "_billingEventId\|sparse\|index" /home/user/projetos/crm/back/models/Payment.js | head -30
-
-OUT
-9:    patientId: { type: String, index: true }, // 🎯 Compatibilidade V2
-12:    appointmentId: { type: String, index: true }, // 🎯 Compatibilidade V2
-54:    financialDate: { type: Date, default: null, index: true },
-85:        index: true,
-201:paymentSchema.index({ appointment: 1, splitGroupId: 1, status: 1 }, { name: 'ledger_split_lookup' });
-202:paymentSchema.index({ source: 1, createdAt: -1 }, { name: 'source_audit_trail' });
-261:paymentSchema.index({ status: 1, billingType: 1, paymentDate: -1 });
-262:paymentSchema.index({ financialDate: -1, status: 1 });
-263:paymentSchema.index({ patientId: 1, status: 1 });
-266:paymentSchema.index({ status: 1, financialDate: -1, amount: 1, kind: 1 }, { name: 'financial_cash_status_date' });
-267:paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financial_doctor_cash_status_date' });
-271:paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
-273:paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
-Diagnóstico completo:
-
-Lock atômico: já correto. O findOneAndUpdate com condição dupla (status ≠ paid + _billingEventId null) nas linhas 31-39 é exatamente o que o documento recomendava. Já está implementado.
-
-Bug real encontrado: linha 76-79 usa payment.amount mas a variável payment nunca foi declarada nesse escopo. locked = documento pré-update, updated = resultado do transitionPaymentStatus. Vai lançar ReferenceError em produção.
-
-Missing: índice sparse no _billingEventId — sem ele o lock funciona (MongoDB é atômico por documento), mas a query é lenta em collection grande.
-
-Corrijo os dois agora:
-
-Edit autoInsuranceSettlementService.js
-Modified
-Agora o índice sparse no Payment model:
-
-Read Payment.js (lines 271-280)
-Edit Payment.js
-Added 1 line
-Feito. Resumo do que estava certo vs o que foi corrigido:
-
-Já estava correto (pode rodar com confiança):
-
-Lock atômico via findOneAndUpdate com condição dupla — garante "1 executor só ganha", sem race condition mesmo com workers paralelos
-transitionPaymentStatus como segundo guard
-Batch vs avulso separados
-Corrigido agora:
-
-payment.amount → locked.amount em 3 lugares (linhas 76, 79, 80) — era um ReferenceError certo em produção
-Índice sparse _billingEventId adicionado no Payment model — acelera a query do lock
-GO seguro para produção. Roda o dry-run primeiro para confirmar os 65 payments candidatos, depois execute.
-
-autoInsuranceSettlementService.js
-Bom, aqui a gente chegou no ponto “produção real mesmo”, então vou ser direto e preciso.
-
----
-
-# ✅ O QUE ESTÁ REALMENTE OK AGORA
-
-Você já tem o essencial bem feito:
-
-## 🔒 1. Lock correto (isso é o mais importante)
-
-* `findOneAndUpdate` com condição
-* `status != paid`
-* `_billingEventId == null`
-
-👉 isso elimina race condition na prática
-
----
-
-## 🔁 2. Idempotência dupla
-
-* `transitionPaymentStatus` (estado)
-* `_billingEventId` (execução)
-
-👉 isso impede double-settlement até em retry
-
----
-
-## 📊 3. Separação de fluxos
-
-* batch → `processReturn`
-* avulso → `autoInsuranceSettlement`
-
-👉 arquitetura limpa, sem acoplamento
-
----
-
-## 📦 4. Índice sparse adicionado
-
-👉 melhora lookup de lock em volume
-
----
-
-# ⚠️ O PONTO MAIS IMPORTANTE (HONESTO)
-
-Mesmo com tudo isso:
-
-> O sistema agora está tecnicamente correto para rodar em produção.
-
-MAS…
-
-Ele ainda depende de **uma suposição crítica**:
-
----
-
-# 🧠 SUPOSIÇÃO QUE VOCÊ ESTÁ FAZENDO SEM PERCEBER
-
-> “não existem múltiplos jobs rodando ao mesmo tempo sem coordenação externa”
-
-Se isso for verdade:
-
-✔ você está seguro
-
----
-
-Se NÃO for:
-
-* dois servidores rodando job
-* retry manual + cron ao mesmo tempo
-* execução duplicada por deploy
-
-👉 ainda existe risco residual (pequeno, mas real)
-
----
-
-# 🧱 O QUE FALTA PARA FICAR “HOSPITAL-GRADE”
-
-Não é correção de bug — é blindagem operacional:
-
-## 🔐 1. LEADER LOCK (recomendado)
-
-Um lock global simples:
-
-```js id="9n2kq1"
-db.locks.updateOne(
-  { _id: "insurance-settlement-job" },
-  { $set: { running: true, startedAt: new Date() } },
-  { upsert: true }
-)
-```
-
-com TTL ou timeout.
-
----
-
-## 🧯 2. SAFE GUARD NO JOB
-
-```js id="p4k2ld"
-if (await isJobRunning()) return;
-```
-
----
-
-## 📌 3. LOG DE EXECUÇÃO ÚNICA
-
-Pra auditoria do financeiro:
-
-* runId
-* count
-* total amount
-* payments list
-
----
-
-# 💰 SOBRE O DRE (IMPORTANTE PRA SUA DECISÃO)
-
-Depois desse job:
-
-* R$ 0 → ~R$ 5.760 realizado
-* 65 payments deixam de ser “fantasma contábil”
-* seu sistema passa a ter **caixa real consistente**
-
-👉 isso muda credenciamento, auditoria e negociação com convênios
-
----
-
-# 🚦 MINHA RECOMENDAÇÃO FINAL (CLARA)
-
-## Você pode:
-
-### ✅ EXECUTAR AGORA se:
-
-* só 1 instância do backend roda job
-* cron não está duplicado
-* não existe execução manual simultânea
-
----
-
-### 🟡 OU blindar antes se quiser nível máximo:
-
-Adicionar:
-
-* leader lock simples
-* log de execução
-* check de job ativo
-
-leva 10–15 min e elimina 100% do risco operacional restante
-
----
-
-# 💬 VEREDITO HONESTO
-
-> O código está correto para produção funcional.
-
-> Falta apenas blindagem operacional para produção crítica.
-
----
-
-Se quiser, no próximo passo eu posso te deixar isso em nível:
-
-> “não quebra nem se 3 servidores rodarem ao mesmo tempo”
-
-com um lock distribuído simples e limpo (sem Redis obrigatório).
-
-Só fala: **“quero blindagem total do job”**
-Antes de implementar qualquer coisa, vou ver como o job é disparado hoje — se roda num único processo, o líder lock pode ser overkill.
-
-Bash Check how the settlement job is triggered
-IN
-grep -n "runAvulsoSettlement\|autoInsuranceSettlement\|cron\|schedule\|setInterval" /home/user/projetos/crm/back/workers/paymentWorker.js /home/user/projetos/crm/back/server.js 2>/dev/null | head -40
-
-OUT
-/home/user/projetos/crm/back/workers/paymentWorker.js:976:            console.log(`[PaymentWorker] ✅ Appointment ${appointmentId} sincronizado com sucesso`);
-/home/user/projetos/crm/back/workers/paymentWorker.js:978:            log.info('appointment_synced', `Appointment ${appointmentId} sincronizado`, {
-/home/user/projetos/crm/back/workers/paymentWorker.js:1153:            operationalStatus: 'scheduled',
-/home/user/projetos/crm/back/workers/paymentWorker.js:1160:                    newStatus: 'scheduled',
-/home/user/projetos/crm/back/workers/paymentWorker.js:1359:        operationalStatus: 'scheduled',
-/home/user/projetos/crm/back/server.js:82:import { startLearningCron } from "./crons/learningCron.js";
-/home/user/projetos/crm/back/server.js:83:import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
-/home/user/projetos/crm/back/server.js:84:import { startCron, startAllCrons } from './config/cronManager.js';
-/home/user/projetos/crm/back/server.js:138:import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
-/home/user/projetos/crm/back/server.js:139:import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
-/home/user/projetos/crm/back/server.js:140:import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
-/home/user/projetos/crm/back/server.js:141:import { scheduleGmbAutoRepublish } from './crons/gmbAutoRepublish.js';  // 🔄 NOVO: Republicação automática de posts GMB
-/home/user/projetos/crm/back/server.js:158:import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
-/home/user/projetos/crm/back/server.js:159:import { scheduleDailyScoring } from './crons/dailyScoring.js';
-/home/user/projetos/crm/back/server.js:160:import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.cron.js';
-/home/user/projetos/crm/back/server.js:161:import { schedulePatientConsistency } from './crons/patientConsistency.cron.js';
-/home/user/projetos/crm/back/server.js:237:// scheduleMonthlyCommissions();
-/home/user/projetos/crm/back/server.js:239:// scheduleDailyAlerts();
-/home/user/projetos/crm/back/server.js:240:scheduleGmbCron();  // Geração e envio de posts GMB via Make
-/home/user/projetos/crm/back/server.js:241:scheduleLandingPageDailyPosts();  // Posts diários vinculados a landing pages
-/home/user/projetos/crm/back/server.js:242:scheduleGmbAutoRepublish();  // Republicação automática de posts que expiram
-/home/user/projetos/crm/back/server.js:243:// scheduleDailyScoring()
-/home/user/projetos/crm/back/server.js:565:app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
-/home/user/projetos/crm/back/server.js:663:  setInterval(() => {
-/home/user/projetos/crm/back/server.js:772:      // await import("./workers/followup.cron.js");
-/home/user/projetos/crm/back/server.js:865:      console.log("⏭️ Crons desabilitados no processo API — use o cron-worker dedicado");
-/home/user/projetos/crm/back/server.js:870:    // const { startRegressionCron } = await import("./crons/regressionCron.js");
-/home/user/projetos/crm/back/server.js:872:    // await import("./crons/gmb.cron.js");  // Standalone: não importar no server principal (reconecta MongoDB)
-/home/user/projetos/crm/back/server.js:874:    // const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
-Bash Check if settlement job is exposed via route
-IN
-grep -rn "runAvulsoSettlement\|avulsoSettlement\|autoInsuranceSettlement" /home/user/projetos/crm/back/routes/ /home/user/projetos/crm/back/server.js 2>/dev/null | head -20
-
-OUT
-(Bash completed with no output)
-O job não está em nenhum cron e não tem rota exposta — é executado manualmente (script direto ou chamada pontual).
-
-Nesse cenário o líder lock é overkill. O risco que o documento descreve (3 servidores simultâneos) não existe aqui: Render roda 1 instância, e o job só dispara quando você manda explicitamente.
-
-O que você já tem é suficiente para isso:
-
-Lock atômico no banco: se por acidente você rodar duas vezes seguidas, o segundo processo vê _billingEventId preenchido e pula
-transitionPaymentStatus: segundo guard se o primeiro falhar
-Veredito direto: pode executar. O bug do payment.amount que corrigimos era o único risco real — esse sim quebraria em produção.
-
-excluir o que nao ta sendo usao e qeu causa confussao na anlsie de code etc Sim — e isso aqui é um ponto bem importante: **vocês já têm maturidade suficiente no sistema para parar de “corrigir no braço” e começar a padronizar limpeza de código.**
-
-Mas tem uma nuance: não é “usar mais ferramenta X”, é **criar um protocolo de limpeza consistente**.
-
----
-
-# 🧼 O que vocês *deveriam estar usando mais* (de verdade)
-
-## 1. 🔍 “Audit scripts antes de mexer em regra”
-
-Vocês já fazem isso bem, mas pode virar padrão:
-
-* sempre criar script de validação antes de alterar lógica
-* sempre rodar em staging com snapshot
-* nunca confiar só em leitura de código
-
-👉 vocês já estão 70% nisso (isso é bom)
-
----
-
-## 2. 🧱 “Single source of truth por domínio”
-
-Hoje vocês têm:
-
-* billing espalhado (insurance, payment, batch, v2)
-* settlement duplicado (batch + avulso + controller + service)
-
-👉 o que falta não é ferramenta — é organização:
-
-Cada domínio deveria ter:
-
-```
-/billing
-   /core (regras puras)
-   /flows (batch, avulso)
-   /jobs
-   /guards
-```
-
----
-
-## 3. 🧪 “Dry-run obrigatório como gate”
-
-Isso vocês já começaram a fazer bem.
-
-Mas o upgrade é:
-
-👉 TODO script crítico deve ter:
-
-* dry-run default
-* execute explícito
-* rollback se possível
-
----
-
-## 4. 🧠 “Flow doc obrigatório (o que eu te falei antes)”
-
-Isso aqui é o divisor de águas:
-
-* Claude / Kimi param de “inventar fluxo”
-* você para de corrigir interpretação errada
-* o sistema vira previsível
-
----
-
-## 5. 🧯 “Guard layer (vocês estão quase lá)”
-
-Vocês já têm:
-
-* financialGuard
-* paymentStatusService
-* settlement service
-
-Falta só reforçar:
-
-👉 regra simples:
-
-> nenhuma escrita financeira direta fora de service central
-
----
-
-# ⚠️ O PROBLEMA REAL (o que está te fazendo sentir “bagunça”)
-
-Não é falta de ferramenta.
-
-É isso aqui:
-
-### ❌ múltiplos caminhos para a mesma ação
-
-Exemplo atual:
-
-* `processReturn` (batch)
-* `receiveSession`
-* `autoInsuranceSettlement`
-* `paymentService`
-* controller direto
-
-👉 todos podem mexer em payment.status
-
----
-
-# 🔥 O QUE REALMENTE RESOLVE (nível arquitetura)
-
-## 1 único ponto de verdade:
-
-```js id="flow-core"
-PaymentLifecycleService
-```
-
-com:
-
-* `settle(paymentId)`
-* `cancel(paymentId)`
-* `transition(...)`
-
-e TODO resto chama isso.
-
----
-
-# 💡 RESPOSTA DIRETA PRA SUA PERGUNTA
-
-> “o que ainda não estamos usando pra limpar código?”
-
-✔ vocês já usam:
-
-* scripts de auditoria
-* dry-run
-* services separados
-* guards
-
-❗ o que falta de verdade:
-
-## 1. contrato de fluxo (FLOW.md)
-
-## 2. ponto único de escrita financeira
-
-## 3. padronização de jobs (leader lock + dry-run padrão)
-
-## 4. separação real “core vs orchestration”
-
----
-
-# 🧭 RESUMO HONESTO
-
-Você não está com problema de ferramenta.
-
-Você está num estágio onde:
-
-> o sistema cresceu mais rápido que a “camada de organização dele”
-
----
-
-# 🚀 Se quiser o próximo passo certo
-
-Eu posso te ajudar a dar o salto real:
-
-### 🔥 “refatoração estrutural sem quebrar nada”
-
-* unificar settlement em 1 service core
-* eliminar caminhos paralelos
-* deixar batch e avulso só como adapters
-* criar FLOW.md oficial do sistema
-* reduzir 60% da complexidade mental do sistema
-
-Só fala:
-
-**“quero simplificar arquitetura sem quebrar billing”**
-Foco direto: encontrar o que está morto e deletar. Deixa eu mapear quais funções/arquivos de billing têm zero referência.
-
-Bash Find which settlement/billing functions are actually imported and used
-IN
-cd /home/user/projetos/crm/back && echo "=== autoInsuranceSettlementService ===" && grep -rn "autoInsuranceSettlementService\|runAvulsoSettlement\|settleBatch\|settleInsurancePayment" --include="*.js" . | grep -v "node_modules" | grep -v "autoInsuranceSettlementService.js"
-
-echo "=== insuranceBillingService.v2 ===" && grep -rn "insuranceBillingService" --include="*.js" . | grep -v "node_modules" | grep -v "insuranceBillingService.v2.js"
-
-echo "=== paymentStatusService ===" && grep -rn "paymentStatusService\|transitionPaymentStatus" --include="*.js" . | grep -v "node_modules" | grep -v "paymentStatusService.js"
-
-OUT
-=== autoInsuranceSettlementService ===
-controllers/insuranceV2Controller.js:314:    // 4. Avulso path: settle direto via settleInsurancePayment
-controllers/insuranceV2Controller.js:318:        const result = await settleInsurancePayment(pid, {
-=== insuranceBillingService.v2 ===
-domains/billing/workers/billingConsumerWorker.js:7: * insuranceBillingService V2 existente.
-domains/billing/workers/billingConsumerWorker.js:177:    const result = await insuranceBillingService.processSessionCompleted(
-domains/billing/workers/billingConsumerWorker.js:376:    const result = await insuranceBillingService.processSessionBilled(
-domains/billing/workers/billingConsumerWorker.js:432:    const result = await insuranceBillingService.processSessionReceived(
-tests/billing/load-test.js:90:      const result = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:113:      const result1 = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:138:      const result2 = await insuranceBillingService.processSessionBilled(
-tests/billing/billing-v2-e2e.test.js:153:      const result3 = await insuranceBillingService.processSessionReceived(
-tests/billing/billing-v2-e2e.test.js:195:      const result1 = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:203:      const result2 = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:233:      await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:241:      const result1 = await insuranceBillingService.processSessionBilled(
-tests/billing/billing-v2-e2e.test.js:249:      const result2 = await insuranceBillingService.processSessionBilled(
-tests/billing/billing-v2-e2e.test.js:277:      await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:282:      await insuranceBillingService.processSessionBilled(
-tests/billing/billing-v2-e2e.test.js:309:      await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:316:      const result = await insuranceBillingService.processSessionReceived(
-tests/billing/billing-v2-e2e.test.js:367:      const result = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:408:      const result = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:417:      await insuranceBillingService.cancelBilling(
-tests/billing/billing-v2-e2e.test.js:472:      const result1 = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:476:      const result2 = await insuranceBillingService.processSessionCompleted(
-tests/billing/billing-v2-e2e.test.js:508:      const result1Again = await insuranceBillingService.processSessionCompleted(
-=== paymentStatusService ===
-services/insuranceBatchService.js:164:  // 🎯 Transiciona status via paymentStatusService (emite eventos)
-services/insuranceBatchService.js:302:    // Se convênio pagou, atualizar status principal via paymentStatusService
-services/insuranceBatchService.js:307:        await transitionPaymentStatus(existingPayment._id, 'paid', {
-services/autoInsuranceSettlementService.js:12: * Double-settlement: impossível — transitionPaymentStatus não-op se já paid.
-services/autoInsuranceSettlementService.js:60:    const { payment: updated } = await transitionPaymentStatus(paymentId, 'paid', {
-services/paymentService.js:100:        // 🎯 USA paymentStatusService — ÚNICO caminho para mudança de status
-services/paymentService.js:102:        const { payment } = await transitionPaymentStatus(paymentId, 'paid', {
-services/paymentService.js:110:        // Campos adicionais que não são gerenciados pelo paymentStatusService
-services/financialGuard/guards/convenio.guard.js:41:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-services/financialGuard/guards/particular.guard.js:52:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-routes/appointment.v2.js:701:        await transitionPaymentStatus(orphanPayment._id, 'canceled', {
-routes/appointment.v2.js:829:          await transitionPaymentStatus(payment._id, 'canceled', {
-routes/appointment.v2.js:3172:        await transitionPaymentStatus(payment._id, 'canceled', {
-routes/payment.v2.js:997:        // 🎯 STATUS TRANSITION: usa paymentStatusService se status mudou
-routes/payment.v2.js:999:            await transitionPaymentStatus(id, status, {
-routes/payment.v2.js:1140:        // 1. Marca cada payment como pago — usa paymentStatusService (blindagem)
-routes/payment.v2.js:1142:            await transitionPaymentStatus(p._id, 'paid', {
-routes/Payment.js:3467:        // 🎯 STATUS TRANSITION: usa paymentStatusService para mudança de status
-routes/Payment.js:3468:        await transitionPaymentStatus(payment._id, 'paid', {
-services/financial/ConvenioMetricsService.js:819:            await transitionPaymentStatus(payment._id, 'paid', {
-services/financial/ConvenioMetricsService.js:825:            // Atualiza paymentDate separadamente (não gerenciado pelo paymentStatusService)
-routes/importFromAgenda.js:1045:        await transitionPaymentStatus(appointment.payment, 'canceled', {
-workers/paymentWorker.js:246:        await transitionPaymentStatus(payment._id, 'paid', {
-workers/paymentWorker.js:917:        // 3. Atualiza status via paymentStatusService (apenas se mudou)
-workers/paymentWorker.js:919:            await transitionPaymentStatus(updated._id, newStatus, {
-workers/paymentWorker.js:1143:        await transitionPaymentStatus(payment._id, 'paid', {
-workers/paymentWorker.js:1342:        await transitionPaymentStatus(paymentId, 'paid', {
-domain/payment/cancelPayment.js:57:    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-controllers/packageController.v2.js:1502:      // 🎯 STATUS TRANSITION: usa paymentStatusService
-controllers/packageController.v2.js:1503:      await transitionPaymentStatus(payment._id, 'paid', {
-models/Payment.js:205:// Detecta bypass de transitionPaymentStatus e emite evento automaticamente.
-Bash Find truly dead exports and unused files in billing area
-IN
-echo "=== runAvulsoSettlement / settleBatch (quem importa?) ===" && grep -rn "runAvulsoSettlement\|settleBatch" --include="*.js" . | grep -v node_modules
-
-echo "" && echo "=== billingConsumerWorker (quem inicia?) ===" && grep -rn "billingConsumerWorker\|billingConsumer" --include="*.js" . | grep -v node_modules | grep -v "billingConsumerWorker.js"
-
-echo "" && echo "=== Arquivos .v2.js ou legado sem import ===" && for f in services/insuranceBillingService.js services/settlementService.js services/receiveSession.js domains/billing/services/insuranceBillingService.v2.js; do [ -f "$f" ] && echo "EXISTS: $f"; done
-
-OUT
-=== runAvulsoSettlement / settleBatch (quem importa?) ===
-services/autoInsuranceSettlementService.js:123:export async function runAvulsoSettlement({ dryRun = false } = {}) {
-services/autoInsuranceSettlementService.js:174:export async function settleBatch(batchId, { reason = 'manual_batch_receive', paidAt } = {}) {
-controllers/insuranceV2Controller.js:6:import { settleInsurancePayment, runAvulsoSettlement } from '../services/autoInsuranceSettlementService.js';
-
-=== billingConsumerWorker (quem inicia?) ===
-domains/integration/adapters/clinicalToBilling.adapter.js:17: * Sessions de convênio são tratadas pelo billingConsumerWorker via SESSION_COMPLETED.
-domains/integration/adapters/clinicalToBilling.adapter.js:42: * Convênio NÃO é roteado aqui — billingConsumerWorker já o consome
-domains/integration/adapters/clinicalToBilling.adapter.js:54:    // Convênio já tem dono — billingConsumerWorker
-
-=== Arquivos .v2.js ou legado sem import ===
-EXISTS: domains/billing/services/insuranceBillingService.v2.js
-Bash Deep check on dead exports and unstarted workers
-IN
-echo "=== settleBatch: importado em algum lugar? ===" && grep -rn "import.*settleBatch\|require.*settleBatch" --include="*.js" . | grep -v node_modules
-
-echo "" && echo "=== billingConsumerWorker: iniciado em algum lugar? ===" && grep -rn "import.*billingConsumerWorker\|require.*billingConsumerWorker\|billingConsumerWorker" --include="*.js" . | grep -v node_modules | grep -v "billingConsumerWorker.js" | grep -v ".adapter.js"
-
-echo "" && echo "=== ConvenioMetricsService: quem usa? ===" && grep -rn "ConvenioMetricsService" --include="*.js" . | grep -v node_modules | grep -v "ConvenioMetricsService.js"
-
-echo "" && echo "=== insuranceBillingService.v2: importado onde? ===" && grep -rn "insuranceBillingService" --include="*.js" . | grep -v node_modules | grep "import\|require" | grep -v "v2.js" | grep -v "test\|spec"
-
-OUT
-=== settleBatch: importado em algum lugar? ===
-
-=== billingConsumerWorker: iniciado em algum lugar? ===
-
-=== ConvenioMetricsService: quem usa? ===
-services/financial/FinancialOverviewService.js:35:            ConvenioMetricsService.getConvenioMetrics({ month, year }), // NOVO: Métricas de convênio
-routes/financial/convenio.routes.js:36:        const metrics = await ConvenioMetricsService.getConvenioMetrics({
-routes/financial/convenio.routes.js:79:        const faturamentos = await ConvenioMetricsService.getFaturamentosPorPeriodo(
-routes/financial/convenio.routes.js:106:        const summary = await ConvenioMetricsService.getDashboardSummary();
-routes/financial/convenio.routes.js:142:        const result = await ConvenioMetricsService.faturarEmLote({
-routes/financial/convenio.routes.js:181:        const result = await ConvenioMetricsService.faturarTodosDoPaciente({
-routes/financial/convenio.routes.js:220:        const result = await ConvenioMetricsService.receberPagamentoConvenio({
-routes/financial/convenio.routes.js:260:        const result = await ConvenioMetricsService.receberEmLote({
-controllers/insuranceV2Controller.js:19:    // 🆕 CORREÇÃO: Segue mesma regra do legado (ConvenioMetricsService)
-tests/convenioMetrics.test.js:2:// Testes unitários para ConvenioMetricsService
-tests/convenioMetrics.test.js:13:describe('ConvenioMetricsService', () => {
-tests/convenioMetrics.test.js:38:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/convenioMetrics.test.js:80:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/convenioMetrics.test.js:114:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/convenioMetrics.test.js:146:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/convenioMetrics.test.js:159:      const result = await ConvenioMetricsService.getDashboardSummary();
-tests/convenioMetrics.test.js:194:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/convenioMetrics.test.js:228:      const result = await ConvenioMetricsService.getConvenioMetrics({
-tests/test_convenio_metrics.js:3: * 🧪 Teste do ConvenioMetricsService
-tests/test_convenio_metrics.js:13:    console.log('🧪 Testando ConvenioMetricsService...\n');
-tests/test_convenio_metrics.js:24:        const metrics = await ConvenioMetricsService.getConvenioMetrics({
-
-=== insuranceBillingService.v2: importado onde? ===
-Resultados claros. Mapeamento do que está morto:
-
-Código	Status
-settleBatch() em autoInsuranceSettlementService.js	Exportado, nunca importado
-billingConsumerWorker.js	Nunca iniciado — só aparece em comentários
-insuranceBillingService.v2.js	Sem import em produção — só nos testes
-Deixa eu confirmar o worker antes de deletar:
-
-Bash Check billingConsumerWorker header and size
-IN
-head -30 /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js && echo "---" && wc -l /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js
-
-OUT
-/**
- * ============================================================================
- * BILLING CONSUMER WORKER - BullMQ
- * ============================================================================
- * 
- * Consome eventos da fila 'billing-orchestrator' e processa via
- * insuranceBillingService V2 existente.
- * 
- * Responsabilidades:
- * - Consumir SESSION_COMPLETED
- * - Delegar para InsuranceBillingService
- * - Gerenciar retry e DLQ
- * - Idempotência via correlationId
- * ============================================================================
- */
-
-import { Worker } from 'bullmq';
-import { insuranceBillingService } from '../services/insuranceBillingService.v2.js';
-import EventStore from '../../../models/EventStore.js';
-import Payment from '../../../models/Payment.js';
-import Appointment from '../../../models/Appointment.js';
-import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
-import { validatePaymentEvent, generatePaymentIdempotencyKey } from '../contracts/PaymentEvents.contract.js';
-import { v4 as uuidv4 } from 'uuid';
-
-// =============================================================================
-// CONFIGURAÇÃO
-// =============================================================================
-
-const WORKER_CONFIG = {
----
-535 /home/user/projetos/crm/back/domains/billing/workers/billingConsumerWorker.js
-535 linhas de BullMQ que nunca foram ligadas ao server. Vou verificar tudo que depende desse par antes de deletar.
-
-Bash Map all domains/billing files and their production imports
-IN
-echo "=== Arquivos em domains/billing/ ===" && find /home/user/projetos/crm/back/domains/billing -type f -name "*.js" | sed 's|.*/domains/billing/||'
-
-echo "" && echo "=== Quem importa arquivos de domains/billing/ (produção)? ===" && grep -rn "domains/billing" --include="*.js" /home/user/projetos/crm/back | grep -v node_modules | grep -v "domains/billing/" | grep -v "test\|spec\|Test"
-
-OUT
-=== Arquivos em domains/billing/ ===
-convenioApiController.js
-insuranceRoutes.js
-insuranceController.js
-convenioManageController.js
-config/FeatureFlags.js
-workers/packageProcessingWorker.js
-workers/billingConsumerWorker.js
-workers/index.js
-workers/insuranceOrchestratorWorker.js
-workers/packageProjectionWorker.js
-contracts/PaymentEvents.contract.js
-adapters/SessionCompletedAdapter.js
-events/insuranceEvents.js
-services/PackageBillingService.v2.js
-services/convenioIntegrationService.js
-services/PackageProjectionService.js
-services/insuranceBillingService.v2.js
-services/ReconciliationService.js
-services/InsuranceBatchProjectionService.js
-integrations/tiss/tissGenerator.js
-integrations/tiss/providerGateway.js
-scripts/initConvenios.js
-domain/insuranceDomain.js
-models/FinancialStateMachine.js
-rules/billingEvents.js
-rules/index.js
-rules/insuranceRules.js
-
-=== Quem importa arquivos de domains/billing/ (produção)? ===
-Nenhum arquivo de produção importa nada de domains/billing/. O diretório inteiro está desconectado. Deixa eu confirmar o workers/index.js — se ele não sobe, nada sobe.
-
-Bash Check if billing workers/index.js is ever started
-IN
-head -20 /home/user/projetos/crm/back/domains/billing/workers/index.js && echo "---" && grep -rn "domains/billing/workers/index\|billing/workers" --include="*.js" /home/user/projetos/crm/back | grep -v node_modules | grep -v "domains/billing/"
-
-OUT
-// back/domains/billing/workers/index.js
-/**
- * Billing Workers Index
- * 
- * Workers do domínio Billing - Arquitetura Event-Driven
- * 
- * ESTRUTURA (pós-análise documento-analise.txt):
- * ┌─────────────────────────────────────────────────────────────┐
- * │                    BILLING DOMAIN                            │
- * ├─────────────────────────────────────────────────────────────┤
- * │                                                              │
- * │  insuranceOrchestratorWorker.js                             │
- * │  ├── Consome: Eventos de Insurance (batches, glosas)        │
- * │  └── Responsabilidade: Orquestrar fluxo de convênio         │
- * │                                                              │
- * │  packageProcessingWorker.js                                 │
- * │  └── Processamento de pacotes de sessões                    │
- * │                                                              │
- * │  packageProjectionWorker.js                                 │
- * │  └── Projeção de pacotes (CQRS)                             │
----
-Concordo com o teu veredito — e vou só ajustar a leitura com um pouco de rigor de produção.
-
----
-
-# ✅ Cenário REAL que você descreveu (importante validar isso)
-
-Você tem:
-
-* 1 instância (Render single instance)
-* job manual (não cron, não worker paralelo)
-* execução pontual sob comando humano
-
-👉 isso reduz MUITO a superfície de concorrência
-
----
-
-# 🔒 O que você já tem é suficiente
-
-## 1. `_billingEventId` (ok)
-
-* impede reprocessamento lógico
-* protege retry manual
-
-## 2. `transitionPaymentStatus` (ok)
-
-* garante idempotência de estado
-
-## 3. `findOneAndUpdate` (ok)
-
-* atomicidade por documento
-
----
-
-# ⚠️ O ponto mais importante (o único risco real restante)
-
-Não é concorrência.
-
-É este:
-
-## 👉 execução parcial + interrupção no meio
-
-Exemplo:
-
-* 65 payments
-* executa 30
-* processo cai (rede, timeout, Ctrl+C)
-* você roda de novo
-
-### Resultado:
-
-✔ não duplica (seguro)
-❗ mas você precisa confiar que:
-
-* `_billingEventId` foi persistido corretamente antes do crash window fechar
-
----
-
-# 🧠 O que isso significa na prática
-
-Você não tem risco de:
-
-* double payment ❌
-* race condition ❌
-* concorrência ❌
-
-Você só tem risco de:
-
-> “job incompleto”
-
----
-
-# 💡 E isso já está mitigado por design
-
-Porque:
-
-* `_billingEventId` é persistido por payment
-* `transitionPaymentStatus` é atômico
-* query é reexecutável sem efeito colateral
-
-👉 ou seja: o job é **re-runnable seguro**
-
----
-
-# 📊 VEREDITO TÉCNICO FINAL
-
-## ✔ Seguro para produção
-
-com seu cenário atual
-
-## ✔ Sem necessidade de leader lock
-
-correto — seria overengineering aqui
-
-## ✔ Bug crítico já corrigido
-
-`payment.amount` era o único risco de crash real
-
----
-
-# 🚀 O QUE EU RECOMENDO AGORA (curto e direto)
-
-Antes de rodar:
-
-### 1. rodar dry-run (você já fez)
-
-### 2. executar
-
-### 3. rodar validate_staging de novo
-
-### 4. conferir DRE
-
----
-
-# 💬 CONCLUSÃO HONESTA
-
-Você está correto:
-
-> “o lock adicional seria overkill nesse contexto”
-
-E mais importante:
-
-👉 o sistema agora está em um estado raro de arquitetura backend:
-
-* idempotente
-* reexecutável
-* sem risco de duplicação financeira
-* com fallback avulso + batch consistente
-
----
-
-Se quiser o próximo nível depois disso, aí sim vale pensar em:
-
-* simplificar múltiplos caminhos de settlement
-* unificar batch + avulso em um pipeline único
-* reduzir complexidade mental do billing
-
-Mas isso é evolução — não bloqueio.
-
----
-
-Se quiser, próximo passo natural depois do `--execute` é eu te ajudar a:
-
-👉 validar o impacto no DRE e garantir que “realizado” está correto contábilmente (não só tecnicamente)
-
-Só me fala.Boa. Esse é exatamente o tipo de refatoração que melhora o sistema de verdade — mas precisa ser **progressiva e com “zero impacto no billing” como regra absoluta**.
-
-Vou te propor uma simplificação que não quebra nada e ainda reduz bastante a complexidade mental.
-
----
-
-# 🧠 PROBLEMA ATUAL (diagnóstico real)
-
-Hoje você tem **3 caminhos para dinheiro virar “pago”**:
-
-1. `processReturn` (batch)
-2. `receiveSession` (manual/lote v2)
-3. `autoInsuranceSettlement` (avulso)
-
-E ainda:
-
-* `paymentService`
-* `insuranceBillingService.v2`
-* `insuranceBatchService`
-* `paymentStatusService`
-
-👉 Resultado: múltiplos “portões de entrada” para o mesmo estado final (`paid`)
-
----
-
-# 🎯 OBJETIVO DA SIMPLIFICAÇÃO
-
-Você NÃO quer:
-
-* remover features
-* mudar regra de negócio
-* mexer no DRE
-
-Você quer só isso:
-
-> 🔒 “Um único caminho lógico para qualquer payment chegar em PAID”
-
----
-
-# 🧱 ARQUITETURA SIMPLIFICADA (sem quebrar nada)
-
-## 🔥 NOVA ESTRUTURA (camada mental)
-
-### 1. CORE (único ponto de verdade)
-
-```text
-PaymentLifecycleService
-```
-
-Responsável por:
-
-* `settle(paymentId)`
-* `cancel(paymentId)`
-* `transition(status)`
-
-````
-
-👉 NUNCA chama Mongo direto fora disso
-
----
-
-### 2. ORQUESTRADORES (não mudam regra, só roteiam)
-
-```text
-/flows
-   batchFlow.ts
-   avulsoFlow.ts
-   sessionFlow.ts
-````
-
-Eles só fazem:
-
-* decidir qual payments entram
-* chamar `PaymentLifecycleService.settle()`
-
----
-
-### 3. ADAPTADORES (entrada externa)
-
-```text
-/controllers
-/jobs
-/routes
-```
-
-👉 só chamam flows, nunca service direto
-
----
-
-# 🔁 COMO FICA SEU SISTEMA ATUAL (mapa de migração)
-
-## Antes
-
-```
-controller → service → paymentStatusService → DB
-job → service → DB
-batch → service → DB
-avulso → service → DB
-```
-
-## Depois
-
-```
-controller → flow → PaymentLifecycleService → DB
-job → flow → PaymentLifecycleService → DB
-batch → flow → PaymentLifecycleService → DB
-avulso → flow → PaymentLifecycleService → DB
-```
-
----
-
-# 🔒 O QUE ISSO TE GARANTE
-
-✔ elimina duplicação de lógica
-✔ elimina “jeitos diferentes de pagar”
-✔ mantém batch e avulso intactos
-✔ não muda schema
-✔ não muda DRE
-✔ não muda comportamento externo
-
----
-
-# ⚙️ PASSO A PASSO SEGURO (SEM RISCO)
-
-## FASE 1 — criar CORE (zero impacto)
-
-Criar:
-
-```js id="core1"
-PaymentLifecycleService.settle(paymentId)
-```
-
-👉 por dentro ele só chama o que já existe:
-
-* `transitionPaymentStatus`
-
-⚠️ ainda não troca nada
-
----
-
-## FASE 2 — adaptar autoInsuranceSettlement
-
-Troca:
-
-```js
-transitionPaymentStatus(...)
-```
-
-por:
-
-```js
-PaymentLifecycleService.settle(...)
-```
-
----
-
-## FASE 3 — adaptar batch (processReturn)
-
-Mesmo padrão
-
----
-
-## FASE 4 — avulso flow
-
-Seu novo service já vira só:
-
-```js
-avulsoFlow → PaymentLifecycleService.settle
-```
-
----
-
-## FASE 5 — controllers limpam lógica
-
-Controller vira só:
-
-```js
-return flow.execute(req.body)
-```
-
----
-
-# 🧠 RESULTADO FINAL (ganho real)
-
-## Antes
-
-* 5 caminhos diferentes
-* lógica espalhada
-* debug difícil
-
-## Depois
-
-* 1 regra de settlement
-* 3 flows previsíveis
-* controllers limpos
-* jobs previsíveis
-
----
-
-# ⚠️ IMPORTANTE (regra de ouro dessa refatoração)
-
-Você NÃO mexe em:
-
-* schema
-* DRE
-* status definitions
-* batch logic
-
-👉 só muda “quem chama quem”
-
----
-
-# 💡 O detalhe que mais importa aqui
-
-Isso não é refactor de código.
-
-É:
-
-> 🔒 “redução de superfície de decisão do sistema”
-
----
-
-# 🚀 SE EU FOSSE VOCÊ (ordem exata)
-
-1. criar `PaymentLifecycleService`
-2. plugar auto-settlement nele
-3. plugar batch nele
-4. depois remover chamadas diretas antigas aos poucos
-5. só no final apagar redundâncias
-
----
-
-# 📌 RESUMO HONESTO
-
-Você não precisa simplificar tudo agora.
-
-Você precisa:
-
-> criar UM centro de decisão do dinheiro (settlement)
-
----
-
-Se quiser, próximo passo eu posso te entregar:
-
-### 🔥 versão pronta do `PaymentLifecycleService`
-
-* compatível com tudo que você já tem
-* sem breaking change
-* com migração incremental segura
-
-Só fala: **“quero o core de billing unificado”**
-Bash Confirm billing domain routes not registered, get total size
-IN
-grep -rn "insuranceRoutes\|convenioApiController\|convenioManageController\|domains/billing" --include="*.js" /home/user/projetos/crm/back/server.js /home/user/projetos/crm/back/routes/ 2>/dev/null | grep -v node_modules | head -20
-
-echo "" && echo "=== Tamanho total do domains/billing ===" && find /home/user/projetos/crm/back/domains/billing -name "*.js" | xargs wc -l 2>/dev/null | tail -1
-
-OUT
-/home/user/projetos/crm/back/server.js:174:import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
-/home/user/projetos/crm/back/server.js:564:app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
-/home/user/projetos/crm/back/routes/insuranceBatch.v2.js:17:import { buildInsuranceBatchView } from '../domains/billing/services/InsuranceBatchProjectionService.js';
-/home/user/projetos/crm/back/routes/package.v2.js:22:import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
-
-=== Tamanho total do domains/billing ===
-  9161 total
-Atenção — domains/billing/ não está todo morto. insuranceRoutes.js está registrado em server.js, InsuranceBatchProjectionService e PackageProjectionService são usados em rotas ativas. Vou checar só os workers antes de deletar qualquer coisa.
-
-Bash Check if the other billing workers are imported anywhere
-IN
-for f in domains/billing/workers/insuranceOrchestratorWorker.js domains/billing/workers/packageProcessingWorker.js domains/billing/workers/packageProjectionWorker.js; do echo "=== $f ===" && head -5 $f && grep -rn "$(basename $f .js)" --include="*.js" . | grep -v node_modules | grep -v "$f" | grep "import\|require" | head -3; echo ""; done
-
-OUT
-=== domains/billing/workers/insuranceOrchestratorWorker.js ===
-// insurance/workers/insuranceOrchestratorWorker.js
-/**
- * Insurance Orchestrator Worker
- * 
- * Orquestra todo o fluxo de faturamento de convênios.
-
-=== domains/billing/workers/packageProcessingWorker.js ===
-// back/domains/billing/workers/packageProcessingWorker.js
-/**
- * Package Processing Worker
- *
- * Responsabilidade: Processar criação de pacotes V2
-
-=== domains/billing/workers/packageProjectionWorker.js ===
-// back/domains/billing/workers/packageProjectionWorker.js
-/**
- * Package Projection Worker - ELITE VERSION
- * 
- * Garantias de Produção:
-Todos os workers sem import em produção. O mapa final do que está morto:
-
-Para deletar:
-
-domains/billing/workers/ — 5 arquivos, nenhum iniciado em produção
-domains/billing/services/insuranceBillingService.v2.js — só usada pelos workers mortos e testes
-settleBatch() em autoInsuranceSettlementService.js — exportada, nunca importada
-tests/billing/billing-v2-e2e.test.js e tests/billing/load-test.js — testam o service morto
-Mantém vivo:
-
-domains/billing/insuranceRoutes.js (registrado no server)
-domains/billing/services/InsuranceBatchProjectionService.js (usado em rota ativa)
-domains/billing/services/PackageProjectionService.js (usado em rota ativa)
-Todo o resto de domains/billing/ (controllers, adapters, rules, etc.)
-Posso prosseguir com as deleções? São ~1.400 linhas de código morto.
-
-Boa checagem — e aqui a decisão precisa ser bem conservadora, porque billing é exatamente onde “parece morto” até quebrar produção.
-
-Vou te dar um veredito técnico claro:
-
----
-
-# ⚠️ VEREDITO: NÃO DELETE AINDA
-
-Mesmo que os workers não estejam importados hoje, isso **não prova que estão mortos de verdade**.
-
-O que você mostrou prova apenas:
-
-> ❌ “não há import direto no código atual”
-
-Mas não prova:
-
-* cron externo (Render / CI / script manual)
-* execução via CLI (`node worker.js`)
-* execução via PM2 config antigo
-* execução via container entrypoint
-* execução por outro repo / script operacional
-* execução por job manual que alguém ainda usa em produção
-
----
-
-# 🧠 O PROBLEMA REAL EM BILLING
-
-Workers de billing são um tipo de código que tem uma característica perigosa:
-
-> “infra invisível”
-
-Eles frequentemente são:
-
-* rodados fora do fluxo normal da API
-* esquecidos, mas ainda usados
-* dependência operacional oculta
-
----
-
-# 🔥 O QUE EU VI NO SEU CASO
-
-Você tem:
-
-## 1. Workers “sem referência” no código
-
-✔ isso parece morto
-
-## 2. Mas:
-
-* `insuranceRoutes.js` ainda ativo
-* projection services ativos
-* billing v2 ainda em transição
-* settlement acabou de ser introduzido
-
-👉 isso é exatamente o tipo de sistema que ainda tem execução manual escondida
-
----
-
-# 🚨 RISCO REAL SE VOCÊ DELETAR AGORA
-
-Se algum desses ainda for usado manualmente:
-
-* batch processing pode parar silenciosamente
-* projeção de pacotes pode quebrar histórico
-* reconciliação de convênios pode ficar inconsistente
-* e você só vai descobrir no DRE depois
-
----
-
-# 🧯 REGRA DE OURO (billing system)
-
-Antes de deletar worker:
-
-## você precisa provar 3 coisas:
-
-### 1. NÃO está em código
-
-✔ você já fez
-
-### 2. NÃO está em runtime entrypoint
-
-❌ ainda não provou
-
-### 3. NÃO está em operação manual/documentada
-
-❌ ainda não provou
-
----
-
-# 🧪 O QUE VOCÊ DEVERIA FAZER AGORA (seguro e rápido)
-
-## PASSO 1 — search de execução indireta
-
-```bash id="k3m9x1"
-grep -R "insuranceOrchestratorWorker" .
-grep -R "packageProcessingWorker" .
-grep -R "node .*worker" .
-grep -R "workers/" .
-```
-
----
-
-## PASSO 2 — procurar execução fora do repo
-
-Verifica:
-
-* package.json scripts
-* Dockerfile
-* render.yaml
-* pm2 ecosystem
-* cron jobs
-* CI pipelines
-
----
-
-## PASSO 3 — adicionar “telemetria leve” antes de deletar
-
-Se quiser ser elegante:
-
-```js id="t7k2p1"
-console.log('[WORKER START]', __filename)
-```
-
-e deixar rodando 24–48h em staging/prod
-
----
-
-# 🧠 DECISÃO ARQUITETURAL CORRETA
-
-## ❌ NÃO FAZER AGORA
-
-* deletar workers
-
-## ✅ FAZER AGORA
-
-* marcar como “deprecated”
-* impedir novas chamadas
-* monitorar uso
-
----
-
-# 💡 ESTRATÉGIA PROFISSIONAL (o que sistemas bons fazem)
-
-Em vez de deletar:
-
-## 1. mover para:
-
-```
-/deprecated/workers/
-```
-
-## 2. adicionar warning:
-
-```js id="d3k9x2"
-/**
- * ⚠️ DEPRECATED
- * Não usar em novos fluxos
- * Substituído por PaymentLifecycleService + flows
- */
-```
-
-## 3. logar uso se acontecer
-
----
-
-# 🚀 VEREDITO FINAL
-
-> ❌ ainda não é seguro deletar
-
-> ✔ é seguro desativar gradualmente
-
----
-
-# 🧭 RESUMO HONESTO
-
-Você está num momento clássico de refactor grande:
-
-> “parece morto, mas pode ser infraestrutura fantasma”
-
-E em billing isso é perigoso demais para assumir.
-
----
-
-# Se quiser próximo passo
-
-Posso te ajudar a fazer isso direito:
-
-### 🔥 “dead code audit de billing nível produção”
-
-* identificar o que é realmente morto
-* o que é operacional oculto
-* o que pode ser removido sem risco
-* e te dar um plano de remoção em ondas seguras
-
-Só fala: **“quero auditoria real de código morto”**
-Certo, verificação correta. Deixa eu checar os entrypoints externos antes de qualquer deleção.
-
-Bash Check package.json scripts and render.yaml for worker entrypoints
-IN
-echo "=== package.json scripts ===" && grep -A 30 '"scripts"' /home/user/projetos/crm/back/package.json
-
-echo "" && echo "=== render.yaml ===" && cat /home/user/projetos/crm/render.yaml 2>/dev/null
-
-echo "" && echo "=== referências a workers nos configs ===" && grep -rn "worker\|Worker" /home/user/projetos/crm/back/package.json /home/user/projetos/crm/render.yaml 2>/dev/null
-
-OUT
-=== package.json scripts ===
-  "scripts": {
-    "postinstall": "node installChrome.js",
-    "build": "node installChrome.js",
-    "start": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node -r dotenv/config server.js",
-    "dev": "(fuser -k 5000/tcp 2>/dev/null || true) && sleep 1 && NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' nodemon server.js",
-    "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
-    "dev:system": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
-    "dev:api:full": "(fuser -k 5000/tcp 2>/dev/null || true) && sleep 1 && ENABLE_WORKERS=false ENABLE_CRONS=false ENABLE_PROJECTIONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' nodemon server.js",
-    "dev:worker:cron": "ENABLE_WORKERS=false ENABLE_CRONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=1024' nodemon workers/entrypoints/cron-worker.js",
-    "dev:worker": "ENABLE_WORKERS=true WORKER_GROUP=all node workers/startWorkers.js",
-    "dev:worker:scheduling": "ENABLE_WORKERS=true WORKER_GROUP=scheduling node workers/entrypoints/scheduling-worker.js",
-    "dev:worker:billing": "ENABLE_WORKERS=true WORKER_GROUP=billing node workers/entrypoints/billing-worker.js",
-    "dev:worker:whatsapp": "ENABLE_WORKERS=true WORKER_GROUP=whatsapp node workers/entrypoints/whatsapp-worker.js",
-    "dev:worker:clinical": "ENABLE_WORKERS=true WORKER_GROUP=clinical node workers/entrypoints/clinical-worker.js",
-    "dev:worker:reconciliation": "ENABLE_WORKERS=true WORKER_GROUP=reconciliation node workers/entrypoints/reconciliation-worker.js",
-    "dev:isolated": "node start-isolated.js",
-    "dev:isolated:scheduling": "node start-isolated.js scheduling",
-    "dev:isolated:billing": "node start-isolated.js billing",
-    "dev:isolated:whatsapp": "node start-isolated.js whatsapp",
-    "dev:isolated:clinical": "node start-isolated.js clinical",
-    "dev:isolated:reconciliation": "node start-isolated.js reconciliation",
-    "worker": "node -r dotenv/config ./workers/followup.worker.js",
-    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
-    "cron": "node -r dotenv/config ./workers/followup.cron.js",
-    "test": "node tests/complete.js",
-    "test:unit": "node tests/complete.js --unit",
-    "test:qa": "node tests/complete.js --qa",
-    "test:alta": "node tests/complete.js --alta-intencao",
-    "test:regra5": "node tests/complete.js --regra5",
-    "test:vitest": "vitest run",
-    "test:amanda": "vitest run --config vitest.config.amanda.js",
-
-=== render.yaml ===
-# Render.com Configuration
-# Documentação: https://render.com/docs/blueprint-spec
-
-services:
-  # 🚀 API Backend (Web Service)
-  - type: web
-    name: crm-backend
-    runtime: node
-    plan: standard
-    region: ohio
-    branch: main
-    rootDir: back
-    buildCommand: npm install
-    startCommand: node server.js
-    
-    # Health check para Render monitorar
-    healthCheckPath: /api/health
-    
-    # Auto-restart configurado via health check
-    # Se /api/health retornar 503 por 3x, Render reinicia
-    
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 10000
-      - key: MONGODB_URI
-        sync: false # Configurar no dashboard do Render
-      - key: REDIS_URL
-        sync: false # Configurar no dashboard do Render
-      - key: JWT_SECRET
-        generateValue: true
-    
-    # Scaling automático (opcional)
-    scaling:
-      minInstances: 1
-      maxInstances: 2
-      targetCPUPercent: 70
-      targetMemoryPercent: 80
-    
-    # Persistência de logs
-    logRetention: 7
-
-  # 🔥 Worker Principal (Background Worker)
-  - type: worker
-    name: crm-worker
-    runtime: node
-    plan: standard
-    region: ohio
-    branch: main
-    rootDir: back
-    buildCommand: npm install
-    startCommand: node workers/startWorkers.js
-    
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: MONGODB_URI
-        fromService:
-          name: crm-backend
-          type: web
-          envVarKey: MONGODB_URI
-      - key: REDIS_URL
-        fromService:
-          name: crm-backend
-          type: web
-          envVarKey: REDIS_URL
-      - key: ENABLE_WHATSAPP_CHAT_PROJECTION
-        value: 'true'
-      - key: ENABLE_WHATSAPP_REALTIME
-        value: 'true'
-      # 🧨 MODO EMERGÊNCIA: limpa sessão completamente no próximo boot
-      # Remova após reconectar e gerar novo QR
-      - key: WHATSAPP_FORCE_CLEAN_SESSION
-        value: 'true'
-    
-    # Persistência da sessão WhatsApp (.wwebjs_auth)
-    disk:
-      name: whatsapp-session
-      mountPath: /var/data/wwebjs_auth
-      sizeGB: 1
-    
-    # Worker não expõe porta, mas tem health check interno
-    # Se processo exit, Render reinicia automaticamente
-
-  # 🐕 Watchdog (Worker separado - opcional)
-  # Pode rodar no mesmo startWorkers.js acima ou separado
-  - type: worker
-    name: crm-watchdog
-    runtime: node
-    plan: starter # Pode ser starter (mais barato)
-    region: ohio
-    branch: main
-    rootDir: back
-    buildCommand: npm install
-    startCommand: node infrastructure/workers/watchdog.js
-    
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: MONGODB_URI
-        fromService:
-          name: crm-backend
-          type: web
-          envVarKey: MONGODB_URI
-
-# 🔄 Redis (Managed ou External)
-# Se usar Redis Cloud ou similar, configure REDIS_URL no dashboard
-# Se quiser Redis managed do Render:
-# - type: redis
-#   name: crm-redis
-#   plan: starter
-#   region: ohio
-#   ipAllowList: [] # Acesso público (com auth)
-
-=== referências a workers nos configs ===
-/home/user/projetos/crm/render.yaml:44:  # 🔥 Worker Principal (Background Worker)
-/home/user/projetos/crm/render.yaml:45:  - type: worker
-/home/user/projetos/crm/render.yaml:46:    name: crm-worker
-/home/user/projetos/crm/render.yaml:53:    startCommand: node workers/startWorkers.js
-/home/user/projetos/crm/render.yaml:83:    # Worker não expõe porta, mas tem health check interno
-/home/user/projetos/crm/render.yaml:86:  # 🐕 Watchdog (Worker separado - opcional)
-/home/user/projetos/crm/render.yaml:87:  # Pode rodar no mesmo startWorkers.js acima ou separado
-/home/user/projetos/crm/render.yaml:88:  - type: worker
-/home/user/projetos/crm/render.yaml:96:    startCommand: node infrastructure/workers/watchdog.js
-/home/user/projetos/crm/back/package.json:11:    "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
-/home/user/projetos/crm/back/package.json:12:    "dev:system": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
-/home/user/projetos/crm/back/package.json:14:    "dev:worker:cron": "ENABLE_WORKERS=false ENABLE_CRONS=true NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=1024' nodemon workers/entrypoints/cron-worker.js",
-/home/user/projetos/crm/back/package.json:15:    "dev:worker": "ENABLE_WORKERS=true WORKER_GROUP=all node workers/startWorkers.js",
-/home/user/projetos/crm/back/package.json:16:    "dev:worker:scheduling": "ENABLE_WORKERS=true WORKER_GROUP=scheduling node workers/entrypoints/scheduling-worker.js",
-/home/user/projetos/crm/back/package.json:17:    "dev:worker:billing": "ENABLE_WORKERS=true WORKER_GROUP=billing node workers/entrypoints/billing-worker.js",
-/home/user/projetos/crm/back/package.json:18:    "dev:worker:whatsapp": "ENABLE_WORKERS=true WORKER_GROUP=whatsapp node workers/entrypoints/whatsapp-worker.js",
-/home/user/projetos/crm/back/package.json:19:    "dev:worker:clinical": "ENABLE_WORKERS=true WORKER_GROUP=clinical node workers/entrypoints/clinical-worker.js",
-/home/user/projetos/crm/back/package.json:20:    "dev:worker:reconciliation": "ENABLE_WORKERS=true WORKER_GROUP=reconciliation node workers/entrypoints/reconciliation-worker.js",
-/home/user/projetos/crm/back/package.json:27:    "worker": "node -r dotenv/config ./workers/followup.worker.js",
-/home/user/projetos/crm/back/package.json:28:    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
-/home/user/projetos/crm/back/package.json:29:    "cron": "node -r dotenv/config ./workers/followup.cron.js",
-/home/user/projetos/crm/back/package.json:45:    "billing:worker": "node -r dotenv/config domains/billing/workers/billingConsumerWorker.js",
-/home/user/projetos/crm/back/package.json:47:    "test:billing:integration": "vitest run tests/billing/billing-worker.integration.test.js",
-/home/user/projetos/crm/back/package.json:54:    "test:safety": "vitest run tests/unit/completeWorker.safety.test.js tests/e2e/appointment-edit-sync.e2e.test.js --forceExit",
-Achei o risco. package.json linha 45 tem billing:worker apontando diretamente para billingConsumerWorker.js. Preciso ver o que startWorkers.js carrega em produção.
-
-Bash Check startWorkers.js and billing-worker.js for domains/billing references
-IN
-grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/startWorkers.js 2>/dev/null | head -30
-
-echo "" && grep -n "billing\|domains/billing\|billingConsumer" /home/user/projetos/crm/back/workers/entrypoints/billing-worker.js 2>/dev/null | head -20
-
-OUT
-10: *   node workers/startWorkers.js billing  → só billing
-142:                console.log('[BOOT] ⏳ WhatsApp ainda não ready — esperando mais 2min antes de subir billing/clinical...');
-146:            // 3e. Workers de prioridade MÉDIA (billing + clinical)
-148:            await startWorkersByGroup('billing');
-
-4: * Processa: payments, balance, packages, invoices, insurance, billing-consumer
-35:        await startWorkersByGroup('billing');
-billing-worker.js menciona "billing-consumer" no comentário. Preciso ver o que startWorkersByGroup('billing') carrega de fato.
-
-Bash Check what billing-worker.js actually loads
-IN
-grep -n "startWorkersByGroup\|billing\|domains/billing\|billingConsumer" /home/user/projetos/crm/back/workers/entrypoints/billing-worker.js 2>/dev/null | head -40
-
-OUT
-4: * Processa: payments, balance, packages, invoices, insurance, billing-consumer
-10:import { startWorkersByGroup, stopAllWorkers } from '../index.js';
-35:        await startWorkersByGroup('billing');
-Bash Check workers/index.js for what billing group contains
-IN
-grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -40
-
-OUT
-(Bash completed with no output)
-Bash Check workers/index.js billing group definition
-IN
-grep -n "billing\|domains" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -30 && echo "---" && grep -n "startWorkersByGroup" /home/user/projetos/crm/back/workers/index.js 2>/dev/null | head -10
-
-OUT
----
-62:export async function startWorkersByGroup(groupName) {
-Read index.js (lines 2-101)
-O registry.js é quem define o grupo billing. É ele que preciso ver.
-
-Bash Check registry.js billing group definition
-IN
-grep -n "billing\|domains/billing\|billingConsumer\|insuranceOrchestrator\|packageProcessing\|packageProjection" /home/user/projetos/crm/back/workers/registry.js 2>/dev/null | head -40
-
-OUT
-29:import { packageProjectionWorker } from '../domains/billing/workers/packageProjectionWorker.js';
-30:import { packageProcessingWorker } from '../domains/billing/workers/packageProcessingWorker.js';
-35:import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
-36:import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/insuranceOrchestratorWorker.js';
-89:  billing: async (workers) => {
-95:    if (isEnabled('ENABLE_BILLING_PACKAGE_PROJECTION')) workers.push(packageProjectionWorker);
-96:    if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
-100:    console.log('[Registry] billing ok');
-Para. Análise anterior estava errada.
-
-registry.js importa todos os workers de domains/billing/workers/ e os inclui no grupo billing que sobe em produção via startWorkers.js → Render. Eles estão vivos, só gateados por feature flags.
-
-Resumo correto do que é realmente morto:
-
-Só uma coisa confirmada: settleBatch() em autoInsuranceSettlementService.js — exportada, nunca importada em lugar nenhum. Já corrigi antes.
-
-Tudo o mais em domains/billing/workers/ está ativo em produção. A análise do documento estava certa em ser conservador — o grep de import direto não é suficiente quando existe um registry dinâmico.
-
-Não há mais nada seguro para deletar agora sem mapear os feature flags ativos no Render.
 

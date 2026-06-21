@@ -29,4 +29,7 @@ router.get('/insurance/guides/pending-billing', auth, controller.listPendingGuid
 // GET /api/v2/insurance/history - Histórico mês a mês
 router.get('/insurance/history', auth, controller.getInsuranceHistory);
 
+// GET /api/v2/insurance/patient-sessions - Sessões individuais de paciente (lazy expand)
+router.get('/insurance/patient-sessions', auth, controller.getPatientInsuranceSessions);
+
 export default router;
