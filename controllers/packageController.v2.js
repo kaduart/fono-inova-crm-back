@@ -750,13 +750,49 @@ export const createPackageV2 = async (req, res) => {
         reuseAppt = await Appointment.findById(appointmentId).session(mongoSession);
       }
 
+      // Se appointmentId foi informado mas não existe, erro antes de qualquer alteração
+      if (appointmentId && !reuseAppt) {
+        await mongoSession.abortTransaction();
+        return res.status(404).json({
+          success: false,
+          errorCode: 'REUSE_APPOINTMENT_NOT_FOUND',
+          message: 'Agendamento a ser reutilizado não encontrado'
+        });
+      }
+
+      // Calcular slots que realmente precisam ser criados (remove o do appointment reutilizado)
+      let slotsToCreate = schedule;
+      if (reuseAppt) {
+        slotsToCreate = schedule.filter(slot => !isSameSlot(slot, reuseAppt));
+
+        // 🛡️ Proteção: se appointmentId foi informado mas não bate com nenhum slot,
+        // aborta ANTES de modificar o appointment existente
+        if (slotsToCreate.length === schedule.length) {
+          await mongoSession.abortTransaction();
+          const apptDateStr = typeof reuseAppt.date === 'string'
+            ? reuseAppt.date.split('T')[0]
+            : reuseAppt.date.toISOString().split('T')[0];
+          return res.status(400).json({
+            success: false,
+            errorCode: 'REUSE_APPOINTMENT_SLOT_MISMATCH',
+            message: `O agendamento reutilizado está em ${apptDateStr} às ${reuseAppt.time} e não corresponde a nenhum slot do pacote`,
+            data: {
+              appointmentId: reuseAppt._id,
+              appointmentDate: apptDateStr,
+              appointmentTime: reuseAppt.time,
+              schedule
+            }
+          });
+        }
+      }
+
       // 🚨 VALIDAR CONFLITOS DE AGENDA
       for (const slot of schedule) {
         // FIX: usar buildDateTime para comparação correta Date vs Date
         const slotDateTime = buildDateTime(slot.date, slot.time);
 
         // 🔗 Pular slot que será reutilizado (usuário selecionou explicitamente)
-        if (isSameSlot(slot, reuseAppt)) {
+        if (reuseAppt && isSameSlot(slot, reuseAppt)) {
           continue;
         }
 
@@ -793,7 +829,6 @@ export const createPackageV2 = async (req, res) => {
       }
 
       // 🔗 REUTILIZAR appointment existente (só roda se appointmentId fornecido)
-      let slotsToCreate = schedule;
       if (reuseAppt) {
         // Vincular ao pacote
         reuseAppt.package = pkg._id;
@@ -930,8 +965,6 @@ export const createPackageV2 = async (req, res) => {
           );
         }
 
-        // Remover o slot correspondente — não criar duplicata
-        slotsToCreate = schedule.filter(slot => !isSameSlot(slot, reuseAppt));
       }
 
       // Criar em batch apenas os slots novos
@@ -961,13 +994,14 @@ export const createPackageV2 = async (req, res) => {
       pkg.sessions = sessions.map(s => s._id);
       pkg.appointments = appointments.map(a => a._id);
 
-      // 🔥 INVARIANTE: schedule DEVE ser igual ao totalSessions
-      if (appointments.length !== parseInt(totalSessions)) {
+      // 🔥 INVARIANTE: total de appointments deve bater com totalSessions
+      const expectedAppointments = reuseAppt ? slotsToCreate.length + 1 : slotsToCreate.length;
+      if (appointments.length !== expectedAppointments || appointments.length !== parseInt(totalSessions)) {
         await mongoSession.abortTransaction();
         return res.status(400).json({
           success: false,
           errorCode: 'SCHEDULE_COUNT_MISMATCH',
-          message: `Número de sessões na agenda (${appointments.length}) deve ser igual ao totalSessions (${totalSessions})`
+          message: `Número de sessões na agenda (${appointments.length}) inconsistente. Esperado: ${expectedAppointments} (totalSessions: ${totalSessions})`
         });
       }
       
