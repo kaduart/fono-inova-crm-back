@@ -44,6 +44,19 @@ const logger = createContextLogger('PackageV2');
 /**
  * Gera hash único para idempotência
  */
+/**
+ * Compara se um slot de schedule corresponde a um appointment existente.
+ * Compara data (YYYY-MM-DD) e hora (HH:mm) de forma timezone-safe.
+ */
+function isSameSlot(slot, appointment) {
+  if (!slot || !appointment) return false;
+  if (appointment.time !== slot.time) return false;
+  const apptDateStr = typeof appointment.date === 'string'
+    ? appointment.date.split('T')[0]
+    : appointment.date.toISOString().split('T')[0];
+  return apptDateStr === slot.date;
+}
+
 function generateIdempotencyKey(data) {
   const { patientId, doctorId, specialty, totalSessions, timestamp } = data;
   return `pkg_${patientId}_${doctorId}_${specialty}_${totalSessions}_${timestamp || Date.now()}`;
@@ -743,9 +756,8 @@ export const createPackageV2 = async (req, res) => {
         const slotDateTime = buildDateTime(slot.date, slot.time);
 
         // 🔗 Pular slot que será reutilizado (usuário selecionou explicitamente)
-        if (reuseAppt && reuseAppt.time === slot.time) {
-          const reuseMs = new Date(reuseAppt.date).getTime();
-          if (Math.abs(slotDateTime.getTime() - reuseMs) < 60000) continue;
+        if (isSameSlot(slot, reuseAppt)) {
+          continue;
         }
 
         const conflict = await Appointment.findOne({
@@ -919,11 +931,7 @@ export const createPackageV2 = async (req, res) => {
         }
 
         // Remover o slot correspondente — não criar duplicata
-        const reuseMs = new Date(reuseAppt.date).getTime();
-        slotsToCreate = schedule.filter(slot => {
-          const slotMs = buildDateTime(slot.date, slot.time).getTime();
-          return !(reuseAppt.time === slot.time && Math.abs(slotMs - reuseMs) < 60000);
-        });
+        slotsToCreate = schedule.filter(slot => !isSameSlot(slot, reuseAppt));
       }
 
       // Criar em batch apenas os slots novos

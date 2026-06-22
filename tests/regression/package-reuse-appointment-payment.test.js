@@ -26,7 +26,8 @@ vi.mock('../../middleware/auth.js', () => ({
     auth: (req, res, next) => {
         req.user = { _id: new mongoose.Types.ObjectId(), role: 'admin' };
         next();
-    }
+    },
+    authorize: () => (req, res, next) => next()
 }));
 
 vi.mock('../../middleware/amandaAuth.js', () => ({
@@ -357,5 +358,59 @@ describe('🚨 REGRESSÃO — Zion Bug (sessão avulsa → pacote)', () => {
         const reusedAppt = await Appointment.findById(appointment._id);
         expect(reusedAppt.payment).toBeNull();
         expect(reusedAppt.package).toBeTruthy();
+    });
+
+    it('deve reutilizar 1 appointment existente e criar os demais quando totalSessions > 1', async () => {
+        const patient = await createPatient();
+        const doctor = await createDoctor();
+        const today = moment().add(2, 'days').format('YYYY-MM-DD');
+        const time = '16:00';
+
+        const { appointment } = await createAvulsoAppointment(patient, doctor, today, time);
+
+        const payload = {
+            patientId: patient._id.toString(),
+            doctorId: doctor._id.toString(),
+            specialty: 'fonoaudiologia',
+            sessionType: 'fonoaudiologia',
+            sessionValue: 150,
+            totalSessions: 4,
+            totalValue: 600,
+            type: 'package',
+            model: 'prepaid',
+            paymentMethod: 'pix',
+            durationMonths: 1,
+            sessionsPerWeek: 1,
+            appointmentId: appointment._id.toString(),
+            schedule: [
+                { date: today, time },
+                { date: moment(today).add(7, 'days').format('YYYY-MM-DD'), time },
+                { date: moment(today).add(14, 'days').format('YYYY-MM-DD'), time },
+                { date: moment(today).add(21, 'days').format('YYYY-MM-DD'), time }
+            ],
+            payments: [{ amount: 600, method: 'pix', date: today }]
+        };
+
+        const res = await request(app)
+            .post('/api/v2/packages')
+            .set('Authorization', `Bearer ${jwt.sign({ _id: new mongoose.Types.ObjectId().toString(), role: 'admin' }, 'zion-test-secret-123')}`)
+            .send(payload)
+            .expect(201);
+
+        expect(res.body.success).toBe(true);
+        const packageId = res.body.data.packageId;
+
+        // ── Deve ter exatamente 4 appointments no pacote ──
+        const packageAppointments = await Appointment.find({ package: packageId });
+        expect(packageAppointments).toHaveLength(4);
+
+        // ── O appointment reutilizado deve estar entre eles ──
+        const reused = packageAppointments.find(a => a._id.toString() === appointment._id.toString());
+        expect(reused).toBeTruthy();
+        expect(reused.serviceType).toBe('package_session');
+
+        // ── Deve ter 4 sessions ──
+        const packageSessions = await Session.find({ package: packageId });
+        expect(packageSessions).toHaveLength(4);
     });
 });
