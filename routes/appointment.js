@@ -28,7 +28,7 @@ import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
-import { mapAppointmentDTO } from '../utils/appointmentDto.js';
+import { mapAppointmentDTO, resolveAndMapAppointmentDTO } from '../utils/appointmentDto.js';
 import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 
 // 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
@@ -1343,7 +1343,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 }
             }, 100);
 
-            res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
+            res.json({ success: true, data: await resolveAndMapAppointmentDTO(updatedAppointment) });
 
         } catch (error) {
             console.error('Erro ao atualizar agendamento:', error);
@@ -2025,7 +2025,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
         // Salva sem validar campos problemáticos
         const updatedAppointment = await appointment.save({ validateBeforeSave: false });
 
-        res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
+        res.json({ success: true, data: await resolveAndMapAppointmentDTO(updatedAppointment) });
 
     } catch (error) {
         console.error('Erro ao atualizar status clínico:', error);
@@ -2082,7 +2082,7 @@ router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
         // Sincronização pós-commit (opcional, mas recomendado)
         setTimeout(() => syncEvent(updatedAppointment, 'appointment').catch(console.error), 100);
 
-        res.json({ success: true, data: mapAppointmentDTO(updatedAppointment) });
+        res.json({ success: true, data: await resolveAndMapAppointmentDTO(updatedAppointment) });
 
     } catch (error) {
         if (session) await session.abortTransaction();

@@ -8,6 +8,38 @@
  * do patient populado, garantindo que consumidores antigos não quebrem.
  */
 
+import Appointment from '../models/Appointment.js';
+
+/**
+ * Versão async do mapper: auto-popula doctor/patient quando não vieram populados.
+ * Use em qualquer PUT/PATCH que faz save() sem requery.
+ * Aceita Mongoose doc ou ObjectId/string.
+ */
+export async function resolveAndMapAppointmentDTO(doc) {
+    if (!doc) return null;
+    // Se só temos um ID, busca o appointment completo
+    const id = doc._id || doc;
+    if (typeof id === 'string' || id._bsontype === 'ObjectID' || id._bsontype === 'ObjectId') {
+        const appointment = await Appointment.findById(id)
+            .populate('doctor', 'fullName specialty email phoneNumber')
+            .populate('patient', 'fullName phone dateOfBirth email')
+            .populate('session', 'isPaid paymentStatus partialAmount status')
+            .populate('payment', 'status amount paymentMethod')
+            .lean();
+        return mapAppointmentDTO(appointment);
+    }
+    // Se é um doc Mongoose, popula apenas os campos que faltam
+    const needsDoctorPopulate = doc.doctor && typeof doc.doctor === 'object' && !doc.doctor.fullName && !doc.doctor.name;
+    const needsPatientPopulate = doc.patient && typeof doc.patient === 'object' && !doc.patient.fullName && !doc.patient.name;
+    if (needsDoctorPopulate || needsPatientPopulate) {
+        const paths = [];
+        if (needsDoctorPopulate) paths.push({ path: 'doctor', select: 'fullName specialty email phoneNumber' });
+        if (needsPatientPopulate) paths.push({ path: 'patient', select: 'fullName phone dateOfBirth email' });
+        try { await doc.populate(paths); } catch (_) {}
+    }
+    return mapAppointmentDTO(doc);
+}
+
 export function mapAppointmentDTO(appointment) {
     if (!appointment) return null;
 

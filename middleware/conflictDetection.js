@@ -83,11 +83,29 @@ export const checkAppointmentConflicts = async (req, res, next) => {
   // 🔥 Pré-agendamentos podem não ter patientId (paciente ainda não cadastrado)
   const isPreAgendamento = operationalStatus === 'pre_agendado' || isNewPatient === true;
 
-  // Para edições (PUT /:id), busca patientId do appointment existente quando não informado
-  if (!patientId && !isPreAgendamento && appointmentId && isValidObjectId(appointmentId)) {
+  // Normaliza horário antes da lookup (necessário para comparação de slot)
+  const timeHHmm = normalizeTimeHHmm(time);
+
+  // Para edições (PUT /:id): lê existente para (1) patientId e (2) skip se slot não mudou
+  if (appointmentId && isValidObjectId(appointmentId)) {
     try {
-      const existing = await Appointment.findById(appointmentId).select('patient').lean();
-      if (existing?.patient) patientId = existing.patient.toString();
+      const existing = await Appointment.findById(appointmentId).select('patient date time doctor').lean();
+      if (existing) {
+        if (!patientId && !isPreAgendamento && existing.patient) {
+          patientId = existing.patient.toString();
+        }
+        // Se data, hora E médico não mudaram, o appointment já ocupa o slot — sem conflito novo
+        const existingDateStr = existing.date
+          ? new Date(existing.date).toISOString().substring(0, 10)
+          : '';
+        const existingTimeNorm = normalizeTimeHHmm(existing.time) || '';
+        const existingDoctorId = existing.doctor?.toString() || '';
+        const doctorUnchanged = !doctorId || existingDoctorId === doctorId;
+        if (date && timeHHmm && existingDateStr === date && existingTimeNorm === timeHHmm && doctorUnchanged) {
+          req.body.time = timeHHmm;
+          return next();
+        }
+      }
     } catch (_) { /* non-blocking */ }
   }
 
@@ -120,7 +138,6 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     });
   }
 
-  const timeHHmm = normalizeTimeHHmm(time);
   if (!timeHHmm) {
     return res.status(400).json({
       error: "Formato de horário inválido",
