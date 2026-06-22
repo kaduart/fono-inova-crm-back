@@ -466,11 +466,9 @@ router.get('/', flexibleAuth, async (req, res) => {
             } else if (status === 'Cancelado') {
                 filter.operationalStatus = { $in: ['canceled', 'missed'] };
             }
-        } else if (!shouldIncludePreAgendamentos) {
-            // 🛡️ Por padrão, exclui pré-agendamentos pendentes e convertidos
-            filter.operationalStatus = { $ne: 'pre_agendado' };
-            filter.appointmentId = { $exists: false };
         }
+        // 🚫 REMOVIDO: filtro padrão que excluía pré-agendamentos. Agora eles vêm por padrão.
+        // Quem quiser excluir deve enviar explicitamente excludePreAgendamentos=true.
         console.log('[GET /appointments] Filtro montado:', JSON.stringify(filter));
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 

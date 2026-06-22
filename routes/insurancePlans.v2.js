@@ -64,9 +64,9 @@ router.post('/', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
     }
 
-    // Busca valor real do convênio; usa sessionValue do body como fallback
+    // Resolve valor da sessão: prioridade 1) body (modal), 2) guia, 3) tabela do convênio
     const convenioValue = await Convenio.getSessionValue(guide.insurance).catch(() => null);
-    const resolvedSessionValue = convenioValue || Number(sessionValue) || 0;
+    const resolvedSessionValue = Number(sessionValue) || Number(guide.sessionValue) || convenioValue || 0;
 
     const totalSessions = guide.totalSessions - guide.usedSessions;
     if (totalSessions <= 0) {
