@@ -251,6 +251,7 @@ async function processEvent(eventType, payload, correlationId) {
     // ========================================
     case 'APPOINTMENT_CANCELED':
     case 'APPOINTMENT_COMPLETED':
+    case 'APPOINTMENT_UPDATED':
       if (packageId) {
         return await handlePackageBuild(packageId, correlationId);
       }

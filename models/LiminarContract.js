@@ -45,6 +45,11 @@ const liminarContractSchema = new mongoose.Schema({
   // ─── RELAÇÕES ──────────────────────────────────────────────
   plans: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TherapeuticPlan' }],
 
+  // ─── RECEBIMENTO FINANCEIRO ────────────────────────────────
+  // Data real de entrada do dinheiro (PIX/TED/depósito).
+  // Quando informado, tem prioridade sobre creditHistory[0] para financialDate do Payment.
+  receivedAt: { type: Date, default: null },
+
   // ─── IDEMPOTÊNCIA ──────────────────────────────────────────
   idempotencyKey: { type: String, index: true, unique: true, sparse: true }
 

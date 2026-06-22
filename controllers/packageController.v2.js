@@ -276,6 +276,7 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     clinicalStatus: 'pending',
     paymentStatus: pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid',
     paymentOrigin: pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid',
+    paymentMethod: pkg.paymentMethod || 'pix',
     // ⚠️ LEGADO: pkg.type 'convenio'|'liminar' nunca ocorre em dados novos
     billingType: pkg.type === 'convenio' ? 'convenio' :
                  pkg.type === 'liminar' ? 'liminar' : 'particular',
@@ -283,6 +284,8 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     isFirstAppointment: index === 0
   }));
 
+  const apptModel = Appointment.$__collection ? Appointment : Appointment.db.model('Appointment');
+  apptModel.$locals = { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' };
   return await Appointment.insertMany(appointmentDocs, { session: mongoSession });
 }
 
@@ -320,6 +323,7 @@ async function createSessionsBatch(pkg, appointments, mongoSession) {
     paymentMethod: pkg.model === 'liminar' ? 'liminar_credit' : pkg.paymentMethod
   }));
 
+  Session.$locals = { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' };
   return await Session.insertMany(sessionDocs, { session: mongoSession });
 }
 

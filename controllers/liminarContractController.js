@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import LiminarContract from '../models/LiminarContract.js';
+import Payment from '../models/Payment.js';
 import TherapeuticPlan from '../models/TherapeuticPlan.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
@@ -20,7 +21,8 @@ export async function createLiminarContract(req, res) {
     court,
     expirationDate,
     mode = 'hybrid',
-    idempotencyKey
+    idempotencyKey,
+    receivedAt   // data real do recebimento financeiro (PIX/TED/depósito)
   } = req.body;
 
   if (!patientId || !doctorId || !totalCredit) {
@@ -61,10 +63,35 @@ export async function createLiminarContract(req, res) {
 
     // Só inclui idempotencyKey se foi fornecido — evita null no índice sparse/unique
     if (idempotencyKey) contractData.idempotencyKey = idempotencyKey;
+    if (receivedAt)    contractData.receivedAt = new Date(receivedAt);
 
     const contract = await LiminarContract.create(contractData);
 
-    logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit });
+    // Hierarquia de verdade financeira para o caixa:
+    // 1. receivedAt informado pelo usuário (data real do PIX/TED)
+    // 2. creditHistory[0] com type='initial' (proxy da migração)
+    // 3. createdAt (evento técnico — último recurso)
+    const financialDate =
+        contract.receivedAt ||
+        contract.creditHistory?.find(h => h.type === 'initial')?.createdAt ||
+        contract.createdAt;
+
+    await Payment.create({
+        patient:         new mongoose.Types.ObjectId(patientId),
+        doctor:          new mongoose.Types.ObjectId(doctorId),
+        amount:          totalCredit,
+        status:          'paid',
+        kind:            'liminar_contract_receipt',
+        billingType:     'liminar',
+        paymentMethod:   'liminar_credit',
+        paymentDate:     financialDate,
+        financialDate:   financialDate,
+        liminarContract: contract._id,
+        isFromPackage:   false,
+        notes:           processNumber ? `Processo: ${processNumber}` : null,
+    });
+
+    logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit, financialDate });
 
     return res.status(201).json({ contract });
   } catch (err) {
@@ -121,7 +148,7 @@ export async function listLiminarContracts(req, res) {
 // Adiciona crédito ao contrato (ex: nova decisão judicial)
 // ──────────────────────────────────────────────────────────────
 export async function rechargeContract(req, res) {
-  const { amount, reason = 'judicial_recharge' } = req.body;
+  const { amount, reason = 'judicial_recharge', receivedAt } = req.body;
 
   if (!amount || amount <= 0) {
     return res.status(400).json({ error: 'amount deve ser maior que zero' });
@@ -151,6 +178,22 @@ export async function rechargeContract(req, res) {
   if (!result) {
     return res.status(404).json({ error: 'Contrato não encontrado' });
   }
+
+  const rechargeDate = receivedAt ? new Date(receivedAt) : new Date();
+  await Payment.create({
+      patient:         result.patient,
+      doctor:          result.doctor,
+      amount:          amount,
+      status:          'paid',
+      kind:            'liminar_contract_receipt',
+      billingType:     'liminar',
+      paymentMethod:   'liminar_credit',
+      paymentDate:     rechargeDate,
+      financialDate:   rechargeDate,
+      liminarContract: result._id,
+      isFromPackage:   false,
+      notes:           `Recarga: ${reason}`,
+  });
 
   return res.json({ contract: result });
 }

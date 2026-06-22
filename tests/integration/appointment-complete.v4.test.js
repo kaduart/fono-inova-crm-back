@@ -54,7 +54,7 @@ beforeAll(async () => {
     app.use(express.json());
     
     // Importa e configura as rotas
-    const appointmentRouter = (await import('../../routes/appointment.js')).default;
+    const appointmentRouter = (await import('../../routes/appointment.v2.js')).default;
     app.use('/appointments', mockAuth, appointmentRouter);
     
     // Inicia servidor em porta aleatória

@@ -49,7 +49,7 @@ async function fetchRawData(packageId, correlationId) {
   const sessions = await Session.find({ package: packageId })
     .sort({ date: 1, time: 1 })
     .limit(100)
-    .select('date time status isPaid appointmentId')  // 🔗 Inclui appointmentId
+    .select('date time status isPaid appointmentId paymentMethod')  // 🔗 Inclui appointmentId e paymentMethod
     .lean();
   
   logger.info('[PackageProjectionService] Raw data fetched', {

@@ -159,22 +159,28 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     // 🚨 FIX: Usar helper padronizado para range de busca (timezone-safe)
     const dayRange = buildDayRange(date);
 
-    // 🆕 NOVO: Buscar TODOS os agendamentos do dia para verificar sobreposição
-    const queries = [
-      // Doctor appointments (sempre)
-      Appointment.find({
-        doctor: doctorObjectId,
-        date: dayRange,
-        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-        ...excludeSelf,
-      })
-        .select("time duration patient operationalStatus _id")
-        .populate("patient", "fullName")
-        .lean(),
+    // 🟢 SINGLE SOURCE OF TRUTH para ocupação do médico
+    const occupancyData = await fetchOccupancyData(doctorId, date);
+    const doctorOccupancy = getSlotOccupancy({
+      time,
+      duration: newDuration,
+      date,
+      occupancyData,
+      excludeAppointmentId: appointmentId
+    });
 
-      // Patient appointments (só se tem patientId)
-      patientObjectId
-        ? Appointment.find({
+    if (doctorOccupancy.occupied) {
+      const metadata = doctorOccupancy.metadata || {};
+      console.log(
+        `[checkAppointmentConflicts] CONFLITO MÉDICO: Novo ${timeHHmm}-${newEndMinutes}min` +
+        ` | _id=${metadata._id} reason=${doctorOccupancy.reason} paciente="${metadata.patient?.fullName || '?'}`
+      );
+    }
+
+    // 🆕 NOVO: Verificar sobreposição de intervalos para o paciente (fonte separada)
+    const patientQueries = patientObjectId
+      ? [
+          Appointment.find({
             patient: patientObjectId,
             date: dayRange,
             operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
@@ -182,22 +188,8 @@ export const checkAppointmentConflicts = async (req, res, next) => {
           })
             .select("time duration doctor operationalStatus _id")
             .populate("doctor", "fullName")
-            .lean()
-        : Promise.resolve([]),
-
-      // Doctor sessions (sempre)
-      Session.find({
-        doctor: doctorObjectId,
-        date: dayRange,
-        status: { $nin: ['canceled'] },
-      })
-        .select("time patient")
-        .populate("patient", "fullName")
-        .lean(),
-
-      // Patient sessions (só se tem patientId)
-      patientObjectId
-        ? Session.find({
+            .lean(),
+          Session.find({
             patient: patientObjectId,
             date: dayRange,
             status: { $nin: ['canceled'] },
@@ -205,37 +197,11 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             .select("time doctor")
             .populate("doctor", "fullName")
             .lean()
-        : Promise.resolve([]),
-    ];
+        ]
+      : [Promise.resolve([]), Promise.resolve([])];
 
-    const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all(queries);
-
-    // Combina appointments + sessions para checagem unificada (sessions usam duration 40 padrão)
-    const allDoctorSlots = [...doctorAppointments, ...doctorSessions];
+    const [patientAppointments, patientSessions] = await Promise.all(patientQueries);
     const allPatientSlots = [...patientAppointments, ...patientSessions];
-
-    // 🆕 NOVO: Verificar sobreposição de intervalos para o médico
-    const doctorConflict = allDoctorSlots.find((appt) => {
-      const apptTime = normalizeTimeHHmm(appt.time);
-      if (!apptTime) return false;
-      
-      const apptDuration = appt.duration || 40;
-      const apptStart = timeToMinutes(apptTime);
-      const apptEnd = apptStart + apptDuration;
-      
-      // Verifica sobreposição: [newStart, newEnd) intersect [apptStart, apptEnd)
-      const overlaps = newStartMinutes < apptEnd && newEndMinutes > apptStart;
-      
-      if (overlaps) {
-        console.log(
-          `[checkAppointmentConflicts] CONFLITO MÉDICO: Novo ${timeHHmm}-${newEndMinutes}min` +
-          ` sobrepõe existente ${apptTime}-${apptEnd}min` +
-          ` | _id=${appt._id} status=${appt.operationalStatus} paciente="${appt.patient?.fullName || '?'}"`
-        );
-      }
-      
-      return overlaps;
-    });
 
     // 🆕 NOVO: Verificar sobreposição de intervalos para o paciente
     const patientConflict = allPatientSlots.find((appt) => {
@@ -256,14 +222,15 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     });
 
     // Sessão Conjunta: mesmo profissional pode ter dois pacientes no mesmo horário
-    if (doctorConflict && !isJointSession) {
+    if (doctorOccupancy.occupied && !isJointSession) {
+      const metadata = doctorOccupancy.metadata || {};
       return res.status(409).json({
         error: "Conflito de agenda médica",
         message: "O médico já possui um compromisso neste horário",
         conflict: {
-          appointmentId: doctorConflict._id,
-          patientName: doctorConflict.patient?.fullName || "Nome não disponível",
-          existingAppointment: doctorConflict,
+          appointmentId: metadata._id,
+          patientName: metadata.patient?.fullName || "Nome não disponível",
+          existingAppointment: metadata,
         },
         suggestion: "Por favor, escolha outro horário ou médico",
       });
@@ -340,6 +307,145 @@ function appointmentBlocksSlot(slotTime, appointmentTime, durationMinutes = 40) 
 }
 
 // ======================================================
+// 🟢 SINGLE SOURCE OF TRUTH: ocupação de um horário
+// ======================================================
+
+/**
+ * Busca todos os dados de ocupação de um médico em um dia.
+ * Usado por slots e conflict check para garantir regras idênticas.
+ */
+async function fetchOccupancyData(doctorId, date) {
+  const doctorObjectId = toObjectId(doctorId);
+  const dayRange = buildDayRange(date);
+
+  const doctor = await Doctor.findById(doctorId).select('fullName').lean();
+  const doctorName = doctor?.fullName || '';
+
+  const [
+    doctorAppointments,
+    preAgendamentos,
+    packageSessions,
+    rawShadowLocks
+  ] = await Promise.all([
+    Appointment.find({
+      doctor: doctorObjectId,
+      date: dayRange,
+      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+    })
+      .select('date time duration startDateTime endDateTime patient operationalStatus _id')
+      .populate('patient', 'fullName')
+      .lean(),
+
+    Appointment.find({
+      date: dayRange,
+      operationalStatus: 'pre_agendado',
+      $or: [
+        { doctor: doctorObjectId },
+        ...(doctorName ? [{ professionalName: { $regex: new RegExp(doctorName, 'i') } }] : [])
+      ]
+    })
+      .select('date time duration startDateTime endDateTime patient operationalStatus _id')
+      .populate('patient', 'fullName')
+      .lean(),
+
+    Session.find({
+      doctor: doctorObjectId,
+      date: dayRange,
+      status: { $nin: ['canceled'] },
+    })
+      .select('date time duration startDateTime endDateTime patient _id')
+      .populate('patient', 'fullName')
+      .lean(),
+
+    ShadowLockService.findActiveLocksForDoctorDay(doctorId, date).catch(err => {
+      console.error('[fetchOccupancyData] Erro ao buscar shadow locks:', err.message);
+      return new Map();
+    })
+  ]);
+
+  const lockMap = rawShadowLocks instanceof Map ? rawShadowLocks : new Map();
+
+  // Converte documentos em intervalos Date com metadados
+  function docToInterval(doc) {
+    let start, end;
+    if (doc.startDateTime && doc.endDateTime) {
+      start = new Date(doc.startDateTime);
+      end = new Date(doc.endDateTime);
+    } else {
+      const d = new Date(doc.date);
+      const t = String(doc.time || '').trim();
+      const [h, m] = t.split(':').map(Number);
+      start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h || 0, m || 0, 0, 0);
+      const duration = doc.duration || 40;
+      end = new Date(start.getTime() + duration * 60000);
+    }
+    return {
+      start,
+      end,
+      doc,
+      source: doc.operationalStatus === 'pre_agendado' ? 'pre_agendado' : (doc.status ? 'session' : 'appointment')
+    };
+  }
+
+  return {
+    intervals: [
+      ...doctorAppointments.map(docToInterval),
+      ...preAgendamentos.map(docToInterval),
+      ...packageSessions.map(docToInterval)
+    ],
+    lockMap,
+    doctorName
+  };
+}
+
+/**
+ * Retorna a ocupação de um slot específico.
+ * Autoridade única: usada tanto por slots quanto por conflict check.
+ */
+function getSlotOccupancy({ time, duration = 40, date, occupancyData, excludeAppointmentId = null }) {
+  const timeHHmm = normalizeTimeHHmm(time);
+  if (!timeHHmm) return { occupied: false };
+
+  const [sh, sm] = timeHHmm.split(':').map(Number);
+  // Usa a data explícita (YYYY-MM-DD) para montar o slot, não depende de haver intervalos
+  const slotDate = new Date(`${date}T12:00:00-03:00`);
+  const slotStart = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate(), sh, sm, 0, 0);
+  const slotEnd = new Date(slotStart.getTime() + (parseInt(duration) || 40) * 60000);
+
+  for (const interval of occupancyData.intervals) {
+    // Skip self se for edição
+    if (excludeAppointmentId && interval.doc._id?.toString?.() === excludeAppointmentId) {
+      continue;
+    }
+
+    const sameDay = interval.start.toDateString() === slotStart.toDateString();
+    if (!sameDay) continue;
+
+    const overlaps = interval.start < slotEnd && interval.end > slotStart;
+    if (overlaps) {
+      return {
+        occupied: true,
+        reason: interval.source,
+        source: interval.source,
+        metadata: interval.doc
+      };
+    }
+  }
+
+  const activeLock = occupancyData.lockMap.get(timeHHmm);
+  if (activeLock) {
+    return {
+      occupied: true,
+      reason: 'shadow_lock',
+      source: 'shadow_lock',
+      metadata: activeLock
+    };
+  }
+
+  return { occupied: false };
+}
+
+// ======================================================
 // 🔧 FALLBACK: Quando doctor não tem agenda → vazio
 // ======================================================
 function generateDefaultSlots() {
@@ -395,79 +501,15 @@ export async function calculateAvailableSlots(doctorId, date) {
   
   console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
-  // 🚨 FIX: Usar helper padronizado para range de busca (timezone-safe)
-  const dayRange = buildDayRange(date);
-  
-  console.log(`[calculateAvailableSlots] Buscando agendamentos entre ${dayRange.$gte.toISOString()} e ${dayRange.$lte.toISOString()}`);
+  // 🟢 SINGLE SOURCE OF TRUTH: busca ocupação do dia uma única vez
+  const occupancyData = await fetchOccupancyData(doctorId, date);
 
-  // 🚨 FIX: Buscar agendamentos COM startDateTime/endDateTime (novo padrão Date-based)
-  const [bookedAppointments, preAgendadosAtivos, packageSessions, rawShadowPatterns, rawShadowLocks] = await Promise.all([
-    Appointment.find({
-      doctor: toObjectId(doctorId),
-      date: dayRange,
-      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-    })
-      .select("date time duration startDateTime endDateTime patient -_id")
-      .lean(),
-
-    // 🚨 FIX: pre_agendado agora BLOQUEIA o slot
-    Appointment.find({
-      date: dayRange,
-      operationalStatus: 'pre_agendado',
-      $or: [
-        { doctor: toObjectId(doctorId) },
-        { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
-      ]
-    })
-      .select("date time duration startDateTime endDateTime patient -_id")
-      .lean(),
-
-    // 🚨 FIX: Sessões de pacote (modelo Session) bloqueiam slots
-    Session.find({
-      doctor: toObjectId(doctorId),
-      date: dayRange,
-      status: { $nin: ['canceled'] },
-    })
-      .select("date time duration -_id")
-      .lean(),
-
-    // 🧠 NOVO: Shadow patterns (recorrência inteligente) — cache + fallback on-the-fly
-    ShadowPatternService.findPatternsForDoctorDay(doctorId, date).catch(err => {
-      console.error('[calculateAvailableSlots] Erro ao buscar shadow patterns:', err.message);
-      return new Map();
-    }),
-
-    // 🔒 NOVO: Shadow locks (reservas reais criadas pela secretária)
-    ShadowLockService.findActiveLocksForDoctorDay(doctorId, date).catch(err => {
-      console.error('[calculateAvailableSlots] Erro ao buscar shadow locks:', err.message);
-      return new Map();
-    })
-  ]);
-
+  // 🧠 NOVO: Shadow patterns (recorrência inteligente) — cache + fallback on-the-fly
+  const rawShadowPatterns = await ShadowPatternService.findPatternsForDoctorDay(doctorId, date).catch(err => {
+    console.error('[calculateAvailableSlots] Erro ao buscar shadow patterns:', err.message);
+    return new Map();
+  });
   const shadowMap = rawShadowPatterns instanceof Map ? rawShadowPatterns : new Map();
-  const lockMap = rawShadowLocks instanceof Map ? rawShadowLocks : new Map();
-
-  // 🕐 Helper: converte documento (Appointment/Session) para intervalo Date
-  function docToInterval(doc) {
-    if (doc.startDateTime && doc.endDateTime) {
-      return { start: new Date(doc.startDateTime), end: new Date(doc.endDateTime) };
-    }
-    // Fallback legado: monta de date + time + duration
-    const d = new Date(doc.date);
-    const t = String(doc.time || '').trim();
-    const [h, m] = t.split(':').map(Number);
-    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h || 0, m || 0, 0, 0);
-    const duration = doc.duration || 40;
-    const end = new Date(start.getTime() + duration * 60000);
-    return { start, end };
-  }
-
-  // Combinar todos os agendamentos/sessions como intervalos Date
-  const allIntervals = [
-    ...bookedAppointments,
-    ...preAgendadosAtivos,
-    ...packageSessions
-  ].map(docToInterval);
 
   // 🆕 NOVO: Montar array de slots com metadados
   const slotsWithMetadata = normalizedTimes.map((slotTime) => {
@@ -482,36 +524,24 @@ export async function calculateAvailableSlots(doctorId, date) {
       };
     }
 
-    // Prioridade 2: Date-based overlap
-    const slotDate = new Date(`${date}T12:00:00-03:00`);
-    const [sh, sm] = slotTime.split(':').map(Number);
-    const slotStart = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate(), sh, sm, 0, 0);
-    const slotEnd = new Date(slotStart.getTime() + 40 * 60000);
+    // Prioridade 2: Ocupação (appointment / session / pre_agendado / shadow_lock)
+    const occupancy = getSlotOccupancy({ time: slotTime, duration: 40, date, occupancyData });
 
-    const isBlocked = allIntervals.some(ai => {
-      const sameDay = ai.start.toDateString() === slotStart.toDateString();
-      if (!sameDay) return false;
-      return ai.start < slotEnd && ai.end > slotStart;
-    });
-
-    if (isBlocked) {
-      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento`);
+    if (occupancy.occupied) {
+      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por ${occupancy.reason}`);
+      if (occupancy.reason === 'shadow_lock') {
+        return {
+          time: slotTime,
+          available: false,
+          reason: 'shadow_lock',
+          label: `Reservado: ${occupancy.metadata.patientName}`
+        };
+      }
       return {
         time: slotTime,
         available: false,
-        reason: 'appointment',
+        reason: occupancy.reason,
         label: 'Horário Ocupado'
-      };
-    }
-
-    // 🔒 Prioridade 3: Shadow lock (reserva real criada pela secretária)
-    const activeLock = lockMap.get(slotTime);
-    if (activeLock) {
-      return {
-        time: slotTime,
-        available: false,
-        reason: 'shadow_lock',
-        label: `Reservado: ${activeLock.patientName}`
       };
     }
 
@@ -542,8 +572,8 @@ export async function calculateAvailableSlots(doctorId, date) {
     };
   });
   
-  const totalAppointments = bookedAppointments.length + preAgendadosAtivos.length + packageSessions.length;
-  console.log(`[calculateAvailableSlots] bookedAppointments=${bookedAppointments.length}, preAgendados=${preAgendadosAtivos.length}, packageSessions=${packageSessions.length}, total=${totalAppointments}`);
+  const totalAppointments = occupancyData.intervals.length;
+  console.log(`[calculateAvailableSlots] totalOccupancyIntervals=${totalAppointments}`);
   console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
   return slotsWithMetadata;
@@ -575,52 +605,22 @@ export async function checkSlotOverlap({ doctorId, date, time, duration = 40, ex
   const newStart = timeToMinutes(timeHHmm);
   const newEnd = newStart + (parseInt(duration) || 40);
 
-  const dayRange = buildDayRange(date);
-  const doctorObjectId = toObjectId(doctorId);
-  const excludeFilter = excludeAppointmentId && isValidObjectId(excludeAppointmentId)
-    ? { _id: { $ne: toObjectId(excludeAppointmentId) } }
-    : {};
-
-  // Busca appointments + sessions do médico no dia
-  const [doctorAppointments, doctorSessions] = await Promise.all([
-    Appointment.find({
-      doctor: doctorObjectId,
-      date: dayRange,
-      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-      ...excludeFilter,
-    })
-      .select("time duration")
-      .lean(),
-    Session.find({
-      doctor: doctorObjectId,
-      date: dayRange,
-      status: { $nin: ['canceled'] },
-      ...excludeFilter,
-    })
-      .select("time duration")
-      .lean(),
-  ]);
-
-  const allSlots = [...doctorAppointments, ...doctorSessions];
-
-  const conflict = allSlots.find((slot) => {
-    const slotTime = normalizeTimeHHmm(slot.time);
-    if (!slotTime) return false;
-
-    const slotDuration = slot.duration || 40;
-    const slotStart = timeToMinutes(slotTime);
-    const slotEnd = slotStart + slotDuration;
-
-    const overlaps = newStart < slotEnd && newEnd > slotStart;
-
-    if (overlaps) {
-      console.log(`[checkSlotOverlap] CONFLITO: Novo ${timeHHmm}-${newEnd} sobrepõe existente ${slotTime}-${slotEnd}`);
-    }
-
-    return overlaps;
+  // 🟢 Usa a mesma fonte de verdade de ocupação
+  const occupancyData = await fetchOccupancyData(doctorId, date);
+  const occupancy = getSlotOccupancy({
+    time,
+    duration,
+    date,
+    occupancyData,
+    excludeAppointmentId
   });
 
-  return conflict || null;
+  if (occupancy.occupied) {
+    const metadata = occupancy.metadata || {};
+    console.log(`[checkSlotOverlap] CONFLITO: Novo ${timeHHmm}-${newEnd} ocupado por ${occupancy.reason} | _id=${metadata._id}`);
+  }
+
+  return occupancy.occupied ? (occupancy.metadata || {}) : null;
 }
 
 // ======================================================

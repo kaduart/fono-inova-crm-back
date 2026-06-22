@@ -161,7 +161,8 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     // 2. Verifica se a view precisa ser reconstruída (schema evoluiu)
     const needsRebuild = !packageView || 
                          (packageView.snapshot?.version ?? 0) < 2 ||
-                         (packageView.sessions?.length > 0 && !packageView.sessions[0].hasOwnProperty('paymentMethod'));
+                         (packageView.sessions?.length > 0 && !packageView.sessions[0].hasOwnProperty('paymentMethod')) ||
+                         (packageView.sessions?.some(s => s.paymentMethod === undefined || s.paymentMethod === ''));
     
     // 3. FALLBACK: Se não achou ou está desatualizada, builda on-the-fly
     if (!packageView || needsRebuild) {

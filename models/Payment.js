@@ -33,7 +33,7 @@ const paymentSchema = new mongoose.Schema({
     sessionType: { type: String, default: null },
     kind: {
         type: String,
-        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', 'package_payment', 'manual_adjustment', 'unknown_or_orphan', null],
+        enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', 'package_payment', 'manual_adjustment', 'unknown_or_orphan', 'liminar_contract_receipt', null],
         default: null
     },
     kindConfidence: {

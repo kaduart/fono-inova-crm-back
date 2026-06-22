@@ -3,12 +3,11 @@
 //
 // REGRA DE NEGÓCIO:
 //   - Sessão coberta por crédito judicial (liminar)
-//   - Paciente NÃO paga — LiminarContract absorve o custo
-//   - financialDate = now → ENTRA no caixa imediato (receita registrada)
-//   - isPaid = true imediatamente
-//   - LiminarGuard debita o crédito do contrato antes de criar Payment
+//   - Paciente pagou antecipadamente (LiminarContract.receivedAt / createdAt)
+//   - Sessão = consumo de crédito, NÃO nova entrada de caixa
+//   - LiminarGuard debita o crédito do contrato
+//   - NÃO é criado Payment: o caixa já foi reconhecido no recebimento do contrato
 
-import Payment from '../../../models/Payment.js';
 import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 
@@ -16,9 +15,7 @@ export const LiminarHandler = {
     /**
      * Fase 1 — campos de pagamento na Session.
      * Mutates sessionUpdate in-place.
-     *
-     * @param {Object} sessionUpdate
-     * @param {import('../shared/context.js').CompleteContext} ctx
+     * Necessário para calculateProduction (usa session.paymentMethod/paymentOrigin).
      */
     buildSessionUpdate(sessionUpdate, ctx) {
         FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'liminar_complete' });
@@ -29,19 +26,14 @@ export const LiminarHandler = {
     },
 
     /**
-     * Fase 2 — debita LiminarContract + cria Payment (entra no caixa).
-     * Mutates appointmentUpdate.$set.payment com o _id criado.
-     *
-     * @param {Object} appointmentUpdate
-     * @param {import('../shared/context.js').CompleteContext} ctx
-     * @returns {Promise<Object>} paymentCreated
+     * Fase 2 — debita LiminarContract.
+     * NÃO cria Payment: liminar é pré-paga, caixa foi reconhecido no contrato.
      */
     async buildPayment(appointmentUpdate, ctx) {
-        const { appointment, appointmentId, sessionId, sessionValue, mongoSession, userId } = ctx;
+        const { appointment, appointmentId, sessionValue, mongoSession } = ctx;
 
         if (!sessionValue || sessionValue <= 0) return null;
 
-        const now = new Date();
         const liminarContractId = appointment.liminarContract?._id || appointment.liminarContract;
 
         if (liminarContractId) {
@@ -55,32 +47,7 @@ export const LiminarHandler = {
                 session: mongoSession
             });
         }
-        // ✅ V2 ATIVO: LiminarHandler — liminar NÃO pre-cria Payment no schedule.
-        // Portanto, aqui é o momento correto de criar. (Particular/Convenio atualizam existente.)
-        const [paymentDoc] = await Payment.create([{
-            patient:         appointment.patient?._id,
-            amount:          sessionValue,
-            status:          'paid',
-            type:            'service',
-            serviceType:     'session',
-            paymentMethod:   'liminar_credit',
-            paymentDate:     now,
-            paidAt:          now,
-            financialDate:   now,           // receita reconhecida no momento da realização
-            isFromPackage:   false,
-            description:     `Sessão liminar realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-            appointment:     appointmentId,
-            session:         sessionId,
-            liminarContract: liminarContractId || null,
-            createdBy:       userId,
-            kind:            'session_payment',
-            billingType:     'liminar'
-        }], { session: mongoSession });
 
-        const paymentCreated = paymentDoc;
-        appointmentUpdate.$set.payment = paymentCreated._id;
-        console.log(`[LiminarHandler] 💰 Payment liminar criado: ${paymentCreated._id}`, { liminarContractId });
-
-        return paymentCreated;
+        return null;
     }
 };

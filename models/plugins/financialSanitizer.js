@@ -72,9 +72,10 @@ export default function financialSanitizer(schema, options = {}) {
 
   // Pre-save: intercepta doc.save(), Model.create(), new Model()
   schema.pre('save', function(next) {
+    const opts = this.$locals || {};
     if (
-      this.$locals?.__fromFinancialGuard === true &&
-      this.$locals?.__guardContext === 'FINANCIAL'
+      opts.__fromFinancialGuard === true &&
+      opts.__guardContext === 'FINANCIAL'
     ) return next();
     if (this.isNew) {
       sanitize(this.toObject(), 'save');
@@ -91,6 +92,11 @@ export default function financialSanitizer(schema, options = {}) {
 
   // Pre-insertMany: intercepta Model.insertMany()
   schema.pre('insertMany', function(next, docs) {
+    const opts = this.$locals || {};
+    if (
+      opts.__fromFinancialGuard === true &&
+      opts.__guardContext === 'FINANCIAL'
+    ) return next();
     if (Array.isArray(docs)) {
       for (const doc of docs) {
         sanitize(doc, 'insertMany');

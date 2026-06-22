@@ -30,7 +30,7 @@ async function createTestApp() {
   // Importar rotas reais
   const { default: importFromAgendaRoutes } = await import('../../routes/importFromAgenda.js');
   const { default: preAgendamentoRoutes } = await import('../../routes/preAgendamento.js');
-  const { default: appointmentRoutes } = await import('../../routes/appointment.js');
+  const { default: appointmentRoutes } = await import('../../routes/appointment.v2.js');
   
   // Montar rotas
   app.use('/api/import-from-agenda', importFromAgendaRoutes);
