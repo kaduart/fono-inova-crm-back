@@ -63,12 +63,33 @@ function getDayKeyFromYMD(dateYMD) {
 // ======================================================
 // ✅ MIDDLEWARE: conflicts (doctor + patient)
 // ======================================================
+// Extrai ID de campo que pode ser string, ObjectId ou objeto populado
+function extractId(field) {
+  if (!field) return undefined;
+  if (typeof field === 'string') return field;
+  if (typeof field === 'object') return field._id?.toString?.() || field.id?.toString?.() || String(field);
+  return String(field);
+}
+
 export const checkAppointmentConflicts = async (req, res, next) => {
-  const { doctorId, patientId, date, time, operationalStatus, isNewPatient, isJointSession } = req.body;
+  const { date, time, operationalStatus, isNewPatient, isJointSession } = req.body;
   const appointmentId = req.params?.id;
+
+  // Aceita tanto doctorId quanto doctor (nome do campo no modelo Mongoose)
+  const doctorId = req.body.doctorId || extractId(req.body.doctor);
+  // Aceita tanto patientId quanto patient
+  let patientId = req.body.patientId || extractId(req.body.patient);
 
   // 🔥 Pré-agendamentos podem não ter patientId (paciente ainda não cadastrado)
   const isPreAgendamento = operationalStatus === 'pre_agendado' || isNewPatient === true;
+
+  // Para edições (PUT /:id), busca patientId do appointment existente quando não informado
+  if (!patientId && !isPreAgendamento && appointmentId && isValidObjectId(appointmentId)) {
+    try {
+      const existing = await Appointment.findById(appointmentId).select('patient').lean();
+      if (existing?.patient) patientId = existing.patient.toString();
+    } catch (_) { /* non-blocking */ }
+  }
 
   if (!doctorId || (!isPreAgendamento && !patientId) || !date || !time) {
     return res.status(400).json({

@@ -895,7 +895,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 // Busca agendamentos com filtros
 router.get('/', flexibleAuth, async (req, res) => {
     try {
-        const { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos } = req.query;
+        const { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos, includePreAgendamentos } = req.query;
+        const shouldIncludePreAgendamentos = includePreAgendamentos === 'true';
 
         const filter = {};
         let individualSessionId = null;
@@ -932,7 +933,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             } else if (status === 'Cancelado') {
                 filter.operationalStatus = { $in: ['canceled', 'missed'] };
             }
-        } else {
+        } else if (!shouldIncludePreAgendamentos) {
             // 🛡️ Por padrão, exclui pré-agendamentos pendentes e convertidos
             filter.operationalStatus = { $ne: 'pre_agendado' };
             filter.appointmentId = { $exists: false };
@@ -1012,6 +1013,11 @@ router.get('/', flexibleAuth, async (req, res) => {
         let finalResults = calendarEvents;
         if (shouldExcludePreAgendamentos) {
             finalResults = calendarEvents.filter(e => e.operationalStatus !== 'pre_agendado' && !e.appointmentId);
+        }
+
+        // Quando explicitamente incluir pré-agendamentos, mantém todos os status
+        if (shouldIncludePreAgendamentos) {
+            finalResults = calendarEvents;
         }
 
         finalResults.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));

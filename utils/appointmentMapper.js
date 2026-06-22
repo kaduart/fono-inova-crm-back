@@ -98,9 +98,11 @@ export const getSafeProfessionalName = (appt) => {
  * 🔹 Mapeia um agendamento REAL para o formato do Frontend/FullCalendar
  */
 export const mapAppointmentToEvent = (appt) => {
-    const startMoment = moment.tz(`${appt.date} ${appt.time}`, "YYYY-MM-DD HH:mm", "America/Sao_Paulo");
-    const end = startMoment.clone().add(appt.duration || 40, 'minutes').toISOString();
-    const start = startMoment.toISOString();
+    // appt.date pode ser Date object (Mongoose) ou ISO string — extraímos só YYYY-MM-DD
+    const dateStr = appt.date ? new Date(appt.date).toISOString().substring(0, 10) : '';
+    const startMoment = moment.tz(`${dateStr} ${appt.time}`, "YYYY-MM-DD HH:mm", "America/Sao_Paulo");
+    const end = startMoment.isValid() ? startMoment.clone().add(appt.duration || 40, 'minutes').toISOString() : null;
+    const start = startMoment.isValid() ? startMoment.toISOString() : null;
 
     const professionalName = getSafeProfessionalName(appt);
     const patientName = getSafePatientName(appt);
@@ -149,7 +151,10 @@ export const mapAppointmentToEvent = (appt) => {
         // 🔗 IDs de referência
         session: appt.session?._id?.toString() || appt.session?.toString() || null,
         payment: appt.payment?._id?.toString() || appt.payment?.toString() || null,
-        metadata: appt.metadata || null
+        metadata: appt.metadata || null,
+        // Tipo de serviço — necessário para badges na agenda
+        serviceType: appt.serviceType || null,
+        crm: appt.crm || null,
     };
 };
 
