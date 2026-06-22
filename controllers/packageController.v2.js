@@ -753,15 +753,29 @@ export const createPackageV2 = async (req, res) => {
           date: slotDateTime,          // FIX: Date object, não string
           time: slot.time,
           operationalStatus: { $nin: ['canceled', 'no_show'] }
-        }).session(mongoSession);
+        })
+          .populate('patient', 'fullName phone')
+          .populate('doctor', 'fullName')
+          .session(mongoSession);
 
         if (conflict) {
           await mongoSession.abortTransaction();
+          const patientName = conflict.patient?.fullName || 'Paciente não identificado';
+          const doctorName = conflict.doctor?.fullName || 'Profissional não identificado';
+          const patientPhone = conflict.patient?.phone || '-';
           return res.status(409).json({
             success: false,
             errorCode: 'SCHEDULE_CONFLICT',
-            message: `Conflito de agenda: ${slot.date} às ${slot.time} já está ocupado`,
-            data: { conflictingAppointment: conflict._id }
+            message: `Conflito de agenda: ${slot.date} às ${slot.time} já está ocupado por ${patientName} (${patientPhone}) com ${doctorName}`,
+            data: {
+              conflictingAppointment: conflict._id,
+              patientName,
+              patientPhone,
+              doctorName,
+              status: conflict.operationalStatus,
+              date: slot.date,
+              time: slot.time
+            }
           });
         }
       }
