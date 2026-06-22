@@ -266,7 +266,7 @@ export const handlePackageSessionUpdate = async (appointment, action, user, deta
         // Cria entrada de histórico padrão
         const historyEntry = {
             action,
-            changedBy: user._id,
+            changedBy: user?._id || user?.id || null,
             timestamp: new Date(),
             details: details.changes || {}
         };

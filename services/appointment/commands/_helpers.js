@@ -24,7 +24,7 @@ export function checkDoctorPermission(appointment, user) {
   if (!appointment || !user) return;
   if (user.role === 'doctor') {
     const appointmentDoctor = appointment.doctor?.toString?.() || appointment.doctor;
-    const userId = user._id?.toString?.() || user._id;
+    const userId = user._id?.toString?.() || user.id?.toString?.() || user._id || user.id;
     if (appointmentDoctor && appointmentDoctor !== userId) {
       throw buildError('Você não pode editar este agendamento', 403, 'FORBIDDEN');
     }

@@ -139,7 +139,7 @@ router.post('/', flexibleAuth, checkPackageAvailability, checkAppointmentConflic
 router.put(
   '/:id',
   validateId,
-  auth,
+  flexibleAuth,
   checkPackageAvailability,
   checkAppointmentConflicts,
   async (req, res) => {
