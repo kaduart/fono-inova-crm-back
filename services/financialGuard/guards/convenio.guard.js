@@ -87,12 +87,35 @@ async function revertSessionAndGuide(payment, { session, reason }) {
 
   // Restaurar guia
   if (sessionDoc.insuranceGuide) {
-    await InsuranceGuide.findByIdAndUpdate(
-      sessionDoc.insuranceGuide,
-      { $inc: { usedSessions: -1 } },
-      { session }
+    // $inc + $pull atômicos: decrementa contador e remove entrada do audit trail
+    // em uma única operação, prevenindo divergência entre as duas estruturas.
+    // Floor guard { usedSessions: $gt: 0 } previne contador negativo.
+    const restoredGuide = await InsuranceGuide.findOneAndUpdate(
+      { _id: sessionDoc.insuranceGuide, usedSessions: { $gt: 0 } },
+      {
+        $inc:  { usedSessions: -1 },
+        $pull: { consumptionHistory: { sessionId: sessionDoc._id } },
+      },
+      { session, new: true }
     );
-    console.log(`[ConvenioGuard] Guia ${sessionDoc.insuranceGuide} restaurada (usedSessions -1)`);
+
+    if (!restoredGuide) {
+      console.warn(`[ConvenioGuard] Guia ${sessionDoc.insuranceGuide} não restaurada (usedSessions já era 0 ou guia não encontrada)`);
+      return true;
+    }
+
+    console.log(`[ConvenioGuard] Guia ${restoredGuide._id} restaurada (usedSessions ${restoredGuide.usedSessions + 1} → ${restoredGuide.usedSessions})`);
+
+    // Reativação: findByIdAndUpdate não dispara pre-save hooks — status permaneceria
+    // 'exhausted' após $inc mesmo com sessões disponíveis. Corrige explicitamente.
+    if (restoredGuide.status === 'exhausted' && restoredGuide.usedSessions < restoredGuide.totalSessions) {
+      await InsuranceGuide.findByIdAndUpdate(
+        restoredGuide._id,
+        { $set: { status: 'active' } },
+        { session }
+      );
+      console.log(`[ConvenioGuard] Guia ${restoredGuide._id} reativada: exhausted → active`);
+    }
   }
 
   return true;

@@ -82,8 +82,23 @@ export const ConvenioHandler = {
         }
 
         // 2. Consumir sessão da guia (dentro da transação)
-        await guide.consumeSession(mongoSession);
-        console.log(`[ConvenioHandler] 📋 Guia consumida: ${guide._id} (${guide.usedSessions}/${guide.totalSessions})`);
+        // Idempotência anti-double-debit: verifica estado atual da session no banco
+        // antes de debitar — protege contra retry e complete duplicado.
+        const currentSessionState = await Session.findById(sessionId)
+            .select('guideConsumed insuranceGuide')
+            .session(mongoSession)
+            .lean();
+        const alreadyConsumed = currentSessionState?.guideConsumed === true;
+
+        if (!alreadyConsumed) {
+            await guide.consumeSession(mongoSession, {
+                sessionId:      sessionId,
+                professionalId: appointment.doctor?._id || appointment.doctor || null,
+            });
+            console.log(`[ConvenioHandler] 📋 Guia consumida: ${guide._id} (${guide.usedSessions}/${guide.totalSessions})`);
+        } else {
+            console.warn(`[ConvenioHandler] ⚡ Idempotência: session ${sessionId} já consumiu guia — pulando consumeSession()`);
+        }
 
         // 3. Vincular guia à Session — causa raiz de sessões órfãs no billing
         await Session.findByIdAndUpdate(

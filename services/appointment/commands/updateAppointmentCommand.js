@@ -53,6 +53,17 @@ export async function execute(id, payload, user) {
       const safeBody = sanitizeAppointmentPayload(payload);
       const currentDate = new Date();
 
+      // patientInfo é descartado pela sanitização (correto — não deve ir direto no $set do Appointment)
+      // mas os campos de contato precisam ser propagados ao Patient (SSOT) e ao snapshot local
+      const incomingPatientInfo = payload.patientInfo;
+      const patientContactUpdate = {};
+      if (incomingPatientInfo) {
+        if (incomingPatientInfo.phone != null) patientContactUpdate.phone = incomingPatientInfo.phone;
+        if (incomingPatientInfo.email !== undefined) patientContactUpdate.email = incomingPatientInfo.email;
+        if (incomingPatientInfo.birthDate != null) patientContactUpdate.dateOfBirth = incomingPatientInfo.birthDate;
+        if (incomingPatientInfo.fullName) patientContactUpdate.fullName = incomingPatientInfo.fullName;
+      }
+
       // 🚫 packageId é imutável após criação
       const incomingPackageId = toObjectIdString(safeBody.package);
       const currentPackageId = toObjectIdString(appointment.package);
@@ -66,12 +77,15 @@ export async function execute(id, payload, user) {
 
       const updateData = {
         ...safeBody,
+        // Merge com o snapshot existente para não apagar campos não enviados nesta edição
+        // Ex: usuário altera só phone → não perde fullName/email do snapshot
+        ...(incomingPatientInfo ? { patientInfo: { ...(appointment.patientInfo?.toObject?.() ?? appointment.patientInfo ?? {}), ...incomingPatientInfo } } : {}),
         doctor: payload.doctorId || appointment.doctor,
         updatedAt: currentDate,
       };
 
       const previousData = {
-        doctor: appointment.doctor.toString(),
+        doctor: appointment.doctor?.toString?.() || null,
         patient: appointment.patient?.toString?.() || appointment.patient,
         date: appointment.date,
         time: appointment.time,
@@ -107,6 +121,16 @@ export async function execute(id, payload, user) {
 
       if (!updatedAppointment) {
         throw buildError('Agendamento não encontrado após atualização', 404, 'APPOINTMENT_NOT_FOUND');
+      }
+
+      // Propaga mudanças de contato ao Patient (source of truth para dados pessoais do paciente)
+      const currentPatientId = toObjectIdString(appointment.patient);
+      if (currentPatientId && Object.keys(patientContactUpdate).length > 0) {
+        await Patient.findByIdAndUpdate(
+          currentPatientId,
+          { $set: patientContactUpdate },
+          { session: mongoSession }
+        );
       }
 
       // Sincroniza Session vinculada

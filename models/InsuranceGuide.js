@@ -402,7 +402,14 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
  *   session.endSession();
  * }
  */
-insuranceGuideSchema.methods.consumeSession = async function (mongoSession) {
+/**
+ * @param {ClientSession} mongoSession
+ * @param {Object} [context]
+ * @param {ObjectId|string} [context.sessionId]      - ID da Session clínica (para audit trail)
+ * @param {ObjectId|string} [context.professionalId] - ID do Doctor que realizou
+ * @param {string}          [context.notes]          - Nota livre
+ */
+insuranceGuideSchema.methods.consumeSession = async function (mongoSession, context = {}) {
   // Validações críticas
   if (this.status !== 'active') {
     throw new Error(`Guia está ${this.status} e não pode ser utilizada`);
@@ -423,6 +430,23 @@ insuranceGuideSchema.methods.consumeSession = async function (mongoSession) {
   // Auto-transição para 'exhausted' se necessário
   if (this.usedSessions >= this.totalSessions) {
     this.status = 'exhausted';
+  }
+
+  // Audit trail — idempotente: não duplica entrada para a mesma Session
+  if (context.sessionId) {
+    const sessionIdStr = context.sessionId.toString();
+    const alreadyRecorded = this.consumptionHistory.some(
+      h => h.sessionId?.toString() === sessionIdStr
+    );
+    if (!alreadyRecorded) {
+      this.consumptionHistory.push({
+        sessionId:      context.sessionId,
+        sessionNumber:  this.usedSessions,
+        consumedAt:     now,
+        professionalId: context.professionalId || null,
+        notes:          context.notes || '',
+      });
+    }
   }
 
   // Salva usando a transação passada
