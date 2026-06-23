@@ -44,6 +44,15 @@ const sessionSchema = new mongoose.Schema({
             return v.toString().toLowerCase().trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
         }
     },
+    serviceType: {
+        type: String,
+        default: null,
+        enum: {
+            values: ['session', 'evaluation', 're_evaluation', 'consultation', 'procedure', null],
+            message: 'serviceType "{VALUE}" não é válido'
+        },
+        description: 'Tipo de atendimento dentro da especialidade (ex: avaliação, sessão regular)'
+    },
     sessionValue: Number,
     appointmentId: {
         type: mongoose.Schema.Types.ObjectId,

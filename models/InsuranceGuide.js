@@ -105,6 +105,22 @@ const insuranceGuideSchema = new mongoose.Schema({
   },
 
   // ======================================================================
+  // 🩺 AVALIAÇÃO SEPARADA
+  // ======================================================================
+  evaluationAmount: {
+    type: Number,
+    min: [0, 'Valor da avaliação não pode ser negativo'],
+    default: null,
+    description: 'Valor da avaliação inicial separada do valor da sessão'
+  },
+  evaluationSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Session',
+    default: null,
+    description: 'Sessão de avaliação vinculada (se criada automaticamente)'
+  },
+
+  // ======================================================================
   // TEMPO E STATUS
   // ======================================================================
 

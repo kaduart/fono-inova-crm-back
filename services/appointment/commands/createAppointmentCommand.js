@@ -100,6 +100,39 @@ async function createWithHybridService(payload, user) {
   const isPackageSession = serviceType === 'package_session';
   const isNoAmountPackageSession = isPackageSession && amount <= 0;
 
+  // 🔹 Cria paciente quando isNewPatient=true e patientInfo é fornecido
+  let effectivePatientId = patientId;
+  if (!effectivePatientId && payload.isNewPatient && payload.patientInfo) {
+    const { fullName, phone, birthDate, email } = payload.patientInfo;
+    if (fullName && birthDate) {
+      let existingPatient = null;
+      if (phone) {
+        const normalizedPhone = phone.replace(/\D/g, '');
+        const escapedName = fullName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        existingPatient = await Patient.findOne({
+          fullName: { $regex: new RegExp(`^${escapedName}$`, 'i') },
+          phone: normalizedPhone
+        }).lean();
+      }
+      if (existingPatient?._id) {
+        effectivePatientId = existingPatient._id.toString();
+      } else {
+        const newPatient = await Patient.create({
+          fullName: fullName.trim(),
+          dateOfBirth: birthDate,
+          phone: phone?.replace(/\D/g, '') || undefined,
+          email: email?.toLowerCase() || undefined,
+          createdBy: user?._id
+        });
+        effectivePatientId = newPatient._id.toString();
+      }
+    }
+  }
+
+  if (!effectivePatientId) {
+    throw buildError('Paciente é obrigatório para criar agendamento', 400, 'MISSING_PATIENT');
+  }
+
   // 🔹 Side effect: lead é criado/vinculado FORA da transação principal
   let effectiveLeadId = inputLeadId || null;
   let leadSnapshot = null;
@@ -108,7 +141,7 @@ async function createWithHybridService(payload, user) {
     await Leads.findByIdAndUpdate(effectiveLeadId, { patientJourneyStage: 'ativo' });
   } else {
     effectiveLeadId = await ensureLeadForAppointment(
-      patientId,
+      effectivePatientId,
       {
         serviceType,
         date: payload.date,
@@ -136,7 +169,7 @@ async function createWithHybridService(payload, user) {
     // 2. Cria agendamento via HybridService (fonte de verdade)
     const hybridResult = await appointmentHybridService.create(
       {
-        patientId,
+        patientId: effectivePatientId,
         doctorId,
         date: payload.date,
         time: payload.time,
@@ -212,7 +245,7 @@ async function createWithHybridService(payload, user) {
 
     // 5. Atualiza Patient.appointments
     await Patient.findByIdAndUpdate(
-      patientId,
+      effectivePatientId,
       { $addToSet: { appointments: hybridResult.appointmentId } },
       { session: mongoSession, new: false }
     );
@@ -224,7 +257,7 @@ async function createWithHybridService(payload, user) {
     try {
       await emitSocket('appointmentCreated', {
         _id: hybridResult.appointmentId,
-        patient: patientId,
+        patient: effectivePatientId,
         doctor: doctorId,
         date: payload.date,
         time: payload.time,

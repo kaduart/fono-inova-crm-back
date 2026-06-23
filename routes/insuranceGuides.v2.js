@@ -59,7 +59,9 @@ router.post('/', auth, async (req, res) => {
       sessionValue,
       doctorId,
       issuedAt,
-      notes
+      notes,
+      evaluationAmount,
+      evaluationBilled
     } = req.body;
 
     // Validações
@@ -92,6 +94,8 @@ router.post('/', auth, async (req, res) => {
       sessionsRemaining: parseInt(totalSessions),
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
+      ...(evaluationAmount != null && { evaluationAmount: Number(evaluationAmount) }),
+      ...(evaluationBilled != null && { evaluationBilled: Boolean(evaluationBilled) }),
       ...(doctorId && { doctorId }),
       ...(issuedAt && { issuedAt: new Date(issuedAt) }),
       notes,
@@ -106,6 +110,91 @@ router.post('/', auth, async (req, res) => {
     };
 
     const guide = await InsuranceGuide.create(guideData);
+
+    // Cria sessão de avaliação separada, se houver valor de avaliação e ainda não foi faturada
+    if (guide.evaluationAmount > 0 && guide.evaluationBilled !== true) {
+      try {
+        const evalDate = guide.issuedAt ? new Date(guide.issuedAt) : new Date();
+        evalDate.setHours(0, 0, 0, 0);
+        const evalTime = '08:00';
+
+        const appointment = await Appointment.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          specialty: guide.specialty,
+          date: evalDate,
+          time: evalTime,
+          billingType: 'convenio',
+          paymentMethod: 'convenio',
+          insuranceGuide: guide._id,
+          insuranceProvider: guide.insurance,
+          sessionValue: guide.evaluationAmount,
+          insuranceValue: guide.evaluationAmount,
+          operationalStatus: 'completed',
+          clinicalStatus: 'completed',
+          paymentStatus: 'pending',
+          status: 'completed',
+          notes: 'Avaliação inicial de convênio',
+          serviceType: 'evaluation',
+          createdAt: new Date()
+        });
+
+        const session = await Session.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          specialty: guide.specialty,
+          date: evalDate,
+          time: evalTime,
+          sessionType: guide.specialty,
+          serviceType: 'evaluation',
+          sessionValue: guide.evaluationAmount,
+          appointmentId: appointment._id,
+          appointment: appointment._id,
+          doctor: guide.doctorId,
+          patient: guide.patientId,
+          paymentMethod: 'convenio',
+          status: 'completed',
+          isPaid: false,
+          insuranceGuide: guide._id,
+          insurancePlan: null,
+          notes: 'Avaliação inicial de convênio',
+          createdAt: new Date()
+        });
+
+        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id });
+
+        const payment = await Payment.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          appointment: appointment._id,
+          session: session._id,
+          specialty: guide.specialty,
+          amount: 0,
+          billingType: 'convenio',
+          status: 'pending',
+          financialDate: null,
+          paymentDate: evalDate,
+          paymentMethod: 'other',
+          insurance: {
+            provider: guide.insurance,
+            status: 'pending_billing',
+            grossAmount: guide.evaluationAmount,
+            guideId: guide._id
+          },
+          insuranceGuide: guide._id,
+          notes: `Avaliação inicial do convênio ${guide.insurance}`,
+          kind: 'session_payment'
+        });
+
+        await Appointment.findByIdAndUpdate(appointment._id, { payment: payment._id });
+
+        guide.evaluationSessionId = session._id;
+        await guide.save();
+      } catch (evalError) {
+        console.error('[InsuranceGuidesV2] Erro ao criar avaliação:', evalError);
+        // Não falha a criação da guia por causa da avaliação
+      }
+    }
 
     // Publica evento (async)
     try {
@@ -139,6 +228,9 @@ router.post('/', auth, async (req, res) => {
         status: guide.status,
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
+        evaluationAmount: guide.evaluationAmount ?? null,
+        evaluationBilled: guide.evaluationBilled ?? false,
+        evaluationSessionId: guide.evaluationSessionId || null,
         correlationId
       },
       meta: {
@@ -226,6 +318,9 @@ router.get('/', auth, async (req, res) => {
           status: g.status,
           expiresAt: g.expiresAt,
           sessionValue: g.sessionValue ?? null,
+          evaluationAmount: g.evaluationAmount ?? null,
+          evaluationBilled: g.evaluationBilled ?? false,
+          evaluationSessionId: g.evaluationSessionId?.toString?.() || null,
           totalValue: (g.sessionValue != null && g.totalSessions) ? g.sessionValue * g.totalSessions : null,
           doctor: g.doctorId ? { _id: g.doctorId._id?.toString(), fullName: g.doctorId.fullName } : null,
           issuedAt: g.issuedAt || null,
@@ -293,6 +388,9 @@ router.get('/:id', auth, async (req, res) => {
         status: guide.status,
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
+        evaluationAmount: guide.evaluationAmount ?? null,
+        evaluationBilled: guide.evaluationBilled ?? false,
+        evaluationSessionId: guide.evaluationSessionId?.toString?.() || null,
         totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
         doctor: guide.doctorId ? { _id: guide.doctorId._id?.toString(), fullName: guide.doctorId.fullName } : null,
         issuedAt: guide.issuedAt || null,
@@ -371,7 +469,7 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada', correlationId });
     }
 
-    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt } = req.body;
+    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt, evaluationAmount, evaluationBilled } = req.body;
 
     if (specialty) {
       if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
@@ -386,8 +484,91 @@ router.put('/:id', auth, async (req, res) => {
     if (sessionValue !== undefined) guide.sessionValue = sessionValue != null ? Number(sessionValue) : null;
     if (doctorId !== undefined) guide.doctorId = doctorId || null;
     if (issuedAt !== undefined) guide.issuedAt = issuedAt ? new Date(issuedAt) : null;
+    if (evaluationAmount !== undefined) guide.evaluationAmount = evaluationAmount != null ? Number(evaluationAmount) : null;
+    if (evaluationBilled !== undefined) guide.evaluationBilled = Boolean(evaluationBilled);
 
     await guide.save();
+
+    // Se foi adicionada avaliação, ainda não existe sessão de avaliação e não foi faturada externamente
+    if (guide.evaluationAmount > 0 && !guide.evaluationSessionId && guide.evaluationBilled !== true) {
+      try {
+        const evalDate = guide.issuedAt ? new Date(guide.issuedAt) : new Date();
+        evalDate.setHours(0, 0, 0, 0);
+        const evalTime = '08:00';
+
+        const appointment = await Appointment.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          specialty: guide.specialty,
+          date: evalDate,
+          time: evalTime,
+          billingType: 'convenio',
+          paymentMethod: 'convenio',
+          insuranceGuide: guide._id,
+          insuranceProvider: guide.insurance,
+          sessionValue: guide.evaluationAmount,
+          insuranceValue: guide.evaluationAmount,
+          operationalStatus: 'completed',
+          clinicalStatus: 'completed',
+          paymentStatus: 'pending',
+          status: 'completed',
+          notes: 'Avaliação inicial de convênio',
+          serviceType: 'evaluation',
+          createdAt: new Date()
+        });
+
+        const session = await Session.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          specialty: guide.specialty,
+          date: evalDate,
+          time: evalTime,
+          sessionType: guide.specialty,
+          sessionValue: guide.evaluationAmount,
+          appointmentId: appointment._id,
+          appointment: appointment._id,
+          paymentMethod: 'convenio',
+          status: 'completed',
+          isPaid: false,
+          insuranceGuide: guide._id,
+          insurancePlan: null,
+          notes: 'Avaliação inicial de convênio',
+          createdAt: new Date()
+        });
+
+        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id });
+
+        const payment = await Payment.create({
+          patient: guide.patientId,
+          doctor: guide.doctorId,
+          appointment: appointment._id,
+          session: session._id,
+          specialty: guide.specialty,
+          amount: 0,
+          billingType: 'convenio',
+          status: 'pending',
+          financialDate: null,
+          paymentDate: evalDate,
+          paymentMethod: 'other',
+          insurance: {
+            provider: guide.insurance,
+            status: 'pending_billing',
+            grossAmount: guide.evaluationAmount,
+            guideId: guide._id
+          },
+          insuranceGuide: guide._id,
+          notes: `Avaliação inicial do convênio ${guide.insurance}`,
+          kind: 'session_payment'
+        });
+
+        await Appointment.findByIdAndUpdate(appointment._id, { payment: payment._id });
+
+        guide.evaluationSessionId = session._id;
+        await guide.save();
+      } catch (evalError) {
+        console.error('[InsuranceGuidesV2] Erro ao criar avaliação na edição:', evalError);
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -402,6 +583,9 @@ router.put('/:id', auth, async (req, res) => {
         remaining: Math.max(0, guide.totalSessions - guide.usedSessions),
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
+        evaluationAmount: guide.evaluationAmount ?? null,
+        evaluationBilled: guide.evaluationBilled ?? false,
+        evaluationSessionId: guide.evaluationSessionId || null,
         totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
         doctorId: guide.doctorId || null,
         issuedAt: guide.issuedAt || null,
