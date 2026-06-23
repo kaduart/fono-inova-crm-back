@@ -96,7 +96,7 @@ async function createWithHybridService(payload, user) {
     leadId: inputLeadId,
   } = payload;
 
-  const amount = parseFloat(payload.paymentAmount) || 0;
+  const amount = parseFloat(payload.paymentAmount) || parseFloat(payload.sessionValue) || 0;
   const isPackageSession = serviceType === 'package_session';
   const isNoAmountPackageSession = isPackageSession && amount <= 0;
 

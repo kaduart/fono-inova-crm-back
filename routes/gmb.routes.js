@@ -90,6 +90,20 @@ router.post('/admin/trigger-publish', gmbController.triggerManualPublish);
 router.post('/admin/trigger-generation', gmbController.triggerManualGeneration);
 router.post('/admin/trigger-weekly', gmbController.triggerWeeklyGeneration);
 
+// 📅 Calendário Temático GMB — 30 dias
+router.get('/calendar', gmbController.listCalendar);
+router.get('/calendar/runs', gmbController.listCalendarRuns);
+router.post('/admin/trigger-calendar-today', gmbController.triggerCalendarToday);
+router.post('/admin/trigger-calendar-upcoming', gmbController.triggerCalendarUpcoming);
+
+// 🧪 A/B Engine
+router.get('/ab-tests', gmbController.listABTests);
+router.get('/ab-tests/performance', gmbController.getABPerformance);
+router.post('/ab-tests/preview-variant', gmbController.previewABVariant);
+router.post('/ab-tests/:postId/view', gmbController.recordABView);
+router.post('/ab-tests/:postId/whatsapp-click', gmbController.recordABWhatsAppClick);
+router.post('/ab-tests/:postId/lead', gmbController.recordABLead);
+
 // Inteligência (em desenvolvimento)
 router.get('/intelligence/suggestion', gmbController.getIntelligentSuggestion);
 router.get('/intelligence/data', gmbController.getIntelligenceData);

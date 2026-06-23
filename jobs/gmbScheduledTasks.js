@@ -1,6 +1,7 @@
 // jobs/gmbScheduledTasks.js
 import cron from 'node-cron';
 import * as gmbService from '../services/gmbService.js';
+import * as gmbCalendarService from '../services/gmbCalendarService.js';
 import * as makeService from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
@@ -86,6 +87,26 @@ export const scheduleGmbCron = () => {
             await gmbService.createPostsForAllEspecialidades();
         } catch (error) {
             console.error('❌ [GMB] Erro ao criar posts para especialidades:', error.message);
+        }
+    }, { scheduled: true, timezone: 'America/Sao_Paulo' });
+    
+    // ═══════════════════════════════════════════════════════════════
+    // CRIAÇÃO DE POST DO CALENDÁRIO TEMÁTICO (diário)
+    // Post estratégico baseado no calendário de 30 dias
+    // ═══════════════════════════════════════════════════════════════
+    
+    // 07:00 → Post temático do dia (baseado nos clusters de conteúdo)
+    cron.schedule('0 7 * * *', async () => {
+        console.log('🚀 [GMB Calendário] Iniciando criação do post temático do dia...');
+        try {
+            const result = await gmbCalendarService.createTodaysCalendarPost({ triggeredBy: 'cron' });
+            if (result?.post) {
+                console.log(`✅ [GMB Calendário] Post agendado: ${result.post.title?.substring(0, 60)}`);
+            } else {
+                console.log('ℹ️ [GMB Calendário] Nenhum post criado (já existia ou skip)');
+            }
+        } catch (error) {
+            console.error('❌ [GMB Calendário] Erro no cron:', error.message);
         }
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
     
@@ -212,6 +233,7 @@ export const scheduleGmbCron = () => {
 
     console.log('✅ Cron do GMB agendado:');
     console.log('   🏥 Especialidades: 06:00 (cria post para cada área que falta)');
+    console.log('   📅 Calendário Temático: 07:00 (post diário dos clusters)');
     console.log('   📝 Extras: 07:30(8h) / 11:30(12h) / 14:30(15h) / 18:30(19h)');
     console.log('   🚀 Envio Make: a cada 30min das 8h às 22h');
 };

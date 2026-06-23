@@ -61,7 +61,9 @@ router.post('/', auth, async (req, res) => {
       issuedAt,
       notes,
       evaluationAmount,
-      evaluationBilled
+      generateEvaluationBilling,
+      evaluationDate,
+      evaluationTime
     } = req.body;
 
     // Validações
@@ -95,7 +97,7 @@ router.post('/', auth, async (req, res) => {
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
       ...(evaluationAmount != null && { evaluationAmount: Number(evaluationAmount) }),
-      ...(evaluationBilled != null && { evaluationBilled: Boolean(evaluationBilled) }),
+      ...(generateEvaluationBilling != null && { generateEvaluationBilling: Boolean(generateEvaluationBilling) }),
       ...(doctorId && { doctorId }),
       ...(issuedAt && { issuedAt: new Date(issuedAt) }),
       notes,
@@ -111,18 +113,17 @@ router.post('/', auth, async (req, res) => {
 
     const guide = await InsuranceGuide.create(guideData);
 
-    // Cria sessão de avaliação separada, se houver valor de avaliação e ainda não foi faturada
-    if (guide.evaluationAmount > 0 && guide.evaluationBilled !== true) {
+    // Cria agendamento de avaliação se houver valor e deve gerar cobrança
+    if (guide.evaluationAmount > 0 && guide.generateEvaluationBilling !== false) {
       try {
-        const evalDate = guide.issuedAt ? new Date(guide.issuedAt) : new Date();
-        evalDate.setHours(0, 0, 0, 0);
-        const evalTime = '08:00';
+        const evalDateStr = evaluationDate || (guide.issuedAt ? guide.issuedAt.toISOString().substring(0, 10) : new Date().toISOString().substring(0, 10));
+        const evalTime = evaluationTime || '08:00';
 
         const appointment = await Appointment.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           specialty: guide.specialty,
-          date: evalDate,
+          date: evalDateStr,
           time: evalTime,
           billingType: 'convenio',
           paymentMethod: 'convenio',
@@ -130,10 +131,10 @@ router.post('/', auth, async (req, res) => {
           insuranceProvider: guide.insurance,
           sessionValue: guide.evaluationAmount,
           insuranceValue: guide.evaluationAmount,
-          operationalStatus: 'completed',
-          clinicalStatus: 'completed',
+          operationalStatus: 'pre_agendado',
+          clinicalStatus: 'pending',
           paymentStatus: 'pending',
-          status: 'completed',
+          status: 'pre_agendado',
           notes: 'Avaliação inicial de convênio',
           serviceType: 'evaluation',
           createdAt: new Date()
@@ -141,19 +142,17 @@ router.post('/', auth, async (req, res) => {
 
         const session = await Session.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           specialty: guide.specialty,
-          date: evalDate,
+          date: evalDateStr,
           time: evalTime,
           sessionType: guide.specialty,
           serviceType: 'evaluation',
           sessionValue: guide.evaluationAmount,
           appointmentId: appointment._id,
           appointment: appointment._id,
-          doctor: guide.doctorId,
-          patient: guide.patientId,
           paymentMethod: 'convenio',
-          status: 'completed',
+          status: 'pending',
           isPaid: false,
           insuranceGuide: guide._id,
           insurancePlan: null,
@@ -161,11 +160,9 @@ router.post('/', auth, async (req, res) => {
           createdAt: new Date()
         });
 
-        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id });
-
         const payment = await Payment.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           appointment: appointment._id,
           session: session._id,
           specialty: guide.specialty,
@@ -173,7 +170,7 @@ router.post('/', auth, async (req, res) => {
           billingType: 'convenio',
           status: 'pending',
           financialDate: null,
-          paymentDate: evalDate,
+          paymentDate: new Date(evalDateStr),
           paymentMethod: 'other',
           insurance: {
             provider: guide.insurance,
@@ -186,7 +183,7 @@ router.post('/', auth, async (req, res) => {
           kind: 'session_payment'
         });
 
-        await Appointment.findByIdAndUpdate(appointment._id, { payment: payment._id });
+        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id, payment: payment._id });
 
         guide.evaluationSessionId = session._id;
         await guide.save();
@@ -229,7 +226,7 @@ router.post('/', auth, async (req, res) => {
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
         evaluationAmount: guide.evaluationAmount ?? null,
-        evaluationBilled: guide.evaluationBilled ?? false,
+        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
         evaluationSessionId: guide.evaluationSessionId || null,
         correlationId
       },
@@ -319,7 +316,7 @@ router.get('/', auth, async (req, res) => {
           expiresAt: g.expiresAt,
           sessionValue: g.sessionValue ?? null,
           evaluationAmount: g.evaluationAmount ?? null,
-          evaluationBilled: g.evaluationBilled ?? false,
+          generateEvaluationBilling: g.generateEvaluationBilling ?? true,
           evaluationSessionId: g.evaluationSessionId?.toString?.() || null,
           totalValue: (g.sessionValue != null && g.totalSessions) ? g.sessionValue * g.totalSessions : null,
           doctor: g.doctorId ? { _id: g.doctorId._id?.toString(), fullName: g.doctorId.fullName } : null,
@@ -389,7 +386,7 @@ router.get('/:id', auth, async (req, res) => {
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
         evaluationAmount: guide.evaluationAmount ?? null,
-        evaluationBilled: guide.evaluationBilled ?? false,
+        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
         evaluationSessionId: guide.evaluationSessionId?.toString?.() || null,
         totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
         doctor: guide.doctorId ? { _id: guide.doctorId._id?.toString(), fullName: guide.doctorId.fullName } : null,
@@ -469,7 +466,7 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada', correlationId });
     }
 
-    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt, evaluationAmount, evaluationBilled } = req.body;
+    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt, evaluationAmount, generateEvaluationBilling, evaluationDate, evaluationTime } = req.body;
 
     if (specialty) {
       if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
@@ -485,22 +482,21 @@ router.put('/:id', auth, async (req, res) => {
     if (doctorId !== undefined) guide.doctorId = doctorId || null;
     if (issuedAt !== undefined) guide.issuedAt = issuedAt ? new Date(issuedAt) : null;
     if (evaluationAmount !== undefined) guide.evaluationAmount = evaluationAmount != null ? Number(evaluationAmount) : null;
-    if (evaluationBilled !== undefined) guide.evaluationBilled = Boolean(evaluationBilled);
+    if (generateEvaluationBilling !== undefined) guide.generateEvaluationBilling = Boolean(generateEvaluationBilling);
 
     await guide.save();
 
-    // Se foi adicionada avaliação, ainda não existe sessão de avaliação e não foi faturada externamente
-    if (guide.evaluationAmount > 0 && !guide.evaluationSessionId && guide.evaluationBilled !== true) {
+    // Se foi adicionada avaliação, ainda não existe sessão de avaliação e deve gerar cobrança
+    if (guide.evaluationAmount > 0 && !guide.evaluationSessionId && guide.generateEvaluationBilling !== false) {
       try {
-        const evalDate = guide.issuedAt ? new Date(guide.issuedAt) : new Date();
-        evalDate.setHours(0, 0, 0, 0);
-        const evalTime = '08:00';
+        const evalDateStr = evaluationDate || (guide.issuedAt ? guide.issuedAt.toISOString().substring(0, 10) : new Date().toISOString().substring(0, 10));
+        const evalTime = evaluationTime || '08:00';
 
         const appointment = await Appointment.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           specialty: guide.specialty,
-          date: evalDate,
+          date: evalDateStr,
           time: evalTime,
           billingType: 'convenio',
           paymentMethod: 'convenio',
@@ -508,10 +504,10 @@ router.put('/:id', auth, async (req, res) => {
           insuranceProvider: guide.insurance,
           sessionValue: guide.evaluationAmount,
           insuranceValue: guide.evaluationAmount,
-          operationalStatus: 'completed',
-          clinicalStatus: 'completed',
+          operationalStatus: 'pre_agendado',
+          clinicalStatus: 'pending',
           paymentStatus: 'pending',
-          status: 'completed',
+          status: 'pre_agendado',
           notes: 'Avaliação inicial de convênio',
           serviceType: 'evaluation',
           createdAt: new Date()
@@ -519,16 +515,17 @@ router.put('/:id', auth, async (req, res) => {
 
         const session = await Session.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           specialty: guide.specialty,
-          date: evalDate,
+          date: evalDateStr,
           time: evalTime,
           sessionType: guide.specialty,
+          serviceType: 'evaluation',
           sessionValue: guide.evaluationAmount,
           appointmentId: appointment._id,
           appointment: appointment._id,
           paymentMethod: 'convenio',
-          status: 'completed',
+          status: 'pending',
           isPaid: false,
           insuranceGuide: guide._id,
           insurancePlan: null,
@@ -536,11 +533,9 @@ router.put('/:id', auth, async (req, res) => {
           createdAt: new Date()
         });
 
-        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id });
-
         const payment = await Payment.create({
           patient: guide.patientId,
-          doctor: guide.doctorId,
+          doctor: guide.doctorId || null,
           appointment: appointment._id,
           session: session._id,
           specialty: guide.specialty,
@@ -548,7 +543,7 @@ router.put('/:id', auth, async (req, res) => {
           billingType: 'convenio',
           status: 'pending',
           financialDate: null,
-          paymentDate: evalDate,
+          paymentDate: new Date(evalDateStr),
           paymentMethod: 'other',
           insurance: {
             provider: guide.insurance,
@@ -561,7 +556,7 @@ router.put('/:id', auth, async (req, res) => {
           kind: 'session_payment'
         });
 
-        await Appointment.findByIdAndUpdate(appointment._id, { payment: payment._id });
+        await Appointment.findByIdAndUpdate(appointment._id, { session: session._id, payment: payment._id });
 
         guide.evaluationSessionId = session._id;
         await guide.save();
@@ -584,7 +579,7 @@ router.put('/:id', auth, async (req, res) => {
         expiresAt: guide.expiresAt,
         sessionValue: guide.sessionValue ?? null,
         evaluationAmount: guide.evaluationAmount ?? null,
-        evaluationBilled: guide.evaluationBilled ?? false,
+        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
         evaluationSessionId: guide.evaluationSessionId || null,
         totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
         doctorId: guide.doctorId || null,

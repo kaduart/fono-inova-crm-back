@@ -496,7 +496,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
-            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type liminarProcessNumber liminarCourt' })
+            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
             .sort({ date: -1, time: 1 })
@@ -584,7 +584,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         const appointment = await Appointment.findById(id)
             .populate('patient', 'fullName phone email dateOfBirth')
             .populate('doctor', 'fullName specialty')
-            .populate('package', 'totalSessions sessionsUsed')
+            .populate('package', 'totalSessions sessionsUsed sessionValue totalPaid financialStatus balance type')
             .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
             .populate('session', 'status paymentStatus')
             .populate('payment', 'status amount paymentMethod');

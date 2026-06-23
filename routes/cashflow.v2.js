@@ -213,7 +213,10 @@ router.get('/', auth, async (req, res) => {
             const desc = (p.description || '').toLowerCase();
             const isLiminarY = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
             const isPackagePayment = !isLiminarY && (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session' || p.package || (p.session && yesterdayPkgSessionPrepaidMap.get(p.session.toString()) === true));
-            if (isPackagePayment && appt && appt.operationalStatus !== 'completed') return null;
+            const pkgPaymentTypeY = appt?.package?.paymentType || appt?.package?.model;
+            const isPrepaidPackageY = pkgPaymentTypeY === 'full' || pkgPaymentTypeY === 'prepaid';
+            // Consumo de pacote PRÉ-PAGO só entra no caixa se a sessão foi concluída; per-session é pagamento real do dia
+            if (isPackagePayment && isPrepaidPackageY && appt && appt.operationalStatus !== 'completed') return null;
             if (isPackagePayment) {
                 const isCompraHoje = !!p.package;
                 const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
@@ -283,8 +286,10 @@ router.get('/', auth, async (req, res) => {
                 moment(p.financialDate).tz('America/Sao_Paulo').startOf('day')
                     .isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day')));
 
-            // Pagamentos de pacote só entram no caixa se o appointment foi concluído — exceto pré-pagamentos
-            if (isPackagePayment && appt && appt.operationalStatus !== 'completed' && !isPrepagamento) {
+            const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
+            const isPrepaidPackage = pkgPaymentType === 'full' || pkgPaymentType === 'prepaid';
+            // Consumo de pacote PRÉ-PAGO só entra no caixa se a sessão foi concluída — exceto pré-pagamentos e per-session (pagamento real do dia)
+            if (isPackagePayment && isPrepaidPackage && appt && appt.operationalStatus !== 'completed' && !isPrepagamento) {
                 return null;
             }
 
@@ -368,7 +373,7 @@ router.get('/', auth, async (req, res) => {
                 billingType: p.billingType || '-',
                 kind: p.kind || '-',
                 package: !!p.package || !!appt?.package,
-                packageId: p.package ? p.package.toString() : (appt?.package ? appt.package.toString() : null),
+                packageId: p.package ? (p.package._id || p.package).toString() : (appt?.package ? (appt.package._id || appt.package).toString() : null),
                 isPackageSale: tipo === 'Pacote' && !!p.package,
                 isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
                 appointmentStatus: appt?.operationalStatus || '-',
@@ -761,5 +766,16 @@ router.get('/month', auth, async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+export function clearCashflowCache(date) {
+    if (date) {
+        // Remove entradas do dia específico
+        for (const key of _cashflowCache.keys()) {
+            if (key.startsWith(date)) _cashflowCache.delete(key);
+        }
+    } else {
+        _cashflowCache.clear();
+    }
+}
 
 export default router;

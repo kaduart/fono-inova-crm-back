@@ -128,9 +128,9 @@ paymentSchema.pre('validate', function(next) {
         this.appointmentId = this.appointment.toString();
     }
     
-    // financialDate para payments pagos — paymentDate é predominante (data real do pagamento)
+    // financialDate para payments pagos — paidAt é predominante (momento real do pagamento)
     if (['paid', 'completed', 'confirmed'].includes(this.status) && !this.financialDate && !this.isFromPackage) {
-        this.financialDate = this.paymentDate || this.paidAt || new Date();
+        this.financialDate = this.paidAt || this.paymentDate || new Date();
     }
     
     // 🚨 GUARDA FINANCEIRA: package_consumed SEMPRE é consumo de pacote

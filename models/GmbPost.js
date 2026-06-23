@@ -162,6 +162,13 @@ const gmbPostSchema = new mongoose.Schema({
     default: true,
     description: 'Se true, post será republicado automaticamente quando expirar'
   },
+
+  // 🧪 Metadados do A/B Engine e calendário
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+    description: 'Metadados extras: calendário, A/B variant, tracking, etc.'
+  }
   
 }, { timestamps: true });
 

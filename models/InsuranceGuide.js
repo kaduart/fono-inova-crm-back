@@ -119,6 +119,11 @@ const insuranceGuideSchema = new mongoose.Schema({
     default: null,
     description: 'Sessão de avaliação vinculada (se criada automaticamente)'
   },
+  generateEvaluationBilling: {
+    type: Boolean,
+    default: true,
+    description: 'Se true, gera cobrança/faturamento da avaliação no sistema. Se false, a avaliação já foi cobrada externamente.'
+  },
 
   // ======================================================================
   // TEMPO E STATUS

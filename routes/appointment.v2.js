@@ -24,6 +24,26 @@ import Package from '../models/Package.js';
 import PatientBalance from '../models/PatientBalance.js';
 import moment from 'moment-timezone';
 import { syncEvent } from '../services/syncService.js';
+import { clearCashflowCache } from './cashflow.v2.js';
+
+/**
+ * Normaliza método de pagamento do appointment para o schema Payment.
+ */
+function mapPaymentMethod(method) {
+  const map = {
+    'dinheiro': 'cash',
+    'pix': 'pix',
+    'credit_card': 'credit_card',
+    'cartao_credito': 'credit_card',
+    'cartao_debito': 'debit_card',
+    'debit_card': 'debit_card',
+    'cartao': 'credit_card',
+    'transferencia': 'bank_transfer',
+    'convenio': 'convenio',
+    'liminar_credit': 'liminar_credit'
+  };
+  return map[method] || method || 'pix';
+}
 import readRouter from './appointmentReads.js';
 import {
   createAppointment,
@@ -326,24 +346,60 @@ router.patch('/:id/complete', auth, async (req, res) => {
             await Session.findOneAndUpdate({ _id: sessionId }, sessionUpdateData, { session });
         }
 
-        // 2️⃣ ATUALIZAR PAYMENT
-        if (!addToBalance && !isConvenioSession) {
+        // 2️⃣ ATUALIZAR/CRIAR PAYMENT
+        // Regra geral: todo particular que NÃO seja pacote pré-pago gera Payment no ato.
+        const isPrepaidPackage = packageId && (
+            appointment.package?.paymentType === 'full' ||
+            appointment.package?.model === 'prepaid'
+        );
+
+        if (!addToBalance && !isConvenioSession && !isPrepaidPackage) {
             let finalPaymentId = paymentId;
 
-            if (!finalPaymentId && !packageId) {
+            if (!finalPaymentId) {
                 const orphanPayment = await Payment.findOne({ appointment: appointment._id }, { _id: 1 }, { session });
                 if (orphanPayment) {
                     finalPaymentId = orphanPayment._id;
-                    await Appointment.updateOne({ _id: appointment._id }, { $set: { payment: finalPaymentId } }, { session });
                 }
             }
 
+            const now = new Date();
+            const clinicalPaymentDate = appointment.date
+                ? moment.tz(appointment.date, 'America/Sao_Paulo').startOf('day').toDate()
+                : now;
+
             if (finalPaymentId) {
-                const existingPayment = await Payment.findOne({ _id: finalPaymentId }, { status: 1 }, { session });
-                const updateData = existingPayment?.status === 'paid'
-                    ? { status: 'paid', updatedAt: new Date() }
-                    : { status: 'paid', paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"), updatedAt: new Date() };
+                const existingPayment = await Payment.findOne({ _id: finalPaymentId }, { status: 1, paidAt: 1, financialDate: 1 }, { session });
+                const updateData = { status: 'paid', updatedAt: now };
+                if (!existingPayment?.paidAt) updateData.paidAt = now;
+                if (!existingPayment?.financialDate) updateData.financialDate = now;
                 await Payment.updateOne({ _id: finalPaymentId }, { $set: updateData }, { session });
+            } else {
+                // Camada de segurança: cria Payment se não existe (avaliação/avulso particular / per-session)
+                const newPayment = new Payment({
+                    patient: appointment.patient || appointment.patientId,
+                    patientId: appointment.patient?._id?.toString() || appointment.patient?.toString() || appointment.patientId,
+                    appointment: appointment._id,
+                    appointmentId: appointment._id.toString(),
+                    session: sessionId || null,
+                    amount: appointment.sessionValue || 0,
+                    paymentMethod: mapPaymentMethod(appointment.paymentMethod) || 'pix',
+                    paymentDate: clinicalPaymentDate,
+                    financialDate: now,
+                    paidAt: now,
+                    status: 'paid',
+                    billingType: appointment.billingType || 'particular',
+                    specialty: appointment.specialty || null,
+                    serviceType: appointment.serviceType || null,
+                    source: 'appointment',
+                    description: `Pagamento referente ao agendamento ${appointment._id}`
+                });
+                await newPayment.save({ session });
+                finalPaymentId = newPayment._id;
+            }
+
+            if (finalPaymentId) {
+                await Appointment.updateOne({ _id: appointment._id }, { $set: { payment: finalPaymentId, paymentId: finalPaymentId.toString() } }, { session });
             }
         }
 
@@ -401,6 +457,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
         await Appointment.updateOne({ _id: id }, updateData, { session });
 
         await session.commitTransaction();
+
+        // Invalida cache do cashflow para que o novo payment apareça imediatamente
+        const apptDateStr = appointment.date
+            ? moment.tz(appointment.date, 'America/Sao_Paulo').format('YYYY-MM-DD')
+            : moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        clearCashflowCache(apptDateStr);
 
         // 5️⃣ SALDO DEVEDOR (pós-commit)
         if (addToBalance && patientId) {

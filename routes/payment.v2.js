@@ -978,20 +978,20 @@ router.patch('/:id', auth, async (req, res) => {
             ...(notes !== undefined && { notes }),
             ...(doctor !== undefined && isValidObjectId(doctor) && { doctor }),
             ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
-            // financialDate explícito (admin edit) tem prioridade sobre paymentDate
+            // financialDate explícito (admin edit) define a data real do caixa
             ...(financialDateBody !== undefined && !payment.isFromPackage && {
                 financialDate: moment.tz(financialDateBody, 'America/Sao_Paulo').startOf('day').toDate(),
-                paymentDate:   moment.tz(financialDateBody, 'America/Sao_Paulo').startOf('day').toDate(),
-            }),
-            ...(paymentDate !== undefined && financialDateBody === undefined && !payment.isFromPackage && {
-                financialDate: moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
             }),
             updatedAt: new Date()
         };
 
-        // 🏦 FINANCIAL LOCK: se mudou para pago, precisa de paidAt
-        if (status !== undefined && ['paid', 'completed', 'confirmed'].includes(status) && !payment.paidAt) {
-            updateData.paidAt = new Date();
+        // 🏦 FINANCIAL LOCK: se mudou para pago, precisa de paidAt e financialDate real
+        if (status !== undefined && ['paid', 'completed', 'confirmed'].includes(status)) {
+            if (!payment.paidAt) updateData.paidAt = new Date();
+            // Só seta financialDate se o body não enviou uma data financeira explícita
+            if (financialDateBody === undefined && !payment.financialDate && !payment.isFromPackage) {
+                updateData.financialDate = new Date();
+            }
         }
 
         // 🎯 STATUS TRANSITION: usa paymentStatusService se status mudou

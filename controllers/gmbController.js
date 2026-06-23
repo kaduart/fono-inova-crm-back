@@ -796,3 +796,161 @@ export async function getConversionMetrics(req, res) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+// 📅 CALENDÁRIO TEMÁTICO GMB — 30 DIAS
+// ═══════════════════════════════════════════════════════════════
+
+import * as gmbCalendarService from '../services/gmbCalendarService.js';
+import * as gmbABEngine from '../services/gmbABEngine.js';
+
+// 🚀 Criar post do calendário para hoje
+export async function triggerCalendarToday(req, res) {
+  try {
+    const result = await gmbCalendarService.createTodaysCalendarPost();
+    res.json({
+      success: true,
+      data: result,
+      message: result ? 'Post do calendário criado com sucesso' : 'Post do dia já existia'
+    });
+  } catch (error) {
+    console.error('Erro ao criar post do calendário:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🗓️ Criar posts do calendário para os próximos dias
+export async function triggerCalendarUpcoming(req, res) {
+  try {
+    const dias = parseInt(req.body.dias) || 7;
+    const results = await gmbCalendarService.createCalendarPostsForUpcomingDays(dias);
+    res.json({
+      success: true,
+      data: results,
+      message: `Calendário gerado para os próximos ${dias} dias`
+    });
+  } catch (error) {
+    console.error('Erro ao gerar calendário:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📋 Listar calendário temático
+export async function listCalendar(req, res) {
+  try {
+    res.json({
+      success: true,
+      data: gmbCalendarService.CALENDARIO_GMB_30_DIAS,
+      total: gmbCalendarService.CALENDARIO_GMB_30_DIAS.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📊 Listar histórico de execuções do calendário
+export async function listCalendarRuns(req, res) {
+  try {
+    const limit = parseInt(req.query.limit) || 30;
+    const runs = await gmbCalendarService.getCalendarRuns(limit);
+    res.json({
+      success: true,
+      data: runs,
+      total: runs.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 🧪 A/B ENGINE — CALENDÁRIO TEMÁTICO GMB
+// ═══════════════════════════════════════════════════════════════
+
+// 📊 Listar testes A/B
+export async function listABTests(req, res) {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const tests = await gmbABEngine.listABTests(limit);
+    res.json({ success: true, data: tests });
+  } catch (error) {
+    console.error('Erro ao listar testes A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📈 Performance por tema
+export async function getABPerformance(req, res) {
+  try {
+    const performance = await gmbABEngine.getPerformanceByTheme();
+    res.json({ success: true, data: performance });
+  } catch (error) {
+    console.error('Erro ao calcular performance A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🔗 Registrar clique no WhatsApp
+export async function recordABWhatsAppClick(req, res) {
+  try {
+    const { postId } = req.params;
+    const result = await gmbABEngine.recordMetric(postId, 'whatsappClicks', 1);
+    res.json({ success: true, data: result, message: 'Clique no WhatsApp registrado' });
+  } catch (error) {
+    console.error('Erro ao registrar clique A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 👁️ Registrar visualização (view)
+export async function recordABView(req, res) {
+  try {
+    const { postId } = req.params;
+    const result = await gmbABEngine.recordMetric(postId, 'views', 1);
+    res.json({ success: true, data: result, message: 'Visualização registrada' });
+  } catch (error) {
+    console.error('Erro ao registrar view A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 💚 Registrar lead
+export async function recordABLead(req, res) {
+  try {
+    const { postId } = req.params;
+    const result = await gmbABEngine.recordMetric(postId, 'leads', 1);
+    res.json({ success: true, data: result, message: 'Lead registrado' });
+  } catch (error) {
+    console.error('Erro ao registrar lead A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🎯 Forçar variante para teste manual
+export async function previewABVariant(req, res) {
+  try {
+    const { tema, variant } = req.body;
+    if (!tema || !['A', 'B'].includes(variant)) {
+      return res.status(400).json({ success: false, error: 'tema e variant (A|B) são obrigatórios' });
+    }
+
+    const item = { tema };
+    const variants = gmbABEngine.generateVariants(item);
+    const selected = variants[variant];
+
+    res.json({
+      success: true,
+      data: {
+        tema,
+        variant,
+        label: selected.label,
+        customTheme: selected.customTheme
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao preview variante A/B:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}

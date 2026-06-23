@@ -182,6 +182,11 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         return { status: 'already_confirmed', appointmentId };
     }
 
+    // Data clínica do agendamento (para paymentDate)
+    const clinicalPaymentDate = appointment?.date
+        ? moment.tz(appointment.date, 'America/Sao_Paulo').startOf('day').toDate()
+        : new Date();
+
     if (appointment.operationalStatus === 'rejected' || appointment.operationalStatus === 'canceled') {
         log.info('appointment_cancelled', `Agendamento ${appointmentId} já cancelado/rejeitado`);
         return { status: 'appointment_cancelled', appointmentId };
@@ -201,7 +206,7 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         };
     }
 
-    // 3. Cria registro de pagamento
+    // 3. Cria registro de pagamento (pending — financialDate preenchido só no paid)
     const payment = new Payment({
         patient: appointment?.patient || patientId,  // 🎯 Schema obrigatório: busca do appointment ou fallback payload
         patientId: patientId,
@@ -209,11 +214,8 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         appointmentId: appointmentId,
         amount,
         paymentMethod,
-        paymentDate: payload.paymentDate ? new Date(payload.paymentDate) : new Date(),
-        // Converte para startOf('day') em Brasília — evita UTC midnight cair no dia anterior
-        financialDate: payload.paymentDate
-            ? moment.tz(payload.paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
-            : new Date(),
+        paymentDate: clinicalPaymentDate,
+        financialDate: null,
         status: 'pending',
         billingType: 'particular', // 🎯 Dashboard separa por tipo
         source: 'appointment',
@@ -243,9 +245,9 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         });
 
         // ✅ CONFIRMA PAYMENT IMEDIATAMENTE (sessão já foi completada antes deste evento)
+        // financialDate é derivado do pagamento real (paidAt), não do input externo
         await transitionPaymentStatus(payment._id, 'paid', {
             paymentMethod: payment.paymentMethod || 'pix',
-            financialDate: payment.paymentDate || new Date(),
             paidAt: new Date(),
             reason: 'payment_link_confirmed'
         });
