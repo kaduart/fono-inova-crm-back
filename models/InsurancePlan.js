@@ -18,6 +18,8 @@ const insurancePlanSchema = new mongoose.Schema({
 
   slots: { type: [slotSchema], default: [] },
 
+  sessionValue: { type: Number, default: 0 },
+
   generatedAppointments: [
     { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }
   ],

@@ -10,6 +10,7 @@ import InsurancePlan from '../models/InsurancePlan.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';
+import Session from '../models/Session.js';
 import Convenio from '../models/Convenio.js';
 import { generateInsurancePlanSessions } from '../services/schedule/generateInsurancePlanSessions.js';
 
@@ -107,6 +108,7 @@ router.post('/', auth, async (req, res) => {
       sessionsPerWeek,
       startDate: new Date(startDate),
       slots,
+      sessionValue: resolvedSessionValue,
       status: 'active',
       notes,
       createdBy: req.user?.id
@@ -213,6 +215,7 @@ router.get('/guide/:guideId', auth, async (req, res) => {
   try {
     const { guideId } = req.params;
     const plan = await InsurancePlan.findOne({ guide: guideId })
+      .populate('doctor', 'fullName name specialty')
       .populate('generatedAppointments', 'date time operationalStatus specialty')
       .lean();
 
@@ -220,10 +223,243 @@ router.get('/guide/:guideId', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
     }
 
+    // Planos antigos podem não ter sessionValue salvo. Recupera do primeiro payment pendente.
+    if (!plan.sessionValue) {
+      const payment = await Payment.findOne({
+        insurancePlan: plan._id,
+        status: 'pending',
+        billingType: 'convenio'
+      }).select('insurance.grossAmount').lean();
+
+      plan.sessionValue = payment?.insurance?.grossAmount || 0;
+    }
+
     res.json({ success: true, data: plan });
   } catch (error) {
     console.error('[InsurancePlansV2] Erro ao buscar:', error);
     res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  }
+});
+
+/**
+ * PATCH /api/v2/insurance-plans/:id
+ * Atualiza plano de convênio e sincroniza appointments futuros pendentes.
+ * Sessões já completadas NÃO são alteradas.
+ */
+router.patch('/:id', auth, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { id } = req.params;
+    const { doctorId, sessionValue, slots, notes } = req.body;
+
+    const plan = await InsurancePlan.findById(id).session(session);
+    if (!plan) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+    }
+
+    if (plan.status !== 'active') {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo. Cancele e crie um novo.' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // Appointments futuros pendentes gerados por este plano
+    const affected = await Appointment.find({
+      _id: { $in: plan.generatedAppointments },
+      date: { $gte: today },
+      operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
+    }).select('_id date time patient').session(session).lean();
+
+    // Sincronização de horário se slots mudaram
+    const timeSyncMap = new Map();
+    const toCancelIds = [];
+    if (slots !== undefined) {
+      const newDayToTime = new Map((slots || []).map(s => [s.dayOfWeek, s.time]));
+
+      for (const a of affected) {
+        const dow = new Date(a.date).getDay();
+        const newTime = newDayToTime.get(dow);
+        if (newTime) {
+          if (newTime !== a.time) timeSyncMap.set(String(a._id), newTime);
+        } else {
+          toCancelIds.push(a._id);
+        }
+      }
+    }
+
+    // Pré-checagem de conflitos com novo profissional
+    const SLOT_BLOCKING_STATUSES = [
+      'pre_agendado', 'scheduled', 'confirmed', 'pending', 'paid',
+      'missed', 'processing_create', 'processing_complete', 'processing_cancel', 'force_cancelled'
+    ];
+
+    if (doctorId && affected.length > 0) {
+      const newDoctorObjId = new mongoose.Types.ObjectId(doctorId);
+      const movingIds = affected.map(a => a._id);
+
+      const conflicts = await Appointment.find({
+        _id: { $nin: movingIds },
+        doctor: newDoctorObjId,
+        isJointSession: false,
+        operationalStatus: { $in: SLOT_BLOCKING_STATUSES },
+        $or: affected.map(a => ({
+          date: a.date,
+          time: timeSyncMap.get(String(a._id)) || a.time
+        }))
+      }).select('date time patient').populate('patient', 'fullName').session(session).lean();
+
+      if (conflicts.length > 0) {
+        await session.abortTransaction();
+
+        const detalhes = conflicts.map(c => {
+          const dataFmt = new Date(c.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          const nomePaciente = c.patient?.fullName || 'paciente não identificado';
+          return `${dataFmt} às ${c.time} (já ocupado com ${nomePaciente})`;
+        });
+
+        return res.status(409).json({
+          success: false,
+          errorCode: 'CONFLITO_AGENDA',
+          message: `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`,
+          conflicts: conflicts.map(c => ({
+            date: c.date,
+            time: c.time,
+            patientName: c.patient?.fullName || null
+          }))
+        });
+      }
+    }
+
+    // Atualiza plano
+    if (doctorId !== undefined) plan.doctor = new mongoose.Types.ObjectId(doctorId);
+    if (sessionValue !== undefined) plan.sessionValue = Number(sessionValue) || 0;
+    if (slots !== undefined) plan.slots = slots;
+    if (notes !== undefined) plan.notes = notes;
+
+    await plan.save({ session });
+
+    // Atualiza appointments pendentes (doctor, time e valores)
+    const baseSet = {};
+    if (doctorId !== undefined) baseSet.doctor = new mongoose.Types.ObjectId(doctorId);
+    if (sessionValue !== undefined) {
+      baseSet.sessionValue = Number(sessionValue) || 0;
+      baseSet.insuranceValue = Number(sessionValue) || 0;
+    }
+
+    let appointmentsUpdated = 0;
+    if (affected.length > 0 && (Object.keys(baseSet).length > 0 || timeSyncMap.size > 0)) {
+      const bulkOps = affected
+        .map(a => {
+          const set = { ...baseSet };
+          const newTime = timeSyncMap.get(String(a._id));
+          if (newTime) set.time = newTime;
+          return Object.keys(set).length > 0
+            ? { updateOne: { filter: { _id: a._id }, update: { $set: set } } }
+            : null;
+        })
+        .filter(Boolean);
+
+      if (bulkOps.length > 0) {
+        const result = await Appointment.bulkWrite(bulkOps, { session });
+        appointmentsUpdated = result.modifiedCount;
+      }
+    }
+
+    // Cancela appointments cujo dia da semana saiu do plano
+    let appointmentsCanceled = 0;
+    if (toCancelIds.length > 0) {
+      const cancelRes = await Appointment.updateMany(
+        { _id: { $in: toCancelIds } },
+        {
+          $set: {
+            operationalStatus: 'canceled',
+            cancellationReason: 'plan_slot_removed',
+            updatedAt: new Date()
+          }
+        },
+        { session }
+      );
+      appointmentsCanceled = cancelRes.modifiedCount;
+
+      await Session.updateMany(
+        { appointmentId: { $in: toCancelIds }, status: { $ne: 'completed' } },
+        { $set: { status: 'canceled', updatedAt: new Date() } },
+        { session }
+      );
+
+      await Payment.updateMany(
+        { appointment: { $in: toCancelIds }, status: 'pending' },
+        { $set: { status: 'canceled', updatedAt: new Date() } },
+        { session }
+      );
+    }
+
+    // Atualiza doctor e sessionValue nas sessions futuras pendentes
+    if ((doctorId !== undefined || sessionValue !== undefined) && affected.length > 0) {
+      const affectedIds = affected.map(a => a._id);
+      const sessionSet = {};
+      if (doctorId !== undefined) sessionSet.doctor = new mongoose.Types.ObjectId(doctorId);
+      if (sessionValue !== undefined) sessionSet.sessionValue = Number(sessionValue) || 0;
+
+      await Session.updateMany(
+        { appointmentId: { $in: affectedIds }, status: { $ne: 'completed' } },
+        { $set: { ...sessionSet, updatedAt: new Date() } },
+        { session }
+      );
+    }
+
+    // Atualiza insurance.grossAmount nos payments pendentes vinculados aos appointments futuros
+    let paymentsUpdated = 0;
+    if (sessionValue !== undefined && affected.length > 0) {
+      const affectedIds = affected.map(a => a._id);
+      const paymentRes = await Payment.updateMany(
+        {
+          appointment: { $in: affectedIds },
+          status: 'pending',
+          billingType: 'convenio'
+        },
+        {
+          $set: {
+            'insurance.grossAmount': Number(sessionValue) || 0,
+            updatedAt: new Date()
+          }
+        },
+        { session }
+      );
+      paymentsUpdated = paymentRes.modifiedCount;
+    }
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      data: {
+        plan,
+        appointmentsUpdated,
+        appointmentsCanceled,
+        paymentsUpdated
+      }
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('[InsurancePlansV2] Erro ao atualizar plano:', error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        errorCode: 'CONFLITO_AGENDA',
+        message: 'O horário ficou indisponível durante a operação. Tente novamente.'
+      });
+    }
+
+    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  } finally {
+    session.endSession();
   }
 });
 
