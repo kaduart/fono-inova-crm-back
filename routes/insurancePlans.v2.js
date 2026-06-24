@@ -435,13 +435,32 @@ router.patch('/:id', auth, async (req, res) => {
 
     await session.commitTransaction();
 
+    // Regenera sessões futuras se o guide ainda tem sessões restantes sem agendamento futuro
+    let appointmentsGenerated = 0;
+    try {
+      const guide = await InsuranceGuide.findById(plan.guide).lean();
+      const remaining = (guide?.totalSessions || 0) - (guide?.usedSessions || 0);
+      if (remaining > 0 && affected.length === 0) {
+        const genResult = await generateInsurancePlanSessions({
+          planId: plan._id,
+          guideId: plan.guide,
+          sessionValue: plan.sessionValue || 0,
+          skipHolidays: true
+        });
+        appointmentsGenerated = genResult?.count || 0;
+      }
+    } catch (genErr) {
+      console.error('[InsurancePlansV2] Erro ao regenerar sessões após edição:', genErr.message);
+    }
+
     res.json({
       success: true,
       data: {
         plan,
         appointmentsUpdated,
         appointmentsCanceled,
-        paymentsUpdated
+        paymentsUpdated,
+        appointmentsGenerated
       }
     });
 
@@ -513,6 +532,50 @@ router.delete('/:id', auth, async (req, res) => {
     res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   } finally {
     session.endSession();
+  }
+});
+
+/**
+ * POST /api/v2/insurance-plans/:id/generate-sessions
+ * Gera (ou regenera) appointments futuros com base na configuração do plano ativo.
+ * Equivalente ao "Gerar sessões" do Liminar — separado da edição do plano.
+ */
+router.post('/:id/generate-sessions', auth, async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+  }
+
+  try {
+    const plan = await InsurancePlan.findById(id).lean();
+    if (!plan) return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+    if (plan.status !== 'active') return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Plano não está ativo' });
+
+    const guide = await InsuranceGuide.findById(plan.guide).lean();
+    if (!guide) return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+
+    const remaining = (guide.totalSessions || 0) - (guide.usedSessions || 0);
+    if (remaining <= 0) {
+      return res.status(400).json({ success: false, errorCode: 'GUIDE_EXHAUSTED', message: 'Guia sem sessões restantes para gerar' });
+    }
+
+    const result = await generateInsurancePlanSessions({
+      planId: plan._id,
+      guideId: guide._id,
+      sessionValue: plan.sessionValue || 0,
+      skipHolidays: true
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        appointmentsGenerated: result?.count || 0,
+        remaining
+      }
+    });
+  } catch (error) {
+    console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
+    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
 

@@ -310,10 +310,26 @@ router.get('/', auth, async (req, res) => {
       InsuranceGuide.countDocuments(query)
     ]);
 
+    // Agrega contagem de appointments por status para cada guia
+    const guideIds = guides.map(g => g._id);
+    const apptCounts = await Appointment.aggregate([
+      { $match: { insuranceGuide: { $in: guideIds } } },
+      { $group: {
+        _id: '$insuranceGuide',
+        canceledCount: { $sum: { $cond: [{ $in: ['$operationalStatus', ['canceled', 'cancelled', 'missed']] }, 1, 0] } },
+        scheduledCount: { $sum: { $cond: [{ $in: ['$operationalStatus', ['pre_agendado', 'scheduled', 'confirmed']] }, 1, 0] } },
+        completedCount: { $sum: { $cond: [{ $eq: ['$operationalStatus', 'completed'] }, 1, 0] } }
+      }}
+    ]);
+    const apptCountMap = {};
+    for (const c of apptCounts) apptCountMap[c._id.toString()] = c;
+
     res.json({
       success: true,
       data: {
-        guides: guides.map(g => ({
+        guides: guides.map(g => {
+          const counts = apptCountMap[g._id.toString()] || { canceledCount: 0, scheduledCount: 0, completedCount: 0 };
+          return {
           _id: g._id.toString(),
           number: g.number,
           patientId: g.patientId?._id?.toString?.() || g.patientId?.toString?.() || g.patientId,
@@ -322,6 +338,9 @@ router.get('/', auth, async (req, res) => {
           totalSessions: g.totalSessions,
           usedSessions: g.usedSessions || 0,
           remaining: Math.max(0, (g.totalSessions || 0) - (g.usedSessions || 0)),
+          canceledCount: counts.canceledCount,
+          scheduledCount: counts.scheduledCount,
+          completedCount: counts.completedCount,
           status: g.status,
           expiresAt: g.expiresAt,
           sessionValue: g.sessionValue ?? null,
@@ -333,7 +352,8 @@ router.get('/', auth, async (req, res) => {
           issuedAt: g.issuedAt || null,
           notes: g.notes || null,
           createdAt: g.createdAt
-        })),
+          };
+        }),
         pagination: {
           total,
           page: parseInt(page),

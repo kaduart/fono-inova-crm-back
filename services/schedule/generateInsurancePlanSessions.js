@@ -54,8 +54,12 @@ export async function generateInsurancePlanSessions({
   if (remaining <= 0) throw new Error('GUIDE_EXHAUSTED');
 
   // ── 2. Resolve janela de geração ───────────────────────────────
-  const startDate = new Date(plan.startDate);
-  startDate.setHours(0, 0, 0, 0);
+  const planStartDate = new Date(plan.startDate);
+  planStartDate.setHours(0, 0, 0, 0);
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  // Ao regenerar um plano ativo com sessões passadas, parte de hoje para não criar appointments no passado
+  const startDate = planStartDate > todayDate ? planStartDate : todayDate;
 
   // +1 de buffer: quando startDate cai no meio da semana, slots anteriores
   // ao startDate são pulados na semana 0, consumindo uma semana sem gerar sessão
