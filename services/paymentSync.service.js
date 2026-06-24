@@ -11,6 +11,7 @@
 //   - monthly_settlement / debt_settlement (pagamentos agregados)
 
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import crypto from 'crypto';
@@ -147,7 +148,7 @@ export async function syncAppointmentPayments(appointmentId, mongoSession = null
         const splitGroupId = crypto.randomUUID();
         const createdPayments = [];
         for (const form of appointment.paymentForms) {
-            const paymentDate = form.date ? new Date(form.date) : now;
+            const paymentDate = form.date ? moment.tz(form.date, 'America/Sao_Paulo').startOf('day').toDate() : now;
             const [doc] = await Payment.create([{
                 patient: appointment.patient,
                 doctor: appointment.doctor,

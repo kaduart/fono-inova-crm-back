@@ -383,6 +383,7 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
       kind: 'package_receipt',
       status: 'paid',
       paidAt: new Date(),
+      billingType: pkg.type === 'liminar' ? 'liminar' : 'particular',
       serviceType: 'package_session',
       notes: p.description || 'Pagamento do pacote'
     };

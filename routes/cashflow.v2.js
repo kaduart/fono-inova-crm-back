@@ -295,7 +295,7 @@ router.get('/', auth, async (req, res) => {
 
             if (isLiminar) {
                 tipo = 'Liminar';
-                servico = 'Sessão Liminar';
+                servico = p.kind === 'liminar_contract_receipt' ? 'Crédito Liminar' : 'Sessão Liminar';
             } else if (isPackagePayment) {
                 tipo = 'Pacote';
                 // Usa serviceType real do agendamento; fallback para 'Sessão de Pacote'
@@ -382,7 +382,7 @@ router.get('/', auth, async (req, res) => {
         }).filter(Boolean);
         console.log(`[cashflow.v2] transacoesCaixa.process = ${Date.now() - _tTransacoesCaixa}ms (${transacoesCaixa.length} items)`);
 
-        transacoesCaixa.sort((a, b) => b.hora.localeCompare(a.hora));
+        transacoesCaixa.sort((a, b) => a.hora.localeCompare(b.hora));
 
         // Recalcula totais do caixa a partir das transações já filtradas
         const totalCaixaFiltrado = transacoesCaixa.reduce((s, t) => s + t.valor, 0);

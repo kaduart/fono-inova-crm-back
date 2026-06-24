@@ -1,5 +1,6 @@
 // controllers/convenioPackageController.js
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Package from '../models/Package.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import Session from '../models/Session.js';
@@ -746,7 +747,7 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
     // ===================================
     // 3. ATUALIZAR SESSÕES
     // ===================================
-    const paymentDateObj = new Date(paymentDate);
+    const paymentDateObj = moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate();
     
     const updateResult = await Session.updateMany(
       {

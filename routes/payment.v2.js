@@ -977,7 +977,7 @@ router.patch('/:id', auth, async (req, res) => {
             ...(specialty !== undefined && { specialty }),
             ...(notes !== undefined && { notes }),
             ...(doctor !== undefined && isValidObjectId(doctor) && { doctor }),
-            ...(paymentDate !== undefined && { paymentDate: new Date(paymentDate) }),
+            ...(paymentDate !== undefined && { paymentDate: moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate() }),
             // financialDate explícito (admin edit) define a data real do caixa
             ...(financialDateBody !== undefined && !payment.isFromPackage && {
                 financialDate: moment.tz(financialDateBody, 'America/Sao_Paulo').startOf('day').toDate(),
