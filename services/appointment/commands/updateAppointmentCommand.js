@@ -234,12 +234,7 @@ export async function execute(id, payload, user) {
     });
 
     if (saved.serviceType === 'package_session') {
-      await syncAffectedViews({
-        event: 'appointment.updated',
-        packageId: saved.package?.toString?.() || saved.package,
-        correlationId: `appt_put_${saved._id}_${Date.now()}`,
-      });
-
+      // handlePackageSessionUpdate primeiro: atualiza Session.date/time antes de buildar a PackagesView
       const action = determineActionType(payload, previousData);
       await handlePackageSessionUpdate(
         saved,
@@ -247,6 +242,12 @@ export async function execute(id, payload, user) {
         user,
         { changes: payload, previousData }
       );
+
+      await syncAffectedViews({
+        event: 'appointment.updated',
+        packageId: (saved.package?._id || saved.package)?.toString?.(),
+        correlationId: `appt_put_${saved._id}_${Date.now()}`,
+      });
     }
   } catch (err) {
     console.error('[updateAppointmentCommand] Erro na sincronização pós-atualização:', err);

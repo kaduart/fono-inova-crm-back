@@ -79,7 +79,7 @@ export async function invalidateAvailability(appointment) {
 export async function syncProjections(appointment, correlationId = null) {
   if (!appointment) return;
 
-  const packageId = appointment.package?.toString?.() || appointment.package;
+  const packageId = (appointment.package?._id || appointment.package)?.toString?.();
   const patientId = appointment.patient?.toString?.() || appointment.patient;
 
   await syncAffectedViews({
