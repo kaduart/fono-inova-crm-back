@@ -1392,10 +1392,10 @@ export async function generateImageForEspecialidade(especialidade, postContent =
 
       if (existingImages) {
         console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImages.reuseCount}x)`);
-        // Força extensao .jpg e formato JPEG — o GMB exige isso no URL path
-        const gmbCompatibleUrl = optimizeCloudinaryUrl(existingImages.url);
+        // Usa URL direta do ImageBank — makeService.ensureGmbCompatibleUrl já remove transforms on-demand antes de enviar
+        // Não chamar optimizeCloudinaryUrl aqui: adiciona transforms que causam redirect no GMB
         return {
-          url: gmbCompatibleUrl,
+          url: existingImages.url,
           provider: 'imagebank-reused',
           reused: true
         };

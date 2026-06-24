@@ -152,13 +152,8 @@ ImageBankSchema.statics.findByEspecialidadeETema = async function(especialidade,
     .limit(limit);
   }
   
-  // Se ainda não encontrou, busca qualquer imagem ativa
-  if (images.length === 0) {
-    images = await this.find({ status: 'active' })
-      .sort({ usageCount: 1, lastUsed: 1 })
-      .limit(limit);
-  }
-  
+  // Sem fallback cross-specialty: retorna vazio para forçar geração de nova imagem
+  // (fallback genérico retornava imagens de outras especialidades causando cross-contamination)
   return images;
 };
 
