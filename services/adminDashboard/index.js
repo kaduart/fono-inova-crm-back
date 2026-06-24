@@ -92,6 +92,21 @@ export async function buildDashboardOverview(include = Object.keys(BLOCKS), forc
 }
 
 /**
+ * Pré-aquece todos os blocos do dashboard logo após startup.
+ * Elimina o cold start de 4s na primeira requisição do usuário.
+ */
+export async function warmupDashboardCache() {
+  try {
+    console.log('[DashboardCache] 🔥 Warmup iniciado...');
+    const start = Date.now();
+    await buildDashboardOverview(Object.keys(BLOCKS), false);
+    console.log(`[DashboardCache] ✅ Warmup concluído em ${Date.now() - start}ms`);
+  } catch (err) {
+    console.warn('[DashboardCache] ⚠️ Warmup falhou (não crítico):', err.message);
+  }
+}
+
+/**
  * Invalida cache de blocos específicos
  */
 export async function invalidateDashboardBlocks(blockNames = Object.keys(BLOCKS)) {

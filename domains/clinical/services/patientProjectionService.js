@@ -98,6 +98,7 @@ export async function buildPatientView(patientId, options = {}) {
         .sort({ date: -1, time: -1 })
         .limit(50)
         .select('date time operationalStatus clinicalStatus doctor serviceType specialty sessionValue paymentStatus')
+        .populate('doctor', 'fullName')
         .lean(),
       // Counts via aggregation — barato, não carrega documentos
       // 🎯 MESMO FILTRO: evita contar pré-agendamentos e duplicatas de conversão
@@ -155,6 +156,9 @@ export async function buildPatientView(patientId, options = {}) {
     const { lastAppointment, nextAppointment } = extractAppointments(recentAppointments);
     stats.lastAppointmentDate = lastAppointment?.date || null;
     stats.nextAppointmentDate = nextAppointment?.date || null;
+
+    // Deriva doctorName dos appointments populados como fallback
+    const doctorFromApts = recentAppointments.find(a => a.doctor?.fullName)?.doctor;
     
     // 5. Normaliza nome para busca
     const normalizedName = patient.fullName
@@ -183,7 +187,7 @@ export async function buildPatientView(patientId, options = {}) {
       
       // Vínculo
       doctorId: patient.doctor,
-      doctorName: patient.doctor?.fullName || null,
+      doctorName: patient.doctor?.fullName || doctorFromApts?.fullName || null,
       specialty: null, // será preenchido se tiver doutor
       
       // Stats calculadas (usam aggregation counts — precisas e baratas)

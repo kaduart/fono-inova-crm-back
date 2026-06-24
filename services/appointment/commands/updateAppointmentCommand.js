@@ -141,22 +141,30 @@ export async function execute(id, payload, user) {
 
       // Atualiza Payment (somente se não for pacote)
       if (!updatedAppointment.package && updatedAppointment.payment) {
+        const isConvenioPayment = updatedAppointment.payment?.billingType === 'convenio';
+
+        const paymentSet = {
+          doctor: updateData.doctor || updatedAppointment.doctor,
+          serviceDate: updateData.date ?? updatedAppointment.date,
+          serviceType: updateData.serviceType ?? updatedAppointment.serviceType,
+          updatedAt: currentDate,
+        };
+
+        // Campos financeiros: nunca sobrescrever payment de convênio com fallback 'particular'
+        if (!isConvenioPayment) {
+          Object.assign(paymentSet, {
+            amount: updateData.amount ?? updateData.paymentAmount ?? updatedAppointment.paymentAmount,
+            paymentMethod: updateData.paymentMethod ?? updatedAppointment.paymentMethod,
+            billingType: updateData.billingType ?? updatedAppointment.billingType ?? 'particular',
+            insuranceProvider: updateData.insuranceProvider ?? updatedAppointment.insuranceProvider,
+            insuranceValue: updateData.insuranceValue ?? updatedAppointment.insuranceValue,
+            authorizationCode: updateData.authorizationCode ?? updatedAppointment.authorizationCode,
+          });
+        }
+
         await Payment.findByIdAndUpdate(
           updatedAppointment.payment,
-          {
-            $set: {
-              doctor: updateData.doctor || updatedAppointment.doctor,
-              amount: updateData.amount ?? updateData.paymentAmount ?? updatedAppointment.paymentAmount,
-              paymentMethod: updateData.paymentMethod ?? updatedAppointment.paymentMethod,
-              serviceDate: updateData.date ?? updatedAppointment.date,
-              serviceType: updateData.serviceType ?? updatedAppointment.serviceType,
-              billingType: updateData.billingType ?? updatedAppointment.billingType ?? 'particular',
-              insuranceProvider: updateData.insuranceProvider ?? updatedAppointment.insuranceProvider,
-              insuranceValue: updateData.insuranceValue ?? updatedAppointment.insuranceValue,
-              authorizationCode: updateData.authorizationCode ?? updatedAppointment.authorizationCode,
-              updatedAt: currentDate,
-            },
-          },
+          { $set: paymentSet },
           { session: mongoSession, new: true }
         );
       }

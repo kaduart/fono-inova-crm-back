@@ -245,7 +245,7 @@ export async function getHealth(req, res) {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [stuckPublished, failed, noImage] = await Promise.all([
+    const [stuckPublished, failed, noImage, retrying] = await Promise.all([
       // published mas sem gmbPostId = Make nunca confirmou o GMB
       GmbPost.countDocuments({
         status: 'published',
@@ -253,14 +253,22 @@ export async function getHealth(req, res) {
         createdAt: { $gte: sevenDaysAgo },
       }),
       GmbPost.countDocuments({ status: 'failed' }),
+      // sem imagem em qualquer status que seria enviado ao Make
       GmbPost.countDocuments({
-        status: 'scheduled',
+        status: { $in: ['scheduled', 'publishing_retry'] },
         $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
+      }),
+      // posts falhando repetidamente no Google (≥2 retries sem confirmação)
+      GmbPost.countDocuments({
+        status: { $in: ['scheduled', 'publishing_retry'] },
+        retryCount: { $gte: 2 },
+        gmbPostId: { $exists: false },
+        createdAt: { $gte: sevenDaysAgo },
       }),
     ]);
 
-    const total = stuckPublished + failed + noImage;
-    res.json({ success: true, data: { stuckPublished, failed, noImage, total } });
+    const total = stuckPublished + failed + noImage + retrying;
+    res.json({ success: true, data: { stuckPublished, failed, noImage, retrying, total } });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

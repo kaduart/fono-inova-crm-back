@@ -164,11 +164,12 @@ patientsViewSchema.index({ 'snapshot.ttl': 1 }, { expireAfterSeconds: 0 });
  * Busca rápida por termo (nome, telefone ou CPF)
  */
 patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}) {
-  const { 
-    limit = 50, 
-    skip = 0, 
+  const {
+    limit = 50,
+    skip = 0,
     doctorId = null,
-    status = null 
+    status = null,
+    sortBy = null
   } = options;
   
   let query = {};
@@ -196,10 +197,14 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
   if (doctorId) query.doctorId = doctorId;
   if (status) query.status = status;
   
+  const sortCriteria = sortBy
+    ? { [sortBy]: -1 }
+    : { 'stats.lastAppointmentDate': -1, fullName: 1 };
+
   const [patients, total] = await Promise.all([
     this.find(query)
       .select('-__v -snapshot.ttl') // exclui campos internos
-      .sort({ 'stats.lastAppointmentDate': -1, fullName: 1 })
+      .sort(sortCriteria)
       .skip(skip)
       .limit(limit)
       .lean(),

@@ -91,6 +91,7 @@ import { auth } from "./middleware/auth.js";
 // ======================================================
 import adminRoutes from "./routes/admin.js";
 import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOVO: Admin Dashboard V2
+import { warmupDashboardCache } from './services/adminDashboard/index.js';
 import adminFinancialMetricsRoutes from './routes/admin/financialMetrics.routes.js';  // 📊 Métricas financeiras internas
 import adminSystemRoutes, { serverAdapter as bullBoardAdapter } from './routes/adminSystem.js';  // 🖥️ Monitor de filas + Bull Board
 import amandaRoutes from "./routes/aiAmanda.js";
@@ -840,6 +841,9 @@ server.listen(PORT, '0.0.0.0', () => {
         
         mongoConnected = true;
         console.log("✅ MongoDB conectado");
+
+        // Pré-aquece o cache do dashboard em background (elimina cold start de 4s)
+        setTimeout(() => warmupDashboardCache(), 2000);
 
         // Remove índices legados de evoluções para recriar sem restrições problemáticas
         const evoCol = mongoose.connection.db.collection('evolutions');

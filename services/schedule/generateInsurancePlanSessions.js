@@ -53,6 +53,10 @@ export async function generateInsurancePlanSessions({
   const remaining = guide.totalSessions - guide.usedSessions;
   if (remaining <= 0) throw new Error('GUIDE_EXHAUSTED');
 
+  // Guia é a fonte de verdade do valor de sessão do convênio.
+  // plan.sessionValue é apenas um espelho; guide.sessionValue prevalece.
+  const effectiveSessionValue = guide.sessionValue || sessionValue || 0;
+
   // ── 2. Resolve janela de geração ───────────────────────────────
   const planStartDate = new Date(plan.startDate);
   planStartDate.setHours(0, 0, 0, 0);
@@ -143,8 +147,8 @@ export async function generateInsurancePlanSessions({
           insuranceProvider: guide.insurance,
           insuranceGuide: guide._id,
           insurancePlan: plan._id,
-          sessionValue,
-          insuranceValue: sessionValue,
+          sessionValue: effectiveSessionValue,
+          insuranceValue: effectiveSessionValue,
           operationalStatus: 'pre_agendado',
           clinicalStatus: 'pending',
           paymentStatus: 'pending',
@@ -194,7 +198,7 @@ export async function generateInsurancePlanSessions({
     insurance: {
       provider: guide.insurance,
       status: 'pending_billing',
-      grossAmount: sessionValue,
+      grossAmount: effectiveSessionValue,
       guideId: guide._id
     },
     insuranceGuide: guide._id,
@@ -237,7 +241,7 @@ export async function generateInsurancePlanSessions({
     patient: plan.patient,
     doctor: plan.doctor,
     specialty: plan.specialty,
-    sessionValue,
+    sessionValue: effectiveSessionValue,
     insuranceGuide: guide._id,
     insurancePlan: plan._id
   }));
@@ -271,7 +275,7 @@ export async function generateInsurancePlanSessions({
     appointmentsCreated: result.upsertedCount,
     paymentsCreated: paymentDocs.length,
     sessionsCreated: createdSessions.length,
-    sessionValue
+    sessionValue: effectiveSessionValue
   });
 
   return {

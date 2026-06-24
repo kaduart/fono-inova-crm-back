@@ -268,10 +268,11 @@ router.patch('/:id', auth, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     // Appointments futuros pendentes gerados por este plano
+    // 'confirmed' incluído: PATCH de sessionValue/doctor deve propagar mesmo após confirmação
     const affected = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
       date: { $gte: today },
-      operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
     }).select('_id date time patient').session(session).lean();
 
     // Sincronização de horário se slots mudaram

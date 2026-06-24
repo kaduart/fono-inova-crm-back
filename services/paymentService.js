@@ -175,11 +175,12 @@ class PaymentService {
                 invalidos++;
                 console.warn(`[PaymentService][AUDIT] ${p._id}: ${audit.erros.join(', ')}`);
                 
-                // Auto-corrige se possível
+                // Auto-corrige se possível — convênio tem prioridade sobre fallback particular
                 if (audit.erros.includes('billingType ausente')) {
+                    const inferredType = (p.insuranceGuide || p.insurance?.provider) ? 'convenio' : 'particular';
                     await Payment.updateOne(
                         { _id: p._id },
-                        { $set: { billingType: 'particular' } }
+                        { $set: { billingType: inferredType } }
                     );
                     corrigidos++;
                 }

@@ -53,21 +53,23 @@ router.get('/', flexibleAuth, async (req, res) => {
   const correlationId = req.headers['x-correlation-id'] || `pat_list_${Date.now()}`;
   
   try {
-    const { 
-      search, 
-      limit = 50, 
+    const {
+      search,
+      limit = 50,
       skip = 0,
       doctorId = null,
       status = null,
+      sortBy = null,
       includeStale = 'false' // se 'true', inclui views stale
     } = req.query;
-    
+
     // 🚀 Query otimizada no PatientsView
     const result = await PatientsView.quickSearch(search, {
       limit: parseInt(limit),
       skip: parseInt(skip),
       doctorId,
-      status
+      status,
+      ...(sortBy ? { sortBy } : {})
     });
     
     const duration = Date.now() - startTime;
@@ -76,7 +78,7 @@ router.get('/', flexibleAuth, async (req, res) => {
     // Se tem views stale e não estamos incluindo, dispara rebuild em background
     if (staleCount > 0 && includeStale !== 'true') {
       logger.warn(`[${correlationId}] ⚠️ ${staleCount} views stale detectadas`);
-      
+
       // Dispara rebuild em background (não await)
       result.patients
         .filter(p => p.snapshot?.isStale)
@@ -88,6 +90,21 @@ router.get('/', flexibleAuth, async (req, res) => {
           }, { correlationId });
         });
     }
+
+    // Backfill único: reconstrói views geradas antes do fix de populate (2026-06-24T20:00:00Z)
+    const DOCTOR_BACKFILL_CUTOFF = new Date('2026-06-24T20:00:00.000Z');
+    result.patients
+      .filter(p => {
+        const builtAt = p.snapshot?.calculatedAt ? new Date(p.snapshot.calculatedAt) : null;
+        return !p.snapshot?.isStale && builtAt && builtAt < DOCTOR_BACKFILL_CUTOFF;
+      })
+      .slice(0, 10)
+      .forEach(p => {
+        publishEvent('PATIENT_VIEW_REBUILD_REQUESTED', {
+          patientId: p.patientId.toString(),
+          reason: 'backfill_doctor_name'
+        }, { correlationId });
+      });
     
     // ✅ CORREÇÃO: Mapeia para garantir que _id seja o patientId (não o ID da view)
     const normalizedPatients = result.patients.map(p => ({
