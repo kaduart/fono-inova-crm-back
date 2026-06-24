@@ -133,6 +133,9 @@ export async function generateInsurancePlanSessions({
           specialty: plan.specialty,
           date: slot.date,
           time: slot.time,
+          duration: plan.duration || 40,
+          serviceType: 'session',
+          sessionType: plan.specialty,
           insuranceProvider: guide.insurance,
           insuranceGuide: guide._id,
           insurancePlan: plan._id,
@@ -143,6 +146,7 @@ export async function generateInsurancePlanSessions({
           paymentStatus: 'pending',
           status: 'pre_agendado',
           notes: 'Sessão de convênio gerada pelo plano',
+          metadata: { origin: { source: 'insurance_plan' } },
           createdAt: new Date()
         }
       },

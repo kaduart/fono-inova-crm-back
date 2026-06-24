@@ -137,6 +137,9 @@ router.post('/', auth, async (req, res) => {
           status: 'pre_agendado',
           notes: 'Avaliação inicial de convênio',
           serviceType: 'evaluation',
+          sessionType: guide.specialty,
+          duration: 40,
+          metadata: { origin: { source: 'insurance_guide' } },
           createdAt: new Date()
         });
 
@@ -189,7 +192,14 @@ router.post('/', auth, async (req, res) => {
         await guide.save();
       } catch (evalError) {
         console.error('[InsuranceGuidesV2] Erro ao criar avaliação:', evalError);
-        // Não falha a criação da guia por causa da avaliação
+        // Rollback: remove a guide para não deixar estado inconsistente
+        await InsuranceGuide.findByIdAndDelete(guide._id).catch(() => {});
+        return res.status(500).json({
+          success: false,
+          errorCode: 'EVALUATION_CREATION_FAILED',
+          message: `Guia não foi criada: falha ao gerar agendamento de avaliação. ${evalError.message}`,
+          correlationId
+        });
       }
     }
 
@@ -510,6 +520,9 @@ router.put('/:id', auth, async (req, res) => {
           status: 'pre_agendado',
           notes: 'Avaliação inicial de convênio',
           serviceType: 'evaluation',
+          sessionType: guide.specialty,
+          duration: 40,
+          metadata: { origin: { source: 'insurance_guide' } },
           createdAt: new Date()
         });
 
@@ -562,6 +575,12 @@ router.put('/:id', auth, async (req, res) => {
         await guide.save();
       } catch (evalError) {
         console.error('[InsuranceGuidesV2] Erro ao criar avaliação na edição:', evalError);
+        return res.status(500).json({
+          success: false,
+          errorCode: 'EVALUATION_CREATION_FAILED',
+          message: `Falha ao gerar agendamento de avaliação. ${evalError.message}`,
+          correlationId
+        });
       }
     }
 
