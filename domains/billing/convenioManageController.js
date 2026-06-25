@@ -173,7 +173,7 @@ export async function getConvenioDetailsHandler(req, res) {
  */
 export async function createConvenioHandler(req, res) {
     try {
-        const { code, name, sessionValue, notes = '' } = req.body;
+        const { code, name, sessionValue, notes = '', billingMode = 'per_month' } = req.body;
         
         // Validação
         const validation = validateConvenioData({ code, name, sessionValue });
@@ -202,6 +202,7 @@ export async function createConvenioHandler(req, res) {
             code: normalizedCode,
             name: name.trim(),
             sessionValue: Number(sessionValue),
+            billingMode: ['per_month', 'per_guide'].includes(billingMode) ? billingMode : 'per_month',
             notes: notes.trim(),
             active: true
         });
@@ -237,7 +238,7 @@ export async function createConvenioHandler(req, res) {
 export async function updateConvenioHandler(req, res) {
     try {
         const { code } = req.params;
-        const { name, sessionValue, notes, active } = req.body;
+        const { name, sessionValue, notes, active, billingMode } = req.body;
         
         const normalizedCode = code.toLowerCase().trim();
         
@@ -282,7 +283,14 @@ export async function updateConvenioHandler(req, res) {
         if (active !== undefined) {
             updateData.active = Boolean(active);
         }
-        
+
+        if (billingMode !== undefined) {
+            if (!['per_month', 'per_guide'].includes(billingMode)) {
+                return res.status(400).json({ success: false, error: 'billingMode inválido' });
+            }
+            updateData.billingMode = billingMode;
+        }
+
         // Atualiza
         const updated = await Convenio.findOneAndUpdate(
             { code: normalizedCode },

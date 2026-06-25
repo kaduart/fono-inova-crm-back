@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import InsuranceGuideView from '../models/InsuranceGuideView.js';
+import Convenio from '../models/Convenio.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -85,16 +86,27 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
+    // Busca billingMode do convênio (congela na guia para preservar histórico)
+    const insuranceCode = insurance.toLowerCase().replace(' ', '-');
+    const convenioDoc = await Convenio.findOne({ code: insuranceCode });
+    const billingMode = convenioDoc?.billingMode || 'per_month';
+    const resolvedSessionValue = sessionValue != null ? Number(sessionValue) : (convenioDoc?.sessionValue || 0);
+    const totalAuthorizedValue = billingMode === 'per_guide'
+      ? parseInt(totalSessions) * resolvedSessionValue
+      : null;
+
     // Cria a guia
     const guideData = {
       number,
       patientId: patientId.toString(),
       specialty,
-      insurance: insurance.toLowerCase().replace(' ', '-'),
+      insurance: insuranceCode,
       totalSessions: parseInt(totalSessions),
       sessionsUsed: 0,
       sessionsRemaining: parseInt(totalSessions),
       expiresAt: expiresAt ? new Date(expiresAt) : null,
+      billingMode,
+      totalAuthorizedValue,
       ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
       ...(evaluationAmount != null && { evaluationAmount: Number(evaluationAmount) }),
       ...(generateEvaluationBilling != null && { generateEvaluationBilling: Boolean(generateEvaluationBilling) }),

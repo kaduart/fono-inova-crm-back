@@ -261,11 +261,20 @@ export async function getPatientPendingPayments(patientId, { populate = true } =
     q = q
       .populate('patient', 'fullName phone email')
       .populate('doctor', 'fullName specialty')
-      .populate({ path: 'appointment', select: 'date time operationalStatus sessionType doctor', populate: { path: 'doctor', select: 'fullName specialty' } })
+      .populate({ path: 'appointment', select: 'date time operationalStatus clinicalStatus sessionType doctor', populate: { path: 'doctor', select: 'fullName specialty' } })
       .populate('session', 'date time status sessionType serviceType sessionValue');
   }
 
-  const items = await q.lean();
+  const allItems = await q.lean();
+
+  // ✅ CORREÇÃO: dívida real só existe quando o agendamento foi completado
+  // ou quando não há agendamento (débito manual). Agendamentos futuros são "a receber".
+  const items = allItems.filter(p =>
+    !p.appointment ||
+    p.appointment.operationalStatus === 'completed' ||
+    p.appointment.clinicalStatus === 'completed'
+  );
+
   const total = items.reduce((s, p) => s + (p.amount || 0), 0);
 
   return {

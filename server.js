@@ -214,6 +214,7 @@ import liminarContractRoutes from './routes/liminarContract.js';  // ⚖️ NOVO
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
 import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';  // 🚀 NOVO: Observabilidade
 import healthRoutes from './routes/health.js';  // 🚀 NOVO: Health Check Completo
+import healthV2Routes from './routes/health.v2.js';  // 🚀 NOVO: Health Check V2
 import healthMigrationRoutes from './routes/health.migration.js';  // 🚀 NOVO: Health Check de Migração V1→V2
 import packageMetricsRoutes from './routes/package.metrics.js';  // 🚀 NOVO: Métricas Package V2
 
@@ -389,6 +390,7 @@ app.get('/health/full', healthFullEndpoint);
 
 // 🚀 NOVO: Health Check Completo (com watchdog, queues, stuck events)
 app.use('/api/health', healthRoutes);
+app.use('/api/v2/health', healthV2Routes);
 
 // 🚀 NOVO: Health Check de Migração V1→V2 (monitora quando pode desativar V1)
 app.use('/api/health', healthMigrationRoutes);

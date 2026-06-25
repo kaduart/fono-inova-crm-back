@@ -2357,11 +2357,17 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
 
         const payments = await Payment.find(query)
             .populate('patient', 'fullName')
-            .populate('appointment', 'date time')
+            .populate('appointment', 'date time clinicalStatus')
             .sort({ paymentDate: -1 })
             .lean();
 
-        const debitos = payments.map(p => ({
+        // ✅ CORREÇÃO: débito real só quando o agendamento foi completado
+        // ou quando não há agendamento (débito manual). Agendamentos futuros são "a receber".
+        const realDebtPayments = payments.filter(p =>
+            !p.appointment || p.appointment.clinicalStatus === 'completed'
+        );
+
+        const debitos = realDebtPayments.map(p => ({
             _id: p._id,
             date: p.appointment?.date || (p.serviceDate ? p.serviceDate.toISOString().split('T')[0] : (p.paymentDate ? p.paymentDate.toISOString().split('T')[0] : null)),
             time: p.appointment?.time || null,

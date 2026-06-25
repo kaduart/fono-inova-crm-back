@@ -578,7 +578,8 @@ router.post('/create-sync', auth, async (req, res) => {
         appointmentId,
         serviceType = 'session',
         notes,
-        status = 'pending'
+        status = 'pending',
+        billingType: requestedBillingType
     } = req.body;
 
     // 🛡️ Validação
@@ -615,12 +616,40 @@ router.post('/create-sync', auth, async (req, res) => {
             ? moment.tz(paymentDate, 'America/Sao_Paulo').startOf('day').toDate()
             : now;
 
+        // 🎯 Resolve billingType corretamente:
+        // 1. Usa o billingType explicitamente enviado no body
+        // 2. Se houver appointment, usa o billingType do appointment
+        // 3. Fallback: particular
+        let resolvedBillingType = requestedBillingType;
+        let resolvedPaymentMethod = paymentMethod;
+        let appointmentDoc = null;
+
+        if (!resolvedBillingType && appointmentId) {
+            appointmentDoc = await Appointment.findById(appointmentId)
+                .select('billingType insuranceProvider paymentMethod')
+                .lean();
+
+            if (appointmentDoc) {
+                resolvedBillingType = appointmentDoc.billingType;
+
+                // Se o appointment é convênio e não foi enviado paymentMethod específico,
+                // normaliza para 'convenio' para consistência com o restante do sistema
+                if (resolvedBillingType === 'convenio' && paymentMethod === 'dinheiro') {
+                    resolvedPaymentMethod = 'convenio';
+                }
+            }
+        }
+
+        if (!resolvedBillingType) {
+            resolvedBillingType = 'particular';
+        }
+
         const paymentData = {
             patient: patientId,
             patientId: patientId.toString(),
             doctor: doctorId || null,
             amount,
-            paymentMethod,
+            paymentMethod: resolvedPaymentMethod,
             paymentDate: paymentDate ? new Date(paymentDate) : now,
             financialDate: financialDateBrasilia,
             // serviceDate = data da sessão (regime de competência). Distinto de paymentDate (caixa).
@@ -629,7 +658,7 @@ router.post('/create-sync', auth, async (req, res) => {
             serviceType,
             notes: notes || '',
             kind: appointmentId ? 'appointment_payment' : 'session_payment',
-            billingType: 'particular',
+            billingType: resolvedBillingType,
             createdAt: now,
             updatedAt: now,
             ...(appointmentId && {

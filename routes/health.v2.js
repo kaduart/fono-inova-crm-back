@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { getRedis } from '../services/redisClient.js';
+import { getCompleteV1FallbackMetrics } from '../services/completeFallbackMetrics.js';
 
 const router = express.Router();
 
@@ -78,7 +79,24 @@ router.get('/', async (req, res) => {
   });
 });
 
-export default router;
+/**
+ * GET /api/v2/health/complete-fallback - Métricas de fallback do complete V1
+ *
+ * Retorna quantas vezes o caminho legado de complete foi acionado.
+ * Útil para decidir quando é seguro remover o V1 permanentemente.
+ */
+router.get('/complete-fallback', async (req, res) => {
+  const metrics = getCompleteV1FallbackMetrics();
+
+  res.status(metrics.safeToRemove ? 200 : 503).json({
+    success: metrics.safeToRemove,
+    timestamp: new Date().toISOString(),
+    message: metrics.safeToRemove
+      ? 'Nenhum fallback V1 detectado desde o último deploy.'
+      : 'Fallback V1 detectado. Investigar antes de remover o código legado.',
+    metrics
+  });
+});
 
 /**
  * GET /api/v2/migration/status - Status da migração 4.0
@@ -99,3 +117,5 @@ router.get('/migration/status', async (req, res) => {
     health: health
   });
 });
+
+export default router;

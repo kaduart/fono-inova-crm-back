@@ -122,8 +122,26 @@ export async function buildPatientView(patientId, options = {}) {
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       // 🎯 DÍVIDA REAL DO PACIENTE: exclui convênio e insurance (não é dívida do paciente)
+      // ✅ CORREÇÃO: só considera dívida quando o agendamento vinculado foi completado.
+      // Agendamentos futuros (Payment pending criado no create) são "a receber", não dívida.
       Payment.aggregate([
         { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'pending', billingType: { $nin: ['convenio', 'insurance'] } } },
+        {
+          $lookup: {
+            from: 'appointments',
+            localField: 'appointment',
+            foreignField: '_id',
+            as: 'appointmentDoc'
+          }
+        },
+        {
+          $match: {
+            $or: [
+              { appointmentDoc: { $size: 0 } },                 // débito manual sem agendamento
+              { 'appointmentDoc.clinicalStatus': 'completed' }  // sessão já realizada
+            ]
+          }
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       PatientBalance.findOne({ patient: patientId }).lean(),
@@ -216,7 +234,8 @@ export async function buildPatientView(patientId, options = {}) {
       // Saldo
       // 🎯 FONTE DE VERDADE FINANCEIRA: usa totalPendingParticular (Payment) em vez de PatientBalance.currentBalance
       // PatientBalance é um contador mutável que pode ficar desatualizado/corrompido.
-      // totalPendingParticular = status:pending EXCLUINDO convênio/insurance — é o que o paciente realmente deve.
+      // totalPendingParticular = status:pending EXCLUINDO convênio/insurance E SÓ quando o agendamento foi completado.
+      // Agendamentos futuros não são dívida — são "a receber" (usar stats.totalPending).
       balance: {
         current: stats.totalPendingParticular || 0,
         lastUpdated: new Date()

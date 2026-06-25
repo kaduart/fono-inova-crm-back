@@ -25,6 +25,9 @@ import PatientBalance from '../models/PatientBalance.js';
 import moment from 'moment-timezone';
 import { syncEvent } from '../services/syncService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
+import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import { FeatureFlags } from '../config/featureFlags.js';
+import { recordCompleteV1Fallback } from '../services/completeFallbackMetrics.js';
 
 /**
  * Normaliza método de pagamento do appointment para o schema Payment.
@@ -305,6 +308,52 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
 
         console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
+
+        // ============================================================
+        // 🚀 V2 OFFICIAL PATH (feature flag)
+        // Delega para completeSessionService.v2.js quando ativo.
+        // Elimina dual-write, garante lock, ledger e eventos.
+        // ============================================================
+        const useCompleteServiceV2 = FeatureFlags.COMPLETE.USE_V2;
+        if (useCompleteServiceV2) {
+            console.log(`[complete] 🚀 Usando completeSessionService.v2.js (FF_COMPLETE_V2=true)`);
+            const serviceResult = await completeSessionV2(id, {
+                addToBalance,
+                balanceAmount,
+                balanceDescription,
+                sessionValue: req.body.sessionValue,
+                notes: req.body.notes,
+                evolution: req.body.evolution,
+                userId: req.user?._id?.toString(),
+                correlationId: req.headers['x-correlation-id'] || req.id
+            });
+
+            // Preserva contrato de resposta do frontend: Appointment populado
+            const populatedAppointment = await Appointment.findById(id)
+                .populate('session patient doctor payment package')
+                .lean();
+
+            if (populatedAppointment?.date) {
+                const apptDateStr = moment.tz(populatedAppointment.date, 'America/Sao_Paulo').format('YYYY-MM-DD');
+                clearCashflowCache(apptDateStr);
+            }
+
+            console.log(`[complete] ✅ Completo via serviço oficial`, {
+                appointmentId: id,
+                serviceResult: !!serviceResult.success,
+                durationMs: Date.now() - startTime
+            });
+
+            return res.json(populatedAppointment);
+        }
+
+        // 🚨 FALLBACK V1 — em observabilidade antes da remoção
+        recordCompleteV1Fallback({
+            appointmentId: id,
+            patientId: req.body?.patientId,
+            userId: req.user?._id?.toString(),
+            reason: FeatureFlags.COMPLETE.USE_V2 ? 'emergency_rollback' : 'flag_disabled'
+        });
 
         const appointment = await Appointment.findById(id)
             .populate('session patient doctor payment')

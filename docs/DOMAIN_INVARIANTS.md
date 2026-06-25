@@ -237,8 +237,61 @@ FinancialProjection / TotalsSnapshot / FinancialDailySnapshot / financialMetrics
 
 ---
 
+---
+
+## ADR-010: novaReceitaMes é um KPI híbrido intencional
+
+**Data:** 2026-06-25  
+**Contexto:** Investigação de possível duplicidade ao marcar convênio como recebido (`paidAt`).
+
+**Decisão:** `novaReceitaMes` mistura dois regimes contábeis:
+
+| Fonte | Regime | Campo de data |
+|-------|--------|---------------|
+| Convênio | Competência (produção) | `session.date` |
+| Particular | Caixa (pagamento real) | `paymentDate / financialDate` |
+| Pacote | Caixa (venda do pacote) | `paymentDate / financialDate` |
+
+**Por que é intencional:** convênio nunca gera caixa imediato — o dinheiro entra semanas/meses depois. Forçar caixa quebraria a previsibilidade de produção clínica.
+
+**Consequências:**
+- `novaReceitaMes` NÃO é "dinheiro recebido" — é "valor gerado no período"
+- `novaReceitaMes` vs `caixa.total` SEMPRE vai ter diferença para convênio — isso é normal
+- Marcar convênio como `received` (paidAt) **NÃO inflaciona `novaReceitaMes`** do mês do recebimento
+- A diferença entre `producaoDetalhe.convenio` e `caixaDetalhe.convenio` = `convenioAReceber` (correto)
+
+**Anti-pattern crítico — NUNCA fazer:**
+```js
+// ❌ NUNCA — mover convênio para paidAt em novaReceitaMes
+Session.aggregate([{ $match: { paidAt: { $gte: start } } }])
+
+// ❌ NUNCA — mover particular/pacote para session.date em novaReceitaMes
+Payment.aggregate([{ $match: { 'session.date': { $gte: start } } }])
+
+// ❌ NUNCA — comparar novaReceitaMes com caixa.total esperando igualdade
+assert(novaReceitaMes.total === caixa.total) // sempre diferente quando há convênio
+```
+
+**Padrão correto:**
+```js
+// ✅ SEMPRE — convênio em novaReceitaMes usa session.date (competência)
+Session.aggregate([{ $match: { date: { $gte: start }, paymentMethod: 'convenio' } }])
+
+// ✅ SEMPRE — convênio no caixa usa receivedAt (paidAt)
+Payment.find({ 'insurance.receivedAt': { $gte: start } })
+
+// ✅ SEMPRE — separar os três KPIs no dashboard
+novaReceitaMes  = produção do período (híbrido competência/caixa)
+caixa.total     = dinheiro real recebido
+convenioAReceber = produção.convenio - caixa.convenio
+```
+
+---
+
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
+| 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
+| 2026-06-25 | billingMode per_month/per_guide: paidAt projetado em getInsuranceReceivables |
 | 2026-06-23 | Criação — consolidação de invariantes, ADRs e mapas de impacto para entrada de qualquer IA |

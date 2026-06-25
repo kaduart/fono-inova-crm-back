@@ -36,6 +36,14 @@ const convenioSchema = new mongoose.Schema({
     default: true
   },
   
+  // Modo de faturamento padrão para novas guias deste convênio
+  // Congelado na guia no momento da criação — alterar aqui não afeta guias existentes
+  billingMode: {
+    type: String,
+    enum: ['per_month', 'per_guide'],
+    default: 'per_month'
+  },
+
   // Observações
   notes: {
     type: String,

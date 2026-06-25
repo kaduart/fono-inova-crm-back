@@ -145,15 +145,18 @@ export const ConvenioHandler = {
             paymentDataKeys: Object.keys(paymentData)
         });
 
-        if (appointment.payment) {
+        const existingPaymentId = appointment.payment?._id || appointment.payment;
+        const existingPayment = existingPaymentId
+            ? await Payment.findById(existingPaymentId).session(mongoSession).lean()
+            : null;
+
+        if (existingPayment) {
             // Payment pré-criado pelo generateInsurancePlanSessions — atualiza
-            const existingPaymentId = appointment.payment._id || appointment.payment;
-            const beforePayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
             console.log('[ConvenioHandler] 🔍 payment ANTES do update', {
                 paymentId: existingPaymentId?.toString?.(),
-                session: beforePayment?.session?.toString?.() || beforePayment?.session,
-                status: beforePayment?.status,
-                kind: beforePayment?.kind
+                session: existingPayment?.session?.toString?.() || existingPayment?.session,
+                status: existingPayment?.status,
+                kind: existingPayment?.kind
             });
 
             paymentCreated = await Payment.findByIdAndUpdate(
@@ -167,6 +170,9 @@ export const ConvenioHandler = {
                 kind: paymentCreated.kind
             });
         } else {
+            if (existingPaymentId && !existingPayment) {
+                console.warn(`[ConvenioHandler] ⚠️ appointment.payment aponta para Payment inexistente (${existingPaymentId?.toString?.()}). Tratando como orphan/criação.`);
+            }
             // Fallback: appointment sem payment pré-linkado
             // 🔍 GUARD idempotente: busca orphan no banco antes de criar.
             // Garante 1 Payment ativo por appointment+billingType (evita double-counting).

@@ -10,6 +10,7 @@
  */
 
 import Appointment from '../../../models/Appointment.js';
+import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import { appendEvent } from '../../../infrastructure/events/eventStoreService.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildDayRange, buildDateTime } from '../../../utils/datetime.js';
@@ -89,8 +90,24 @@ export async function scheduleAppointment(data, context = {}) {
   // 🚨 FIX: Converter data para Date com timezone BRT antes de salvar
   const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
   const dateTime = buildDateTime(dateStr, time);
-  
+
   await checkDoubleBooking({ doctorId, patientId, date: dateStr, time });
+
+  // Enriquece com dados da guia para que o appointment já nasça completo
+  let guideFields = {};
+  if (insuranceGuideId) {
+    const guide = await InsuranceGuide.findById(insuranceGuideId)
+      .select('insurance sessionValue')
+      .lean();
+    if (guide) {
+      guideFields = {
+        billingType: 'convenio',
+        insuranceProvider: guide.insurance,
+        insuranceValue: guide.sessionValue ?? 0,
+        sessionValue: guide.sessionValue ?? 0,
+      };
+    }
+  }
 
   // 1. Cria appointment
   const appointment = await Appointment.create({
@@ -102,6 +119,7 @@ export async function scheduleAppointment(data, context = {}) {
     serviceType,
     package: packageId,
     insuranceGuide: insuranceGuideId,
+    ...guideFields,
     operationalStatus: 'scheduled',
     clinicalStatus: 'pending',
     paymentStatus: 'pending',

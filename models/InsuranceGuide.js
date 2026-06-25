@@ -93,6 +93,20 @@ const insuranceGuideSchema = new mongoose.Schema({
     default: null
   },
 
+  // Modo de faturamento — congelado na criação, default vem do Convenio
+  billingMode: {
+    type: String,
+    enum: ['per_month', 'per_guide'],
+    default: 'per_month'
+  },
+
+  // Valor total autorizado da guia (totalSessions × sessionValue, congelado na criação)
+  // Usado como base de cobrança para billingMode === 'per_guide'
+  totalAuthorizedValue: {
+    type: Number,
+    default: null
+  },
+
   doctorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Doctor',

@@ -226,7 +226,7 @@ export async function listGuidesPendingBilling(filters = {}) {
     guideMatch.patientId = new mongoose.Types.ObjectId(patientId);
   }
 
-  // Status elegíveis: active, linked, exhausted. Cancelled/expired não entram.
+  // Status elegível: active, linked, exhausted — igual para todos os billingMode
   guideMatch.status = { $in: ['active', 'linked', 'exhausted'] };
 
   // Buscar sessões elegíveis por guia
@@ -310,6 +310,14 @@ export async function listGuidesPendingBilling(filters = {}) {
   const enrichedGuides = guides.map(guide => {
     const pending = pendingByGuide.get(guide._id.toString()) || { sessionsCount: 0, totalValue: 0 };
     const sessions = sessionsByGuide.get(guide._id.toString()) || [];
+    const billingMode = guide.billingMode || 'per_month';
+
+    // per_guide: cobra o valor total autorizado da guia (independente do mês)
+    // per_month: cobra apenas as sessões do período selecionado
+    const pendingValue = billingMode === 'per_guide'
+      ? (guide.totalAuthorizedValue || (guide.totalSessions * (guide.sessionValue || 0)))
+      : (pending.totalValue || (pending.sessionsCount * (guide.sessionValue || 0)));
+
     return {
       guideId: guide._id.toString(),
       number: guide.number,
@@ -320,8 +328,11 @@ export async function listGuidesPendingBilling(filters = {}) {
       usedSessions: guide.usedSessions,
       remaining: guide.totalSessions - guide.usedSessions,
       sessionValue: guide.sessionValue,
+      billingMode,
+      totalAuthorizedValue: guide.totalAuthorizedValue || null,
+      sessionsThisMonth: pending.sessionsCount,
       pendingSessions: pending.sessionsCount,
-      pendingValue: pending.totalValue || (pending.sessionsCount * (guide.sessionValue || 0)),
+      pendingValue,
       firstSessionDate: pending.minDate,
       lastSessionDate: pending.maxDate,
       sessions

@@ -130,6 +130,8 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
       grossAmount: grossAmount,
       status: payment.insurance?.status || 'pending_billing',
       paymentDate: payment.paymentDate,
+      paidAt: payment.paidAt || payment.insurance?.receivedAt || null,
+      billedAt: payment.insurance?.billedAt || null,
       authorizationCode: payment.insurance?.authorizationCode,
       specialty: payment.session?.specialty || 'Outros'
     });

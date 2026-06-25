@@ -304,7 +304,8 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         : patientId;
 
     // Fonte de verdade: Payment records pending.
-    // Débito só existe se a sessão foi completada (provisioning cria payment pending no complete).
+    // ✅ CORREÇÃO: débito só existe se a sessão foi completada.
+    // Agendamentos futuros são "a receber", não dívida real do paciente.
     // Inclui sessions de pacotes — NÃO usa calculateRealPackageDebt.
     const pendingPayments = await Payment.find({
         $and: [
@@ -315,10 +316,15 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         ]
     })
     .sort({ createdAt: -1 })
-    .populate('appointment', 'date time specialty sessionValue package')
+    .populate('appointment', 'date time specialty sessionValue package clinicalStatus')
     .lean();
 
-    const items = pendingPayments.map(p => {
+    // Filtra: mantém apenas payments sem agendamento (débito manual) ou com sessão completada
+    const realDebtPayments = pendingPayments.filter(p =>
+        !p.appointment || p.appointment.clinicalStatus === 'completed'
+    );
+
+    const items = realDebtPayments.map(p => {
         const appt = p.appointment;
         const specialty = appt?.specialty || p.specialty || null;
         const packageId = appt?.package?.toString() || p.package?.toString() || null;
@@ -348,7 +354,9 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         data: items,
         meta: {
             totalPending: items.reduce((s, p) => s + (p.amount || 0), 0),
-            count: items.length
+            count: items.length,
+            totalReceivable: pendingPayments.reduce((s, p) => s + (p.amount || 0), 0),
+            receivableCount: pendingPayments.length
         }
     });
 }));

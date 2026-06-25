@@ -40,6 +40,7 @@ export const resolveVisualFlag = (appt) => {
 export const getFriendlyStatus = (opStatus, isPre = false) => {
     if (isPre) return opStatus === 'novo' ? 'Pendente' : 'Pendente';
     switch (opStatus) {
+        case 'completed': return 'Atendido';
         case 'confirmed':
         case 'paid': return 'Confirmado';
         case 'scheduled':
@@ -107,7 +108,12 @@ export const mapAppointmentToEvent = (appt) => {
     const professionalName = getSafeProfessionalName(appt);
     const patientName = getSafePatientName(appt);
 
-    const paymentStatus =
+    // Preserva status consolidados no Appointment (ex: pending_receipt de convênio/liminar)
+    // antes de cair no status genérico do Payment, que pode ser apenas 'pending'.
+    const consolidatedStatus = ['pending_receipt', 'not_applicable', 'package_paid', 'paid', 'partial', 'advanced'].includes(appt.paymentStatus)
+        ? appt.paymentStatus
+        : null;
+    const paymentStatus = consolidatedStatus ||
         appt.payment?.status || appt.paymentStatus || appt.session?.paymentStatus ||
         (appt.package?.financialStatus === 'paid' ? 'paid' : 'pending');
 
