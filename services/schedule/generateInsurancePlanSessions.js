@@ -130,10 +130,16 @@ export async function generateInsurancePlanSessions({
       },
       update: {
         $set: {
-          // Sempre enforça billingType/paymentMethod mesmo em appointments existentes.
+          // Sempre enforça billingType/paymentMethod/valores mesmo em appointments existentes.
           // $setOnInsert não corrigia appointments criados antes do plano (causa do bug 2026-06-09).
+          // sessionValue/insuranceValue também precisam ser setados em appointments pré-existentes
+          // para evitar saldo devedor fantasma (bug 2026-06-26).
           billingType: 'convenio',
-          paymentMethod: 'convenio'
+          paymentMethod: 'convenio',
+          ...(effectiveSessionValue > 0 && {
+            sessionValue: effectiveSessionValue,
+            insuranceValue: effectiveSessionValue,
+          }),
         },
         $setOnInsert: {
           patient: plan.patient,
