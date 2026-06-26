@@ -1,19 +1,14 @@
-olha a qtdd de x chama essa api na aba patietndashbaorde na apge nao tem nadaaa 
-se nao tem info precismso melhroar a apresentacao faca suas analsies  , 
-curl 'http://localhost:5000/api/v2/patients/6a3d3d769b3cf35e7fd2ed79' \  -H 'Accept: application/json, text/plain, */*' \  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4MjQ4MDYzOCwiZXhwIjoxNzgyNDg0MjM4fQ.hBmA7YHeBau_4msK6DGX408ffyoYpB5KHdw7dvyr10Q' \  -H 'Connection: keep-alive' \  -H 'If-None-Match: W/"4e2-lkpE3SE45ZEf1mCUCJvTg/xgCCo"' \  -H 'Origin: http://localhost:5173' \  -H 'Referer: http://localhost:5173/' \  -H 'Sec-Fetch-Dest: empty' \  -H 'Sec-Fetch-Mode: cors' \  -H 'Sec-Fetch-Site: same-site' \  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \  -H 'sec-ch-ua-mobile: ?0' \  -H 'sec-ch-ua-platform: "Windows"' \  -H 'x-correlation-id: front_1782481298574_f8cm9oam5'caha aessa api e pwq noa mostra a infos??{    "success": true,    "data": {        "_id": "6a3d3d769b3cf35e7fd2ed79",        "patientId": "6a3d3d769b3cf35e7fd2ed79",        "__v": 0,        "balance": {            "current": 0,            "lastUpdated": "2026-06-26T13:40:35.028Z"        },        "createdAt": "2026-06-25T15:00:02.151Z",        "dateOfBirth": "2023-12-27T00:00:00.000Z",        "doctorName": "Mikaelly da Silva Sousa",        "fullName": "Emanuel Lucas Lopes da Silva",        "lastAppointment": null,        "nextAppointment": {            "id": "6a3d3d779b3cf35e7fd2ed84",            "date": "2026-07-03T12:00:00.000Z",            "time": "10:00",            "status": "pending",            "serviceType": "evaluation",            "doctorName": "Mikaelly da Silva Sousa"        },        "normalizedName": "emanuel lucas lopes da silva",        "packages": [],        "phone": "62992215282",        "phoneDigits": "62992215282",        "snapshot": {            "version": 3,            "calculatedAt": "2026-06-26T13:40:35.056Z",            "ttl": "2026-09-24T13:40:35.056Z",            "isStale": false        },        "specialty": null,        "stats": {            "totalAppointments": 1,            "totalCompleted": 0,            "totalCanceled": 0,            "totalNoShow": 0,            "totalSessions": 0,            "totalPackages": 0,            "totalRevenue": 0,            "totalPending": 250,            "totalPendingParticular": 0,            "firstAppointmentDate": "2026-07-03T12:00:00.000Z",            "lastAppointmentDate": null,            "nextAppointmentDate": "2026-07-03T12:00:00.000Z"        },        "status": "active",        "tags": [            "debito"        ],        "updatedAt": "2026-06-26T13:40:35.057Z",        "id": "6a3d3d769b3cf35e7fd2ed79"    },    "meta": {        "timestamp": "2026-06-26T13:41:38.105Z"    }}, por que cha a a apid e docotr???      ---
+26/06/2026
+14:00
+Lucas Gabriel de Araújo Costa
+Luis Henrique / terapia_ocupacional
+Sessão
+Pix
+Imediato
+Particular
+Pago na Sessão
+R$ 160,00
 
 
+liminar ainda ta entrando no caixa do dia erroneamente a gente ajustou par entar no dia do recebinemto e so atulzair o consumo mas noa aparecer masi em recebimentos do dia qeu faz a sessao
 
-
-
-
-
-
-
-
-
-
-
-
-
-cra vc replicou a poha do card de info pq vc na faz as cosias dierito cara pqp o cad d ecima tem infos perfeitas exlui esse segundo seu bortsta

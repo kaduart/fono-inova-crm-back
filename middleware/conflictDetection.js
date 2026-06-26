@@ -205,6 +205,9 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 
     // 🆕 NOVO: Verificar sobreposição de intervalos para o paciente
     const patientConflict = allPatientSlots.find((appt) => {
+      // 🛡️ Ignora a Session vinculada ao próprio agendamento em edição
+      if (appointmentId && appt.appointmentId?.toString?.() === appointmentId) return false;
+
       const apptTime = normalizeTimeHHmm(appt.time);
       if (!apptTime) return false;
       
@@ -413,9 +416,13 @@ function getSlotOccupancy({ time, duration = 40, date, occupancyData, excludeApp
   const slotEnd = new Date(slotStart.getTime() + (parseInt(duration) || 40) * 60000);
 
   for (const interval of occupancyData.intervals) {
-    // Skip self se for edição
-    if (excludeAppointmentId && interval.doc._id?.toString?.() === excludeAppointmentId) {
-      continue;
+    // Skip self se for edição (appointment próprio ou session vinculada a ele)
+    if (excludeAppointmentId) {
+      const docId = interval.doc._id?.toString?.();
+      const linkedAppointmentId = interval.doc.appointmentId?.toString?.();
+      if (docId === excludeAppointmentId || linkedAppointmentId === excludeAppointmentId) {
+        continue;
+      }
     }
 
     const sameDay = interval.start.toDateString() === slotStart.toDateString();

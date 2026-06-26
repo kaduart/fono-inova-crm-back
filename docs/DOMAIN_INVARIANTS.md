@@ -105,6 +105,12 @@ Se alterar Patient, verificar:
 19. Session não é a entidade financeira — Payment é
 20. Não usar `Session.commissionValue` — comissão vem de `commissionRule.service.js`
 
+### Convênio (InsuranceGuide / InsuranceBatch)
+21. `InsuranceGuide.sessionValue` é a fonte oficial do valor contratado da sessão de convênio
+22. `Session.sessionValue` deve espelhar `InsuranceGuide.sessionValue` para fins de produção clínica
+23. `Payment.amount` representa o valor efetivamente faturado/recebido e pode divergir da guia por glosa, pagamento parcial ou ajuste financeiro
+24. Todo endpoint que agrupa/consulta convênio deve usar `InsuranceResolverService` para resolver `provider` e `patient` com a mesma hierarquia
+
 ### Amanda (WhatsApp)
 21. Nunca disparar mensagem sem `detectAllFlags()` primeiro
 22. Pipeline: `detectAllFlags → BusinessRulesAdapter → DecisionResolver → ResponseBuilder`
@@ -153,6 +159,14 @@ Se alterar Patient, verificar:
 **Decisão:** Dois regimes coexistem: Produção = Recebimento + A Receber; Caixa = Recebimento + Retroativos.
 **Motivo:** Gestão clínica precisa de visão de produção independente de quando o dinheiro entrou.
 **Consequência:** `serviceDate` é o campo correto para competência clínica; `financialDate` para caixa.
+
+### ADR-009: InsuranceResolverService é a única fonte de resolução de convênio e paciente
+**Decisão:** Toda consulta/agrupamento por convênio (`provider`) e por paciente em contexto de convênio passa por `InsuranceResolverService`.
+**Motivo:** Resolver provider/payment em múltiplos pontos do código gerou relatórios contraditórios (ex: mesmo payment aparecia como `unimed-anapolis`, `Convenio` e `Outros` em telas diferentes).
+**Consequência:**
+- Hierarquia de provider: `Payment.insurance.provider → Session.insuranceProvider → Session.insuranceGuide.insurance → Appointment.insuranceProvider → InsuranceBatch.insuranceProvider → Package.insuranceProvider → "Outros"`.
+- Hierarquia de patient: `Session.patient → Appointment.patient → Payment.patient`.
+- Nenhum endpoint novo deve reimplementar essa lógica; sempre importar `InsuranceResolverService`.
 
 ---
 

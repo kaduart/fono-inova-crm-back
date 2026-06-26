@@ -52,7 +52,7 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       date: { $gte: startDate, $lte: endDate },
       status: 'completed'
     })
-      .populate('package', 'sessionType totalSessions insuranceProvider')
+      .populate('package', 'sessionType totalSessions insuranceProvider sessionValue totalValue')
       .populate('insuranceGuide', 'insurance')
       .lean();
 
@@ -63,11 +63,15 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       return true;
     });
 
-    const { totalCommission, breakdown } = calculateCommissionBatch(doctor, sessions);
+    const { totalCommission, breakdown, totalProductionBase } = calculateCommissionBatch(doctor, sessions);
 
     const isNeuropediatria = ['neuroped', 'neuropediatria'].includes(
       (doctor.specialty || '').toLowerCase().trim()
     );
+
+    const effectiveRate = totalProductionBase > 0
+      ? parseFloat(((totalCommission / totalProductionBase) * 100).toFixed(1))
+      : 0;
 
     const result = {
       doctorId,
@@ -75,8 +79,11 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       totalCommission,
       totalSessions: sessions.length,
       breakdown,
+      productionBase: totalProductionBase,
+      commissionRate: effectiveRate,
       period: { startDate, endDate },
-      commissionModel: isNeuropediatria ? 'neuropediatria_percentage' : 'rule_based'
+      commissionModel: isNeuropediatria ? 'neuropediatria_percentage' : 'rule_based',
+      lastUpdated: new Date().toISOString()
     };
     _commCacheSet(cacheKey, result);
     return result;

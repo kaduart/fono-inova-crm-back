@@ -206,6 +206,7 @@ export function calculateSessionCommission(doctor, session, sessionDate = null) 
  */
 export function calculateCommissionBatch(doctor, sessions) {
   let totalCommission = 0;
+  let totalProductionBase = 0;
   const breakdown = {
     standardSessions: { count: 0, value: 0, byInsurance: {} },
     evaluations: { count: 0, value: 0 },
@@ -237,6 +238,7 @@ export function calculateCommissionBatch(doctor, sessions) {
     }
 
     const value = session.sessionValue || 0;
+    totalProductionBase += value;
     const commission = calculateSessionCommission(doctor, session);
 
     totalCommission += commission;
@@ -273,7 +275,7 @@ export function calculateCommissionBatch(doctor, sessions) {
     }
   }
 
-  return { totalCommission, breakdown, neuropsychPackages };
+  return { totalCommission, breakdown, neuropsychPackages, totalProductionBase };
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -398,7 +400,7 @@ export async function simulateCommission(doctorId, startDate, endDate) {
     date: { $gte: start, $lte: end },
     status: 'completed'
   })
-    .populate('package', 'sessionType totalSessions insuranceProvider')
+    .populate('package', 'sessionType totalSessions insuranceProvider sessionValue totalValue')
     .populate('insuranceGuide', 'insurance')
     .lean();
 

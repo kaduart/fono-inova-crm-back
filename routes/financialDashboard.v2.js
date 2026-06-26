@@ -1663,10 +1663,13 @@ async function calculateDespesas(year, month) {
                     doctorId: d._id.toString(),
                     doctorName: d.fullName,
                     total: comm.totalCommission,
-                    sessions: comm.totalSessions
+                    sessions: comm.totalSessions,
+                    productionBase: comm.productionBase ?? 0,
+                    commissionRate: comm.commissionRate ?? 0,
+                    lastUpdated: comm.lastUpdated ?? new Date().toISOString()
                 };
             } catch (err) {
-                return { doctorId: d._id.toString(), doctorName: d.fullName, total: 0, sessions: 0 };
+                return { doctorId: d._id.toString(), doctorName: d.fullName, total: 0, sessions: 0, productionBase: 0, commissionRate: 0, lastUpdated: new Date().toISOString() };
             }
         })
     );

@@ -8,6 +8,7 @@ import { createBatch, sendBatch, processReturn } from '../services/insuranceBatc
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
 import { isConvenioSession, buildInsuranceReceivableFilter } from '../utils/billingHelpers.js';
+import InsuranceResolverService from '../services/insuranceResolver.service.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
 import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
@@ -65,7 +66,15 @@ export async function getInsuranceReceivables(req, res) {
 
     const payments = await Payment.find(matchFilter)
       .populate('patient', 'fullName phone')
-      .populate('session', 'date time specialty status')
+      .populate('session', 'date time specialty status insuranceProvider insuranceGuide patient')
+      .populate({
+        path: 'session',
+        populate: [
+          { path: 'patient', select: 'fullName phone' },
+          { path: 'insuranceGuide', select: 'number insurance specialty' }
+        ]
+      })
+      .populate('appointment', 'patient insuranceProvider insuranceGuide date specialty')
       .populate('package', 'insuranceProvider insuranceGuide')
       .lean();
 
@@ -81,18 +90,36 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
   // Filtra por provider se especificado
   let filteredPayments = payments;
   if (provider) {
-    filteredPayments = payments.filter(p => 
-      p.insurance?.provider === provider || 
-      p.package?.insuranceProvider === provider
-    );
+    const targetProvider = String(provider).toLowerCase();
+    filteredPayments = payments.filter(p => {
+      const resolved = InsuranceResolverService.resolveInsuranceProvider({
+        payment: p,
+        session: p.session,
+        appointment: p.appointment,
+        package: p.package
+      });
+      return resolved === targetProvider;
+    });
   }
   
   // Agrupar por CONVÊNIO
   const grouped = {};
   
   for (const payment of filteredPayments) {
-    const providerName = payment.insurance?.provider || payment.package?.insuranceProvider || 'Outros';
-    const patientId = payment.patient?._id?.toString();
+    const providerName = InsuranceResolverService.resolveInsuranceProvider({
+      payment,
+      session: payment.session,
+      appointment: payment.appointment,
+      package: payment.package
+    });
+
+    const patient = InsuranceResolverService.resolvePatient({
+      payment,
+      session: payment.session,
+      appointment: payment.appointment
+    });
+
+    const patientId = patient?._id?.toString();
     if (!patientId) continue;
     
     if (!grouped[providerName]) {
@@ -109,7 +136,7 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
     if (!patientGroup) {
       patientGroup = {
         patientId: patientId,
-        patientName: payment.patient?.fullName || 'N/A',
+        patientName: patient?.fullName || 'N/A',
         total: 0,
         count: 0,
         payments: []
@@ -1147,12 +1174,12 @@ export async function getPatientInsuranceSessions(req, res) {
         billingStatus = 'billed';
       }
 
-      const sessionProvider =
-        appt?.insuranceProvider ||
-        session.insuranceGuide?.insurance ||
-        payment?.insurance?.provider ||
-        batch?.insuranceProvider ||
-        'nao_identificado';
+      const sessionProvider = InsuranceResolverService.resolveInsuranceProvider({
+        payment,
+        session,
+        appointment: appt,
+        batch
+      });
 
       if (provider && sessionProvider.toLowerCase() !== provider.toLowerCase()) continue;
       if (status !== 'all' && billingStatus !== status) continue;
@@ -1190,7 +1217,10 @@ export async function getPatientInsuranceSessions(req, res) {
       if (batchSession?.status === 'paid' || batch?.status === 'received') billingStatus = 'received';
       else if (batchSession?.status === 'sent' || ['sent', 'processing'].includes(batch?.status)) billingStatus = 'billed';
 
-      const sessionProvider = pmt.insurance?.provider || appt?.insuranceProvider || 'nao_identificado';
+      const sessionProvider = InsuranceResolverService.resolveInsuranceProvider({
+        payment: pmt,
+        appointment: appt
+      });
       if (provider && sessionProvider.toLowerCase() !== provider.toLowerCase()) continue;
       if (status !== 'all' && billingStatus !== status) continue;
 
