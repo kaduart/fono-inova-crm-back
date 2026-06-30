@@ -8,6 +8,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import unifiedFinancialService from './unifiedFinancialService.v2.js';
 import { recalculateFutureTargets } from './planningAutoService.js';
+import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 
 /**
  * Atualiza automaticamente o progresso do planejamento
@@ -398,7 +399,7 @@ export const calculateMonthlyProjection = async (month, year) => {
             if (appt.package) {
                 composition.pacotes += value;
                 recurringRevenue += value; // pacote = compromisso de continuidade
-            } else if (appt.billingType === 'convenio') {
+            } else if (isInsuranceAppointment(appt)) {
                 composition.convenios += value;
                 newRevenue += value; // convênio = geralmente autorização nova
             } else if (appt.patientType === 'recorrente') {

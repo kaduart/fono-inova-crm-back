@@ -96,6 +96,23 @@ export const getSafeProfessionalName = (appt) => {
 };
 
 /**
+ * Retorna true se o agendamento é de convênio, independente de edições manuais no billingType.
+ * Usa 4 sinais: billingType, paymentMethod, insuranceProvider e insuranceGuide (vínculo com guia).
+ */
+export const isInsuranceAppointment = (appt) => {
+    if (!appt) return false;
+    if (appt.billingType === 'convenio') return true;
+    if (appt.paymentMethod === 'convenio') return true;
+    // insuranceProvider é sempre string — trim() previne whitespace acidental
+    if (typeof appt.insuranceProvider === 'string') return appt.insuranceProvider.trim().length > 0;
+    if (appt.insuranceProvider) return true;
+    // insuranceGuide pode ser ObjectId (sem .trim) ou string — tratar separadamente
+    if (typeof appt.insuranceGuide === 'string') return appt.insuranceGuide.trim().length > 0;
+    if (appt.insuranceGuide) return true;
+    return false;
+};
+
+/**
  * 🔹 Mapeia um agendamento REAL para o formato do Frontend/FullCalendar
  */
 export const mapAppointmentToEvent = (appt) => {

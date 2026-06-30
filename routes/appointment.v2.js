@@ -48,6 +48,7 @@ function mapPaymentMethod(method) {
   return map[method] || method || 'pix';
 }
 import readRouter from './appointmentReads.js';
+import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 import {
   createAppointment,
   updateAppointment,
@@ -369,9 +370,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const packageId = appointment.package?._id || appointment.package;
         const patientId = appointment.patient?._id || appointment.patient;
 
-        const isConvenioSession = appointment.billingType === 'convenio' ||
-                                  appointment.insuranceProvider ||
-                                  appointment.paymentMethod === 'convenio';
+        const isConvenioSession = isInsuranceAppointment(appointment);
 
         const shouldIncrementPackage = appointment.package && appointment.clinicalStatus !== 'completed';
 

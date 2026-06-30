@@ -10,6 +10,7 @@ import Expense from '../models/Expense.js';
 import PackagesView from '../models/PackagesView.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { createContextLogger } from '../utils/logger.js';
+import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 import { v4 as uuidv4 } from 'uuid';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 
@@ -164,7 +165,7 @@ router.get('/', async (req, res) => {
         for (const a of appointments) {
             const valor = a.sessionValue || 0;
             const isPacote = a.serviceType === 'package_session';
-            const isConvenio = a.billingType === 'convenio' || (a.insuranceProvider && a.insuranceProvider.trim() !== '');
+            const isConvenio = isInsuranceAppointment(a);
             const foiPago = paidAppointmentIds.has(a._id.toString()) || a.paymentStatus === 'package_paid' || isPacote;
 
             if (isConvenio) {

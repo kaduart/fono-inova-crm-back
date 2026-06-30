@@ -1,6 +1,7 @@
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import mongoose from 'mongoose';
+import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -83,7 +84,7 @@ function computeLifecycleFlags(appointments, patientHistoryMap) {
             return { ...apt, isLead: false, isFirstVisit: false, isFirstVisitInSpecialty: false, isReturningAfter45Days: false, isContinuousTreatment: false };
         }
 
-        const isConvenioSession = apt.billingType === 'convenio' || apt.paymentMethod === 'convenio';
+        const isConvenioSession = isInsuranceAppointment(apt);
         // Desde 2026-05-07 TODOS os appointments nascem como pre_agendado — inclusive retornos.
         // Lead = genuinamente nova pessoa na clínica (isFirstVisit obrigatório).
         const isLead = !isConvenioSession && isFirstVisit && (

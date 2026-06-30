@@ -1,6 +1,7 @@
 // utils/paymentResolver.js
 // 🏥 ARQUITETURA v4.0 - Centralização de Regras de Pagamento
 // ÚNICO lugar onde a lógica de decisão financeira deve existir
+import { isInsuranceAppointment } from './appointmentMapper.js';
 
 /**
  * Resolve o tipo de processamento financeiro baseado no contexto
@@ -28,7 +29,7 @@ export function resolvePaymentType({ addToBalance, packageData, appointmentData,
     }
     
     // Prioridade 2: Convênio (recebível, não entrada de caixa imediata)
-    if (packageData?.type === 'convenio' || appointmentData?.billingType === 'convenio') {
+    if (packageData?.type === 'convenio' || isInsuranceAppointment(appointmentData)) {
         return {
             type: 'convenio',
             createPayment: true,     // Cria como recebível (status: pending_receipt)

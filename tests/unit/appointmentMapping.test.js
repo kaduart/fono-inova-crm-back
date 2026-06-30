@@ -3,7 +3,8 @@ import {
     getSafePatientName,
     getSafeProfessionalName,
     mapAppointmentToEvent,
-    getFriendlyStatus
+    getFriendlyStatus,
+    isInsuranceAppointment
 } from '../../utils/appointmentMapper.js';
 
 describe('AppointmentMapper - Unit Tests', () => {
@@ -85,6 +86,66 @@ describe('AppointmentMapper - Unit Tests', () => {
             expect(event.professional).toBe('Dr. Teste');
             expect(event.status).toBe('Pendente');
             expect(event.patient.fullName).toBe('Alice Marques Martins');
+        });
+    });
+
+    describe('isInsuranceAppointment', () => {
+        it('retorna true quando billingType é convenio', () => {
+            expect(isInsuranceAppointment({ billingType: 'convenio' })).toBe(true);
+        });
+
+        it('retorna true quando paymentMethod é convenio', () => {
+            expect(isInsuranceAppointment({ paymentMethod: 'convenio' })).toBe(true);
+        });
+
+        it('retorna true quando insuranceProvider está preenchido', () => {
+            expect(isInsuranceAppointment({ insuranceProvider: 'unimed-anapolis' })).toBe(true);
+        });
+
+        it('retorna true quando insuranceGuide está preenchido (vínculo com guia)', () => {
+            expect(isInsuranceAppointment({ insuranceGuide: '6a15d805a29814035f6657a1' })).toBe(true);
+        });
+
+        it('retorna false para appointment particular (nenhum sinal de convênio)', () => {
+            expect(isInsuranceAppointment({ billingType: 'particular', sessionValue: 160 })).toBe(false);
+        });
+
+        it('retorna false para appointment vazio', () => {
+            expect(isInsuranceAppointment({})).toBe(false);
+        });
+
+        it('retorna false para null', () => {
+            expect(isInsuranceAppointment(null)).toBe(false);
+        });
+
+        it('retorna false para undefined', () => {
+            expect(isInsuranceAppointment(undefined)).toBe(false);
+        });
+
+        it('retorna true com múltiplos sinais presentes simultaneamente', () => {
+            expect(isInsuranceAppointment({ billingType: 'convenio', insuranceGuide: 'abc' })).toBe(true);
+        });
+
+        it('retorna false para insuranceProvider string vazia', () => {
+            expect(isInsuranceAppointment({ insuranceProvider: '' })).toBe(false);
+        });
+
+        it('retorna false para insuranceProvider com apenas espaços', () => {
+            expect(isInsuranceAppointment({ insuranceProvider: '   ' })).toBe(false);
+        });
+
+        it('retorna false para insuranceGuide string vazia', () => {
+            expect(isInsuranceAppointment({ insuranceGuide: '' })).toBe(false);
+        });
+
+        it('retorna false para insuranceGuide com apenas espaços', () => {
+            expect(isInsuranceAppointment({ insuranceGuide: '   ' })).toBe(false);
+        });
+
+        it('retorna true quando insuranceGuide é um ObjectId (sem .trim)', () => {
+            // Simula mongoose.Types.ObjectId: objeto truthy sem método .trim
+            const fakeObjectId = { toHexString: () => '507f1f77bcf86cd799439011' };
+            expect(isInsuranceAppointment({ insuranceGuide: fakeObjectId })).toBe(true);
         });
     });
 
