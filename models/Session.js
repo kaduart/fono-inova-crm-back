@@ -93,7 +93,7 @@ const sessionSchema = new mongoose.Schema({
     notes: { type: String },
     paymentStatus: {
         type: String,
-        enum: ['paid', 'partial', 'pending', 'unpaid', 'pending_receipt', 'recognized', 'package_paid', 'pending_balance'],
+        enum: ['paid', 'partial', 'pending', 'unpaid', 'pending_receipt', 'recognized', 'package_paid', 'pending_balance', 'canceled'],
         default: 'pending',
         description: 'Situação financeira específica desta sessão'
     },

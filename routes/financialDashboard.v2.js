@@ -1654,9 +1654,13 @@ async function calculateDespesas(year, month) {
     const expenseTotal = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     // 💰 Calcular comissões de todos os profissionais ativos no mês
-    const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName').lean();
+    const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName commissionRules.rules').lean();
     const commissionResults = await Promise.all(
         doctors.map(async (d) => {
+            const hasRules = (d.commissionRules?.rules?.length ?? 0) > 0;
+            if (!hasRules) {
+                return { doctorId: d._id.toString(), doctorName: d.fullName, total: 0, sessions: 0, productionBase: 0, commissionRate: 0, lastUpdated: new Date().toISOString(), noRule: true };
+            }
             try {
                 const comm = await calculateDoctorCommission(d._id, start, end);
                 return {
@@ -1666,16 +1670,17 @@ async function calculateDespesas(year, month) {
                     sessions: comm.totalSessions,
                     productionBase: comm.productionBase ?? 0,
                     commissionRate: comm.commissionRate ?? 0,
-                    lastUpdated: comm.lastUpdated ?? new Date().toISOString()
+                    lastUpdated: comm.lastUpdated ?? new Date().toISOString(),
+                    noRule: false
                 };
             } catch (err) {
-                return { doctorId: d._id.toString(), doctorName: d.fullName, total: 0, sessions: 0, productionBase: 0, commissionRate: 0, lastUpdated: new Date().toISOString() };
+                return { doctorId: d._id.toString(), doctorName: d.fullName, total: 0, sessions: 0, productionBase: 0, commissionRate: 0, lastUpdated: new Date().toISOString(), noRule: false };
             }
         })
     );
 
-    const activeCommissions = commissionResults.filter(c => c.total > 0);
-    const commissionTotal = activeCommissions.reduce((sum, c) => sum + c.total, 0);
+    const commissionTotal = commissionResults.reduce((sum, c) => sum + c.total, 0);
+    const semRegra = commissionResults.filter(c => c.noRule).length;
 
     return {
         total: parseFloat((expenseTotal + commissionTotal).toFixed(2)),
@@ -1683,7 +1688,8 @@ async function calculateDespesas(year, month) {
         breakdown: {
             expenses: parseFloat(expenseTotal.toFixed(2)),
             comissoes: parseFloat(commissionTotal.toFixed(2)),
-            detalheComissoes: activeCommissions
+            detalheComissoes: commissionResults,
+            semRegra
         }
     };
 }

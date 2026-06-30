@@ -461,6 +461,24 @@ export async function initWhatsAppClient() {
   } catch (e) { console.warn('[WhatsAppWeb][DIAG] Erro ao listar cache:', e.message); }
   // ───────────────────────────────────────────────────────────────────────────
 
+  // Remove Chrome singleton lock files deixados por instâncias anteriores (ex: redeploy no Render).
+  // Apenas os locks são removidos — a sessão WPP (cookies/auth) é preservada.
+  const lockFiles = [
+    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonLock'),
+    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonCookie'),
+    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonSocket'),
+  ];
+  for (const lockFile of lockFiles) {
+    try {
+      if (fs.existsSync(lockFile)) {
+        fs.unlinkSync(lockFile);
+        console.log(`[WhatsAppWeb] 🔓 Lock file removido: ${lockFile}`);
+      }
+    } catch (e) {
+      console.warn(`[WhatsAppWeb] Aviso ao remover lock file ${lockFile}:`, e.message);
+    }
+  }
+
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
