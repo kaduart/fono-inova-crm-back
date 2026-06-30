@@ -462,22 +462,30 @@ export async function initWhatsAppClient() {
   // ───────────────────────────────────────────────────────────────────────────
 
   // Remove Chrome singleton lock files deixados por instâncias anteriores (ex: redeploy no Render).
+  // Busca recursiva — funciona independente do path exato criado pelo LocalAuth (session vs session-default).
   // Apenas os locks são removidos — a sessão WPP (cookies/auth) é preservada.
-  const lockFiles = [
-    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonLock'),
-    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonCookie'),
-    path.join(authPath, '.wwebjs_auth', 'session-default', 'SingletonSocket'),
-  ];
-  for (const lockFile of lockFiles) {
+  const LOCK_NAMES = new Set(['SingletonLock', 'SingletonCookie', 'SingletonSocket']);
+  function removeSingletonLocks(dir) {
+    if (!fs.existsSync(dir)) return;
     try {
-      if (fs.existsSync(lockFile)) {
-        fs.unlinkSync(lockFile);
-        console.log(`[WhatsAppWeb] 🔓 Lock file removido: ${lockFile}`);
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          removeSingletonLocks(full);
+        } else if (LOCK_NAMES.has(entry.name)) {
+          try {
+            fs.unlinkSync(full);
+            console.log(`[WhatsAppWeb] 🔓 Lock removido: ${full}`);
+          } catch (e) {
+            console.warn(`[WhatsAppWeb] Aviso ao remover lock ${full}:`, e.message);
+          }
+        }
       }
     } catch (e) {
-      console.warn(`[WhatsAppWeb] Aviso ao remover lock file ${lockFile}:`, e.message);
+      console.warn('[WhatsAppWeb] Erro ao varrer locks:', e.message);
     }
   }
+  removeSingletonLocks(authPath);
 
   connectionStatus = 'initializing';
   await saveState();
