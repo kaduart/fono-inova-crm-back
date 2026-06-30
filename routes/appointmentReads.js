@@ -428,7 +428,7 @@ router.get('/stats', auth, async (req, res) => {
 // Busca agendamentos com filtros
 router.get('/', flexibleAuth, async (req, res) => {
     try {
-        const { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos, includePreAgendamentos } = req.query;
+        const { patientId, patientName, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos, includePreAgendamentos } = req.query;
         const shouldIncludePreAgendamentos = includePreAgendamentos === 'true';
 
         const filter = {};
@@ -436,7 +436,15 @@ router.get('/', flexibleAuth, async (req, res) => {
         let createdAppointmentId = null; // 👈 novo
 
         // 🔹 Filtros por paciente e médico
-        if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
+        if (patientName && patientName.trim()) {
+            const Patient = mongoose.model('Patient');
+            const matchingPatients = await Patient.find(
+                { fullName: { $regex: patientName.trim(), $options: 'i' } },
+                { _id: 1 }
+            ).lean();
+            const ids = matchingPatients.map(p => p._id);
+            filter.patient = ids.length > 0 ? { $in: ids } : new mongoose.Types.ObjectId('000000000000000000000000');
+        } else if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
             // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
             let resolvedPatientId = patientId;
             const patientExists = await mongoose.connection.db.collection('patients').findOne(
@@ -492,6 +500,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // Removido limit default para garantir que todos os appointments do período venham
         const appointments = await Appointment.find(filter)
+            .skip(skip)
             .limit(limit)
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
