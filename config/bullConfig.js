@@ -87,11 +87,13 @@ export const doctorEvents = new QueueEvents("doctor-processing", {
 });
 
 // 💬 Fila de envio de mensagens WhatsApp (API web enfileira, worker consome)
+// attempts: 8 + backoff 30s → cobre até ~15 min de deploy/restart do worker
+// 30s → 60s → 120s → 240s → 480s → 960s → 1920s (acumulado ~65 min)
 export const whatsappSendQueue = new Queue("whatsapp-send", {
     connection: bullMqConnection,
     defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
+        attempts: 8,
+        backoff: { type: 'exponential', delay: 30000 },
         removeOnComplete: 200,
         removeOnFail: 100
     }
