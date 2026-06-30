@@ -161,6 +161,8 @@ export const mapAppointmentToEvent = (appt) => {
         // Tipo de serviço — necessário para badges na agenda
         serviceType: appt.serviceType || null,
         crm: appt.crm || null,
+        // 💳 Método de pagamento — para exibir na agenda
+        paymentMethod: appt.paymentMethod || appt.payment?.paymentMethod || null,
     };
 };
 
