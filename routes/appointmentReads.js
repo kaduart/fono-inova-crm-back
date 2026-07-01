@@ -507,7 +507,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
-            .populate({ path: 'payment', select: 'status amount paymentMethod' })
+            .populate({ path: 'payment', select: 'status amount paymentMethod splitMethods' })
             .sort({ date: -1, time: 1 })
             .lean();
         console.log(`[GET /appointments] MongoDB retornou ${appointments.length} documentos`);

@@ -158,6 +158,13 @@ router.get('/', auth, async (req, res) => {
                 .map(s => [s._id.toString(), s.appointmentId.toString()])
         );
 
+        // appointmentId → Payment — para buscar splitMethods em transacoesProducao
+        const paymentByApptId = new Map(
+            cash.payments
+                .filter(p => p.appointment)
+                .map(p => [(p.appointment?._id || p.appointment).toString(), p])
+        );
+
         // patientId → serviceType — via sessions de produção (não depende de populate)
         const patientIdToServiceType = new Map();
         for (const s of production.sessions) {
@@ -347,6 +354,8 @@ router.get('/', auth, async (req, res) => {
                 metodo = 'Transferência Bancária';
             } else if (tipo === 'Convênio') {
                 metodo = 'Convênio';
+            } else if (p.splitMethods?.length >= 2) {
+                metodo = 'Split';
             } else if (method.includes('pix')) {
                 metodo = 'Pix';
             } else if (method.includes('dinheiro') || method.includes('cash')) {
@@ -377,7 +386,7 @@ router.get('/', auth, async (req, res) => {
                 isPackageSale: tipo === 'Pacote' && !!p.package,
                 isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
                 appointmentStatus: appt?.operationalStatus || '-',
-                paymentForms: appt?.paymentForms || []
+                paymentForms: p.splitMethods || appt?.paymentForms || []
             };
         }).filter(Boolean);
         console.log(`[cashflow.v2] transacoesCaixa.process = ${Date.now() - _tTransacoesCaixa}ms (${transacoesCaixa.length} items)`);
@@ -386,11 +395,34 @@ router.get('/', auth, async (req, res) => {
 
         // Recalcula totais do caixa a partir das transações já filtradas
         const totalCaixaFiltrado = transacoesCaixa.reduce((s, t) => s + t.valor, 0);
-        const pixFiltrado = transacoesCaixa.filter(t => t.metodo === 'Pix').reduce((s, t) => s + t.valor, 0);
-        const dinheiroFiltrado = transacoesCaixa.filter(t => t.metodo === 'Dinheiro').reduce((s, t) => s + t.valor, 0);
-        const cartaoFiltrado = transacoesCaixa.filter(t => t.metodo === 'Cartão').reduce((s, t) => s + t.valor, 0);
-        const transferenciaFiltrado = transacoesCaixa.filter(t => t.metodo === 'Transferência Bancária').reduce((s, t) => s + t.valor, 0);
-        const outrosFiltrado = transacoesCaixa.filter(t => !['Pix', 'Dinheiro', 'Cartão', 'Transferência Bancária'].includes(t.metodo)).reduce((s, t) => s + t.valor, 0);
+        const _splitMethodToLabel = m => {
+            const ml = (m || '').toLowerCase();
+            if (ml.includes('pix')) return 'Pix';
+            if (ml.includes('dinheiro') || ml.includes('cash')) return 'Dinheiro';
+            if (ml.includes('cartão') || ml.includes('cartao') || ml.includes('card') || ml.includes('crédito') || ml.includes('debito') || ml.includes('credit') || ml.includes('debit')) return 'Cartão';
+            if (ml.includes('transfer')) return 'Transferência Bancária';
+            return 'Outros';
+        };
+        let pixFiltrado = 0, dinheiroFiltrado = 0, cartaoFiltrado = 0, transferenciaFiltrado = 0, outrosFiltrado = 0;
+        qtdPix = 0; qtdDinheiro = 0; qtdCartao = 0;
+        for (const t of transacoesCaixa) {
+            if (t.paymentForms?.length >= 2) {
+                for (const f of t.paymentForms) {
+                    const lbl = _splitMethodToLabel(f.method);
+                    if (lbl === 'Pix') { pixFiltrado += f.amount; qtdPix++; }
+                    else if (lbl === 'Dinheiro') { dinheiroFiltrado += f.amount; qtdDinheiro++; }
+                    else if (lbl === 'Cartão') { cartaoFiltrado += f.amount; qtdCartao++; }
+                    else if (lbl === 'Transferência Bancária') transferenciaFiltrado += f.amount;
+                    else outrosFiltrado += f.amount;
+                }
+            } else {
+                if (t.metodo === 'Pix') { pixFiltrado += t.valor; qtdPix++; }
+                else if (t.metodo === 'Dinheiro') { dinheiroFiltrado += t.valor; qtdDinheiro++; }
+                else if (t.metodo === 'Cartão') { cartaoFiltrado += t.valor; qtdCartao++; }
+                else if (t.metodo === 'Transferência Bancária') transferenciaFiltrado += t.valor;
+                else outrosFiltrado += t.valor;
+            }
+        }
         const countCaixaFiltrado = transacoesCaixa.length;
 
         // ========== DESPESAS DO DIA ==========
@@ -483,7 +515,7 @@ router.get('/', auth, async (req, res) => {
                 categoria,
                 professional: doctor?.fullName || '-',
                 paymentModel: isPacote ? (isPrepaidPkg ? 'prepaid' : 'per_session') : null,
-                paymentForms: appt?.paymentForms || []
+                paymentForms: (s.appointmentId ? paymentByApptId.get(s.appointmentId.toString())?.splitMethods : null) || appt?.paymentForms || []
             };
         });
 

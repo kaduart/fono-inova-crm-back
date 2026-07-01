@@ -364,6 +364,82 @@ A diferença entre os dois é o tamanho do bug.
 
 ---
 
+## INVARIANTE 13 — `Payment.splitMethods` é o SSOT da composição de pagamento
+
+```
+A composição de um pagamento (quais métodos e quais valores) reside APENAS em Payment.splitMethods.
+Nenhum outro campo define como um pagamento foi realizado.
+```
+
+**Por quê:** Durante a semana de 2026-06-30 a 2026-07-01, bugs de "R$0 no caixa" e "método errado"
+foram rastreados ao fato de que `cashflow.v2.js` e modais liam `Appointment.paymentForms` ou
+`Payment.paymentMethod` para determinar a composição — ambos incompletos para pagamentos com split.
+
+**Estrutura de um pagamento com split:**
+```js
+Payment {
+  paymentMethod: 'pix',      // ← apenas atalho/compatibilidade (primeiro método)
+  splitMethods: [            // ← SSOT da composição
+    { method: 'pix',      amount: 250 },
+    { method: 'dinheiro', amount: 200 }
+  ]
+}
+```
+
+**Regras:**
+- `Payment.paymentMethod` = primeiro método ou método único. Nunca representa o pagamento completo quando há split.
+- `Payment.splitMethods` = array completo. Presente apenas quando `length >= 2`.
+- Para pagamento simples: `splitMethods` é `null` ou `[]`; usar `paymentMethod` é correto.
+- Para pagamento split: usar `splitMethods`. Ignorar `paymentMethod`.
+
+**Consequência prática:**
+- Todo consumidor que precise da composição (cashflow, modal, dashboard) deve verificar `splitMethods?.length >= 2` primeiro.
+- `metodo` em transações do caixa é `'Split'` quando `splitMethods.length >= 2` — não `'Pix'`, não `'Dinheiro'`.
+- Os totais de caixa por método (pix/dinheiro/cartão) devem distribuir por `splitMethods` quando presentes.
+
+**Campo legado — `Appointment.paymentForms`:**
+```
+STATUS: LEGADO — não usar em novas implementações.
+Razão: foi substituído por Payment.splitMethods como SSOT.
+Pendente: remoção após auditoria de consumidores.
+```
+
+---
+
+## INVARIANTE 14 — Datas financeiras são imutáveis após liquidação
+
+```
+paymentDate, financialDate e paidAt de um Payment.paid nunca são alterados.
+```
+
+**Por quê:** Essas datas representam **quando o dinheiro entrou**. Alterar retroativamente
+destrói a rastreabilidade do caixa e quebra relatórios de competência.
+
+**Regra:** A data financeira é determinada no momento do `Payment.status: 'paid'`.
+Nenhum evento posterior (cancelamento, reagendamento, edição de sessão) altera essas datas.
+
+**O que fazer quando o dinheiro foi registrado na data errada:**
+Criar um estorno + novo payment com a data correta. Nunca fazer `$set: { financialDate: novaData }` diretamente.
+
+---
+
+## INVARIANTE 15 — Dois fluxos de pagamento são válidos; `confirmed + paid` não é bug
+
+```
+Fluxo A: complete → Payment.paid criado automaticamente
+Fluxo B: Payment registrado manualmente → Appointment permanece confirmed
+```
+
+**Estado `confirmed + paid` é explicitamente válido.**
+
+**Consequência prática:**
+- Nenhum código pode assumir que `Appointment.confirmed` significa "sem pagamento".
+- Nenhum código pode assumir que `Payment.paid` implica `Appointment.completed`.
+- Para saber se um appointment tem pagamento: verificar `Payment.find({ appointment: id, status: 'paid' })`, não `appointment.operationalStatus`.
+- O dashboard financeiro deve incluir payments de appointments `confirmed` no caixa (Fluxo B).
+
+---
+
 ## Violações conhecidas (pendentes de correção)
 
 | Invariante | Violação | Arquivo | Status |
@@ -373,3 +449,6 @@ A diferença entre os dois é o tamanho do bug.
 | INV-8 | `totals.v2.js` reimplementa `calculateCash()` inline | `totals.v2.js:95-137` | P2 |
 | INV-8 | ~~`FinancialOverviewService` usa `receita = caixa`~~ | **REMOVIDO** — código morto eliminado | ✅ |
 | INV-3 | `receitaReconhecida` nomeada `receitaProjetada` internamente | `financialDashboard.v2.js:1476` | ✅ corrigido — agora `production.total` |
+| INV-13 | `cashflow.v2.js` lia `appt?.paymentForms` em vez de `Payment.splitMethods` | `cashflow.v2.js:380,516` | ✅ corrigido em 2026-07-01 |
+| INV-13 | `appointmentReads.js` não populava `splitMethods` no populate de payment | `appointmentReads.js:92,510,599` | ✅ corrigido em 2026-07-01 |
+| INV-13 | `Appointment.paymentForms` ainda existe no modelo como campo legado | `models/Appointment.js` | P2 — remover após auditoria |
