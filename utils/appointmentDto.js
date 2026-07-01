@@ -197,6 +197,12 @@ export function mapAppointmentDTO(appointment) {
         // Flags extras (se presentes)
         isFirstVisit: appointment.isFirstVisit ?? null,
         isReturningAfter45Days: appointment.isReturningAfter45Days ?? null,
+        sessionStatusMismatch: (() => {
+            const sessStatus = appointment.session?.status;
+            const apptStatus = appointment.operationalStatus;
+            if (!sessStatus || apptStatus === 'completed' || apptStatus === 'cancelled') return false;
+            return sessStatus === 'completed';
+        })(),
 
         // Pós-atendimento WhatsApp
         postAppointmentSentAt: appointment.postAppointmentSentAt || null,

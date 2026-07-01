@@ -78,7 +78,10 @@ export const ConvenioHandler = {
             .sort({ expiresAt: 1 });
 
         if (!guide) {
-            throw new Error('NO_ACTIVE_GUIDE: Nenhuma guia ativa encontrada para este paciente/especialidade');
+            const err = new Error('NO_ACTIVE_GUIDE: Nenhuma guia ativa encontrada para este paciente/especialidade');
+            err.code = 'NO_ACTIVE_GUIDE';
+            err.statusCode = 422;
+            throw err;
         }
 
         // 2. Consumir sessão da guia (dentro da transação)

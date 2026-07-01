@@ -8,7 +8,6 @@
 
 import mongoose from 'mongoose';
 import Appointment from '../../../models/Appointment.js';
-import Session from '../../../models/Session.js';
 import { resolveAndMapAppointmentDTO } from '../../../utils/appointmentDto.js';
 import { syncEvent } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
@@ -43,19 +42,6 @@ export async function execute(id, user) {
     });
 
     const updatedAppointment = await appointment.save({ session, validateBeforeSave: false });
-
-    if (appointment.session) {
-      await Session.findByIdAndUpdate(
-        appointment.session,
-        {
-          $set: {
-            status: 'completed',
-            updatedAt: new Date(),
-          },
-        },
-        { session }
-      );
-    }
 
     await session.commitTransaction();
 
