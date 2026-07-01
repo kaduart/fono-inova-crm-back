@@ -13,6 +13,7 @@ import { resolveAndMapAppointmentDTO } from '../../../utils/appointmentDto.js';
 import { syncEvent } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError, checkDoctorPermission } from './_helpers.js';
+import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, user) {
   const session = await mongoose.startSession();
@@ -27,6 +28,7 @@ export async function execute(id, user) {
 
     checkDoctorPermission(appointment, user);
 
+    const beforeSnapshot = appointment.toObject({ virtuals: false, getters: false });
     const oldStatus = appointment.operationalStatus;
     appointment.operationalStatus = 'confirmed';
     appointment.clinicalStatus = 'pending';
@@ -58,6 +60,18 @@ export async function execute(id, user) {
     await session.commitTransaction();
 
     setTimeout(() => syncEvent(updatedAppointment, 'appointment').catch(console.error), 100);
+
+    await recordAudit({
+      user,
+      action: 'appointment_confirmed',
+      entityType: 'Appointment',
+      entityId: updatedAppointment._id,
+      before: beforeSnapshot,
+      after: updatedAppointment,
+      source: 'appointment_command:confirmAppointmentCommand',
+      correlationId: updatedAppointment.correlationId,
+      metadata: { from: oldStatus, to: 'confirmed' },
+    });
 
     return {
       data: await resolveAndMapAppointmentDTO(updatedAppointment),

@@ -33,6 +33,7 @@ import {
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import { createCommissionSnapshot } from './commissionRule.service.js';
 import Doctor from '../models/Doctor.js';
+import { recordAudit } from './auditLogService.js';
 
 /**
  * Completa uma sessão - Mutação primária de estado
@@ -126,6 +127,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     let appointment = await Appointment.findById(appointmentId)
         .populate('session patient doctor package liminarContract')
         .lean();
+    const beforeAppointmentSnapshot = appointment ? { ...appointment } : null;
 
     if (!appointment) {
         throw new Error('Agendamento não encontrado');
@@ -141,9 +143,23 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 sessionValue: 0,
                 isProcessing: false,
                 completedAt: new Date(),
+                completedBy: userId || null,
                 updatedAt: new Date()
             }
         });
+
+        const afterAppointment = await Appointment.findById(appointmentId).lean();
+        await recordAudit({
+            user: userId ? { _id: userId } : null,
+            action: 'appointment_completed',
+            entityType: 'Appointment',
+            entityId: appointmentId,
+            before: beforeAppointmentSnapshot,
+            after: afterAppointment,
+            source: 'completeSessionService.v2:return',
+            correlationId,
+        });
+
         console.log(`[CompleteSessionV2] ✅ Retorno completado sem caixa: ${appointmentId}`);
         return {
             success: true,
@@ -706,6 +722,23 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             appointmentUpdate,
             { session: mongoSession }
         );
+
+        const afterAppointment = await Appointment.findById(appointmentId)
+            .populate('patient doctor session payment package')
+            .session(mongoSession)
+            .lean();
+
+        await recordAudit({
+            user: userId ? { _id: userId } : null,
+            action: 'appointment_completed',
+            entityType: 'Appointment',
+            entityId: appointmentId,
+            before: beforeAppointmentSnapshot,
+            after: afterAppointment,
+            source: 'completeSessionService.v2',
+            correlationId: correlationId || afterAppointment?.correlationId,
+            metadata: { billingType, sessionValue, addToBalance },
+        });
 
         // 🏦 REGISTRAR LANÇAMENTOS NO LEDGER FINANCEIRO (dentro da transação)
         // 1. Receita reconhecida para sessões AVULSAS (sem package)

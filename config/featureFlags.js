@@ -45,6 +45,11 @@ export const FeatureFlags = {
     USE_LEDGER: process.env.FF_FINANCIAL_LEDGER === 'true',
     PERCENTAGE_LEDGER: parseInt(process.env.FF_FINANCIAL_LEDGER_PERCENTAGE || '0'),
   },
+
+  // 🛡️ Feature Flag: Audit Log de Appointment
+  AUDIT: {
+    ENABLED: process.env.FF_AUDIT_ENABLED !== 'false',
+  },
   
   // Status atual das flags
   getStatus: function() {
@@ -54,6 +59,7 @@ export const FeatureFlags = {
       complete: { useV2: this.COMPLETE.USE_V2, percentage: this.COMPLETE.PERCENTAGE_V2 },
       cancel: { useV2: this.CANCEL.USE_V2, percentage: this.CANCEL.PERCENTAGE_V2 },
       financial: { useLedger: this.FINANCIAL.USE_LEDGER, percentage: this.FINANCIAL.PERCENTAGE_LEDGER },
+      audit: { enabled: this.AUDIT.ENABLED },
     };
   }
 };

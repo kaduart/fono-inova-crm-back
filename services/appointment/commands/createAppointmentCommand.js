@@ -23,6 +23,7 @@ import Session from '../../../models/Session.js';
 import Appointment from '../../../models/Appointment.js';
 import Leads from '../../../models/Leads.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
+import { recordAudit } from '../../auditLogService.js';
 
 function isInsuranceAppointment(body) {
   return (
@@ -61,6 +62,19 @@ export async function execute(payload, user, res = null) {
     const populatedAppointment = appointmentId
       ? await Appointment.findById(appointmentId).populate('patient doctor session payment package').lean()
       : null;
+
+    if (populatedAppointment) {
+      await recordAudit({
+        user,
+        action: 'appointment_created',
+        entityType: 'Appointment',
+        entityId: populatedAppointment._id,
+        before: null,
+        after: populatedAppointment,
+        source: 'appointment_command:createAppointmentCommand:insurance',
+        correlationId: populatedAppointment.correlationId,
+      });
+    }
 
     return {
       appointment: populatedAppointment,
@@ -184,6 +198,7 @@ async function createWithHybridService(payload, user) {
         forcePayment: false,
         notes: payload.notes,
         userId: user?._id,
+        createdBy: user?._id,
         isJointSession: payload.isJointSession || false,
       },
       mongoSession
@@ -281,6 +296,17 @@ async function createWithHybridService(payload, user) {
     const populatedPayment = hybridResult.paymentId
       ? await PaymentModel.findById(hybridResult.paymentId).lean()
       : null;
+
+    await recordAudit({
+      user,
+      action: 'appointment_created',
+      entityType: 'Appointment',
+      entityId: populatedAppointment._id,
+      before: null,
+      after: populatedAppointment,
+      source: 'appointment_command:createAppointmentCommand:hybrid',
+      correlationId: populatedAppointment.correlationId,
+    });
 
     return {
       appointment: populatedAppointment,

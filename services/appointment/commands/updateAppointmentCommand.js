@@ -30,6 +30,7 @@ import {
   sanitizeAppointmentPayload,
   toObjectIdString,
 } from './_helpers.js';
+import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, payload, user) {
   if (!id) {
@@ -81,6 +82,7 @@ export async function execute(id, payload, user) {
         // Ex: usuário altera só phone → não perde fullName/email do snapshot
         ...(incomingPatientInfo ? { patientInfo: { ...(appointment.patientInfo?.toObject?.() ?? appointment.patientInfo ?? {}), ...incomingPatientInfo } } : {}),
         doctor: payload.doctorId || appointment.doctor,
+        updatedBy: user?._id,
         updatedAt: currentDate,
       };
 
@@ -93,6 +95,20 @@ export async function execute(id, payload, user) {
         paymentMethod: appointment.paymentMethod,
         sessionType: appointment.sessionType,
         serviceType: appointment.serviceType,
+        billingType: appointment.billingType,
+        insuranceProvider: appointment.insuranceProvider,
+        insuranceValue: appointment.insuranceValue,
+        insuranceGuide: appointment.insuranceGuide?.toString?.() || appointment.insuranceGuide,
+        insurancePlan: appointment.insurancePlan?.toString?.() || appointment.insurancePlan,
+        operationalStatus: appointment.operationalStatus,
+        clinicalStatus: appointment.clinicalStatus,
+        package: appointment.package?.toString?.() || appointment.package,
+        liminarContract: appointment.liminarContract?.toString?.() || appointment.liminarContract,
+        sessionValue: appointment.sessionValue,
+        cancelReason: appointment.cancelReason,
+        rescheduledFrom: appointment.rescheduledFrom?.toString?.() || appointment.rescheduledFrom,
+        originalAppointmentId: appointment.originalAppointmentId?.toString?.() || appointment.originalAppointmentId,
+        notes: appointment.notes,
       };
 
       // Reativação de cancelado
@@ -260,6 +276,17 @@ export async function execute(id, payload, user) {
   } catch (err) {
     console.error('[updateAppointmentCommand] Erro na sincronização pós-atualização:', err);
   }
+
+  await recordAudit({
+    user,
+    action: 'appointment_updated',
+    entityType: 'Appointment',
+    entityId: saved._id,
+    before: previousData,
+    after: saved,
+    source: 'appointment_command:updateAppointmentCommand',
+    correlationId: saved.correlationId,
+  });
 
   return {
     data: await resolveAndMapAppointmentDTO(saved),

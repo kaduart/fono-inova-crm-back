@@ -4,6 +4,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { recordAudit } from '../services/auditLogService.js';
 
 /**
  * Registra um pagamento antecipado com criação automática de:
@@ -29,6 +30,8 @@ export const handleAdvancePayment = async (req, res) => {
         } = req.body;
 
         const now = new Date();
+
+        const createdAdvanceAppointments = [];
 
         // 🔹 1. Cria o pagamento principal
         const payment = new Payment({
@@ -113,6 +116,11 @@ export const handleAdvancePayment = async (req, res) => {
             });
             await advAppointment.save({ session: mongoSession });
 
+            if (!createdAdvanceAppointments) {
+                createdAdvanceAppointments = [];
+            }
+            createdAdvanceAppointments.push(advAppointment);
+
             await updateAppointmentFromSession(advSession, mongoSession);
         }
 
@@ -121,6 +129,35 @@ export const handleAdvancePayment = async (req, res) => {
 
         // 🔹 5. Confirma a transação
         await mongoSession.commitTransaction();
+
+        // Auditoria best-effort dos appointments criados
+        try {
+            await recordAudit({
+                user: req?.user,
+                action: 'appointment_created',
+                entityType: 'Appointment',
+                entityId: todayAppointment._id,
+                before: null,
+                after: todayAppointment,
+                source: 'helper:handleAdvancePayment:today',
+                correlationId: todayAppointment.correlationId,
+            });
+
+            for (const advAppointment of createdAdvanceAppointments) {
+                await recordAudit({
+                    user: req?.user,
+                    action: 'appointment_created',
+                    entityType: 'Appointment',
+                    entityId: advAppointment._id,
+                    before: null,
+                    after: advAppointment,
+                    source: 'helper:handleAdvancePayment:advance',
+                    correlationId: advAppointment.correlationId,
+                });
+            }
+        } catch (auditErr) {
+            console.error('[handleAdvancePayment] Falha ao registrar auditoria:', auditErr.message);
+        }
 
         const populatedPayment = await Payment.findById(payment._id)
             .populate('patient doctor')

@@ -1,14 +1,109 @@
-26/06/2026
-14:00
-Lucas Gabriel de Araújo Costa
-Luis Henrique / terapia_ocupacional
-Sessão
-Pix
-Imediato
-Particular
-Pago na Sessão
-R$ 160,00
+cara vmaso la tem sessoes da isabela como nao vincualda acredito qeu o apcote dela seja antigo ao nosso novo modelo de pacote veja
+curl 'https://fono-inova-crm-back.onrender.com/api/insurance/admin/convenios?includeInactive=false' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3ODI5MTQ1MjAsImV4cCI6MTc4MzAwMDkyMH0.ytsCt2OeFB-CSf-08hnC6-0ZzKKVathhF8Y4r9ruueE' \
+  -H 'if-none-match: W/"61f-wJn2xgY4nnFCeWBx3q5pSlSFeR4"' \
+  -H 'origin: https://app.clinicafonoinova.com.br' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://app.clinicafonoinova.com.br/' \
+  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: cross-site' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
+  -H 'x-correlation-id: front_1782914574837_apr8w2cxh'
+  {
+    "success": true,
+    "data": [
+        {
+            "_id": "6a3ec3a8bbd6959696d2eb30",
+            "code": "bradesco-saude",
+            "active": true,
+            "billingMode": "per_month",
+            "createdAt": "2026-06-26T18:23:36.228Z",
+            "name": "Bradesco Saúde",
+            "notes": "",
+            "sessionValue": 150,
+            "updatedAt": "2026-06-26T18:23:36.228Z",
+            "stats": {
+                "recentBatches": 0,
+                "pendingSessions": 0,
+                "estimatedRevenue": 0
+            }
+        },
+        {
+            "_id": "699900c4b70ca66ae283170d",
+            "code": "unimed-anapolis",
+            "__v": 0,
+            "active": true,
+            "createdAt": "2026-02-21T00:48:04.497Z",
+            "name": "Unimed Anápolis",
+            "notes": "",
+            "sessionValue": 100,
+            "updatedAt": "2026-06-25T12:26:57.092Z",
+            "billingMode": "per_guide",
+            "stats": {
+                "recentBatches": 0,
+                "pendingSessions": 0,
+                "estimatedRevenue": 0
+            }
+        },
+        {
+            "_id": "699900c5b70ca66ae283170f",
+            "code": "unimed-campinas",
+            "__v": 0,
+            "active": true,
+            "createdAt": "2026-02-21T00:48:05.103Z",
+            "name": "Unimed Campinas",
+            "notes": "",
+            "sessionValue": 140,
+            "updatedAt": "2026-02-21T00:48:05.103Z",
+            "billingMode": "per_month",
+            "stats": {
+                "recentBatches": 0,
+                "pendingSessions": 0,
+                "estimatedRevenue": 0
+            }
+        },
+        {
+            "_id": "6a3a94df53b86f5ce4309e77",
+            "code": "unimed-fesp",
+            "name": "Unimed Fesp",
+            "sessionValue": 180,
+            "active": true,
+            "notes": "",
+            "createdAt": "2026-06-23T14:14:55.931Z",
+            "updatedAt": "2026-06-23T14:14:55.931Z",
+            "__v": 0,
+            "billingMode": "per_month",
+            "stats": {
+                "recentBatches": 0,
+                "pendingSessions": 0,
+                "estimatedRevenue": 0
+            }
+        },
+        {
+            "_id": "699900c5b70ca66ae2831710",
+            "code": "unimed-goiania",
+            "__v": 0,
+            "active": true,
+            "createdAt": "2026-02-21T00:48:05.356Z",
+            "name": "Unimed Goiânia",
+            "notes": "",
+            "sessionValue": 80,
+            "updatedAt": "2026-02-21T00:48:05.356Z",
+            "billingMode": "per_month",
+            "stats": {
+                "recentBatches": 0,
+                "pendingSessions": 0,
+                "estimatedRevenue": 0
+            }
+        }
+    ],
+    "count": 5
+}
 
-
-liminar ainda ta entrando no caixa do dia erroneamente a gente ajustou par entar no dia do recebinemto e so atulzair o consumo mas noa aparecer masi em recebimentos do dia qeu faz a sessao
-
+veja o padrao de sesssoes do unimed FEsp e adqeu esses sessoes d a isabela que e da unioemd goiania para podermos ajusta rao apdrao atual que eo mesmo modelo do  fesp

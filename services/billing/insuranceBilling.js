@@ -146,7 +146,8 @@ class InsuranceBillingService {
         insuranceProvider: guide.insurance,
         insuranceValue: 0,
         authorizationCode: guide.number,
-        notes
+        notes,
+        createdBy
       });
 
       await newAppointment.save({ session, validateBeforeSave: false });

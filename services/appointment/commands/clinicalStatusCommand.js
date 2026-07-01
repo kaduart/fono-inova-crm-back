@@ -10,6 +10,7 @@ import Appointment from '../../../models/Appointment.js';
 import { resolveAndMapAppointmentDTO } from '../../../utils/appointmentDto.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError, checkDoctorPermission } from './_helpers.js';
+import { recordAudit } from '../../auditLogService.js';
 
 const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'missed'];
 
@@ -19,6 +20,8 @@ export async function execute(id, status, user) {
   }
 
   const appointment = await Appointment.findById(id);
+  const beforeSnapshot = appointment ? appointment.toObject({ virtuals: false, getters: false }) : null;
+
   if (!appointment) {
     throw buildError('Agendamento não encontrado', 404, 'APPOINTMENT_NOT_FOUND');
   }
@@ -35,6 +38,18 @@ export async function execute(id, status, user) {
   });
 
   const updatedAppointment = await appointment.save({ validateBeforeSave: false });
+
+  await recordAudit({
+    user,
+    action: 'appointment_clinical_status_updated',
+    entityType: 'Appointment',
+    entityId: updatedAppointment._id,
+    before: beforeSnapshot,
+    after: updatedAppointment,
+    source: 'appointment_command:clinicalStatusCommand',
+    correlationId: updatedAppointment.correlationId,
+    metadata: { clinicalStatus: status },
+  });
 
   setImmediate(() => {
     emitSocket('appointment:updated', { appointmentId: updatedAppointment._id, clinicalStatus: status });

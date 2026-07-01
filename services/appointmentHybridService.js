@@ -100,7 +100,7 @@ export class AppointmentHybridService {
             // Metadados
             notes,
             correlationId: crypto.randomUUID(),
-            createdBy: userId,
+            createdBy: userId || null,
             
             // Histórico
             history: [{

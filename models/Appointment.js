@@ -380,7 +380,14 @@ const appointmentSchema = new mongoose.Schema({
     forceCancelledAt: { type: Date, default: null },
     forceCancelledReason: { type: String, default: null },
     reverseFinancial: { type: Boolean, default: false }
-  }
+  },
+
+  // ─── RASTREABILIDADE DO ATOR ───────────────────────────────
+  // Preenchidos pelos commands de appointment para facilitar queries rápidas.
+  createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  updatedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  completedBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  canceledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
 
 }, {
   timestamps: true,

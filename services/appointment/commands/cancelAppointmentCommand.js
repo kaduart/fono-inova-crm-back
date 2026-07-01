@@ -21,6 +21,7 @@ import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { handlePackageSessionUpdate, syncEvent } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError } from './_helpers.js';
+import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, { reason, confirmedAbsence = false }, user) {
   if (!reason) {
@@ -35,6 +36,8 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
       message: 'Agendamento já estava cancelado.',
     };
   }
+
+  const beforeSnapshot = alreadyCanceled;
 
   const result = await runTransactionWithRetry(async (session) => {
     const appointment = await Appointment.findById(id).populate('session payment').session(session);
@@ -132,6 +135,7 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
           visualFlag: 'blocked',
           canceledReason: reason,
           canceledAt: new Date(),
+          canceledBy: user?._id,
           confirmedAbsence,
           updatedAt: new Date(),
         },
@@ -175,6 +179,18 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
   } catch (error) {
     console.error('[cancelAppointmentCommand] Erro na sincronização pós-cancelamento:', error.message);
   }
+
+  await recordAudit({
+    user,
+    action: 'appointment_canceled',
+    entityType: 'Appointment',
+    entityId: result._id,
+    before: beforeSnapshot,
+    after: result,
+    source: 'appointment_command:cancelAppointmentCommand',
+    correlationId: result.correlationId,
+    metadata: { reason, confirmedAbsence },
+  });
 
   return {
     data: result,

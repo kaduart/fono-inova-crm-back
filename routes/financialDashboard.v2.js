@@ -270,10 +270,11 @@ router.get('/', auth, async (req, res) => {
                 despesasSnap = await calculateDespesas(targetYear, targetMonth);
             }
 
-            const [aReceberSnap, comparativosSnap, pendentesSnap] = await Promise.all([
+            const [aReceberSnap, comparativosSnap, pendentesSnap, appointmentCountsSnap] = await Promise.all([
                 calculateAReceber(targetYear, targetMonth),
                 calculateComparativos(targetYear, targetMonth),
                 calculatePendentes(targetYear, targetMonth),
+                calculateAppointmentCounts(targetYear, targetMonth),
             ]);
 
             const metasSnap = await calculateMetas(data, targetYear, targetMonth);
@@ -368,7 +369,8 @@ router.get('/', auth, async (req, res) => {
                     riscoOperacional: riscoOperacionalSnap,
                     acoesExecutivas: acoesExecutivasSnap,
                     drillDown: drillDownSnap,
-                    indicadores: indicadoresSnap
+                    indicadores: indicadoresSnap,
+                    appointmentCounts: appointmentCountsSnap
                 },
                 metadata: { projection: true }
             });
@@ -381,11 +383,12 @@ router.get('/', auth, async (req, res) => {
         };
 
         // Fase 1: queries independentes em paralelo
-        const [dataRt, aReceber, despesas, pendentes] = await Promise.all([
+        const [dataRt, aReceber, despesas, pendentes, appointmentCounts] = await Promise.all([
             _timeit('realTime',    calculateRealTime(targetYear, targetMonth)),
             _timeit('aReceber',    calculateAReceber(targetYear, targetMonth)),
             _timeit('despesas',    calculateDespesas(targetYear, targetMonth)),
             _timeit('pendentes',   calculatePendentes(targetYear, targetMonth)),
+            _timeit('appointments', calculateAppointmentCounts(targetYear, targetMonth)),
         ]);
         data = dataRt;
 
@@ -431,6 +434,7 @@ router.get('/', auth, async (req, res) => {
                 metas,
                 profissionais: profissionais.ranking,
                 indicadores,
+                appointmentCounts,
                 // 🆕 NOVA ARQUITETURA SEMÂNTICA V3
                 visaoSemantica: data.visaoSemantica,
             },
@@ -492,7 +496,8 @@ router.get('/', auth, async (req, res) => {
                 riscoOperacional,
                 acoesExecutivas,
                 drillDown,
-                indicadores
+                indicadores,
+                appointmentCounts
             },
             metadata: {
                 projection: false
@@ -1337,6 +1342,28 @@ async function calculateNovaReceita(start, end) {
  * Caixa e Produção totais usam FinancialMetricsService (fonte única de verdade).
  * Breakdowns manuais são calculados sobre a MESMA base de dados do V2.
  */
+/**
+ * Contagem de appointments do mês para enriquecer os cards do dashboard.
+ * Realizados = completed. Ativos = pre_agendado + scheduled + confirmed + completed.
+ */
+async function calculateAppointmentCounts(year, month) {
+    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
+    const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
+
+    const [ativos, realizados] = await Promise.all([
+        Appointment.countDocuments({
+            date: { $gte: start, $lte: end },
+            operationalStatus: { $in: ['pre_agendado', 'scheduled', 'confirmed', 'completed'] }
+        }),
+        Appointment.countDocuments({
+            date: { $gte: start, $lte: end },
+            operationalStatus: 'completed'
+        })
+    ]);
+
+    return { ativos, realizados };
+}
+
 async function calculateRealTime(year, month) {
     const _t0 = Date.now();
     const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
@@ -2424,6 +2451,132 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
         res.json({ success: true, data: debitos, total });
     } catch (err) {
         console.error('[DashboardV2] Erro /debitos:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /v2/financial/dashboard/base-recorrente
+// Base recorrente do mês: agenda firme, pacotes ativos, guias de convênio
+router.get('/base-recorrente', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { month, year } = req.query;
+        if (!month || !year) {
+            return res.status(400).json({ success: false, message: 'month e year são obrigatórios' });
+        }
+
+        const start = moment.tz([parseInt(year), parseInt(month) - 1, 1], TIMEZONE).startOf('day').toDate();
+        const end = moment.tz([parseInt(year), parseInt(month) - 1, 1], TIMEZONE).endOf('month').endOf('day').toDate();
+
+        const billingTypeOf = (a) => {
+            if (a.billingType === 'convenio') return 'convenio';
+            if (a.billingType === 'liminar' || a.liminarContract) return 'liminar';
+            if (a.package || a.billingType === 'pacote') return 'pacote';
+            return 'particular';
+        };
+
+        const sessionValueOf = (a) => {
+            if (a.billingType === 'convenio') return a.insuranceValue || 0;
+            return a.sessionValue || 0;
+        };
+
+        // 1. Appointments ativos no mês
+        const appointments = await Appointment.find({
+            date: { $gte: start, $lte: end },
+            operationalStatus: { $in: ['pre_agendado', 'scheduled', 'confirmed', 'completed'] }
+        }).select('billingType liminarContract package sessionValue insuranceValue operationalStatus').lean();
+
+        const agendaFirme = { pacote: { count: 0, valor: 0 }, convenio: { count: 0, valor: 0 }, particular: { count: 0, valor: 0 }, liminar: { count: 0, valor: 0 } };
+        let totalAgendado = 0, totalValorAgendado = 0;
+
+        const realizados = { pacote: { count: 0, valor: 0 }, convenio: { count: 0, valor: 0 }, particular: { count: 0, valor: 0 }, liminar: { count: 0, valor: 0 } };
+        let totalRealizado = 0, totalValorRealizado = 0;
+
+        for (const a of appointments) {
+            const tipo = billingTypeOf(a);
+            const valor = sessionValueOf(a);
+            agendaFirme[tipo].count += 1;
+            agendaFirme[tipo].valor += valor;
+            totalAgendado += 1;
+            totalValorAgendado += valor;
+
+            if (a.operationalStatus === 'completed') {
+                realizados[tipo].count += 1;
+                realizados[tipo].valor += valor;
+                totalRealizado += 1;
+                totalValorRealizado += valor;
+            }
+        }
+
+        // 2. Pacotes ativos
+        const pacotesAtivos = await Package.find(
+            { status: { $in: ['active', 'confirmed'] } },
+            { totalSessions: 1, sessionsDone: 1, sessionsUsed: 1, sessionValue: 1, patient: 1 }
+        ).lean();
+
+        const totalPacotesSessoes = pacotesAtivos.reduce((s, p) => {
+            const done = p.sessionsDone || p.sessionsUsed || 0;
+            return s + Math.max(0, (p.totalSessions || 0) - done);
+        }, 0);
+
+        const pacoteAgendadoJulho = appointments.filter(a => billingTypeOf(a) === 'pacote').length;
+
+        // 3. Guias convênio ativas
+        const guiasAtivasRaw = await mongoose.connection.db.collection('insuranceguides').aggregate([
+            { $match: { status: 'active' } },
+            { $group: {
+                _id: '$insurancePlan',
+                guias: { $sum: 1 },
+                sessoesRestantes: { $sum: { $subtract: [{ $ifNull: ['$totalSessions', 0] }, { $ifNull: ['$usedSessions', 0] }] } }
+            }}
+        ]).toArray();
+
+        const guiasAtivas = guiasAtivasRaw.map(g => ({
+            plano: g._id || 'sem plano',
+            guias: g.guias,
+            sessoesRestantes: Math.max(0, g.sessoesRestantes)
+        }));
+
+        const totalGuiasAtivas = guiasAtivas.reduce((s, g) => s + g.guias, 0);
+        const totalSessoesGuia = guiasAtivas.reduce((s, g) => s + g.sessoesRestantes, 0);
+
+        // 4. Referência mês anterior (produção)
+        const prevStart = moment(start).subtract(1, 'month').startOf('month').toDate();
+        const prevEnd = moment(start).subtract(1, 'month').endOf('month').toDate();
+        const producaoMesAnterior = await Appointment.aggregate([
+            { $match: { date: { $gte: prevStart, $lte: prevEnd }, operationalStatus: 'completed' } },
+            { $group: { _id: null, total: { $sum: { $cond: [{ $eq: ['$billingType', 'convenio'] }, { $ifNull: ['$insuranceValue', 0] }, { $ifNull: ['$sessionValue', 0] }] } } } }
+        ]);
+        const referenciaMesAnterior = producaoMesAnterior[0]?.total || 0;
+
+        res.json({
+            success: true,
+            period: { month: parseInt(month), year: parseInt(year) },
+            agendaFirme,
+            realizados,
+            totais: {
+                agendado: { sessoes: totalAgendado, valor: totalValorAgendado },
+                realizado: { sessoes: totalRealizado, valor: totalValorRealizado },
+                pendenteAgenda: { sessoes: totalAgendado - totalRealizado, valor: totalValorAgendado - totalValorRealizado }
+            },
+            pacotes: {
+                ativos: pacotesAtivos.length,
+                sessoesRestantes: totalPacotesSessoes,
+                agendadasNoMes: pacoteAgendadoJulho,
+                semAgendamentoNoMes: Math.max(0, totalPacotesSessoes - pacoteAgendadoJulho)
+            },
+            convenios: {
+                guiasAtivas: totalGuiasAtivas,
+                sessoesAutorizadas: totalSessoesGuia,
+                porPlano: guiasAtivas
+            },
+            referenciaMesAnterior,
+            sugestoesMeta: {
+                conservadora: Math.ceil(totalValorAgendado / 1000) * 1000,
+                ambiciosa: Math.ceil(referenciaMesAnterior * 0.9 / 1000) * 1000
+            }
+        });
+    } catch (err) {
+        console.error('[DashboardV2] Erro /base-recorrente:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });

@@ -19,6 +19,7 @@ import { updatePatientAppointments } from '../../../utils/appointmentUpdater.js'
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError } from './_helpers.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
+import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, user) {
   const appointment = await Appointment.findById(id).populate('session payment');
@@ -36,6 +37,7 @@ export async function execute(id, user) {
   }
 
   const { patient, session, payment } = appointment;
+  const beforeSnapshot = appointment.toObject({ virtuals: false, getters: false });
 
   await runTransactionWithRetry(async (mongoSession) => {
     // 1. Remove referência do appointment na Session
@@ -80,6 +82,17 @@ export async function execute(id, user) {
   }
 
   await updatePatientAppointments(patient);
+
+  await recordAudit({
+    user,
+    action: 'appointment_deleted',
+    entityType: 'Appointment',
+    entityId: appointment._id,
+    before: beforeSnapshot,
+    after: null,
+    source: 'appointment_command:deleteAppointmentCommand',
+    correlationId: appointment.correlationId,
+  });
 
   return {
     data: { deletedId: id },
