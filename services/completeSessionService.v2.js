@@ -296,6 +296,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     // 🎯 Variável para compartilhar estado entre Session e Appointment
     let sessionUpdate = null;
     let sessionDoc = null;
+    let packageJustFinished = false; // flag para cancelar appointments FORA da transação
 
     // Contexto imutável passado aos handlers de billingType
     // sessionDoc começa null e é preenchido após Session.findById abaixo
@@ -516,28 +517,11 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     { status: 'finished' },
                     { session: mongoSession }
                 );
+                packageJustFinished = true;
                 console.log(`[CompleteSessionV2] ✅ Pacote ${packageId} → finished (${completedSessions.length}/${activeSessions.length} ativas concluídas)`);
-
-                // 🔄 Cancela appointments futuros do pacote que ainda estão pendentes
-                const cancelResult = await Appointment.updateMany(
-                    {
-                        package: packageId,
-                        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
-                    },
-                    {
-                        $set: {
-                            operationalStatus: 'canceled',
-                            clinicalStatus: 'canceled',
-                            status: 'canceled',
-                            cancellationReason: 'Pacote finalizado - sessões esgotadas',
-                            updatedAt: new Date()
-                        }
-                    },
-                    { session: mongoSession }
-                );
-                if (cancelResult.modifiedCount > 0) {
-                    console.log(`[CompleteSessionV2] 🗑️ ${cancelResult.modifiedCount} appointment(s) futuro(s) cancelado(s) - pacote esgotado`);
-                }
+                // 🔄 Cancelamento de appointments movido para FORA da transação
+                // Motivo: Appointment.updateMany via Mongoose dispara middleware que
+                // não é transaction-aware, causando abort da transação na última sessão.
             }
         }
 
@@ -872,6 +856,32 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
         // 🔄 INVALIDA CACHE do dashboard para refletir novo caixa/produção em tempo real
         invalidateDashboardCache();
+
+        // 🔄 Cancela appointments futuros do pacote (fora da transação — evita abort por Mongoose middleware)
+        if (packageJustFinished && packageId) {
+            try {
+                const cancelResult = await Appointment.updateMany(
+                    {
+                        package: packageId,
+                        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+                    },
+                    {
+                        $set: {
+                            operationalStatus: 'canceled',
+                            clinicalStatus: 'canceled',
+                            status: 'canceled',
+                            cancellationReason: 'Pacote finalizado - sessões esgotadas',
+                            updatedAt: new Date()
+                        }
+                    }
+                );
+                if (cancelResult.modifiedCount > 0) {
+                    console.log(`[CompleteSessionV2] 🗑️ ${cancelResult.modifiedCount} appointment(s) futuro(s) cancelado(s) - pacote esgotado`);
+                }
+            } catch (cancelErr) {
+                console.error(`[CompleteSessionV2] ⚠️ Erro ao cancelar appointments pós-finish (não crítico):`, cancelErr.message);
+            }
+        }
 
         // 🔄 REBUILD SÍNCRONO da view (frontend precisa ver dados atualizados)
         let viewRebuilt = false;
