@@ -89,7 +89,7 @@ router.get('/history/:patientId', flexibleAuth, async (req, res) => {
         const history = await Appointment.find({ patient: patientId, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } })
             .sort({ date: -1 })
             .populate('doctor', 'fullName specialty')
-            .populate('payment', 'status amount paymentMethod');
+            .populate('payment', 'status amount paymentMethod splitMethods');
         res.json({ success: true, data: history.map(mapAppointmentDTO) });
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -596,7 +596,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             .populate('package', 'totalSessions sessionsUsed sessionValue totalPaid financialStatus balance type')
             .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
             .populate('session', 'status paymentStatus')
-            .populate('payment', 'status amount paymentMethod');
+            .populate('payment', 'status amount paymentMethod splitMethods');
 
         if (!appointment) {
             return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });

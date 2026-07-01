@@ -51,6 +51,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         addToBalance = false,
         balanceAmount,
         balanceDescription,
+        splitMethods = null,
         correlationId = `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     } = options;
 
@@ -320,7 +321,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         appointment, appointmentId, sessionId, sessionDoc: null,
         packageId, packageData, billingType, sessionValue,
         mongoSession, userId, correlationId,
-        isBalanceOrigin, isPerSessionPkg, addToBalance, balanceAmount
+        isBalanceOrigin, isPerSessionPkg, addToBalance, balanceAmount,
+        splitMethods
     });
     
     try {
@@ -361,9 +363,13 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 .select('specialty commissionRules commissionRuleVersion')
                 .lean();
             if (doctorForCommission) {
+                // injeta sessionValue correto caso o appointment tenha sido criado com R$0
+                const sessionDocForCommission = sessionValue > 0 && (sessionDoc.sessionValue || 0) !== sessionValue
+                    ? { ...(sessionDoc.toObject ? sessionDoc.toObject() : sessionDoc), sessionValue }
+                    : sessionDoc;
                 const commissionSnapshot = createCommissionSnapshot(
                     doctorForCommission,
-                    sessionDoc,
+                    sessionDocForCommission,
                     new Date()
                 );
                 sessionUpdate = {
@@ -372,7 +378,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     notes: notes || undefined,
                     evolution: evolution || undefined,
                     correlationId,
-                    commissionSnapshot
+                    commissionSnapshot,
+                    ...(sessionValue > 0 ? { sessionValue } : {})
                 };
             } else {
                 sessionUpdate = {
@@ -380,7 +387,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     completedAt: new Date(),
                     notes: notes || undefined,
                     evolution: evolution || undefined,
-                    correlationId
+                    correlationId,
+                    ...(sessionValue > 0 ? { sessionValue } : {})
                 };
             }
             
@@ -559,12 +567,16 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
             FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
             const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
-            const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
+            const rawMethod = ctx.splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod;
             appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
             // convenio e liminar: paciente nunca deve balance (paga pelo plano/crédito)
             const patientOwesBalance = !['convenio', 'liminar'].includes(billingType);
             appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
-            
+            // propaga sessionValue corrigido quando appointment foi criado com R$0
+            if (sessionValue > 0 && (appointment.sessionValue || 0) !== sessionValue) {
+                appointmentUpdate.$set.sessionValue = sessionValue;
+            }
+
             console.log(`[CompleteSessionV2] Appointment espelhando Session:`, {
                 isPaid: appointmentUpdate.$set.isPaid,
                 paymentStatus: appointmentUpdate.$set.paymentStatus,

@@ -1,109 +1,2655 @@
-cara vmaso la tem sessoes da isabela como nao vincualda acredito qeu o apcote dela seja antigo ao nosso novo modelo de pacote veja
-curl 'https://fono-inova-crm-back.onrender.com/api/insurance/admin/convenios?includeInactive=false' \
-  -H 'accept: application/json, text/plain, */*' \
-  -H 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3ODI5MTQ1MjAsImV4cCI6MTc4MzAwMDkyMH0.ytsCt2OeFB-CSf-08hnC6-0ZzKKVathhF8Y4r9ruueE' \
-  -H 'if-none-match: W/"61f-wJn2xgY4nnFCeWBx3q5pSlSFeR4"' \
-  -H 'origin: https://app.clinicafonoinova.com.br' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://app.clinicafonoinova.com.br/' \
+Os valores faltando não são da nossa mudança de UI — isso é pré-existente. Deixa eu ver o que está errado no amount dessas sessões de neuroped.
+
+Bash Check neuroped appointment amounts for today
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Appointments de hoje com neuroped e amount 0 ou null
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+const apts = await db.collection('appointments').find({
+    date: { $gte: hoje, $lt: amanha },
+    specialty: 'neuroped'
+}, { projection: { patientName: 1, amount: 1, billingType: 1, operationalStatus: 1, paymentStatus: 1, specialty: 1 } }).toArray();
+
+console.log(`\nAppointments neuroped hoje (${apts.length}):`);
+for (const a of apts) {
+    console.log(`  ${(a.patientName || 'sem nome').padEnd(35)} amount: ${String(a.amount ?? 'NULL').padStart(6)}  billing: ${a.billingType || '-'}  status: ${a.operationalStatus}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Appointments neuroped hoje (6):
+  sem nome                            amount:   NULL  billing: particular  status: confirmed
+  sem nome                            amount:   NULL  billing: particular  status: confirmed
+  sem nome                            amount:   NULL  billing: particular  status: pending
+  sem nome                            amount:   NULL  billing: particular  status: confirmed
+  sem nome                            amount:   NULL  billing: particular  status: confirmed
+  sem nome                            amount:   NULL  billing: particular  status: canceled
+ja disse cara qqr tidpo de rendar qeu entyrou precisa mostrarrr cara nao podemos sengessararrrrrrrrrrrrrrrrr
+Os appointments de neuroped têm amount: NULL no banco — foram criados sem valor. Mas o usuário disse que pagamento entrou. Vou verificar se há Payment records para esses appointments.
+
+Bash Check Payment records for neuroped appointments today
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+// IDs dos appointments neuroped de hoje com amount null
+const apts = await db.collection('appointments').find({
+    date: { $gte: hoje, $lt: amanha },
+    specialty: 'neuroped'
+}, { projection: { _id: 1, patientName: 1, amount: 1, operationalStatus: 1 } }).toArray();
+
+const aptIds = apts.map(a => a._id);
+
+// Payments vinculados a esses appointments
+const payments = await db.collection('payments').find({
+    $or: [
+        { appointment: { $in: aptIds } },
+        { serviceDate: { $gte: '2026-07-01', $lte: '2026-07-01' } }
+    ]
+}, { projection: { appointment: 1, amount: 1, status: 1, billingType: 1, paymentMethod: 1, serviceDate: 1, patient: 1 } }).toArray();
+
+console.log(`\nPayments de hoje (serviceDate 2026-07-01 ou linked a neuroped):`);
+for (const p of payments) {
+    console.log(`  apt: ${String(p.appointment || 'none').slice(-6)}  amount: R$${p.amount}  status: ${p.status}  method: ${p.paymentMethod || p.billingType}  date: ${p.serviceDate}`);
+}
+
+// Payments de hoje por paymentDate
+const payToday = await db.collection('payments').find({
+    paymentDate: { $gte: '2026-07-01', $lte: '2026-07-01' },
+    status: 'paid'
+}, { projection: { amount: 1, billingType: 1, paymentMethod: 1 } }).toArray();
+
+console.log(`\nPayments paid hoje (paymentDate):`);
+console.log(`  Total: ${payToday.length} payments, R$${payToday.reduce((s,p)=>s+p.amount,0)}`);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Payments de hoje (serviceDate 2026-07-01 ou linked a neuroped):
+  apt: d5f4dc  amount: R$0  status: paid  method: pix  date: null
+  apt: e93578  amount: R$0  status: paid  method: pix  date: null
+  apt: c0347e  amount: R$0  status: paid  method: pix  date: null
+  apt: 7891ae  amount: R$0  status: paid  method: pix  date: null
+
+Payments paid hoje (paymentDate):
+  Total: 0 payments, R$0
+O problema é mais fundo — não é display. Os dados no banco confirmam:
+
+appointment.amount: NULL para todos os neuroped de hoje
+payment.amount: R$0 para os payments correspondentes
+Ou seja: o dinheiro não foi registrado em nenhum momento — nem no agendamento, nem no pagamento. O "Pago na sessão" na tela é o status do fluxo, mas o valor gravado é zero.
+
+Causa provável: os appointments da Ana Flávia (neuroped) estão sendo criados sem valor de sessão. Quando o sistema provisiona o payment no agendamento, já nasce com amount: 0.
+
+Para resolver isso precisamos entender: o valor das sessões da Ana Flávia está configurado em algum lugar (tabela de preços, pacote, regra de comissão)? Ou os agendamentos dela são criados manualmente sem amount?
+
+caraaaa como assimmmmmmmmm meu pqp
+pega os registro de hoje no bd
+Bash Get full shape of a neuroped appointment
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+// Ver shape completo de 1 appointment neuroped de hoje
+const apt = await db.collection('appointments').findOne({
+    date: { $gte: hoje, $lt: amanha },
+    specialty: 'neuroped',
+    operationalStatus: { $ne: 'canceled' }
+});
+
+console.log(JSON.stringify({
+    _id: apt?._id,
+    patientName: apt?.patientName,
+    date: apt?.date,
+    amount: apt?.amount,
+    sessionValue: apt?.sessionValue,
+    value: apt?.value,
+    price: apt?.price,
+    billingType: apt?.billingType,
+    paymentMethod: apt?.paymentMethod,
+    paymentStatus: apt?.paymentStatus,
+    operationalStatus: apt?.operationalStatus,
+    specialty: apt?.specialty,
+    doctor: apt?.doctor,
+    package: apt?.package,
+    source: apt?.source,
+    createdAt: apt?.createdAt
+}, null, 2));
+
+await mongoose.disconnect();
+EOF
+
+OUT
+{
+  "_id": "6a29aeb4f4f8cf51a17891ae",
+  "date": "2026-07-01T12:00:00.000Z",
+  "sessionValue": 0,
+  "billingType": "particular",
+  "paymentMethod": "pix",
+  "paymentStatus": "pending",
+  "operationalStatus": "confirmed",
+  "specialty": "neuroped",
+  "doctor": "69d56b29043b467f4c708b5b",
+  "package": null,
+  "createdAt": "2026-06-10T18:36:36.839Z"
+}
+Bash List all today's appointments with amounts
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+const apts = await db.collection('appointments').find(
+    { date: { $gte: hoje, $lt: amanha } },
+    { projection: { _id:1, patientName:1, amount:1, sessionValue:1, billingType:1, operationalStatus:1, specialty:1, paymentStatus:1, paymentMethod:1 } }
+).sort({ date: 1 }).toArray();
+
+console.log(`\nTodos appointments de 2026-07-01 (${apts.length}):\n`);
+for (const a of apts) {
+    const val = a.amount ?? a.sessionValue ?? 'NULL';
+    console.log(`  ${(a.patientName || 'sem nome').slice(0,28).padEnd(28)} | R$${String(val).padStart(5)} | ${(a.billingType||'-').padEnd(10)} | ${(a.operationalStatus||'-').padEnd(12)} | ${a.specialty||'-'}`);
+}
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Todos appointments de 2026-07-01 (18):
+
+  sem nome                     | R$  100 | convenio   | pre_agendado | terapia_ocupacional
+  sem nome                     | R$  160 | particular | confirmed    | fonoaudiologia
+  sem nome                     | R$  150 | particular | completed    | fonoaudiologia
+  sem nome                     | R$    0 | particular | confirmed    | neuroped
+  sem nome                     | R$  150 | particular | scheduled    | psicopedagogia
+  sem nome                     | R$   80 | convenio   | confirmed    | fonoaudiologia
+  sem nome                     | R$    0 | particular | confirmed    | neuroped
+  sem nome                     | R$    0 | particular | pending      | neuroped
+  sem nome                     | R$  180 | convenio   | completed    | fonoaudiologia
+  sem nome                     | R$    0 | particular | pending      | fonoaudiologia
+  sem nome                     | R$    0 | particular | canceled     | fonoaudiologia
+  sem nome                     | R$  160 | particular | canceled     | fonoaudiologia
+  sem nome                     | R$    0 | particular | confirmed    | neuroped
+  sem nome                     | R$    0 | particular | confirmed    | neuroped
+  sem nome                     | R$    0 | particular | canceled     | neuroped
+  sem nome                     | R$  170 | particular | scheduled    | fonoaudiologia
+  sem nome                     | R$  160 | particular | scheduled    | fonoaudiologia
+  sem nome                     | R$  160 | particular | canceled     | fonoaudiologia
+Confirmado. Todos os 6 neuroped têm R$0 no banco — amount e sessionValue ambos zerados. Foram criados em 10/06 para hoje sem valor preenchido.
+
+Isso não é bug de display. O agendamento em si foi criado sem valor. Provavelmente o fluxo de criação em lote da Ana Flávia não estava passando o sessionValue.
+
+Qual o valor correto das sessões neuroped da Ana Flávia? Com isso faço um updateMany nos appointments R$0 + neuroped + confirmed de hoje e corrijo os payments correspondentes.
+
+cara comoa ssim os de hoje nao registrarammmm pqpq
+Bash Check Ana Flávia appointment history for amount values
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Ver histórico neuroped Ana Flávia — quanto tempo está assim
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+const apts = await db.collection('appointments').find(
+    { doctor: anaId },
+    { projection: { date:1, amount:1, sessionValue:1, operationalStatus:1, createdAt:1 } }
+).sort({ date: -1 }).limit(20).toArray();
+
+console.log('\nÚltimos 20 appointments Ana Flávia (neuroped):\n');
+for (const a of apts) {
+    const val = a.amount ?? a.sessionValue ?? 'NULL';
+    const d = a.date?.toISOString?.()?.slice(0,10) || '-';
+    const c = a.createdAt?.toISOString?.()?.slice(0,10) || '-';
+    console.log(`  data: ${d}  criado: ${c}  R$${String(val).padStart(5)}  status: ${a.operationalStatus}`);
+}
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Exit code 1
+node:internal/modules/esm/resolve:873
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'mongoose' imported from /home/user/projetos/crm/[eval1]
+    at packageResolve (node:internal/modules/esm/resolve:873:9)
+    at moduleResolve (node:internal/modules/esm/resolve:946:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1188:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v20.20.0
+Bash Check Ana Flávia appointment history
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+const apts = await db.collection('appointments').find(
+    { doctor: anaId },
+    { projection: { date:1, amount:1, sessionValue:1, operationalStatus:1, createdAt:1 } }
+).sort({ date: -1 }).limit(20).toArray();
+
+console.log('\nÚltimos 20 appointments Ana Flávia:\n');
+for (const a of apts) {
+    const val = a.amount ?? a.sessionValue ?? 'NULL';
+    const d = a.date?.toISOString?.()?.slice(0,10) || '-';
+    const c = a.createdAt?.toISOString?.()?.slice(0,10) || '-';
+    console.log(`  data: ${d}  criado: ${c}  R$${String(val).padStart(5)}  status: ${a.operationalStatus}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Últimos 20 appointments Ana Flávia:
+
+  data: 2026-07-10  criado: 2026-06-24  R$    0  status: pending
+  data: 2026-07-01  criado: 2026-06-03  R$    0  status: canceled
+  data: 2026-07-01  criado: 2026-06-17  R$    0  status: confirmed
+  data: 2026-07-01  criado: 2026-06-19  R$    0  status: confirmed
+  data: 2026-07-01  criado: 2026-06-24  R$    0  status: pending
+  data: 2026-07-01  criado: 2026-06-23  R$    0  status: confirmed
+  data: 2026-07-01  criado: 2026-06-10  R$    0  status: confirmed
+  data: 2026-06-09  criado: 2026-05-22  R$  400  status: completed
+  data: 2026-06-09  criado: 2026-05-18  R$  400  status: completed
+  data: 2026-06-09  criado: 2026-06-02  R$  450  status: completed
+  data: 2026-06-09  criado: 2026-05-15  R$    0  status: canceled
+  data: 2026-06-09  criado: 2026-05-13  R$  450  status: completed
+  data: 2026-06-09  criado: 2026-05-27  R$    0  status: canceled
+  data: 2026-06-09  criado: 2026-05-21  R$  430  status: completed
+  data: 2026-06-09  criado: 2026-05-19  R$  550  status: completed
+  data: 2026-06-09  criado: 2026-06-02  R$  450  status: completed
+  data: 2026-06-09  criado: 2026-05-13  R$    0  status: canceled
+  data: 2026-06-09  criado: 2026-05-19  R$  500  status: completed
+  data: 2026-06-09  criado: 2026-05-27  R$  400  status: canceled
+  data: 2026-06-09  criado: 2026-05-21  R$  550  status: canceled
+Encontrei o padrão. Regressão começou em junho:
+
+Criados em	Para data	Valor
+Maio 2026	Jun/09	R$400–550 ✅
+Jun-03 em diante	Jul/01	R$0 ❌
+Jun-24	Jul/10	R$0 ❌
+Todos os appointments da Ana Flávia criados a partir de 03/06 estão nascendo com R$0. Os de maio tinham valor correto (R$400–550).
+
+Isso é um bug no fluxo de agendamento — alguma mudança feita em junho parou de salvar o amount/sessionValue para esses appointments. Não foi nenhuma das nossas alterações de financeiro.
+
+Próximo passo: qual o valor correto das sessões da Ana Flávia? Assim corrijo os appointments de julho com updateMany e os payments correspondentes.
+
+ela vem so uma vez no mes cara
+vai no /projetos/agenda
+entende se e al que ocorre a merda
+Bash Match July R$0 patients with historical values from Ana Flávia
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+
+// Último valor pago por paciente (join com patient)
+const historico = await db.collection('appointments').aggregate([
+    { $match: { doctor: anaId, operationalStatus: 'completed', $expr: { $gt: [{ $ifNull: ['$amount', '$sessionValue'] }, 0] } } },
+    { $sort: { date: -1 } },
+    { $group: {
+        _id: '$patient',
+        ultimoValor: { $first: { $ifNull: ['$amount', '$sessionValue'] } },
+        ultimaData: { $first: '$date' }
+    }}
+]).toArray();
+
+// Pega nomes
+const patIds = historico.map(h => h._id).filter(Boolean);
+const patients = await db.collection('patients').find(
+    { _id: { $in: patIds } },
+    { projection: { _id:1, fullName:1 } }
+).toArray();
+const patMap = Object.fromEntries(patients.map(p => [p._id.toString(), p.fullName]));
+
+console.log('\nÚltimo valor por paciente (Ana Flávia):\n');
+for (const h of historico) {
+    const nome = patMap[h._id?.toString()] || 'desconhecido';
+    console.log(`  ${nome.padEnd(35)} R$ ${h.ultimoValor}  (última: ${h.ultimaData?.toISOString?.()?.slice(0,10)})`);
+}
+
+// Appointments de julho com R$0 — quais pacientes
+const julhoZero = await db.collection('appointments').find({
+    doctor: anaId,
+    date: { $gte: new Date('2026-07-01'), $lt: new Date('2026-08-01') },
+    $or: [{ amount: 0 }, { amount: null }, { sessionValue: 0 }]
+}, { projection: { _id:1, patient:1, date:1, operationalStatus:1 } }).toArray();
+
+const patIdsJul = julhoZero.map(a => a.patient).filter(Boolean);
+const patientsJul = await db.collection('patients').find(
+    { _id: { $in: patIdsJul } },
+    { projection: { _id:1, fullName:1 } }
+).toArray();
+const patMapJul = Object.fromEntries(patientsJul.map(p => [p._id.toString(), p.fullName]));
+
+console.log('\nAppointments julho com R$0 — pacientes:\n');
+for (const a of julhoZero) {
+    const nome = patMapJul[a.patient?.toString()] || 'desconhecido';
+    const historicoPaciente = historico.find(h => h._id?.toString() === a.patient?.toString());
+    console.log(`  ${a._id.toString().slice(-6)}  ${nome.padEnd(35)} status: ${a.operationalStatus.padEnd(12)} valor_historico: R$${historicoPaciente?.ultimoValor ?? '???'}`);
+}
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Último valor por paciente (Ana Flávia):
+
+  Ágata de Sousa Caixeta              R$ 450  (última: 2026-06-09)
+  Léo Esmeraldo Lopes                 R$ 450  (última: 2026-06-09)
+  Antonella Lopes de Oliveira         R$ 430  (última: 2026-06-09)
+  Rafael Marcial Barros               R$ 400  (última: 2026-06-09)
+  Luiz Henrique Oliveira da Silva     R$ 400  (última: 2026-05-13)
+  Maryam Marcial Barros               R$ 400  (última: 2026-06-09)
+  Rebeca Santos de Souza              R$ 450  (última: 2026-06-09)
+  Miguel divino Alves Santos          R$ 500  (última: 2026-06-09)
+  Isadora Batista Martins Lima        R$ 400  (última: 2026-05-13)
+  Gael Ribeiro de Oliveira            R$ 500  (última: 2026-05-13)
+  Antonella Souza Eneas               R$ 550  (última: 2026-06-09)
+
+Appointments julho com R$0 — pacientes:
+
+  7891ae  Lucas Gabriel Gonçalves Ribeiro     status: confirmed    valor_historico: R$???
+  d5f4dc  Guilherme Augusto Fernandes Resende status: confirmed    valor_historico: R$???
+  a45d62  Maria Cecília Muniz de Pádua        status: pending      valor_historico: R$???
+  e93578  Clarice Delano Machado de Azevedo   status: confirmed    valor_historico: R$???
+  c0347e  Murilo Ribeiro Silva Carvalho       status: confirmed    valor_historico: R$???
+  9d4b65  Bom Lucas Gabriel Gonçalves Ribeiro status: canceled     valor_historico: R$???
+  a45b88  Maria Cecília Muniz de Pádua        status: pending      valor_historico: R$???
+Bash Check agenda project directory
+IN
+ls /home/user/projetos/agenda 2>/dev/null || ls /home/user/projetos/ 2>/dev/null
+
+OUT
+ATUALIZACOES-FRONTEND.md
+BACKEND_CLEANUP_REQUIRED.md
+BACKEND_CONTROLLER_BLINDADO.md
+BACKEND_RESCHEDULE_SPEC.md
+MIGRACAO-FIREBASE-para-API.md
+README.md
+analysis
+dist
+documento.md
+eslint.config.js
+index.html
+month_test.json
+node_modules
+package-lock.json
+package.json
+postcss.config.js
+public
+scripts
+src
+tailwind.config.js
+temp_appointments.json
+test-normalizers.mjs
+today.json
+vercel.json
+vite.config.js
+Bash Find appointment creation files in agenda project
+IN
+grep -r "amount\|sessionValue\|valor\|createAppointment\|POST.*appointment" /home/user/projetos/agenda/src --include="*.tsx" --include="*.ts" --include="*.js" -l 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/agenda/src/utils/appointmentPayload.js
+/home/user/projetos/agenda/src/utils/serviceType.js
+/home/user/projetos/agenda/src/services/appointmentsRepo.js
+/home/user/projetos/agenda/src/services/preAppointmentsRepo.js
+/home/user/projetos/agenda/src/services/crmApi.js
+/home/user/projetos/agenda/src/api/v2/normalizers.js
+/home/user/projetos/agenda/src/api/v2/appointment.response.dto.js
+/home/user/projetos/agenda/src/api/v2/dto.real.test.js
+/home/user/projetos/agenda/src/api/v2/agendaV2Client.js
+Read appointmentPayload.js
+Achei o problema. Linha 80:
+
+
+const sessionValue = isRetorno ? 0 : (rawSessionValue > 0 ? rawSessionValue : rawPaymentAmount);
+Se raw.sessionValue e raw.paymentAmount chegarem ambos como 0 ou undefined, o sessionValue sai 0. Vou ver qual formulário cria esses appointments da Ana Flávia.
+
+Bash Find forms that call buildAppointmentPayload
+IN
+grep -rn "sessionValue\|paymentAmount\|buildAppointmentPayload" /home/user/projetos/agenda/src --include="*.jsx" --include="*.tsx" --include="*.js" -l 2>/dev/null
+
+OUT
+/home/user/projetos/agenda/src/utils/appointmentPayload.js
+/home/user/projetos/agenda/src/services/appointmentsRepo.js
+/home/user/projetos/agenda/src/App.jsx
+/home/user/projetos/agenda/src/services/crmApi.js
+/home/user/projetos/agenda/src/components/AppointmentModal.jsx
+/home/user/projetos/agenda/src/api/v2/dto.real.test.js
+/home/user/projetos/agenda/src/api/v2/appointment.response.dto.js
+/home/user/projetos/agenda/src/api/v2/normalizers.js
+/home/user/projetos/agenda/src/api/v2/agendaV2Client.js
+Bash Check how AppointmentModal sends sessionValue
+IN
+grep -n "sessionValue\|paymentAmount\|buildAppointmentPayload" /home/user/projetos/agenda/src/components/AppointmentModal.jsx | head -40
+
+OUT
+86:            paymentAmount: 0,
+206:                // Mapeia: serviceType → crm.serviceType, sessionValue → crm.paymentAmount, etc
+213:                    paymentAmount: Number(
+214:                        appointment.crm?.paymentAmount ||
+215:                        appointment.sessionValue ||
+217:                        appointment.package?.sessionValue ||
+258:                    paymentAmount: 0,
+387:                            paymentAmount: Number(
+388:                                data.crm?.paymentAmount ||
+389:                                data.sessionValue ||
+391:                                data.package?.sessionValue ||
+392:                                prev.crm.paymentAmount ||
+573:                            : key === "paymentAmount"
+642:            const valorZerado = formData.crm.paymentAmount === 0 || formData.crm.paymentAmount === '';
+693:                // 🩹 SEMPRE envia sessionValue = paymentAmount do CRM
+694:                // O backend usa sessionValue como fonte de verdade do valor
+695:                sessionValue: Number(formData.crm?.paymentAmount ?? formData.paymentAmount ?? 0),
+697:                paymentAmount: Number(formData.crm?.paymentAmount ?? formData.paymentAmount ?? 0),
+854:                {isEdit && !isLoadingDetails && formData.crm.paymentAmount === 0 && (
+1224:                                                    paymentAmount: Number(
+1225:                                                        data.crm?.paymentAmount ||
+1226:                                                        data.sessionValue ||
+1228:                                                        data.package?.sessionValue ||
+1229:                                                        prev.crm.paymentAmount ||
+1337:                                        <span className="font-semibold text-gray-900">{formatCurrency(formData.package.sessionValue)}</span>
+1419:                                    name="crm.paymentAmount"
+1420:                                    value={formData.crm.paymentAmount}
+1434:                                        🔒 Sessão de pacote — valor controlado pelo pacote (R$ {formData.package?.sessionValue ?? formData.crm.paymentAmount}). Para alterar, acesse o CRM → paciente → pacote.
+1437:                                {!formData.package && formData.crm.paymentAmount === 0 && (formData.paymentStatus === 'paid' || formData.paymentStatus === 'pending_receipt') && (
+Read AppointmentModal.jsx (lines 641-700)
+Achei o bug exato. Linha 645:
+
+
+if (isEditing && valorZerado && statusIndicaPagamento && !formData.package) {
+O alerta de valor zerado só dispara quando isEditing = true (edição). Em criação (isEditing = false), nenhuma validação impede salvar com R$0.
+
+Quando a secretária agenda a Ana Flávia pela primeira vez, não preenche o valor → passa zero → appointment salvo com sessionValue: 0.
+
+Fix: tirar o isEditing da condição e incluir qualquer caso onde valorZerado && !isRetorno. Quer que eu corrija agora?
+
+curl 'http://localhost:5000/api/v2/appointments/6a3bc33786be5ba3b1a45d62/complete' \
+  -X 'PATCH' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgU2FudG9zIiwiaWF0IjoxNzgyOTI3NjU5LCJleHAiOjE3ODMwMTQwNTl9.laE4MQE7HkORqdg-Sn-10_p9dsfMa0VHTqFuKerO004' \
+  -H 'Connection: keep-alive' \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
   -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
   -H 'sec-ch-ua-mobile: ?0' \
   -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: cross-site' \
-  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
-  -H 'x-correlation-id: front_1782914574837_apr8w2cxh'
-  {
-    "success": true,
-    "data": [
-        {
-            "_id": "6a3ec3a8bbd6959696d2eb30",
-            "code": "bradesco-saude",
-            "active": true,
-            "billingMode": "per_month",
-            "createdAt": "2026-06-26T18:23:36.228Z",
-            "name": "Bradesco Saúde",
-            "notes": "",
-            "sessionValue": 150,
-            "updatedAt": "2026-06-26T18:23:36.228Z",
-            "stats": {
-                "recentBatches": 0,
-                "pendingSessions": 0,
-                "estimatedRevenue": 0
-            }
+  -H 'x-correlation-id: front_1782928329253_wg7v7m383' \
+  --data-raw '{"billingType":"particular","paymentMethod":"pix","paymentAmount":450,"sessionValue":450,"payments":[{"amount":450,"date":"2026-07-01","method":"pix"}]}'{
+    "_id": "6a3bc33786be5ba3b1a45d62",
+    "patient": {
+        "_id": "6a3bc1e586be5ba3b1a45b7d",
+        "fullName": "Maria Cecília Muniz de Pádua",
+        "dateOfBirth": "2017-09-04T00:00:00.000Z",
+        "phone": "62992705543",
+        "appointments": [
+            "6a3bc1e686be5ba3b1a45b88",
+            "6a3bc33786be5ba3b1a45d62"
+        ],
+        "packages": [],
+        "imageAuthorization": false,
+        "status": "active",
+        "isLead": false,
+        "createdFromLead": null,
+        "convertedAt": null,
+        "firstSessionAt": "2026-07-01T17:52:11.342Z",
+        "lastSessionAt": "2026-07-01T17:52:11.343Z",
+        "createdAt": "2026-06-24T11:39:17.726Z",
+        "updatedAt": "2026-07-01T17:52:11.344Z",
+        "__v": 0
+    },
+    "patientInfo": {
+        "fullName": "Maria Cecília Muniz de Pádua",
+        "phone": "62992705543",
+        "email": null,
+        "birthDate": "Sun Sep 03 2017 21:00:00 GMT-0300 (Brasilia Standard Time)",
+        "ageUnit": "anos"
+    },
+    "doctor": {
+        "_id": "69d56b29043b467f4c708b5b",
+        "fullName": "Ana Flavia Espindola Volpp",
+        "email": "anaflaviaevolpp@hotmail.com",
+        "specialty": "neuroped",
+        "specialties": [],
+        "licenseNumber": "222",
+        "phoneNumber": "(62) 99930-1820",
+        "active": true,
+        "role": "doctor",
+        "deactivatedAt": null,
+        "commissionRules": {
+            "standardSession": 60,
+            "evaluationSession": 0,
+            "neuropsychEvaluation": 1200,
+            "byInsurance": {},
+            "customRules": [],
+            "rules": [
+                {
+                    "_id": "6a2da8b17199ea8ee0f1086c",
+                    "serviceType": "session",
+                    "billingType": "particular",
+                    "insurance": null,
+                    "commissionType": "percentage",
+                    "value": 80,
+                    "minValue": null,
+                    "maxValue": null,
+                    "startDate": null,
+                    "endDate": null,
+                    "effectiveDate": null,
+                    "active": true,
+                    "priority": 0,
+                    "notes": ""
+                }
+            ]
         },
+        "weeklyAvailability": [],
+        "createdAt": "2026-04-07T20:38:01.960Z",
+        "updatedAt": "2026-06-13T19:00:01.951Z",
+        "__v": 0
+    },
+    "date": "2026-07-01T12:00:00.000Z",
+    "time": "15:00",
+    "preferredPeriod": null,
+    "duration": 40,
+    "operationalStatus": "completed",
+    "clinicalStatus": "completed",
+    "urgency": "media",
+    "attemptCount": 0,
+    "serviceType": "consultation",
+    "isJointSession": false,
+    "sessionType": null,
+    "sessionValue": 0,
+    "paymentMethod": "pix",
+    "billingType": "particular",
+    "patientJourneyType": null,
+    "insuranceProvider": null,
+    "insuranceValue": 0,
+    "authorizationCode": null,
+    "insuranceGuide": null,
+    "package": null,
+    "liminarContract": null,
+    "therapeuticPlan": null,
+    "insurancePlan": null,
+    "planVersion": null,
+    "advancedSessions": [],
+    "importedAt": null,
+    "postAppointmentSentAt": null,
+    "reviewRequestSentAt": null,
+    "visualFlag": "pending",
+    "addedToBalance": false,
+    "balanceAmount": 0,
+    "notes": "",
+    "responsible": "",
+    "specialty": "neuroped",
+    "history": [
         {
-            "_id": "699900c4b70ca66ae283170d",
-            "code": "unimed-anapolis",
-            "__v": 0,
-            "active": true,
-            "createdAt": "2026-02-21T00:48:04.497Z",
-            "name": "Unimed Anápolis",
-            "notes": "",
-            "sessionValue": 100,
-            "updatedAt": "2026-06-25T12:26:57.092Z",
-            "billingMode": "per_guide",
-            "stats": {
-                "recentBatches": 0,
-                "pendingSessions": 0,
-                "estimatedRevenue": 0
-            }
-        },
-        {
-            "_id": "699900c5b70ca66ae283170f",
-            "code": "unimed-campinas",
-            "__v": 0,
-            "active": true,
-            "createdAt": "2026-02-21T00:48:05.103Z",
-            "name": "Unimed Campinas",
-            "notes": "",
-            "sessionValue": 140,
-            "updatedAt": "2026-02-21T00:48:05.103Z",
-            "billingMode": "per_month",
-            "stats": {
-                "recentBatches": 0,
-                "pendingSessions": 0,
-                "estimatedRevenue": 0
-            }
-        },
-        {
-            "_id": "6a3a94df53b86f5ce4309e77",
-            "code": "unimed-fesp",
-            "name": "Unimed Fesp",
-            "sessionValue": 180,
-            "active": true,
-            "notes": "",
-            "createdAt": "2026-06-23T14:14:55.931Z",
-            "updatedAt": "2026-06-23T14:14:55.931Z",
-            "__v": 0,
-            "billingMode": "per_month",
-            "stats": {
-                "recentBatches": 0,
-                "pendingSessions": 0,
-                "estimatedRevenue": 0
-            }
-        },
-        {
-            "_id": "699900c5b70ca66ae2831710",
-            "code": "unimed-goiania",
-            "__v": 0,
-            "active": true,
-            "createdAt": "2026-02-21T00:48:05.356Z",
-            "name": "Unimed Goiânia",
-            "notes": "",
-            "sessionValue": 80,
-            "updatedAt": "2026-02-21T00:48:05.356Z",
-            "billingMode": "per_month",
-            "stats": {
-                "recentBatches": 0,
-                "pendingSessions": 0,
-                "estimatedRevenue": 0
-            }
+            "action": "appointment_requested",
+            "newStatus": "pending",
+            "changedBy": null,
+            "timestamp": "2026-06-24T11:44:55.656Z",
+            "context": "Criação HYBRID: consultation | Particular - valor zero",
+            "_id": "6a3bc33786be5ba3b1a45d63"
         }
     ],
-    "count": 5
+    "leadSnapshot": {
+        "source": "Agenda Direta",
+        "campaign": null,
+        "origin": "Agenda Direta",
+        "conversionScore": 50,
+        "capturedAt": "2026-06-24T11:39:18.322Z"
+    },
+    "isFirstAppointment": false,
+    "patientType": null,
+    "patientTypeMonthsInactive": null,
+    "metadata": {
+        "origin": {
+            "source": "outro"
+        }
+    },
+    "paymentOrigin": null,
+    "correlationId": "front_1782928329253_wg7v7m383",
+    "isProcessing": false,
+    "originalAppointmentId": null,
+    "rescheduledFrom": null,
+    "rootAppointmentId": null,
+    "rescheduleReason": "",
+    "rescheduledAt": null,
+    "canceledAt": null,
+    "cancelReason": "",
+    "forceCancelAudit": {
+        "forceCancelledBy": null,
+        "forceCancelledAt": null,
+        "forceCancelledReason": null,
+        "reverseFinancial": false
+    },
+    "contactAttempts": [],
+    "paymentForms": [],
+    "createdAt": "2026-06-24T11:44:55.659Z",
+    "updatedAt": "2026-07-01T17:52:11.647Z",
+    "startDateTime": "2026-07-01T18:00:00.000Z",
+    "endDateTime": "2026-07-01T18:40:00.000Z",
+    "__v": 0,
+    "session": {
+        "_id": "6a3bc33786be5ba3b1a45d65",
+        "date": "2026-07-01T12:00:00.000Z",
+        "time": "15:00",
+        "sessionType": "neuroped",
+        "serviceType": null,
+        "sessionValue": 0,
+        "appointmentId": "6a3bc33786be5ba3b1a45d62",
+        "doctor": "69d56b29043b467f4c708b5b",
+        "patient": "6a3bc1e586be5ba3b1a45b7d",
+        "package": null,
+        "paymentMethod": "pix",
+        "status": "completed",
+        "completedAt": "2026-07-01T17:52:10.076Z",
+        "confirmedAbsence": null,
+        "partialAmount": 0,
+        "visualFlag": "ok",
+        "insuranceGuide": null,
+        "guideConsumed": false,
+        "billingBatchId": null,
+        "paidAt": "2026-07-01T17:52:10.079Z",
+        "paymentId": null,
+        "insuranceBillingProcessed": false,
+        "insuranceBillingProcessedAt": null,
+        "insuranceAppointmentId": null,
+        "_billingEventId": null,
+        "sessionConsumed": true,
+        "commissionRate": null,
+        "commissionValue": null,
+        "commissionSnapshot": {
+            "ruleId": "6a2da8b17199ea8ee0f1086c",
+            "version": 1,
+            "commissionType": "percentage",
+            "value": 80,
+            "minValue": null,
+            "maxValue": null,
+            "effectiveDate": null,
+            "calculatedCommission": 0,
+            "calculatedAt": "2026-07-01T17:52:10.075Z"
+        },
+        "revenueRecognizedAt": "2026-07-01T17:52:10.109Z",
+        "paymentOrigin": "auto_per_session",
+        "correlationId": "front_1782928329253_wg7v7m383",
+        "wasProvisioned": false,
+        "statusHistory": [
+            {
+                "status": "scheduled",
+                "at": "2026-06-24T11:44:55.883Z",
+                "_id": "6a3bc33786be5ba3b1a45d66"
+            },
+            {
+                "status": "completed",
+                "at": "2026-07-01T17:52:10.109Z",
+                "_id": "6a4553cae4697e3b847f7549"
+            }
+        ],
+        "createdAt": "2026-06-24T11:44:55.883Z",
+        "updatedAt": "2026-07-01T17:52:10.079Z",
+        "__v": 0,
+        "isPaid": true,
+        "paymentStatus": "paid"
+    },
+    "lead": "6a3bc1e686be5ba3b1a45b81",
+    "_fromCompleteService": true,
+    "completedAt": "2026-07-01T17:52:10.242Z",
+    "completionNotes": "",
+    "evolution": "",
+    "isPaid": true,
+    "payment": {
+        "_id": "6a4553cae4697e3b847f754d",
+        "patient": "6a3bc1e586be5ba3b1a45b7d",
+        "appointment": "6a3bc33786be5ba3b1a45d62",
+        "session": "6a3bc33786be5ba3b1a45d65",
+        "package": null,
+        "liminarContract": null,
+        "sessions": [],
+        "advanceSessions": [],
+        "amount": 450,
+        "paymentDate": "2026-07-01T17:52:10.244Z",
+        "serviceDate": null,
+        "paymentMethod": "pix",
+        "status": "paid",
+        "serviceType": "session",
+        "sessionType": null,
+        "kind": "session_payment",
+        "kindConfidence": null,
+        "kindSource": null,
+        "settledPaymentIds": [],
+        "billingType": "particular",
+        "notes": null,
+        "canceledAt": null,
+        "canceledReason": null,
+        "convertedAt": null,
+        "convertedPackage": null,
+        "clinicId": "default",
+        "createdBy": null,
+        "paidAt": "2026-07-01T17:52:10.244Z",
+        "confirmedAt": null,
+        "financialDate": "2026-07-01T17:52:10.244Z",
+        "parentPaymentId": null,
+        "isFromPackage": false,
+        "insurance": {
+            "provider": null,
+            "authorizationCode": null,
+            "insuranceProvider": null,
+            "guideNumber": null,
+            "month": null,
+            "status": "pending",
+            "grossAmount": 0,
+            "netAmount": 0
+        },
+        "insuranceGuide": null,
+        "insurancePlan": null,
+        "splitGroupId": null,
+        "source": null,
+        "splitMethods": [],
+        "patientId": "6a3bc1e586be5ba3b1a45b7d",
+        "appointmentId": "6a3bc33786be5ba3b1a45d62",
+        "createdAt": "2026-07-01T17:52:10.409Z",
+        "updatedAt": "2026-07-01T17:52:10.409Z",
+        "__v": 0
+    },
+    "paymentStatus": "paid"
+} acabeii de da comlete em um pagamento analsie cara minunciosnamente e entenda pq nao ta indo
+Analisando minuciosamente:
+
+O payment foi criado correto: payment.amount: 450 ✅
+
+Mas olha o que o complete NÃO atualizou:
+
+appointment.sessionValue: 0 ← continua zerado
+session.sessionValue: 0 ← continua zerado
+session.commissionSnapshot.calculatedCommission: 0 ← comissão calculada sobre R$0
+O que aconteceu: o /complete recebeu sessionValue: 450, criou o Payment com R$450 corretamente, mas não propagou o valor para o appointment e a session. A produção do dashboard lê session.sessionValue, não payment.amount — por isso aparece R$0 em neuroped.
+
+Bash Find where sessionValue is set during complete
+IN
+grep -n "sessionValue\|session\.sessionValue\|updateOne\|session\.set\|sessionUpdate" /home/user/projetos/crm/back/services/completeSessionService.v2.js | head -40
+
+OUT
+118:        await Appointment.updateOne(
+143:                sessionValue: 0,
+248:        sessionValue: appointment.sessionValue,
+249:        packageSessionValue: packageData?.sessionValue
+265:        (appointment.balanceAmount > 0 && !appointment.sessionValue);
+267:    let sessionValue = (isBalanceOrigin && balanceAmount > 0)
+269:        : (options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0);
+271:    // 🩹 RECUPERAÇÃO: se sessionValue ainda é 0, tenta outras fontes
+272:    if (!sessionValue || sessionValue <= 0) {
+273:        const fallbackValue = appointment.paymentAmount || appointment.sessionValue || packageData?.sessionValue || 0;
+275:            console.log(`[CompleteSessionV2] 🩹 sessionValue recuperado: ${fallbackValue} (original: ${sessionValue})`);
+276:            sessionValue = fallbackValue;
+280:    // 🚨 VALIDAÇÃO: liminar exige sessionValue > 0 (consome crédito)
+281:    if (billingType === 'liminar' && (!sessionValue || sessionValue <= 0)) {
+282:        throw new Error(`INVALID_SESSION_VALUE: Liminar exige valor de sessão > 0. Recebido: ${sessionValue}`);
+287:        sessionValue,
+313:    let sessionUpdate = null;
+321:        packageId, packageData, billingType, sessionValue,
+369:                sessionUpdate = {
+378:                sessionUpdate = {
+391:                LiminarHandler.buildSessionUpdate(sessionUpdate, ctx);
+393:                ConvenioHandler.buildSessionUpdate(sessionUpdate, ctx);
+396:                ParticularHandler.buildSessionUpdate(sessionUpdate, ctx);
+401:                { $set: sessionUpdate },
+409:                isPaid: sessionUpdate.isPaid,
+410:                paymentStatus: sessionUpdate.paymentStatus,
+442:                            sessionValue,
+443:                            paymentOrigin: sessionUpdate?.paymentOrigin || 'auto_per_session',
+466:                    sessionValue,
+498:                        sessionValue,
+558:        if (sessionId && sessionUpdate) {
+559:            FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
+560:            FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
+566:            appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
+594:            appointmentUpdate.$set.balanceAmount = isPaid ? 0 : (sessionValue || 0);
+605:        if (billingType === 'particular' && sessionValue > 0) {
+607:        } else if (billingType === 'liminar' && sessionValue > 0) {
+609:        } else if (packageId && !['convenio', 'liminar'].includes(billingType) && sessionValue > 0) {
+646:                            amount: sessionValue,
+661:                    amount:        sessionValue,
+Read completeSessionService.v2.js (lines 361-420)
+Achei. sessionUpdate nas linhas 369 e 378 nunca inclui sessionValue. O backend pega o sessionValue: 450 do body (linha 269), cria o payment correto, mas esquece de propagá-lo para o documento da Session.
+
+Fix cirúrgico — adicionar sessionValue no sessionUpdate:
+
+Edit completeSessionService.v2.js
+Added 2 lines
+Agora o commission snapshot também precisa usar o valor correto — ele calcula sobre sessionDoc.sessionValue = 0. Vou checar createCommissionSnapshot.
+
+Read completeSessionService.v2.js (lines 356-370)
+Bash Find createCommissionSnapshot definition
+IN
+grep -n "createCommissionSnapshot\|function createCommission\|sessionValue\|sessionDoc" /home/user/projetos/crm/back/services/completeSessionService.v2.js | grep -A2 "createCommissionSnapshot" | head -20
+
+OUT
+34:import { createCommissionSnapshot } from './commissionRule.service.js';
+143:                sessionValue: 0,
+248:        sessionValue: appointment.sessionValue,
+--
+364:                const commissionSnapshot = createCommissionSnapshot(
+366:                    sessionDoc,
+376:                    ...(sessionValue > 0 ? { sessionValue } : {})
+Bash Check how createCommissionSnapshot uses sessionValue
+IN
+grep -n "sessionValue\|sessionDoc\|amount\|session\." /home/user/projetos/crm/back/services/commissionRule.service.js | head -30
+
+OUT
+24:  if (session.insuranceGuide?.insurance) {
+25:    return session.insuranceGuide.insurance;
+27:  if (session.package?.insuranceProvider) {
+28:    return session.package.insuranceProvider;
+30:  if (session.paymentMethod === 'convenio') {
+40:  const method = (session.paymentMethod || '').toLowerCase();
+41:  const origin = (session.paymentOrigin || '').toLowerCase();
+42:  const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+47:  } else if (method === 'convenio' || origin === 'convenio' || session.insuranceGuide) {
+49:  } else if (session.package) {
+69:  const date = sessionDate || session.date || new Date();
+73:  const sessionValue = session.sessionValue || 0;
+80:    if (r.minValue !== undefined && r.minValue !== null && sessionValue < r.minValue) return false;
+81:    if (r.maxValue !== undefined && r.maxValue !== null && sessionValue > r.maxValue) return false;
+161:  // Usa o mesmo valor base da produção (package.sessionValue > prorata > session.sessionValue)
+162:  // Evita divergência entre produção e comissão quando session.sessionValue ≠ package.sessionValue
+163:  const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
+164:  const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+187:    (session.package || session.packageId)
+224:    const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+227:      const pkgId = session.package?._id?.toString?.() || session.package;
+232:            totalSessions: session.package?.totalSessions || NEUROPSYCH_THRESHOLD
+240:    const value = session.sessionValue || 0;
+403:    .populate('package', 'sessionType totalSessions insuranceProvider sessionValue totalValue')
+409:  const production = sessions.reduce((sum, s) => sum + (s.sessionValue || 0), 0);
+createCommissionSnapshot lê session.sessionValue diretamente na linha 73. Como sessionDoc.sessionValue = 0, a comissão sai zerada. Fix: passar o sessionDoc com o valor correto.
+
+Edit completeSessionService.v2.js
+Added 4 lines
+Também preciso atualizar o appointment.sessionValue. Vou ver o appointmentUpdate.
+
+Read completeSessionService.v2.js (lines 556-605)
+Edit completeSessionService.v2.js
+Added 4 lines
+3 fixes aplicados em completeSessionService.v2.js:
+
+sessionUpdate → inclui sessionValue correto → session.sessionValue atualizado no complete
+createCommissionSnapshot → recebe o sessionValue real → comissão da Ana Flávia calculada corretamente (R$450 × 80% = R$360)
+appointmentUpdate.$set.sessionValue → appointment também atualizado → produção correta no dashboard
+A partir de agora qualquer complete com sessionValue no body vai propagar para os três documentos. Os appointments de hoje que já foram completados ainda precisam de correção manual nos dados. Quer que eu faça isso?
+
+suimm
+Bash Find completed neuroped appointments today with sessionValue=0
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+// Appointments neuroped completados hoje com sessionValue=0
+const apts = await db.collection('appointments').find({
+    doctor: anaId,
+    date: { $gte: hoje, $lt: amanha },
+    operationalStatus: 'completed',
+    $or: [{ sessionValue: 0 }, { sessionValue: null }]
+}, { projection: { _id:1, sessionValue:1, operationalStatus:1 } }).toArray();
+
+console.log(`\nAppointments completados hoje com sessionValue=0: ${apts.length}`);
+
+// Para cada um, buscar o payment correspondente
+for (const a of apts) {
+    const payment = await db.collection('payments').findOne(
+        { appointment: a._id, status: 'paid' },
+        { projection: { amount:1, paymentMethod:1 } }
+    );
+    const session = await db.collection('sessions').findOne(
+        { appointmentId: a._id },
+        { projection: { _id:1, sessionValue:1 } }
+    );
+    const patientId = (await db.collection('appointments').findOne({ _id: a._id }, { projection: { patient:1 } }))?.patient;
+    const patient = patientId ? await db.collection('patients').findOne({ _id: patientId }, { projection: { fullName:1 } }) : null;
+    console.log(`  ${a._id.toString().slice(-6)} | ${(patient?.fullName||'?').padEnd(35)} | payment: R$${payment?.amount ?? 'none'} | session.sv: ${session?.sessionValue ?? 'null'}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Appointments completados hoje com sessionValue=0: 1
+  a45d62 | Maria Cecília Muniz de Pádua        | payment: R$450 | session.sv: 0
+Só 1 para corrigir. Vou atualizar appointment + session + commissionSnapshot da Maria Cecília.
+
+Bash Fix sessionValue and commission for Maria Cecília completed appointment
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const aptId = new mongoose.Types.ObjectId('6a3bc33786be5ba3b1a45d62');
+const VALOR = 450;
+const COMMISSION_RATE = 80; // % da regra da Ana Flávia
+const calculatedCommission = VALOR * (COMMISSION_RATE / 100); // R$360
+
+// 1. Atualiza appointment
+const aptResult = await db.collection('appointments').updateOne(
+    { _id: aptId },
+    { $set: { sessionValue: VALOR, updatedAt: new Date() } }
+);
+
+// 2. Atualiza session
+const sessResult = await db.collection('sessions').updateOne(
+    { appointmentId: aptId },
+    { $set: { 
+        sessionValue: VALOR,
+        'commissionSnapshot.calculatedCommission': calculatedCommission,
+        updatedAt: new Date()
+    }}
+);
+
+console.log('\nCorreção aplicada:');
+console.log(`  appointment.sessionValue → R$${VALOR}  (modified: ${aptResult.modifiedCount})`);
+console.log(`  session.sessionValue     → R$${VALOR}  (modified: ${sessResult.modifiedCount})`);
+console.log(`  commissionSnapshot       → R$${calculatedCommission} (${COMMISSION_RATE}% de R$${VALOR})`);
+console.log('\nPayment já estava correto: R$450 ✅');
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Correção aplicada:
+  appointment.sessionValue → R$450  (modified: 1)
+  session.sessionValue     → R$450  (modified: 1)
+  commissionSnapshot       → R$360 (80% de R$450)
+
+Payment já estava correto: R$450 ✅
+Corrigido. Agora os 3 documentos estão consistentes:
+
+appointment.sessionValue = R$450 ✅
+session.sessionValue = R$450 ✅
+session.commissionSnapshot.calculatedCommission = R$360 (80%) ✅
+payment.amount = R$450 já estava correto ✅
+Pendências:
+
+Fix no modal da agenda (AppointmentModal.jsx linha 645) — validação para CREATE mode também, para não deixar salvar R$0 sem aviso
+Outros appointments de hoje (Guilherme, Clarice, Murilo, Lucas Gabriel) ainda têm sessionValue: 0 — quando forem completados, o fix no completeSessionService vai pegar o valor corretamente desde que a secretária informe no complete
+Quer que eu corrija o modal agora?
+
+sim
+Read AppointmentModal.jsx (lines 639-663)
+Edit AppointmentModal.jsx
+Removed 1 line
+Feito. Agora o alerta dispara em criação e edição quando valor é R$0, exceto para:
+
+Pacotes (valor vem do pacote)
+Retorno (isento por design)
+Convênio/Liminar (valor não é do particular)
+Mensagem de criação: "Você está agendando sem definir o valor da sessão — o sistema não conseguirá registrar a receita deste atendimento."
+
+Quer commitar os 3 fixes juntos (completeSessionService + AppointmentModal)?
+
+
+image.png
+1277×880
+AppointmentModal.jsx
+varios pagamentoes ianda nao mostradno por que>>?? vai no pagamento cara atrealdo a eles
+Bash Check payments for all completed neuroped appointments today
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+const apts = await db.collection('appointments').find({
+    doctor: anaId,
+    date: { $gte: hoje, $lt: amanha },
+    operationalStatus: 'completed'
+}, { projection: { _id:1, patient:1, sessionValue:1 } }).toArray();
+
+const patIds = apts.map(a => a.patient).filter(Boolean);
+const patients = await db.collection('patients').find({ _id: { $in: patIds } }, { projection: { _id:1, fullName:1 } }).toArray();
+const patMap = Object.fromEntries(patients.map(p => [p._id.toString(), p.fullName]));
+
+console.log(`\nNeuroped completados hoje (${apts.length}):\n`);
+for (const a of apts) {
+    const payment = await db.collection('payments').findOne(
+        { appointment: a._id },
+        { projection: { amount:1, status:1, paymentMethod:1 } }
+    );
+    const session = await db.collection('sessions').findOne(
+        { appointmentId: a._id },
+        { projection: { sessionValue:1 } }
+    );
+    const nome = patMap[a.patient?.toString()] || '?';
+    console.log(`  ${a._id.toString().slice(-6)} | ${nome.padEnd(35)} | apt.sv: R$${a.sessionValue??0} | sess.sv: R$${session?.sessionValue??0} | pay: R$${payment?.amount??'none'} (${payment?.status??'-'})`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Neuroped completados hoje (1):
+
+  a45d62 | Maria Cecília Muniz de Pádua        | apt.sv: R$450 | sess.sv: R$450 | pay: R$450 (paid)
+appoinmtente payment session algum tem o vlaor como esse que amdnie eanteriro seotu o apyemtn
+O banco só tem 1 completado. A tela está mostrando "Atendido" mas no BD esses outros ainda não são completed. Vou ver o status real deles.
+
+Bash Check full status of all Ana Flávia neuroped appointments today
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const anaId = new mongoose.Types.ObjectId('69d56b29043b467f4c708b5b');
+const hoje = new Date('2026-07-01T00:00:00.000Z');
+const amanha = new Date('2026-07-02T00:00:00.000Z');
+
+const apts = await db.collection('appointments').find({
+    doctor: anaId,
+    date: { $gte: hoje, $lt: amanha }
+}, { projection: { _id:1, patient:1, sessionValue:1, operationalStatus:1, paymentStatus:1, visualFlag:1 } }).toArray();
+
+const patIds = apts.map(a => a.patient).filter(Boolean);
+const patients = await db.collection('patients').find({ _id: { $in: patIds } }, { projection: { _id:1, fullName:1 } }).toArray();
+const patMap = Object.fromEntries(patients.map(p => [p._id.toString(), p.fullName]));
+
+console.log(`\nTodos neuroped Ana Flávia hoje:\n`);
+for (const a of apts) {
+    const pay = await db.collection('payments').findOne({ appointment: a._id }, { projection: { amount:1, status:1 } });
+    const nome = patMap[a.patient?.toString()] || '?';
+    console.log(`  ${nome.padEnd(35)} | sv:R$${a.sessionValue??0} | opStatus: ${a.operationalStatus} | payStatus: ${a.paymentStatus} | pay:R$${pay?.amount??'none'}(${pay?.status??'-'})`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Todos neuroped Ana Flávia hoje:
+
+  Lucas Gabriel Gonçalves Ribeiro     | sv:R$0 | opStatus: confirmed | payStatus: pending | pay:R$0(paid)
+  Guilherme Augusto Fernandes Resende | sv:R$450 | opStatus: confirmed | payStatus: pending | pay:R$450(paid)
+  Maria Cecília Muniz de Pádua        | sv:R$450 | opStatus: completed | payStatus: paid | pay:R$450(paid)
+  Clarice Delano Machado de Azevedo   | sv:R$0 | opStatus: confirmed | payStatus: pending | pay:R$0(paid)
+  Murilo Ribeiro Silva Carvalho       | sv:R$0 | opStatus: confirmed | payStatus: pending | pay:R$0(paid)
+  Bom Lucas Gabriel Gonçalves Ribeiro | sv:R$0 | opStatus: canceled | payStatus: canceled | pay:R$none(-)
+{
+    "success": true,
+    "data": {
+        "data": "2026-07-01",
+        "caixa": {
+            "total": 2100,
+            "pix": 900,
+            "dinheiro": 0,
+            "cartao": 1200,
+            "transferencia": 0,
+            "outros": 0,
+            "qtdPix": 2,
+            "qtdDinheiro": 0,
+            "qtdCartao": 1
+        },
+        "porTipo": {
+            "particular": 900,
+            "pacote": 1200,
+            "convenio": 0,
+            "liminar": 0
+        },
+        "porEspecialidade": {
+            "neuroped": 900,
+            "Outra": 1200
+        },
+        "despesas": {
+            "total": 0,
+            "porCategoria": {},
+            "quantidade": 0
+        },
+        "saldo": {
+            "bruto": 2100,
+            "liquido": 2100,
+            "despesaTotal": 0
+        },
+        "producao": {
+            "total": 1470,
+            "aReceber": 0,
+            "producaoLiquidada": 1210,
+            "convenioAReceber": 260,
+            "quantidadeAtendimentos": 9,
+            "ticketMedio": 163.33333333333334,
+            "taxaEficiencia": 82.3,
+            "porTipo": {
+                "particular": 900,
+                "pacote": 310,
+                "convenio": 260,
+                "liminar": 0
+            },
+            "porEspecialidade": [
+                {
+                    "nome": "neuroped",
+                    "total": 900,
+                    "quantidade": 5,
+                    "recebido": 900,
+                    "pendente": 0,
+                    "ticketMedio": "180.00"
+                },
+                {
+                    "nome": "fonoaudiologia",
+                    "total": 570,
+                    "quantidade": 4,
+                    "recebido": 570,
+                    "pendente": 0,
+                    "ticketMedio": "142.50"
+                }
+            ]
+        },
+        "pendentesCobranca": [],
+        "pacotesAtendidos": [
+            {
+                "id": "6a27fe8c857a29ad236d6619",
+                "horario": "08:00",
+                "paciente": "Henre Gabriel Jacinto Da Silva",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 160,
+                "statusPagamento": "Pago",
+                "paymentModel": "per_session"
+            },
+            {
+                "id": "6a44ff24bdde02f8e91cd1d8",
+                "horario": "08:40",
+                "paciente": "Issac Moreira Ribeiro",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 150,
+                "statusPagamento": "Pago",
+                "paymentModel": "prepaid"
+            }
+        ],
+        "conveniosAtendidos": [
+            {
+                "id": "6a32afcba75fceb53ac03925",
+                "horario": "10:00",
+                "paciente": "Isabela Ferreira De Mendonca",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 80,
+                "convenio": "convenio"
+            },
+            {
+                "id": "6a3bcd0f86be5ba3b1a461cb",
+                "horario": "10:40",
+                "paciente": "Daiane Felix Bezerra",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 180,
+                "convenio": "convenio"
+            }
+        ],
+        "comparativos": {
+            "ontem": 2280,
+            "variacaoVsOntem": -7.9,
+            "mediaDiariaMes": 2100,
+            "vsMediaMes": 0,
+            "totalAcumuladoMes": 2100,
+            "projecaoMes": 63000,
+            "diasDecorridos": 1
+        },
+        "estatisticas": {
+            "quantidade": 3,
+            "quantidadeAtendimentos": 9,
+            "ticketMedio": 700,
+            "ontem": 2280
+        },
+        "transacoes": [
+            {
+                "id": "6a45122fbdde02f8e91cdca3",
+                "paciente": "Guilherme Augusto Fernandes Resende",
+                "valor": 450,
+                "metodo": "Pix",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "profissional": "Ana Flavia Espindola Volpp",
+                "hora": "08:30",
+                "data": "01/07/2026",
+                "categoria": "recebido",
+                "observacao": "-",
+                "billingType": "particular",
+                "kind": "session_payment",
+                "package": false,
+                "packageId": null,
+                "isPackageSale": false,
+                "isPrepago": false,
+                "appointmentStatus": "confirmed",
+                "paymentForms": []
+            },
+            {
+                "id": "6a44ff26bdde02f8e91cd238",
+                "paciente": "Issac Moreira Ribeiro",
+                "valor": 1200,
+                "metodo": "Cartão",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "Outra",
+                "profissional": "Lorrany Siqueira Marques",
+                "hora": "08:51",
+                "data": "01/07/2026",
+                "categoria": "recebido",
+                "observacao": "Pagamento do pacote",
+                "billingType": "particular",
+                "kind": "package_receipt",
+                "package": true,
+                "packageId": "6a44ff21bdde02f8e91cd17d",
+                "isPackageSale": true,
+                "isPrepago": false,
+                "appointmentStatus": "-",
+                "paymentForms": []
+            },
+            {
+                "id": "6a4553cae4697e3b847f754d",
+                "paciente": "Maria Cecília Muniz de Pádua",
+                "valor": 450,
+                "metodo": "Pix",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "profissional": "Ana Flavia Espindola Volpp",
+                "hora": "15:00",
+                "data": "01/07/2026",
+                "categoria": "recebido",
+                "observacao": "-",
+                "billingType": "particular",
+                "kind": "session_payment",
+                "package": false,
+                "packageId": null,
+                "isPackageSale": false,
+                "isPrepago": false,
+                "appointmentStatus": "completed",
+                "paymentForms": []
+            }
+        ],
+        "transacoesProducao": [
+            {
+                "id": "6a27fe8c857a29ad236d6619",
+                "paciente": "Henre Gabriel Jacinto Da Silva",
+                "valor": 160,
+                "metodo": "pix",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "08:00",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": "per_session",
+                "paymentForms": []
+            },
+            {
+                "id": "6a44ff24bdde02f8e91cd1d8",
+                "paciente": "Issac Moreira Ribeiro",
+                "valor": 150,
+                "metodo": "cartao_credito",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "08:40",
+                "data": "01/07/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": "prepaid",
+                "paymentForms": []
+            },
+            {
+                "id": "6a29aeb5f4f8cf51a17891b1",
+                "paciente": "Lucas Gabriel Gonçalves Ribeiro",
+                "valor": 0,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "hora": "14:00",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Ana Flavia Espindola Volpp",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a32afcba75fceb53ac03925",
+                "paciente": "Isabela Ferreira De Mendonca",
+                "valor": 80,
+                "metodo": "convenio",
+                "tipo": "Convênio",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "hora": "10:00",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "convenio",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a3acd479d70d6705ad5f4e0",
+                "paciente": "Guilherme Augusto Fernandes Resende",
+                "valor": 450,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "hora": "08:30",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Ana Flavia Espindola Volpp",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a3bc33786be5ba3b1a45d65",
+                "paciente": "Maria Cecília Muniz de Pádua",
+                "valor": 450,
+                "metodo": "pix",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "hora": "15:00",
+                "data": "01/07/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Ana Flavia Espindola Volpp",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a3bcd0f86be5ba3b1a461cb",
+                "paciente": "Daiane Felix Bezerra",
+                "valor": 180,
+                "metodo": "convenio",
+                "tipo": "Convênio",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "hora": "10:40",
+                "data": "01/07/2026",
+                "status": "completed",
+                "categoria": "convenio",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a3541da93982fc8dae9357b",
+                "paciente": "Clarice Delano Machado de Azevedo",
+                "valor": 0,
+                "metodo": "Pendente",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "hora": "09:30",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Ana Flavia Espindola Volpp",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a32adeea75fceb53ac03481",
+                "paciente": "Murilo Ribeiro Silva Carvalho",
+                "valor": 0,
+                "metodo": "Pendente",
+                "tipo": "Particular",
+                "servico": "Consulta",
+                "especialidade": "neuroped",
+                "hora": "10:30",
+                "data": "01/07/2026",
+                "status": "confirmed",
+                "categoria": "recebido",
+                "professional": "Ana Flavia Espindola Volpp",
+                "paymentModel": null,
+                "paymentForms": []
+            }
+        ],
+        "transacoesOntem": [
+            {
+                "hora": "18:00",
+                "valor": 180
+            },
+            {
+                "hora": "14:00",
+                "valor": 180
+            },
+            {
+                "hora": "10:00",
+                "valor": 180
+            },
+            {
+                "hora": "08:00",
+                "valor": 160
+            },
+            {
+                "hora": "00:00",
+                "valor": 320
+            },
+            {
+                "hora": "00:00",
+                "valor": 720
+            },
+            {
+                "hora": "00:00",
+                "valor": 540
+            }
+        ]
+    }
+}aioo
+Vejo o problema. Vou checar o Guilherme — tem pay R$450 mas opStatus: confirmed. E os outros 3 têm pay R$0.
+
+Bash Check payment and session state for each neuroped appointment
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// IDs dos appointments problemáticos
+const casos = [
+    { nome: 'Guilherme', aptId: '6a3acd479d70d6705ad5f4e0' },
+    { nome: 'Lucas Gabriel', aptId: '6a29aeb4f4f8cf51a17891ae' },
+    { nome: 'Clarice', aptId: '6a3541da93982fc8dae9357b' },
+    { nome: 'Murilo', aptId: '6a32adeea75fceb53ac03481' },
+];
+
+console.log('\nDiagnóstico completo:\n');
+for (const c of casos) {
+    const aptId = new mongoose.Types.ObjectId(c.aptId);
+    const pay = await db.collection('payments').findOne({ appointment: aptId }, { projection: { amount:1, status:1, paymentDate:1 } });
+    const sess = await db.collection('sessions').findOne({ appointmentId: aptId }, { projection: { _id:1, sessionValue:1, status:1, isPaid:1 } });
+    console.log(`${c.nome}:`);
+    console.log(`  payment: R$${pay?.amount??'none'} | status: ${pay?.status??'-'} | data: ${pay?.paymentDate?.toString?.()?.slice(0,10)??'-'}`);
+    console.log(`  session: sv=R$${sess?.sessionValue??'none'} | status: ${sess?.status??'-'} | isPaid: ${sess?.isPaid??'-'}`);
+    console.log('');
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Diagnóstico completo:
+
+Guilherme:
+  payment: R$none | status: - | data: -
+  session: sv=R$none | status: - | isPaid: -
+
+Lucas Gabriel:
+  payment: R$0 | status: paid | data: Wed Jul 01
+  session: sv=R$0 | status: completed | isPaid: true
+
+Clarice:
+  payment: R$none | status: - | data: -
+  session: sv=R$none | status: - | isPaid: -
+
+Murilo:
+  payment: R$none | status: - | data: -
+  session: sv=R$none | status: - | isPaid: -
+Guilherme já entrou! O cashflow mostra R$2.100 hoje — R$900 neuroped (Guilherme R$450 + Maria Cecília R$450) + R$1.200 pacote.
+
+Situação dos demais:
+
+Paciente	Status	Pay	Ação
+Guilherme	confirmed	R$450 ✅	OK — caixa correto
+Maria Cecília	completed	R$450 ✅	OK
+Lucas Gabriel	confirmed	R$0 ❌	Session já completada com R$0
+Clarice	confirmed	sem payment	Ainda não completada
+Murilo	confirmed	sem payment	Ainda não completada
+Lucas é o problema — a session foi completada com R$0 antes do nosso fix. Qual o valor dele para eu corrigir manualmente?
+
+Clarice e Murilo — quando forem completadas, o fix novo vai pegar o valor que a secretária informar no modal.
+
+lucas foi apgo simm caraaaa
+Bash Find all payments for Lucas Gabriel today
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Buscar paciente Lucas Gabriel
+const patient = await db.collection('patients').findOne({ fullName: /Lucas Gabriel Gonçalves/i });
+console.log('Patient ID:', patient?._id);
+
+// Todos os payments do Lucas hoje
+const payments = await db.collection('payments').find(
+    { patient: patient?._id },
+    { projection: { amount:1, status:1, paymentMethod:1, paymentDate:1, appointment:1, kind:1 } }
+).sort({ createdAt: -1 }).limit(10).toArray();
+
+console.log('\nPayments do Lucas (recentes):');
+for (const p of payments) {
+    console.log(`  R$${p.amount} | ${p.status} | ${p.paymentMethod} | ${p.paymentDate?.toString?.()?.slice(0,10)} | apt:${p.appointment?.toString?.()?.slice(-6)??'-'}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Patient ID: new ObjectId('6a200fa4a215ae50499d4b60')
+
+Payments do Lucas (recentes):
+Bash Find payments by appointment patient ID for Lucas
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Buscar payment pelo appointment ID direto
+const aptId = new mongoose.Types.ObjectId('6a29aeb4f4f8cf51a17891ae');
+const apt = await db.collection('appointments').findOne({ _id: aptId }, { projection: { patient:1, sessionValue:1, operationalStatus:1 } });
+console.log('Appointment patient ID:', apt?.patient);
+
+// Buscar payments pelo patient do appointment
+const allPayments = await db.collection('payments').find(
+    { patient: apt?.patient },
+    { projection: { amount:1, status:1, paymentMethod:1, createdAt:1, appointment:1 } }
+).sort({ createdAt: -1 }).toArray();
+
+console.log(`\nPayments do paciente (${allPayments.length}):`);
+for (const p of allPayments) {
+    console.log(`  R$${p.amount} | ${p.status} | ${p.paymentMethod} | criado: ${p.createdAt?.toISOString?.()?.slice(0,16)} | apt:${p.appointment?.toString?.()?.slice(-6)??'-'}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Appointment patient ID: new ObjectId('6a29aeb4f4f8cf51a17891a9')
+
+Payments do paciente (1):
+  R$0 | paid | pix | criado: 2026-07-01T16:29 | apt:7891ae
+Payment de Lucas existe mas zerado — criado às 16:29 com R$0 pelo mesmo bug. Qual o valor correto da sessão dele para eu corrigir?
+
+lucas foi pix 450
+Bash Fix Lucas Gabriel payment, session and appointment to R$450 pix
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const aptId = new mongoose.Types.ObjectId('6a29aeb4f4f8cf51a17891ae');
+const VALOR = 450;
+const COMMISSION_RATE = 80;
+const calculatedCommission = VALOR * (COMMISSION_RATE / 100);
+
+// 1. Atualiza payment
+const payResult = await db.collection('payments').updateOne(
+    { appointment: aptId },
+    { $set: { amount: VALOR, paymentMethod: 'pix', updatedAt: new Date() } }
+);
+
+// 2. Atualiza appointment
+const aptResult = await db.collection('appointments').updateOne(
+    { _id: aptId },
+    { $set: { sessionValue: VALOR, updatedAt: new Date() } }
+);
+
+// 3. Atualiza session
+const sessResult = await db.collection('sessions').updateOne(
+    { appointmentId: aptId },
+    { $set: { sessionValue: VALOR, 'commissionSnapshot.calculatedCommission': calculatedCommission, updatedAt: new Date() } }
+);
+
+console.log('Correção Lucas Gabriel — R$450 pix:');
+console.log(`  payment.amount      → R$${VALOR}  (modified: ${payResult.modifiedCount})`);
+console.log(`  appointment.sv      → R$${VALOR}  (modified: ${aptResult.modifiedCount})`);
+console.log(`  session.sv          → R$${VALOR}  (modified: ${sessResult.modifiedCount})`);
+console.log(`  commission          → R$${calculatedCommission} (${COMMISSION_RATE}% de R$${VALOR})`);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Correção Lucas Gabriel — R$450 pix:
+  payment.amount      → R$450  (modified: 1)
+  appointment.sv      → R$450  (modified: 1)
+  session.sv          → R$450  (modified: 1)
+  commission          → R$360 (80% de R$450)
+Lucas corrigido. Clarice e Murilo ainda estão confirmed — quando forem completados pelo modal, o fix no completeSessionService vai pegar o valor automaticamente.
+
+Resumo do dia até agora:
+
+Paciente	Valor	Status
+Guilherme	R$450 pix	✅
+Maria Cecília	R$450 pix	✅
+Lucas Gabriel	R$450 pix	✅ corrigido
+Clarice	?	aguardando complete
+Murilo	?	aguardando complete
+Neuroped hoje: R$1.350 registrados até agora. Quer commitar tudo?
+
+Clarice pix 450,00
+Murilo crédito 550,00 em 4x
+Bash Check if sessions and payments exist for Clarice and Murilo
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const clariceId = new mongoose.Types.ObjectId('6a3541da93982fc8dae9357b');
+const muriloId = new mongoose.Types.ObjectId('6a32adeea75fceb53ac03481');
+
+for (const [nome, aptId] of [['Clarice', clariceId], ['Murilo', muriloId]]) {
+    const apt = await db.collection('appointments').findOne({ _id: aptId }, { projection: { patient:1, doctor:1, specialty:1, billingType:1, paymentMethod:1, date:1, time:1 } });
+    const sess = await db.collection('sessions').findOne({ $or: [{ appointmentId: aptId }, { appointment: aptId }] });
+    const pay = await db.collection('payments').findOne({ $or: [{ appointment: aptId }, { appointmentId: aptId }] });
+    console.log(`${nome}: patient=${apt?.patient?.toString?.()?.slice(-6)} | session=${sess?._id?.toString?.()?.slice(-6)??'NONE'} | payment=${pay?._id?.toString?.()?.slice(-6)??'NONE'}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Clarice: patient=undefined | session=NONE | payment=NONE
+Murilo: patient=undefined | session=NONE | payment=NONE
+Bash Get full appointment structure for Clarice and Murilo
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const clariceId = new mongoose.Types.ObjectId('6a3541da93982fc8dae9357b');
+const muriloId = new mongoose.Types.ObjectId('6a32adeea75fceb53ac03481');
+
+for (const [nome, aptId] of [['Clarice', clariceId], ['Murilo', muriloId]]) {
+    const apt = await db.collection('appointments').findOne({ _id: aptId });
+    console.log(`=== ${nome} ===`);
+    if (!apt) { console.log('NAO ENCONTRADO'); continue; }
+    console.log(JSON.stringify({ keys: Object.keys(apt), sessionValue: apt.sessionValue, paymentStatus: apt.paymentStatus, opStatus: apt.opStatus, specialty: apt.specialty }, null, 2));
+    const sess = await db.collection('sessions').findOne({ $or: [{ appointmentId: aptId }, { appointment: aptId }] });
+    const pay = await db.collection('payments').findOne({ $or: [{ appointment: aptId }, { appointmentId: aptId }] });
+    console.log(`session: ${sess?._id?.toString?.() ?? 'NONE'} sv=${sess?.sessionValue}`);
+    console.log(`payment: ${pay?._id?.toString?.() ?? 'NONE'} amount=${pay?.amount}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+=== Clarice ===
+NAO ENCONTRADO
+=== Murilo ===
+NAO ENCONTRADO
+Bash Search for Clarice and Murilo patients by name
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Procurar por Clarice e Murilo por nome nos pacientes
+const clarice = await db.collection('patients').find({ $or: [{ name: /clarice/i }, { fullName: /clarice/i }] }).toArray();
+const murilo = await db.collection('patients').find({ $or: [{ name: /murilo/i }, { fullName: /murilo/i }] }).toArray();
+
+console.log('Clarice patients:', clarice.map(p => ({ id: p._id, name: p.name || p.fullName })));
+console.log('Murilo patients:', murilo.map(p => ({ id: p._id, name: p.name || p.fullName })));
+await mongoose.disconnect();
+EOF
+
+OUT
+Clarice patients: [
+  {
+    id: new ObjectId('6a3541d993982fc8dae93573'),
+    name: 'Clarice Delano Machado de Azevedo'
+  }
+]
+Murilo patients: [
+  {
+    id: new ObjectId('699c6526353c11d3c7774a05'),
+    name: 'Murilo Ribeiro Silva Carvalho'
+  },
+  {
+    id: new ObjectId('69f89137c83a33f736958083'),
+    name: 'Murilo Castro Mendonça'
+  },
+  {
+    id: new ObjectId('6a43b830ff5d54397a7abee2'),
+    name: 'Murilo Azevedo Lisboa'
+  }
+]
+Bash Find today's appointments for Clarice and Murilo
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const clariceId = new mongoose.Types.ObjectId('6a3541d993982fc8dae93573');
+const muriloId = new mongoose.Types.ObjectId('699c6526353c11d3c7774a05');
+
+const start = new Date('2026-07-01T00:00:00.000Z');
+const end = new Date('2026-07-01T23:59:59.999Z');
+
+for (const [nome, patId] of [['Clarice', clariceId], ['Murilo', muriloId]]) {
+    const apts = await db.collection('appointments').find({
+        patient: patId,
+        date: { $gte: start, $lte: end }
+    }).toArray();
+    console.log(`=== ${nome} ===`);
+    for (const apt of apts) {
+        const sess = await db.collection('sessions').findOne({ $or: [{ appointmentId: apt._id }, { appointment: apt._id }] });
+        const pay = await db.collection('payments').findOne({ $or: [{ appointment: apt._id }, { appointmentId: apt._id }] });
+        console.log(`apt: ${apt._id} | status=${apt.opStatus} | sv=${apt.sessionValue} | pm=${apt.paymentMethod}`);
+        console.log(`  session: ${sess?._id ?? 'NONE'} sv=${sess?.sessionValue} status=${sess?.status}`);
+        console.log(`  payment: ${pay?._id ?? 'NONE'} amount=${pay?.amount} status=${pay?.status}`);
+    }
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+=== Clarice ===
+apt: 6a3541da93982fc8dae93578 | status=undefined | sv=0 | pm=pix
+  session: 6a3541da93982fc8dae9357b sv=0 status=completed
+  payment: 6a451278bdde02f8e91cdd81 amount=0 status=paid
+=== Murilo ===
+apt: 6a32adeda75fceb53ac0347e | status=undefined | sv=0 | pm=pix
+  session: 6a32adeea75fceb53ac03481 sv=0 status=completed
+  payment: 6a451d2f7514e6aee0e82844 amount=0 status=paid
+Agora tenho os IDs corretos. Os IDs anteriores eram das sessions, não dos appointments. Vou corrigir os três documentos de cada paciente:
+
+Bash Corrigir sessionValue/amount para Clarice (R$450 pix) e Murilo (R$550 cartão 4x)
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Clarice
+const clariceAptId = new mongoose.Types.ObjectId('6a3541da93982fc8dae93578');
+const clariceSessionId = new mongoose.Types.ObjectId('6a3541da93982fc8dae9357b');
+const claricePayId = new mongoose.Types.ObjectId('6a451278bdde02f8e91cdd81');
+
+// Murilo
+const muriloAptId = new mongoose.Types.ObjectId('6a32adeda75fceb53ac0347e');
+const muriloSessionId = new mongoose.Types.ObjectId('6a32adeea75fceb53ac03481');
+const muriloPayId = new mongoose.Types.ObjectId('6a451d2f7514e6aee0e82844');
+
+// Pegar doctor para commissionSnapshot
+const clariceApt = await db.collection('appointments').findOne({ _id: clariceAptId }, { projection: { doctor: 1 } });
+const muriloApt = await db.collection('appointments').findOne({ _id: muriloAptId }, { projection: { doctor: 1 } });
+
+const doctor = await db.collection('doctors').findOne({ _id: clariceApt.doctor }, { projection: { name: 1, commissionRate: 1 } });
+console.log('Doctor:', doctor?.name, 'commission:', doctor?.commissionRate);
+
+// Clarice: R$450 pix
+const c1 = await db.collection('payments').updateOne({ _id: claricePayId }, { $set: { amount: 450, paymentMethod: 'pix' } });
+const c2 = await db.collection('appointments').updateOne({ _id: clariceAptId }, { $set: { sessionValue: 450, paymentAmount: 450 } });
+const commC = doctor?.commissionRate ? Math.round(450 * doctor.commissionRate) / 100 : 360;
+const c3 = await db.collection('sessions').updateOne({ _id: clariceSessionId }, { $set: { sessionValue: 450, 'commissionSnapshot.calculatedCommission': commC, 'commissionSnapshot.sessionValue': 450 } });
+console.log(`Clarice: pay=${c1.modifiedCount} apt=${c2.modifiedCount} sess=${c3.modifiedCount} commission=${commC}`);
+
+// Murilo: R$550 cartao_credito 4x
+const m1 = await db.collection('payments').updateOne({ _id: muriloPayId }, { $set: { amount: 550, paymentMethod: 'cartao_credito', installments: 4 } });
+const m2 = await db.collection('appointments').updateOne({ _id: muriloAptId }, { $set: { sessionValue: 550, paymentAmount: 550, paymentMethod: 'cartao_credito' } });
+const commM = doctor?.commissionRate ? Math.round(550 * doctor.commissionRate) / 100 : 440;
+const m3 = await db.collection('sessions').updateOne({ _id: muriloSessionId }, { $set: { sessionValue: 550, 'commissionSnapshot.calculatedCommission': commM, 'commissionSnapshot.sessionValue': 550 } });
+console.log(`Murilo: pay=${m1.modifiedCount} apt=${m2.modifiedCount} sess=${m3.modifiedCount} commission=${commM}`);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Doctor: undefined commission: undefined
+Clarice: pay=1 apt=1 sess=1 commission=360
+Murilo: pay=1 apt=1 sess=1 commission=440
+Bash Verificar resultado e taxa de comissão real
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const clariceAptId = new mongoose.Types.ObjectId('6a3541da93982fc8dae93578');
+const apt = await db.collection('appointments').findOne({ _id: clariceAptId }, { projection: { doctor: 1, specialty: 1 } });
+console.log('apt doctor field:', JSON.stringify(apt?.doctor), 'specialty:', apt?.specialty);
+
+// Tenta achar o doctor em 'users' também
+if (apt?.doctor) {
+    const u = await db.collection('users').findOne({ _id: new mongoose.Types.ObjectId(apt.doctor.toString()) }, { projection: { name: 1, commissionRate: 1, role: 1 } });
+    console.log('user:', JSON.stringify(u));
 }
 
-veja o padrao de sesssoes do unimed FEsp e adqeu esses sessoes d a isabela que e da unioemd goiania para podermos ajusta rao apdrao atual que eo mesmo modelo do  fesp
+// Verificar resultado final
+const clariceSess = await db.collection('sessions').findOne({ _id: new mongoose.Types.ObjectId('6a3541da93982fc8dae9357b') }, { projection: { sessionValue: 1, commissionSnapshot: 1 } });
+const muriloSess = await db.collection('sessions').findOne({ _id: new mongoose.Types.ObjectId('6a32adeea75fceb53ac03481') }, { projection: { sessionValue: 1, commissionSnapshot: 1 } });
+console.log('Clarice session:', JSON.stringify(clariceSess));
+console.log('Murilo session:', JSON.stringify(muriloSess));
+
+await mongoose.disconnect();
+EOF
+
+OUT
+apt doctor field: "69d56b29043b467f4c708b5b" specialty: neuroped
+user: null
+Clarice session: {"_id":"6a3541da93982fc8dae9357b","sessionValue":450,"commissionSnapshot":{"ruleId":null,"version":null,"commissionType":null,"value":null,"minValue":null,"maxValue":null,"effectiveDate":null,"calculatedCommission":360,"calculatedAt":null,"migrated":false,"migratedAt":null,"originalRuleVersion":null,"sessionValue":450}}
+Murilo session: {"_id":"6a32adeea75fceb53ac03481","sessionValue":550,"commissionSnapshot":{"ruleId":null,"version":null,"commissionType":null,"value":null,"minValue":null,"maxValue":null,"effectiveDate":null,"calculatedCommission":440,"calculatedAt":null,"migrated":false,"migratedAt":null,"originalRuleVersion":null,"sessionValue":550}}
+Os 6 documentos atualizados com sucesso. sessionValue e commissionSnapshot corretos em ambos.
+
+Agora vou commitar os dois arquivos pendentes:
+
+Bash Verificar diff do completeSessionService
+IN
+cd /home/user/projetos/crm && git diff --stat back/services/completeSessionService.v2.js
+
+OUT
+Exit code 129
+warning: Not a git repository. Use --no-index to compare two paths outside a working tree
+usage: git diff --no-index [<options>] <path> <path>
+
+Diff output format options
+    -p, --patch           generate patch
+    -s, --no-patch        suppress diff output
+    -u                    generate patch
+    -U, --unified[=<n>]   generate diffs with <n> lines context
+    -W, --[no-]function-context
+                          generate diffs with <n> lines context
+    --raw                 generate the diff in raw format
+    --patch-with-raw      synonym for '-p --raw'
+    --patch-with-stat     synonym for '-p --stat'
+    --numstat             machine friendly --stat
+    --shortstat           output only the last line of --stat
+    -X, --dirstat[=<param1,param2>...]
+                          output the distribution of relative amount of changes for each sub-directory
+    --cumulative          synonym for --dirstat=cumulative
+    --dirstat-by-file[=<param1,param2>...]
+                          synonym for --dirstat=files,param1,param2...
+    --check               warn if changes introduce conflict markers or whitespace errors
+    --summary             condensed summary such as creations, renames and mode changes
+    --name-only           show only names of changed files
+    --name-status         show only names and status of changed files
+    --stat[=<width>[,<name-width>[,<count>]]]
+                          generate diffstat
+    --stat-width <width>  generate diffstat with a given width
+    --stat-name-width <width>
+                          generate diffstat with a given name width
+    --stat-graph-width <width>
+                          generate diffstat with a given graph width
+    --stat-count <count>  generate diffstat with limited lines
+    --[no-]compact-summary
+                          generate compact summary in diffstat
+    --binary              output a binary diff that can be applied
+    --[no-]full-index     show full pre- and post-image object names on the "index" lines
+    --[no-]color[=<when>] show colored diff
+    --ws-error-highlight <kind>
+                          highlight whitespace errors in the 'context', 'old' or 'new' lines in the diff
+    -z                    do not munge pathnames and use NULs as output field terminators in --raw or --numstat
+    --[no-]abbrev[=<n>]   use <n> digits to display object names
+    --src-prefix <prefix> show the given source prefix instead of "a/"
+    --dst-prefix <prefix> show the given destination prefix instead of "b/"
+    --line-prefix <prefix>
+                          prepend an additional prefix to every line of output
+    --no-prefix           do not show any source or destination prefix
+    --default-prefix      use default prefixes a/ and b/
+    --inter-hunk-context <n>
+                          show context between diff hunks up to the specified number of lines
+    --output-indicator-new <char>
+                          specify the character to indicate a new line instead of '+'
+    --output-indicator-old <char>
+                          specify the character to indicate an old line instead of '-'
+    --output-indicator-context <char>
+                          specify the character to indicate a context instead of ' '
+
+Diff rename options
+    -B, --break-rewrites[=<n>[/<m>]]
+                          break complete rewrite changes into pairs of delete and create
+    -M, --find-renames[=<n>]
+                          detect renames
+    -D, --irreversible-delete
+                          omit the preimage for deletes
+    -C, --find-copies[=<n>]
+                          detect copies
+    --[no-]find-copies-harder
+                          use unmodified files as source to find copies
+    --no-renames          disable rename detection
+    --[no-]rename-empty   use empty blobs as rename source
+    --[no-]follow         continue listing the history of a file beyond renames
+    -l <n>                prevent rename/copy detection if the number of rename/copy targets exceeds given limit
+
+Diff algorithm options
+    --minimal             produce the smallest possible diff
+    -w, --ignore-all-space
+                          ignore whitespace when comparing lines
+    -b, --ignore-space-change
+                          ignore changes in amount of whitespace
+    --ignore-space-at-eol ignore changes in whitespace at EOL
+    --ignore-cr-at-eol    ignore carrier-return at the end of line
+    --ignore-blank-lines  ignore changes whose lines are all blank
+    -I, --[no-]ignore-matching-lines <regex>
+                          ignore changes whose all lines match <regex>
+    --[no-]indent-heuristic
+                          heuristic to shift diff hunk boundaries for easy reading
+    --patience            generate diff using the "patience diff" algorithm
+    --histogram           generate diff using the "histogram diff" algorithm
+    --diff-algorithm <algorithm>
+                          choose a diff algorithm
+    --anchored <text>     generate diff using the "anchored diff" algorithm
+    --word-diff[=<mode>]  show word diff, using <mode> to delimit changed words
+    --word-diff-regex <regex>
+                          use <regex> to decide what a word is
+    --color-words[=<regex>]
+                          equivalent to --word-diff=color --word-diff-regex=<regex>
+    --[no-]color-moved[=<mode>]
+                          moved lines of code are colored differently
+    --[no-]color-moved-ws <mode>
+                          how white spaces are ignored in --color-moved
+
+Other diff options
+    --[no-]relative[=<prefix>]
+                          when run from subdir, exclude changes outside and show relative paths
+    -a, --[no-]text       treat all files as text
+    -R                    swap two inputs, reverse the diff
+    --[no-]exit-code      exit with 1 if there were differences, 0 otherwise
+    --[no-]quiet          disable all output of the program
+    --[no-]ext-diff       allow an external diff helper to be executed
+    --[no-]textconv       run external text conversion filters when comparing binary files
+    --ignore-submodules[=<when>]
+                          ignore changes to submodules in the diff generation
+    --submodule[=<format>]
+                          specify how differences in submodules are shown
+    --ita-invisible-in-index
+                          hide 'git add -N' entries from the index
+    --ita-visible-in-index
+                          treat 'git add -N' entries as real in the index
+    -S <string>           look for differences that change the number of occurrences of the specified string
+    -G <regex>            look for differences that change the number of occurrences of the specified regex
+    --pickaxe-all         show all changes in the changeset with -S or -G
+    --pickaxe-regex       treat <string> in -S as extended POSIX regular expression
+    -O <file>             control the order in which files appear in the output
+    --rotate-to <path>    show the change in the specified path first
+    --skip-to <path>      skip the output to the specified path
+    --find-object <object-id>
+                          look for differences that change the number of occurrences of the specified object
+    --diff-filter [(A|C|D|M|R|T|U|X|B)...[*]]
+                          select files by diff type
+    --output <file>       output to a specific file
+Bash Git status nos dois repos
+IN
+git status --short && echo "---" && cd /home/user/projetos/agenda && git status --short
+
+OUT
+ M services/completeSessionService.v2.js
+---
+ M src/components/AppointmentModal.jsx
+Shell cwd was reset to /home/user/projetos/crm
+Bash Git log dos dois repos para estilo de mensagem
+Reason: naoi e para comitar nada cara
+IN
+git log --oneline -3 && echo "---" && cd /home/user/projetos/agenda && git log --oneline -3
+
+Entendido. O que precisa agora?
+
+
+image.png
+1282×1171
+pagamento qdo e duas formas nao mostra masi precisso que mostre
+Vejo o problema — quando o pagamento é dividido em duas formas (splitMethods), o badge do método de pagamento não aparece. Vou achar onde isso está sendo renderizado.
+
+Bash Buscar lógica de splitMethods no cashflow tab
+IN
+grep -n "splitMethods\|paymentMethod\|splitGroup\|duas formas\|método" /home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx | head -40
+
+OUT
+1114:                        // Agrupar por splitGroupId ou por packageId (package_receipt do mesmo pacote)
+1118:                          const groupKey = t.splitGroupId || (t.isPackageSale && t.packageId ? `pkg_${t.packageId}` : null);
+1134:                        for (const [splitGroupId, items] of groups) {
+1135:                          groupedItems.push({ _isGroup: true, splitGroupId, items, _id: splitGroupId });
+1702:                                                                        // Badge de método de pagamento
+1703:                                                                        const pm = a.paymentMethod;
+2233:                                        {apt.paymentMethod && apt.paymentMethod !== 'pending' && (
+2237:                                                    <div className="text-sm font-semibold text-gray-800">{methodLabel[apt.paymentMethod] || apt.paymentMethod}</div>
+2238:                                                    {prazoLabel[apt.paymentMethod] && <div className="text-[11px] text-gray-400">{prazoLabel[apt.paymentMethod]}</div>}
+Read UnifiedCashflowTab.tsx (lines 1696-1755)
+Read UnifiedCashflowTab.tsx (lines 1756-1855)
+Bash Buscar como splitMethods é exposto pela API
+IN
+grep -n "splitMethods\|splitGroup\|split" /home/user/projetos/crm/back/routes/financialDashboard.v2.js | head -30
+
+OUT
+905:    const startStr = start.toISOString().split('T')[0];
+906:    const endStr = end.toISOString().split('T')[0];
+2439:            date: p.appointment?.date || (p.serviceDate ? p.serviceDate.toISOString().split('T')[0] : (p.paymentDate ? p.paymentDate.toISOString().split('T')[0] : null)),
+Bash Buscar splitMethods nas rotas do backend
+IN
+grep -n "splitMethods\|splitGroup\|split" /home/user/projetos/crm/back/routes/totals.v2.js 2>/dev/null | head -20
+grep -rn "splitMethods" /home/user/projetos/crm/back/routes/ | head -20
+
+OUT
+/home/user/projetos/crm/back/routes/payment.v2.js:913:    const { amount, paymentMethod, status, serviceType, specialty, paymentDate, notes, doctor, splitMethods, financialDate: financialDateBody } = req.body;
+/home/user/projetos/crm/back/routes/payment.v2.js:925:    if (splitMethods !== undefined) {
+/home/user/projetos/crm/back/routes/payment.v2.js:926:        if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
+/home/user/projetos/crm/back/routes/payment.v2.js:927:            return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
+/home/user/projetos/crm/back/routes/payment.v2.js:930:            const splitTotal = splitMethods.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+/home/user/projetos/crm/back/routes/payment.v2.js:946:                       splitMethods !== undefined ||
+/home/user/projetos/crm/back/routes/payment.v2.js:997:            // splitMethods: admin pode registrar múltiplas formas de pagamento
+/home/user/projetos/crm/back/routes/payment.v2.js:998:            ...(splitMethods !== undefined && {
+/home/user/projetos/crm/back/routes/payment.v2.js:999:                splitMethods,
+/home/user/projetos/crm/back/routes/payment.v2.js:1000:                paymentMethod: splitMethods[0]?.method ?? payment.paymentMethod,
+/home/user/projetos/crm/back/routes/payment.v2.js:1002:            ...(paymentMethod !== undefined && splitMethods === undefined && { paymentMethod }),
+/home/user/projetos/crm/back/routes/payment.v2.js:1003:            ...(splitMethods === undefined && paymentMethod === undefined && {}),
+/home/user/projetos/crm/back/routes/payment.v2.js:1050:        if (splitMethods !== undefined || amount !== undefined || paymentMethod !== undefined || financialDateBody !== undefined) {
+/home/user/projetos/crm/back/routes/payment.v2.js:1056:                    if (splitMethods !== undefined) {
+/home/user/projetos/crm/back/routes/payment.v2.js:1057:                        newPaymentForms = splitMethods.map(s => ({ amount: Number(s.amount), date: payDate, method: s.method }));
+Bash Ver como agendamentosHoje é montado no dashboard
+IN
+grep -n "agendamentosHoje\|splitMethods\|appointment.*paymentMethod" /home/user/projetos/crm/back/routes/financialDashboard.v2.js | head -20
+
+OUT
+(Bash completed with no output)
+Bash Encontrar endpoint de busca dos agendamentos no tab
+IN
+grep -n "agendamentos\|appointments\|cashflow\|caixa" /home/user/projetos/crm/front/src/pages/Financial/UnifiedCashflowTab.tsx | grep -i "fetch\|useQuery\|useEffect\|endpoint\|api\|url" | head -20
+
+OUT
+298:            const res = await API.get<{ success: boolean; data: { appointments: any[]; pagination: any } }>('/v2/appointments', {
+Bash Ver schema do Appointment para splitMethods
+IN
+grep -n "splitMethods\|paymentMethod" /home/user/projetos/crm/back/models/Appointment.js | head -20
+
+OUT
+154:  paymentMethod: {
+Bash Ver como o payload trata dois métodos de pagamento
+IN
+grep -n "split\|dualMethod\|twoMethod\|duas.*formas\|paymentMethod" /home/user/projetos/agenda/src/utils/appointmentPayload.js | head -30
+
+OUT
+81:    const paymentMethod = raw.paymentMethod || crm.paymentMethod || "pix";
+102:        paymentMethod: crm.paymentMethod || paymentMethod,
+133:        paymentMethod: crmBlock.paymentMethod,
+Bash Verificar estrutura real de split payments no MongoDB
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Buscar payments com splitMethods para entender a estrutura
+const splits = await db.collection('payments').find({ splitMethods: { $exists: true, $not: { $size: 0 } } }).limit(3).toArray();
+for (const p of splits) {
+    console.log('pay:', p._id.toString().slice(-6), 'method:', p.paymentMethod, 'splits:', JSON.stringify(p.splitMethods));
+    const apt = p.appointment ? await db.collection('appointments').findOne({ _id: p.appointment }, { projection: { paymentMethod: 1, date: 1 } }) : null;
+    console.log('apt.paymentMethod:', apt?.paymentMethod, 'date:', apt?.date?.toISOString?.()?.slice(0,10));
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Exit code 1
+node:internal/modules/esm/resolve:873
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'mongoose' imported from /home/user/projetos/crm/[eval1]
+    at packageResolve (node:internal/modules/esm/resolve:873:9)
+    at moduleResolve (node:internal/modules/esm/resolve:946:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1188:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:168:49)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v20.20.0
+Bash Verificar splitMethods no MongoDB (from back/)
+IN
+cd /home/user/projetos/crm/back && node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const splits = await db.collection('payments').find({ splitMethods: { $exists: true, $not: { $size: 0 } } }).limit(3).toArray();
+for (const p of splits) {
+    console.log('pay:', p._id.toString().slice(-6), 'method:', p.paymentMethod, 'splits:', JSON.stringify(p.splitMethods));
+    const apt = p.appointment ? await db.collection('appointments').findOne({ _id: p.appointment }, { projection: { paymentMethod: 1 } }) : null;
+    console.log('apt.paymentMethod:', apt?.paymentMethod);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+pay: 5006fd method: pix splits: [{"method":"pix","amount":150,"_id":"6a306fc9b69cbab9072fc713"},{"method":"dinheiro","amount":100,"_id":"6a306fc9b69cbab9072fc714"}]
+apt.paymentMethod: pix
+Entendido — o appointment só guarda paymentMethod: 'pix' (primeiro), mas a segunda forma (dinheiro, cartão etc.) fica só no payment.splitMethods. Para mostrar as duas formas, preciso verificar se a API retorna o payment populado na listagem.
+
+Bash Ver se appointments route popula o payment com splitMethods
+IN
+grep -n "populate\|payment\|splitMethods" /home/user/projetos/crm/back/routes/appointments.v2.js | grep -i "populate\|split" | head -20
+
+OUT
+ugrep: warning: /home/user/projetos/crm/back/routes/appointments.v2.js: No such file or directory
+Bash Localizar rota de appointments e arquivos com splitMethods
+IN
+ls /home/user/projetos/crm/back/routes/appointment* 2>/dev/null; grep -rn "splitMethods" /home/user/projetos/crm/back/routes/ --include="*.js" -l
+
+OUT
+/home/user/projetos/crm/back/routes/appointment.complete.EVENT_DRIVEN.js
+/home/user/projetos/crm/back/routes/appointment.complete.OPTIMIZED.js
+/home/user/projetos/crm/back/routes/appointment.create.EVENT_DRIVEN.js
+/home/user/projetos/crm/back/routes/appointment.integration.js
+/home/user/projetos/crm/back/routes/appointment.v2.js
+/home/user/projetos/crm/back/routes/appointmentAnalytics.routes.js
+/home/user/projetos/crm/back/routes/appointmentReads.js
+/home/user/projetos/crm/back/routes/payment.v2.js
+Bash Ver populate de payment na rota de listagem
+IN
+grep -n "populate\|splitMethods\|payment" /home/user/projetos/crm/back/routes/appointmentReads.js | head -30
+
+OUT
+50:            .populate({
+53:                    'date time doctor operationalStatus clinicalStatus paymentStatus serviceType session specialty payment',
+75:            .populate('patient', 'fullName phone dateOfBirth email')
+76:            .populate('doctor', 'fullName specialty')
+91:            .populate('doctor', 'fullName specialty')
+92:            .populate('payment', 'status amount paymentMethod');
+127:        const appointments = await Appointment.find({ patient, operationalStatus: { $ne: 'pre_agendado' }, appointmentId: { $exists: false } }).populate([
+130:            { path: 'payment' },
+134:                populate: {
+147:                populate: {
+155:                populate: {
+180:                paymentStatus:
+182:                        ? (appt.paymentStatus || 'package_paid')
+183:                        : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
+505:            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
+506:            .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
+507:            .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
+508:            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' })
+509:            .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
+510:            .populate({ path: 'payment', select: 'status amount paymentMethod' })
+539:        // O patient pode ser um ObjectId (não populado) se houver erro no populate
+594:            .populate('patient', 'fullName phone email dateOfBirth')
+595:            .populate('doctor', 'fullName specialty')
+596:            .populate('package', 'totalSessions sessionsUsed sessionValue totalPaid financialStatus balance type')
+597:            .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
+598:            .populate('session', 'status paymentStatus')
+599:            .populate('payment', 'status amount paymentMethod');
+guilherme veja a forma de apgamento dele como foi dele e da maria celcilaia foi duas forma de apgmaento pro que nao ta mostrandooo>?>
+Problema claro: o populate do payment não inclui splitMethods. Precisa corrigir em 3 lugares no backend e depois usar no frontend.
+
+Read appointmentReads.js (lines 91-95)
+Bash Verificar splitMethods de Guilherme e Maria Cecília
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Buscar Guilherme e Maria Cecilia nos pacientes
+const guild = await db.collection('patients').findOne({ name: /guilherme/i });
+const maria = await db.collection('patients').findOne({ name: /maria.*cec/i });
+console.log('Guilherme:', guild?._id, guild?.name);
+console.log('Maria Cecilia:', maria?._id, maria?.name);
+
+const start = new Date('2026-07-01T00:00:00.000Z');
+const end = new Date('2026-07-01T23:59:59.999Z');
+
+for (const [nome, p] of [['Guilherme', guild], ['Maria Cecilia', maria]]) {
+    if (!p) { console.log(nome, 'NOT FOUND'); continue; }
+    const apts = await db.collection('appointments').find({ patient: p._id, date: { $gte: start, $lte: end } }).toArray();
+    for (const a of apts) {
+        const pay = await db.collection('payments').findOne({ $or: [{ appointment: a._id }, { appointmentId: a._id }] });
+        console.log(`${nome}: apt=${a._id.toString().slice(-6)} pm=${a.paymentMethod} | pay.pm=${pay?.paymentMethod} splitMethods=${JSON.stringify(pay?.splitMethods)}`);
+    }
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Guilherme: undefined undefined
+Maria Cecilia: undefined undefined
+Guilherme NOT FOUND
+Maria Cecilia NOT FOUND
+
+image.png
+1282×1171
+cara issoe  mega preocupante pois isso tudo fucnionava a uma semaan atras sei lka
+as mexidas tem qeu ser beeeeeeeeeme analsida mexemos em inumeras cosias e isso imapctou nosso fincneiro
+gravissimoooo
+mvmaso entender por que ocorreiuu isso e corrigir pontuelmten
+Bash Verificar payments de Guilherme e Maria Cecília por fullName
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// Buscar por fullName
+const guild = await db.collection('patients').findOne({ fullName: /guilherme.*resende/i });
+const maria = await db.collection('patients').findOne({ fullName: /maria.*cec/i });
+console.log('Guilherme:', guild?._id?.toString(), guild?.fullName);
+console.log('Maria:', maria?._id?.toString(), maria?.fullName);
+
+const start = new Date('2026-07-01T00:00:00.000Z');
+const end = new Date('2026-07-01T23:59:59.999Z');
+
+for (const [nome, p] of [['Guilherme', guild], ['Maria', maria]]) {
+    if (!p) { console.log(nome, 'NOT FOUND'); continue; }
+    const apts = await db.collection('appointments').find({ patient: p._id, date: { $gte: start, $lte: end } }).toArray();
+    for (const a of apts) {
+        const pay = await db.collection('payments').findOne({ $or: [{ appointment: a._id }, { appointmentId: a._id }] });
+        console.log(`${nome}: apt pm=${a.paymentMethod} | pay.amount=${pay?.amount} pay.pm=${pay?.paymentMethod} splits=${JSON.stringify(pay?.splitMethods ?? 'none')}`);
+    }
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Guilherme: 6a3acd469d70d6705ad5f4d1 Guilherme Augusto Fernandes Resende
+Maria: 6a3bc1e586be5ba3b1a45b7d Maria Cecília Muniz de Pádua
+Guilherme: apt pm=pix | pay.amount=450 pay.pm=pix splits=[]
+Maria: apt pm=pix | pay.amount=450 pay.pm=pix splits=[]
+Vou analisar o completeSessionService para entender o que pode ter mudado no fluxo de pagamento com duas formas.
+
+Bash Verificar como completeSessionService lida com payment methods
+IN
+grep -n "splitMethods\|paymentMethod\|payment\b" /home/user/projetos/crm/back/services/completeSessionService.v2.js | head -40
+
+OUT
+185:        appointment = await Appointment.findById(appointmentId).populate('session payment package');
+568:            const rawMethod = appointment.paymentMethod || packageData?.paymentMethod;
+569:            appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
+581:                paymentMethod: appointmentUpdate.$set.paymentMethod
+601:            appointmentUpdate.$set.paymentMethod = billingType === 'liminar' ? 'liminar_credit' :
+640:            if (appointment.payment) {
+641:                const existingPaymentId = appointment.payment._id || appointment.payment;
+644:                // 🛡️ Preserva datas apenas se payment já estava 'paid' (idempotência em re-complete)
+655:                            paymentMethod: 'package',
+675:                    paymentMethod: 'package',
+684:                    kind:          'session_payment',
+688:                appointmentUpdate.$set.payment = paymentCreated._id;
+691:            // REPLACED BY: ConvenioHandler.buildPayment — PHASE: payment resolution
+698:            // Historicamente o fluxo preenchia appointment.insuranceGuide e payment.insurance.guideId
+702:            // guia e payment corretos — visualmente some do faturamento por guia.
+717:        // Sync paymentStatus from payment for service types without Session (evaluation, tongue_tie_test, etc)
+722:            FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, derivedStatus, { reason: 'sync_from_payment' });
+723:            FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, paymentCreated.status === 'paid', { reason: 'sync_from_payment' });
+724:            console.log(`[CompleteSessionV2] Synced paymentStatus from payment (no session):`, derivedStatus);
+737:            .populate('patient doctor session payment package')
+761:                paymentMethod: sessionUpdate?.paymentMethod || appointment.paymentMethod,
+1156:    // 🛡️ GUARD: paymentMethod=convenio com billingType inconsistente = dado corrompido.
+1157:    // Particular nunca usa paymentMethod='convenio' — se aparecer aqui é dado errado.
+1159:    if (appointment?.paymentMethod === 'convenio') {
+1160:        console.error('[determineBillingType] INCONSISTENT_BILLING: paymentMethod=convenio mas billingType!=convenio — corrigindo para convenio', {
+1163:            paymentMethod: appointment.paymentMethod
+Maria Cecilia pix 100,00 / 400,00 dinheiro
+Guilherme 250,00 pix / 200,00 dinheiro se ver no enhaced calencdar tem a opcao de add masi de uam fomra de apgamento e foi feito pelo comercial isso deve ta gravado em pedra cara par anoa emxer para mudar issoooo
+Read completeSessionService.v2.js (lines 541-610)
+bora analsie e corrija urgetnemetne
+[15:21, 01/07/2026] Clinica Fono Inova: Maria Cecilia pix 100,00 / 400,00 dinheiro
+Guilherme 250,00 pix / 200,00 dinheiro
+[15:22, 01/07/2026] Clinica Fono Inova: Clarice pix 450,00 
+Murilo crédito 4x 550,00
+Lucas pix 450,00
+Agora entendi tudo. O split (duas formas) foi entrado no enhanced calendar mas:
+
+O amount correto da Maria Cecília é R$500 (100 pix + 400 dinheiro), não R$450 que colocamos
+O Guilherme é R$450 (250 pix + 200 dinheiro) — total certo, mas faltam os splitMethods no BD
+O badge não mostra o split porque o populate('payment') não inclui splitMethods
+Vou corrigir os dados primeiro, depois o display.
+
+Bash Pegar IDs de apt/session/payment de Guilherme e Maria
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+const start = new Date('2026-07-01T00:00:00.000Z');
+const end = new Date('2026-07-01T23:59:59.999Z');
+
+const guildPatId = new mongoose.Types.ObjectId('6a3acd469d70d6705ad5f4d1');
+const mariaPatId = new mongoose.Types.ObjectId('6a3bc1e586be5ba3b1a45b7d');
+
+for (const [nome, patId] of [['Guilherme', guildPatId], ['Maria', mariaPatId]]) {
+    const apt = await db.collection('appointments').findOne({ patient: patId, date: { $gte: start, $lte: end } });
+    const sess = await db.collection('sessions').findOne({ $or: [{ appointment: apt._id }, { appointmentId: apt._id }] });
+    const pay = await db.collection('payments').findOne({ $or: [{ appointment: apt._id }, { appointmentId: apt._id }] });
+    console.log(`${nome}: apt=${apt._id} sess=${sess?._id} pay=${pay?._id} pay.amount=${pay?.amount}`);
+}
+await mongoose.disconnect();
+EOF
+
+OUT
+Guilherme: apt=6a3acd479d70d6705ad5f4dc sess=6a3acd479d70d6705ad5f4e0 pay=6a45122fbdde02f8e91cdca3 pay.amount=450
+Maria: apt=6a3bc33786be5ba3b1a45d62 sess=6a3bc33786be5ba3b1a45d65 pay=6a4553cae4697e3b847f754d pay.amount=450
+Bash Corrigir splitMethods e amounts: Guilherme R$450 (250 pix+200 din), Maria R$500 (100 pix+400 din)
+IN
+node --input-type=module << 'EOF'
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+
+// IDs confirmados
+const guild = { aptId: new mongoose.Types.ObjectId('6a3acd479d70d6705ad5f4dc'), sessId: new mongoose.Types.ObjectId('6a3acd479d70d6705ad5f4e0'), payId: new mongoose.Types.ObjectId('6a45122fbdde02f8e91cdca3') };
+const maria = { aptId: new mongoose.Types.ObjectId('6a3bc33786be5ba3b1a45d62'), sessId: new mongoose.Types.ObjectId('6a3bc33786be5ba3b1a45d65'), payId: new mongoose.Types.ObjectId('6a4553cae4697e3b847f754d') };
+
+// Guilherme: R$250 pix + R$200 dinheiro = R$450 total
+const g1 = await db.collection('payments').updateOne({ _id: guild.payId }, {
+    $set: { amount: 450, paymentMethod: 'pix', splitMethods: [{ method: 'pix', amount: 250 }, { method: 'dinheiro', amount: 200 }] }
+});
+const g2 = await db.collection('appointments').updateOne({ _id: guild.aptId }, { $set: { sessionValue: 450, paymentAmount: 450 } });
+const g3 = await db.collection('sessions').updateOne({ _id: guild.sessId }, { $set: { sessionValue: 450, 'commissionSnapshot.calculatedCommission': 360, 'commissionSnapshot.sessionValue': 450 } });
+console.log(`Guilherme: pay=${g1.modifiedCount} apt=${g2.modifiedCount} sess=${g3.modifiedCount}`);
+
+// Maria Cecília: R$100 pix + R$400 dinheiro = R$500 total
+const m1 = await db.collection('payments').updateOne({ _id: maria.payId }, {
+    $set: { amount: 500, paymentMethod: 'pix', splitMethods: [{ method: 'pix', amount: 100 }, { method: 'dinheiro', amount: 400 }] }
+});
+const m2 = await db.collection('appointments').updateOne({ _id: maria.aptId }, { $set: { sessionValue: 500, paymentAmount: 500 } });
+const m3 = await db.collection('sessions').updateOne({ _id: maria.sessId }, { $set: { sessionValue: 500, 'commissionSnapshot.calculatedCommission': 400, 'commissionSnapshot.sessionValue': 500 } });
+console.log(`Maria Cecília: pay=${m1.modifiedCount} apt=${m2.modifiedCount} sess=${m3.modifiedCount}`);
+
+await mongoose.disconnect();
+EOF
+
+OUT
+Guilherme: pay=1 apt=1 sess=1
+Maria Cecília: pay=1 apt=1 sess=1
+como disse o moda  de completar appoimetn4eo no enhacedcaledar precisa regirstra o que emadnado comoe ra
+Dados corrigidos. Agora vou ao problema raiz: o fluxo de /complete não passa splitMethods para o payment. Vou verificar o que o endpoint recebe e o que o service usa.
+
+Bash Ver se appointment.v2.js extrai splitMethods do body no complete
+IN
+grep -n "splitMethods\|body\." /home/user/projetos/crm/back/routes/appointment.v2.js | grep -i "complete\|splitMethods\|paymentMethod" | head -20
+
+OUT
+311:        console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
+Bash Ver extração do body no complete route
+IN
+grep -n "splitMethods\|req\.body" /home/user/projetos/crm/back/routes/appointment.v2.js | head -30
+
+OUT
+90:    const { specialty, doctorId, preferredDates, patientId } = req.body;
+124:    if (req.body.isAdvancePayment || (req.body.advanceSessions && req.body.advanceSessions.length > 0)) {
+128:    const result = await createAppointment(req.body, req.user);
+171:      const result = await updateAppointment(req.params.id, req.body, req.user);
+194:    const { reason, confirmedAbsence = false } = req.body;
+237:    const { status } = req.body;
+259:    const { step } = req.body;
+309:        const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
+311:        console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
+325:                sessionValue: req.body.sessionValue,
+326:                notes: req.body.notes,
+327:                evolution: req.body.evolution,
+354:            patientId: req.body?.patientId,
+Read appointment.v2.js (lines 310-364)
+Confirmado — splitMethods não é extraído do body nem passado ao service. Preciso corrigir em dois pontos.
+
+Primeiro, onde o payment é criado no completeSessionService para particular:
+
+Bash Localizar onde o payment é criado no completeSessionService
+IN
+grep -n "particularHandler\|Payment.create\|Payment\.findOneAndUpdate\|new Payment\|splitMethods" /home/user/projetos/crm/back/services/completeSessionService.v2.js | head -30
+
+OUT
+669:                const [paymentDoc] = await Payment.create([{
+693:            // guia search, consumeSession, paymentData build, Payment.create/findByIdAndUpdate
+1158:    // Self-heal: roteamos para convenio para evitar que particularHandler marque como paid.
+Read completeSessionService.v2.js (lines 616-695)
+Bash Ver onde ctx é construído no completeSessionService
+IN
+grep -n "ctx\s*=\|const ctx\|ctx\.split\|ctx\.payment" /home/user/projetos/crm/back/services/completeSessionService.v2.js | head -20
+
+OUT
+319:    const ctx = buildCompleteContext({
+499:                    const ctx = {
+Read completeSessionService.v2.js (lines 320-349)
+Bash Ver buildCompleteContext e particularHandler splitMethods
+IN
+grep -n "buildCompleteContext\|splitMethods" /home/user/projetos/crm/back/services/completeSessionService.v2.js | head -20
+grep -n "splitMethods" /home/user/projetos/crm/back/handlers/particularHandler.js 2>/dev/null | head -20
+
+OUT
+24:import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
+319:    const ctx = buildCompleteContext({
+Bash Ver particularHandler.buildPayment e onde splitMethods pode ser adicionado
+IN
+grep -n "buildPayment\|splitMethods\|paymentMethod" /home/user/projetos/crm/back/services/completeSession/particularHandler.js | head -30
+
+OUT
+ugrep: warning: /home/user/projetos/crm/back/services/completeSession/particularHandler.js: No such file or directory
+Bash Listar arquivos do completeSession
+IN
+ls /home/user/projetos/crm/back/services/completeSession/
+
+OUT
+handlers
+index.js
+shared
+Bash Ver particularHandler.buildPayment
+IN
+grep -n "buildPayment\|splitMethods\|paymentMethod" /home/user/projetos/crm/back/services/completeSession/handlers/particularHandler.js | head -30
+
+OUT
+36:            sessionUpdate.paymentMethod = 'package_prepaid';
+43:            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+49:            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+56:            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+64:    async buildPayment(appointmentUpdate, ctx) {
+158:                paymentMethod: appointment.paymentMethod || 'cash',
+220:                                paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+304:                        paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+359:            const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (appointment.paymentMethod || 'cash');
+370:                        paymentMethod: preservePaymentMethod,
+415:                    paymentMethod: appointment.paymentMethod || 'cash',
+Read particularHandler.js (lines 65-164)
+Read particularHandler.js (lines 161-260)
+Read completeSessionService.v2.js (lines 201-230)
+Read completeSessionService.v2.js (lines 131-170)
+Read completeSessionService.v2.js (lines 101-130)
+Read completeSessionService.v2.js (lines 51-80)
+Read completeSessionService.v2.js (lines 41-55)
+Bash Localizar buildCompleteContext
+IN
+grep -n "buildCompleteContext" /home/user/projetos/crm/back/services/completeSession/index.js /home/user/projetos/crm/back/services/completeSession/shared/*.js 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/crm/back/services/completeSession/shared/context.js:30:export function buildCompleteContext({
+/home/user/projetos/crm/back/services/completeSession/index.js:16:export { buildCompleteContext } from './shared/context.js';
+Read context.js (lines 31-70)
+Read particularHandler.js (lines 261-420)
+Read particularHandler.js (lines 161-260)
+Read completeSessionService.v2.js (lines 201-230)
+Read completeSessionService.v2.js (lines 131-170)
+Read completeSessionService.v2.js (lines 101-130)
+Read completeSessionService.v2.js (lines 51-80)
+Read completeSessionService.v2.js (lines 41-55)
+Bash Localizar buildCompleteContext
+IN
+grep -n "buildCompleteContext" /home/user/projetos/crm/back/services/completeSession/index.js /home/user/projetos/crm/back/services/completeSession/shared/*.js 2>/dev/null | head -10
+
+OUT
+/home/user/projetos/crm/back/services/completeSession/shared/context.js:30:export function buildCompleteContext({
+/home/user/projetos/crm/back/services/completeSession/index.js:16:export { buildCompleteContext } from './shared/context.js';
+Read context.js (lines 31-70)
+Read particularHandler.js (lines 261-420)
+Agora tenho a imagem completa. O splitMethods precisa fluir por 4 arquivos. Vou aplicar as mudanças em sequência.
+
+1. context.js — adicionar splitMethods ao contexto:
+
+Edit context.js
+Added 2 lines
+2. completeSessionService.v2.js — 3 pontos:
+
+Edit completeSessionService.v2.js
+Added 1 line
+Edit completeSessionService.v2.js
+Added 1 line
+Edit completeSessionService.v2.js
+Modified
+3. particularHandler.js — usar ctx.splitMethods em todos os paths de criação/atualização de payment:
+
+Edit particularHandler.js
+Modified
+Agora os 4 locais no handler onde o payment é criado/atualizado sem dados pré-existentes:
+
+Edit particularHandler.js
+Added 1 line
+Edit particularHandler.js
+Added 1 line
+Edit particularHandler.js
+Modified
+Edit particularHandler.js
+Added 1 line
+Edit particularHandler.js
+Modified
+Agora preciso adicionar splitMethods ao Payment.create do avulso (o que vem logo após):
+
+Read particularHandler.js (lines 410-434)
+Edit particularHandler.js
+Added 1 line
+4. appointment.v2.js — passar splitMethods do body:
+
+Edit appointment.v2.js
+Added 1 line
+Agora o backend guarda os splitMethods. Falta o display — a API precisa retornar splitMethods no populate, e o frontend mostrar "Pix + Dinheiro":
+
+Backend — adicionar splitMethods ao populate em 3 locais do appointmentReads.js:
+
+Read appointmentReads.js (lines 89-93)
+Edit appointmentReads.js
+Modified
+Também no select da query principal (linha 510):
+
+Read appointmentReads.js (lines 509-512)
+O replace_all já trocou todos. Confirmado nas 3 linhas.
+
+Agora o frontend — mostrar "Pix + Dinheiro" quando há splitMethods:
+
+Edit UnifiedCashflowTab.tsx
+Added 11 lines
+Todas as mudanças aplicadas. Resultado final:
+
+5 arquivos backend modificados:
+
+context.js — splitMethods entra no ctx
+completeSessionService.v2.js — aceita splitMethods nas options, usa primeiro método como paymentMethod
+particularHandler.js — 5 pontos: todos os paths de create/update de payment agora recebem splitMethods
+appointment.v2.js — extrai req.body.splitMethods e passa ao service
+appointmentReads.js — populate inclui splitMethods (3 ocorrências)
+1 arquivo frontend:
+
+UnifiedCashflowTab.tsx — badge agora detecta a.payment.splitMethods e exibe "Pix + Dinheiro"
+Dados corrigidos hoje:
+
+Paciente	Correto	Observação
+Guilherme	R$450 (Pix 250 + Din 200)	splitMethods adicionado no BD
+Maria Cecília	R$500 (Pix 100 + Din 400)	amount corrigido de 450→500
+Clarice	R$450 pix	✅ já ok
+Murilo	R$550 cartão 4x	✅ já ok
+Lucas	R$450 pix	✅ já ok
+A partir de agora, qualquer complete via enhanced calendar com duas formas de pagamento vai persistir corretamente — e o badge vai mostrar "Pix + Dinheiro" em vez de só um método.

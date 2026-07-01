@@ -62,7 +62,7 @@ export const ParticularHandler = {
      * Fase 2 — cria/atualiza Payment e ajusta Package.
      */
     async buildPayment(appointmentUpdate, ctx) {
-        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc } = ctx;
+        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods } = ctx;
 
         // Incrementa sessionsDone apenas se sessao NAO estava completed antes
         // (protecao contra retry/idempotencia)
@@ -217,10 +217,11 @@ export const ParticularHandler = {
                                 paidAt:        now,
                                 financialDate: now,
                                 amount:        sessionValue,
-                                paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                                paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
                                 kind:          'session_payment',
                                 billingType:   'particular',
                                 updatedAt:     now,
+                                ...(splitMethods ? { splitMethods } : {}),
                                 ...(isPrepaidFallback ? { isFromPackage: true } : {})
                             }
                         },
@@ -301,7 +302,7 @@ export const ParticularHandler = {
                         status:        'paid',
                         type:          'service',
                         serviceType:   'session',
-                        paymentMethod: appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                        paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
                         paymentDate:   now,
                         paidAt:        now,
                         financialDate: now,
@@ -311,6 +312,7 @@ export const ParticularHandler = {
                         createdBy:     userId,
                         kind:          'session_payment',
                         billingType:   'particular',
+                        ...(splitMethods ? { splitMethods } : {}),
                         ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }], { session: mongoSession });
                     paymentCreated = paymentDoc;
@@ -356,7 +358,7 @@ export const ParticularHandler = {
             const alreadyPaid = existingPayment?.status === 'paid';
             const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : now;
             const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : now;
-            const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (appointment.paymentMethod || 'cash');
+            const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (splitMethods?.[0]?.method || appointment.paymentMethod || 'cash');
 
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,
@@ -371,6 +373,7 @@ export const ParticularHandler = {
                         kind:          'session_payment',
                         billingType:   'particular',
                         updatedAt:     now,
+                        ...(!alreadyPaid && splitMethods ? { splitMethods } : {}),
                         ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }
                 },
@@ -412,7 +415,7 @@ export const ParticularHandler = {
                     status:        'paid',
                     type:          'service',
                     serviceType:   'session',
-                    paymentMethod: appointment.paymentMethod || 'cash',
+                    paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || 'cash',
                     paymentDate:   now,
                     paidAt:        now,
                     financialDate: now,
@@ -422,6 +425,7 @@ export const ParticularHandler = {
                     createdBy:     userId,
                     kind:          'session_payment',
                     billingType:   'particular',
+                    ...(splitMethods ? { splitMethods } : {}),
                     ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession });
                 paymentCreated = paymentDoc;

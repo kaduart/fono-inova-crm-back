@@ -42,7 +42,8 @@ export function buildCompleteContext({
     isBalanceOrigin,
     isPerSessionPkg,
     addToBalance,
-    balanceAmount
+    balanceAmount,
+    splitMethods
 }) {
     return {
         appointment,
@@ -59,6 +60,7 @@ export function buildCompleteContext({
         isBalanceOrigin: !!isBalanceOrigin,
         isPerSessionPkg: !!isPerSessionPkg,
         addToBalance:    !!addToBalance,
-        balanceAmount:   balanceAmount || 0
+        balanceAmount:   balanceAmount || 0,
+        splitMethods:    Array.isArray(splitMethods) && splitMethods.length >= 2 ? splitMethods : null
     };
 }

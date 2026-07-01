@@ -153,8 +153,6 @@ export async function generateInsurancePlanSessions({
           insuranceProvider: guide.insurance,
           insuranceGuide: guide._id,
           insurancePlan: plan._id,
-          sessionValue: effectiveSessionValue,
-          insuranceValue: effectiveSessionValue,
           operationalStatus: 'pre_agendado',
           clinicalStatus: 'pending',
           paymentStatus: 'pending',
