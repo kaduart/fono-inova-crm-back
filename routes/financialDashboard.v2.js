@@ -26,6 +26,7 @@ import financialExpenseSnapshotService from '../services/financialExpenseSnapsho
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
+import Package from '../models/Package.js';
 import unifiedFinancialService, { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
 import { logMetric } from '../utils/logMetric.js';
@@ -1406,16 +1407,26 @@ async function calculateRealTime(year, month) {
         return r;
     });
 
-    const [cash, production, todayCash, todayProduction, competencia, packageSalesAgg, novaReceitaMes] = await Promise.all([
+    const [cash, production, todayCash, todayProduction, competencia, packageSalesAgg, novaReceitaMes, backlogAgg] = await Promise.all([
         cashPromise,
         productionPromise,
         todayCashPromise,
         todayProductionPromise,
         competenciaPromise,
         packageSalesPromise,
-        novaReceitaPromise
+        novaReceitaPromise,
+        Package.aggregate([
+            { $match: { status: { $in: ['active', 'confirmed'] } } },
+            { $addFields: { sessionsRemaining: { $subtract: ['$totalSessions', { $ifNull: ['$sessionsDone', 0] }] } } },
+            { $group: {
+                _id: null,
+                sessoes: { $sum: '$sessionsRemaining' },
+                pacotes: { $sum: 1 },
+                valorEstimado: { $sum: { $multiply: ['$sessionsRemaining', { $ifNull: ['$sessionValue', 0] }] } }
+            }}
+        ])
     ]);
-    console.log(`[realTime] unifiedFinancialService parallel = ${Date.now() - _tUnified}ms (cash+production+today+competencia+packages+novaReceita)`);
+    console.log(`[realTime] unifiedFinancialService parallel = ${Date.now() - _tUnified}ms (cash+production+today+competencia+packages+novaReceita+backlog)`);
 
     // 🛡️ Particular pendente do dia — fonte: sessions completed sem payment paid (exclui pré-pago)
     const _tParticularPendente = Date.now();
@@ -1538,8 +1549,13 @@ async function calculateRealTime(year, month) {
         },
         recebimentosAntecipados,
         aReceberProducao,
-        receitaReconhecida: receitaProjetada,  // 🆕 agora = caixa + a_receber
+        receitaReconhecida: production.total,  // INV-3: regime de competência = Session.completed
         novaReceitaMes,
+        backlogContratado: {
+            sessoes: backlogAgg[0]?.sessoes || 0,
+            pacotes: backlogAgg[0]?.pacotes || 0,
+            valorEstimado: backlogAgg[0]?.valorEstimado || 0
+        },
 
         // ─── 🆕 NOVA ARQUITETURA SEMÂNTICA V3 ───
         visaoSemantica: {
@@ -1613,9 +1629,8 @@ async function calculateAReceber(year, month) {
     const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
     const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
 
-    // 🆕 Fonte de verdade: Payment — convênios pendentes
-    const startDate = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
-    const endDate = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
+    // INV-4: A Receber = Session.completed → Payment.pending (evento de domínio)
+    // Ancora em serviceDate/paymentDate; createdAt removido — inflava R$14.480 de phantoms
     const payments = await Payment.find({
         status: 'pending',
         $and: [
@@ -1629,14 +1644,18 @@ async function calculateAReceber(year, month) {
             {
                 $or: [
                     { paymentDate: { $gte: startStr, $lte: endStr } },
-                    { serviceDate: { $gte: startStr, $lte: endStr } },
-                    { createdAt: { $gte: startDate, $lte: endDate } }
+                    { serviceDate: { $gte: startStr, $lte: endStr } }
                 ]
             }
         ]
-    }).lean();
+    }).populate('appointment', 'operationalStatus').lean();
 
-    const total = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    // INV-4: inclui apenas pagamentos de sessões já realizadas
+    const realizados = payments.filter(p =>
+        !p.appointment || p.appointment?.operationalStatus === 'completed'
+    );
+
+    const total = realizados.reduce((sum, p) => sum + (p.amount || 0), 0);
     return { total: parseFloat(total.toFixed(2)), mesAtual: parseFloat(total.toFixed(2)), historico: 0 };
 }
 
@@ -2009,7 +2028,7 @@ async function calculatePendentes(year, month) {
     const paymentsAll = await Payment.find({ status: 'pending' })
         .populate('patient', 'fullName')
         .populate('doctor', 'fullName specialty')
-        .populate('appointment', 'date time')
+        .populate('appointment', 'date time operationalStatus')
         .lean();
     console.log(`[pendentes] paymentsAll.find+populate = ${Date.now() - _t0}ms (${paymentsAll.length} docs)`);
 
@@ -2047,6 +2066,18 @@ async function calculatePendentes(year, month) {
                 dataRef,
                 patient: p.patient?.fullName,
                 reason: 'FORA_DO_MES'
+            });
+            continue;
+        }
+
+        // INV-4: pendentes apenas de sessões já realizadas
+        if (p.appointment && p.appointment?.operationalStatus !== 'completed') {
+            skippedAudit.push({
+                _id: p._id.toString(),
+                amount: valor,
+                dataRef,
+                patient: p.patient?.fullName,
+                reason: 'APPOINTMENT_NOT_COMPLETED'
             });
             continue;
         }

@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
         };
         if (clinicId) matchStage.clinicId = clinicId;
 
-        const [paymentResult, sessionProductionResult, expenseResult, packageResult, balanceResult, appointments] = await Promise.all([
+        const [paymentResult, sessionProductionResult, expenseResult, packageResult, balanceResult, appointments, cashResult] = await Promise.all([
             Payment.aggregate([
                 { $match: matchStage },
                 { $group: {
@@ -133,7 +133,8 @@ router.get('/', async (req, res) => {
                 operationalStatus: { $in: ['confirmed', 'completed', 'scheduled', 'pre_agendado'] },
                 isDeleted: { $ne: true },
                 patient: { $exists: true, $ne: null }
-            }).select('_id sessionValue billingType insuranceProvider serviceType paymentStatus').lean()
+            }).select('_id sessionValue billingType insuranceProvider serviceType paymentStatus').lean(),
+            unifiedFinancialService.calculateCash(rangeStart, rangeEnd) // P2a: SSOT de Caixa
         ]);
 
         const p = paymentResult[0] || {};
@@ -185,7 +186,7 @@ router.get('/', async (req, res) => {
             }
         }
 
-        const totalReceived = p.totalReceived || 0;
+        const totalReceived = cashResult.total; // P2a: unifiedFinancialService.calculateCash() é SSOT de Caixa
         const totalExpenses = exp.totalExpenses || 0;
         const profit = totalReceived - totalExpenses;
 

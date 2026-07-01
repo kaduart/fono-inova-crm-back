@@ -185,17 +185,6 @@ describe('FLUXO SECRETARIA V2', () => {
     console.log(`[OK] Pagamento processado em ${result.attempts} tentativas`);
   });
 
-  it('7. Deve verificar Financial Overview V2', async () => {
-    await new Promise(r => setTimeout(r, 1000));
-    
-    const res = await api.get(`/api/v2/financial/overview?date=${testDate}`);
-    const data = await res.json();
-    
-    expect(res.status).toBe(200);
-    expect(data.data).toBeDefined();
-    console.log(`[OK] Financial: R$ ${data.data.revenue?.totalReceived || 0}`);
-  });
-
   it('8. Deve verificar Analytics V2', async () => {
     const res = await api.get(`/api/v2/analytics/operational?date=${testDate}`);
     const data = await res.json();

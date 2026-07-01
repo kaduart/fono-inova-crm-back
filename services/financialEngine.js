@@ -51,7 +51,8 @@ export async function calculateFinancialSnapshot({
   groupByPatient = true,
   groupByDoctor = true,
   populate = true,
-  excludeBillingTypes = null // ex: ['convenio', 'liminar'] para excluir receitas de terceiros
+  excludeBillingTypes = null, // ex: ['convenio', 'liminar'] para excluir receitas de terceiros
+  requireCompletedAppointment = false // INV-4: filtra só pagamentos de sessões realizadas
 } = {}) {
   const start = Date.now();
 
@@ -109,7 +110,12 @@ export async function calculateFinancialSnapshot({
       .populate('session', 'date time status sessionType serviceType sessionValue');
   }
 
-  const payments = await paymentsQuery.lean();
+  const rawPayments = await paymentsQuery.lean();
+
+  // INV-4: quando requireCompletedAppointment, exclui pagamentos de sessões não realizadas
+  const payments = requireCompletedAppointment
+    ? rawPayments.filter(p => !p.appointment || p.appointment?.operationalStatus === 'completed')
+    : rawPayments;
 
   // ── Calculate totals ──
   let total = 0;
@@ -205,7 +211,8 @@ export async function calculatePendentesEngine({ startDate, endDate, clinicId = 
     clinicId,
     status: ['pending', 'partial'],
     groupByPatient: true,
-    groupByDoctor: true
+    groupByDoctor: true,
+    requireCompletedAppointment: true // INV-4: só sessões realizadas entram em Pendentes
   });
 }
 
