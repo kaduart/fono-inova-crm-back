@@ -205,7 +205,7 @@ export class ReconciliationService {
             autoFix: async () => {
               await Session.updateOne(
                 { _id: session._id },
-                { $set: { isPaid: true, paymentStatus: 'paid' } }
+                { $set: { isPaid: true, paymentStatus: 'paid', _fromWriteGateway: true } }
               );
             },
             message: 'Payment is paid but Session is not marked as paid'
@@ -230,7 +230,7 @@ export class ReconciliationService {
             autoFix: async () => {
               await Appointment.updateOne(
                 { _id: appointment._id },
-                { $set: { paymentStatus: payment.status } }
+                { $set: { paymentStatus: payment.status, _fromWriteGateway: true } }
               );
             },
             message: 'Payment status differs from Appointment status'

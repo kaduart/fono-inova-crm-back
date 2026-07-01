@@ -13,6 +13,7 @@ import LiminarContract from '../../models/LiminarContract.js';
 import { buildDateTime, buildDayRange } from '../../utils/datetime.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildLiminarSession } from '../../domain/session/sessionFactory.js';
+import { executeWithSession as bulkCancelAppointments } from '../appointment/commands/bulkCancelAppointmentsCommand.js';
 
 function addDays(date, days) {
   const d = new Date(date);
@@ -83,23 +84,21 @@ export async function generateLiminarSessions({
   if (mode === 'reset') {
     // Cancela APENAS sessões agendadas (não confirmed/completed)
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const cancelRes = await Appointment.updateMany(
-      {
-        liminarContract: contract._id,
-        date: { $gte: today },
-        operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
-      },
-      {
-        $set: {
-          operationalStatus: 'canceled',
-          clinicalStatus: 'canceled',
-          updatedAt: new Date()
-        }
-      }
+    const appointmentsToCancel = await Appointment.find({
+      liminarContract: contract._id,
+      date: { $gte: today },
+      operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
+    }).select('_id').lean();
+
+    const cancelRes = await bulkCancelAppointments(
+      appointmentsToCancel.map(a => a._id),
+      { reason: 'reset de plano terapêutico liminar' },
+      null,
+      null // sem session externa; command gerencia própria transação
     );
     console.log('[generateLiminarSessions] 🔄 reset cancelou futuras scheduled', {
       contractId: contract._id.toString(),
-      canceled: cancelRes.modifiedCount
+      canceled: cancelRes.canceled
     });
 
     weekStart = getWeekStart(startDate);

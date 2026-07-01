@@ -667,7 +667,8 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
                         paymentStatus: 'paid',
                         visualFlag: 'ok',
                         paidAt: now,
-                        updatedAt: now
+                        updatedAt: now,
+                        _fromWriteGateway: true,
                     },
                     $push: {
                         history: {

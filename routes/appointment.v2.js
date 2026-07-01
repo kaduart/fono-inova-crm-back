@@ -422,7 +422,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 const updateData = { status: 'paid', updatedAt: now };
                 if (!existingPayment?.paidAt) updateData.paidAt = now;
                 if (!existingPayment?.financialDate) updateData.financialDate = now;
-                await Payment.updateOne({ _id: finalPaymentId }, { $set: updateData }, { session });
+                await Payment.updateOne({ _id: finalPaymentId }, { $set: { ...updateData, _fromWriteGateway: true } }, { session });
             } else {
                 // Camada de segurança: cria Payment se não existe (avaliação/avulso particular / per-session)
                 const newPayment = new Payment({
@@ -448,7 +448,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
 
             if (finalPaymentId) {
-                await Appointment.updateOne({ _id: appointment._id }, { $set: { payment: finalPaymentId, paymentId: finalPaymentId.toString() } }, { session });
+                await Appointment.updateOne({ _id: appointment._id }, { $set: { payment: finalPaymentId, paymentId: finalPaymentId.toString(), _fromWriteGateway: true } }, { session });
             }
         }
 
@@ -503,6 +503,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData.visualFlag = 'pending';
         }
 
+        updateData._fromWriteGateway = true;
         await Appointment.updateOne({ _id: id }, updateData, { session });
 
         await session.commitTransaction();

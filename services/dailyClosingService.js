@@ -149,6 +149,7 @@ export async function calculateDailyClosing(date, clinicId) {
                                 paymentStatus: paidLike ? (s.paymentStatus || 'paid') : (s.paymentStatus || 'pending'),
                                 operationalStatus: mapStatusToOperational(s.status),
                                 clinicalStatus: mapStatusToClinical(s.status),
+                                _fromWriteGateway: true, // sincronização autorizada de snapshot diário
                             }
                         }
                     }

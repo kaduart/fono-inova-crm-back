@@ -10,15 +10,17 @@
  * - Adiciona histórico de expiração automática
  * - NÃO afeta pré-agendamentos já convertidos (têm appointmentId)
  * - NÃO afeta liminar/convênio (só atua em operationalStatus)
+ *
+ * IMPORTANTE: este cron NÃO escreve diretamente no banco.
+ * Ele delega para expirePreAgendamentoCommand, que é o único
+ * caminho autorizado para a transição pre_agendado → missed.
  */
 
 import cron from 'node-cron';
-import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 import Appointment from '../models/Appointment.js';
-import Session from '../models/Session.js';
 import { createContextLogger } from '../utils/logger.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { execute as expirePreAgendamentoCommand } from '../services/appointment/commands/expirePreAgendamentoCommand.js';
 
 const log = createContextLogger('cron', 'PreAgendamentoExpiration');
 const TIMEZONE = 'America/Sao_Paulo';
@@ -77,61 +79,17 @@ async function expirePreAgendamentos() {
     let processed = 0;
     for (const apt of expired) {
       try {
-        // 🔒 IDEMPOTÊNCIA ATÔMICA: só expira se ainda estiver pre_agendado
-        // Evita race condition quando múltiplas instâncias do cron rodam simultaneamente
-        const updated = await Appointment.findOneAndUpdate(
-          { _id: apt._id, operationalStatus: 'pre_agendado' },
-          {
-            operationalStatus: 'missed',
-            clinicalStatus: 'missed',
-            $push: {
-              history: {
-                action: 'auto_expired',
-                previousStatus: apt.operationalStatus,
-                newStatus: 'missed',
-                timestamp: new Date(),
-                context: `Pré-agendamento expirado automaticamente — horário não convertido (margem: ${MARGIN_MINUTES}min)`,
-                correlationId
-              }
-            }
-          },
-          { new: true }
-        );
-
-        if (!updated) {
-          log.warn(`[${correlationId}] ⏭️ Appointment ${apt._id} já foi processado por outra instância`);
-          continue;
-        }
-
-        // Se houver Session vinculada, atualiza também
-        if (apt.session) {
-          await Session.findByIdAndUpdate(apt.session, {
-            status: 'missed',
-            $push: {
-              history: {
-                action: 'auto_expired',
-                newStatus: 'missed',
-                timestamp: new Date(),
-                context: 'Session vinculada a pré-agendamento expirado',
-                correlationId
-              }
-            }
-          });
-        }
-
-        // Publica evento (opcional, para dashboards/analytics)
-        await publishEvent(EventTypes.APPOINTMENT_STATUS_CHANGED, {
-          appointmentId: apt._id,
-          patientId: apt.patient,
-          doctorId: apt.doctor,
-          previousStatus: apt.operationalStatus,
-          newStatus: 'missed',
-          reason: 'auto_expired',
-          correlationId
+        const result = await expirePreAgendamentoCommand(apt._id, {
+          reason: `Pré-agendamento expirado automaticamente — horário não convertido (margem: ${MARGIN_MINUTES}min)`,
+          correlationId,
         });
 
-        processed++;
-        log.info(`[${correlationId}] ✅ Expirado: appointment ${apt._id} (${apt.date} ${apt.time || ''})`);
+        if (result.expired) {
+          processed++;
+          log.info(`[${correlationId}] ✅ Expirado: appointment ${apt._id} (${apt.date} ${apt.time || ''})`);
+        } else {
+          log.warn(`[${correlationId}] ⏭️ Appointment ${apt._id} já foi processado por outra instância`);
+        }
       } catch (err) {
         log.error(`[${correlationId}] ❌ Erro ao expirar appointment ${apt._id}: ${err.message}`);
       }

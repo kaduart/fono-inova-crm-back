@@ -6,6 +6,8 @@ import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
+import AppointmentWriteGuard from './appointment/AppointmentWriteGuard.js';
+import { executeWithSession as bulkCancelAppointments } from './appointment/commands/bulkCancelAppointmentsCommand.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -530,7 +532,8 @@ const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvi
 // ==================== API PÚBLICA ====================
 
 export const confirmarAgendamentosMassa = async (ids) => {
-  const resultado = await Appointment.updateMany(
+  const resultado = await AppointmentWriteGuard.updateMany(
+    Appointment,
     { _id: { $in: ids } },
     {
       $set: {
@@ -551,26 +554,13 @@ export const confirmarAgendamentosMassa = async (ids) => {
 };
 
 export const liberarVagasMassa = async (ids, motivo = 'Não confirmou') => {
-  const resultado = await Appointment.updateMany(
-    { _id: { $in: ids } },
-    {
-      $set: {
-        operationalStatus: 'canceled',
-        clinicalStatus: 'missed',
-        canceledAt: new Date(),
-        cancelReason: motivo
-      },
-      $push: {
-        history: {
-          action: 'cancelado_pendente',
-          newStatus: 'canceled',
-          timestamp: new Date(),
-          context: motivo
-        }
-      }
-    }
+  const resultado = await bulkCancelAppointments(
+    ids,
+    { reason: motivo, confirmedAbsence: false },
+    null,
+    null
   );
-  return { sucesso: true, quantidade: resultado.modifiedCount };
+  return { sucesso: true, quantidade: resultado.canceled, erros: resultado.errors };
 };
 
 

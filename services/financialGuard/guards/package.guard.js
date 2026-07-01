@@ -4,6 +4,7 @@
 import Package from '../../../models/Package.js';
 import Payment from '../../../models/Payment.js';
 import Appointment from '../../../models/Appointment.js';
+import { executeWithSession as bulkCancelAppointments } from '../../appointment/commands/bulkCancelAppointmentsCommand.js';
 
 /**
  * Package Guard - Regras financeiras de pacotes
@@ -298,26 +299,21 @@ async function handleCompleteSession({ payload, session }) {
       { session, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
     );
 
-    const cancelResult = await Appointment.updateMany(
-      {
-        package: packageId,
-        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
-      },
-      {
-        $set: {
-          operationalStatus: 'canceled',
-          clinicalStatus: 'canceled',
-          status: 'canceled',
-          cancellationReason: 'Pacote finalizado - sessões esgotadas',
-          updatedAt: new Date()
-        }
-      },
-      { session, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
+    const appointmentsToCancel = await Appointment.find({
+      package: packageId,
+      operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+    }).session(session).select('_id');
+
+    const cancelResult = await bulkCancelAppointments(
+      appointmentsToCancel.map(a => a._id),
+      { reason: 'Pacote finalizado - sessões esgotadas' },
+      null,
+      session
     );
 
     console.log('[PackageGuard][FINISHED] Pacote finalizado', {
       packageId,
-      appointmentsCanceled: cancelResult.modifiedCount
+      appointmentsCanceled: cancelResult.canceled
     });
   }
 

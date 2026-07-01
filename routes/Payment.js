@@ -742,7 +742,8 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                     $set: {
                         status: 'paid',
                         paidAt,
-                        paymentDate: today
+                        paymentDate: today,
+                        _fromWriteGateway: true,
                     }
                 },
                 { new: true, session, runValidators: true }
@@ -763,7 +764,8 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                             isPaid: true,
                             paymentStatus: 'paid',
                             visualFlag: 'ok',
-                            paymentMethod: payment.paymentMethod
+                            paymentMethod: payment.paymentMethod,
+                            _fromWriteGateway: true,
                         }
                     },
                     { session }
@@ -780,7 +782,8 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                             visualFlag: 'ok',
                             // ⚠️ só mude se sua regra realmente usa 'paid' como estado operacional
                             // operationalStatus: 'paid',
-                            paymentMethod: payment.paymentMethod
+                            paymentMethod: payment.paymentMethod,
+                            _fromWriteGateway: true,
                         }
                     },
                     { session }

@@ -64,6 +64,14 @@ export const ParticularHandler = {
     async buildPayment(appointmentUpdate, ctx) {
         const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods } = ctx;
 
+        // Valida que a soma dos splits bate com o valor da sessão
+        if (splitMethods?.length >= 2) {
+            const splitSum = splitMethods.reduce((s, m) => s + Number(m.amount || 0), 0);
+            if (Math.abs(splitSum - sessionValue) > 0.01) {
+                throw new Error(`Split inválido: soma R$${splitSum.toFixed(2)} ≠ valor da sessão R$${sessionValue.toFixed(2)}`);
+            }
+        }
+
         // Incrementa sessionsDone apenas se sessao NAO estava completed antes
         // (protecao contra retry/idempotencia)
         let pkgAtual = null;
@@ -221,7 +229,7 @@ export const ParticularHandler = {
                                 kind:          'session_payment',
                                 billingType:   'particular',
                                 updatedAt:     now,
-                                ...(splitMethods ? { splitMethods } : {}),
+                                splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
                                 ...(isPrepaidFallback ? { isFromPackage: true } : {})
                             }
                         },
@@ -312,7 +320,7 @@ export const ParticularHandler = {
                         createdBy:     userId,
                         kind:          'session_payment',
                         billingType:   'particular',
-                        ...(splitMethods ? { splitMethods } : {}),
+                        splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
                         ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }], { session: mongoSession });
                     paymentCreated = paymentDoc;
@@ -373,7 +381,7 @@ export const ParticularHandler = {
                         kind:          'session_payment',
                         billingType:   'particular',
                         updatedAt:     now,
-                        ...(!alreadyPaid && splitMethods ? { splitMethods } : {}),
+                        ...(!alreadyPaid ? { splitMethods: splitMethods?.length >= 2 ? splitMethods : null } : {}),
                         ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }
                 },
@@ -381,9 +389,23 @@ export const ParticularHandler = {
             );
             console.log(`[ParticularHandler] [PAGO] Payment existente atualizado: ${paymentCreated._id}`);
         } else {
-            // Guard orphan: mesma lógica do per-session — evita duplicata se payment já existe sem appointmentId
+            // Passo 1 — busca determinística: Payment vinculado via appointment ou session (SSOT).
+            // Cobre o caso onde appointment.payment não foi populado mas Payment.appointment já aponta aqui.
+            // Essa busca é 100% confiável — se encontrar, não precisa de fallback.
+            const linkedPayment = await Payment.findOne({
+                status:      'paid',
+                billingType: { $in: ['particular', null, undefined] },
+                $or: [
+                    { appointment: appointmentId },
+                    ...(sessionId ? [{ session: sessionId }] : [])
+                ]
+            }).sort({ createdAt: -1 }).session(mongoSession).lean();
+
+            // Passo 2 — busca heurística (fallback legado): payment órfão criado via /create-sync
+            // sem appointmentId antes de 2026-06-15. Existe por compatibilidade histórica.
+            // NÃO remover: garante adoção de payments antigos sem vínculo explícito.
             const startOfTodayAvulso = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const orphanAvulso = await Payment.findOne({
+            const orphanAvulso = linkedPayment ? null : await Payment.findOne({
                 patient:       appointment.patient?._id,
                 amount:        sessionValue,
                 status:        'paid',
@@ -391,9 +413,11 @@ export const ParticularHandler = {
                 financialDate: { $gte: startOfTodayAvulso }
             }).sort({ createdAt: -1 }).session(mongoSession).lean();
 
-            if (orphanAvulso) {
+            const adoptedPayment = linkedPayment || orphanAvulso;
+
+            if (adoptedPayment) {
                 paymentCreated = await Payment.findByIdAndUpdate(
-                    orphanAvulso._id,
+                    adoptedPayment._id,
                     {
                         $set: {
                             appointment:   appointmentId,
@@ -406,8 +430,9 @@ export const ParticularHandler = {
                     },
                     { session: mongoSession, new: true }
                 );
-                appointmentUpdate.$set.payment = orphanAvulso._id;
-                console.log(`[ParticularHandler] [PAGO] Orphan adotado (sem criar novo): ${orphanAvulso._id} (financialDate=${orphanAvulso.financialDate})`);
+                appointmentUpdate.$set.payment = adoptedPayment._id;
+                const label = linkedPayment ? 'vinculado via SSOT' : 'orphan legado';
+                console.log(`[ParticularHandler] [PAGO] Payment adotado (${label}): ${adoptedPayment._id} (financialDate=${adoptedPayment.financialDate})`);
             } else {
                 const [paymentDoc] = await Payment.create([{
                     patient:       appointment.patient?._id,
@@ -425,7 +450,7 @@ export const ParticularHandler = {
                     createdBy:     userId,
                     kind:          'session_payment',
                     billingType:   'particular',
-                    ...(splitMethods ? { splitMethods } : {}),
+                    splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
                     ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession });
                 paymentCreated = paymentDoc;

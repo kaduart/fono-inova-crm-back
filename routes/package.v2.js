@@ -411,17 +411,17 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
     const [sessionsResult, appointmentsResult, paymentsResult] = await Promise.all([
       Session.updateMany(
         { _id: { $in: pendingSessionIds } },
-        { status: 'canceled', updatedAt: new Date() }
+        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
       ),
       appointmentIds.length > 0
         ? Appointment.updateMany(
             { _id: { $in: appointmentIds }, status: { $nin: ['completed', 'canceled', 'cancelled'] } },
-            { status: 'canceled', updatedAt: new Date() }
+            { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
           )
         : Promise.resolve({ modifiedCount: 0 }),
       Payment.updateMany(
         { package: pkgObjectId, status: { $in: ['pending', 'scheduled'] } },
-        { status: 'canceled', updatedAt: new Date() }
+        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
       )
     ]);
 

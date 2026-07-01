@@ -890,7 +890,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
         $or: guideOrPackageQuery,
         status: { $in: pendingStatuses }
       },
-      { status: 'canceled', updatedAt: new Date() }
+      { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
     );
 
     // ── 4. Cancela payments pendentes ──
@@ -899,7 +899,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
         $or: guideOrPackageQuery,
         status: { $in: ['pending', 'scheduled', 'unpaid'] }
       },
-      { status: 'canceled', updatedAt: new Date() }
+      { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
     );
 
     // ── 5. Cancela InsurancePlan e DELETA seus appointments/sessions/payments futuros ──
@@ -920,7 +920,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
 
       await Payment.updateMany(
         { insurancePlan: linkedPlan._id, status: { $in: ['pending', 'scheduled', 'unpaid'] } },
-        { status: 'canceled', updatedAt: new Date() }
+        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
       );
       await InsurancePlan.findByIdAndUpdate(linkedPlan._id, { status: 'cancelled', updatedAt: new Date() });
       planCanceled = true;

@@ -290,7 +290,8 @@ async function processCancelJob({ job, eventId, correlationId, idempotencyKey, p
                         canceledReason: reason,
                         confirmedAbsence: confirmedAbsence || false,
                         canceledAt: new Date(),
-                        updatedAt: new Date()
+                        updatedAt: new Date(),
+                        _fromCancelService: true,
                     },
                     $push: {
                         history: {

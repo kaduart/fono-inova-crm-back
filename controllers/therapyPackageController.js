@@ -11,6 +11,7 @@ import { distributePayments } from '../services/distributePayments.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 
 import { syncEvent } from '../services/syncService.js';
+import AppointmentWriteGuard from '../services/appointment/AppointmentWriteGuard.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import Leads from '../models/Leads.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
@@ -2716,7 +2717,8 @@ export const bulkCancelSessions = async (req, res) => {
                     $set: {
                         status: 'canceled',
                         confirmedAbsence: confirmedAbsence,
-                        canceledAt: new Date()
+                        canceledAt: new Date(),
+                        _fromWriteGateway: true,
                     }
                 }
             }
@@ -2728,14 +2730,15 @@ export const bulkCancelSessions = async (req, res) => {
             ordered: false 
         });
 
-        // 🚀 BULKWRITE: Atualiza appointments relacionados de uma vez
+        // 🚀 Atualiza appointments relacionados via gateway autorizado
         const appointmentIds = sessions
             .filter(s => s.appointmentId)
             .map(s => s.appointmentId);
 
         let appointmentsUpdated = 0;
         if (appointmentIds.length > 0) {
-            const appointmentResult = await Appointment.updateMany(
+            const appointmentResult = await AppointmentWriteGuard.updateMany(
+                Appointment,
                 { 
                     _id: { $in: appointmentIds },
                     operationalStatus: { $ne: 'canceled' }
@@ -2881,14 +2884,16 @@ export const cancelAllSessions = async (req, res) => {
                 $set: {
                     status: 'canceled',
                     confirmedAbsence: confirmedAbsence,
-                    canceledAt: new Date()
+                    canceledAt: new Date(),
+                    _fromWriteGateway: true,
                 }
             },
             { session: mongoSession }
         );
 
-        // ⚡ UMA QUERY: Atualiza TODOS os appointments de uma vez
-        const appointmentResult = await Appointment.updateMany(
+        // ⚡ Atualiza TODOS os appointments de uma vez via gateway autorizado
+        const appointmentResult = await AppointmentWriteGuard.updateMany(
+            Appointment,
             {
                 package: packageId,
                 operationalStatus: { $ne: 'canceled' }

@@ -13,6 +13,8 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Convenio from '../models/Convenio.js';
 import { generateInsurancePlanSessions } from '../services/schedule/generateInsurancePlanSessions.js';
+import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
+import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 
 const router = express.Router();
 
@@ -77,17 +79,22 @@ router.post('/', auth, async (req, res) => {
 
     // 🔄 Se já existe plano para esta guia (qualquer status), remove o antigo e cria novo
     const existingPlan = await InsurancePlan.findOne({ guide: guideId }).session(session);
+    let replacedPlanSnapshot = null;
     if (existingPlan) {
+      replacedPlanSnapshot = pickInsurancePlanFields(existingPlan);
       const today = new Date().toISOString().split('T')[0];
       // Cancela appointments futuros do plano antigo
-      await Appointment.updateMany(
-        {
-          _id: { $in: existingPlan.generatedAppointments },
-          operationalStatus: 'scheduled',
-          date: { $gte: today }
-        },
-        { $set: { operationalStatus: 'canceled', cancellationReason: 'plan_reset' } },
-        { session }
+      const oldAppointments = await Appointment.find({
+        _id: { $in: existingPlan.generatedAppointments },
+        operationalStatus: 'scheduled',
+        date: { $gte: today }
+      }).session(session).select('_id');
+
+      await bulkCancelAppointments(
+        oldAppointments.map(a => a._id),
+        { reason: 'plan_reset' },
+        req.user,
+        session
       );
       // Remove payments pendentes do plano antigo
       await Payment.deleteMany(
@@ -126,6 +133,32 @@ router.post('/', auth, async (req, res) => {
     });
 
     await session.commitTransaction();
+
+    // Audit: plano substituído (se havia um anterior) + plano criado
+    if (replacedPlanSnapshot) {
+      await recordAudit({
+        user: req.user,
+        action: 'insurance_plan_replaced',
+        entityType: 'InsurancePlan',
+        entityId: existingPlan._id,
+        before: replacedPlanSnapshot,
+        after: null,
+        source: 'api:insurance_plans:post',
+        pickFn: (x) => x,
+        metadata: { guideId, replacedBy: planDoc._id },
+      });
+    }
+    await recordAudit({
+      user: req.user,
+      action: 'insurance_plan_created',
+      entityType: 'InsurancePlan',
+      entityId: planDoc._id,
+      before: null,
+      after: pickInsurancePlanFields(planDoc),
+      source: 'api:insurance_plans:post',
+      pickFn: (x) => x,
+      metadata: { guideId, generatedCount: result.count },
+    });
 
     res.status(201).json({
       success: true,
@@ -265,6 +298,7 @@ router.patch('/:id', auth, async (req, res) => {
       return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo. Cancele e crie um novo.' });
     }
 
+    const beforeSnapshot = pickInsurancePlanFields(plan);
     const today = new Date().toISOString().split('T')[0];
 
     // Appointments futuros pendentes gerados por este plano
@@ -373,18 +407,13 @@ router.patch('/:id', auth, async (req, res) => {
     // Cancela appointments cujo dia da semana saiu do plano
     let appointmentsCanceled = 0;
     if (toCancelIds.length > 0) {
-      const cancelRes = await Appointment.updateMany(
-        { _id: { $in: toCancelIds } },
-        {
-          $set: {
-            operationalStatus: 'canceled',
-            cancellationReason: 'plan_slot_removed',
-            updatedAt: new Date()
-          }
-        },
-        { session }
+      const cancelRes = await bulkCancelAppointments(
+        toCancelIds,
+        { reason: 'plan_slot_removed' },
+        req.user,
+        session
       );
-      appointmentsCanceled = cancelRes.modifiedCount;
+      appointmentsCanceled = cancelRes.canceled;
 
       await Session.updateMany(
         { appointmentId: { $in: toCancelIds }, status: { $ne: 'completed' } },
@@ -435,6 +464,18 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     await session.commitTransaction();
+
+    await recordAudit({
+      user: req.user,
+      action: 'insurance_plan_updated',
+      entityType: 'InsurancePlan',
+      entityId: plan._id,
+      before: beforeSnapshot,
+      after: pickInsurancePlanFields(plan),
+      source: 'api:insurance_plans:patch',
+      pickFn: (x) => x,
+      metadata: { appointmentsUpdated, appointmentsCanceled, paymentsUpdated },
+    });
 
     // Regenera sessões futuras se o guide ainda tem sessões restantes sem agendamento futuro
     let appointmentsGenerated = 0;
@@ -499,17 +540,21 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
     }
 
+    const cancelBeforeSnapshot = pickInsurancePlanFields(plan);
     const today = new Date().toISOString().split('T')[0];
 
     // Cancela appointments futuros scheduled
-    await Appointment.updateMany(
-      {
-        _id: { $in: plan.generatedAppointments },
-        operationalStatus: 'scheduled',
-        date: { $gte: today }
-      },
-      { $set: { operationalStatus: 'canceled', cancellationReason: 'plan_canceled' } },
-      { session }
+    const appointmentsToCancel = await Appointment.find({
+      _id: { $in: plan.generatedAppointments },
+      operationalStatus: 'scheduled',
+      date: { $gte: today }
+    }).session(session).select('_id');
+
+    await bulkCancelAppointments(
+      appointmentsToCancel.map(a => a._id),
+      { reason: 'plan_canceled' },
+      req.user,
+      session
     );
 
     // Remove payments pendentes futuros
@@ -526,6 +571,18 @@ router.delete('/:id', auth, async (req, res) => {
     await plan.save({ session });
 
     await session.commitTransaction();
+
+    await recordAudit({
+      user: req.user,
+      action: 'insurance_plan_canceled',
+      entityType: 'InsurancePlan',
+      entityId: plan._id,
+      before: cancelBeforeSnapshot,
+      after: pickInsurancePlanFields(plan),
+      source: 'api:insurance_plans:delete',
+      pickFn: (x) => x,
+    });
+
     res.json({ success: true, message: 'Plano cancelado com sucesso' });
 
   } catch (error) {
@@ -577,6 +634,24 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
   } catch (error) {
     console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
     return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  }
+});
+
+/**
+ * GET /api/v2/insurance-plans/:id/changelog
+ * Retorna o histórico de alterações (audit trail) de um plano
+ */
+router.get('/:id/changelog', auth, async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+  }
+  try {
+    const entries = await getInsurancePlanAuditTrail(id, { limit: 50 });
+    res.json({ success: true, data: entries });
+  } catch (error) {
+    console.error('[InsurancePlansV2] Erro ao buscar changelog:', error);
+    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
 

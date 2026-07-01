@@ -3,6 +3,7 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import { FinancialContext } from '../utils/financialContext.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { resolvePaymentKind } from '../utils/resolvePaymentKind.js';
+import AppointmentWriteGuard from '../services/appointment/AppointmentWriteGuard.js';
 import crypto from 'crypto';
 
 const paymentSchema = new mongoose.Schema({
@@ -344,5 +345,8 @@ paymentSchema.methods.toDTO = function() {
 };
 
 const Payment = mongoose.model('Payment', paymentSchema);
+
+// 🛡️ Instala interceptor de writes raw no model Payment
+AppointmentWriteGuard.install('Payment', Payment, ['status']);
 
 export default Payment;

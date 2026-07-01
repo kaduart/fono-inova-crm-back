@@ -3,6 +3,7 @@
 
 import LiminarContract from '../../../models/LiminarContract.js';
 import Appointment from '../../../models/Appointment.js';
+import { executeWithSession as cancelAppointmentWithSession } from '../../appointment/commands/cancelAppointmentCommand.js';
 
 export default {
   async handle({ context, payload, session }) {
@@ -83,26 +84,30 @@ async function handleComplete({ payload, session }) {
       { session }
     );
 
-    // Cancela appointments futuros vinculados ao contrato
-    const cancelResult = await Appointment.updateMany(
-      {
-        liminarContract: liminarContractId,
-        operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
-      },
-      {
-        $set: {
-          operationalStatus: 'canceled',
-          clinicalStatus:    'canceled',
-          cancellationReason: 'Crédito liminar esgotado',
-          updatedAt: new Date()
-        }
-      },
-      { session }
-    );
+    // Cancela appointments futuros vinculados ao contrato via command
+    const appointmentsToCancel = await Appointment.find({
+      liminarContract: liminarContractId,
+      operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
+    }).session(session).select('_id');
+
+    let canceledCount = 0;
+    for (const appt of appointmentsToCancel) {
+      try {
+        await cancelAppointmentWithSession(
+          appt._id,
+          { reason: 'Crédito liminar esgotado' },
+          null,
+          session
+        );
+        canceledCount++;
+      } catch (err) {
+        console.error('[LiminarGuard][EXHAUSTED] Erro ao cancelar appointment', appt._id, err.message);
+      }
+    }
 
     console.log('[LiminarGuard][EXHAUSTED]', {
       liminarContractId,
-      appointmentsCanceled: cancelResult.modifiedCount
+      appointmentsCanceled: canceledCount
     });
   }
 

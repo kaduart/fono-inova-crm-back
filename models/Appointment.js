@@ -3,6 +3,7 @@ import { syncEvent } from '../services/syncService.js';
 import MedicalEvent from './MedicalEvent.js';
 import financialSanitizer from './plugins/financialSanitizer.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
+import AppointmentWriteGuard from '../services/appointment/AppointmentWriteGuard.js';
 
 // Sub-schema: tentativas de contato (vinha do PreAgendamento)
 const contactAttemptSchema = new mongoose.Schema({
@@ -527,9 +528,25 @@ appointmentSchema.pre('findOneAndUpdate', function (next) {
   this.options.runValidators = true;
   this.options.context = 'query';
 
-  // 🕐 Se o update modificar date/time/duration, recalcula startDateTime/endDateTime
   const update = this.getUpdate() || {};
   const $set = update.$set || update;
+
+  // 🛡️ SEGURANÇA: bloqueia marcação direta de operationalStatus='completed'
+  // via findOneAndUpdate fora do completeSessionService.
+  // canceled é intencionalmente NÃO bloqueado aqui porque muitos fluxos legítimos
+  // (planos, guias, pacotes, workers) usam updateMany/findByIdAndUpdate para cancelar
+  // em massa. Esses fluxos devem ser gradualmente migrados para commands.
+  const isFromCompleteService = $set._fromCompleteService === true;
+  if ($set.operationalStatus === 'completed' && !isFromCompleteService) {
+    const err = new Error(
+      '[SECURITY] operationalStatus=completed só pode ser setado via completeSessionService. ' +
+      'Use PATCH /:id/complete ou chame completeSessionV2().'
+    );
+    err.code = 'FORBIDDEN_MANUAL_COMPLETE';
+    return next(err);
+  }
+
+  // 🕐 Se o update modificar date/time/duration, recalcula startDateTime/endDateTime
   if ($set.date || $set.time || $set.duration) {
     // Precisamos buscar o doc atual para ter os valores que não foram modificados
     // Como não temos acesso ao doc no hook de query, adicionamos um $set explícito
@@ -685,4 +702,13 @@ appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', 
 appointmentSchema.plugin(financialSanitizer, { entity: 'Appointment' });
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
+
+// 🛡️ Instala interceptor de writes raw no model Appointment
+// Modo padrão: warn (loga, mas não bloqueia). Use APPOINTMENT_WRITE_GUARD_MODE=strict
+// em staging/produção quando todos os writes estiverem governados.
+AppointmentWriteGuard.install('Appointment', Appointment, [
+  'operationalStatus',
+  'clinicalStatus',
+]);
+
 export default Appointment;

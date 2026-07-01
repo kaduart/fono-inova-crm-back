@@ -26,6 +26,13 @@ const REFERENCE_FIELDS = new Set([
   'originalAppointmentId',
 ]);
 
+const INSURANCE_PLAN_REFERENCE_FIELDS = new Set(['doctor', 'patient', 'guide']);
+
+const INSURANCE_PLAN_AUDITABLE_FIELDS = new Set([
+  'doctor', 'sessionValue', 'slots', 'notes', 'status',
+  'specialty', 'sessionsPerWeek', 'totalSessions', 'startDate',
+]);
+
 const AUDITABLE_FIELDS = new Set([
   'billingType',
   'insuranceProvider',
@@ -124,6 +131,26 @@ export function pickAuditableFields(appointment) {
   return picked;
 }
 
+export function pickInsurancePlanFields(plan) {
+  if (!plan) return null;
+  const rawSource = plan.toObject
+    ? plan.toObject({ virtuals: false, getters: false })
+    : plan;
+  const source = deepClone(rawSource);
+  const picked = {};
+  for (const field of INSURANCE_PLAN_AUDITABLE_FIELDS) {
+    let value = source[field];
+    if (INSURANCE_PLAN_REFERENCE_FIELDS.has(field)) {
+      if (isPlainObject(value) && value._id !== undefined) value = value._id;
+      else if (Array.isArray(value)) {
+        value = value.map(v => (isPlainObject(v) && v._id !== undefined ? v._id : v));
+      }
+    }
+    picked[field] = normalizeValue(value === undefined ? null : value);
+  }
+  return picked;
+}
+
 export const buildAuditDiff = computeDiff;
 
 export function computeDiff(before, after) {
@@ -162,15 +189,15 @@ function inferSeverity(diff, action) {
 
   // Criação e eventos de sistema não devem herdar severidade de campos críticos,
   // pois o registro está apenas sendo inicializado.
-  if (action === 'appointment_created' || action.includes('_system_') || action.endsWith('_recalc')) {
+  if (action === 'appointment_created' || action === 'insurance_plan_created' || action.includes('_system_') || action.endsWith('_recalc')) {
     return 'INFO';
   }
 
   const criticalFields = ['billingType', 'insuranceGuide', 'insurancePlan', 'insuranceProvider'];
-  const warningFields = ['insuranceValue', 'paymentMethod', 'paymentAmount', 'sessionValue', 'operationalStatus', 'clinicalStatus', 'date', 'time', 'doctor', 'patient'];
+  const warningFields = ['insuranceValue', 'paymentMethod', 'paymentAmount', 'sessionValue', 'operationalStatus', 'clinicalStatus', 'date', 'time', 'doctor', 'patient', 'slots', 'status'];
 
   const changedFields = Object.keys(diff);
-  if (action === 'appointment_deleted') return 'CRITICAL';
+  if (action === 'appointment_deleted' || action === 'insurance_plan_canceled') return 'CRITICAL';
   if (changedFields.some((f) => criticalFields.includes(f))) return 'CRITICAL';
   if (changedFields.some((f) => warningFields.includes(f))) return 'WARNING';
   return 'INFO';
@@ -186,14 +213,16 @@ export async function recordAudit({
   source,
   correlationId,
   metadata,
+  pickFn,
 }) {
   if (!FeatureFlags.AUDIT.ENABLED) {
     return;
   }
 
   try {
-    const normalizedBefore = before ? pickAuditableFields(before) : null;
-    const normalizedAfter = after ? pickAuditableFields(after) : null;
+    const picker = pickFn || pickAuditableFields;
+    const normalizedBefore = before ? picker(before) : null;
+    const normalizedAfter = after ? picker(after) : null;
     const diff = computeDiff(normalizedBefore, normalizedAfter);
     const severity = inferSeverity(diff, action);
 
@@ -225,8 +254,6 @@ export async function recordAudit({
       userId: user?._id?.toString?.() || null,
       error: error.message,
       stack: error.stack,
-      before: normalizedBefore,
-      after: normalizedAfter,
     }));
   }
 }
@@ -245,4 +272,13 @@ export async function getAppointmentAuditTrail(appointmentId, options = {}) {
     .lean();
 }
 
-export default { recordAudit, pickAuditableFields, computeDiff, buildAuditDiff, getAppointmentAuditTrail };
+export async function getInsurancePlanAuditTrail(planId, options = {}) {
+  const { limit = 50, skip = 0 } = options;
+  return AuditLog.find({ entityType: 'InsurancePlan', entityId: planId })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+}
+
+export default { recordAudit, pickAuditableFields, pickInsurancePlanFields, computeDiff, buildAuditDiff, getAppointmentAuditTrail, getInsurancePlanAuditTrail };

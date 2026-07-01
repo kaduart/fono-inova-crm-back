@@ -760,7 +760,8 @@ export class InsuranceBillingService {
           $set: { 
             paymentStatus: 'billed',
             'insurance.status': 'billed',
-            'insurance.billedAt': billedAt
+            'insurance.billedAt': billedAt,
+            _fromWriteGateway: true,
           }
         },
         { session: mongoSession }

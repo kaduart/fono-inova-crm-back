@@ -111,6 +111,35 @@ export async function execute(id, payload, user) {
         notes: appointment.notes,
       };
 
+      // 🛡️ GUARDA DE DOMÍNIO: operationalStatus é state machine — não pode ser alterado
+      // por update genérico. completed → completeSessionV2; canceled → cancelAppointment.
+      const incomingOperationalStatus = updateData.operationalStatus;
+      if (incomingOperationalStatus === 'completed' && appointment.operationalStatus !== 'completed') {
+        throw buildError(
+          'Transição inválida: operationalStatus=completed só pode ser atingido via completeSessionV2',
+          409,
+          'FORBIDDEN_MANUAL_COMPLETE'
+        );
+      }
+      if (incomingOperationalStatus === 'canceled' && !CANCELED_STATUSES.includes(appointment.operationalStatus)) {
+        throw buildError(
+          'Transição inválida: operationalStatus=canceled só pode ser atingido via cancelAppointment',
+          409,
+          'FORBIDDEN_MANUAL_CANCEL'
+        );
+      }
+
+      // 🛡️ GUARDA DE DOMÍNIO: clinicalStatus=completed exige operationalStatus=completed
+      const incomingClinicalStatus = updateData.clinicalStatus;
+      const effectiveOperationalStatus = incomingOperationalStatus || appointment.operationalStatus;
+      if (incomingClinicalStatus === 'completed' && effectiveOperationalStatus !== 'completed') {
+        throw buildError(
+          'Transição inválida: clinicalStatus=completed requer operationalStatus=completed',
+          409,
+          'CLINICAL_COMPLETION_REQUIRES_OPERATIONAL_COMPLETION'
+        );
+      }
+
       // Reativação de cancelado
       const wasCanceled = CANCELED_STATUSES.includes(appointment.operationalStatus);
       const isReactivating =

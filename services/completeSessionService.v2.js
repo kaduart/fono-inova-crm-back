@@ -145,7 +145,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 isProcessing: false,
                 completedAt: new Date(),
                 completedBy: userId || null,
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                _fromCompleteService: true,
             }
         });
 

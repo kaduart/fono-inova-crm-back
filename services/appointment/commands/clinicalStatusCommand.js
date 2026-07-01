@@ -2,8 +2,9 @@
 /**
  * Clinical Status Command
  *
- * Responsabilidade: atualizar o status clínico de um agendamento,
- * refletindo-o no status operacional quando a sessão foi realizada.
+ * Responsabilidade: atualizar o status clínico de um agendamento.
+ * O status clínico é descritivo e NUNCA deve afetar o status operacional
+ * nem ser usado como proxy de finalização de atendimento.
  */
 
 import Appointment from '../../../models/Appointment.js';
@@ -27,6 +28,17 @@ export async function execute(id, status, user) {
   }
 
   checkDoctorPermission(appointment, user);
+
+  // 🛡️ GUARDA DE DOMÍNIO: clinicalStatus='completed' só é permitido
+  // se o atendimento já foi finalizado operacionalmente via completeSessionV2.
+  // Isso evita o estado inconsistente: clinical completed + operational confirmed/scheduled.
+  if (status === 'completed' && appointment.operationalStatus !== 'completed') {
+    throw buildError(
+      'Transição inválida: finalização clínica requer finalização operacional via completeSessionV2',
+      409,
+      'CLINICAL_COMPLETION_REQUIRES_OPERATIONAL_COMPLETION'
+    );
+  }
 
   appointment.clinicalStatus = status;
   appointment.history.push({

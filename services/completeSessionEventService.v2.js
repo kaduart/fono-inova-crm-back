@@ -64,7 +64,8 @@ export async function completeSessionEventDrivenV2(appointmentId, options = {}) 
                 clinicalStatus: 'completed',
                 paymentStatus: 'not_applicable',
                 sessionValue: 0,
-                updatedAt: new Date()
+                updatedAt: new Date(),
+                _fromCompleteService: true,
             }
         });
         console.log(`[CompleteSessionV2] ✅ Retorno completado sem processamento financeiro: ${appointmentId}`);

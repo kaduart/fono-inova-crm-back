@@ -4,6 +4,7 @@ import { syncEvent } from '../services/syncService.js';
 import provisionamentoService from '../services/provisionamentoService.js';
 import MedicalEvent from './MedicalEvent.js';
 import financialSanitizer from './plugins/financialSanitizer.js';
+import AppointmentWriteGuard from '../services/appointment/AppointmentWriteGuard.js';
 
 const sessionSchema = new mongoose.Schema({
     date: {
@@ -716,5 +717,8 @@ sessionSchema.methods.softDeleteCascade = async function(reason = 'manual', dele
 sessionSchema.plugin(financialSanitizer, { entity: 'Session' });
 
 const Session = mongoose.model('Session', sessionSchema);
+
+// 🛡️ Instala interceptor de writes raw no model Session
+AppointmentWriteGuard.install('Session', Session, ['status']);
 
 export default Session;

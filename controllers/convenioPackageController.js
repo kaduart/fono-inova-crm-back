@@ -651,7 +651,8 @@ export const cancelConvenioSession = async (req, res) => {
         session.appointmentId,
         {
           operationalStatus: 'canceled',
-          clinicalStatus: 'missed'
+          clinicalStatus: 'missed',
+          _fromWriteGateway: true,
         },
         { session: mongoSession }
       );
@@ -762,7 +763,8 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
           paidAt: paymentDateObj,
           paymentStatus: 'paid',
           visualFlag: 'ok',
-          notes: notes ? `${notes} | Pago em ${paymentDate}` : `Pago em ${paymentDate}`
+          notes: notes ? `${notes} | Pago em ${paymentDate}` : `Pago em ${paymentDate}`,
+          _fromWriteGateway: true,
         }
       }
     ).session(mongoSession);
