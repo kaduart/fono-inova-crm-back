@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import GuidePolicySchema from './schemas/GuidePolicySchema.js';
 
 /**
  * 🏥 Convenio Model
@@ -43,6 +44,16 @@ const convenioSchema = new mongoose.Schema({
     enum: ['per_month', 'per_guide'],
     default: 'per_month'
   },
+
+  // Quantidade padrão de sessões sugerida ao criar/renovar guia
+  defaultSessions: {
+    type: Number,
+    default: null,
+    min: 1
+  },
+
+  // Regras operacionais de renovação — define como as guias deste convênio funcionam
+  guidePolicy: GuidePolicySchema,
 
   // Observações
   notes: {

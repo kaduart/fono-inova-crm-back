@@ -12,6 +12,7 @@ import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
+import { GuideLifecycleService } from '../../../services/guideLifecycle/GuideLifecycleService.js';
 
 export const ConvenioHandler = {
     /**
@@ -55,27 +56,27 @@ export const ConvenioHandler = {
             throw new Error('INVALID_SESSION_ID: sessionId é obrigatório para criar/atualizar payment de convênio');
         }
 
-        // 1. Buscar guia ativa
+        // 1. Buscar guia elegível
         // Filtro primário: appointment vinculado à guia correta evita consumir guia errada
         // quando paciente tem múltiplas guias ativas para mesma especialidade.
-        const guideQuery = appointment.insuranceGuide
-            ? {
-                _id: appointment.insuranceGuide,
-                status: 'active',
-                expiresAt: { $gte: now },
-                $expr: { $lt: ['$usedSessions', '$totalSessions'] }
+        let guide = null;
+        if (appointment.insuranceGuide) {
+            const candidate = await InsuranceGuide.findById(appointment.insuranceGuide).session(mongoSession);
+            if (candidate) {
+                const lifecycle = await GuideLifecycleService.evaluate(candidate, now);
+                if (lifecycle.eligibility.canBill) {
+                    guide = candidate;
+                }
             }
-            : {
-                patientId: appointment.patient?._id,
-                specialty: specialty.toLowerCase().trim(),
-                status: 'active',
-                expiresAt: { $gte: now },
-                $expr: { $lt: ['$usedSessions', '$totalSessions'] }
-            };
+        }
 
-        const guide = await InsuranceGuide.findOne(guideQuery)
-            .session(mongoSession)
-            .sort({ expiresAt: 1 });
+        if (!guide) {
+            guide = await InsuranceGuide.findValid(
+                appointment.patient?._id?.toString?.() || appointment.patient,
+                specialty,
+                now
+            );
+        }
 
         if (!guide) {
             const err = new Error('NO_ACTIVE_GUIDE: Nenhuma guia ativa encontrada para este paciente/especialidade');

@@ -103,3 +103,7 @@ coverage/
 # Outputs de auditoria, relatórios e logs de análise
 auditoria-output/
 logs-archive/
+
+# NUNCA versionar: dumps/backups de banco (dados de paciente/financeiro — LGPD)
+backups-mongo/
+backup_mongo_test_*/

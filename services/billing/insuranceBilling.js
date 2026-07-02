@@ -8,6 +8,7 @@ import Payment from '../../models/Payment.js';
 import { updatePatientAppointments } from '../../utils/appointmentUpdater.js';
 import { validateDateTime, checkScheduleConflict } from '../../utils/billingHelpers.js';
 import { recordInsuranceBilled, recordInsuranceReceived } from '../financialLedgerService.js';
+import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.js';
 
 /**
  * 💼 Insurance Billing Service
@@ -204,6 +205,9 @@ class InsuranceBillingService {
         .populate('payment')
         .lean();
 
+      const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+      const lowBalanceAlert = lifecycle.alerts.find(a => a.code === 'LOW_BALANCE' || a.code === 'NO_SESSIONS');
+
       return {
         success: true,
         appointment: populatedAppointment,
@@ -217,7 +221,8 @@ class InsuranceBillingService {
           status: guide.status
         },
         message: `Agendamento criado (guia será consumida quando sessão for concluída)`,
-        alert: guide.remaining <= 2 ? 'LOW_BALANCE' : null
+        alert: lowBalanceAlert ? lowBalanceAlert.code : null,
+        lifecycle
       };
 
     } catch (error) {

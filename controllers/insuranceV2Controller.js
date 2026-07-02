@@ -511,15 +511,11 @@ export async function autoLinkOrphanSessions(req, res) {
         continue;
       }
 
-      const guide = await InsuranceGuide.findOne({
-        patientId: new mongoose.Types.ObjectId(patientId.toString()),
+      const guide = await InsuranceGuide.findValid(
+        patientId.toString(),
         specialty,
-        status: { $in: ['active', 'linked'] },
-        expiresAt: { $gte: session.date || new Date() },
-        $expr: { $lt: ['$usedSessions', '$totalSessions'] }
-      })
-        .sort({ expiresAt: 1 })
-        .session(mongoSession);
+        session.date ? new Date(session.date) : new Date()
+      );
 
       if (!guide) {
         skipped.push({ sessionId: session._id.toString(), reason: 'Nenhuma guia ativa compatível' });
@@ -632,15 +628,11 @@ export async function previewAutoLinkOrphanSessions(req, res) {
         continue;
       }
 
-      const guide = await InsuranceGuide.findOne({
-        patientId: new mongoose.Types.ObjectId(rawPatientId.toString()),
+      const guide = await InsuranceGuide.findValid(
+        rawPatientId.toString(),
         specialty,
-        status: { $in: ['active', 'linked'] },
-        expiresAt: { $gte: session.date || new Date() },
-        $expr: { $lt: ['$usedSessions', '$totalSessions'] }
-      })
-        .sort({ expiresAt: 1 })
-        .lean();
+        session.date ? new Date(session.date) : new Date()
+      );
 
       if (!guide) {
         skipped.push({

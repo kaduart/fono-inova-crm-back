@@ -15,6 +15,7 @@ import Convenio from '../models/Convenio.js';
 import { generateInsurancePlanSessions } from '../services/schedule/generateInsurancePlanSessions.js';
 import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
+import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 
 const router = express.Router();
 
@@ -71,11 +72,19 @@ router.post('/', auth, async (req, res) => {
     const convenioValue = await Convenio.getSessionValue(guide.insurance).catch(() => null);
     const resolvedSessionValue = Number(sessionValue) || Number(guide.sessionValue) || convenioValue || 0;
 
-    const totalSessions = guide.totalSessions - guide.usedSessions;
-    if (totalSessions <= 0) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+    if (!lifecycle.eligibility.canSchedule) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, errorCode: 'GUIDE_EXHAUSTED', message: 'Guia sem sessões disponíveis' });
+      const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_NOT_ELIGIBLE',
+        message: blockingAlert?.message || 'Guia não elegível para agendamento',
+        lifecycle
+      });
     }
+
+    const totalSessions = guide.totalSessions - guide.usedSessions;
 
     // 🔄 Se já existe plano para esta guia (qualquer status), remove o antigo e cria novo
     const existingPlan = await InsurancePlan.findOne({ guide: guideId }).session(session);
@@ -612,10 +621,18 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     const guide = await InsuranceGuide.findById(plan.guide).lean();
     if (!guide) return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
 
-    const remaining = (guide.totalSessions || 0) - (guide.usedSessions || 0);
-    if (remaining <= 0) {
-      return res.status(400).json({ success: false, errorCode: 'GUIDE_EXHAUSTED', message: 'Guia sem sessões restantes para gerar' });
+    const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+    if (!lifecycle.eligibility.canSchedule) {
+      const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_NOT_ELIGIBLE',
+        message: blockingAlert?.message || 'Guia não elegível para gerar sessões',
+        lifecycle
+      });
     }
+
+    const remaining = (guide.totalSessions || 0) - (guide.usedSessions || 0);
 
     const result = await generateInsurancePlanSessions({
       planId: plan._id,

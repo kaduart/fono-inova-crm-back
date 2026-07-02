@@ -17,6 +17,7 @@ import InsuranceGuide from '../models/InsuranceGuide.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import { createContextLogger } from '../utils/logger.js';
+import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 
 const logger = createContextLogger('InsuranceBatchGuideAdapter');
 
@@ -226,9 +227,6 @@ export async function listGuidesPendingBilling(filters = {}) {
     guideMatch.patientId = new mongoose.Types.ObjectId(patientId);
   }
 
-  // Status elegível: active, linked, exhausted — igual para todos os billingMode
-  guideMatch.status = { $in: ['active', 'linked', 'exhausted'] };
-
   // Buscar sessões elegíveis por guia
   const sessionMatch = {
     status: 'completed',
@@ -268,14 +266,22 @@ export async function listGuidesPendingBilling(filters = {}) {
 
   guideMatch._id = { $in: guideIds };
 
-  const total = await InsuranceGuide.countDocuments(guideMatch);
-
-  const guides = await InsuranceGuide.find(guideMatch)
+  const allGuides = await InsuranceGuide.find(guideMatch)
     .populate('patientId', 'fullName')
     .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(limit)
     .lean();
+
+  const now = new Date();
+  const eligibleGuides = [];
+  for (const guide of allGuides) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, now);
+    if (lifecycle.eligibility.canBill) {
+      eligibleGuides.push(guide);
+    }
+  }
+
+  const total = eligibleGuides.length;
+  const guides = eligibleGuides.slice((page - 1) * limit, page * limit);
 
   const pendingByGuide = new Map(guidesWithPending.map(g => [g._id.toString(), g]));
 

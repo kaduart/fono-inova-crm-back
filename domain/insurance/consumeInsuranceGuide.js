@@ -1,6 +1,7 @@
 // domain/insurance/consumeInsuranceGuide.js
 import InsuranceGuide from '../../models/InsuranceGuide.js';
 import Session from '../../models/Session.js';
+import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
 
 /**
  * Consome sessão da guia de convênio
@@ -44,23 +45,17 @@ export async function consumeInsuranceGuide(guideId, sessionId) {
         }
     }
 
-    // Valida guia
-    if (guide.status !== 'active') {
-        console.warn(`[consumeInsuranceGuide] Guia ${guideId} não está ativa (status: ${guide.status})`);
+    // Valida elegibilidade da guia via lifecycle
+    const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+    if (!lifecycle.eligibility.canBill) {
+        const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
+        const reason = blockingAlert?.code || 'GUIDE_NOT_ELIGIBLE';
+        console.warn(`[consumeInsuranceGuide] Guia ${guideId} não elegível para consumo: ${reason}`);
         return { 
             consumed: false, 
-            reason: 'GUIDE_NOT_ACTIVE',
-            status: guide.status
-        };
-    }
-
-    if (guide.usedSessions >= guide.totalSessions) {
-        console.warn(`[consumeInsuranceGuide] Guia ${guideId} esgotada`);
-        return { 
-            consumed: false, 
-            reason: 'GUIDE_EXHAUSTED',
-            usedSessions: guide.usedSessions,
-            totalSessions: guide.totalSessions
+            reason,
+            status: guide.status,
+            lifecycle
         };
     }
 

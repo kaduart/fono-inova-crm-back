@@ -1,6 +1,8 @@
 // models/InsuranceGuide.js
 import mongoose from 'mongoose';
 import { resolvePatientId } from '../utils/identityResolver.js';
+import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
+import Convenio from './Convenio.js';
 
 /**
  * 🏥 InsuranceGuide Model
@@ -152,7 +154,7 @@ const insuranceGuideSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: {
-      values: ['active', 'exhausted', 'expired', 'cancelled', 'linked'],
+      values: ['active', 'exhausted', 'expired', 'cancelled', 'linked', 'superseded'],
       message: 'Status "{VALUE}" não é válido'
     },
     default: 'active',
@@ -231,7 +233,50 @@ const insuranceGuideSchema = new mongoose.Schema({
       type: String,
       default: ''
     }
-  }]
+  }],
+
+  // ======================================================================
+  // 🔄 CICLO DE VIDA — SUBSTITUIÇÃO DE GUIA
+  // ======================================================================
+
+  supersededBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InsuranceGuide',
+    default: null,
+    description: 'ID da guia que substituiu esta'
+  },
+  supersedes: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InsuranceGuide',
+    default: null,
+    description: 'ID da guia que esta substituiu (cadeia histórica)'
+  },
+  supersededAt: {
+    type: Date,
+    default: null
+  },
+  // Por que a substituição aconteceu (auditoria)
+  replacementTrigger: {
+    type: String,
+    enum: {
+      values: ['expiration', 'new_authorization', 'administrative_correction', 'judicial_order', 'manual'],
+      message: 'Trigger de substituição "{VALUE}" não é válido'
+    },
+    default: null
+  },
+  // Como a migração de atendimentos foi feita (auditoria)
+  replacementMethod: {
+    type: String,
+    enum: {
+      values: ['eligible', 'manual', 'none'],
+      message: 'Método de substituição "{VALUE}" não é válido'
+    },
+    default: null
+  },
+  replacementNotes: {
+    type: String,
+    default: null
+  }
 
 }, {
   timestamps: true,
@@ -268,6 +313,12 @@ insuranceGuideSchema.index(
   { name: 'idx_expiration_cleanup' }
 );
 
+// Índice para navegação de cadeia histórica de substituições
+insuranceGuideSchema.index(
+  { supersededBy: 1 },
+  { name: 'idx_superseded_by', sparse: true }
+);
+
 // ======================================================================
 // PRE-SAVE HOOKS (Regras de Negócio)
 // ======================================================================
@@ -285,10 +336,15 @@ insuranceGuideSchema.pre('save', function (next) {
     this.status = 'exhausted';
   }
 
-  // REGRA 3: Bloquear reativação manual se esgotada
+  // REGRA 3: Bloquear reativação manual se esgotada ou substituída
   if (this.status === 'active' && this.usedSessions >= this.totalSessions) {
     const err = new Error('Não é possível reativar guia esgotada');
     err.code = 'GUIDE_EXHAUSTED';
+    return next(err);
+  }
+  if (this.isModified('status') && this.status === 'active' && this._previousStatus === 'superseded') {
+    const err = new Error('Não é possível reativar guia substituída');
+    err.code = 'GUIDE_SUPERSEDED';
     return next(err);
   }
 
@@ -335,16 +391,24 @@ insuranceGuideSchema.statics.findValid = async function (patientId, specialty, d
   // 🔑 V2 Fix: Resolver identity (aceita view._id ou patientId real)
   const resolvedId = await resolvePatientId(patientId, { throwIfNotFound: false }) || patientId;
   const patientIdQuery = new mongoose.Types.ObjectId(resolvedId);
-    
-  return await this.findOne({
+
+  // Busca candidatas amplas e deixa o lifecycle decidir elegibilidade
+  const candidates = await this.find({
     patientId: patientIdQuery,
     specialty: specialty.toLowerCase().trim(),
-    status: 'active',
-    expiresAt: { $gte: date },
-    $expr: { $lt: ['$usedSessions', '$totalSessions'] } // usedSessions < totalSessions
+    status: { $in: ['active', 'linked'] }
   })
-    .sort({ expiresAt: 1 }) // FIFO: primeira a vencer
-    .lean(false); // Retorna documento Mongoose (não POJO)
+    .sort({ expiresAt: 1 })
+    .lean(false);
+
+  for (const guide of candidates) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, date);
+    if (lifecycle.eligibility.canSchedule) {
+      return guide;
+    }
+  }
+
+  return null;
 };
 
 /**
@@ -371,11 +435,12 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
   // 🔑 V2 Fix: Resolver identity (aceita view._id ou patientId real)
   const resolvedId = await resolvePatientId(patientId, { throwIfNotFound: false }) || patientId;
   const patientIdQuery = new mongoose.Types.ObjectId(resolvedId);
-    
+  const now = new Date();
+
+  // Candidatas amplas; lifecycle decide elegibilidade operacional
   const query = {
     patientId: patientIdQuery,
-    status: 'active',
-    expiresAt: { $gte: new Date() } // Apenas não-vencidas
+    status: { $in: ['active', 'linked'] }
   };
 
   if (specialty) {
@@ -383,12 +448,19 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
   }
 
   const guides = await this.find(query)
-    .select('number specialty insurance totalSessions usedSessions expiresAt')
+    .select('number specialty insurance totalSessions usedSessions expiresAt insuranceId')
     .sort({ expiresAt: 1 })
     .lean();
 
-  // Agregação manual (mais eficiente que $group para poucos docs)
-  const totals = guides.reduce((acc, guide) => {
+  const usableGuides = [];
+  for (const guide of guides) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, now);
+    if (lifecycle.eligibility.canSchedule || lifecycle.eligibility.canBill) {
+      usableGuides.push({ guide, lifecycle });
+    }
+  }
+
+  const totals = usableGuides.reduce((acc, { guide }) => {
     acc.total += guide.totalSessions;
     acc.used += guide.usedSessions;
     return acc;
@@ -398,15 +470,16 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
     total: totals.total,
     used: totals.used,
     remaining: Math.max(0, totals.total - totals.used),
-    guides: guides.map(g => ({
-      id: g._id,
-      number: g.number,
-      specialty: g.specialty,
-      insurance: g.insurance,
-      total: g.totalSessions,
-      used: g.usedSessions,
-      remaining: Math.max(0, g.totalSessions - g.usedSessions),
-      expiresAt: g.expiresAt
+    guides: usableGuides.map(({ guide, lifecycle }) => ({
+      id: guide._id,
+      number: guide.number,
+      specialty: guide.specialty,
+      insurance: guide.insurance,
+      total: guide.totalSessions,
+      used: guide.usedSessions,
+      remaining: Math.max(0, guide.totalSessions - guide.usedSessions),
+      expiresAt: guide.expiresAt,
+      lifecycle
     }))
   };
 };
@@ -500,13 +573,9 @@ insuranceGuideSchema.methods.consumeSession = async function (mongoSession, cont
  *   await guide.consumeSession(session);
  * }
  */
-insuranceGuideSchema.methods.isValid = function () {
-  const now = new Date();
-  return (
-    this.status === 'active' &&
-    this.usedSessions < this.totalSessions &&
-    this.expiresAt >= now
-  );
+insuranceGuideSchema.methods.isValid = async function () {
+  const lifecycle = await GuideLifecycleService.evaluate(this, new Date());
+  return lifecycle.eligibility.canSchedule;
 };
 
 // ======================================================================

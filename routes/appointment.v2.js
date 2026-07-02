@@ -499,8 +499,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData.paymentStatus = 'pending_receipt';
             updateData.visualFlag = 'pending';
         } else {
-            updateData.paymentStatus = 'pending';
-            updateData.visualFlag = 'pending';
+            // Particular avulso puro (sem pacote/convênio/fiado): Payment já foi
+            // marcado 'paid' acima — appointment.paymentStatus precisa refletir isso,
+            // senão fica dessincronizado (Session/Payment=paid, Appointment=pending).
+            updateData.paymentStatus = 'paid';
+            updateData.visualFlag = 'ok';
         }
 
         updateData._fromWriteGateway = true;

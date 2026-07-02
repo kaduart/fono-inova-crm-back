@@ -18,6 +18,8 @@ import InsurancePlan from '../models/InsurancePlan.js';
 import Doctor from '../models/Doctor.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
+import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideService.js';
+import { buildGuideResponse } from '../services/guideLifecycle/guideResponseBuilder.js';
 
 const router = express.Router();
 
@@ -231,27 +233,13 @@ router.post('/', auth, async (req, res) => {
       console.warn('[InsuranceGuidesV2] Evento falhou (não crítico):', eventError.message);
     }
 
-    // Retorna no formato V2
+    // Retorna no contrato V2 { guide, lifecycle }
+    const conv = await Convenio.findOne({ code: guide.insurance }).select('guidePolicy defaultSessions').lean();
+    const response = await buildGuideResponse(guide, conv);
+
     res.status(201).json({
       success: true,
-      data: {
-        _id: guide._id.toString(),
-        guideId: guide._id.toString(),
-        number: guide.number,
-        patientId: guide.patientId,
-        specialty: guide.specialty,
-        insurance: guide.insurance,
-        totalSessions: guide.totalSessions,
-        sessionsUsed: guide.sessionsUsed,
-        sessionsRemaining: guide.sessionsRemaining,
-        status: guide.status,
-        expiresAt: guide.expiresAt,
-        sessionValue: guide.sessionValue ?? null,
-        evaluationAmount: guide.evaluationAmount ?? null,
-        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
-        evaluationSessionId: guide.evaluationSessionId || null,
-        correlationId
-      },
+      data: response,
       meta: {
         version: '2.0',
         eventDriven: true,
@@ -336,36 +324,37 @@ router.get('/', auth, async (req, res) => {
     const apptCountMap = {};
     for (const c of apptCounts) apptCountMap[c._id.toString()] = c;
 
+    // Carregar guidePolicy dos convênios em batch (uma query para todos)
+    const insuranceCodes = [...new Set(guides.map(g => g.insurance).filter(Boolean))];
+    const convenioMap = {};
+    if (insuranceCodes.length > 0) {
+      const convenios = await Convenio.find({ code: { $in: insuranceCodes } })
+        .select('code guidePolicy defaultSessions').lean();
+      for (const c of convenios) convenioMap[c.code] = c;
+    }
+
+    // Constrói respostas { guide, lifecycle } de forma paralela
+    const guideResponses = await Promise.all(
+      guides.map(async g => {
+        const counts = apptCountMap[g._id.toString()] || { canceledCount: 0, scheduledCount: 0, completedCount: 0 };
+        const conv = convenioMap[g.insurance] || null;
+        const response = await buildGuideResponse(g, conv);
+        return {
+          ...response,
+          guide: {
+            ...response.guide,
+            canceledCount: counts.canceledCount,
+            scheduledCount: counts.scheduledCount,
+            completedCount: counts.completedCount,
+          }
+        };
+      })
+    );
+
     res.json({
       success: true,
       data: {
-        guides: guides.map(g => {
-          const counts = apptCountMap[g._id.toString()] || { canceledCount: 0, scheduledCount: 0, completedCount: 0 };
-          return {
-          _id: g._id.toString(),
-          number: g.number,
-          patientId: g.patientId?._id?.toString?.() || g.patientId?.toString?.() || g.patientId,
-          insurance: g.insurance,
-          specialty: g.specialty,
-          totalSessions: g.totalSessions,
-          usedSessions: g.usedSessions || 0,
-          remaining: Math.max(0, (g.totalSessions || 0) - (g.usedSessions || 0)),
-          canceledCount: counts.canceledCount,
-          scheduledCount: counts.scheduledCount,
-          completedCount: counts.completedCount,
-          status: g.status,
-          expiresAt: g.expiresAt,
-          sessionValue: g.sessionValue ?? null,
-          evaluationAmount: g.evaluationAmount ?? null,
-          generateEvaluationBilling: g.generateEvaluationBilling ?? true,
-          evaluationSessionId: g.evaluationSessionId?.toString?.() || null,
-          totalValue: (g.sessionValue != null && g.totalSessions) ? g.sessionValue * g.totalSessions : null,
-          doctor: g.doctorId ? { _id: g.doctorId._id?.toString(), fullName: g.doctorId.fullName } : null,
-          issuedAt: g.issuedAt || null,
-          notes: g.notes || null,
-          createdAt: g.createdAt
-          };
-        }),
+        guides: guideResponses,
         pagination: {
           total,
           page: parseInt(page),
@@ -403,7 +392,7 @@ router.get('/:id', auth, async (req, res) => {
     }
 
     const guide = await InsuranceGuide.findById(id).populate('doctorId', 'fullName').lean();
-    
+
     if (!guide) {
       return res.status(404).json({
         success: false,
@@ -412,30 +401,16 @@ router.get('/:id', auth, async (req, res) => {
       });
     }
 
+    // Join com Convenio para incluir guidePolicy
+    const conv = guide.insurance
+      ? await Convenio.findOne({ code: guide.insurance }).select('guidePolicy defaultSessions').lean()
+      : null;
+
+    const response = await buildGuideResponse(guide, conv);
+
     res.json({
       success: true,
-      data: {
-        _id: guide._id.toString(),
-        guideId: guide._id.toString(),
-        number: guide.number,
-        patientId: guide.patientId,
-        insurance: guide.insurance,
-        specialty: guide.specialty,
-        totalSessions: guide.totalSessions,
-        usedSessions: guide.usedSessions || 0,
-        sessionsRemaining: (guide.totalSessions || 0) - (guide.usedSessions || 0),
-        status: guide.status,
-        expiresAt: guide.expiresAt,
-        sessionValue: guide.sessionValue ?? null,
-        evaluationAmount: guide.evaluationAmount ?? null,
-        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
-        evaluationSessionId: guide.evaluationSessionId?.toString?.() || null,
-        totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
-        doctor: guide.doctorId ? { _id: guide.doctorId._id?.toString(), fullName: guide.doctorId.fullName } : null,
-        issuedAt: guide.issuedAt || null,
-        notes: guide.notes,
-        createdAt: guide.createdAt
-      },
+      data: response,
       meta: { version: '2.0' }
     });
 
@@ -616,28 +591,15 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
+    const conv = guide.insurance
+      ? await Convenio.findOne({ code: guide.insurance }).select('guidePolicy defaultSessions').lean()
+      : null;
+    const response = await buildGuideResponse(guide, conv);
+
     return res.status(200).json({
       success: true,
       message: 'Guia atualizada com sucesso',
-      data: {
-        _id: guide._id.toString(),
-        number: guide.number,
-        specialty: guide.specialty,
-        insurance: guide.insurance,
-        totalSessions: guide.totalSessions,
-        usedSessions: guide.usedSessions,
-        remaining: Math.max(0, guide.totalSessions - guide.usedSessions),
-        expiresAt: guide.expiresAt,
-        sessionValue: guide.sessionValue ?? null,
-        evaluationAmount: guide.evaluationAmount ?? null,
-        generateEvaluationBilling: guide.generateEvaluationBilling ?? true,
-        evaluationSessionId: guide.evaluationSessionId || null,
-        totalValue: (guide.sessionValue != null && guide.totalSessions) ? guide.sessionValue * guide.totalSessions : null,
-        doctorId: guide.doctorId || null,
-        issuedAt: guide.issuedAt || null,
-        notes: guide.notes,
-        status: guide.status
-      },
+      data: response,
       meta: { version: '2.0', correlationId }
     });
   } catch (error) {
@@ -674,14 +636,15 @@ router.delete('/:id', auth, async (req, res) => {
     guide.status = 'cancelled';
     await guide.save();
 
+    const conv = guide.insurance
+      ? await Convenio.findOne({ code: guide.insurance }).select('guidePolicy defaultSessions').lean()
+      : null;
+    const response = await buildGuideResponse(guide, conv);
+
     return res.status(200).json({
       success: true,
       message: 'Guia cancelada com sucesso',
-      data: {
-        id: guide._id,
-        number: guide.number,
-        status: guide.status
-      }
+      data: response
     });
 
   } catch (error) {
@@ -970,6 +933,128 @@ router.post('/:id/inactivate', auth, async (req, res) => {
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao inativar guia:', error);
     return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  }
+});
+
+/**
+ * POST /api/v2/insurance-guides/:id/supersede
+ * Substitui uma guia por outra, com migração opcional de atendimentos pendentes.
+ *
+ * Body:
+ *   newGuide: { number, expiresAt, totalSessions, sessionValue, issuedAt, doctorId, billingMode, ... }
+ *   replacementTrigger: 'expiration' | 'new_authorization' | 'administrative_correction' | 'judicial_order' | 'manual'
+ *   replacementNotes?: string
+ *   migrationStrategy: 'none' | 'eligible' | 'manual'
+ *   appointmentIds?: string[]   (apenas para migrationStrategy='manual')
+ */
+router.post('/:id/supersede', auth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'ID inválido' });
+    }
+
+    const { newGuide: newGuideData, replacementTrigger, replacementNotes, migrationStrategy, appointmentIds } = req.body;
+
+    if (!newGuideData) {
+      return res.status(400).json({ success: false, code: 'MISSING_NEW_GUIDE', message: 'Dados da nova guia são obrigatórios' });
+    }
+    if (!replacementTrigger) {
+      return res.status(400).json({ success: false, code: 'MISSING_TRIGGER', message: 'Motivo da substituição é obrigatório' });
+    }
+    if (!migrationStrategy) {
+      return res.status(400).json({ success: false, code: 'MISSING_STRATEGY', message: 'Estratégia de migração é obrigatória' });
+    }
+
+    // Herdar patientId, insurance e specialty da guia original (imutáveis)
+    const oldGuide = await InsuranceGuide.findById(id).lean();
+    if (!oldGuide) {
+      return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Guia não encontrada' });
+    }
+
+    const newGuidePayload = {
+      ...newGuideData,
+      patientId: oldGuide.patientId,
+      insurance: oldGuide.insurance,
+      specialty: oldGuide.specialty,
+    };
+
+    const result = await replaceInsuranceGuideService({
+      oldGuideId: id,
+      newGuideData: newGuidePayload,
+      migrationStrategy: migrationStrategy || 'eligible',
+      appointmentIds: appointmentIds || [],
+      replacementTrigger,
+      replacementNotes,
+      performedBy: req.user._id,
+    });
+
+    return res.status(201).json({
+      success: true,
+      newGuide: result.newGuide,
+      migrated: result.migrated,
+      planCloned: result.planCloned,
+      planGeneratedAppointmentsCount: result.planGeneratedAppointmentsCount,
+      planAppointmentsCanceledCount: result.planAppointmentsCanceledCount,
+    });
+
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'INTERNAL_ERROR',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PATCH /api/v2/insurance-guides/:id
+ * Edição restrita de metadados administrativos.
+ * Apenas campos da whitelist são aplicados — qualquer outro campo é ignorado silenciosamente.
+ */
+const PATCH_ALLOWED_FIELDS = ['number', 'expiresAt', 'notes', 'doctorId', 'replacementNotes',
+  'totalSessions', 'sessionValue', 'billingMode', 'issuedAt',
+  'evaluationAmount', 'generateEvaluationBilling'];
+
+router.patch('/:id', auth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'ID inválido' });
+    }
+
+    const allowed = PATCH_ALLOWED_FIELDS;
+
+    const update = {};
+    for (const field of allowed) {
+      if (field in req.body) update[field] = req.body[field];
+    }
+
+    if (!Object.keys(update).length) {
+      return res.status(400).json({ success: false, code: 'NO_FIELDS', message: 'Nenhum campo editável informado' });
+    }
+
+    const guide = await InsuranceGuide.findByIdAndUpdate(
+      id,
+      { $set: update },
+      { new: true, runValidators: true }
+    );
+
+    if (!guide) {
+      return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Guia não encontrada' });
+    }
+
+    return res.json({ success: true, guide });
+
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code || 'INTERNAL_ERROR',
+      message: error.message,
+    });
   }
 });
 

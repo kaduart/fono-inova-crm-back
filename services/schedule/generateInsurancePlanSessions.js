@@ -8,6 +8,7 @@ import Payment from '../../models/Payment.js';
 import Session from '../../models/Session.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
 import InsurancePlan from '../../models/InsurancePlan.js';
+import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildInsuranceSession } from '../../domain/session/sessionFactory.js';
 
@@ -50,8 +51,13 @@ export async function generateInsurancePlanSessions({
   const guide = await InsuranceGuide.findById(guideId).session(mongoSession).lean();
   if (!guide) throw new Error('GUIDE_NOT_FOUND');
 
+  const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+  if (!lifecycle.eligibility.canSchedule) {
+    const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
+    throw new Error(blockingAlert?.message || 'Guia não elegível para gerar sessões');
+  }
+
   const remaining = guide.totalSessions - guide.usedSessions;
-  if (remaining <= 0) throw new Error('GUIDE_EXHAUSTED');
 
   // Guia é a fonte de verdade do valor de sessão do convênio.
   // plan.sessionValue é apenas um espelho; guide.sessionValue prevalece.

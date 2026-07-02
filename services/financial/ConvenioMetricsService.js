@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import Session from '../../models/Session.js';
 import Package from '../../models/Package.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
+import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
 import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -197,12 +198,20 @@ class ConvenioMetricsService {
      * Busca guias ativas e calcula saldo
      */
     async _getGuiasAtivas() {
-        const guias = await InsuranceGuide.find({
-            status: 'active',
-            expiresAt: { $gte: new Date() }
+        const candidates = await InsuranceGuide.find({
+            status: { $in: ['active', 'linked'] }
         }).lean();
 
-        const totalSessoesRestantes = guias.reduce((sum, g) => {
+        const now = new Date();
+        const usableGuides = [];
+        for (const g of candidates) {
+            const lifecycle = await GuideLifecycleService.evaluate(g, now);
+            if (lifecycle.eligibility.canSchedule || lifecycle.eligibility.canBill) {
+                usableGuides.push(g);
+            }
+        }
+
+        const totalSessoesRestantes = usableGuides.reduce((sum, g) => {
             return sum + (g.totalSessions - g.usedSessions);
         }, 0);
 
@@ -210,7 +219,7 @@ class ConvenioMetricsService {
         const valorEstimado = totalSessoesRestantes * 180;
 
         return {
-            count: guias.length,
+            count: usableGuides.length,
             totalSessoesRestantes,
             valorEstimado
         };

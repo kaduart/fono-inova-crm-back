@@ -58,6 +58,15 @@ function translateMongooseError(error) {
 // READ SIDE (Síncrono - direto do DB)
 // ============================================
 
+// Helper: capacidade semanal real do médico = soma dos horários cadastrados em
+// weeklyAvailability (fonte da verdade da agenda). Cai para maxSlots/30 apenas
+// quando o médico ainda não tem agenda configurada.
+function computeWeeklyCapacity(doctor) {
+  const avail = doctor.weeklyAvailability || [];
+  const totalSlots = avail.reduce((sum, day) => sum + (day.times?.length || 0), 0);
+  return totalSlots > 0 ? totalSlots : (doctor.maxSlots || 30);
+}
+
 // Helper: calcula stats dos médicos
 async function enrichDoctorsWithStats(doctors) {
   if (!doctors.length) return [];
@@ -71,25 +80,53 @@ async function enrichDoctorsWithStats(doctors) {
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   endOfMonth.setHours(23, 59, 59, 999);
 
-  const [patientCounts, appointmentCounts] = await Promise.all([
+  // Semana atual (segunda a domingo) — maxSlots é capacidade SEMANAL, não mensal
+  const dayOfWeek = now.getDay();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
+
+  // Agendamentos cancelados não ocupam slot (invariante: cancelamento libera o slot) —
+  // nunca podem contar como ocupação/sessão realizada
+  const CANCELLED_STATUSES = ['canceled', 'force_cancelled', 'processing_cancel'];
+
+  const [patientCounts, appointmentCounts, weeklyAppointmentCounts] = await Promise.all([
     // Pacientes ÚNICOS atendidos por cada doctor (via appointments do mês)
     Appointment.aggregate([
       {
         $match: {
           doctor: { $in: objectIds, $exists: true, $ne: null },
-          date: { $gte: startOfMonth, $lte: endOfMonth }
+          date: { $gte: startOfMonth, $lte: endOfMonth },
+          operationalStatus: { $nin: CANCELLED_STATUSES }
         }
       },
       { $group: { _id: '$doctor', patients: { $addToSet: '$patient' } } },
       { $project: { _id: 1, count: { $size: '$patients' } } }
     ]),
 
-    // Appointments do MÊS por doctor
+    // Appointments do MÊS por doctor (exclui cancelados — não representam atendimento real)
     Appointment.aggregate([
       {
         $match: {
           doctor: { $in: objectIds, $exists: true, $ne: null },
-          date: { $gte: startOfMonth, $lte: endOfMonth }
+          date: { $gte: startOfMonth, $lte: endOfMonth },
+          operationalStatus: { $nin: CANCELLED_STATUSES }
+        }
+      },
+      { $group: { _id: '$doctor', count: { $sum: 1 } } }
+    ]),
+
+    // Appointments da SEMANA por doctor (base da ocupação, já que maxSlots é semanal;
+    // exclui cancelados pelo mesmo motivo)
+    Appointment.aggregate([
+      {
+        $match: {
+          doctor: { $in: objectIds, $exists: true, $ne: null },
+          date: { $gte: startOfWeek, $lte: endOfWeek },
+          operationalStatus: { $nin: CANCELLED_STATUSES }
         }
       },
       { $group: { _id: '$doctor', count: { $sum: 1 } } }
@@ -98,12 +135,14 @@ async function enrichDoctorsWithStats(doctors) {
 
   const patientMap = Object.fromEntries(patientCounts.map(p => [p._id.toString(), p.count]));
   const appointmentMap = Object.fromEntries(appointmentCounts.map(a => [a._id.toString(), a.count]));
+  const weeklyAppointmentMap = Object.fromEntries(weeklyAppointmentCounts.map(a => [a._id.toString(), a.count]));
 
   return doctors.map(d => {
     const dId = d._id.toString();
     const patients = patientMap[dId] || 0;
     const monthlySessions = appointmentMap[dId] || 0;
-    const maxSlots = d.maxSlots || 30;
+    const weeklySessions = weeklyAppointmentMap[dId] || 0;
+    const maxSlots = computeWeeklyCapacity(d);
     return {
       ...d,
       _id: dId,
@@ -111,7 +150,8 @@ async function enrichDoctorsWithStats(doctors) {
       maxSlots,
       patients,
       monthlySessions,
-      occupancy: Math.round((monthlySessions / maxSlots) * 100)
+      weeklySessions,
+      occupancy: Math.round((weeklySessions / maxSlots) * 100)
     };
   });
 }
@@ -170,10 +210,10 @@ router.get('/', flexibleAuth, async (req, res) => {
 router.get('/active', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: true })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
-    
+
     const enriched = await enrichDoctorsWithStats(doctors);
     return res.json(formatSuccess({ doctors: enriched }));
   } catch (error) {
@@ -187,10 +227,10 @@ router.get('/active', flexibleAuth, async (req, res) => {
 router.get('/inactive', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: false })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
-    
+
     const enriched = await enrichDoctorsWithStats(doctors);
     return res.json(formatSuccess({ doctors: enriched }));
   } catch (error) {
@@ -242,7 +282,7 @@ router.post('/', flexibleAuth, async (req, res) => {
   const correlationId = `doc_create_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
-    const { fullName, email, password, specialty, licenseNumber, phoneNumber, active } = req.body;
+    const { fullName, email, password, specialty, licenseNumber, phoneNumber, active, weeklyAvailability, commissionRules } = req.body;
 
     if (!fullName || !email || !specialty) {
       return res.status(400).json(formatError(400, 'Nome, e-mail e especialidade são obrigatórios'));
@@ -260,7 +300,9 @@ router.post('/', flexibleAuth, async (req, res) => {
       phoneNumber,
       active: active !== undefined ? active : true,
       role: 'doctor',
-      commissionRules: { rules: [] },
+      weeklyAvailability: weeklyAvailability || [],
+      // Preserva regras de comissão configuradas na tela antes do profissional existir no banco
+      commissionRules: { rules: commissionRules?.rules || [] },
       createdBy: req.user?.id
     });
 
@@ -437,7 +479,7 @@ router.get('/stats', flexibleAuth, async (req, res) => {
     if (status === 'inactive') query.active = false;
 
     const doctors = await Doctor.find(query)
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots deactivatedAt')
+      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
 
@@ -470,7 +512,8 @@ router.get('/stats', flexibleAuth, async (req, res) => {
       try {
         appointmentCounts[id] = await Appointment.countDocuments({
           doctor: id,
-          date: { $gte: startOfWeek, $lte: endOfWeek }
+          date: { $gte: startOfWeek, $lte: endOfWeek },
+          operationalStatus: { $nin: ['canceled', 'force_cancelled', 'processing_cancel'] }
         });
       } catch (e) {
         appointmentCounts[id] = 0;
@@ -481,7 +524,7 @@ router.get('/stats', flexibleAuth, async (req, res) => {
       const dId = d._id.toString();
       const patients = patientCounts[dId] || 0;
       const weeklySessions = appointmentCounts[dId] || 0;
-      const maxSlots = d.maxSlots || 30;
+      const maxSlots = computeWeeklyCapacity(d);
       const occupancy = Math.round((weeklySessions / maxSlots) * 100);
 
       return {

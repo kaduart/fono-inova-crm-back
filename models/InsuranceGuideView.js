@@ -9,6 +9,7 @@
  */
 
 import mongoose from 'mongoose';
+import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 
 const insuranceGuideViewSchema = new mongoose.Schema({
   // ID da guia original (write model)
@@ -134,65 +135,72 @@ insuranceGuideViewSchema.index(
 // ============================================
 
 /**
- * Busca guias válidas para agendamento
+ * Busca guias elegíveis para agendamento usando lifecycle.
  */
 insuranceGuideViewSchema.statics.findValid = async function(patientId, specialty, date = new Date()) {
-  return await this.find({
+  const candidates = await this.find({
     patientId,
     specialty: specialty.toLowerCase().trim(),
-    status: 'active',
-    expiresAt: { $gte: date },
-    $expr: { $lt: ['$usedSessions', '$totalSessions'] }
+    status: { $in: ['active', 'linked'] }
   })
-    .sort({ expiresAt: 1 }) // FIFO: primeira a vencer
+    .sort({ expiresAt: 1 })
     .lean();
+
+  for (const guide of candidates) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, date);
+    if (lifecycle.eligibility.canSchedule) {
+      return guide;
+    }
+  }
+
+  return null;
 };
 
 /**
- * Retorna saldo agregado de guias ativas
+ * Retorna saldo agregado de guias elegíveis segundo o lifecycle.
  */
 insuranceGuideViewSchema.statics.getBalance = async function(patientId, specialty = null) {
+  const now = new Date();
   const match = {
     patientId,
-    status: 'active',
-    expiresAt: { $gte: new Date() }
+    status: { $in: ['active', 'linked'] }
   };
 
   if (specialty) {
     match.specialty = specialty.toLowerCase().trim();
   }
 
-  const result = await this.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$totalSessions' },
-        used: { $sum: '$usedSessions' },
-        remaining: { $sum: '$remainingSessions' },
-        guides: { $push: '$$ROOT' }
-      }
-    }
-  ]);
+  const candidates = await this.find(match)
+    .sort({ expiresAt: 1 })
+    .lean();
 
-  if (result.length === 0) {
-    return { total: 0, used: 0, remaining: 0, guides: [] };
+  const usableGuides = [];
+  for (const guide of candidates) {
+    const lifecycle = await GuideLifecycleService.evaluate(guide, now);
+    if (lifecycle.eligibility.canSchedule || lifecycle.eligibility.canBill) {
+      usableGuides.push({ guide, lifecycle });
+    }
   }
 
+  const total = usableGuides.reduce((sum, { guide }) => sum + (guide.totalSessions || 0), 0);
+  const used = usableGuides.reduce((sum, { guide }) => sum + (guide.usedSessions || 0), 0);
+  const remaining = usableGuides.reduce((sum, { guide }) => sum + (guide.remainingSessions || 0), 0);
+
   return {
-    total: result[0].total,
-    used: result[0].used,
-    remaining: result[0].remaining,
-    guides: result[0].guides.map(g => ({
-      id: g._id,
-      guideId: g.guideId,
-      number: g.number,
-      specialty: g.specialty,
-      insurance: g.insurance,
-      total: g.totalSessions,
-      used: g.usedSessions,
-      remaining: g.remainingSessions,
-      expiresAt: g.expiresAt
+    total,
+    used,
+    remaining,
+    guides: usableGuides.map(({ guide, lifecycle }) => ({
+      id: guide._id,
+      guideId: guide.guideId,
+      number: guide.number,
+      specialty: guide.specialty,
+      insurance: guide.insurance,
+      total: guide.totalSessions,
+      used: guide.usedSessions,
+      remaining: guide.remainingSessions,
+      expiresAt: guide.expiresAt,
+      lifecycle
     }))
   };
 };

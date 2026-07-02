@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 import Convenio from '../../../models/Convenio.js';
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import InsuranceBatch from '../../../models/InsuranceBatch.js';
+import { GuideLifecycleService } from '../../../services/guideLifecycle/GuideLifecycleService.js';
 import Session from '../../../models/Session.js';
 
 // ============================================
@@ -36,11 +37,21 @@ export async function getConvenioSessionValue(convenioCode) {
  * Busca guias ativas para um paciente
  */
 export async function getActiveGuidesForPatient(patientId) {
-    return await InsuranceGuide.find({
+    const candidates = await InsuranceGuide.find({
         patientId,
-        status: { $in: ['active', 'partial'] },
-        expiresAt: { $gt: new Date() }
+        status: { $in: ['active', 'linked', 'partial'] }
     }).lean();
+
+    const now = new Date();
+    const usableGuides = [];
+    for (const guide of candidates) {
+        const lifecycle = await GuideLifecycleService.evaluate(guide, now);
+        if (lifecycle.eligibility.canSchedule || lifecycle.eligibility.canBill) {
+            usableGuides.push(guide);
+        }
+    }
+
+    return usableGuides;
 }
 
 /**

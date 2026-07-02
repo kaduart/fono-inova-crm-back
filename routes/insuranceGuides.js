@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
+import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 
 const router = express.Router();
 
@@ -310,14 +311,17 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
-    // Restrição: só edita se usedSessions === 0
-    if (guide.usedSessions > 0) {
+    // Restrição: só edita se lifecycle permitir
+    const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+    if (!lifecycle.eligibility.canEdit) {
       return res.status(400).json({
         success: false,
-        message: 'Não é possível editar guia já utilizada',
-        code: 'GUIDE_ALREADY_USED',
+        message: 'Não é possível editar guia já utilizada ou em estado bloqueado',
+        code: 'GUIDE_NOT_EDITABLE',
         details: {
-          usedSessions: guide.usedSessions
+          usedSessions: guide.usedSessions,
+          status: guide.status,
+          lifecycle
         }
       });
     }

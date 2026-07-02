@@ -12,7 +12,10 @@ export const FeatureFlags = {
   },
   
   COMPLETE: {
-    USE_V2: process.env.FF_COMPLETE_V2 === 'true',
+    // Fail-safe: env ausente/mal configurada cai no lado seguro (V2), não no V1 legado.
+    // Incidente 2026-07-02: FF_COMPLETE_V2 ausente em prod fez todo "completar sessão"
+    // rodar no fallback V1, que aceitava Payment 'paid' com amount 0.
+    USE_V2: process.env.FF_COMPLETE_V2 !== 'false',
     PERCENTAGE_V2: parseInt(process.env.FF_COMPLETE_PERCENTAGE || '0'),
   },
   
