@@ -474,11 +474,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
         };
 
         const updateData = {
-            operationalStatus: 'confirmed',
+            // operationalStatus é a fonte da verdade (models/Appointment.js:512-514) —
+            // tinha ficado 'confirmed' aqui, nunca virava 'completed' de fato.
+            operationalStatus: 'completed',
             clinicalStatus: 'completed',
             completedAt: new Date(),
             updatedAt: new Date(),
             visualFlag: 'ok',
+            _fromCompleteService: true,
             $push: { history: historyEntry }
         };
 
