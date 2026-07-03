@@ -554,23 +554,94 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     let lastError;
 
     while (retries < maxRetries) {
+      const mongoSession = await mongoose.startSession();
       try {
-        // Delete em sequência (não paralelo) para evitar conflitos
-        const pkgResult = await Package.findByIdAndDelete(pkgObjectId);
-        
+        await mongoSession.startTransaction();
+
+        // Busca o pacote ANTES de deletar (para ajustar PatientBalance)
+        const pkgResult = await Package.findById(pkgObjectId).session(mongoSession);
+
         if (!pkgResult) {
           logger.warn('[PackageV2] Package not found for deletion', { correlationId, packageId: id });
         }
 
-        // Só deleta relacionados se o package existia
         if (pkgResult) {
-          await Appointment.deleteMany({ package: pkgObjectId });
-          await Session.deleteMany({ package: pkgObjectId });
-          await Payment.deleteMany({ package: pkgObjectId });
+          // Coleta IDs de relacionados para ajuste do PatientBalance
+          const appointmentIds = (await Appointment.find({ package: pkgObjectId })
+            .select('_id')
+            .session(mongoSession)
+            .lean()).map(a => a._id.toString());
+          const sessionIds = (await Session.find({ package: pkgObjectId })
+            .select('_id')
+            .session(mongoSession)
+            .lean()).map(s => s._id.toString());
+
+          // 🏦 REVERTE transações do PatientBalance associadas ao pacote
+          const patientBalance = await PatientBalance.findOne({ patient: pkgResult.patient }).session(mongoSession);
+          if (patientBalance) {
+            const packageIdStr = pkgObjectId.toString();
+            let balanceChanged = false;
+
+            for (const tx of patientBalance.transactions) {
+              const txPackageId = tx.settledByPackageId?.toString?.();
+              const txAppointmentId = tx.appointmentId?.toString?.();
+              const txSessionId = tx.sessionId?.toString?.();
+
+              const belongsToPackage = txPackageId === packageIdStr;
+              const belongsToRelated = appointmentIds.includes(txAppointmentId) || sessionIds.includes(txSessionId);
+
+              if (!belongsToPackage && !belongsToRelated) continue;
+              if (tx.isDeleted) continue;
+
+              if (tx.type === 'credit') {
+                // Reverte crédito: aumenta o saldo devedor
+                patientBalance.currentBalance += tx.amount;
+                patientBalance.totalCredited = Math.max(0, (patientBalance.totalCredited || 0) - tx.amount);
+                tx.isDeleted = true;
+                tx.deletedAt = new Date();
+                tx.deleteReason = `Pacote ${packageIdStr} deletado`;
+                balanceChanged = true;
+              } else if (tx.type === 'debit' && tx.isPaid) {
+                // Reabre débito quitado pelo pacote
+                tx.isPaid = false;
+                tx.paidAmount = 0;
+                tx.settledByPackageId = null;
+                patientBalance.currentBalance += tx.amount;
+                balanceChanged = true;
+              } else if (tx.type === 'debit' && !tx.isPaid) {
+                // Débito não quitado associado ao pacote é removido (soft delete)
+                tx.isDeleted = true;
+                tx.deletedAt = new Date();
+                tx.deleteReason = `Pacote ${packageIdStr} deletado`;
+                patientBalance.currentBalance = Math.max(0, patientBalance.currentBalance - tx.amount);
+                patientBalance.totalDebited = Math.max(0, (patientBalance.totalDebited || 0) - tx.amount);
+                balanceChanged = true;
+              }
+            }
+
+            if (balanceChanged) {
+              patientBalance.lastTransactionAt = new Date();
+              await patientBalance.save({ session: mongoSession });
+              logger.info('[PackageV2] PatientBalance ajustado após deleção de pacote', {
+                correlationId,
+                packageId: id,
+                patientId: pkgResult.patient.toString(),
+                newBalance: patientBalance.currentBalance
+              });
+            }
+          }
+
+          // Deleta relacionados
+          await Appointment.deleteMany({ package: pkgObjectId }).session(mongoSession);
+          await Session.deleteMany({ package: pkgObjectId }).session(mongoSession);
+          await Payment.deleteMany({ package: pkgObjectId }).session(mongoSession);
+          await Package.deleteOne({ _id: pkgObjectId }).session(mongoSession);
         }
 
         // Remove a view pelo _id dela
-        await PackagesView.findByIdAndDelete(viewId);
+        await PackagesView.findByIdAndDelete(viewId).session(mongoSession);
+
+        await mongoSession.commitTransaction();
 
         const duration = Date.now() - startTime;
 
@@ -588,6 +659,7 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
         }, { duration: `${duration}ms`, correlationId }));
 
       } catch (retryError) {
+        await mongoSession.abortTransaction();
         lastError = retryError;
         
         // Se for write conflict, faz retry com backoff
@@ -607,6 +679,8 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
         
         // Outro erro, não faz retry
         throw retryError;
+      } finally {
+        await mongoSession.endSession();
       }
     }
 

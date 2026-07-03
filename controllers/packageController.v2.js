@@ -393,6 +393,73 @@ async function createPrepaidPayments(pkg, payments, mongoSession = null) {
   return await Payment.insertMany(paymentDocs, options);
 }
 
+/**
+ * Quita débitos pendentes do PatientBalance quando um pacote pré-pago é criado.
+ * O valor antecipado do pacote deve absorver o saldo devedor existente do paciente.
+ */
+async function settlePendingDebitsForPrepaidPackage(pkg, totalPaid, mongoSession) {
+  if (!totalPaid || totalPaid <= 0) return { settledAmount: 0, settledCount: 0 };
+
+  const patientBalance = await PatientBalance.findOne({ patient: pkg.patient }).session(mongoSession);
+  if (!patientBalance) return { settledAmount: 0, settledCount: 0 };
+
+  const pendingDebits = patientBalance.transactions.filter(
+    t => t.type === 'debit' && !t.isPaid && !t.isDeleted && !t.settledByPackageId
+  );
+
+  if (pendingDebits.length === 0) return { settledAmount: 0, settledCount: 0 };
+
+  let remainingCredit = totalPaid;
+  let settledAmount = 0;
+  const settledDebitIds = [];
+
+  for (const debit of pendingDebits) {
+    if (remainingCredit <= 0) break;
+    const amountToSettle = Math.min(debit.amount, remainingCredit);
+
+    debit.settledByPackageId = pkg._id;
+    debit.isPaid = true;
+    debit.paidAmount = amountToSettle;
+    settledAmount += amountToSettle;
+    remainingCredit -= amountToSettle;
+    settledDebitIds.push(debit._id);
+
+    // Se quitou parcialmente, ajusta o valor do débito e cria um novo débito residual
+    if (amountToSettle < debit.amount) {
+      const residualAmount = debit.amount - amountToSettle;
+      patientBalance.transactions.push({
+        type: 'debit',
+        amount: residualAmount,
+        description: `Saldo residual não quitado pelo pacote #${pkg._id.toString().slice(-6)}`,
+        sessionId: debit.sessionId,
+        appointmentId: debit.appointmentId,
+        specialty: debit.specialty,
+        registeredBy: null,
+        transactionDate: new Date()
+      });
+    }
+  }
+
+  if (settledAmount > 0) {
+    patientBalance.transactions.push({
+      type: 'credit',
+      amount: settledAmount,
+      description: `Quitação via pacote pré-pago #${pkg._id.toString().slice(-6)}`,
+      settledByPackageId: pkg._id,
+      registeredBy: null,
+      transactionDate: new Date()
+    });
+
+    patientBalance.currentBalance = Math.max(0, patientBalance.currentBalance - settledAmount);
+    patientBalance.totalCredited = (patientBalance.totalCredited || 0) + settledAmount;
+    patientBalance.lastTransactionAt = new Date();
+
+    await patientBalance.save({ session: mongoSession });
+  }
+
+  return { settledAmount, settledCount: settledDebitIds.length };
+}
+
 // ============================================================
 // 🎯 CONTROLLERS
 // ============================================================
@@ -1083,6 +1150,29 @@ export const createPackageV2 = async (req, res) => {
             }
           }
         }
+      }
+    }
+
+    // 🏦 PACOTE PRÉ-PAGO: quita automaticamente débitos pendentes do paciente
+    // O pagamento antecipado deve absorver o saldo devedor existente
+    if (model === 'prepaid' && payments.length > 0) {
+      const totalPrepaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      try {
+        const settleResult = await settlePendingDebitsForPrepaidPackage(pkg, totalPrepaid, mongoSession);
+        if (settleResult.settledAmount > 0) {
+          logger.info('[PackageV2] Débitos pendentes quitados via pacote pré-pago', {
+            correlationId,
+            packageId: pkg._id.toString(),
+            settledAmount: settleResult.settledAmount,
+            settledCount: settleResult.settledCount
+          });
+        }
+      } catch (settleError) {
+        logger.error('[PackageV2] Erro ao quitar débitos pendentes (não-fatal)', {
+          correlationId,
+          packageId: pkg._id.toString(),
+          error: settleError.message
+        });
       }
     }
 
