@@ -133,7 +133,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false 
         clinicalStatus: confirmedAbsence ? 'missed' : 'pending',
         paymentStatus: 'canceled',
         visualFlag: 'blocked',
-        canceledReason: reason,
+        cancelReason: reason,
         canceledAt: new Date(),
         canceledBy: user?._id,
         confirmedAbsence,
