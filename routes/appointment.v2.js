@@ -28,6 +28,7 @@ import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { FeatureFlags } from '../config/featureFlags.js';
 import { recordCompleteV1Fallback } from '../services/completeFallbackMetrics.js';
+import { logMetric } from '../utils/logMetric.js';
 
 /**
  * Normaliza método de pagamento do appointment para o schema Payment.
@@ -303,12 +304,26 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 router.patch('/:id/complete', auth, async (req, res) => {
     let session = null;
     const startTime = Date.now();
+    const requestId = req.id || req.headers['x-correlation-id'] || `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
         const { id } = req.params;
         const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
+        const userId = req.user?._id?.toString();
 
         console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
+
+        logMetric('appointment', 'complete_request_received', {
+            requestId,
+            appointmentId: id,
+            userId,
+            addToBalance,
+            balanceAmount,
+            path: req.path,
+            method: req.method,
+            userAgent: req.headers['user-agent'],
+            ip: req.ip
+        });
 
         // ============================================================
         // 🚀 V2 OFFICIAL PATH (feature flag)
@@ -340,10 +355,23 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 clearCashflowCache(apptDateStr);
             }
 
+            const durationMs = Date.now() - startTime;
             console.log(`[complete] ✅ Completo via serviço oficial`, {
                 appointmentId: id,
                 serviceResult: !!serviceResult.success,
-                durationMs: Date.now() - startTime
+                durationMs
+            });
+
+            logMetric('appointment', 'complete_request_success', {
+                requestId,
+                appointmentId: id,
+                userId,
+                durationMs,
+                serviceSuccess: !!serviceResult.success,
+                operationalStatus: populatedAppointment?.operationalStatus,
+                clinicalStatus: populatedAppointment?.clinicalStatus,
+                paymentStatus: populatedAppointment?.paymentStatus,
+                paymentId: populatedAppointment?.payment?._id?.toString?.() || populatedAppointment?.payment?.toString?.()
             });
 
             return res.json(populatedAppointment);
@@ -556,7 +584,19 @@ router.patch('/:id/complete', auth, async (req, res) => {
         if (session) {
             try { await session.abortTransaction(); } catch (e) { /* silenciar */ }
         }
+        const durationMs = Date.now() - startTime;
         console.error(`[complete] ❌ Erro:`, error);
+
+        logMetric('appointment', 'complete_request_error', {
+            requestId,
+            appointmentId: req.params?.id,
+            userId: req.user?._id?.toString(),
+            durationMs,
+            error: error.message,
+            stack: error.stack,
+            statusCode: error.statusCode || 500
+        });
+
         res.status(500).json({
             error: 'Erro interno no servidor',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined

@@ -1,35 +1,280 @@
 {
-                "_id": "6a341c1f0e0535d53e7c6cdc",
-                "number": "16306580",
-                "patientId": "69655746dcdf49e2c282800b",
-                "insurance": "unimed-anapolis",
-                "specialty": "terapia_ocupacional",
-                "totalSessions": 10,
-                "usedSessions": 6,
-                "remaining": 4,
-                "canceledCount": 1,
-                "scheduledCount": 3,
-                "completedCount": 5,
-                "status": "expired",
-                "expiresAt": "2026-06-28T00:00:00.000Z",
-                "sessionValue": 100,
-                "evaluationAmount": null,
-                "generateEvaluationBilling": true,
-                "evaluationSessionId": null,
-                "totalValue": 1000,
-                "doctor": {
-                    "_id": "6840aa2f928a20e92ab13be8",
-                    "fullName": "Luis Henrique"
-                },
-                "issuedAt": "2026-06-03T00:00:00.000Z",
-                "notes": null,
-                "createdAt": "2026-06-18T16:26:07.656Z"
-            },curl 'http://localhost:5000/api/v2/insurance-guides?patientId=69655746dcdf49e2c282800b' \
+    "success": true,
+    "data": {
+        "data": "2026-07-03",
+        "caixa": {
+            "total": 1790,
+            "pix": 690,
+            "dinheiro": 100,
+            "cartao": 1000,
+            "transferencia": 0,
+            "outros": 0,
+            "qtdPix": 2,
+            "qtdDinheiro": 1,
+            "qtdCartao": 1
+        },
+        "porTipo": {
+            "particular": 150,
+            "pacote": 1640,
+            "convenio": 0,
+            "liminar": 0
+        },
+        "porEspecialidade": {
+            "fonoaudiologia": 150,
+            "Outra": 1640
+        },
+        "despesas": {
+            "total": 0,
+            "porCategoria": {},
+            "quantidade": 0
+        },
+        "saldo": {
+            "bruto": 1790,
+            "liquido": 1790,
+            "despesaTotal": 0
+        },
+        "producao": {
+            "total": 460,
+            "aReceber": 0,
+            "producaoLiquidada": 310,
+            "convenioAReceber": 150,
+            "quantidadeAtendimentos": 3,
+            "ticketMedio": 153.33333333333334,
+            "taxaEficiencia": 67.4,
+            "porTipo": {
+                "particular": 0,
+                "pacote": 310,
+                "convenio": 150,
+                "liminar": 0
+            },
+            "porEspecialidade": [
+                {
+                    "nome": "fonoaudiologia",
+                    "total": 460,
+                    "quantidade": 3,
+                    "recebido": 460,
+                    "pendente": 0,
+                    "ticketMedio": "153.33"
+                }
+            ]
+        },
+        "pendentesCobranca": [],
+        "pacotesAtendidos": [
+            {
+                "id": "6a31afdedb64174c5e8f92e0",
+                "horario": "09:20",
+                "paciente": "Rodrigo Antônio Silva de Carvalho",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 160,
+                "statusPagamento": "Pago",
+                "paymentModel": "prepaid"
+            },
+            {
+                "id": "6a22fa12224ee942f6c35f01",
+                "horario": "10:00",
+                "paciente": "Ravi Francisco Moreira Andrade",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "professional": "Lorrany Siqueira Marques",
+                "valor": 150,
+                "statusPagamento": "Pago",
+                "paymentModel": "per_session"
+            }
+        ],
+        "conveniosAtendidos": [
+            {
+                "id": "6a47cd7f297dfad7bb4ed6f2",
+                "horario": "14:00",
+                "paciente": "Alencar Rafael Dos Santos Salgado Faria",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "professional": "Mikaelly da Silva Sousa",
+                "valor": 150,
+                "convenio": "convenio"
+            }
+        ],
+        "comparativos": {
+            "ontem": 1150,
+            "variacaoVsOntem": 55.7,
+            "mediaDiariaMes": 2340,
+            "vsMediaMes": -23.5,
+            "totalAcumuladoMes": 7020,
+            "projecaoMes": 70200,
+            "diasDecorridos": 3
+        },
+        "estatisticas": {
+            "quantidade": 3,
+            "quantidadeAtendimentos": 3,
+            "ticketMedio": 596.6666666666666,
+            "ontem": 1150
+        },
+        "transacoes": [
+            {
+                "id": "6a47c511a82914c40faef836",
+                "paciente": "Ravi Francisco Moreira Andrade",
+                "valor": 150,
+                "metodo": "Split",
+                "tipo": "Particular",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "profissional": "Lorrany Siqueira Marques",
+                "hora": "10:00",
+                "data": "03/07/2026",
+                "categoria": "recebido",
+                "observacao": "-",
+                "billingType": "particular",
+                "kind": "session_payment",
+                "package": true,
+                "packageId": "6a22fa10224ee942f6c35ef3",
+                "isPackageSale": false,
+                "isPrepago": false,
+                "appointmentStatus": "completed",
+                "paymentForms": [
+                    {
+                        "method": "dinheiro",
+                        "amount": 100,
+                        "_id": "6a480f88af414cb8dff66940"
+                    },
+                    {
+                        "method": "pix",
+                        "amount": 50,
+                        "_id": "6a480f88af414cb8dff66941"
+                    }
+                ]
+            },
+            {
+                "id": "6a47f16b297dfad7bb4ee83b",
+                "paciente": "Isadora Almeida",
+                "valor": 1000,
+                "metodo": "Cartão",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "Outra",
+                "profissional": "Lorrany Siqueira Marques",
+                "hora": "14:29",
+                "data": "03/07/2026",
+                "categoria": "recebido",
+                "observacao": "Pagamento do pacote",
+                "billingType": "particular",
+                "kind": "package_receipt",
+                "package": true,
+                "packageId": "6a47f167297dfad7bb4ee80d",
+                "isPackageSale": true,
+                "isPrepago": false,
+                "appointmentStatus": "-",
+                "paymentForms": []
+            },
+            {
+                "id": "6a480ccd314de78abe64c070",
+                "paciente": "Samuel roczniesk da Costa",
+                "valor": 640,
+                "metodo": "Pix",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "Outra",
+                "profissional": "Lorrany Siqueira Marques",
+                "hora": "16:26",
+                "data": "03/07/2026",
+                "categoria": "recebido",
+                "observacao": "Pagamento do pacote",
+                "billingType": "particular",
+                "kind": "package_receipt",
+                "package": true,
+                "packageId": "6a480cc9314de78abe64c047",
+                "isPackageSale": true,
+                "isPrepago": false,
+                "appointmentStatus": "-",
+                "paymentForms": []
+            }
+        ],
+        "transacoesProducao": [
+            {
+                "id": "6a47cd7f297dfad7bb4ed6f2",
+                "paciente": "Alencar Rafael Dos Santos Salgado Faria",
+                "valor": 150,
+                "metodo": "convenio",
+                "tipo": "Convênio",
+                "servico": "Sessão",
+                "especialidade": "fonoaudiologia",
+                "hora": "14:00",
+                "data": "03/07/2026",
+                "status": "completed",
+                "categoria": "convenio",
+                "professional": "Mikaelly da Silva Sousa",
+                "paymentModel": null,
+                "paymentForms": []
+            },
+            {
+                "id": "6a31afdedb64174c5e8f92e0",
+                "paciente": "Rodrigo Antônio Silva de Carvalho",
+                "valor": 160,
+                "metodo": "package_prepaid",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "09:20",
+                "data": "03/07/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": "prepaid",
+                "paymentForms": []
+            },
+            {
+                "id": "6a22fa12224ee942f6c35f01",
+                "paciente": "Ravi Francisco Moreira Andrade",
+                "valor": 150,
+                "metodo": "dinheiro",
+                "tipo": "Pacote",
+                "servico": "Sessão de Pacote",
+                "especialidade": "fonoaudiologia",
+                "hora": "10:00",
+                "data": "03/07/2026",
+                "status": "completed",
+                "categoria": "recebido",
+                "professional": "Lorrany Siqueira Marques",
+                "paymentModel": "per_session",
+                "paymentForms": [
+                    {
+                        "method": "dinheiro",
+                        "amount": 100,
+                        "_id": "6a480f88af414cb8dff66940"
+                    },
+                    {
+                        "method": "pix",
+                        "amount": 50,
+                        "_id": "6a480f88af414cb8dff66941"
+                    }
+                ]
+            }
+        ],
+        "transacoesOntem": [
+            {
+                "hora": "11:20",
+                "valor": 140
+            },
+            {
+                "hora": "00:00",
+                "valor": 640
+            },
+            {
+                "hora": "17:20",
+                "valor": 190
+            },
+            {
+                "hora": "15:20",
+                "valor": 180
+            }
+        ]
+    }
+}curl 'http://localhost:5000/api/v2/cashflow?date=2026-07-03' \
   -H 'Accept: application/json, text/plain, */*' \
   -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4MjkzNzk0MywiZXhwIjoxNzgyOTQxNTQzfQ.xoaM2vGVeb6P_nq0kXsxlpclKRO_v7KqflANnoefAFg' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4MzEwNjE0NSwiZXhwIjoxNzgzMTA5NzQ1fQ.bSvTM2E1yx3ByfW2wUZm49ns4UMQ-JaIw00mBucjBVU' \
   -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"139d-fxsEgGkpyFBgqAx58ShieAa2vFs"' \
+  -H 'If-None-Match: W/"12f2-UyX1DSGh+/NTJ8B3HpnrvU46DAM"' \
   -H 'Origin: http://localhost:5173' \
   -H 'Referer: http://localhost:5173/' \
   -H 'Sec-Fetch-Dest: empty' \
@@ -39,4 +284,4 @@
   -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
   -H 'sec-ch-ua-mobile: ?0' \
   -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1782939995730_hok4k7nek' vmaos la os pacotes do pacitne nicolas sao antigos e eestao desafados as infos pacotes etc por exemplo pega o pacote da isabela da unemd anapolis quer atendemtno hoje ela ta  com as infos de appoimtnet paymntr e sessao atuzlaidas essas sessoes precissam serem ajustadas no pacote do nicolas luccza
+  -H 'x-correlation-id: front_1783108162536_1z9vskd4k'
