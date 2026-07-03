@@ -28,6 +28,7 @@ import Appointment from '../models/Appointment.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
+import { clearCashflowCache } from './cashflow.v2.js';
 
 const router = express.Router();
 
@@ -1045,6 +1046,18 @@ router.patch('/:id', auth, async (req, res) => {
 
         // Commit antes de side-effects (evento + populate de retorno)
         await mongoSession.commitTransaction();
+
+        // Invalida cache do caixa: dia antigo (onde o payment estava cacheado antes
+        // da edição) e dia novo (pra onde ele foi movido), se amount/financialDate mudou.
+        // Sem isso, a tela de Caixa & Fluxo continua servindo dado velho até o cache
+        // expirar sozinho (bug confirmado 2026-07-03: edição de financialDate não saía
+        // do dia antigo no /api/v2/cashflow).
+        if (amount !== undefined || financialDateBody !== undefined) {
+            const oldDate = payment.financialDate || payment.paymentDate || payment.createdAt;
+            if (oldDate) clearCashflowCache(moment.tz(oldDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+            const newDate = updateData.financialDate;
+            if (newDate) clearCashflowCache(moment.tz(newDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+        }
 
         // 5a. Sync appointment.paymentForms quando payment/split/data mudou (side-effect)
         if (splitMethods !== undefined || amount !== undefined || paymentMethod !== undefined || financialDateBody !== undefined) {
