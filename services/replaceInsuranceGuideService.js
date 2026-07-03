@@ -7,7 +7,6 @@ import Payment from '../models/Payment.js';
 import { recordAudit } from './auditLogService.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 import { generateInsurancePlanSessions } from './schedule/generateInsurancePlanSessions.js';
-import { executeWithSession as bulkCancelAppointments } from './appointment/commands/bulkCancelAppointmentsCommand.js';
 
 // Regra de negócio: appointment ainda depende da guia (não encerrado nem faturado)
 function isAppointmentGuideReassignable(appointment) {
@@ -131,13 +130,26 @@ export async function replaceInsuranceGuideService({
       }).session(mongoSession).select('_id').lean();
 
       if (planAppointmentsToCancel.length > 0) {
-        const cancelResult = await bulkCancelAppointments(
-          planAppointmentsToCancel.map(a => a._id),
-          { reason: 'guide_renewal_plan_reset' },
-          { _id: performedBy },
-          mongoSession
+        // 'suspended', não 'canceled': isso não é falta/desistência do paciente, é
+        // reorganização interna (guia trocada). Marcar como cancelado poluía a agenda
+        // do dia e o caixa com uma falsa impressão de alta taxa de cancelamento.
+        const suspendResult = await Appointment.updateMany(
+          { _id: { $in: planAppointmentsToCancel.map(a => a._id) } },
+          {
+            $set: { operationalStatus: 'suspended', updatedAt: new Date() },
+            $push: {
+              history: {
+                action: 'suspenso_troca_guia',
+                newStatus: 'suspended',
+                changedBy: performedBy,
+                timestamp: new Date(),
+                context: 'guide_renewal_plan_reset',
+              },
+            },
+          },
+          { session: mongoSession }
         );
-        planAppointmentsCanceledCount = cancelResult.canceled;
+        planAppointmentsCanceledCount = suspendResult.modifiedCount || 0;
       }
     }
 

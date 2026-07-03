@@ -466,6 +466,13 @@ router.get('/', flexibleAuth, async (req, res) => {
             filter.doctor = new mongoose.Types.ObjectId(doctorId);
         }
 
+        // 'suspended' = agendamento pausado por troca de guia de convênio
+        // (replaceInsuranceGuideService) — não é falta/cancelamento do paciente,
+        // não deve aparecer na agenda do dia nem no cashflow. Filtro de status
+        // explícito abaixo já não inclui 'suspended' em nenhum caso, então só
+        // precisa do default aqui pra quando nenhum status é pedido.
+        filter.operationalStatus = { $ne: 'suspended' };
+
         if (status && status !== 'all') {
             if (status === 'Confirmado') {
                 filter.operationalStatus = { $in: ['confirmed', 'paid'] };

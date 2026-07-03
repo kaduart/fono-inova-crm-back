@@ -85,6 +85,11 @@ const appointmentSchema = new mongoose.Schema({
       'confirmed',    // Confirmado pelo profissional
       'pending',
       'canceled',
+      // 'suspended' = agendamento do plano antigo pausado por troca/renovação de guia
+      // de convênio (replaceInsuranceGuideService) — diferente de 'canceled': não é
+      // falta/desistência do paciente, é reorganização interna. Não deve contar como
+      // cancelamento nas telas de agenda/caixa.
+      'suspended',
       'paid',
       'missed',
       'completed',
