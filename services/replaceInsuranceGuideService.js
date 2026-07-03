@@ -3,6 +3,7 @@ import InsuranceGuide from '../models/InsuranceGuide.js';
 import InsurancePlan from '../models/InsurancePlan.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
+import Payment from '../models/Payment.js';
 import { recordAudit } from './auditLogService.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 import { generateInsurancePlanSessions } from './schedule/generateInsurancePlanSessions.js';
@@ -122,7 +123,10 @@ export async function replaceInsuranceGuideService({
       const planAppointmentsToCancel = await Appointment.find({
         _id: { $in: Array.from(oldPlanAppointmentIds).map(id => new mongoose.Types.ObjectId(id)) },
         insuranceGuide: oldGuide._id,
-        operationalStatus: { $in: ['scheduled', 'pre_agendado'] },
+        // 'confirmed' faltava aqui — agendamento já confirmado do plano antigo não era
+        // cancelado nem migrado (fora dos dois filtros), ficando duplicado quando o
+        // plano novo gerava sessão pro mesmo horário recorrente.
+        operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
         date: { $gte: todayStr }
       }).session(mongoSession).select('_id').lean();
 
@@ -165,6 +169,15 @@ export async function replaceInsuranceGuideService({
           sessionsMigratedCount++;
         }
       }
+
+      // 7. Migrar Payment.insuranceGuide vinculado ao appointment (Trinca:
+      // Appointment+Session+Payment devem apontar pra mesma guia). Sem isso,
+      // faturamento/auditoria por guia resolvia pra guia superseded (morta).
+      await Payment.updateMany(
+        { appointment: appt._id, insuranceGuide: oldGuide._id },
+        { $set: { insuranceGuide: newGuide._id } },
+        { session: mongoSession }
+      );
     }
 
     // 7. Copiar plano terapêutico da guia antiga para a nova (se existir)

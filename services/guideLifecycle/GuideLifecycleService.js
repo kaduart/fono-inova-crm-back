@@ -61,6 +61,11 @@ export class GuideLifecycleService {
     const isCancelled = status === 'cancelled';
     const isExhausted = status === 'exhausted';
     const isActive = status === 'active';
+    // 'linked' = guia já convertida/vinculada a um pacote, mas ainda operável.
+    // Todo o resto do domínio (InsuranceGuide.findValid, ConvenioMetricsService,
+    // autoLinkOrphanSessions) já consulta status: { $in: ['active', 'linked'] } —
+    // sem isso aqui, canOperate rejeitava silenciosamente toda guia 'linked'.
+    const isOperableStatus = isActive || status === 'linked';
 
     const expired = strategyResult.expired || isExhausted;
 
@@ -73,7 +78,7 @@ export class GuideLifecycleService {
 
     const hasBlockingAlert = alerts.some(a => a.severity === 'error');
 
-    const canOperate = isActive && !isSuperseded && !isCancelled;
+    const canOperate = isOperableStatus && !isSuperseded && !isCancelled;
 
     return {
       state: {

@@ -85,6 +85,12 @@ export const ConvenioHandler = {
             throw err;
         }
 
+        // Sincroniza Appointment.insuranceGuide com a guia efetivamente usada.
+        // Sem isso, quando o fallback findValid() resolve uma guia diferente da
+        // salva no appointment, só Session/Payment ficam com a guia certa e o
+        // Appointment continua apontando pra guia antiga (Trinca quebrada).
+        appointmentUpdate.$set.insuranceGuide = guide._id;
+
         // 2. Consumir sessão da guia (dentro da transação)
         // Idempotência anti-double-debit: verifica estado atual da session no banco
         // antes de debitar — protege contra retry e complete duplicado.
