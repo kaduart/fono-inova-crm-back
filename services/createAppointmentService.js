@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import crypto from 'crypto';
 import Appointment from '../models/Appointment.js';
+import InsuranceGuide from '../models/InsuranceGuide.js';
 
 /**
  * Create Appointment Service
@@ -57,6 +58,23 @@ export class CreateAppointmentService {
             ? 'continuous_treatment'
             : await this.classifyJourney(patientId, specialty, session);
 
+        // Enriquece com dados da guia para que o appointment já nasça completo
+        // (sem isso, insuranceProvider/insuranceValue ficam vazios e o modal de confirmação
+        // não consegue pré-preencher convênio/valor tabela)
+        let guideFields = {};
+        if (insuranceGuideId) {
+            const guide = await InsuranceGuide.findById(insuranceGuideId)
+                .select('insurance sessionValue')
+                .session(session)
+                .lean();
+            if (guide) {
+                guideFields = {
+                    insuranceProvider: guide.insurance,
+                    insuranceValue: guide.sessionValue ?? 0,
+                };
+            }
+        }
+
         // 2. Cria agendamento (status: pending)
         const appointment = new this.Appointment({
             patient: patientId,
@@ -78,7 +96,8 @@ export class CreateAppointmentService {
             paymentMethod,
             billingType: insuranceGuideId ? 'convenio' : 'particular',
             insuranceGuide: insuranceGuideId,
-            
+            ...guideFields,
+
             // Metadados
             notes,
             correlationId,

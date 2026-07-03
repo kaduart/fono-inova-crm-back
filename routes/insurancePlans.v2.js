@@ -233,6 +233,14 @@ router.post('/', auth, async (req, res) => {
       message = 'Esta guia não tem mais sessões disponíveis.';
       statusCode = 400;
       errorCode = 'GUIDE_EXHAUSTED';
+    } else if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
+      const conflict = error.conflict || {};
+      const prefix = conflict.type === 'doctor'
+        ? 'Conflito de agenda: o profissional já possui um compromisso'
+        : 'Conflito de agenda: o paciente já possui um compromisso';
+      message = `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informado'}. Escolha outro horário.`;
+      statusCode = 409;
+      errorCode = 'APPOINTMENT_SLOT_CONFLICT';
     } else if (error.message?.includes('ValidationError')) {
       message = 'Dados inválidos. Verifique os campos preenchidos e tente novamente.';
       statusCode = 400;

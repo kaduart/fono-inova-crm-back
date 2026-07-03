@@ -18,6 +18,101 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import PatientBalance from '../models/PatientBalance.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
+
+function normalizeTimeHHmm(value) {
+    if (!value) return null;
+    const t = String(value).trim();
+    const m = t.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const hh = String(m[1]).padStart(2, '0');
+    const mm = m[2];
+    const h = Number(hh);
+    const mi = Number(mm);
+    if (Number.isNaN(h) || Number.isNaN(mi) || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+    return `${hh}:${mm}`;
+}
+
+function timeToMinutes(timeStr) {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+}
+
+function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
+    return aStart < bEnd && aEnd > bStart;
+}
+
+function buildDayRange(dateStr) {
+    const start = new Date(`${dateStr}T00:00:00.000Z`);
+    const end = new Date(`${dateStr}T23:59:59.999Z`);
+    return { $gte: start, $lt: end };
+}
+
+/**
+ * Verifica conflitos de horário para criação de pacote.
+ * Lança erro se houver sobreposição com appointments/sessões existentes do médico ou paciente.
+ */
+async function checkPackageSlotConflicts({ sessionsToCreate, duration = 40, mongoSession }) {
+    for (const s of sessionsToCreate) {
+        const dateStr = new Date(s.date).toISOString().split('T')[0];
+        const timeHHmm = normalizeTimeHHmm(s.time);
+        const newStart = timeToMinutes(timeHHmm);
+        const newEnd = newStart + duration;
+        const dayRange = buildDayRange(dateStr);
+
+        const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all([
+            Appointment.find({
+                doctor: s.doctor,
+                date: dayRange,
+                operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+            }).session(mongoSession).select('time duration patient operationalStatus _id').populate('patient', 'fullName').lean(),
+            Appointment.find({
+                patient: s.patient,
+                date: dayRange,
+                operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+            }).session(mongoSession).select('time duration doctor operationalStatus _id').populate('doctor', 'fullName').lean(),
+            Session.find({
+                doctor: s.doctor,
+                date: dayRange,
+                status: { $nin: ['canceled', 'cancelado', 'cancelada'] }
+            }).session(mongoSession).select('time duration patient status _id').populate('patient', 'fullName').lean(),
+            Session.find({
+                patient: s.patient,
+                date: dayRange,
+                status: { $nin: ['canceled', 'cancelado', 'cancelada'] }
+            }).session(mongoSession).select('time duration doctor status _id').populate('doctor', 'fullName').lean()
+        ]);
+
+        const allDoctorSlots = [...doctorAppointments, ...doctorSessions];
+        const allPatientSlots = [...patientAppointments, ...patientSessions];
+
+        for (const appt of allDoctorSlots) {
+            const apptTime = normalizeTimeHHmm(appt.time);
+            if (!apptTime) continue;
+            const apptStart = timeToMinutes(apptTime);
+            const apptEnd = apptStart + (appt.duration || duration);
+            if (intervalsOverlap(newStart, newEnd, apptStart, apptEnd)) {
+                throw new Error(
+                    `Conflito de agenda: o profissional já possui um compromisso em ${moment(s.date).format('DD/MM/YYYY')} às ${apptTime}. ` +
+                    `Escolha outro horário.`
+                );
+            }
+        }
+
+        for (const appt of allPatientSlots) {
+            const apptTime = normalizeTimeHHmm(appt.time);
+            if (!apptTime) continue;
+            const apptStart = timeToMinutes(apptTime);
+            const apptEnd = apptStart + (appt.duration || duration);
+            if (intervalsOverlap(newStart, newEnd, apptStart, apptEnd)) {
+                throw new Error(
+                    `Conflito de agenda: o paciente já possui um compromisso em ${moment(s.date).format('DD/MM/YYYY')} às ${apptTime} ` +
+                    `com ${appt.doctor?.fullName || 'outro profissional'}. Escolha outro horário.`
+                );
+            }
+        }
+    }
+}
 
 /**
  * 🛡️ Valida se schedule começa antes do débito mais antigo
@@ -575,29 +670,14 @@ export const packageOperations = {
                 });
             }
 
-/* 
-
             // ==========================================================
-            // 🚫 5.1️⃣ VALIDAÇÃO DE CONFLITOS COM SESSÕES EXISTENTES
+            // 🚫 5.1️⃣ VALIDAÇÃO DE CONFLITOS COM AGENDAMENTOS EXISTENTES
             // ==========================================================
-            for (const s of sessionsToCreate) {
-                const conflict = await Session.findOne({
-                    date: s.date,
-                    time: s.time,
-                    doctor: s.doctor,
-                    patient: s.patient,
-                    specialty: s.specialty,
-                    status: { $ne: 'canceled' } // ignora canceladas
-                }).lean();
-
-                if (conflict) {
-                    throw new Error(
-                        `Conflito detectado: o paciente já possui uma sessão de ${s.specialty} com este profissional ` +
-                        `no dia ${moment(s.date).format('DD/MM/YYYY')} às ${s.time}.`
-                    );
-                }
-            } */
-
+            await checkPackageSlotConflicts({
+                sessionsToCreate,
+                duration: 40,
+                mongoSession
+            });
 
             const insertedSessions = await Session.insertMany(sessionsToCreate, { session: mongoSession });
 
@@ -985,7 +1065,7 @@ export const packageOperations = {
                 });
             }
 
-            if (error.message.includes('Conflito detectado')) {
+            if (error.message.includes('Conflito detectado') || error.message.includes('Conflito de agenda')) {
                 return res.status(409).json({
                     success: false,
                     message: error.message,

@@ -11,11 +11,114 @@ import InsurancePlan from '../../models/InsurancePlan.js';
 import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildInsuranceSession } from '../../domain/session/sessionFactory.js';
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../../constants/appointmentStatus.js';
 
 function addDays(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
+}
+
+function normalizeTimeHHmm(value) {
+  if (!value) return null;
+  const t = String(value).trim();
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = String(m[1]).padStart(2, '0');
+  const mm = m[2];
+  const h = Number(hh);
+  const mi = Number(mm);
+  if (Number.isNaN(h) || Number.isNaN(mi) || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  return `${hh}:${mm}`;
+}
+
+function timeToMinutes(timeStr) {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+function buildDayRange(dateStr) {
+  const start = new Date(`${dateStr}T00:00:00.000Z`);
+  const end = new Date(`${dateStr}T23:59:59.999Z`);
+  return { $gte: start, $lt: end };
+}
+
+/**
+ * Verifica conflitos de horário para os slots gerados.
+ * Lança erro se houver sobreposição com agendamentos existentes do médico ou do paciente.
+ */
+async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession }) {
+  if (!slots.length) return;
+
+  const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
+  const patientObjectId = patientId ? new mongoose.Types.ObjectId(patientId) : null;
+
+  for (const slot of slots) {
+    const dateStr = slot.dateStr;
+    const timeHHmm = normalizeTimeHHmm(slot.time);
+    const newStart = timeToMinutes(timeHHmm);
+    const newEnd = newStart + duration;
+    const dayRange = buildDayRange(dateStr);
+
+    const [doctorAppointments, patientAppointments] = await Promise.all([
+      Appointment.find({
+        doctor: doctorObjectId,
+        date: dayRange,
+        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+      }).session(mongoSession).select('time duration patient operationalStatus _id').populate('patient', 'fullName').lean(),
+      patientObjectId
+        ? Appointment.find({
+            patient: patientObjectId,
+            date: dayRange,
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+          }).session(mongoSession).select('time duration doctor operationalStatus _id').populate('doctor', 'fullName').lean()
+        : Promise.resolve([])
+    ]);
+
+    for (const appt of doctorAppointments) {
+      const apptTime = normalizeTimeHHmm(appt.time);
+      if (!apptTime) continue;
+      const apptStart = timeToMinutes(apptTime);
+      const apptEnd = apptStart + (appt.duration || duration);
+      if (intervalsOverlap(newStart, newEnd, apptStart, apptEnd)) {
+        const error = new Error(`Conflito de agenda: o profissional ${appt.doctor?.fullName || ''} já possui um compromisso em ${dateStr} às ${apptTime}`);
+        error.code = 'APPOINTMENT_SLOT_CONFLICT';
+        error.statusCode = 409;
+        error.conflict = {
+          type: 'doctor',
+          date: dateStr,
+          time: apptTime,
+          existingAppointmentId: appt._id,
+          patientName: appt.patient?.fullName || 'Nome não disponível'
+        };
+        throw error;
+      }
+    }
+
+    for (const appt of patientAppointments) {
+      const apptTime = normalizeTimeHHmm(appt.time);
+      if (!apptTime) continue;
+      const apptStart = timeToMinutes(apptTime);
+      const apptEnd = apptStart + (appt.duration || duration);
+      if (intervalsOverlap(newStart, newEnd, apptStart, apptEnd)) {
+        const error = new Error(`Conflito de agenda: o paciente já possui um compromisso em ${dateStr} às ${apptTime} com ${appt.doctor?.fullName || 'outro profissional'}`);
+        error.code = 'APPOINTMENT_SLOT_CONFLICT';
+        error.statusCode = 409;
+        error.conflict = {
+          type: 'patient',
+          date: dateStr,
+          time: apptTime,
+          existingAppointmentId: appt._id,
+          doctorName: appt.doctor?.fullName || 'Nome não disponível'
+        };
+        throw error;
+      }
+    }
+  }
 }
 
 /** Retorna o domingo da semana da data fornecida (00:00:00) */
@@ -121,7 +224,16 @@ export async function generateInsurancePlanSessions({
     return { appointments: [], count: 0 };
   }
 
-  // ── 5. bulkWrite upsert para appointments ──────────────────────
+  // ── 5. Verifica conflitos de horário (médico + paciente) ───────
+  await checkSlotConflicts({
+    slots,
+    doctorId: plan.doctor,
+    patientId: plan.patient,
+    duration: plan.duration || 40,
+    mongoSession
+  });
+
+  // ── 6. bulkWrite upsert para appointments ──────────────────────
   const bulkOps = slots.map(slot => ({
     updateOne: {
       filter: {
