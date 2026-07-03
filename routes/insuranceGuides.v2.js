@@ -188,7 +188,7 @@ router.post('/', auth, async (req, res) => {
           status: 'pending',
           financialDate: null,
           paymentDate: new Date(evalDateStr),
-          paymentMethod: 'other',
+          paymentMethod: 'convenio',
           insurance: {
             provider: guide.insurance,
             status: 'pending_billing',
@@ -564,7 +564,7 @@ router.put('/:id', auth, async (req, res) => {
           status: 'pending',
           financialDate: null,
           paymentDate: new Date(evalDateStr),
-          paymentMethod: 'other',
+          paymentMethod: 'convenio',
           insurance: {
             provider: guide.insurance,
             status: 'pending_billing',

@@ -114,6 +114,7 @@ export function buildInsuranceSession(appointment, options = {}) {
         status: options.status || 'scheduled',
         isPaid: false,
         paymentStatus: 'pending_receipt',
+        paymentMethod: 'convenio',
         paymentOrigin: 'convenio',
         visualFlag: 'pending',
         ...options

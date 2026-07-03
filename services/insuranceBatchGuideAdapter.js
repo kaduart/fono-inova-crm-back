@@ -17,7 +17,7 @@ import InsuranceGuide from '../models/InsuranceGuide.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import { createContextLogger } from '../utils/logger.js';
-import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
+
 
 const logger = createContextLogger('InsuranceBatchGuideAdapter');
 
@@ -271,17 +271,11 @@ export async function listGuidesPendingBilling(filters = {}) {
     .sort({ createdAt: -1 })
     .lean();
 
-  const now = new Date();
-  const eligibleGuides = [];
-  for (const guide of allGuides) {
-    const lifecycle = await GuideLifecycleService.evaluate(guide, now);
-    if (lifecycle.eligibility.canBill) {
-      eligibleGuides.push(guide);
-    }
-  }
-
-  const total = eligibleGuides.length;
-  const guides = eligibleGuides.slice((page - 1) * limit, page * limit);
+  // Nota: uma guia pode estar superseded/cancelled/expired e ainda possuir sessões
+  // already completed pendentes de faturamento. O faturamento deve considerar essas
+  // sessões, não o lifecycle de elegibilidade para novas sessões.
+  const total = allGuides.length;
+  const guides = allGuides.slice((page - 1) * limit, page * limit);
 
   const pendingByGuide = new Map(guidesWithPending.map(g => [g._id.toString(), g]));
 

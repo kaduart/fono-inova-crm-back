@@ -204,7 +204,7 @@ export async function generateInsurancePlanSessions({
     status: 'pending',
     financialDate: null,
     paymentDate: new Date(),
-    paymentMethod: 'other', // 'convenio' não é enum válido no Payment
+    paymentMethod: 'convenio',
     insurance: {
       provider: guide.insurance,
       status: 'pending_billing',
