@@ -21,6 +21,7 @@ import Patient from '../models/Patient.js';
 import Lead from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import FinanceWriteGuard from './financialGuard/FinanceWriteGuard.js';
+import { resolveVisualFlag } from './completeSession/shared/resolveVisualFlag.js';
 import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
 import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
@@ -567,6 +568,11 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         if (sessionId && sessionUpdate) {
             FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, sessionUpdate.isPaid ?? false, { reason: 'mirror_from_session' });
             FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, sessionUpdate.paymentStatus ?? 'unknown', { reason: 'mirror_from_session' });
+
+            // 🎨 Sincroniza visualFlag com estado financeiro real (UI/cashflow dependem)
+            // Regressão 2026-07-03: sem isso, appointment completado como 'paid' aparecia 'pending' no cashflow.
+            appointmentUpdate.$set.visualFlag = resolveVisualFlag(sessionUpdate, isBalanceOrigin);
+
             const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
             const rawMethod = ctx.splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod;
             appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
@@ -601,6 +607,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const isPaid = billingType === 'liminar';
             FinanceWriteGuard.setAppointmentPaid(appointmentUpdate.$set, isPaid, { reason: 'fallback_no_session' });
             FinanceWriteGuard.setAppointmentPaymentStatus(appointmentUpdate.$set, isPaid ? 'paid' : 'pending', { reason: 'fallback_no_session' });
+            appointmentUpdate.$set.visualFlag = isPaid ? 'ok' : 'pending';
             appointmentUpdate.$set.paymentMethod = billingType === 'liminar' ? 'liminar_credit' :
                                                    billingType === 'convenio' ? 'convenio' :
                                                    packageId ? 'package_prepaid' : 'cash';
