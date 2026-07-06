@@ -20,6 +20,7 @@ import { startLeadRecoveryWorker } from './leadRecoveryWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
 import { startDailyClosingWorker } from './dailyClosingWorker.js';
 import { startEvolutionWorker } from './evolutionWorker.js';
+import { startCommissionGenerationWorker } from './commissionGenerationWorker.js';
 import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
 import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
 
@@ -96,6 +97,7 @@ const GROUPS = {
     if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
     if (isEnabled('ENABLE_BILLING_CONSUMER')) workers.push(startBillingConsumerWorker());
     if (isEnabled('ENABLE_BILLING_INSURANCE')) workers.push(startInsuranceOrchestratorWorker());
+    if (isEnabled('ENABLE_BILLING_COMMISSION_GENERATION', true)) workers.push(startCommissionGenerationWorker());
 
     console.log('[Registry] billing ok');
   },

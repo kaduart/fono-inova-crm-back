@@ -10,6 +10,9 @@ import { calculateCommissionBatch } from './commissionRule.service.js';
 // Cache: 60s por (doctorId, startDate, endDate) — evita N×2 queries em calculateProfissionais
 const _commCache = new Map();
 const COMM_TTL = 60_000;
+
+// 🔒 Lock em memória para evitar geração concorrente de comissões
+let commissionGenerationLock = false;
 function _commCacheGet(key) {
     const entry = _commCache.get(key);
     if (entry && Date.now() - entry.ts < COMM_TTL) return entry.data;
@@ -98,6 +101,11 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
  * Gera despesas de comissão para todos os profissionais ativos
  */
 export const generateMonthlyCommissions = async (month, year) => {
+  if (commissionGenerationLock) {
+    throw new Error('GENERATION_ALREADY_IN_PROGRESS');
+  }
+
+  commissionGenerationLock = true;
   const session = await mongoose.startSession();
 
   try {
@@ -209,6 +217,7 @@ export const generateMonthlyCommissions = async (month, year) => {
     throw error;
   } finally {
     session.endSession();
+    commissionGenerationLock = false;
   }
 };
 

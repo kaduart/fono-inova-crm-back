@@ -312,11 +312,18 @@ export async function listGuidesPendingBilling(filters = {}) {
     const sessions = sessionsByGuide.get(guide._id.toString()) || [];
     const billingMode = guide.billingMode || 'per_month';
 
-    // per_guide: cobra o valor total autorizado da guia (independente do mês)
-    // per_month: cobra apenas as sessões do período selecionado
-    const pendingValue = billingMode === 'per_guide'
-      ? (guide.totalAuthorizedValue || (guide.totalSessions * (guide.sessionValue || 0)))
-      : (pending.totalValue || (pending.sessionsCount * (guide.sessionValue || 0)));
+    // "A faturar" deve refletir apenas o valor das sessões já realizadas e
+    // pendentes de faturamento no período filtrado, independente do modo de
+    // faturamento da guia. Não deve incluir sessões futuras nem o valor total
+    // autorizado da guia.
+    //
+    // Sempre preferimos pending.totalValue (soma dos sessionValue das sessões
+    // pendentes), pois uma mesma guia pode ter sessões com valores diferentes.
+    // O fallback por multiplicação existe apenas para dados antigos em que o
+    // campo sessionValue não foi propagado para as sessões.
+    const pendingValue =
+      pending.totalValue ??
+      (pending.sessionsCount * (guide.sessionValue || 0));
 
     return {
       guideId: guide._id.toString(),

@@ -8,6 +8,11 @@ import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
 import Patient from '../models/Patient.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
+import {
+  getInsuranceFlowConfig,
+  setInsuranceFlowOverride,
+  resetInsuranceFlowOverride,
+} from '../config/insuranceFlowConfig.js';
 dotenv.config();
 
 const router = express.Router();
@@ -284,6 +289,45 @@ router.get('/appointments/upcoming', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching upcoming appointments:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==============================================================================
+// InsuranceFlowOrchestrator — runtime override
+// ==============================================================================
+
+router.get('/insurance-flow-config', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Apenas administradores' });
+  }
+  res.json({
+    success: true,
+    config: getInsuranceFlowConfig(),
+    envDefault: process.env.FF_INSURANCE_ORCHESTRATOR === 'true'
+  });
+});
+
+router.post('/insurance-flow-override', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Apenas administradores' });
+  }
+
+  const { value } = req.body;
+
+  try {
+    if (value === null || value === undefined) {
+      resetInsuranceFlowOverride();
+    } else {
+      setInsuranceFlowOverride(!!value);
+    }
+
+    res.json({
+      success: true,
+      config: getInsuranceFlowConfig(),
+      envDefault: process.env.FF_INSURANCE_ORCHESTRATOR === 'true'
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

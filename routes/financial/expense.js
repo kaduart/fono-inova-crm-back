@@ -5,7 +5,8 @@ import { auth, authorize } from '../../middleware/auth.js';
 import Doctor from '../../models/Doctor.js';
 import Expense from '../../models/Expense.js';
 import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
-import { manualCommissionTrigger } from '../../jobs/scheduledTasks.js';
+import { getEventStatus } from '../../infrastructure/events/eventStoreService.js';
+import EventStore from '../../models/EventStore.js';
 
 const router = express.Router();
 
@@ -375,6 +376,92 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 });
 
 // POST /api/expenses/generate-commissions
-router.post('/generate-commissions', auth, authorize(['admin']), manualCommissionTrigger);
+router.post('/generate-commissions', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { month, year } = req.body || {};
+        const m = month ? Number(month) : undefined;
+        const y = year ? Number(year) : undefined;
+
+        if (!m || !y || m < 1 || m > 12 || y < 2000 || y > 2100) {
+            return res.status(400).json({
+                success: false,
+                message: 'Mês e ano são obrigatórios e devem ser válidos'
+            });
+        }
+
+        const aggregateId = `commission-${y}-${String(m).padStart(2, '0')}`;
+        const idempotencyKey = `commission-generation:${aggregateId}`;
+
+        // 🛡️ Evita duas gerações simultâneas para o mesmo período
+        const inProgress = await EventStore.findOne({
+            eventType: EventTypes.COMMISSION_GENERATION_REQUESTED,
+            aggregateId,
+            status: { $in: ['pending', 'processing'] }
+        }).lean();
+
+        if (inProgress) {
+            return res.status(409).json({
+                success: true,
+                status: 'processing',
+                eventId: inProgress.eventId,
+                message: 'Geração de comissões já está em andamento para este período.'
+            });
+        }
+
+        const result = await publishEvent(
+            EventTypes.COMMISSION_GENERATION_REQUESTED,
+            { month: m, year: y, aggregateId },
+            {
+                correlationId: req.headers['x-correlation-id'] || `comm_${Date.now()}`,
+                idempotencyKey,
+                metadata: {
+                    source: 'expenseRoutes.generate-commissions',
+                    userId: req.user?.id
+                }
+            }
+        );
+
+        return res.status(202).json({
+            success: true,
+            status: 'processing',
+            eventId: result.eventId,
+            message: 'Geração de comissões iniciada. Você pode acompanhar o progresso pela tela.'
+        });
+    } catch (error) {
+        console.error('[POST /generate-commissions] Erro:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao iniciar geração de comissões',
+            error: error.message
+        });
+    }
+});
+
+// GET /api/expenses/generate-commissions/status/:eventId
+router.get('/generate-commissions/status/:eventId', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { eventId } = req.params;
+        const status = await getEventStatus(eventId);
+
+        if (!status) {
+            return res.status(404).json({
+                success: false,
+                message: 'Evento não encontrado'
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: status
+        });
+    } catch (error) {
+        console.error('[GET /generate-commissions/status] Erro:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao consultar status',
+            error: error.message
+        });
+    }
+});
 
 export default router;

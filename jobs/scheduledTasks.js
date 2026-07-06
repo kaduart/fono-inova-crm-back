@@ -54,6 +54,14 @@ export const manualCommissionTrigger = async (req, res) => {
             data: result
         });
     } catch (error) {
+        if (error.message === 'GENERATION_ALREADY_IN_PROGRESS') {
+            return res.status(409).json({
+                success: false,
+                message: 'Geração de comissões já está em andamento. Aguarde a conclusão.',
+                error: error.message
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Erro ao gerar comissões',

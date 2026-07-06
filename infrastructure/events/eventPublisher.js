@@ -244,6 +244,11 @@ export const EventTypes = {
     
     // 🔄 Reconciliation
     RECONCILIATION_ALERT: 'RECONCILIATION_ALERT',
+
+    // 💰 Commissions
+    COMMISSION_GENERATION_REQUESTED: 'COMMISSION_GENERATION_REQUESTED',
+    COMMISSION_GENERATION_COMPLETED: 'COMMISSION_GENERATION_COMPLETED',
+    COMMISSION_GENERATION_FAILED: 'COMMISSION_GENERATION_FAILED',
 };
 
 /**
@@ -424,6 +429,11 @@ export const eventToQueueMap = {
     
     // 🔄 Reconciliation
     [EventTypes.RECONCILIATION_ALERT]: [],  // Apenas log, sem fila
+
+    // 💰 Commissions
+    [EventTypes.COMMISSION_GENERATION_REQUESTED]: 'commission-generation',
+    [EventTypes.COMMISSION_GENERATION_COMPLETED]: [],
+    [EventTypes.COMMISSION_GENERATION_FAILED]: [],
 };
 
 /**
@@ -598,7 +608,7 @@ if (size > 5000) {
     }
     
     // 🛡️ VALIDAÇÃO DEFENSIVA: aggregateType deve ser válido para o EventStore
-    const VALID_AGGREGATE_TYPES = ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance', 'evolution'];
+    const VALID_AGGREGATE_TYPES = ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance', 'evolution', 'commission'];
     if (!VALID_AGGREGATE_TYPES.includes(finalAggregateType)) {
         const err = new Error(`INVALID_AGGREGATE_TYPE: '${finalAggregateType}' não é um tipo válido. EventType=${eventType}. Use um dos valores: ${VALID_AGGREGATE_TYPES.join(', ')}`);
         log.error('invalid_aggregate_type', err.message, { eventType, aggregateType: finalAggregateType });
@@ -803,6 +813,7 @@ function extractAggregateType(eventType, payload) {
     if (eventType.includes('NOTIFICATION')) return 'notification';
     if (eventType.includes('SESSION')) return 'session';
     if (eventType.includes('INSURANCE')) return 'insurance';
+    if (eventType.includes('COMMISSION')) return 'commission';
     
     // Do payload (fallback)
     if (payload.appointmentId) return 'appointment';

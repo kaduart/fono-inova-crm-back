@@ -25,6 +25,7 @@ const AUTHORIZED_FLAGS = [
   '_fromCompleteService',
   '_fromCancelService',
   '_fromWriteGateway',
+  '_fromInsuranceOrchestrator',
 ];
 
 /**

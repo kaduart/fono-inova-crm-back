@@ -65,6 +65,12 @@ export async function syncSessionFromAppointment(appointment, mongoSession = nul
     updatedAt: new Date(),
   };
 
+  // Propaga insuranceGuide quando o Appointment tem uma guia definida.
+  // Evita sobrescrever um vínculo existente na Session com null.
+  if (appointment.insuranceGuide) {
+    update.insuranceGuide = toObjectId(appointment.insuranceGuide);
+  }
+
   // Remove campos undefined para não sobrescrever com null acidentalmente
   Object.keys(update).forEach((key) => {
     if (update[key] === undefined) {

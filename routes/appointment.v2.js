@@ -26,7 +26,9 @@ import moment from 'moment-timezone';
 import { syncEvent } from '../services/syncService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
 import { FeatureFlags } from '../config/featureFlags.js';
+import { getInsuranceFlowConfig } from '../config/insuranceFlowConfig.js';
 import { recordCompleteV1Fallback } from '../services/completeFallbackMetrics.js';
 import { logMetric } from '../utils/logMetric.js';
 
@@ -608,6 +610,155 @@ router.patch('/:id/complete', auth, async (req, res) => {
     }
 });
 
+
+// ======================================================================
+// COMPLETAR AGENDAMENTO DE CONVÊNIO (InsuranceFlowOrchestrator)
+// ======================================================================
+
+router.post('/:id/complete-insurance', validateId, auth, async (req, res) => {
+  const startTime = Date.now();
+  const requestId = req.id || req.headers['x-correlation-id'] || `complete_insurance_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  try {
+    const { id } = req.params;
+    const userId = req.user?._id?.toString();
+
+    // ============================================================
+    // ROLLOUT SAFETY: flag desligada → fallback silencioso para completeSessionV2
+    // Isso permite que o frontend migre a URL sem depender do estado da flag.
+    // ============================================================
+    if (!getInsuranceFlowConfig().useOrchestrator) {
+      console.log(`[complete-insurance] Fallback para completeSessionV2 (flag desativada)`, {
+        appointmentId: id,
+        requestId,
+        userId
+      });
+
+      const serviceResult = await completeSessionV2(id, {
+        notes: req.body.notes,
+        evolution: req.body.evolution,
+        sessionValue: req.body.sessionValue,
+        userId,
+        correlationId: req.headers['x-correlation-id'] || req.id
+      });
+
+      const populatedAppointment = await Appointment.findById(id)
+        .populate('session patient doctor payment package')
+        .lean();
+
+      if (populatedAppointment?.date) {
+        const apptDateStr = moment.tz(populatedAppointment.date, 'America/Sao_Paulo').format('YYYY-MM-DD');
+        clearCashflowCache(apptDateStr);
+      }
+
+      logMetric('appointment', 'complete_insurance_path_used', {
+        requestId,
+        appointmentId: id,
+        userId,
+        path: 'legacy_complete',
+        flagEnabled: false,
+        durationMs: Date.now() - startTime,
+        serviceSuccess: !!serviceResult.success
+      });
+
+      return res.json({
+        success: true,
+        appointment: populatedAppointment,
+        fallback: true,
+        transitions: [],
+        correlationId: req.headers['x-correlation-id'] || req.id
+      });
+    }
+
+    console.log(`[complete-insurance] Iniciando orquestrador`, {
+      appointmentId: id,
+      requestId,
+      userId
+    });
+
+    const appointment = await Appointment.findById(id).lean();
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agendamento não encontrado',
+        code: 'APPT_NOT_FOUND'
+      });
+    }
+
+    if (!isInsuranceAppointment(appointment)) {
+      return res.status(422).json({
+        success: false,
+        error: 'Este agendamento não é de convênio',
+        code: 'NOT_INSURANCE_APPOINTMENT'
+      });
+    }
+
+    const commandResult = await completeInsuranceAppointmentCommand.execute(id, {
+      userId,
+      notes: req.body.notes,
+      evolution: req.body.evolution,
+      sessionValue: req.body.sessionValue,
+      forceReconfirm: req.body.forceReconfirm,
+      correlationId: req.headers['x-correlation-id'] || req.id
+    });
+
+    const populatedAppointment = await Appointment.findById(id)
+      .populate('session patient doctor payment package')
+      .lean();
+
+    if (populatedAppointment?.date) {
+      const apptDateStr = moment.tz(populatedAppointment.date, 'America/Sao_Paulo').format('YYYY-MM-DD');
+      clearCashflowCache(apptDateStr);
+    }
+
+    const durationMs = Date.now() - startTime;
+    console.log(`[complete-insurance] ✅ Fluxo finalizado`, {
+      appointmentId: id,
+      requestId,
+      durationMs,
+      transitions: commandResult.transitions?.map((t) => `${t.from}→${t.to}`)
+    });
+
+    logMetric('appointment', 'complete_insurance_path_used', {
+      requestId,
+      appointmentId: id,
+      userId,
+      path: 'orchestrator',
+      flagEnabled: true,
+      durationMs,
+      transitions: commandResult.transitions?.map((t) => `${t.from}→${t.to}`),
+      serviceSuccess: !!commandResult.completeResult?.success
+    });
+
+    return res.json({
+      success: true,
+      appointment: populatedAppointment,
+      transitions: commandResult.transitions,
+      correlationId: commandResult.correlationId
+    });
+
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    const status = error.status || error.statusCode || 500;
+    const code = error.code || 'INTERNAL_ERROR';
+
+    console.error(`[complete-insurance] ❌ Erro`, {
+      appointmentId: req.params?.id,
+      requestId,
+      durationMs,
+      error: error.message,
+      code,
+      status
+    });
+
+    return res.status(status).json({
+      success: false,
+      error: error.message,
+      code
+    });
+  }
+});
 // ======================================================================
 // READ ENDPOINTS (migrados para appointmentReads.js)
 // ======================================================================

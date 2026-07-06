@@ -248,12 +248,15 @@ export async function generateInsurancePlanSessions({
       },
       update: {
         $set: {
-          // Sempre enforça billingType/paymentMethod/valores mesmo em appointments existentes.
+          // Sempre enforça billingType/paymentMethod/valores/guia mesmo em appointments existentes.
           // $setOnInsert não corrigia appointments criados antes do plano (causa do bug 2026-06-09).
           // sessionValue/insuranceValue também precisam ser setados em appointments pré-existentes
           // para evitar saldo devedor fantasma (bug 2026-06-26).
+          // insuranceGuide precisa ser setado em upserts para que a Session criada a partir
+          // do appointment receba o vínculo correto via buildInsuranceSession.
           billingType: 'convenio',
           paymentMethod: 'convenio',
+          insuranceGuide: guide._id,
           ...(effectiveSessionValue > 0 && {
             sessionValue: effectiveSessionValue,
             insuranceValue: effectiveSessionValue,
@@ -269,7 +272,6 @@ export async function generateInsurancePlanSessions({
           serviceType: 'session',
           sessionType: plan.specialty,
           insuranceProvider: guide.insurance,
-          insuranceGuide: guide._id,
           insurancePlan: plan._id,
           operationalStatus: 'pre_agendado',
           clinicalStatus: 'pending',
@@ -286,12 +288,29 @@ export async function generateInsurancePlanSessions({
 
   const result = await Appointment.bulkWrite(bulkOps, { session: mongoSession, ordered: false });
 
-  // ── 6. Busca appointments criados para vincular payments ───────
+  // ── 6. Busca appointments criados/atualizados pelo upsert ───────
   const createdAppointments = await Appointment.find({
     patient: plan.patient,
     insurancePlan: plan._id,
     operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
   }).session(mongoSession).lean();
+
+  // Garante insuranceGuide nos appointments processados nesta geração.
+  // Não pode estar no $set do bulkWrite porque conflitaria com o $setOnInsert.
+  // Limita aos IDs retornados para não atingir appointments históricos de planos antigos.
+  const appointmentsWithoutGuide = createdAppointments
+    .filter(a => !a.insuranceGuide)
+    .map(a => a._id);
+
+  if (appointmentsWithoutGuide.length > 0) {
+    await Appointment.updateMany(
+      {
+        _id: { $in: appointmentsWithoutGuide }
+      },
+      { $set: { insuranceGuide: guide._id } },
+      { session: mongoSession }
+    );
+  }
 
   // ── 7. Cria payments pendentes (apenas para appointments sem payment convenio ativo) ─────
   // Busca por appointment._id (não por insurancePlan) para detectar payments de planos anteriores.
@@ -380,6 +399,29 @@ export async function generateInsurancePlanSessions({
       }
     }));
     await Appointment.bulkWrite(sessionLinkOps, { session: mongoSession, ordered: false });
+
+    // Payments são criados antes das Sessions neste fluxo.
+    // Após criar as Sessions, vinculamos payment.session utilizando
+    // appointmentId para manter a consistência da trinca:
+    //
+    //   Appointment -> Session
+    //   Appointment -> Payment
+    //   Payment -> Session
+    //
+    // Atualiza apenas payments recém-criados (session ainda nulo) para evitar
+    // sobrescrever vínculos já existentes em reexecuções do fluxo.
+    const paymentSessionLinkOps = createdSessions.map((s) => ({
+      updateOne: {
+        filter: {
+          appointment: s.appointmentId,
+          billingType: 'convenio',
+          status: { $ne: 'canceled' },
+          $or: [{ session: { $exists: false } }, { session: null }]
+        },
+        update: { $set: { session: s._id } }
+      }
+    }));
+    await Payment.bulkWrite(paymentSessionLinkOps, { session: mongoSession, ordered: false });
   }
 
   // ── 10. Atualiza plano com appointments gerados ────────────────

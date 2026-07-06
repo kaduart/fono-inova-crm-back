@@ -4,6 +4,8 @@
  * Controle granular de ativação do novo fluxo
  */
 
+import { getInsuranceFlowConfig } from './insuranceFlowConfig.js';
+
 export const FeatureFlags = {
   // Fluxos de agendamento
   CREATE: {
@@ -17,6 +19,15 @@ export const FeatureFlags = {
     // rodar no fallback V1, que aceitava Payment 'paid' com amount 0.
     USE_V2: process.env.FF_COMPLETE_V2 !== 'false',
     PERCENTAGE_V2: parseInt(process.env.FF_COMPLETE_PERCENTAGE || '0'),
+  },
+
+  // 🏥 Fluxo composto de convênio (InsuranceFlowOrchestrator)
+  // Default vem da env, mas pode ser sobrescrito em runtime via insuranceFlowConfig.
+  INSURANCE_FLOW: {
+    get USE_ORCHESTRATOR() {
+      return getInsuranceFlowConfig().useOrchestrator;
+    },
+    PERCENTAGE_ORCHESTRATOR: parseInt(process.env.FF_INSURANCE_ORCHESTRATOR_PERCENTAGE || '0'),
   },
   
   CANCEL: {
@@ -60,6 +71,7 @@ export const FeatureFlags = {
       emergencyRollback: process.env.FF_EMERGENCY_ROLLBACK === 'true',
       create: { useV2: this.CREATE.USE_V2, percentage: this.CREATE.PERCENTAGE_V2 },
       complete: { useV2: this.COMPLETE.USE_V2, percentage: this.COMPLETE.PERCENTAGE_V2 },
+      insuranceFlow: { useOrchestrator: this.INSURANCE_FLOW.USE_ORCHESTRATOR, percentage: this.INSURANCE_FLOW.PERCENTAGE_ORCHESTRATOR },
       cancel: { useV2: this.CANCEL.USE_V2, percentage: this.CANCEL.PERCENTAGE_V2 },
       financial: { useLedger: this.FINANCIAL.USE_LEDGER, percentage: this.FINANCIAL.PERCENTAGE_LEDGER },
       audit: { enabled: this.AUDIT.ENABLED },
