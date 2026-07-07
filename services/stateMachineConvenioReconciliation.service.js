@@ -1,5 +1,29 @@
 // services/stateMachineConvenioReconciliation.service.js
 // 🔄 Reconciliação de state machine para convênio — core compartilhado
+//
+// 📜 CHANGELOG (drift measurement)
+// 2026-07-07 — sessionCompletedNoPaymentId + sessionCompletedWithActivePaymentButNoPaymentId
+//   Renomeado/unificado em `sessionCompletedWithoutResolvablePayment`.
+//   Causa: `sessionCompletedNoPaymentId` tinha DUAS chaves `$or` no mesmo objeto de
+//   query — a segunda sobrescrevia a primeira (colisão de chave em JS), então o
+//   filtro de billingType nunca era aplicado. A métrica contava TODAS as sessions
+//   completed do sistema (particular/liminar incluídos), não só convênio — inflava
+//   2176 no lugar de ~126 inconsistências reais. `sessionCompletedWithActivePaymentButNoPaymentId`
+//   fazia a mesma checagem sem filtro de billingType nenhum — mesmo problema.
+//   Ambas foram substituídas por uma única métrica correta, escopada a convênio,
+//   que resolve o pagamento por `Payment.session` quando `Session.paymentId` (legado)
+//   está ausente. Ver nota de coexistência de modelos abaixo.
+//
+// 🔀 Coexistência Session.paymentId × Payment.session
+//   `Session.paymentId` é um ponteiro legado, escrito hoje só pelo fluxo antigo de
+//   convênio baseado em Package (`controllers/convenioPackageController.js`, rota
+//   `/api/convenio-packages`, ainda ativa). O fluxo novo baseado em InsuranceGuide
+//   (`services/completeSession/handlers/convenioHandler.js` → `completeSessionV2`)
+//   NUNCA escreve `Session.paymentId` — usa `Payment.session` como ponteiro canônico
+//   (SSOT financeiro, ver back/docs/FINANCIAL_SOURCE_OF_TRUTH.md). Os dois fluxos
+//   coexistem em produção, então qualquer verificação de "session sem payment" deve
+//   checar `paymentId` E fazer fallback via `Payment.session` antes de considerar
+//   drift — nunca assumir que um dos dois é universal.
 
 import fs from 'fs';
 import path from 'path';
@@ -274,23 +298,35 @@ export class StateMachineConvenioReconciler {
 
 export async function measureStateMachineDrift(db) {
   const drift = {
-    sessionCompletedNoPaymentId: 0,
+    sessionCompletedWithoutResolvablePayment: 0,
     canceledPaymentWithCompletedSession: 0,
     guideUsedSessionsInconsistent: 0,
     activePaymentNoSession: 0,
-    activePaymentNoAppointment: 0,
-    sessionCompletedWithActivePaymentButNoPaymentId: 0
+    activePaymentNoAppointment: 0
   };
 
-  drift.sessionCompletedNoPaymentId = await db.collection('sessions').countDocuments({
+  // Sessions de convênio completed que não resolvem pra nenhum Payment ativo,
+  // nem pelo ponteiro legado (Session.paymentId) nem pelo canônico (Payment.session).
+  // Substitui as antigas `sessionCompletedNoPaymentId` (bug de $or duplicado, ver
+  // changelog no topo do arquivo) e `sessionCompletedWithActivePaymentButNoPaymentId`
+  // (mesma checagem sem escopo de billingType).
+  const convenioCompletedSessions = await db.collection('sessions').find({
     status: 'completed',
     $or: [
       { paymentMethod: 'convenio' },
       { paymentOrigin: 'convenio' },
       { billingType: 'convenio' }
-    ],
-    $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
-  });
+    ]
+  }).toArray();
+
+  for (const session of convenioCompletedSessions) {
+    if (session.paymentId) continue; // ponteiro legado presente — ok
+    const activePayment = await db.collection('payments').findOne({
+      session: session._id,
+      status: { $nin: ['canceled', 'refunded'] }
+    });
+    if (!activePayment) drift.sessionCompletedWithoutResolvablePayment++; // drift real: nenhum Payment ativo aponta pra essa session
+  }
 
   const canceledPayments = await db.collection('payments').find({
     status: 'canceled',
@@ -325,21 +361,10 @@ export async function measureStateMachineDrift(db) {
     amount: { $gt: 0 }
   });
 
-  const activePayments = await db.collection('payments').find({
-    status: { $nin: ['canceled', 'refunded'] },
-    session: { $exists: true, $ne: null }
-  }).toArray();
-  const seen = new Set();
-  for (const payment of activePayments) {
-    const session = await db.collection('sessions').findOne({ _id: payment.session });
-    if (session?.status === 'completed' && !session.paymentId) {
-      const key = fmtId(session._id);
-      if (!seen.has(key)) {
-        seen.add(key);
-        drift.sessionCompletedWithActivePaymentButNoPaymentId++;
-      }
-    }
-  }
+  // 🩹 REMOVIDO: sessionCompletedWithActivePaymentButNoPaymentId fazia exatamente a
+  // mesma verificação (session completed sem paymentId, mas com Payment ativo
+  // vinculado), só que sem filtrar por billingType — contava particular/liminar
+  // onde paymentId nunca é aplicável. Mesma checagem agora coberta acima.
 
   drift.total = Object.values(drift).reduce((a, b) => a + b, 0);
   return drift;

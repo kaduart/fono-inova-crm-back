@@ -376,15 +376,25 @@ export async function generateInsurancePlanSessions({
     a => !existingSessionApptIds.has(a._id.toString())
   );
 
+  // 🔒 DTO explícito — NUNCA espalhar o appointment inteiro (`...a`) aqui.
+  // O appointment carrega `status`/`operationalStatus`/`history` e dezenas de outros
+  // campos que não pertencem ao domínio da Session; um spread aberto permite que
+  // qualquer campo do agregado errado vaze pra dentro da Session criada (causa raiz
+  // de sessions convênio nascerem 'completed' por herança — ver PR 2, 2026-07-07).
+  // Liste aqui só o que buildSessionFromAppointment/resolveSessionType realmente usam.
   const sessionDocs = appointmentsNeedingSession.map(a => buildInsuranceSession({
-    ...a,
     _id: a._id,
     patient: plan.patient,
     doctor: plan.doctor,
+    date: a.date,
+    time: a.time,
     specialty: plan.specialty,
+    serviceType: a.serviceType,
+    sessionType: a.sessionType,
     sessionValue: effectiveSessionValue,
     insuranceGuide: guide._id,
-    insurancePlan: plan._id
+    insurancePlan: plan._id,
+    clinicId: a.clinicId
   }));
 
   let createdSessions = [];

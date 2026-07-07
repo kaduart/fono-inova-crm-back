@@ -17,10 +17,29 @@
  * - _fromCompleteService  → completeSessionService
  * - _fromCancelService    → cancelAppointmentCommand/workers
  * - _fromWriteGateway     → AppointmentWriteGateway (uso temporário, documentado)
+ *
+ * 📜 CHANGELOG
+ * 2026-07-07 — Adicionada interceptação de `collection.findOneAndUpdate`.
+ *   Cobre tanto `Model.findByIdAndUpdate` quanto `Model.findOneAndUpdate`, que
+ *   internamente delegam pro mesmo método nativo do driver (confirmado
+ *   empiricamente contra mongoose 8.23 antes desta mudança — não presumido).
+ *   `.save()` de documento NÃO precisou de patch separado: já delega pra
+ *   `collection.updateOne` internamente, então já era coberto.
+ *   Limite conhecido que continua fora do alcance deste guard: uma conexão
+ *   nativa própria (MongoClient direto, fora do mongoose) não passa por
+ *   nenhum destes pontos — não há proteção de código possível contra isso,
+ *   só convenção/review.
  */
 
 const MODE = process.env.APPOINTMENT_WRITE_GUARD_MODE || 'warn';
 
+// ⚠️ MANUTENÇÃO OBRIGATÓRIA: toda flag nova adicionada aqui também precisa ser
+// declarada no schema de CADA model protegido (Appointment.js, Session.js,
+// Payment.js — `schema.add({ _minhaFlagNova: { type: Boolean, select: false } })`).
+// Sem isso, o `strict` mode (default) do Mongoose descarta a flag silenciosamente
+// em updates via Model.findByIdAndUpdate/findOneAndUpdate antes de chegar no
+// driver nativo, e o write vira falso positivo de violação (bug real encontrado
+// e corrigido em 2026-07-07 — ver AppointmentWriteGuard.test.js).
 const AUTHORIZED_FLAGS = [
   '_fromCompleteService',
   '_fromCancelService',
@@ -118,6 +137,7 @@ class AppointmentWriteGuard {
     const originalCollectionUpdateOne = collection.updateOne.bind(collection);
     const originalCollectionUpdateMany = collection.updateMany.bind(collection);
     const originalCollectionBulkWrite = collection.bulkWrite.bind(collection);
+    const originalCollectionFindOneAndUpdate = collection.findOneAndUpdate.bind(collection);
     const originalModelUpdateMany = Model.updateMany.bind(Model);
     const originalModelBulkWrite = Model.bulkWrite.bind(Model);
 
@@ -128,6 +148,16 @@ class AppointmentWriteGuard {
         AppointmentWriteGuard.handleViolation(entry);
       }
       return originalCollectionUpdateOne(filter, update, ...rest);
+    };
+
+    // ── collection.findOneAndUpdate ── cobre Model.findByIdAndUpdate e Model.findOneAndUpdate,
+    // que delegam pra esse método nativo (confirmado empiricamente, não presumido).
+    collection.findOneAndUpdate = function guardedFindOneAndUpdate(filter, update, ...rest) {
+      if (touchesProtectedField(update, protectedFields) && !hasAuthorizedFlag(update)) {
+        const entry = buildLogEntry(modelName, 'collection.findOneAndUpdate', filter, update, protectedFields, new Error().stack);
+        AppointmentWriteGuard.handleViolation(entry);
+      }
+      return originalCollectionFindOneAndUpdate(filter, update, ...rest);
     };
 
     // ── collection.updateMany ──

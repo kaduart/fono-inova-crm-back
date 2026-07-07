@@ -4,7 +4,13 @@
  * Esse módulo existe apenas durante a transição V1 → V2 do complete.
  * Objetivo: dar visibilidade total de quantas vezes o caminho legado ainda
  * é acionado, para que possamos removê-lo com segurança.
+ *
+ * O contador em memória zera a cada deploy — não serve pra provar "não foi
+ * usado nas últimas 2-3 semanas". Por isso todo acionamento também grava um
+ * AuditLog CRITICAL, que sobrevive a deploys/restart (TTL de 1 ano).
  */
+
+import AuditLog from '../models/AuditLog.js';
 
 const metrics = {
   v1FallbackCount: 0,
@@ -43,6 +49,27 @@ export function recordCompleteV1Fallback(payload = {}) {
     count: metrics.v1FallbackCount,
     timestamp: now.toISOString(),
   }));
+
+  // Registro durável — best-effort, nunca deve derrubar o complete em si.
+  // É a fonte usada por GET /api/v2/health/complete-fallback pra decidir
+  // com segurança quando o V1 pode ser removido de vez.
+  if (payload.appointmentId) {
+    AuditLog.create({
+      userId: payload.userId || null,
+      action: 'complete_v1_fallback_used',
+      entityType: 'Appointment',
+      entityId: payload.appointmentId,
+      source: 'appointment.v2.complete.fallback',
+      correlationId: payload.correlationId || null,
+      severity: 'CRITICAL',
+      metadata: {
+        patientId: payload.patientId || null,
+        reason: payload.reason || null,
+      },
+    }).catch(err => {
+      console.error('[COMPLETE_FALLBACK_V1_USED] Falha ao gravar AuditLog (não bloqueia):', err.message);
+    });
+  }
 }
 
 /**

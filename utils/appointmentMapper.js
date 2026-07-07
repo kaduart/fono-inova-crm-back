@@ -157,6 +157,8 @@ export const mapAppointmentToEvent = (appt) => {
         authorizationCode: appt.authorizationCode || '',
         // 📦 PACOTE (se houver)
         package: appt.package || null,
+        // ⚖️ CONTRATO LIMINAR (se houver) — necessário para o guard financeiro do front validar saldo
+        liminarContract: appt.liminarContract || null,
         patient: {
             ...(typeof appt.patient === 'object' ? appt.patient : {}),
             fullName: patientName,

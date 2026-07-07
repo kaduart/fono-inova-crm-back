@@ -144,6 +144,19 @@ const sessionSchema = new mongoose.Schema({
         default: false,
         description: 'Flag de idempotência - true se a guia já foi consumida'
     },
+    guideConsumedAt: {
+        type: Date,
+        default: null,
+        description: 'Momento em que o consumo da guia foi registrado (pode ser reconstruído via backfill, ver guideConsumptionAudit)'
+    },
+    guideConsumptionAudit: {
+        source: { type: String, default: null },      // ex: 'PR4_CONVENIO_RECONCILIATION'
+        reason: { type: String, default: null },       // ex: 'completed_session_missing_consumption_flag'
+        evidence: { type: String, default: null },     // ex: 'complete_correlation_id'
+        correlationId: { type: String, default: null },
+        executedAt: { type: Date, default: null },
+        _id: false
+    },
     billingBatchId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'InsuranceBatch',
@@ -712,6 +725,16 @@ sessionSchema.methods.softDeleteCascade = async function(reason = 'manual', dele
         session.endSession();
     }
 };
+
+// 🛡️ Flags de autorização do AppointmentWriteGuard — ver Appointment.js para o
+// racional completo (strict mode do Mongoose descarta campos não declarados em
+// updates via Model.findByIdAndUpdate/findOneAndUpdate).
+sessionSchema.add({
+  _fromCompleteService: { type: Boolean, select: false },
+  _fromCancelService: { type: Boolean, select: false },
+  _fromWriteGateway: { type: Boolean, select: false },
+  _fromInsuranceOrchestrator: { type: Boolean, select: false },
+});
 
 // 💰 Financial Sanitizer — bloqueia writes V1 na origem
 sessionSchema.plugin(financialSanitizer, { entity: 'Session' });

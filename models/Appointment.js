@@ -703,6 +703,20 @@ appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', 
   }
 };
 
+// 🛡️ Flags de autorização do AppointmentWriteGuard — precisam ser paths reais
+// do schema, senão o `strict` (default true) do Mongoose descarta silenciosamente
+// esses campos do $set antes de chegar no driver nativo em updates via
+// Model.findByIdAndUpdate/findOneAndUpdate (confirmado empiricamente 2026-07-07:
+// _fromCancelService sumia do update antes de alcançar collection.findOneAndUpdate,
+// o que faria o guard reportar falso positivo em todo cancelamento). `select: false`
+// mantém esses campos fora de leituras normais — são só sinalizadores de escrita.
+appointmentSchema.add({
+  _fromCompleteService: { type: Boolean, select: false },
+  _fromCancelService: { type: Boolean, select: false },
+  _fromWriteGateway: { type: Boolean, select: false },
+  _fromInsuranceOrchestrator: { type: Boolean, select: false },
+});
+
 // 💰 Financial Sanitizer — bloqueia writes V1 na origem
 appointmentSchema.plugin(financialSanitizer, { entity: 'Appointment' });
 

@@ -62,6 +62,7 @@ ReconciliationService          →  Auditoria e divergências
 | `Package` como base de produção | Usado apenas como contexto; valor vem de `resolveSessionFinancialValue()`. |
 | Cálculos manuais no frontend | Todo número financeiro vem de um service backend. |
 | `Payment.findByIdAndUpdate({ status })` | Sempre usar `paymentStatusService.transitionPaymentStatus()`. |
+| `Session.paymentId` como checagem única de "session tem payment" | Ponteiro legado — só escrito pelo fluxo antigo de convênio via Package (`convenioPackageController.js`). O fluxo novo (`ConvenioHandler`) nunca escreve esse campo, usa `Payment.session` como ponteiro canônico. Os dois modelos coexistem em produção (2026-07-07); qualquer auditoria de "session sem payment" precisa checar `paymentId` OU resolver via `Payment.session` antes de considerar drift. |
 | `FinancialProjection` | Atualiza mas não tem consumidor oficial. |
 | `TotalsSnapshot` | Atualiza mas quase não é consumido. |
 | `FinancialDailySnapshot` | Histórico legado/quebrado. |

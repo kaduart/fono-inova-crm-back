@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { getRedis } from '../services/redisClient.js';
 import { getCompleteV1FallbackMetrics } from '../services/completeFallbackMetrics.js';
+import AuditLog from '../models/AuditLog.js';
 
 const router = express.Router();
 
@@ -86,15 +87,33 @@ router.get('/', async (req, res) => {
  * Útil para decidir quando é seguro remover o V1 permanentemente.
  */
 router.get('/complete-fallback', async (req, res) => {
-  const metrics = getCompleteV1FallbackMetrics();
+  const sinceDeployMetrics = getCompleteV1FallbackMetrics();
 
-  res.status(metrics.safeToRemove ? 200 : 503).json({
-    success: metrics.safeToRemove,
+  // Contador em memória zera a cada deploy — a resposta confiável pra decidir
+  // remoção vem do AuditLog persistente (sobrevive a restart/deploy no Render).
+  const days = Math.max(1, parseInt(req.query.days, 10) || 21);
+  const since = new Date(Date.now() - days * 86400000);
+
+  const [count, occurrences] = await Promise.all([
+    AuditLog.countDocuments({ action: 'complete_v1_fallback_used', createdAt: { $gte: since } }),
+    AuditLog.find({ action: 'complete_v1_fallback_used', createdAt: { $gte: since } })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+  ]);
+
+  const safeToRemove = count === 0;
+
+  res.status(safeToRemove ? 200 : 503).json({
+    success: safeToRemove,
     timestamp: new Date().toISOString(),
-    message: metrics.safeToRemove
-      ? 'Nenhum fallback V1 detectado desde o último deploy.'
-      : 'Fallback V1 detectado. Investigar antes de remover o código legado.',
-    metrics
+    message: safeToRemove
+      ? `Nenhum fallback V1 detectado nos últimos ${days} dias (fonte: AuditLog). Seguro considerar remoção se os testes de integração também passarem.`
+      : `Fallback V1 detectado ${count}x nos últimos ${days} dias. NÃO remover o código legado ainda.`,
+    window: { days, since: since.toISOString() },
+    persistentCount: count,
+    occurrences,
+    sinceLastDeploy: sinceDeployMetrics
   });
 });
 

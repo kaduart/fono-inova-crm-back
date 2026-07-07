@@ -384,6 +384,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             appointmentId: id,
             patientId: req.body?.patientId,
             userId: req.user?._id?.toString(),
+            correlationId: requestId,
             reason: FeatureFlags.COMPLETE.USE_V2 ? 'emergency_rollback' : 'flag_disabled'
         });
 

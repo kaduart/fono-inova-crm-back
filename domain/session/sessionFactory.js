@@ -108,8 +108,21 @@ export function buildIndividualSession(appointment, options = {}) {
 
 /**
  * Cria uma Session para convênio
+ *
+ * 🔒 GUARD: nunca pode nascer 'completed'. Consumo de guia (guideConsumed,
+ * Payment, revenueRecognizedAt) só acontece via completeSessionV2 → ConvenioHandler.
+ * Uma Session criada aqui já completed pularia esse efeito colateral inteiro
+ * (causa raiz investigada em 2026-07-07 — guias com usedSessions divergente).
  */
 export function buildInsuranceSession(appointment, options = {}) {
+    if (options.status === 'completed') {
+        throw new Error(
+            'INVALID_SESSION_FACTORY_STATUS: buildInsuranceSession não pode criar Session já completed. ' +
+            'Sessões de convênio só transicionam pra completed via completeSessionV2 (ConvenioHandler), ' +
+            'que executa guideConsumed + Payment + revenueRecognizedAt junto. Se precisa registrar uma ' +
+            'sessão histórica já realizada, crie como scheduled e complete pelo fluxo oficial.'
+        );
+    }
     return buildSessionFromAppointment(appointment, {
         status: options.status || 'scheduled',
         isPaid: false,
@@ -123,8 +136,17 @@ export function buildInsuranceSession(appointment, options = {}) {
 
 /**
  * Cria uma Session para liminar (crédito judicial)
+ *
+ * 🔒 GUARD: mesmo racional do buildInsuranceSession — consumo de crédito
+ * judicial só acontece via fluxo oficial de complete.
  */
 export function buildLiminarSession(appointment, options = {}) {
+    if (options.status === 'completed') {
+        throw new Error(
+            'INVALID_SESSION_FACTORY_STATUS: buildLiminarSession não pode criar Session já completed. ' +
+            'Consumo de crédito judicial só acontece via fluxo oficial de complete.'
+        );
+    }
     return buildSessionFromAppointment(appointment, {
         status: options.status || 'scheduled',
         isPaid: false,

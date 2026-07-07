@@ -246,7 +246,8 @@ FinancialProjection / TotalsSnapshot / FinancialDailySnapshot / financialMetrics
 - Event-driven: `back/docs/ARQUITETURA_EVENT_DRIVEN.md`
 - Arquitetura geral: `back/ARQUITETURA_4.0_COMPLETA.md`
 - Fonte única financeira: `back/docs/FINANCIAL_SOURCE_OF_TRUTH.md`
-- Contrato de API: `back/docs/API_CONTRACT_V2.md`
+- Contrato de API (geral): `back/API_CONTRACT_V2.md`
+- Contrato de API (complete session): `back/docs/API_CONTRACT_COMPLETE_SESSION.md`
 - Segurança e rotas: `back/SEGURANCA_ROTAS.md`
 
 ---

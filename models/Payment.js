@@ -344,6 +344,16 @@ paymentSchema.methods.toDTO = function() {
     };
 };
 
+// 🛡️ Flags de autorização do AppointmentWriteGuard — ver Appointment.js para o
+// racional completo (strict mode do Mongoose descarta campos não declarados em
+// updates via Model.findByIdAndUpdate/findOneAndUpdate).
+paymentSchema.add({
+  _fromCompleteService: { type: Boolean, select: false },
+  _fromCancelService: { type: Boolean, select: false },
+  _fromWriteGateway: { type: Boolean, select: false },
+  _fromInsuranceOrchestrator: { type: Boolean, select: false },
+});
+
 const Payment = mongoose.model('Payment', paymentSchema);
 
 // 🛡️ Instala interceptor de writes raw no model Payment
