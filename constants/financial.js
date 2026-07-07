@@ -20,6 +20,22 @@ export const PAYMENT_KIND = Object.freeze({
   DEBT_SETTLEMENT: 'debt_settlement',
 });
 
+// ─── Kinds que NUNCA devem somar como caixa/receita direta ───
+// Motivo por kind:
+//   PACKAGE_CONSUMED  → consumo de crédito já pago na compra, não é dinheiro novo
+//   PACKAGE_RECEIPT   → a venda do pacote já é contada; sessões individuais não somam de novo
+//   MONTHLY_SETTLEMENT/DEBT_SETTLEMENT → recibo agregado; os session_payment originais
+//     que ele lista em `settledPaymentIds` já são contados individualmente — somar os
+//     dois é dupla contagem (bug real encontrado em produção 2026-07-07, ver
+//     back/docs/finance-integrity-audit/).
+// Toda query que soma `Payment.amount WHERE status='paid'` DEVE excluir esses kinds.
+export const CASH_EXCLUDED_KINDS = Object.freeze([
+  PAYMENT_KIND.PACKAGE_CONSUMED,
+  PAYMENT_KIND.PACKAGE_RECEIPT,
+  PAYMENT_KIND.MONTHLY_SETTLEMENT,
+  PAYMENT_KIND.DEBT_SETTLEMENT,
+]);
+
 // ─── Payment.status ───
 export const PAYMENT_STATUS = Object.freeze({
   PENDING: 'pending',

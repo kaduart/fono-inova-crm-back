@@ -15,8 +15,7 @@ import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import crypto from 'crypto';
-
-const EXCLUDED_KINDS = ['package_receipt', 'monthly_settlement', 'debt_settlement', 'package_consumed'];
+import { CASH_EXCLUDED_KINDS as EXCLUDED_KINDS } from '../constants/financial.js';
 
 function normalizeMethod(method) {
     const m = String(method || '').toLowerCase().trim();

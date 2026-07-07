@@ -1179,17 +1179,35 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         }
 
-        // 1. Marca cada payment como pago — usa paymentStatusService (blindagem)
-        for (const p of payments) {
-            await transitionPaymentStatus(p._id, 'paid', {
-                session: mongoSession,
-                paymentMethod: paymentMethod || p.paymentMethod,
-                paidAt: now,
-                financialDate: p.paymentDate || now,
-                userId: req.user?._id,
-                reason: 'bulk_settle'
-            });
-        }
+        // 1. Marca todos os payments como pago numa ÚNICA operação (bulkWrite).
+        // ⚠️ Antes disso era um for-loop chamando transitionPaymentStatus (find+save+
+        // publishEvent AWAITED por item) — com 14+ payments isso são dezenas de
+        // round-trips sequenciais pro Mongo/Redis, o suficiente pra estourar timeout
+        // em produção (Render → Atlas tem latência maior que localhost). O bulkWrite
+        // faz a escrita em 1 round-trip; os eventos (que são o "regra de ouro" do
+        // paymentStatusService) são publicados depois, em paralelo, sem bloquear
+        // sequencialmente.
+        const oldStatusById = new Map(payments.map(p => [p._id.toString(), p.status]));
+        const bulkOps = payments.map(p => ({
+            updateOne: {
+                filter: { _id: p._id },
+                update: {
+                    $set: {
+                        status: 'paid',
+                        paymentMethod: paymentMethod || p.paymentMethod,
+                        // 💰 Regime de caixa: a quitação SEMPRE reconhece o dinheiro no dia em
+                        // que ela acontece — nunca preserva financialDate/paidAt antigos do
+                        // payment (que só existiam enquanto ele era pending, sem sentido de
+                        // "dia que o caixa recebeu"). Bug real: preservar o valor antigo fazia
+                        // sessões de meses atrás, quitadas hoje, sumirem do caixa de hoje e
+                        // aparecerem em dias que o dinheiro nunca entrou de fato.
+                        paidAt: now,
+                        financialDate: now,
+                    }
+                }
+            }
+        }));
+        await Payment.bulkWrite(bulkOps, { session: mongoSession });
 
         // 2. Atualiza appointments vinculados
         const appointmentIds = payments.filter(p => p.appointment).map(p => p.appointment.toString());
@@ -1203,31 +1221,43 @@ router.post('/bulk-settle', auth, async (req, res) => {
         }
 
         // 3. Atualiza packages afetados: recalcula totalPaid/balance a partir das sessions pagas
+        // (mesma lógica de antes, só que buscando pacotes e contando sessions em lote —
+        // 2 round-trips no total em vez de 3 por pacote)
         const packageIds = [...new Set(payments.filter(p => p.package).map(p => p.package.toString()))];
         const affectedPackageIds = [];
         if (packageIds.length > 0) {
             const Package = mongoose.model('Package');
             const Session = mongoose.model('Session');
-            for (const pkgId of packageIds) {
-                const pkg = await Package.findById(pkgId).session(mongoSession).lean();
-                if (!pkg) continue;
-                
-                const paidCount = await Session.countDocuments(
-                    { package: pkgId, isPaid: true }
-                ).session(mongoSession);
-                
+
+            const [packages, paidCounts] = await Promise.all([
+                Package.find({ _id: { $in: packageIds } }).session(mongoSession).lean(),
+                Session.aggregate([
+                    { $match: { package: { $in: packageIds.map(id => new mongoose.Types.ObjectId(id)) }, isPaid: true } },
+                    { $group: { _id: '$package', count: { $sum: 1 } } }
+                ]).session(mongoSession)
+            ]);
+
+            const paidCountByPkg = new Map(paidCounts.map(p => [p._id.toString(), p.count]));
+            const packageBulkOps = [];
+            for (const pkg of packages) {
+                const pkgId = pkg._id.toString();
+                const paidCount = paidCountByPkg.get(pkgId) || 0;
                 const totalPaid = paidCount * (pkg.sessionValue || 0);
                 const balance = Math.max(0, (pkg.totalValue || 0) - totalPaid);
                 let financialStatus = 'unpaid';
                 if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
                 else if (totalPaid > 0) financialStatus = 'partially_paid';
-                
-                await Package.findByIdAndUpdate(
-                    pkgId,
-                    { $set: { totalPaid, balance, financialStatus, updatedAt: now } },
-                    { session: mongoSession }
-                );
+
+                packageBulkOps.push({
+                    updateOne: {
+                        filter: { _id: pkg._id },
+                        update: { $set: { totalPaid, balance, financialStatus, updatedAt: now } }
+                    }
+                });
                 affectedPackageIds.push(pkgId);
+            }
+            if (packageBulkOps.length > 0) {
+                await Package.bulkWrite(packageBulkOps, { session: mongoSession });
             }
         }
 
@@ -1259,6 +1289,44 @@ router.post('/bulk-settle', auth, async (req, res) => {
         }], { session: mongoSession });
 
         await mongoSession.commitTransaction();
+
+        // 5b. Publica PAYMENT_STATUS_CHANGED pra cada payment quitado — em paralelo,
+        // depois do commit, pra não segurar a transação nem o round-trip do bulkWrite
+        // (essa é a garantia "regra de ouro" do paymentStatusService, preservada aqui
+        // sem o custo de fazer 1 evento por vez sequencialmente).
+        await Promise.allSettled(
+            payments.map(p => publishEvent(
+                EventTypes.PAYMENT_STATUS_CHANGED,
+                {
+                    paymentId: p._id.toString(),
+                    patientId: p.patient?.toString?.() || p.patientId,
+                    appointmentId: p.appointment?.toString?.(),
+                    sessionId: p.session?.toString?.(),
+                    packageId: p.package?.toString?.(),
+                    from: oldStatusById.get(p._id.toString()),
+                    to: 'paid',
+                    amount: p.amount,
+                    paymentMethod: paymentMethod || p.paymentMethod,
+                    financialDate: now,
+                    paidAt: now,
+                    kind: p.kind,
+                    billingType: p.billingType,
+                    isFromPackage: p.isFromPackage,
+                    reason: 'bulk_settle',
+                    userId: req.user?._id?.toString?.()
+                },
+                {
+                    correlationId: `payment_status_${p._id}_${oldStatusById.get(p._id.toString())}_paid_${Date.now()}`,
+                    idempotencyKey: `${p._id}_${oldStatusById.get(p._id.toString())}_paid_${now.toISOString().slice(0, 10)}`,
+                    aggregateType: 'payment',
+                    aggregateId: p._id.toString(),
+                    metadata: { source: 'bulk-settle', reason: 'bulk_settle', userId: req.user?._id }
+                }
+            ).catch(pubErr => {
+                console.error(`[V2 bulk-settle] ⚠️ Falha ao publicar evento pra payment ${p._id}: ${pubErr.message}`);
+            })
+            )
+        );
 
         // 6. Rebuild síncrono das PackagesView para cada pacote afetado
         //    Domínio: Financial × TherapyPackage — fechamento de sessões pós-pagas

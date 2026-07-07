@@ -17,6 +17,7 @@ import billingOrchestrator from '../../billing/BillingOrchestrator.js';
 import { handleAdvancePayment } from '../../../helpers/handleAdvancePayment.js';
 import { claimReusableCredit, buildCreditApplication } from '../../package/packageCreditService.js';
 import { ensureLeadForAppointment, buildLeadSnapshot } from '../helpers/leadHelper.js';
+import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import Patient from '../../../models/Patient.js';
 import Session from '../../../models/Session.js';
@@ -146,6 +147,10 @@ async function createWithHybridService(payload, user) {
   if (!effectivePatientId) {
     throw buildError('Paciente é obrigatório para criar agendamento', 400, 'MISSING_PATIENT');
   }
+
+  // 🛡️ POLÍTICA DE ESPECIALIDADE: bloqueia agendamento cujo doctor.specialty
+  // não corresponda à specialty informada (ver appointmentSpecialtyPolicy.js).
+  await validateDoctorSpecialty({ doctorId, specialty: payload.specialty });
 
   // 🔹 Side effect: lead é criado/vinculado FORA da transação principal
   let effectiveLeadId = inputLeadId || null;

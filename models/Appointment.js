@@ -529,7 +529,7 @@ appointmentSchema.pre('save', function (next) {
   next();
 });
 
-appointmentSchema.pre('findOneAndUpdate', function (next) {
+appointmentSchema.pre('findOneAndUpdate', async function (next) {
   this.options.runValidators = true;
   this.options.context = 'query';
 
@@ -552,19 +552,35 @@ appointmentSchema.pre('findOneAndUpdate', function (next) {
   }
 
   // 🕐 Se o update modificar date/time/duration, recalcula startDateTime/endDateTime
-  if ($set.date || $set.time || $set.duration) {
-    // Precisamos buscar o doc atual para ter os valores que não foram modificados
-    // Como não temos acesso ao doc no hook de query, adicionamos um $set explícito
-    // se todos os 3 campos estiverem presentes no update
-    if ($set.date && $set.time) {
-      const d = new Date($set.date);
-      const [h, m] = String($set.time).split(':').map(Number);
-      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
-      const duration = $set.duration || 40;
-      const end = new Date(start.getTime() + duration * 60000);
-      $set.startDateTime = start;
-      $set.endDateTime = end;
-      if (!update.$set) update.$set = $set;
+  // 🚨 FIX (2026-07-07): antes só recalculava se date E time viessem juntos no update.
+  // Um update parcial (só time, ou só date) deixava startDateTime/endDateTime
+  // desatualizados — e conflictDetection.js prioriza esses campos sobre date/time,
+  // causando "conflito fantasma" com o slot antigo mesmo após o agendamento ser movido.
+  // Agora busca no documento atual o(s) campo(s) que não vieram no update.
+  if ($set.date !== undefined || $set.time !== undefined || $set.duration !== undefined) {
+    try {
+      let { date, time, duration } = $set;
+      if (date === undefined || time === undefined || duration === undefined) {
+        const current = await this.model.findOne(this.getQuery()).select('date time duration').lean();
+        if (current) {
+          if (date === undefined) date = current.date;
+          if (time === undefined) time = current.time;
+          if (duration === undefined) duration = current.duration;
+        }
+      }
+
+      if (date && time) {
+        const d = new Date(date);
+        const [h, m] = String(time).split(':').map(Number);
+        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
+        const dur = duration || 40;
+        const end = new Date(start.getTime() + dur * 60000);
+        $set.startDateTime = start;
+        $set.endDateTime = end;
+        if (!update.$set) update.$set = $set;
+      }
+    } catch (err) {
+      return next(err);
     }
   }
 

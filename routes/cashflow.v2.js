@@ -654,6 +654,15 @@ router.get('/', auth, async (req, res) => {
                     valor: t.valor,
                     convenio: t.metodo === 'Convênio' ? 'Convênio' : t.metodo
                 })),
+                liminaresAtendidos: transacoesProducao.filter(t => t.tipo === 'Liminar').map(t => ({
+                    id: t.id,
+                    horario: t.hora,
+                    paciente: t.paciente,
+                    servico: t.servico,
+                    especialidade: t.especialidade,
+                    professional: t.professional,
+                    valor: t.valor
+                })),
                 comparativos: {
                     ontem: yesterdayTotal,
                     variacaoVsOntem: parseFloat(variacao),

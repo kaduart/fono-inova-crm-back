@@ -24,6 +24,7 @@ import PatientBalance from '../../../models/PatientBalance.js';
 import Package from '../../../models/Package.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { PatientViewContract } from '../../../contracts/ProjectionContract.js';
+import { CASH_EXCLUDED_KINDS } from '../../../constants/financial.js';
 
 const logger = createContextLogger('PatientProjection');
 
@@ -113,8 +114,11 @@ export async function buildPatientView(patientId, options = {}) {
         .select('status amount createdAt')
         .lean(),
       // Aggregation para totais financeiros (paid ou completed)
+      // 🚫 exclui kinds de recibo agregado/consumo (ver constants/financial.js
+      // CASH_EXCLUDED_KINDS) — bug de dupla contagem confirmado em produção
+      // 2026-07-07 com monthly_settlement somando junto dos session_payment originais.
       Payment.aggregate([
-        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: { $in: ['paid', 'completed'] } } },
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: { $in: ['paid', 'completed'] }, kind: { $nin: CASH_EXCLUDED_KINDS } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Payment.aggregate([

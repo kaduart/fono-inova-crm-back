@@ -459,6 +459,25 @@ router.patch('/:id', auth, async (req, res) => {
       );
     }
 
+    // 🚨 FIX (2026-07-07): sincroniza o novo horário também na Session vinculada.
+    // O bloco acima só propagava doctor/sessionValue — time nunca era replicado pro Session,
+    // então editar os slots (dia/horário) do plano deixava a Session travada no horário antigo
+    // pra sempre, e o slot antigo continuava "fantasma" bloqueando a agenda do médico
+    // (conflictDetection.js lê o horário direto da Session, não do Appointment).
+    // Precisa ser bulkWrite (não updateMany) porque cada appointment pode ter um horário novo diferente.
+    if (timeSyncMap.size > 0) {
+      const sessionTimeBulkOps = Array.from(timeSyncMap.entries()).map(([apptId, newTime]) => ({
+        updateOne: {
+          filter: { appointmentId: new mongoose.Types.ObjectId(apptId), status: { $ne: 'completed' } },
+          update: { $set: { time: newTime, updatedAt: new Date() } }
+        }
+      }));
+
+      if (sessionTimeBulkOps.length > 0) {
+        await Session.bulkWrite(sessionTimeBulkOps, { session });
+      }
+    }
+
     // Atualiza insurance.grossAmount nos payments pendentes vinculados aos appointments futuros
     let paymentsUpdated = 0;
     if (sessionValue !== undefined && affected.length > 0) {

@@ -51,11 +51,17 @@ function buildDayRange(dateStr) {
  * Verifica conflitos de horário para os slots gerados.
  * Lança erro se houver sobreposição com agendamentos existentes do médico ou do paciente.
  */
-async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession }) {
+async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession, excludePlanId }) {
   if (!slots.length) return;
 
   const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
   const patientObjectId = patientId ? new mongoose.Types.ObjectId(patientId) : null;
+  // 🚨 FIX (2026-07-07): exclui agendamentos que o PRÓPRIO plano já gerou antes.
+  // Sem isso, regenerar um plano existente (ex: adicionar um 2º slot semanal) fazia o
+  // loop revisitar semanas que já têm appointment deste mesmo plano, e o agendamento
+  // do próprio plano era acusado de "conflito" — mesmo sendo o slot que o bulkWrite
+  // upsert logo abaixo apenas atualizaria (idempotente).
+  const planExclusion = excludePlanId ? { insurancePlan: { $ne: excludePlanId } } : {};
 
   for (const slot of slots) {
     const dateStr = slot.dateStr;
@@ -68,13 +74,15 @@ async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, m
       Appointment.find({
         doctor: doctorObjectId,
         date: dayRange,
-        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+        ...planExclusion
       }).session(mongoSession).select('time duration patient operationalStatus _id').populate('patient', 'fullName').lean(),
       patientObjectId
         ? Appointment.find({
             patient: patientObjectId,
             date: dayRange,
-            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+            ...planExclusion
           }).session(mongoSession).select('time duration doctor operationalStatus _id').populate('doctor', 'fullName').lean()
         : Promise.resolve([])
     ]);
@@ -230,7 +238,8 @@ export async function generateInsurancePlanSessions({
     doctorId: plan.doctor,
     patientId: plan.patient,
     duration: plan.duration || 40,
-    mongoSession
+    mongoSession,
+    excludePlanId: plan._id
   });
 
   // ── 6. bulkWrite upsert para appointments ──────────────────────

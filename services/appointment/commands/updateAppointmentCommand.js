@@ -31,6 +31,7 @@ import {
   toObjectIdString,
 } from './_helpers.js';
 import { applyFinancialProtection } from '../policies/appointmentFinancialPolicy.js';
+import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.js';
 import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, payload, user) {
@@ -91,6 +92,16 @@ export async function execute(id, payload, user) {
         updatedBy: user?._id,
         updatedAt: currentDate,
       };
+
+      // 🛡️ POLÍTICA DE ESPECIALIDADE: valida a combinação EFETIVA (médico e
+      // especialidade resultantes deste update, trocados ou mantidos) antes
+      // de escrever. Roda sempre — inclusive quando nada muda — porque é
+      // barata e fecha a porta pra estados já inconsistentes se perpetuarem.
+      const effectiveSpecialty = safeBody.specialty !== undefined ? safeBody.specialty : appointment.specialty;
+      await validateDoctorSpecialty(
+        { doctorId: toObjectIdString(updateData.doctor), specialty: effectiveSpecialty },
+        mongoSession
+      );
 
       const previousData = {
         doctor: appointment.doctor?.toString?.() || null,

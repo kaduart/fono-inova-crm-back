@@ -1,14 +1,462 @@
-outro caso comissao de doutroes que gera em ficnanceiro despesas....
+[EventReaper] ✅ nada a reaper em 27ms
+[AppointmentRecovery] ✅ nada a recuperar em 29ms
+[ReconciliationWorker] Concluído: { checked: 45, inconsistencies: 21, autoFixed: 0 }
+[recon_1783458200885][event_publisher][INFO] publish_start: Publicando evento { eventType: 'RECONCILIATION_ALERT' }
+[recon_1783458200885][event_publisher][WARN] event_validation_failed: Evento com schema inválido — publicado mesmo assim (modo permissivo) {
+  eventType: 'RECONCILIATION_ALERT',
+  aggregateId: 'unknown',
+  errors: '[Object]',
+  warnings: '[Object]',
+  code: 'UNKNOWN_EVENT_TYPE'
+}
+[recon_1783458200885][event_publisher][INFO] event_stored: Evento persistido no Event Store {
+  eventId: '0f8127f6-cad7-4045-8b37-0d1c389573e2',
+  eventType: 'RECONCILIATION_ALERT',
+  aggregateType: 'system'
+}
+[FinancialGuard] Executando settle para SETTLE_PAYMENT
+[event-loop] LAG DETECTED: 120ms (threshold 100ms)
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:29.890Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a1de23e4bafb710ab166944\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-01T19:49:18.800Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:29.887Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a1de23e4bafb710ab166944'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a1de23e4bafb710ab166944: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.129Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a1de26f4bafb710ab166b58\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-01T19:50:07.340Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.125Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a1de26f4bafb710ab166b58'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a1de26f4bafb710ab166b58: pending → paid | R$130 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.221Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a1f2a0212d0f97a7a85cc15\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"financialDate\":\"2026-06-02T19:07:46.780Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.219Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a1f2a0212d0f97a7a85cc15'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a1f2a0212d0f97a7a85cc15: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.328Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a1f2a1912d0f97a7a85cd9c\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"financialDate\":\"2026-06-02T19:08:09.322Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.326Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a1f2a1912d0f97a7a85cd9c'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a1f2a1912d0f97a7a85cd9c: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.578Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a1f2a3712d0f97a7a85cf2b\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"financialDate\":\"2026-06-02T19:08:39.514Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.577Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a1f2a3712d0f97a7a85cf2b'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a1f2a3712d0f97a7a85cf2b: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.710Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a2310cba91b89a228a3685b\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-05T18:09:15.603Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.710Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a2310cba91b89a228a3685b'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a2310cba91b89a228a3685b: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:30.816Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a2310f4a91b89a228a36997\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-05T18:09:56.531Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:30.814Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a2310f4a91b89a228a36997'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a2310f4a91b89a228a36997: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.031Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a27101d733316c44c97d71d\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-08T18:55:25.728Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.030Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a27101d733316c44c97d71d'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a27101d733316c44c97d71d: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.132Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a27103a733316c44c97d898\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-08T18:55:54.851Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.130Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a27103a733316c44c97d898'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a27103a733316c44c97d898: pending → paid | R$130 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.196Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a304a90c42c890104501332\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-15T18:55:12.054Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.195Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a304a90c42c890104501332'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a304a90c42c890104501332: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.333Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a304ab9c42c8901045014f0\",\"__v\":0}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-15T18:55:53.969Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.332Z\",\"insurance.netAmount\":0,\"splitMethods\":[]},\"$inc\":{\"__v\":1}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a304ab9c42c8901045014f0'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a304ab9c42c8901045014f0: pending → paid | R$130 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.538Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a35810693982fc8dae9635f\"}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-19T17:48:54.357Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.538Z\",\"insurance.netAmount\":0}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a35810693982fc8dae9635f'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a35810693982fc8dae9635f: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.672Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a35831293982fc8dae96778\"}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-06-19T17:57:38.196Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.672Z\",\"insurance.netAmount\":0}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a35831293982fc8dae96778'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a35831293982fc8dae96778: pending → paid | R$160 | reason=bulk_settle
+⚠️  [AppointmentWriteGuard] WARN: {
+  "timestamp": "2026-07-07T21:05:31.744Z",
+  "guard": "AppointmentWriteGuard",
+  "model": "Payment",
+  "operation": "collection.updateOne",
+  "touchedFields": [
+    "status"
+  ],
+  "hasAuthorizedFlag": false,
+  "mode": "warn",
+  "filter": "{\"_id\":\"6a4d0f5d53c9e922cc0898a1\"}",
+  "update": "{\"$set\":{\"status\":\"paid\",\"paidAt\":\"2026-07-07T21:05:29.480Z\",\"financialDate\":\"2026-07-07T14:38:21.477Z\",\"paymentMethod\":\"cartao_credito\",\"updatedAt\":\"2026-07-07T21:05:31.743Z\"}}",
+  "stack": [
+    "    at Model.$__save (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:496:8)",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:387:18",
+    "    at /home/user/projetos/crm/back/node_modules/kareem/index.js:113:15",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+  ]
+}
+[PaymentStatusService] ⚠️ Falha ao publicar evento: moment is not defined {
+  paymentId: new ObjectId('6a4d0f5d53c9e922cc0898a1'),
+  from: 'pending',
+  to: 'paid'
+}
+[PaymentStatusService] 6a4d0f5d53c9e922cc0898a1: pending → paid | R$160 | reason=bulk_settle
+⚠️  [FINANCIAL SANITIZER] REMOVED UPDATE: {
+  "operation": "updateMany",
+  "entity": "Appointment",
+  "removedFields": {
+    "isPaid": true,
+    "paymentStatus": "paid"
+  },
+  "mode": "warn",
+  "stack": "    at model.Query.next (/home/user/projetos/crm/back/node_modules/kareem/index.js:93:7)\n    at _next (/home/user/projetos/crm/back/node_modules/kareem/index.js:146:10)\n    at /home/user/projetos/crm/back/node_modules/kareem/index.js:653:30\n    at process.processTicksAndRejections (node:internal/process/task_queues:77:11)"
+}
+💥 UnhandledRejection: MongoTransactionError: Cannot call abortTransaction after calling commitTransaction
+    at ClientSession.abortTransaction (/home/user/projetos/crm/back/node_modules/mongoose/node_modules/mongodb/lib/sessions.js:376:19)
+    at file:///home/user/projetos/crm/back/routes/payment.v2.js:1291:28
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  errorLabelSet: Set(0) {}
+}
+[PatientV2Routes][INFO] [front_1783458370690_86k43wthr] 🔍 Get patient: [object Object] {}
+[GET /appointments] Filtro montado: {"patient":"6a43b830ff5d54397a7abee2","operationalStatus":{"$ne":"suspended"}}
+(node:26533) Warning: Label 'appointments.query' already exists for console.time()
+[PatientV2Routes][WARN] [front_1783458370690_86k43wthr] ⚠️ View is stale (440s): [object Object] {}
+[front_1783458370690_86k43wthr][event_publisher][INFO] publish_start: Publicando evento { eventType: 'PATIENT_VIEW_REBUILD_REQUESTED' }
+[PatientV2Routes][INFO] [front_1783458370690_86k43wthr] ✅ Get completed: [object Object] {}
+[PatientV2Routes][INFO] [front_1783458370690_dbkhrz689] 🔍 Get patient: [object Object] {}
+[GET /appointments] MongoDB retornou 1 documentos
+[Calendar] 1 pacientes únicos para verificar saldo
+[front_1783458370690_86k43wthr][event_publisher][WARN] event_validation_failed: Evento com schema inválido — publicado mesmo assim (modo permissivo) {
+  eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+  aggregateId: '6a43b830ff5d54397a7abee2',
+  errors: '[Object]',
+  warnings: '[Object]',
+  code: 'UNKNOWN_EVENT_TYPE'
+}
+[Calendar] 0 pacientes com saldo devedor
+[GET /appointments] Retornando 1 eventos
+[PatientV2Routes][WARN] [front_1783458370690_dbkhrz689] ⚠️ View is stale (440s): [object Object] {}
+[front_1783458370690_dbkhrz689][event_publisher][INFO] publish_start: Publicando evento { eventType: 'PATIENT_VIEW_REBUILD_REQUESTED' }
+[EVENT_DEBOUNCED] PATIENT_VIEW_REBUILD_REQUESTED aggregate=6a43b830ff5d54397a7abee2 — evento legítimo pode ter sido perdido
+[front_1783458370690_dbkhrz689][event_publisher][WARN] debounced: Evento debounced (publicado recentemente) {
+  eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+  aggregateId: '6a43b830ff5d54397a7abee2'
+}
+[PatientV2Routes][INFO] [front_1783458370690_dbkhrz689] ✅ Get completed: [object Object] {}
+[GET /appointments] Filtro montado: {"patient":"6a43b830ff5d54397a7abee2","operationalStatus":{"$ne":"suspended"}}
+(node:26533) Warning: Label 'appointments.query' already exists for console.time()
+[front_1783458370690_86k43wthr][event_publisher][INFO] event_stored: Evento persistido no Event Store {
+  eventId: 'c108115d-5da3-45da-abbc-4873211d7a8c',
+  eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+  aggregateType: 'patient'
+}
+[future-sessions] PatientId é de view, usando patientId real: 6a43b830ff5d54397a7abee2
+[front_1783458370690_86k43wthr][event_publisher][INFO] event_queued: Evento enviado para fila {
+  eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+  eventId: 'c108115d-5da3-45da-abbc-4873211d7a8c',
+  queue: 'patient-projection',
+  jobId: '1027'
+}
+[PatientProjectionWorker][INFO] [front_1783458370690_86k43wthr] 🎯 Processing PATIENT_VIEW_REBUILD_REQUESTED: [object Object] {}
+[PatientProjectionWorker][INFO] [front_1783458370690_86k43wthr] 🔄 Manual rebuild requested: [object Object] {}
+[PatientProjection][INFO] [front_1783458370690_86k43wthr] Building view for patient 6a43b830ff5d54397a7abee2: [object Object] {}
+[GET /appointments] MongoDB retornou 1 documentos
+[Calendar] 1 pacientes únicos para verificar saldo
+[future-sessions] PatientId é de view, usando patientId real: 6a43b830ff5d54397a7abee2
+[Calendar] 0 pacientes com saldo devedor
+[GET /appointments] Retornando 1 eventos
+[PatientProjection][INFO] [front_1783458370690_86k43wthr] View built successfully: [object Object] {}
+[PatientProjectionWorker][INFO] [front_1783458370690_86k43wthr] ✅ Completed PATIENT_VIEW_REBUILD_REQUESTED: [object Object] {}
+[PatientProjectionWorker][INFO] ✅ Job 1027 completed: [object Object] {}
+[PackageV2][INFO] [pkg_list_1783458373325] Listing packages: [object Object] {}
+[GET /appointments] Filtro montado: {"patient":"6a43b830ff5d54397a7abee2","operationalStatus":{"$ne":"suspended"}}
+(node:26533) Warning: Label 'appointments.query' already exists for console.time()
+[GET /appointments] MongoDB retornou 2 documentos
+[Calendar] 1 pacientes únicos para verificar saldo
+[Calendar] 0 pacientes com saldo devedor
+[GET /appointments] Retornando 2 eventos
+[GET /appointments] Filtro montado: {"patient":"6a43b830ff5d54397a7abee2","operationalStatus":{"$ne":"suspended"}}
+(node:26533) Warning: Label 'appointments.query' already exists for console.time()
+[GET /appointments] MongoDB retornou 2 documentos
+[Calendar] 1 pacientes únicos para verificar saldo
+[Calendar] 0 pacientes com saldo devedor
+[GET /appointments] Retornando 2 eventos
 
 
-oi que eu acho que isso tem a ver com as sessoes de messes passados e por isso nao abteu por exemploa a napaula nao pagamos meses anterires 
 
-curl 'http://localhost:5000/api/v2/expenses?month=6&year=2026&category=&status=&doctorId=' \
+
+
+curl 'http://localhost:5000/api/v2/payments/bulk-settle' \
   -H 'Accept: application/json, text/plain, */*' \
   -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4MzQ0MjgzNSwiZXhwIjoxNzgzNDQ2NDM1fQ.41Tlmt7xI91vsV6Nae36PHxwG_c9my50ClCgLXcOMys' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgU2FudG9zIiwiaWF0IjoxNzgzNDU3MTk3LCJleHAiOjE3ODM1NDM1OTd9.1reC5tBVvuOpPYnPmOMB-FUdoO2Ds9l90bGkJRSlo2A' \
   -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"452e-6DRAgcDQ0i084gQ7lkNDfhdJieA"' \
+  -H 'Content-Type: application/json' \
   -H 'Origin: http://localhost:5173' \
   -H 'Referer: http://localhost:5173/' \
   -H 'Sec-Fetch-Dest: empty' \
@@ -18,671 +466,10 @@ curl 'http://localhost:5000/api/v2/expenses?month=6&year=2026&category=&status=&
   -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
   -H 'sec-ch-ua-mobile: ?0' \
   -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'x-correlation-id: front_1783444014156_hvenizhyx' 
-  {
-    "success": true,
-    "data": [
-        {
-            "_id": "6a4ba44b822c47c625c214cb",
-            "description": "Ana Paula - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 375,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "6a0cd1d0f5d1991be385b58b",
-                "fullName": "Ana Paula",
-                "specialty": "psicologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 6,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":6,\"value\":375,\"byInsurance\":{\"bradesco-saude\":{\"count\":2,\"value\":130,\"rate\":65},\"particular\":{\"count\":4,\"value\":245,\"rate\":65}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"bradesco-saude\":{\"count\":2,\"value\":130,\"rate\":65},\"particular\":{\"count\":4,\"value\":245,\"rate\":65}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:15.995Z",
-            "updatedAt": "2026-07-06T12:49:15.996Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba44b822c47c625c214c4",
-            "description": "Milena Amorim - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 795,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "6a0b65ae80cc438aa0b62c2b",
-                "fullName": "Milena Amorim",
-                "specialty": "psicologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 11,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":11,\"value\":795,\"byInsurance\":{\"particular\":{\"count\":11,\"value\":795,\"rate\":70}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":11,\"value\":795,\"rate\":70}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:15.105Z",
-            "updatedAt": "2026-07-06T12:49:15.106Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba449822c47c625c214ae",
-            "description": "Mayra Magda Mendes Oliveira - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 520,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "6981db7af55849815f98b00a",
-                "fullName": "Mayra Magda Mendes Oliveira",
-                "specialty": "fonoaudiologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 8,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":8,\"value\":520,\"byInsurance\":{\"particular\":{\"count\":8,\"value\":520,\"rate\":65}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":8,\"value\":520,\"rate\":65}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:13.069Z",
-            "updatedAt": "2026-07-06T12:49:13.069Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba447822c47c625c2149f",
-            "description": "Luis Henrique - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 740,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "6840aa2f928a20e92ab13be8",
-                "fullName": "Luis Henrique",
-                "specialty": "terapia_ocupacional"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 12,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":12,\"value\":740,\"byInsurance\":{\"particular\":{\"count\":6,\"value\":380,\"rate\":65},\"unimed-anapolis\":{\"count\":6,\"value\":360,\"rate\":60}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":6,\"value\":380,\"rate\":65},\"unimed-anapolis\":{\"count\":6,\"value\":360,\"rate\":60}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:11.105Z",
-            "updatedAt": "2026-07-06T12:49:11.105Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba446822c47c625c21498",
-            "description": "Lorrany Siqueira Marques - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 7930,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "684072213830f473da1b0b0b",
-                "fullName": "Lorrany Siqueira Marques",
-                "specialty": "fonoaudiologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 122,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":122,\"value\":7930,\"byInsurance\":{\"particular\":{\"count\":111,\"value\":7215,\"rate\":65},\"unimed-fesp\":{\"count\":1,\"value\":65,\"rate\":65},\"unimed-anapolis\":{\"count\":2,\"value\":130,\"rate\":65},\"unimed-campinas\":{\"count\":4,\"value\":260,\"rate\":65},\"unimed-goiania\":{\"count\":3,\"value\":195,\"rate\":65},\"bradesco-saude\":{\"count\":1,\"value\":65,\"rate\":65}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":111,\"value\":7215,\"rate\":65},\"unimed-fesp\":{\"count\":1,\"value\":65,\"rate\":65},\"unimed-anapolis\":{\"count\":2,\"value\":130,\"rate\":65},\"unimed-campinas\":{\"count\":4,\"value\":260,\"rate\":65},\"unimed-goiania\":{\"count\":3,\"value\":195,\"rate\":65},\"bradesco-saude\":{\"count\":1,\"value\":65,\"rate\":65}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:10.215Z",
-            "updatedAt": "2026-07-06T13:21:39.963Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba443822c47c625c21488",
-            "description": "Ana Flavia Espindola Volpp - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 2504,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "69d56b29043b467f4c708b5b",
-                "fullName": "Ana Flavia Espindola Volpp",
-                "specialty": "neuroped"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 7,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":7,\"value\":2504,\"byInsurance\":{\"particular\":{\"count\":7,\"value\":2504,\"rate\":\"80%\"}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":7,\"value\":2504,\"rate\":\"80%\"}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:07.814Z",
-            "updatedAt": "2026-07-06T12:49:07.815Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba443822c47c625c21483",
-            "description": "Bárbara Martins Rodrigues - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 165,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "690a3f957fe419286acb0b0b",
-                "fullName": "Bárbara Martins Rodrigues",
-                "specialty": "fisioterapia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 3,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":3,\"value\":165,\"byInsurance\":{\"particular\":{\"count\":1,\"value\":65,\"rate\":65},\"unimed-campinas\":{\"count\":2,\"value\":100,\"rate\":50}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":1,\"value\":65,\"rate\":65},\"unimed-campinas\":{\"count\":2,\"value\":100,\"rate\":50}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:07.099Z",
-            "updatedAt": "2026-07-06T12:49:07.100Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba441822c47c625c21479",
-            "description": "Thayna Miranda - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 905,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "698f09aa39d78a9c5746dc28",
-                "fullName": "Thayna Miranda",
-                "specialty": "terapia_ocupacional"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 16,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":16,\"value\":905,\"byInsurance\":{\"particular\":{\"count\":7,\"value\":455,\"rate\":65},\"bradesco-saude\":{\"count\":9,\"value\":450,\"rate\":50}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":7,\"value\":455,\"rate\":65},\"bradesco-saude\":{\"count\":9,\"value\":450,\"rate\":50}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:05.677Z",
-            "updatedAt": "2026-07-06T12:49:05.677Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba440822c47c625c21472",
-            "description": "Suzane de Morais Soares - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 570,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "68a8cf172132ca79b074d387",
-                "fullName": "Suzane de Morais Soares",
-                "specialty": "psicologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 9,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":9,\"value\":570,\"byInsurance\":{\"particular\":{\"count\":8,\"value\":520,\"rate\":65},\"unimed-anapolis\":{\"count\":1,\"value\":50,\"rate\":50}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":8,\"value\":520,\"rate\":65},\"unimed-anapolis\":{\"count\":1,\"value\":50,\"rate\":50}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:04.786Z",
-            "updatedAt": "2026-07-06T12:49:04.786Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4ba43e822c47c625c21462",
-            "description": "Tatiana Celuta Peres - Jun/2026",
-            "category": "commission",
-            "subcategory": "salary",
-            "amount": 2085,
-            "date": "2026-06-30",
-            "relatedDoctor": {
-                "_id": "685c2affaec14c71635863b7",
-                "fullName": "Tatiana Celuta Peres",
-                "specialty": "psicologia"
-            },
-            "workPeriod": {
-                "start": "2026-06-01",
-                "end": "2026-06-30",
-                "sessionsCount": 33,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "transferencia_bancaria",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "{\"standardSessions\":{\"count\":33,\"value\":2085,\"byInsurance\":{\"particular\":{\"count\":29,\"value\":1885,\"rate\":65},\"unimed-anapolis\":{\"count\":1,\"value\":50,\"rate\":50},\"unimed-campinas\":{\"count\":3,\"value\":150,\"rate\":50}}},\"evaluations\":{\"count\":0,\"value\":0},\"neuropsychEvaluations\":{\"count\":0,\"value\":0},\"custom\":[],\"byInsurance\":{\"particular\":{\"count\":29,\"value\":1885,\"rate\":65},\"unimed-anapolis\":{\"count\":1,\"value\":50,\"rate\":50},\"unimed-campinas\":{\"count\":3,\"value\":150,\"rate\":50}}}",
-            "createdBy": "000000000000000000000000",
-            "createdByRole": "system",
-            "createdByName": "Sistema",
-            "createdAt": "2026-07-06T12:49:02.670Z",
-            "updatedAt": "2026-07-06T12:49:02.671Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a32ff41a75fceb53ac0d4a1",
-            "description": "Agua",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 198,
-            "date": "2026-06-17",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-17T20:10:41.507Z",
-            "updatedAt": "2026-06-17T20:10:41.508Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a32bd89a75fceb53ac04aef",
-            "description": "uniformes 50%",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 550,
-            "date": "2026-06-17",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "resta pagar 500",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-17T15:30:17.288Z",
-            "updatedAt": "2026-06-17T15:30:17.289Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4bac85822c47c625c2196f",
-            "description": "Aluguel",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 7500,
-            "date": "2026-06-10",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-07-06T13:24:21.231Z",
-            "updatedAt": "2026-07-06T13:24:21.231Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a2953a7406b9a74738c9d66",
-            "description": "Contabilidade",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 400,
-            "date": "2026-06-10",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-10T12:08:07.491Z",
-            "updatedAt": "2026-06-10T12:08:07.492Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a295377406b9a74738c9c9c",
-            "description": "Papelaria",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 430,
-            "date": "2026-06-10",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-10T12:07:19.643Z",
-            "updatedAt": "2026-06-10T12:07:19.644Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a26cc7f733316c44c97781e",
-            "description": "luz",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 601,
-            "date": "2026-06-08",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "canceled",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-08T14:06:55.422Z",
-            "updatedAt": "2026-06-10T12:07:43.646Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a26cc3b733316c44c9776dd",
-            "description": "Luz",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 601,
-            "date": "2026-06-08",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "canceled",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-08T14:05:47.286Z",
-            "updatedAt": "2026-06-10T12:07:36.761Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4d320cf71dcb2d98e9d61b",
-            "description": "Evandro AT",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 900,
-            "date": "2026-06-05",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6a2806fbd330bd5bec8e8d37",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Santos",
-            "createdAt": "2026-07-07T17:06:20.117Z",
-            "updatedAt": "2026-07-07T17:06:20.121Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a4baca1822c47c625c219a9",
-            "description": "Mikaelly Fono",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 4800,
-            "date": "2026-06-05",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "pending",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-07-06T13:24:49.032Z",
-            "updatedAt": "2026-07-06T13:24:49.032Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a2026f16995c3094b4e3886",
-            "description": "Transporte Beatriz",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 210,
-            "date": "2026-06-03",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-03T13:06:57.477Z",
-            "updatedAt": "2026-06-03T13:06:57.479Z",
-            "__v": 0
-        },
-        {
-            "_id": "6a2025b36995c3094b4e375b",
-            "description": "Cord IS",
-            "category": "operational",
-            "subcategory": null,
-            "amount": 196,
-            "date": "2026-06-03",
-            "relatedDoctor": null,
-            "workPeriod": {
-                "sessionsCount": 0,
-                "revenueGenerated": 0
-            },
-            "paymentMethod": "pix",
-            "status": "paid",
-            "isRecurring": false,
-            "recurrence": {
-                "frequency": null,
-                "parentExpense": null
-            },
-            "attachment": null,
-            "notes": "",
-            "createdBy": "6806dd1bb6f92559b49a8a9c",
-            "createdByRole": "admin",
-            "createdByName": "Ricardo Maia Admin",
-            "createdAt": "2026-06-03T13:01:39.536Z",
-            "updatedAt": "2026-06-03T13:01:39.536Z",
-            "__v": 0
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 50,
-        "total": 21,
-        "pages": 1
-    },
-    "totals": {
-        "_id": null,
-        "totalPaid": 10814,
-        "totalPending": 20959,
-        "countPaid": 8,
-        "countPending": 11
-    },
-    "cached": true
-}
+  -H 'x-correlation-id: front_1783458328662_v7aq7a3np' \
+  --data-raw '{"paymentIds":["6a4d0f5d53c9e922cc0898a1","6a35831293982fc8dae96778","6a35810693982fc8dae9635f","6a304ab9c42c8901045014f0","6a304a90c42c890104501332","6a27103a733316c44c97d898","6a27101d733316c44c97d71d","6a2310f4a91b89a228a36997","6a2310cba91b89a228a3685b","6a1f2a3712d0f97a7a85cf2b","6a1f2a1912d0f97a7a85cd9c","6a1f2a0212d0f97a7a85cc15","6a1de26f4bafb710ab166b58","6a1de23e4bafb710ab166944"],"paymentMethod":"cartao_credito","totalAmount":2150}'
+
+
+
+
+             
