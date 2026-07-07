@@ -68,7 +68,8 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
             isRecurring,
             recurrence,
             notes,
-            createdBy: req.user.id
+            createdBy: req.user.id,
+            createdByRole: req.user.role
         }], { session });
 
         await session.commitTransaction();

@@ -394,4 +394,66 @@ describe('⚡ Teste de Carga', () => {
     // Pelo menos 80% deve ter sucesso
     expect(successes).toBeGreaterThanOrEqual(40);
   });
+
+  describe('🛡️ Proteção de origem financeira (convenio/liminar)', () => {
+    it('deve PRESERVAR billingType convenio quando agenda externa envia particular', async () => {
+      const doctor = await Factories.createDoctor();
+      const patient = await Factories.createPatient();
+      const appointment = await Factories.createAppointment({
+        doctor: doctor._id,
+        patient: patient._id,
+        billingType: 'convenio',
+        paymentMethod: 'convenio',
+        insuranceProvider: 'unimed-anapolis',
+        insuranceValue: 100,
+      });
+
+      const response = await request(app)
+        .post('/api/import-from-agenda/sync-update')
+        .set('Authorization', `Bearer ${AuthHelpers.getServiceToken()}`)
+        .send({
+          externalId: appointment._id.toString(),
+          _id: appointment._id.toString(),
+          date: '2026-03-10',
+          time: '10:00',
+          billingType: 'particular',
+          crm: { paymentMethod: 'pix' },
+        });
+
+      expect(response.status).toBe(200);
+
+      const updated = await mongoose.model('Appointment').findById(appointment._id).lean();
+      expect(updated.billingType).toBe('convenio');
+      expect(updated.paymentMethod).toBe('convenio');
+      expect(updated.insuranceProvider).toBe('unimed-anapolis');
+    });
+
+    it('deve PRESERVAR billingType liminar quando agenda externa envia particular', async () => {
+      const doctor = await Factories.createDoctor();
+      const patient = await Factories.createPatient();
+      const appointment = await Factories.createAppointment({
+        doctor: doctor._id,
+        patient: patient._id,
+        billingType: 'liminar',
+        paymentMethod: 'liminar_credit',
+      });
+
+      const response = await request(app)
+        .post('/api/import-from-agenda/sync-update')
+        .set('Authorization', `Bearer ${AuthHelpers.getServiceToken()}`)
+        .send({
+          externalId: appointment._id.toString(),
+          _id: appointment._id.toString(),
+          date: '2026-03-10',
+          billingType: 'particular',
+          crm: { paymentMethod: 'pix' },
+        });
+
+      expect(response.status).toBe(200);
+
+      const updated = await mongoose.model('Appointment').findById(appointment._id).lean();
+      expect(updated.billingType).toBe('liminar');
+      expect(updated.paymentMethod).toBe('liminar_credit');
+    });
+  });
 });

@@ -30,6 +30,7 @@ import {
   sanitizeAppointmentPayload,
   toObjectIdString,
 } from './_helpers.js';
+import { applyFinancialProtection } from '../policies/appointmentFinancialPolicy.js';
 import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, payload, user) {
@@ -51,7 +52,12 @@ export async function execute(id, payload, user) {
 
       checkDoctorPermission(appointment, user);
 
-      const safeBody = sanitizeAppointmentPayload(payload);
+      // 🛡️ POLÍTICA FINANCEIRA: protege origens convenio/liminar contra downgrade acidental
+      // para particular/pix em updates genéricos. Preserva valores atuais silenciosamente
+      // quando não há flag explícita de conversão financeira (__allowFinancialConversion).
+      const protectedPayload = applyFinancialProtection(appointment, payload);
+
+      const safeBody = sanitizeAppointmentPayload(protectedPayload);
       const currentDate = new Date();
 
       // patientInfo é descartado pela sanitização (correto — não deve ir direto no $set do Appointment)

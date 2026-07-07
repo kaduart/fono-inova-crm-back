@@ -17,6 +17,7 @@ import Patient from "../models/Patient.js";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
 import { transitionPaymentStatus } from "../services/paymentStatusService.js";
+import { applyFinancialProtection } from "../services/appointment/policies/appointmentFinancialPolicy.js";
 
 const router = express.Router();
 
@@ -815,6 +816,13 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
     console.log(`[SYNC-UPDATE] ✅ Appointment encontrado: ${appointment._id}`);
 
+    // 🛡️ POLÍTICA FINANCEIRA: protege origens convenio/liminar contra downgrade acidental
+    // vindo de clientes que enviam 'particular'/'pix' como default.
+    const protectedPayload = applyFinancialProtection(appointment, mappedData);
+    if (protectedPayload.billingType !== mappedData.billingType || protectedPayload.paymentMethod !== mappedData.paymentMethod) {
+      console.log(`[SYNC-UPDATE] 🛡️ Política financeira aplicada: billingType=${protectedPayload.billingType}, paymentMethod=${protectedPayload.paymentMethod}`);
+    }
+
     // OTIMIZAÇÃO: Se for agendamento antigo (>7 dias) e já concluído, não gasta recursos
     if (['paid', 'confirmed', 'completed'].includes(appointment.operationalStatus) &&
       new Date(appointment.date) < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) {
@@ -828,7 +836,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
     if (observations) updateData.notes = observations;
     if (specialty) updateData.specialty = specialty.toLowerCase();
     if (responsible !== undefined) updateData.responsible = responsible;
-    if (billingType) updateData.billingType = billingType;
+    if (protectedPayload.billingType !== appointment.billingType) {
+      updateData.billingType = protectedPayload.billingType;
+    }
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
     if (insuranceProvider !== undefined) updateData.insuranceProvider = insuranceProvider || null;
     if (insuranceValue !== undefined) updateData.insuranceValue = Number(insuranceValue || 0);
@@ -845,7 +855,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
     // Adiciona doctor ao updateData se encontrado
     if (doctor) updateData.doctor = doctor._id;
-    if (crmRaw?.paymentMethod) updateData.paymentMethod = crmRaw.paymentMethod;
+    if (protectedPayload.paymentMethod !== appointment.paymentMethod) {
+      updateData.paymentMethod = protectedPayload.paymentMethod;
+    }
     if (crmRaw?.paymentAmount !== undefined) updateData.sessionValue = Number(crmRaw.paymentAmount || 0);
     if (crmRaw?.serviceType) {
       const APPT_SERVICE_TYPES = ['evaluation','session','package_session','individual_session','meet','alignment','return','tongue_tie_test','neuropsych_evaluation','convenio_session'];
@@ -922,7 +934,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         const appointmentDate = date || appointment.date;
       const appointmentTime = time || appointment.time;
       const sessionValue = Number(crm.paymentAmount || appointment.sessionValue || 0);
-      const paymentMethod = crm.paymentMethod || appointment.paymentMethod || 'pix';
+      const paymentMethod = protectedPayload.paymentMethod;
       // Session.paymentMethod enum: ['dinheiro','pix','cartão','convenio']
       const sessionPaymentMethod = ['dinheiro', 'pix', 'cartão', 'convenio'].includes(paymentMethod)
         ? paymentMethod
@@ -932,7 +944,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       const rawServiceType = crm.serviceType === 'session' ? 'individual_session' : (crm.serviceType || appointment.serviceType || 'evaluation');
       const serviceType = PAYMENT_SERVICE_TYPES.includes(rawServiceType) ? rawServiceType : 'individual_session';
       const resolvedSpecialty = normalizeSessionType(crm.sessionType || appointment.specialty || serviceType);
-      const resolvedBillingType = billingType || appointment.billingType || 'particular';
+      const resolvedBillingType = protectedPayload.billingType;
 
       const newSession = await Session.create([{
         patient: patientId,
