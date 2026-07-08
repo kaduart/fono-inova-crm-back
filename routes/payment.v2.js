@@ -29,6 +29,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
+import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 
 const router = express.Router();
 
@@ -719,7 +720,7 @@ router.post('/create-sync', auth, async (req, res) => {
             message: 'Pagamento criado com sucesso'
         });
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         logger.error(`[V2 create-sync] ❌ Erro: ${error.message}`);
         return res.status(500).json({
             success: false,
@@ -1118,7 +1119,7 @@ router.patch('/:id', auth, async (req, res) => {
         });
 
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         logger.error(`[V2 PATCH ${id}] ❌ Erro: ${error.message}`);
         return res.status(500).json({
             success: false,
@@ -1356,7 +1357,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
         });
 
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         logger.error('[V2 bulk-settle] Erro:', error.message);
         res.status(500).json({ success: false, error: error.message });
     } finally {
@@ -1423,7 +1424,7 @@ router.delete('/:paymentId', auth, async (req, res) => {
         return res.json({ success: true, message: 'Pagamento removido com sucesso', data: { paymentId, cascade } });
 
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         logger.error(`[DELETE payment] Erro: ${error.message}`);
         return res.status(500).json({ success: false, error: error.message, code: 'DELETE_PAYMENT_ERROR' });
     } finally {

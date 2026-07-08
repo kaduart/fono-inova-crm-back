@@ -16,6 +16,7 @@ import { createContextLogger } from '../utils/logger.js';
 import { withLock } from '../utils/redisLock.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
+import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 
 /**
  * Payment Worker - Processa pagamentos com Saga Pattern
@@ -1211,7 +1212,7 @@ async function confirmPaymentFlow(payment, appointment, correlationId, log) {
         );
         
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         throw error;
     } finally {
         mongoSession.endSession();
@@ -1291,7 +1292,7 @@ async function compensatePaymentFailure(payment, appointment, error, correlation
         );
         
     } catch (compensationError) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         log.error('compensation_error', `🚨🚨🚨 CRITICAL: Compensação falhou`, {
             error: compensationError.message,
             paymentId: payment._id,

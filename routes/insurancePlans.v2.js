@@ -389,7 +389,13 @@ router.patch('/:id', auth, async (req, res) => {
     // Atualiza plano
     if (doctorId !== undefined) plan.doctor = new mongoose.Types.ObjectId(doctorId);
     if (sessionValue !== undefined) plan.sessionValue = Number(sessionValue) || 0;
-    if (slots !== undefined) plan.slots = slots;
+    if (slots !== undefined) {
+      plan.slots = slots;
+      // 🚨 FIX (2026-07-07): sessionsPerWeek é campo independente (setado só na criação) e
+      // não era recalculado ao editar slots — o card ficava mostrando a frequência antiga
+      // (ex: "1x/semana") mesmo depois de adicionar um 2º horário na semana.
+      plan.sessionsPerWeek = slots.length;
+    }
     if (notes !== undefined) plan.notes = notes;
 
     await plan.save({ session });

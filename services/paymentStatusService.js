@@ -17,6 +17,7 @@
 import Payment from '../models/Payment.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 
 const TIMEZONE = 'America/Sao_Paulo';
 

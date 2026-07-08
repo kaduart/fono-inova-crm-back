@@ -20,6 +20,7 @@ import { createContextLogger } from '../../../utils/logger.js';
 import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import mongoose from 'mongoose';
+import { safeAbortTransaction } from '../../../utils/safeAbortTransaction.js';
 
 import InsuranceBatch from '../../../models/InsuranceBatch.js';
 import InsuranceBatchView from '../../../models/InsuranceBatchView.js';
@@ -298,7 +299,7 @@ async function handleBatchCreated(payload, correlationId, log) {
         };
         
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         throw error;
     } finally {
         mongoSession.endSession();
@@ -463,7 +464,7 @@ async function handleItemApproved(payload, correlationId, log) {
         };
         
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         throw error;
     } finally {
         mongoSession.endSession();
@@ -550,7 +551,7 @@ async function handleItemRejected(payload, correlationId, log) {
         };
         
     } catch (error) {
-        await mongoSession.abortTransaction();
+        await safeAbortTransaction(mongoSession);
         throw error;
     } finally {
         mongoSession.endSession();

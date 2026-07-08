@@ -21,6 +21,7 @@ import { appendEvent } from '../../../infrastructure/events/eventStoreService.js
 import { publishEvent, publishEvents } from '../../../infrastructure/events/eventPublisher.js';
 import guideService from '../../../services/billing/guideService.js';
 import { createError, ERROR_CODES } from '../../../utils/errorUtils.js';
+import { safeAbortTransaction } from '../../../utils/safeAbortTransaction.js';
 import { 
   validateTransition, 
   canBill, 
@@ -407,7 +408,7 @@ export class InsuranceBillingService {
       };
       
     } catch (error) {
-      await mongoSession.abortTransaction();
+      await safeAbortTransaction(mongoSession);
       await executeCompensations();
       
       await publishEvent(INSURANCE_BILLING_EVENTS.INSURANCE_BILLING_FAILED, {
@@ -801,7 +802,7 @@ export class InsuranceBillingService {
       };
       
     } catch (error) {
-      await mongoSession.abortTransaction();
+      await safeAbortTransaction(mongoSession);
       throw error;
     } finally {
       mongoSession.endSession();
@@ -954,7 +955,7 @@ export class InsuranceBillingService {
       };
       
     } catch (error) {
-      await mongoSession.abortTransaction();
+      await safeAbortTransaction(mongoSession);
       throw error;
     } finally {
       mongoSession.endSession();
@@ -1025,7 +1026,7 @@ export class InsuranceBillingService {
       return { success: true, correlationId };
       
     } catch (error) {
-      await mongoSession.abortTransaction();
+      await safeAbortTransaction(mongoSession);
       throw error;
     } finally {
       mongoSession.endSession();

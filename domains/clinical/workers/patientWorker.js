@@ -18,6 +18,7 @@ import { redisConnection } from '../../../infrastructure/queue/queueConfig.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import Patient from '../../../models/Patient.js';
+import { safeAbortTransaction } from '../../../utils/safeAbortTransaction.js';
 
 const logger = createContextLogger('PatientWorker');
 
@@ -200,7 +201,7 @@ async function handleCreatePatient(payload, correlationId) {
     };
     
   } catch (error) {
-    await session.abortTransaction();
+    await safeAbortTransaction(session);
     
     logger.error(`[${correlationId}] 💥 Create failed`, { 
       patientId: payload.patientId,

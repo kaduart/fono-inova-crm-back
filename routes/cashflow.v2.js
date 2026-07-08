@@ -218,7 +218,7 @@ router.get('/', auth, async (req, res) => {
             const appt = apptId ? yesterdayAppointmentsMap.get(apptId) : null;
             const notes = (p.notes || '').toLowerCase();
             const desc = (p.description || '').toLowerCase();
-            const isLiminarY = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
+            const isLiminarY = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit' || !!appt?.liminarContract;
             const isPackagePayment = !isLiminarY && (notes.includes('pacote') || desc.includes('pacote') || p.type === 'package' || p.serviceType === 'package_session' || p.package || (p.session && yesterdayPkgSessionPrepaidMap.get(p.session.toString()) === true));
             const pkgPaymentTypeY = appt?.package?.paymentType || appt?.package?.model;
             const isPrepaidPackageY = pkgPaymentTypeY === 'full' || pkgPaymentTypeY === 'prepaid';
@@ -279,7 +279,9 @@ router.get('/', auth, async (req, res) => {
             let servico = 'Sessão';
 
             // Liminar: crédito judicial consumido — SEMPRE entra no caixa, nunca é filtrado como prepaid
-            const isLiminar = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit';
+            // Fallback appt?.liminarContract: cobre appointments com billingType desatualizado
+            // (ex: pacote particular antigo migrado para liminar sem sync retroativo do billingType)
+            const isLiminar = p.billingType === 'liminar' || p.paymentMethod === 'liminar_credit' || !!appt?.liminarContract;
 
             const isPackagePayment = !isLiminar && (
                 notes.includes('pacote') || desc.includes('pacote') ||
@@ -454,7 +456,7 @@ router.get('/', auth, async (req, res) => {
             const methodLower = (s.paymentMethod || '').toLowerCase();
             const isConvenio = methodLower === 'convenio' || s.paymentOrigin === 'convenio'
                 || appt?.billingType === 'convenio' || s.billingType === 'convenio';
-            const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.paymentOrigin === 'liminar_credit' || s.billingType === 'liminar';
+            const isLiminar = methodLower === 'liminar_credit' || s.paymentOrigin === 'liminar' || s.paymentOrigin === 'liminar_credit' || s.billingType === 'liminar' || !!appt?.liminarContract;
             const isPacote = !!s.package;
 
             // Detecta pacote pré-pago: dinheiro entrou na compra, sessão consumida = receita realizada
