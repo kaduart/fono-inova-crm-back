@@ -15,7 +15,8 @@
  */
 
 import Payment from '../models/Payment.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 
@@ -84,45 +85,48 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         await payment.save();
     }
 
-    // 5. Emite evento transicional (fora da transaction para não bloquear)
+    // 5. Salva evento no Outbox (dentro da transação quando houver session)
     let event = null;
     if (!silent) {
         try {
-            event = await publishEvent(
-                EventTypes.PAYMENT_STATUS_CHANGED,
+            const idempotencyKey = `${paymentId}_${oldStatus}_${newStatus}_${moment.tz(TIMEZONE).format('YYYY-MM-DD')}`;
+            event = await saveToOutbox(
                 {
-                    paymentId: payment._id.toString(),
-                    patientId: payment.patient?.toString?.(),
-                    appointmentId: payment.appointment?.toString?.(),
-                    sessionId: payment.session?.toString?.(),
-                    packageId: payment.package?.toString?.(),
-                    from: oldStatus,
-                    to: newStatus,
-                    amount: payment.amount,
-                    paymentMethod: payment.paymentMethod,
-                    financialDate: payment.financialDate,
-                    paidAt: payment.paidAt,
-                    kind: payment.kind,
-                    billingType: payment.billingType,
-                    isFromPackage: payment.isFromPackage,
-                    reason,
-                    userId: userId?.toString?.()
-                },
-                {
-                    correlationId: `payment_status_${paymentId}_${oldStatus}_${newStatus}_${Date.now()}`,
-                    idempotencyKey: `${paymentId}_${oldStatus}_${newStatus}_${moment.tz(TIMEZONE).format('YYYY-MM-DD')}`,
+                    eventId: idempotencyKey,
+                    eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+                    payload: {
+                        paymentId: payment._id.toString(),
+                        patientId: payment.patient?.toString?.(),
+                        appointmentId: payment.appointment?.toString?.(),
+                        sessionId: payment.session?.toString?.(),
+                        packageId: payment.package?.toString?.(),
+                        from: oldStatus,
+                        to: newStatus,
+                        amount: payment.amount,
+                        paymentMethod: payment.paymentMethod,
+                        financialDate: payment.financialDate,
+                        paidAt: payment.paidAt,
+                        kind: payment.kind,
+                        billingType: payment.billingType,
+                        isFromPackage: payment.isFromPackage,
+                        reason,
+                        userId: userId?.toString?.()
+                    },
                     aggregateType: 'payment',
                     aggregateId: paymentId,
-                    metadata: { source: 'paymentStatusService', reason, userId }
-                }
+                    correlationId: `payment_status_${paymentId}_${oldStatus}_${newStatus}_${Date.now()}`
+                },
+                mongoSession
             );
         } catch (pubErr) {
-            // Falha no evento NÃO quebra a transação, mas loga crítico
-            console.error(`[PaymentStatusService] ⚠️ Falha ao publicar evento: ${pubErr.message}`, {
+            // Falha no evento quebra a transação quando há session, garantindo consistência.
+            // Sem session, loga crítico e continua.
+            console.error(`[PaymentStatusService] ⚠️ Falha ao salvar evento no Outbox: ${pubErr.message}`, {
                 paymentId,
                 from: oldStatus,
                 to: newStatus
             });
+            if (mongoSession) throw pubErr;
         }
     }
 

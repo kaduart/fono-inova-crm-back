@@ -53,20 +53,20 @@ const INTEGRATIONS = [
       },
       {
         type: 'file_exists',
-        path: 'domains/billing/workers/billingOrchestratorWorker.js',
-        description: 'Billing Orchestrator Worker'
+        path: 'domains/billing/workers/billingConsumerWorker.js',
+        description: 'Billing Consumer Worker'
       },
       {
         type: 'file_contains',
-        path: 'domains/billing/workers/billingOrchestratorWorker.js',
+        path: 'domains/billing/workers/billingConsumerWorker.js',
         content: "case 'SESSION_COMPLETED':",
         description: 'Worker handles SESSION_COMPLETED'
       },
       {
         type: 'file_contains',
-        path: 'domains/billing/workers/billingOrchestratorWorker.js',
-        content: 'adaptSessionCompleted',
-        description: 'Worker uses SessionCompletedAdapter'
+        path: 'domains/billing/workers/billingConsumerWorker.js',
+        content: 'handleSessionCompleted',
+        description: 'Worker routes SESSION_COMPLETED to handler'
       }
     ]
   },
@@ -79,33 +79,28 @@ const INTEGRATIONS = [
     checks: [
       {
         type: 'file_exists',
-        path: 'domains/whatsapp/workers/messageBufferWorker.js',
-        description: 'MessageBufferWorker'
-      },
-      {
-        type: 'file_exists',
-        path: 'domains/whatsapp/workers/leadStateWorker.js',
-        description: 'LeadStateWorker'
-      },
-      {
-        type: 'file_exists',
-        path: 'domains/whatsapp/workers/orchestratorWorker.js',
-        description: 'OrchestratorWorker'
-      },
-      {
-        type: 'file_exists',
-        path: 'domains/whatsapp/workers/notificationWorker.js',
-        description: 'NotificationWorker'
-      },
-      {
-        type: 'file_exists',
         path: 'domains/whatsapp/workers/realtimeWorker.js',
         description: 'RealtimeWorker'
       },
       {
+        type: 'file_exists',
+        path: 'domains/whatsapp/workers/messageResponseWorker.js',
+        description: 'MessageResponseWorker'
+      },
+      {
+        type: 'file_exists',
+        path: 'domains/whatsapp/workers/intentClassifierWorker.js',
+        description: 'IntentClassifierWorker'
+      },
+      {
+        type: 'file_exists',
+        path: 'domains/whatsapp/workers/fsmRouterWorker.js',
+        description: 'FsmRouterWorker'
+      },
+      {
         type: 'file_contains',
         path: 'domains/whatsapp/workers/index.js',
-        content: 'createMessageBufferWorker',
+        content: 'realtimeWorker',
         description: 'Workers exported from index'
       }
     ]

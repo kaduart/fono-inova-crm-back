@@ -78,7 +78,7 @@ export const handleAdvancePayment = async (req, res) => {
             isPaid: true,
             paymentStatus: 'paid',
             visualFlag: 'ok',
-            status: 'confirmado',
+            status: 'completed',
             isAdvance: false,
             payment: payment._id,
             createdAt: now,
@@ -93,7 +93,7 @@ export const handleAdvancePayment = async (req, res) => {
             session: todaySession._id,
             date: todaySession.date,
             time: todaySession.time,
-            status: 'confirmado',
+            operationalStatus: 'completed',
             paymentStatus: 'paid',
             visualFlag: 'ok',
         });

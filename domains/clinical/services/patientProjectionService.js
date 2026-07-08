@@ -22,6 +22,7 @@ import Appointment from '../../../models/Appointment.js';
 import Payment from '../../../models/Payment.js';
 import PatientBalance from '../../../models/PatientBalance.js';
 import Package from '../../../models/Package.js';
+import LiminarContract from '../../../models/LiminarContract.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { PatientViewContract } from '../../../contracts/ProjectionContract.js';
 import { CASH_EXCLUDED_KINDS } from '../../../constants/financial.js';
@@ -91,7 +92,8 @@ export async function buildPatientView(patientId, options = {}) {
       totalPendingAgg,
       totalPendingParticularAgg,
       balance,
-      packages
+      packages,
+      liminarContracts
     ] = await Promise.all([
       // Últimos 50 agendamentos (para last/next + lista resumida)
       // 🎯 ALINHADO com resto do sistema: exclui pré-agendamentos e "fantasmas" de conversão
@@ -151,6 +153,11 @@ export async function buildPatientView(patientId, options = {}) {
       PatientBalance.findOne({ patient: patientId }).lean(),
       Package.find({ patient: patientId })
         .select('_id sessionType specialty totalSessions sessionsDone sessionsRemaining status sessionValue')
+        .lean(),
+      // ⚖️ Contratos liminar ativos do paciente
+      LiminarContract.find({ patient: patientId, status: { $in: ['active', 'suspended', 'exhausted'] } })
+        .select('_id totalCredit usedCredit creditBalance status createdAt')
+        .sort({ createdAt: -1 })
         .lean()
     ]);
     
@@ -234,6 +241,18 @@ export async function buildPatientView(patientId, options = {}) {
             };
           })
         : [],
+
+      // ⚖️ Contratos liminar
+      hasLiminarContract: liminarContracts?.length > 0,
+      liminarCredits: liminarContracts?.reduce((sum, c) => sum + (c.totalCredit || 0), 0) || 0,
+      liminarContracts: liminarContracts?.map(c => ({
+        contractId: c._id,
+        totalCredit: c.totalCredit || 0,
+        usedCredit: c.usedCredit || 0,
+        remainingCredit: c.creditBalance || 0,
+        status: c.status,
+        createdAt: c.createdAt
+      })) || [],
       
       // Saldo
       // 🎯 FONTE DE VERDADE FINANCEIRA: usa totalPendingParticular (Payment) em vez de PatientBalance.currentBalance

@@ -10,14 +10,17 @@
  * 6. Retry funciona
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAppointmentService } from '../../services/createAppointmentService.js';
+// Importar models antes de services para garantir registro do schema
+import PatientsView from '../../models/PatientsView.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
 import Patient from '../../models/Patient.js';
 import Doctor from '../../models/Doctor.js';
+import InsuranceGuide from '../../models/InsuranceGuide.js';
+import { createAppointmentService } from '../../services/createAppointmentService.js';
 
 // Mock do Outbox para testes
 const mockOutbox = [];
@@ -38,12 +41,12 @@ let mongoServer;
 beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
-});
+}, 30000);
 
 afterAll(async () => {
     await mongoose.disconnect();
     await mongoServer.stop();
-});
+}, 15000);
 
 beforeEach(async () => {
     mockOutbox.length = 0;
@@ -64,9 +67,13 @@ describe('Create Appointment Flow', () => {
     }
     
     async function createDoctor() {
+        const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
         return await Doctor.create({
             fullName: 'Dr. Teste',
-            specialty: 'fonoaudiologia'
+            specialty: 'fonoaudiologia',
+            email: `dr.teste.${suffix}@test.com`,
+            licenseNumber: `CRM-${suffix.toUpperCase()}`,
+            phoneNumber: '62999999999'
         });
     }
     
@@ -81,6 +88,8 @@ describe('Create Appointment Flow', () => {
             totalValue: sessions * 150,
             sessionType: 'fonoaudiologia',
             specialty: 'fonoaudiologia',
+            durationMonths: Math.max(1, Math.ceil(sessions / 4)),
+            sessionsPerWeek: 1,
             date: new Date()
         });
     }
@@ -89,9 +98,6 @@ describe('Create Appointment Flow', () => {
         it('deve criar agendamento e salvar evento na outbox', async () => {
             const patient = await createPatient();
             const doctor = await createDoctor();
-            
-            const session = await mongoose.startSession();
-            await session.startTransaction();
             
             const result = await createAppointmentService.execute({
                 patientId: patient._id.toString(),
@@ -102,10 +108,7 @@ describe('Create Appointment Flow', () => {
                 serviceType: 'session',
                 paymentMethod: 'pix',
                 amount: 200
-            }, session);
-            
-            await session.commitTransaction();
-            session.endSession();
+            });
             
             // Verifica resultado
             expect(result.appointmentId).toBeDefined();
@@ -115,7 +118,7 @@ describe('Create Appointment Flow', () => {
             
             // Verifica outbox
             expect(mockOutbox).toHaveLength(1);
-            expect(mockOutbox[0].eventType).toBe('APPOINTMENT_REQUESTED');
+            expect(mockOutbox[0].eventType).toBe('APPOINTMENT_CREATED');
             expect(mockOutbox[0].payload.amount).toBe(200);
             
             // Verifica agendamento no DB
@@ -132,9 +135,6 @@ describe('Create Appointment Flow', () => {
             const pkg = await createPackage(patient._id, 10, 2); // 8 restantes
             const doctor = await Doctor.findById(pkg.doctor);
             
-            const session = await mongoose.startSession();
-            await session.startTransaction();
-            
             const result = await createAppointmentService.execute({
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
@@ -142,18 +142,15 @@ describe('Create Appointment Flow', () => {
                 time: '15:00',
                 packageId: pkg._id.toString(),
                 serviceType: 'package_session'
-            }, session);
-            
-            await session.commitTransaction();
-            session.endSession();
+            });
             
             // Verifica tipo de evento
-            expect(mockOutbox[0].eventType).toBe('PACKAGE_APPOINTMENT_REQUESTED');
+            expect(mockOutbox[0].eventType).toBe('APPOINTMENT_CREATED');
             expect(mockOutbox[0].payload.packageId).toBe(pkg._id.toString());
             
             // Verifica status inicial
             const appointment = await Appointment.findById(result.appointmentId);
-            expect(appointment.paymentStatus).toBe('package_paid');
+            expect(appointment.operationalStatus).toBe('pending');
         });
     });
 
@@ -161,28 +158,32 @@ describe('Create Appointment Flow', () => {
         it('deve criar agendamento com evento de validação de guia', async () => {
             const patient = await createPatient();
             const doctor = await createDoctor();
-            
-            const session = await mongoose.startSession();
-            await session.startTransaction();
+            const guide = await InsuranceGuide.create({
+                number: `GUIA-${Date.now()}`,
+                patientId: patient._id,
+                specialty: 'fonoaudiologia',
+                insurance: 'unimed',
+                totalSessions: 10,
+                doctorId: doctor._id,
+                expiresAt: new Date('2025-12-31')
+            });
             
             const result = await createAppointmentService.execute({
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
                 date: '2024-02-01',
                 time: '16:00',
-                insuranceGuideId: 'guide-123',
+                insuranceGuideId: guide._id.toString(),
                 serviceType: 'session',
                 billingType: 'convenio'
-            }, session);
+            });
             
-            await session.commitTransaction();
-            session.endSession();
-            
-            expect(mockOutbox[0].eventType).toBe('INSURANCE_APPOINTMENT_REQUESTED');
-            expect(mockOutbox[0].payload.insuranceGuideId).toBe('guide-123');
+            expect(mockOutbox[0].eventType).toBe('APPOINTMENT_CREATED');
+            expect(mockOutbox[0].payload.insuranceGuideId).toBe(guide._id.toString());
             
             const appointment = await Appointment.findById(result.appointmentId);
-            expect(appointment.paymentStatus).toBe('pending_receipt');
+            expect(appointment.operationalStatus).toBe('pending');
+            expect(appointment.insuranceProvider).toBe('unimed');
         });
     });
 
@@ -216,19 +217,13 @@ describe('Create Appointment Flow', () => {
             const doctor = await createDoctor();
             const correlationId = 'meu-id-customizado';
             
-            const session = await mongoose.startSession();
-            await session.startTransaction();
-            
             const result = await createAppointmentService.execute({
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
                 date: '2024-02-01',
                 time: '14:00',
                 correlationId
-            }, session);
-            
-            await session.commitTransaction();
-            session.endSession();
+            });
             
             expect(result.correlationId).toBe(correlationId);
             expect(mockOutbox[0].correlationId).toBe(correlationId);
@@ -240,18 +235,12 @@ describe('Create Appointment Flow', () => {
             const patient = await createPatient();
             const doctor = await createDoctor();
             
-            const session = await mongoose.startSession();
-            await session.startTransaction();
-            
             const result = await createAppointmentService.execute({
                 patientId: patient._id.toString(),
                 doctorId: doctor._id.toString(),
                 date: '2024-02-01',
                 time: '14:00'
-            }, session);
-            
-            await session.commitTransaction();
-            session.endSession();
+            });
             
             const appointment = await Appointment.findById(result.appointmentId);
             

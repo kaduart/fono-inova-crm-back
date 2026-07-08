@@ -77,7 +77,7 @@ export default {
     // 2. No outbox, deve ter 3 eventos (não é problema)
     // Mas apenas 1 foi processado com sucesso
     const outboxEvents = await mongoose.connection.db
-      .collection('outboxevents')
+      .collection('outboxes')
       .find({
         eventType: 'INVOICE_PER_SESSION_CREATE',
         'payload.patientId': patient._id.toString()

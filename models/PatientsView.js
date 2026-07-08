@@ -111,6 +111,18 @@ const patientsViewSchema = new mongoose.Schema({
     sessionsRemaining: { type: Number, default: 0 },
     status: { type: String }
   }],
+
+  // ⚖️ Contratos liminar
+  hasLiminarContract: { type: Boolean, default: false, index: true },
+  liminarCredits: { type: Number, default: 0 },
+  liminarContracts: [{
+    contractId: { type: mongoose.Schema.Types.ObjectId },
+    totalCredit: { type: Number, default: 0 },
+    usedCredit: { type: Number, default: 0 },
+    remainingCredit: { type: Number, default: 0 },
+    status: { type: String },
+    createdAt: { type: Date }
+  }],
   
   // 🏷️ Tags/Categorização
   tags: [{ type: String, index: true }],

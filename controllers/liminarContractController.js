@@ -6,6 +6,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import { generateLiminarSessions } from '../services/schedule/generateLiminarSessions.js';
 import { createContextLogger } from '../utils/logger.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 
 const logger = createContextLogger('LiminarContract');
 
@@ -33,6 +34,7 @@ export async function createLiminarContract(req, res) {
     return res.status(400).json({ error: 'totalCredit deve ser maior que zero' });
   }
 
+  let session;
   try {
     // Idempotência
     if (idempotencyKey) {
@@ -43,55 +45,80 @@ export async function createLiminarContract(req, res) {
       }
     }
 
-    const contractData = {
-      patient:       patientId,
-      doctor:        doctorId,
-      totalCredit,
-      creditBalance: totalCredit,
-      usedCredit:    0,
-      processNumber: processNumber || null,
-      court:         court || null,
-      expirationDate: expirationDate || null,
-      mode,
-      creditHistory: [{
-        amount:    totalCredit,
-        type:      'initial',
-        reason:    'contract_created',
-        createdAt: new Date()
-      }],
-    };
+    session = await mongoose.startSession();
+    let contract;
+    let payment;
 
-    // Só inclui idempotencyKey se foi fornecido — evita null no índice sparse/unique
-    if (idempotencyKey) contractData.idempotencyKey = idempotencyKey;
-    if (receivedAt)    contractData.receivedAt = new Date(receivedAt);
+    await session.withTransaction(async () => {
+      const contractData = {
+        patient:       patientId,
+        doctor:        doctorId,
+        totalCredit,
+        creditBalance: totalCredit,
+        usedCredit:    0,
+        processNumber: processNumber || null,
+        court:         court || null,
+        expirationDate: expirationDate || null,
+        mode,
+        creditHistory: [{
+          amount:    totalCredit,
+          type:      'initial',
+          reason:    'contract_created',
+          createdAt: new Date()
+        }],
+      };
 
-    const contract = await LiminarContract.create(contractData);
+      // Só inclui idempotencyKey se foi fornecido — evita null no índice sparse/unique
+      if (idempotencyKey) contractData.idempotencyKey = idempotencyKey;
+      if (receivedAt)    contractData.receivedAt = new Date(receivedAt);
 
-    // Hierarquia de verdade financeira para o caixa:
-    // 1. receivedAt informado pelo usuário (data real do PIX/TED)
-    // 2. creditHistory[0] com type='initial' (proxy da migração)
-    // 3. createdAt (evento técnico — último recurso)
-    const financialDate =
-        contract.receivedAt ||
-        contract.creditHistory?.find(h => h.type === 'initial')?.createdAt ||
-        contract.createdAt;
+      [contract] = await LiminarContract.create([contractData], { session });
 
-    await Payment.create({
-        patient:         new mongoose.Types.ObjectId(patientId),
-        doctor:          new mongoose.Types.ObjectId(doctorId),
-        amount:          totalCredit,
-        status:          'paid',
-        kind:            'liminar_contract_receipt',
-        billingType:     'liminar',
-        paymentMethod:   'liminar_credit',
-        paymentDate:     financialDate,
-        financialDate:   financialDate,
-        liminarContract: contract._id,
-        isFromPackage:   false,
-        notes:           processNumber ? `Processo: ${processNumber}` : null,
+      // Hierarquia de verdade financeira para o caixa:
+      // 1. receivedAt informado pelo usuário (data real do PIX/TED)
+      // 2. creditHistory[0] com type='initial' (proxy da migração)
+      // 3. createdAt (evento técnico — último recurso)
+      const financialDate =
+          contract.receivedAt ||
+          contract.creditHistory?.find(h => h.type === 'initial')?.createdAt ||
+          contract.createdAt;
+
+      [payment] = await Payment.create([{
+          patient:         new mongoose.Types.ObjectId(patientId),
+          doctor:          new mongoose.Types.ObjectId(doctorId),
+          amount:          totalCredit,
+          status:          'paid',
+          paidAt:          financialDate,
+          kind:            'liminar_contract_receipt',
+          billingType:     'liminar',
+          paymentMethod:   'liminar_credit',
+          paymentDate:     financialDate,
+          financialDate:   financialDate,
+          liminarContract: contract._id,
+          isFromPackage:   false,
+          notes:           processNumber ? `Processo: ${processNumber}` : null,
+      }], { session });
+
+      await saveToOutbox({
+        eventType: 'LIMINAR_CONTRACT_CREATED',
+        aggregateType: 'liminarContract',
+        aggregateId: contract._id.toString(),
+        payload: {
+          contractId: contract._id.toString(),
+          patientId,
+          doctorId,
+          totalCredit,
+          processNumber: processNumber || null,
+          court: court || null,
+          mode,
+          paymentId: payment._id.toString(),
+          createdAt: new Date().toISOString()
+        },
+        correlationId: idempotencyKey || `liminar_create_${contract._id.toString()}_${Date.now()}`
+      }, session);
     });
 
-    logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit, financialDate });
+    logger.info('Contrato liminar criado', { contractId: contract._id.toString(), patientId, totalCredit });
 
     return res.status(201).json({ contract });
   } catch (err) {
@@ -108,6 +135,10 @@ export async function createLiminarContract(req, res) {
     }
 
     return res.status(500).json({ error: err.message });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 }
 

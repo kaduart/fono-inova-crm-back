@@ -20,7 +20,7 @@
 
 import Appointment from '../../../models/Appointment.js';
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
-import { appendEvent } from '../../../infrastructure/events/eventStoreService.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildDayRange, buildDateTime } from '../../../utils/datetime.js';
 import crypto from 'crypto';
@@ -145,9 +145,8 @@ export async function scheduleAppointment(data, context = {}) {
     }]
   });
   
-  // 2. Publica evento
-  const event = await appendEvent({
-    eventId: `apt_schedule_${appointment._id}_${Date.now()}`,
+  // 2. Salva evento no Outbox
+  const event = await saveToOutbox({
     eventType: AppointmentEventTypes.APPOINTMENT_SCHEDULED,
     aggregateType: 'appointment',
     aggregateId: appointment._id.toString(),
@@ -162,11 +161,7 @@ export async function scheduleAppointment(data, context = {}) {
       packageId: packageId?.toString(),
       insuranceGuideId: insuranceGuideId?.toString()
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'appointmentService.scheduleAppointment'
-    }
+    correlationId
   });
   
   log.info({ 
@@ -213,8 +208,7 @@ export async function confirmAppointment(appointmentId, context = {}) {
     throw new Error('AGENDAMENTO_NAO_ENCONTRADO');
   }
   
-  const event = await appendEvent({
-    eventId: `apt_confirm_${appointmentId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: AppointmentEventTypes.APPOINTMENT_CONFIRMED,
     aggregateType: 'appointment',
     aggregateId: appointmentId,
@@ -225,11 +219,7 @@ export async function confirmAppointment(appointmentId, context = {}) {
       date: appointment.date,
       confirmedAt: new Date()
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'appointmentService.confirmAppointment'
-    }
+    correlationId
   });
   
   return { appointment, event };
@@ -291,8 +281,7 @@ export async function rescheduleAppointment(appointmentId, newData, context = {}
     { new: true }
   );
   
-  const event = await appendEvent({
-    eventId: `apt_reschedule_${appointmentId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: AppointmentEventTypes.APPOINTMENT_RESCHEDULED,
     aggregateType: 'appointment',
     aggregateId: appointmentId,
@@ -306,11 +295,7 @@ export async function rescheduleAppointment(appointmentId, newData, context = {}
       newTime: time,
       reason
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'appointmentService.rescheduleAppointment'
-    }
+    correlationId
   });
   
   log.info({ correlationId, appointmentId, eventId: event.eventId }, 'Agendamento remarcado');
@@ -363,8 +348,7 @@ export async function cancelAppointment(appointmentId, data = {}, context = {}) 
     throw new Error('AGENDAMENTO_NAO_ENCONTRADO');
   }
   
-  const event = await appendEvent({
-    eventId: `apt_cancel_${appointmentId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: AppointmentEventTypes.APPOINTMENT_CANCELLED,
     aggregateType: 'appointment',
     aggregateId: appointmentId,
@@ -378,11 +362,7 @@ export async function cancelAppointment(appointmentId, data = {}, context = {}) 
       notifyPatient,
       cancelledAt: new Date()
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'appointmentService.cancelAppointment'
-    }
+    correlationId
   });
   
   log.info({ correlationId, appointmentId, eventId: event.eventId }, 'Agendamento cancelado');

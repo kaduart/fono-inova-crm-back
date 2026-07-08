@@ -17,7 +17,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import { transitionPaymentStatus } from './paymentStatusService.js';
-import { appendEvent } from '../infrastructure/events/eventStoreService.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 
 const TAG = '[AutoInsuranceSettlement]';
 
@@ -70,8 +70,9 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
         { $set: { 'insurance.status': 'received', 'insurance.receivedAt': now.toISOString().split('T')[0] } }
     );
 
-    await appendEvent({
-        type: 'INSURANCE_PAYMENT_AUTO_SETTLED',
+    await saveToOutbox({
+        eventType: 'INSURANCE_PAYMENT_AUTO_SETTLED',
+        aggregateType: 'payment',
         aggregateId: paymentId.toString(),
         payload: { paymentId: paymentId.toString(), amount: locked.amount, reason, settledAt: now }
     });

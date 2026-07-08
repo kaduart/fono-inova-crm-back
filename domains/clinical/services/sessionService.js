@@ -10,7 +10,7 @@
  */
 
 import Session from '../../../models/Session.js';
-import { appendEvent, processWithGuarantees } from '../../../infrastructure/events/eventStoreService.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import crypto from 'crypto';
 
@@ -56,9 +56,8 @@ export async function createSession(data, context = {}) {
     createdAt: new Date()
   });
   
-  // 2. Publica evento
-  const event = await appendEvent({
-    eventId: `ss_create_${session._id}_${Date.now()}`,
+  // 2. Salva evento no Outbox
+  const event = await saveToOutbox({
     eventType: SessionEventTypes.SESSION_SCHEDULED,
     aggregateType: 'session',
     aggregateId: session._id.toString(),
@@ -72,11 +71,7 @@ export async function createSession(data, context = {}) {
       specialty: session.specialty,
       status: 'scheduled'
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'sessionService.createSession'
-    }
+    correlationId
   });
   
   log.info({ 
@@ -170,10 +165,9 @@ export async function completeSession(sessionId, data = {}, context = {}) {
     { new: true }
   ).populate('patient doctor');
   
-  // 4. Publica evento SESSION_COMPLETED
+  // 4. Salva evento SESSION_COMPLETED no Outbox
   // Este evento é consumido pelo billing domain!
-  const event = await appendEvent({
-    eventId: `ss_complete_${sessionId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: SessionEventTypes.SESSION_COMPLETED,
     aggregateType: 'session',
     aggregateId: sessionId,
@@ -199,13 +193,7 @@ export async function completeSession(sessionId, data = {}, context = {}) {
         insuranceProvider: session.patient.insurance?.provider
       } : undefined
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'sessionService.completeSession',
-      // Importante: marca que precisa ser processado pelo billing
-      requiresBillingProcessing: true
-    }
+    correlationId
   });
   
   console.log(`[completeSession] SUCESSO - sessionId: ${sessionId}`, {
@@ -263,8 +251,7 @@ export async function cancelSession(sessionId, data = {}, context = {}) {
     throw new Error('SESSAO_NAO_ENCONTRADA');
   }
   
-  const event = await appendEvent({
-    eventId: `ss_cancel_${sessionId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: SessionEventTypes.SESSION_CANCELLED,
     aggregateType: 'session',
     aggregateId: sessionId,
@@ -277,12 +264,8 @@ export async function cancelSession(sessionId, data = {}, context = {}) {
       reason,
       cancelledBy
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'sessionService.cancelSession'
-    }
-  });
+    correlationId
+  }, mongoSession);
   
   log.info({ correlationId, sessionId, eventId: event.eventId }, 'Sessão cancelada');
   
@@ -392,8 +375,7 @@ export async function markSessionNoShow(sessionId, context = {}) {
     throw new Error('SESSAO_NAO_ENCONTRADA');
   }
   
-  const event = await appendEvent({
-    eventId: `ss_noshow_${sessionId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: SessionEventTypes.SESSION_NO_SHOW,
     aggregateType: 'session',
     aggregateId: sessionId,
@@ -404,11 +386,7 @@ export async function markSessionNoShow(sessionId, context = {}) {
       date: session.date,
       noShowAt: new Date()
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'sessionService.markSessionNoShow'
-    }
+    correlationId
   });
   
   return { session, event };

@@ -80,8 +80,8 @@ export const PatientEventTypes = {
     idempotent: true
   },
 
-  APPOINTMENT_CANCELED: {
-    type: 'APPOINTMENT_CANCELED',
+  APPOINTMENT_CANCELLED: {
+    type: 'APPOINTMENT_CANCELLED',
     version: 1,
     required: ['appointmentId', 'patientId', 'canceledAt'],
     optional: ['reason', 'canceledBy'],

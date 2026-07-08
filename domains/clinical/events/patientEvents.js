@@ -236,20 +236,30 @@ export const PackageEvents = {
 // HELPER: Emissão de eventos
 // ============================================
 
-import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 
 /**
- * Emite evento de domínio com validação
+ * Emite evento de domínio com validação.
+ *
+ * Salva no Outbox; o OutboxDispatcher publica nas filas apropriadas.
+ * Se houver uma sessão MongoDB ativa, passe-a via options.session para
+ * atomicidade com a transação.
  */
 export async function emitDomainEvent(eventType, payload, options = {}) {
-  const { correlationId = `evt_${Date.now()}` } = options;
-  
+  const { correlationId = `evt_${Date.now()}`, session = null } = options;
+
   console.log(`[DomainEvent] Emitting ${eventType}`, {
     correlationId,
     patientId: payload.patientId
   });
-  
-  return await publishEvent(eventType, payload, { correlationId });
+
+  return await saveToOutbox({
+    eventType,
+    payload,
+    aggregateType: payload.patientId ? 'patient' : 'system',
+    aggregateId: payload.patientId || payload.appointmentId || payload.paymentId || 'unknown',
+    correlationId
+  }, session);
 }
 
 // Exporta todos os eventos

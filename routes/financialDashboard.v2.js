@@ -589,9 +589,8 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
             };
             if (p.status === 'paid') {
                 await processFinancialEvent('PAYMENT_COMPLETED', payload);
-            } else if (p.status === 'partial') {
-                await processFinancialEvent('PAYMENT_PARTIAL', payload);
             }
+            // status 'partial' não gera snapshot parcial; aguarda quitação total.
         }
 
         res.json({

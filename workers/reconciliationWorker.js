@@ -18,7 +18,6 @@ import Payment from '../models/Payment.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import FinancialProjection from '../models/FinancialProjection.js';
 import PatientBalance from '../models/PatientBalance.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import mongoose from 'mongoose';
 import { logMetric } from '../utils/logMetric.js';
 
@@ -60,21 +59,17 @@ export function startReconciliationWorker() {
                 autoFixed: results.autoFixed
             });
             
-            // Se tem inconsistências graves, publica alerta
+            // Se tem inconsistências graves, apenas loga alerta
             if (results.manualReview.length > 0) {
-                await publishEvent(
-                    'RECONCILIATION_ALERT',
-                    {
-                        severity: results.manualReview.length > 5 ? 'high' : 'medium',
-                        issues: results.manualReview,
-                        summary: {
-                            checked: results.checked,
-                            inconsistencies: results.inconsistencies,
-                            autoFixed: results.autoFixed
-                        }
-                    },
-                    { correlationId }
-                );
+                console.warn(`[ReconciliationWorker] ⚠️ ${results.manualReview.length} inconsistências requerem revisão manual`, {
+                    severity: results.manualReview.length > 5 ? 'high' : 'medium',
+                    issues: results.manualReview,
+                    summary: {
+                        checked: results.checked,
+                        inconsistencies: results.inconsistencies,
+                        autoFixed: results.autoFixed
+                    }
+                });
             }
             
             return results;

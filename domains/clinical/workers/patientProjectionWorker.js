@@ -130,7 +130,7 @@ async function processEvent(eventType, payload, correlationId) {
     case 'APPOINTMENT_CREATED':
     case 'APPOINTMENT_UPDATED':
     case 'APPOINTMENT_COMPLETED':
-    case 'APPOINTMENT_CANCELED':
+    case 'APPOINTMENT_CANCELLED':
     case 'APPOINTMENT_RESCHEDULED':
     case 'APPOINTMENT_NO_SHOW':
       // 📅 Qualquer mudança em agendamento = rebuild
@@ -187,6 +187,13 @@ async function processEvent(eventType, payload, correlationId) {
       // 💳 Saldo = rebuild
       return await handleBalanceEvent(patientId, eventType, correlationId);
     
+    // ========================================
+    // LIMINAR CONTRACT EVENTS
+    // ========================================
+    case 'LIMINAR_CONTRACT_CREATED':
+      // ⚖️ Contrato liminar criado: rebuild para refletir créditos
+      return await handleLiminarContractEvent(patientId, eventType, correlationId);
+
     // ========================================
     // MANUAL REBUILD
     // ========================================
@@ -552,6 +559,34 @@ async function handleBalanceEvent(patientId, eventType, correlationId) {
     operation: 'rebuild_balance',
     viewVersion: view.snapshot?.version,
     balance: view.balance?.current
+  };
+}
+
+async function handleLiminarContractEvent(patientId, eventType, correlationId) {
+  logger.info(`[${correlationId}] ⚖️ Rebuilding view after liminar contract event`, { 
+    patientId, 
+    eventType 
+  });
+  
+  const view = await buildPatientView(patientId, { correlationId });
+  
+  if (!view) {
+    logger.warn(`[${correlationId}] ⏭️ Skipping liminar contract event — patient not found (eventual consistency)`, {
+      patientId,
+      eventType
+    });
+    return {
+      operation: 'skip_patient_not_found',
+      patientId,
+      eventType
+    };
+  }
+  
+  return {
+    operation: 'rebuild_liminar_contract',
+    viewVersion: view.snapshot?.version,
+    hasLiminarContract: view.hasLiminarContract,
+    liminarCredits: view.liminarCredits
   };
 }
 

@@ -24,7 +24,8 @@ import PatientsView from '../models/PatientsView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import { recordPackageMetric } from '../routes/package.metrics.js';
@@ -1271,19 +1272,8 @@ export const createPackageV2 = async (req, res) => {
           actionRequired: 'MANUAL_RECONCILIATION_REQUIRED'
         });
         
-        // 🔥 PUBLICAR EVENTO PARA RECONCILIAÇÃO
-        try {
-          await publishEvent('PAYMENT_RECONCILIATION_REQUIRED', {
-            packageId: pkg._id.toString(),
-            patientId,
-            amount: payments.reduce((s, p) => s + p.amount, 0),
-            reason: 'CREATE_PACKAGE_PAYMENT_FAILED',
-            originalError: paymentError.message,
-            correlationId
-          });
-        } catch (eventError) {
-          logger.error('[PackageV2] Failed to publish reconciliation event', { eventError: eventError.message });
-        }
+        // O evento PAYMENT_RECONCILIATION_REQUIRED era um zumbi (publicado sem consumidor).
+        // O log acima já registra a necessidade de reconciliação manual.
       }
     }
 
@@ -1291,21 +1281,27 @@ export const createPackageV2 = async (req, res) => {
     invalidateDashboardCache();
 
     // ========================================
-    // 6️⃣ EVENTOS (fora da transaction)
+    // 6️⃣ EVENTOS (Outbox — publicado pelo dispatcher)
     // ========================================
     try {
-      await publishEvent(EventTypes.PACKAGE_CREATED, {
-        patientId,
-        packageId: pkg._id.toString(),
-        doctorId,
-        type: pkg.type,
-        totalSessions: pkg.totalSessions,
-        appointmentsCreated: appointments.length,
-        sessionsCreated: sessions.length,
-        requestId: correlationId
+      await saveToOutbox({
+        eventType: EventTypes.PACKAGE_CREATED,
+        aggregateType: 'package',
+        aggregateId: pkg._id.toString(),
+        payload: {
+          patientId,
+          packageId: pkg._id.toString(),
+          doctorId,
+          type: pkg.type,
+          totalSessions: pkg.totalSessions,
+          appointmentsCreated: appointments.length,
+          sessionsCreated: sessions.length,
+          requestId: correlationId
+        },
+        correlationId
       });
     } catch (eventError) {
-      logger.warn('[PackageV2] Falha ao publicar evento', { 
+      logger.warn('[PackageV2] Falha ao salvar evento no Outbox', { 
         correlationId, 
         error: eventError.message 
       });

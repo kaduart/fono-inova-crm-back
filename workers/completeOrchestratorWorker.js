@@ -17,7 +17,7 @@ import mongoose from 'mongoose';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 const redis = new Redis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
@@ -96,27 +96,9 @@ async function processSecondaryTasks(jobData) {
         }
     }
 
-    // 3. PUBLICAR EVENTO DE DOMÍNIO (para outros sistemas consumirem)
-    try {
-        await publishEvent(
-            EventTypes.APPOINTMENT_COMPLETED_DOMAIN,
-            {
-                appointmentId,
-                patientId,
-                doctorId,
-                sessionId,
-                packageId,
-                isPrepaid,
-                addToBalance,
-                completedAt: completedAt || new Date()
-            },
-            { correlationId: appointmentId }
-        );
-        console.log(`[WORKER] Evento de domínio publicado`);
-    } catch (err) {
-        console.error(`[WORKER] Erro ao publicar evento (não crítico):`, err.message);
-    }
-
+    // 3. EVENTO DE DOMÍNIO
+    // O evento canônico APPOINTMENT_COMPLETED já é publicado via saveToOutbox()
+    // no fluxo primário de complete. Este worker secundário não precisa republicar.
     console.log(`[WORKER] ✅ Tarefas secundárias concluídas para ${appointmentId}`);
     return { status: 'success', appointmentId };
 }

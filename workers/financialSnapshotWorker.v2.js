@@ -1,5 +1,9 @@
 /**
- * 💰 Financial Snapshot Worker — V2.5 (Transicional + Idempotente)
+ * 💰 Financial Snapshot Service — V2.5 (Transicional + Idempotente)
+ *
+ * ⚠️ NOTA: Este arquivo está em back/workers/ por histórico, mas NÃO é um worker
+ * BullMQ ativo no registry. Ele é chamado como função utilitária por outros
+ * workers, rotas e hooks de eventos.
  *
  * Princípios:
  *   1. Evento transicional: reage a MUDANÇAS de status, não a semântica

@@ -1,6 +1,11 @@
 /**
+ * @deprecated
+ *
  * 🔥 WATCHDOG VIA BULLMQ CRON
- * 
+ *
+ * NÃO faz parte do registry de workers atual. O watchdog ativo é
+ * infrastructure/workers/watchdog.js (iniciado pelo PM2).
+ *
  * Versão para Render.com - usa BullMQ Repeatable Jobs
  * Se o worker restartar, os jobs cron continuam agendados
  * 

@@ -69,7 +69,7 @@ export class TestDatabase {
     await this.cleanAll();
     
     // Limpa também outbox e eventos
-    await this.connection.connection.db.collection('outboxevents').deleteMany({});
+    await this.connection.connection.db.collection('outboxes').deleteMany({});
   }
 
   /**

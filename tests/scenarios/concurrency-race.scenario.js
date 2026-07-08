@@ -120,7 +120,7 @@ export default {
     
     // 4. Eventos: deve ter 1 INVOICE_CREATED (não 2)
     const invoiceEvents = await mongoose.connection.db
-      .collection('outboxevents')
+      .collection('outboxes')
       .countDocuments({
         eventType: 'INVOICE_CREATED',
         'payload.patientId': patient._id.toString()

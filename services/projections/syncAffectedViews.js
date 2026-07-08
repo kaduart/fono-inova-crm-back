@@ -1,7 +1,13 @@
 /**
+ * @deprecated
+ *
  * syncAffectedViews
  *
- * Ponto único de sincronização entre mutations e projections/views.
+ * Ponto legado de sincronização entre mutations e projections/views.
+ * O pipeline canônico agora é: mutation → saveToOutbox() → OutboxDispatcher →
+ * Projection Worker → Read Model. Não expanda este arquivo.
+ *
+ * Mantido temporariamente para rotas/services ainda não migrados.
  *
  * USO:
  *   await syncAffectedViews({

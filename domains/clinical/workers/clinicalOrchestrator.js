@@ -61,8 +61,7 @@ export function createClinicalOrchestrator(deps) {
         case 'APPOINTMENT_RESCHEDULED':
           return await handleAppointmentRescheduled(payload, deps, correlationId);
 
-        case 'APPOINTMENT_CANCELED':   // EventType real do sistema
-        case 'APPOINTMENT_CANCELLED':  // alias legado
+        case 'APPOINTMENT_CANCELLED':
           return await handleAppointmentCancelled(payload, deps, correlationId);
           
         default:

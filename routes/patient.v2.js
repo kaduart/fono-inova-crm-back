@@ -13,12 +13,12 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import Patient from '../models/Patient.js';
 import PatientsView from '../models/PatientsView.js';
 import { buildPatientView } from '../domains/clinical/services/patientProjectionService.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { getProjectionWorkerStatus, getProjectionMetrics } from '../domains/clinical/workers/patientProjectionWorker.js';
 import patientV2DebugRoutes from './patient.v2.debug.js';
 import { createContextLogger } from '../utils/logger.js';
@@ -84,10 +84,13 @@ router.get('/', flexibleAuth, async (req, res) => {
         .filter(p => p.snapshot?.isStale)
         .slice(0, 10) // max 10 por request
         .forEach(p => {
-          publishEvent('PATIENT_VIEW_REBUILD_REQUESTED', {
-            patientId: p.patientId.toString(),
-            reason: 'stale_detected_in_list'
-          }, { correlationId });
+          saveToOutbox({
+            eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+            aggregateType: 'patient',
+            aggregateId: p.patientId.toString(),
+            payload: { patientId: p.patientId.toString(), reason: 'stale_detected_in_list' },
+            correlationId
+          }).catch(err => logger.warn('saveToOutbox failed', { error: err.message }));
         });
     }
 
@@ -100,10 +103,13 @@ router.get('/', flexibleAuth, async (req, res) => {
       })
       .slice(0, 10)
       .forEach(p => {
-        publishEvent('PATIENT_VIEW_REBUILD_REQUESTED', {
-          patientId: p.patientId.toString(),
-          reason: 'backfill_doctor_name'
-        }, { correlationId });
+        saveToOutbox({
+          eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+          aggregateType: 'patient',
+          aggregateId: p.patientId.toString(),
+          payload: { patientId: p.patientId.toString(), reason: 'backfill_doctor_name' },
+          correlationId
+        }).catch(err => logger.warn('saveToOutbox failed', { error: err.message }));
       });
     
     // ✅ CORREÇÃO: Mapeia para garantir que _id seja o patientId (não o ID da view)
@@ -254,10 +260,13 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         logger.warn(`[${correlationId}] ⚠️ View is stale (${Math.round(age / 1000)}s)`, { patientId: resolvedPatientId });
 
         // Dispara rebuild em background (não await)
-        publishEvent('PATIENT_VIEW_REBUILD_REQUESTED', {
-          patientId: resolvedPatientId,
-          reason: `stale_view_accessed (age: ${Math.round(age / 1000)}s)`
-        }, { correlationId });
+        saveToOutbox({
+          eventType: 'PATIENT_VIEW_REBUILD_REQUESTED',
+          aggregateType: 'patient',
+          aggregateId: resolvedPatientId,
+          payload: { patientId: resolvedPatientId, reason: `stale_view_accessed (age: ${Math.round(age / 1000)}s)` },
+          correlationId
+        }).catch(err => logger.warn('saveToOutbox failed', { error: err.message }));
       }
     }
     
@@ -384,6 +393,27 @@ router.post('/', flexibleAuth, async (req, res) => {
 
     const view = await buildPatientView(patient._id.toString(), { correlationId, force: true });
 
+    // 🚀 SALVAR EVENTO NO OUTBOX para projection workers
+    try {
+      await saveToOutbox({
+        eventType: 'PATIENT_REGISTERED',
+        aggregateType: 'patient',
+        aggregateId: patient._id.toString(),
+        payload: {
+          patientId: patient._id.toString(),
+          fullName: patient.fullName,
+          phone: patient.phone,
+          email: patient.email,
+          dateOfBirth: patient.dateOfBirth,
+          createdAt: patient.createdAt?.toISOString() || new Date().toISOString()
+        },
+        correlationId
+      });
+    } catch (eventErr) {
+      logger.error(`[${correlationId}] ❌ Erro ao salvar evento PATIENT_REGISTERED no Outbox`, { error: eventErr.message });
+      // Não falha a resposta — o paciente já foi criado
+    }
+
     return res.status(201).json(
       formatSuccess({
         patientId: patient._id.toString(),
@@ -491,16 +521,18 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
       }, { message: 'Paciente removido' }));
     }
 
-    const event = await publishEvent(
-      EventTypes.PATIENT_DELETE_REQUESTED,
-      {
+    const event = await saveToOutbox({
+      eventType: 'PATIENT_DELETE_REQUESTED',
+      aggregateType: 'patient',
+      aggregateId: patientId,
+      payload: {
         patientId,
         reason: req.body?.reason || null,
         deletedBy: req.user?.id,
         deletedAt: new Date().toISOString()
       },
-      { correlationId }
-    );
+      correlationId
+    });
 
     return res.status(202).json(
       formatSuccess({

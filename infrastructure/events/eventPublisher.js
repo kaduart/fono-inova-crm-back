@@ -10,9 +10,19 @@ import { dashboardCache } from '../../services/adminDashboardCacheService.js';
 
 /**
  * Event Publisher
- * 
- * Publica eventos para filas BullMQ.
- * Todas as filas usam a mesma conexão Redis.
+ *
+ * ⚠️ DEPRECATED — NÃO FAZ PARTE DA API PÚBLICA DO DOMÍNIO.
+ *
+ * A publicação direta em BullMQ (publishEvent) está sendo substituída pelo
+ * pipeline canônico Outbox → Dispatcher → BullMQ.
+ *
+ * O domínio deve salvar eventos via saveToOutbox() de
+ * infrastructure/outbox/outboxPattern.js dentro da transação MongoDB.
+ *
+ * Este arquivo continua sendo usado internamente pelo OutboxDispatcher.
+ * Novo código de domínio não deve chamar publishEvent diretamente.
+ *
+ * Fluxo oficial: docs/architecture/EVENT_PROJECTION_INVENTORY.md
  */
 
 // 🛡️ Debounce de eventos (evita tempestade de rebuilds do mesmo aggregate)
@@ -43,10 +53,6 @@ export const queues = new Proxy({}, {
  */
 export const EventTypes = {
     // 🎯 Intenções (REQUESTED) → entrada da API
-    APPOINTMENT_REQUESTED: 'APPOINTMENT_REQUESTED',
-    PACKAGE_APPOINTMENT_REQUESTED: 'PACKAGE_APPOINTMENT_REQUESTED',
-    INSURANCE_APPOINTMENT_REQUESTED: 'INSURANCE_APPOINTMENT_REQUESTED',
-    ADVANCE_APPOINTMENT_REQUESTED: 'ADVANCE_APPOINTMENT_REQUESTED',
     APPOINTMENT_CREATE_REQUESTED: 'APPOINTMENT_CREATE_REQUESTED',
     APPOINTMENT_CANCEL_REQUESTED: 'APPOINTMENT_CANCEL_REQUESTED',
     APPOINTMENT_COMPLETE_REQUESTED: 'APPOINTMENT_COMPLETE_REQUESTED',
@@ -59,18 +65,10 @@ export const EventTypes = {
     // ✅ Resultados (COMPLETED/COMPLETED/FAILED) → saída dos workers
     APPOINTMENT_CREATED: 'APPOINTMENT_CREATED',
     APPOINTMENT_UPDATED: 'APPOINTMENT_UPDATED',
-    APPOINTMENT_CANCELED: 'APPOINTMENT_CANCELED',
+    APPOINTMENT_CANCELLED: 'APPOINTMENT_CANCELLED',
     APPOINTMENT_COMPLETED: 'APPOINTMENT_COMPLETED',
     APPOINTMENT_REJECTED: 'APPOINTMENT_REJECTED',
-    APPOINTMENT_CONFIRMED: 'APPOINTMENT_CONFIRMED',
     APPOINTMENT_RESCHEDULED: 'APPOINTMENT_RESCHEDULED',
-    APPOINTMENT_DELETED: 'APPOINTMENT_DELETED',
-    
-    // 📝 Updates (solicitação de alteração)
-    APPOINTMENT_UPDATE_REQUESTED: 'APPOINTMENT_UPDATE_REQUESTED',
-    LEAD_UPDATE_REQUESTED: 'LEAD_UPDATE_REQUESTED',
-    INVOICE_UPDATE_REQUESTED: 'INVOICE_UPDATE_REQUESTED',
-    PAYMENT_UPDATE_REQUESTED: 'PAYMENT_UPDATE_REQUESTED',
     
     SESSION_COMPLETED: 'SESSION_COMPLETED',
     SESSION_CANCELED: 'SESSION_CANCELED',
@@ -84,11 +82,8 @@ export const EventTypes = {
     PAYMENT_UPDATED: 'PAYMENT_UPDATED',
     PAYMENT_DELETED: 'PAYMENT_DELETED',
     
-    // 💰 Balance V2 - Eventos
     BALANCE_DEBIT_REQUESTED: 'BALANCE_DEBIT_REQUESTED',
     BALANCE_CREDIT_REQUESTED: 'BALANCE_CREDIT_REQUESTED',
-    BALANCE_UPDATE_REQUESTED: 'BALANCE_UPDATE_REQUESTED',
-    BALANCE_DELETE_REQUESTED: 'BALANCE_DELETE_REQUESTED',
     
     // 📦 Package V2 - Eventos de CRUD para projeção
     PACKAGE_CREATE_REQUESTED: 'PACKAGE_CREATE_REQUESTED',
@@ -97,15 +92,13 @@ export const EventTypes = {
     PACKAGE_UPDATED: 'PACKAGE_UPDATED',
     PACKAGE_CANCELLED: 'PACKAGE_CANCELLED',
     PACKAGE_CREDIT_CONSUMED: 'PACKAGE_CREDIT_CONSUMED',
-    PACKAGE_NO_CREDIT: 'PACKAGE_NO_CREDIT',
     
-    INSURANCE_GUIDE_CONSUMED: 'INSURANCE_GUIDE_CONSUMED',
-    LIMINAR_REVENUE_RECOGNIZED: 'LIMINAR_REVENUE_RECOGNIZED',
+    INSURANCE_GUIDE_CREATED: 'INSURANCE_GUIDE_CREATED',
+    LIMINAR_CONTRACT_CREATED: 'LIMINAR_CONTRACT_CREATED',
     
     // 💰 Faturas
     INVOICE_PER_SESSION_CREATE: 'INVOICE_PER_SESSION_CREATE',
     INVOICE_CREATED: 'INVOICE_CREATED',
-    INVOICE_PAID: 'INVOICE_PAID',
     INVOICE_OVERDUE: 'INVOICE_OVERDUE',
     INVOICE_CANCELED: 'INVOICE_CANCELED',
     
@@ -114,42 +107,19 @@ export const EventTypes = {
     EXPENSE_UPDATED: 'EXPENSE_UPDATED',
     EXPENSE_CANCELED: 'EXPENSE_CANCELED',
     
-    // 📋 Lotes Convênio
-    INSURANCE_BATCH_CREATED: 'INSURANCE_BATCH_CREATED',
-    INSURANCE_BATCH_PROCESSING: 'INSURANCE_BATCH_PROCESSING',
-    INSURANCE_BATCH_SEALED: 'INSURANCE_BATCH_SEALED',
     INSURANCE_BATCH_SENT: 'INSURANCE_BATCH_SENT',
     INSURANCE_BATCH_RECEIVED: 'INSURANCE_BATCH_RECEIVED',
-    INSURANCE_BATCH_COMPLETED: 'INSURANCE_BATCH_COMPLETED',
-    INSURANCE_ITEM_APPROVED: 'INSURANCE_ITEM_APPROVED',
-    INSURANCE_ITEM_REJECTED: 'INSURANCE_ITEM_REJECTED',
-    INSURANCE_PAYMENT_RECEIVED: 'INSURANCE_PAYMENT_RECEIVED',
     INSURANCE_GLOSA: 'INSURANCE_GLOSA',
 
-    // 🏥 Insurance Billing V2 (eventos internos — sem fila por enquanto)
-    INSURANCE_BILLING_CREATED: 'INSURANCE_BILLING_CREATED',
-    INSURANCE_BILLING_FAILED: 'INSURANCE_BILLING_FAILED',
-    INSURANCE_GUIDE_LOCKED: 'INSURANCE_GUIDE_LOCKED',
-    INSURANCE_APPOINTMENT_LINKED: 'INSURANCE_APPOINTMENT_LINKED',
-    INSURANCE_DUPLICATE_DETECTED: 'INSURANCE_DUPLICATE_DETECTED',
-    
     // 🔄 Notificações
     NOTIFICATION_REQUESTED: 'NOTIFICATION_REQUESTED',
     NOTIFICATION_SENT: 'NOTIFICATION_SENT',
     NOTIFICATION_FAILED: 'NOTIFICATION_FAILED',
-    NOTIFICATION_DELIVERED: 'NOTIFICATION_DELIVERED',
     
-    // 💬 Canais específicos
     WHATSAPP_MESSAGE_REQUESTED: 'WHATSAPP_MESSAGE_REQUESTED',
     WHATSAPP_MESSAGE_SENT: 'WHATSAPP_MESSAGE_SENT',
     WHATSAPP_MESSAGE_FAILED: 'WHATSAPP_MESSAGE_FAILED',
-    EMAIL_MESSAGE_REQUESTED: 'EMAIL_MESSAGE_REQUESTED',
-    EMAIL_MESSAGE_SENT: 'EMAIL_MESSAGE_SENT',
-    EMAIL_MESSAGE_FAILED: 'EMAIL_MESSAGE_FAILED',
-    SMS_MESSAGE_REQUESTED: 'SMS_MESSAGE_REQUESTED',
     
-    // 🔄 Sync
-    SYNC_MEDICAL_EVENT: 'SYNC_MEDICAL_EVENT',
     
     // 👤 Patients V2
     PATIENT_CREATE_REQUESTED: 'PATIENT_CREATE_REQUESTED',
@@ -161,7 +131,6 @@ export const EventTypes = {
     PATIENT_CREATE_FAILED: 'PATIENT_CREATE_FAILED',
     PATIENT_VIEW_REBUILD_REQUESTED: 'PATIENT_VIEW_REBUILD_REQUESTED',
     
-    // 🧬 Evolution V2
     EVOLUTION_CREATE_REQUESTED: 'EVOLUTION_CREATE_REQUESTED',
     EVOLUTION_UPDATE_REQUESTED: 'EVOLUTION_UPDATE_REQUESTED',
     EVOLUTION_DELETE_REQUESTED: 'EVOLUTION_DELETE_REQUESTED',
@@ -169,22 +138,8 @@ export const EventTypes = {
     EVOLUTION_UPDATED: 'EVOLUTION_UPDATED',
     EVOLUTION_DELETED: 'EVOLUTION_DELETED',
     
-    // 👨‍⚕️ Doctors V2
-    DOCTOR_CREATE_REQUESTED: 'DOCTOR_CREATE_REQUESTED',
-    DOCTOR_UPDATE_REQUESTED: 'DOCTOR_UPDATE_REQUESTED',
-    DOCTOR_DELETE_REQUESTED: 'DOCTOR_DELETE_REQUESTED',
-    DOCTOR_DEACTIVATE_REQUESTED: 'DOCTOR_DEACTIVATE_REQUESTED',
-    DOCTOR_REACTIVATE_REQUESTED: 'DOCTOR_REACTIVATE_REQUESTED',
-    DOCTOR_CREATED: 'DOCTOR_CREATED',
-    DOCTOR_UPDATED: 'DOCTOR_UPDATED',
-    DOCTOR_DELETED: 'DOCTOR_DELETED',
     
-    // 👤 Leads
-    LEAD_CREATED: 'LEAD_CREATED',
-    LEAD_UPDATED: 'LEAD_UPDATED',
-    LEAD_CONVERTED: 'LEAD_CONVERTED',
     
-    // 📞 Followups
     FOLLOWUP_REQUESTED: 'FOLLOWUP_REQUESTED',
     FOLLOWUP_SCHEDULED: 'FOLLOWUP_SCHEDULED',
     FOLLOWUP_SENT: 'FOLLOWUP_SENT',
@@ -218,37 +173,23 @@ export const EventTypes = {
     // 🔄 Lead Recovery
     LEAD_RECOVERY_CANCEL_REQUESTED: 'LEAD_RECOVERY_CANCEL_REQUESTED',
     
-    // 💰 Financeiro - Totals
-    TOTALS_RECALCULATE_REQUESTED: 'TOTALS_RECALCULATE_REQUESTED',
     TOTALS_RECALCULATED: 'TOTALS_RECALCULATED',
-    DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED',
 
-    // 📋 Pré-agendamento V2
     PREAGENDAMENTO_CREATED: 'PREAGENDAMENTO_CREATED',
     PREAGENDAMENTO_IMPORTED: 'PREAGENDAMENTO_IMPORTED',
 
-    // 🔗 Integration Layer — eventos traduzidos entre domínios
     APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
     SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
 
-    // 💳 Payment V2 — ciclo de vida explícito (migração do post('save') hook)
     PAYMENT_CREATED: 'PAYMENT_CREATED',               // Phase 1: publicado pelo worker, hook ainda ativo
     PAYMENT_STATUS_CHANGED: 'PAYMENT_STATUS_CHANGED', // Phase 2+: substitui o hook quando consumer existir
-    PAYMENT_CONFIRMED: 'PAYMENT_CONFIRMED',
     PAYMENT_CANCELLED: 'PAYMENT_CANCELLED',
-    INSURANCE_PAYMENT_RECOGNIZED: 'INSURANCE_PAYMENT_RECOGNIZED',
     
-    // 🔗 Integration Layer — eventos traduzidos entre domínios
-    APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
-    SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
     
-    // 🔄 Reconciliation
-    RECONCILIATION_ALERT: 'RECONCILIATION_ALERT',
 
     // 💰 Commissions
     COMMISSION_GENERATION_REQUESTED: 'COMMISSION_GENERATION_REQUESTED',
     COMMISSION_GENERATION_COMPLETED: 'COMMISSION_GENERATION_COMPLETED',
-    COMMISSION_GENERATION_FAILED: 'COMMISSION_GENERATION_FAILED',
 };
 
 /**
@@ -256,7 +197,6 @@ export const EventTypes = {
  */
 export const eventToQueueMap = {
     // Intenções → Workers de orquestração
-    [EventTypes.APPOINTMENT_REQUESTED]: 'appointment-processing',
     [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'create-appointment-processing',
     
     // 🧬 Evolution V2
@@ -266,44 +206,39 @@ export const eventToQueueMap = {
     [EventTypes.EVOLUTION_CREATED]: 'evolution-processing',
     [EventTypes.EVOLUTION_UPDATED]: 'evolution-processing',
     [EventTypes.EVOLUTION_DELETED]: 'evolution-processing',
-    [EventTypes.PACKAGE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
-    [EventTypes.INSURANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
-    [EventTypes.ADVANCE_APPOINTMENT_REQUESTED]: 'create-appointment-processing',
     [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
     [EventTypes.APPOINTMENT_COMPLETE_REQUESTED]: 'complete-orchestrator',
-    [EventTypes.APPOINTMENT_UPDATE_REQUESTED]: 'update-orchestrator',
     [EventTypes.PAYMENT_REQUESTED]: 'payment-processing',
     [EventTypes.PAYMENT_PROCESS_REQUESTED]: 'payment-processing',
-    [EventTypes.PAYMENT_UPDATE_REQUESTED]: 'payment-processing',
     [EventTypes.BALANCE_UPDATE_REQUESTED]: 'balance-update',
     [EventTypes.BALANCE_DEBIT_REQUESTED]: 'balance-update',
     [EventTypes.BALANCE_CREDIT_REQUESTED]: 'balance-update',
-    [EventTypes.BALANCE_DELETE_REQUESTED]: 'balance-update',
     [EventTypes.DAILY_CLOSING_REQUESTED]: 'daily-closing',
     [EventTypes.TOTALS_RECALCULATE_REQUESTED]: 'totals-calculation',
     [EventTypes.TOTALS_RECALCULATED]: [],
     
     // Resultados → Workers de reação
     [EventTypes.APPOINTMENT_CREATED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
+    'APPOINTMENT_SCHEDULED': ['notification', 'patient-projection', 'clinical-orchestrator'],
     [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection', 'appointment-integration'],
-    [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator', 'package-projection'],
+    [EventTypes.APPOINTMENT_CANCELLED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator', 'package-projection'],
     [EventTypes.APPOINTMENT_COMPLETED]: ['complete-orchestrator', 'sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
-    [EventTypes.APPOINTMENT_CONFIRMED]: ['notification', 'patient-projection'],
     [EventTypes.APPOINTMENT_RESCHEDULED]: ['notification', 'patient-projection'],
-    [EventTypes.APPOINTMENT_DELETED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
     
-    // Sessions
-    // NOTA: SESSION_COMPLETED não vai para sync-medical porque o billing
     // é acionado por PAYMENT_COMPLETED (criado pelo CompleteOrchestrator)
     [EventTypes.SESSION_COMPLETED]: ['package-projection', 'patient-projection', 'clinical-session', 'integration-orchestrator'],
+    'SESSION_SCHEDULED': ['clinical-session', 'patient-projection'],
     [EventTypes.SESSION_CANCELED]: ['package-projection', 'sync-medical', 'patient-projection', 'clinical-session'],
+    'SESSION_CANCELLED': ['package-projection', 'sync-medical', 'patient-projection', 'clinical-session'],
+    'SESSION_NO_SHOW': ['clinical-session', 'patient-projection'],
     [EventTypes.SESSION_PAYMENT_RECEIVED]: ['sync-medical', 'patient-projection'],
     
     // Payments
     [EventTypes.PAYMENT_COMPLETED]: ['notification', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.PAYMENT_FAILED]: 'notification',
     [EventTypes.PAYMENT_RECEIVED]: ['balance-update', 'patient-projection'],
+    'PAYMENT_REFUNDED': ['balance-update', 'patient-projection'],
     [EventTypes.PAYMENT_UPDATED]: ['balance-update', 'patient-projection'],
     [EventTypes.PAYMENT_DELETED]: ['balance-update', 'patient-projection'],
     
@@ -314,55 +249,37 @@ export const eventToQueueMap = {
     [EventTypes.PATIENT_UPDATE_REQUESTED]: 'patient-processing',
     [EventTypes.PATIENT_DELETE_REQUESTED]: 'patient-processing',
     [EventTypes.PATIENT_CREATED]: ['patient-projection'],
+    'PATIENT_REGISTERED': ['patient-projection'],
     [EventTypes.PATIENT_UPDATED]: ['patient-projection'],
+    'PATIENT_PHONE_CHANGED': ['patient-projection'],
     [EventTypes.PATIENT_DELETED]: ['patient-projection'],
+    'PATIENT_DATA_CONFIRMED': ['patient-projection'],
     [EventTypes.PATIENT_VIEW_REBUILD_REQUESTED]: ['patient-projection'],
     
     // 👨‍⚕️ Doctors V2 - eventos (sem filas específicas por enquanto)
-    [EventTypes.DOCTOR_CREATED]: [],
-    [EventTypes.DOCTOR_UPDATED]: [],
-    [EventTypes.DOCTOR_DELETED]: [],
     [EventTypes.PACKAGE_CREATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_UPDATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_CANCELLED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_CREDIT_CONSUMED]: 'package-validation',
-    [EventTypes.PACKAGE_NO_CREDIT]: 'notification',
+    'PACKAGE_CREDIT_RESTORED': ['package-projection', 'package-validation', 'patient-projection'],
     
     // Insurance
-    [EventTypes.INSURANCE_BATCH_CREATED]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_BATCH_PROCESSING]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_BATCH_SEALED]: 'insurance-orchestrator',
     [EventTypes.INSURANCE_BATCH_SENT]: 'insurance-orchestrator',
     [EventTypes.INSURANCE_BATCH_RECEIVED]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_BATCH_COMPLETED]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_ITEM_APPROVED]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_ITEM_REJECTED]: 'insurance-orchestrator',
-    [EventTypes.INSURANCE_PAYMENT_RECEIVED]: 'insurance-orchestrator',
 
     // Insurance Billing V2 (eventos internos — sem fila por enquanto)
-    [EventTypes.INSURANCE_BILLING_CREATED]: [],
-    [EventTypes.INSURANCE_BILLING_FAILED]: [],
-    [EventTypes.INSURANCE_GUIDE_LOCKED]: [],
-    [EventTypes.INSURANCE_APPOINTMENT_LINKED]: [],
-    [EventTypes.INSURANCE_DUPLICATE_DETECTED]: [],
     
     [EventTypes.NOTIFICATION_REQUESTED]: 'notification',
-    [EventTypes.SYNC_MEDICAL_EVENT]: 'sync-medical',
     
     // 💰 Faturas
     [EventTypes.INVOICE_PER_SESSION_CREATE]: 'invoice-processing',
     [EventTypes.INVOICE_CREATED]: 'notification',
-    [EventTypes.INVOICE_PAID]: 'notification',
     [EventTypes.INVOICE_OVERDUE]: 'notification',
     [EventTypes.INVOICE_CANCELED]: 'notification',
     
     // 📋 Glosa → SyncMedical (único evento de convênio sem dono no fluxo principal)
     [EventTypes.INSURANCE_GLOSA]: 'sync-medical',
     
-    // 👤 Leads → Lead Processing
-    [EventTypes.LEAD_CREATED]: 'lead-processing',
-    [EventTypes.LEAD_UPDATED]: 'lead-processing',
-    [EventTypes.LEAD_CONVERTED]: 'lead-processing',
     
     // 📞 Followups → Followup Processing
     [EventTypes.FOLLOWUP_REQUESTED]: 'followup-processing',
@@ -405,35 +322,28 @@ export const eventToQueueMap = {
     [EventTypes.WHATSAPP_MESSAGE_REQUESTED]: 'whatsapp-notification',
     [EventTypes.WHATSAPP_MESSAGE_SENT]: ['notification', 'whatsapp-chat-projection'],
     [EventTypes.WHATSAPP_MESSAGE_FAILED]: 'notification',
-    [EventTypes.EMAIL_MESSAGE_REQUESTED]: 'email-notification',
-    [EventTypes.EMAIL_MESSAGE_SENT]: 'notification',
-    [EventTypes.EMAIL_MESSAGE_FAILED]: 'notification',
 
     // 🔗 Integration Layer — eventos traduzidos
     [EventTypes.APPOINTMENT_BILLING_REQUESTED]: 'billing-orchestrator',
     [EventTypes.SESSION_BILLING_REQUESTED]: 'billing-orchestrator',
 
-    // 💳 Payment V2 — ciclo de vida
-    // Phase 1: só patient-projection (hook ainda cobre o resto)
     // Phase 2: adicionar 'appointment-processing' quando handler for criado
     [EventTypes.PAYMENT_CREATED]:              'patient-projection',
     [EventTypes.PAYMENT_STATUS_CHANGED]:       'patient-projection',
-    [EventTypes.PAYMENT_CONFIRMED]:            ['patient-projection', 'balance-update'],
     [EventTypes.PAYMENT_CANCELLED]:            'patient-projection',
-    [EventTypes.INSURANCE_PAYMENT_RECOGNIZED]: ['patient-projection', 'balance-update'],
+    'INSURANCE_PAYMENT_AUTO_SETTLED': ['patient-projection', 'balance-update'],
+    [EventTypes.INSURANCE_GUIDE_CREATED]: ['patient-projection'],
+    [EventTypes.LIMINAR_CONTRACT_CREATED]: ['patient-projection'],
     
     // 💰 Expenses V2
     [EventTypes.EXPENSE_CREATED]:              'totals-calculation',
     [EventTypes.EXPENSE_UPDATED]:              'totals-calculation',
     [EventTypes.EXPENSE_CANCELED]:             'totals-calculation',
     
-    // 🔄 Reconciliation
-    [EventTypes.RECONCILIATION_ALERT]: [],  // Apenas log, sem fila
 
     // 💰 Commissions
     [EventTypes.COMMISSION_GENERATION_REQUESTED]: 'commission-generation',
     [EventTypes.COMMISSION_GENERATION_COMPLETED]: [],
-    [EventTypes.COMMISSION_GENERATION_FAILED]: [],
 };
 
 /**
@@ -470,6 +380,13 @@ export const eventToQueueMap = {
  * @returns {Object} Resultado da publicação
  */
 export async function publishEvent(eventType, payload, options = {}) {
+    if (process.env.NODE_ENV !== 'test') {
+        console.warn(
+            `[DEPRECATED] publishEvent(${eventType}) foi chamado fora do OutboxDispatcher. ` +
+            `Use saveToOutbox() dentro da transação MongoDB para garantir consistência.`
+        );
+    }
+
     const { 
         correlationId = null, 
         idempotencyKey = null,
@@ -524,7 +441,6 @@ if (size > 5000) {
     // Gera idempotencyKey se não fornecida
     const finalIdempotencyKey = idempotencyKey || generateIdempotencyKey(eventType, payload, finalAggregateId);
     
-    // 🛡️ DEBOUNCE: ignora eventos do mesmo aggregate em curto prazo (evita tempestade de rebuilds)
     // ⚠️ EXCEÇÃO CRÍTICA: Eventos de WhatsApp inbound NUNCA devem ser debounced — cada mensagem é única (wamid)
     const isWhatsAppInbound = eventType === 'WHATSAPP_MESSAGE_RECEIVED' || 
                                eventType === 'WHATSAPP_MESSAGE_PREPROCESSED' ||
@@ -579,7 +495,6 @@ if (size > 5000) {
         }
     }
     
-    // 🛡️ VALIDAÇÃO DE CONTRACT (Event Contract Layer) — MODO WARNING
     // Nunca bloqueia o publish para garantir estabilidade total da aplicação
     if (!global.__eventPublisherVersionLogged) {
         global.__eventPublisherVersionLogged = true;
@@ -696,13 +611,11 @@ if (size > 5000) {
     const snapshotEventTypes = [
         EventTypes.PAYMENT_STATUS_CHANGED,
         EventTypes.SESSION_COMPLETED,
-        EventTypes.APPOINTMENT_CONFIRMED,
         EventTypes.APPOINTMENT_SCHEDULED,
-        EventTypes.APPOINTMENT_CANCELED,
+        EventTypes.APPOINTMENT_CANCELLED,
         // Legados (mantidos para compatibilidade)
         EventTypes.PAYMENT_COMPLETED,
         EventTypes.PAYMENT_PROCESS_REQUESTED,
-        EventTypes.PAYMENT_PARTIAL,
         EventTypes.PAYMENT_FAILED,
         EventTypes.PAYMENT_CANCELLED,
     ];
@@ -756,7 +669,7 @@ if (size > 5000) {
     // 🆕 V2: Invalidação granular de cache do Admin Dashboard
     const dashboardInvalidationMap = {
         [EventTypes.APPOINTMENT_CREATED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
-        [EventTypes.APPOINTMENT_CANCELED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
+        [EventTypes.APPOINTMENT_CANCELLED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
         [EventTypes.APPOINTMENT_COMPLETED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
         [EventTypes.APPOINTMENT_UPDATED]: ['v2:stats', 'v2:upcoming', 'v2:doctors'],
         [EventTypes.PAYMENT_COMPLETED]: ['v2:stats'],
@@ -764,10 +677,6 @@ if (size > 5000) {
         [EventTypes.PAYMENT_CREATED]: ['v2:stats'],
         [EventTypes.PATIENT_CREATED]: ['v2:stats', 'v2:doctors'],
         [EventTypes.PATIENT_DELETED]: ['v2:stats', 'v2:doctors'],
-        [EventTypes.DOCTOR_CREATED]: ['v2:stats', 'v2:doctors'],
-        [EventTypes.DOCTOR_UPDATED]: ['v2:stats', 'v2:doctors'],
-        [EventTypes.DOCTOR_DEACTIVATE_REQUESTED]: ['v2:stats', 'v2:doctors'],
-        [EventTypes.DOCTOR_REACTIVATE_REQUESTED]: ['v2:stats', 'v2:doctors'],
     };
 
     const blocksToInvalidate = dashboardInvalidationMap[eventType];
@@ -935,5 +844,3 @@ function validatePayload(eventType, payload) {
  * Fecha todas as conexões de fila
  */
 export { closeQueues };
-
-

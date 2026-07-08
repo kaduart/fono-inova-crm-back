@@ -218,7 +218,7 @@ export async function canUpdateEntity(entityType, entityId) {
     switch (entityType) {
       case 'appointment':
         if (entity.operationalStatus === 'canceled') {
-          return { canUpdate: false, reason: 'APPOINTMENT_CANCELED' };
+          return { canUpdate: false, reason: 'APPOINTMENT_CANCELLED' };
         }
         if (entity.clinicalStatus === 'completed') {
           return { canUpdate: false, reason: 'APPOINTMENT_COMPLETED' };

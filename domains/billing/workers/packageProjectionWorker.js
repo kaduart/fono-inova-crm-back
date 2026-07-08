@@ -249,7 +249,7 @@ async function processEvent(eventType, payload, correlationId) {
     // ========================================
     // APPOINTMENT EVENTS (afetam métricas do pacote)
     // ========================================
-    case 'APPOINTMENT_CANCELED':
+    case 'APPOINTMENT_CANCELLED':
     case 'APPOINTMENT_COMPLETED':
     case 'APPOINTMENT_UPDATED':
       if (packageId) {

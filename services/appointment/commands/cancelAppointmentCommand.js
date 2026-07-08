@@ -22,6 +22,7 @@ import { handlePackageSessionUpdate, syncEvent } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError } from './_helpers.js';
 import { recordAudit } from '../../auditLogService.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -158,6 +159,28 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false 
       __guardContext: 'FINANCIAL',
     }
   ).populate('patient doctor session payment package');
+
+  // 🚀 SALVAR EVENTO NO OUTBOX (dentro da transação)
+  try {
+    await saveToOutbox({
+      eventType: 'APPOINTMENT_CANCELLED',
+      aggregateType: 'appointment',
+      aggregateId: appointment._id.toString(),
+      payload: {
+        appointmentId: appointment._id.toString(),
+        patientId: appointment.patient?._id?.toString(),
+        doctorId: appointment.doctor?._id?.toString(),
+        reason,
+        confirmedAbsence,
+        cancelledAt: new Date(),
+        cancelledBy: user?._id?.toString()
+      },
+      correlationId: appointment.correlationId || `cancel_${Date.now()}`
+    }, session);
+  } catch (eventErr) {
+    console.error('[cancelAppointmentCommand] ❌ Erro ao salvar evento no Outbox:', eventErr.message);
+    throw eventErr;
+  }
 
   return updated;
 }

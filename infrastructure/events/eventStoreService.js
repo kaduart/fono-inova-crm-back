@@ -1,3 +1,18 @@
+/**
+ * @deprecated
+ *
+ * EventStore puro (appendEvent) NÃO FAZ PARTE DO PIPELINE CANÔNICO.
+ *
+ * Eventos salvos aqui não são publicados em fila, portanto não chegam aos
+ * projection workers. Use infrastructure/outbox/outboxPattern.js (saveToOutbox)
+ * dentro da transação MongoDB.
+ *
+ * Permanece disponível APENAS como histórico/auditoria de eventos já existentes.
+ * Novo código de domínio não deve chamar appendEvent.
+ *
+ * Fluxo oficial: docs/architecture/EVENT_PROJECTION_INVENTORY.md
+ */
+
 // infrastructure/events/eventStoreService.js
 // Serviço de Event Store - Producer e Consumer de eventos
 
@@ -17,6 +32,12 @@ const log = createContextLogger(null, 'event_store');
  * @returns {Promise<Object>} Evento salvo
  */
 export async function appendEvent(eventData) {
+  console.warn(
+    `[DEPRECATED] appendEvent(${eventData?.eventType}) foi chamado. ` +
+    `Eventos salvos no EventStore sem publicação em fila não chegam aos projection workers. ` +
+    `Use saveToOutbox() de infrastructure/outbox/outboxPattern.js dentro da transação MongoDB.`
+  );
+
   const {
     eventType,
     eventVersion = 1,

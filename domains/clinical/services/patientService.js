@@ -10,7 +10,7 @@
  */
 
 import Patient from '../../../models/Patient.js';
-import { appendEvent, processWithGuarantees } from '../../../infrastructure/events/eventStoreService.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import crypto from 'crypto';
 
@@ -45,9 +45,8 @@ export async function createPatient(data, context = {}) {
     createdAt: new Date()
   });
   
-  // 2. Publica evento no Event Store
-  const event = await appendEvent({
-    eventId: `pt_create_${patient._id}_${Date.now()}`,
+  // 2. Salva evento no Outbox
+  const event = await saveToOutbox({
     eventType: ClinicalEventTypes.PATIENT_REGISTERED,
     aggregateType: 'patient',
     aggregateId: patient._id.toString(),
@@ -60,11 +59,7 @@ export async function createPatient(data, context = {}) {
       specialties: patient.specialties,
       healthPlan: patient.healthPlan
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'patientService.createPatient'
-    }
+    correlationId
   });
   
   log.info({ 
@@ -154,9 +149,8 @@ export async function updatePatient(patientId, data, context = {}) {
   // 3. Detecta mudança de telefone (importante para WhatsApp)
   const phoneChanged = data.phone && data.phone !== oldPatient.phone;
   
-  // 4. Publica evento genérico de update
-  const event = await appendEvent({
-    eventId: `pt_update_${patientId}_${Date.now()}`,
+  // 4. Salva evento genérico de update no Outbox
+  const event = await saveToOutbox({
     eventType: ClinicalEventTypes.PATIENT_UPDATED,
     aggregateType: 'patient',
     aggregateId: patientId,
@@ -166,18 +160,12 @@ export async function updatePatient(patientId, data, context = {}) {
       previousPhone: phoneChanged ? oldPatient.phone : undefined,
       newPhone: phoneChanged ? data.phone : undefined
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'patientService.updatePatient',
-      phoneChanged
-    }
+    correlationId
   });
-  
-  // 5. Se mudou telefone, publica evento específico
+
+  // 5. Se mudou telefone, salva evento específico no Outbox
   if (phoneChanged) {
-    await appendEvent({
-      eventId: `pt_phone_${patientId}_${Date.now()}`,
+    await saveToOutbox({
       eventType: ClinicalEventTypes.PATIENT_PHONE_CHANGED,
       aggregateType: 'patient',
       aggregateId: patientId,
@@ -186,11 +174,7 @@ export async function updatePatient(patientId, data, context = {}) {
         oldPhone: oldPatient.phone,
         newPhone: data.phone
       },
-      metadata: {
-        correlationId,
-        userId,
-        source: 'patientService.updatePatient'
-      }
+      correlationId
     });
   }
   
@@ -231,8 +215,7 @@ export async function confirmPatientData(patientId, context = {}) {
     throw new Error('PACIENTE_NAO_ENCONTRADO');
   }
   
-  const event = await appendEvent({
-    eventId: `pt_confirm_${patientId}_${Date.now()}`,
+  const event = await saveToOutbox({
     eventType: ClinicalEventTypes.PATIENT_DATA_CONFIRMED,
     aggregateType: 'patient',
     aggregateId: patientId,
@@ -241,11 +224,7 @@ export async function confirmPatientData(patientId, context = {}) {
       confirmedAt: new Date(),
       confirmedBy: userId
     },
-    metadata: {
-      correlationId,
-      userId,
-      source: 'patientService.confirmPatientData'
-    }
+    correlationId
   });
   
   return { patient, event };

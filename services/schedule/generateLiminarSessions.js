@@ -290,7 +290,7 @@ export async function generateLiminarSessions({
   let conflictSlots = [];
   if (rawConflicts.length > 0) {
     const Patient = (await import('../../models/Patient.js')).default;
-    const Doctor  = (await import('../models/Doctor.js')).default;
+    const Doctor  = (await import('../../models/Doctor.js')).default;
 
     const conflictDocs = await Promise.all(rawConflicts.map(async slot => {
       const existing = await Appointment.findOne({

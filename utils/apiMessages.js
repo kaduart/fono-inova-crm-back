@@ -10,7 +10,7 @@ export const Messages = {
   // 🎯 SUCESSO
   SUCCESS: {
     APPOINTMENT_CREATED: 'Agendamento registrado e em processamento',
-    APPOINTMENT_CANCELED: 'Agendamento cancelado com sucesso',
+    APPOINTMENT_CANCELLED: 'Agendamento cancelado com sucesso',
     APPOINTMENT_COMPLETED: 'Sessão completada com sucesso',
     PAYMENT_PROCESSED: 'Pagamento processado',
     BALANCE_UPDATED: 'Saldo atualizado',

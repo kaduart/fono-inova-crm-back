@@ -37,7 +37,7 @@
 | Evento | Origem | Outbox | Destino | Status |
 |--------|--------|--------|---------|--------|
 | APPOINTMENT_COMPLETED | CompleteOrchestrator | ✅ | patient-projection, sync-medical | ✅ |
-| APPOINTMENT_CANCELED | CancelOrchestrator | ✅ | patient-projection, sync-medical | ✅ |
+| APPOINTMENT_CANCELLED | CancelOrchestrator | ✅ | patient-projection, sync-medical | ✅ |
 
 ### ✅ INSURANCE (Billing Domain)
 

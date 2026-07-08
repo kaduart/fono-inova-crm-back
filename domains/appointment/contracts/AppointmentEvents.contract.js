@@ -111,7 +111,7 @@ export function registerAppointmentEventContracts() {
         description: 'Solicitação de cancelamento de agendamento'
     });
 
-    defineEventContract('APPOINTMENT_CANCELED', {
+    defineEventContract('APPOINTMENT_CANCELLED', {
         version: 1,
         required: ['appointmentId'],
         optional: ['reason', 'correlationId', 'cancelledAt'],

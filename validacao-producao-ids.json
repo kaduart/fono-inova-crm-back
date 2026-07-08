@@ -1,0 +1,3066 @@
+{
+  "patientId": "6a285cfa7681a873d5c6a00b",
+  "patients": [
+    "6a4ecebb92625ff5e3041065"
+  ],
+  "appointments": [
+    "6a4eceb592625ff5e3040f22",
+    "6a4eceb992625ff5e3040fe4",
+    "6a4ecebc92625ff5e3041092",
+    "6a4ecebc92625ff5e3041093"
+  ],
+  "sessions": [
+    "6a4eceb592625ff5e3040f25",
+    "6a4eceb992625ff5e3040fe7"
+  ],
+  "payments": [
+    "6a4eceb692625ff5e3040f2b",
+    "6a4eceba92625ff5e3040fed"
+  ],
+  "packages": [
+    "6a4ecebc92625ff5e304108e"
+  ],
+  "insuranceGuides": [],
+  "liminarContracts": [
+    "6a4ecf0792625ff5e3041204"
+  ],
+  "outboxEvents": [
+    "ad30152f-5780-4041-8b4d-c376b24b6411",
+    "498d83ad-8140-404a-83e8-e9f0267df15c",
+    "f50ab6d9-14e7-4b2a-bbf8-60ee204d3a73",
+    "552e3dea-0c0b-4090-afd8-ebe7662bf1b9",
+    "dd622bd5-2b3c-41d6-b135-1ae91e36bb31",
+    "fdb0b7cf-6e0f-4394-8b6c-61ef3a5d09d7",
+    "6a4eceba92625ff5e3040fed_canceled_paid_2026-07-08"
+  ],
+  "queueJobs": [],
+  "logs": [
+    {
+      "step": "START",
+      "message": "Iniciando validação dos fluxos críticos",
+      "data": {
+        "baseUrl": "http://localhost:5000",
+        "patientId": "6a285cfa7681a873d5c6a00b"
+      },
+      "at": "2026-07-08T22:26:50.205Z"
+    },
+    {
+      "step": "ERROR",
+      "message": "The `uri` parameter to `openUri()` must be a string, got \"undefined\". Make sure the first parameter to `mongoose.connect()` or `mongoose.createConnection()` is a string.",
+      "data": "MongooseError: The `uri` parameter to `openUri()` must be a string, got \"undefined\". Make sure the first parameter to `mongoose.connect()` or `mongoose.createConnection()` is a string.\n    at NativeConnection.createClient (/home/user/projetos/crm/back/node_modules/mongoose/lib/drivers/node-mongodb-native/connection.js:237:11)\n    at NativeConnection.openUri (/home/user/projetos/crm/back/node_modules/mongoose/lib/connection.js:1075:34)\n    at Mongoose.connect (/home/user/projetos/crm/back/node_modules/mongoose/lib/mongoose.js:450:15)\n    at main (file:///home/user/projetos/crm/back/scripts/validar-fluxos-producao.js:257:20)",
+      "at": "2026-07-08T22:26:50.233Z"
+    },
+    {
+      "step": "RESUME",
+      "message": "Continuando de execução anterior",
+      "data": {
+        "appointments": []
+      },
+      "at": "2026-07-08T22:26:57.183Z"
+    },
+    {
+      "step": "START",
+      "message": "Iniciando validação dos fluxos críticos",
+      "data": {
+        "baseUrl": "http://localhost:5000",
+        "patientId": "6a285cfa7681a873d5c6a00b"
+      },
+      "at": "2026-07-08T22:26:57.191Z"
+    },
+    {
+      "step": "MONGODB",
+      "message": "Conectado",
+      "data": null,
+      "at": "2026-07-08T22:26:57.879Z"
+    },
+    {
+      "step": "DOCTOR",
+      "message": "Médico selecionado",
+      "data": {
+        "doctorId": "684072213830f473da1b0b0b",
+        "specialty": "fonoaudiologia",
+        "name": "Lorrany Siqueira Marques"
+      },
+      "at": "2026-07-08T22:26:59.251Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "1. Particular pago + completação",
+      "data": null,
+      "at": "2026-07-08T22:27:01.352Z"
+    },
+    {
+      "step": "CREATE_APPOINTMENT",
+      "message": "status=201 time=08:40",
+      "data": {
+        "success": true,
+        "data": {
+          "_id": "6a4eceb592625ff5e3040f22",
+          "patient": {
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T21:59:31.937Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:02.382Z",
+            "__v": 0
+          },
+          "patientInfo": {
+            "fullName": "ana teste 2",
+            "phone": "6299999999",
+            "email": null,
+            "birthDate": "Wed May 27 2026 21:00:00 GMT-0300 (Brasilia Standard Time)",
+            "ageUnit": "anos"
+          },
+          "doctor": {
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRules": {
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ]
+            },
+            "commissionRuleVersion": 2
+          },
+          "date": "2026-07-10T12:00:00.000Z",
+          "time": "08:40",
+          "preferredPeriod": null,
+          "duration": 40,
+          "operationalStatus": "pending",
+          "clinicalStatus": "pending",
+          "urgency": "media",
+          "attemptCount": 0,
+          "serviceType": "individual_session",
+          "isJointSession": false,
+          "sessionType": null,
+          "sessionValue": 200,
+          "paymentMethod": "pix",
+          "billingType": "particular",
+          "patientJourneyType": null,
+          "insuranceProvider": null,
+          "insuranceValue": 0,
+          "authorizationCode": null,
+          "insuranceGuide": null,
+          "package": null,
+          "liminarContract": null,
+          "therapeuticPlan": null,
+          "insurancePlan": null,
+          "planVersion": null,
+          "advancedSessions": [],
+          "importedAt": null,
+          "postAppointmentSentAt": null,
+          "reviewRequestSentAt": null,
+          "visualFlag": "pending",
+          "addedToBalance": false,
+          "balanceAmount": 0,
+          "notes": "Validação Outbox - particular",
+          "responsible": "",
+          "specialty": "fonoaudiologia",
+          "history": [
+            {
+              "action": "appointment_requested",
+              "newStatus": "pending",
+              "changedBy": null,
+              "timestamp": "2026-07-08T22:27:01.803Z",
+              "context": "Criação HYBRID: individual_session | Particular - pagamento pendente",
+              "_id": "6a4eceb592625ff5e3040f23"
+            }
+          ],
+          "leadSnapshot": {
+            "source": "Agenda Direta",
+            "campaign": null,
+            "origin": "Agenda Direta",
+            "conversionScore": 50,
+            "capturedAt": "2026-07-08T19:13:49.559Z"
+          },
+          "isFirstAppointment": false,
+          "patientType": null,
+          "patientTypeMonthsInactive": null,
+          "metadata": {
+            "origin": {
+              "source": "outro"
+            }
+          },
+          "paymentOrigin": null,
+          "correlationId": "bc2ab463-be88-489c-bb39-21da97a013ff",
+          "isProcessing": false,
+          "processingStartedAt": null,
+          "originalAppointmentId": null,
+          "rescheduledFrom": null,
+          "rootAppointmentId": null,
+          "rescheduleReason": "",
+          "rescheduledAt": null,
+          "canceledAt": null,
+          "cancelReason": "",
+          "forceCancelAudit": {
+            "forceCancelledBy": null,
+            "forceCancelledAt": null,
+            "forceCancelledReason": null,
+            "reverseFinancial": false
+          },
+          "createdBy": null,
+          "updatedBy": null,
+          "completedBy": null,
+          "canceledBy": null,
+          "contactAttempts": [],
+          "paymentForms": [],
+          "createdAt": "2026-07-08T22:27:01.837Z",
+          "updatedAt": "2026-07-08T22:27:02.319Z",
+          "startDateTime": "2026-07-10T11:40:00.000Z",
+          "endDateTime": "2026-07-10T12:20:00.000Z",
+          "__v": 0,
+          "session": {
+            "_id": "6a4eceb592625ff5e3040f25",
+            "date": "2026-07-10T12:00:00.000Z",
+            "time": "08:40",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 200,
+            "appointmentId": "6a4eceb592625ff5e3040f22",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": null,
+            "paymentMethod": null,
+            "status": "scheduled",
+            "completedAt": null,
+            "confirmedAbsence": null,
+            "partialAmount": 0,
+            "visualFlag": "blocked",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "billingBatchId": null,
+            "paidAt": null,
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": false,
+            "commissionRate": null,
+            "commissionValue": null,
+            "commissionSnapshot": {
+              "ruleId": null,
+              "version": null,
+              "commissionType": null,
+              "value": null,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": null,
+              "calculatedAt": null,
+              "migrated": false,
+              "migratedAt": null,
+              "originalRuleVersion": null
+            },
+            "revenueRecognizedAt": null,
+            "paymentOrigin": "individual",
+            "correlationId": "bc2ab463-be88-489c-bb39-21da97a013ff",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "scheduled",
+                "at": "2026-07-08T22:27:01.924Z",
+                "_id": "6a4eceb592625ff5e3040f26"
+              }
+            ],
+            "createdAt": "2026-07-08T22:27:01.923Z",
+            "updatedAt": "2026-07-08T22:27:01.923Z",
+            "__v": 0
+          },
+          "payment": {
+            "_id": "6a4eceb692625ff5e3040f2b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "doctor": "684072213830f473da1b0b0b",
+            "appointment": "6a4eceb592625ff5e3040f22",
+            "session": "6a4eceb592625ff5e3040f25",
+            "package": null,
+            "liminarContract": null,
+            "sessions": [],
+            "advanceSessions": [],
+            "amount": 200,
+            "paymentDate": "2026-07-08T22:27:02.145Z",
+            "serviceDate": null,
+            "paymentMethod": "pix",
+            "status": "pending",
+            "serviceType": "individual_session",
+            "sessionType": null,
+            "kind": "session_payment",
+            "kindConfidence": "high",
+            "kindSource": "inferred_on_validate",
+            "settledPaymentIds": [],
+            "billingType": "particular",
+            "notes": "Pagamento referente à sessão",
+            "canceledAt": null,
+            "canceledReason": null,
+            "convertedAt": null,
+            "convertedPackage": null,
+            "clinicId": "default",
+            "createdBy": null,
+            "paidAt": null,
+            "confirmedAt": null,
+            "financialDate": null,
+            "parentPaymentId": null,
+            "isFromPackage": false,
+            "insurance": {
+              "provider": null,
+              "authorizationCode": null,
+              "insuranceProvider": null,
+              "guideNumber": null,
+              "month": null,
+              "status": "pending",
+              "grossAmount": 0,
+              "netAmount": 0
+            },
+            "insuranceGuide": null,
+            "insurancePlan": null,
+            "splitGroupId": null,
+            "source": null,
+            "splitMethods": [],
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "appointmentId": "6a4eceb592625ff5e3040f22",
+            "createdAt": "2026-07-08T22:27:02.161Z",
+            "updatedAt": "2026-07-08T22:27:02.161Z",
+            "__v": 0
+          },
+          "lead": "6a4ea16dbcf1adec14040a84"
+        },
+        "message": "Agendamento criado com pagamento pendente"
+      },
+      "at": "2026-07-08T22:27:02.877Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4eceb592625ff5e3040f22",
+        "eventType": "APPOINTMENT_CREATED",
+        "events": [
+          {
+            "eventType": "APPOINTMENT_CREATED",
+            "status": "published",
+            "eventId": "ad30152f-5780-4041-8b4d-c376b24b6411"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:03.805Z"
+    },
+    {
+      "step": "COMPLETE_APPOINTMENT",
+      "message": "status=200",
+      "data": {
+        "success": true,
+        "appointment": {
+          "_id": "6a4eceb592625ff5e3040f22",
+          "patient": {
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T22:27:04.645Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:04.646Z",
+            "__v": 0
+          },
+          "patientInfo": {
+            "fullName": "ana teste 2",
+            "phone": "6299999999",
+            "email": null,
+            "birthDate": "Wed May 27 2026 21:00:00 GMT-0300 (Brasilia Standard Time)",
+            "ageUnit": "anos"
+          },
+          "doctor": {
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRules": {
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ]
+            },
+            "commissionRuleVersion": 2
+          },
+          "date": "2026-07-10T12:00:00.000Z",
+          "time": "08:40",
+          "preferredPeriod": null,
+          "duration": 40,
+          "operationalStatus": "completed",
+          "clinicalStatus": "completed",
+          "urgency": "media",
+          "attemptCount": 0,
+          "serviceType": "individual_session",
+          "isJointSession": false,
+          "sessionType": null,
+          "sessionValue": 200,
+          "paymentMethod": "pix",
+          "billingType": "particular",
+          "patientJourneyType": null,
+          "insuranceProvider": null,
+          "insuranceValue": 0,
+          "authorizationCode": null,
+          "insuranceGuide": null,
+          "package": null,
+          "liminarContract": null,
+          "therapeuticPlan": null,
+          "insurancePlan": null,
+          "planVersion": null,
+          "advancedSessions": [],
+          "importedAt": null,
+          "postAppointmentSentAt": null,
+          "reviewRequestSentAt": null,
+          "visualFlag": "ok",
+          "addedToBalance": false,
+          "balanceAmount": 0,
+          "notes": "Validação Outbox - particular",
+          "responsible": "",
+          "specialty": "fonoaudiologia",
+          "history": [
+            {
+              "action": "appointment_requested",
+              "newStatus": "pending",
+              "changedBy": null,
+              "timestamp": "2026-07-08T22:27:01.803Z",
+              "context": "Criação HYBRID: individual_session | Particular - pagamento pendente",
+              "_id": "6a4eceb592625ff5e3040f23"
+            }
+          ],
+          "leadSnapshot": {
+            "source": "Agenda Direta",
+            "campaign": null,
+            "origin": "Agenda Direta",
+            "conversionScore": 50,
+            "capturedAt": "2026-07-08T19:13:49.559Z"
+          },
+          "isFirstAppointment": false,
+          "patientType": null,
+          "patientTypeMonthsInactive": null,
+          "metadata": {
+            "origin": {
+              "source": "outro"
+            }
+          },
+          "paymentOrigin": null,
+          "correlationId": "complete_1783549623927_ccnsgwc8c",
+          "isProcessing": false,
+          "originalAppointmentId": null,
+          "rescheduledFrom": null,
+          "rootAppointmentId": null,
+          "rescheduleReason": "",
+          "rescheduledAt": null,
+          "canceledAt": null,
+          "cancelReason": "",
+          "forceCancelAudit": {
+            "forceCancelledBy": null,
+            "forceCancelledAt": null,
+            "forceCancelledReason": null,
+            "reverseFinancial": false
+          },
+          "createdBy": null,
+          "updatedBy": null,
+          "completedBy": null,
+          "canceledBy": null,
+          "contactAttempts": [],
+          "paymentForms": [],
+          "createdAt": "2026-07-08T22:27:01.837Z",
+          "updatedAt": "2026-07-08T22:27:04.853Z",
+          "startDateTime": "2026-07-10T11:40:00.000Z",
+          "endDateTime": "2026-07-10T12:20:00.000Z",
+          "__v": 0,
+          "session": {
+            "_id": "6a4eceb592625ff5e3040f25",
+            "date": "2026-07-10T12:00:00.000Z",
+            "time": "08:40",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 200,
+            "appointmentId": "6a4eceb592625ff5e3040f22",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": null,
+            "paymentMethod": "pix",
+            "status": "completed",
+            "completedAt": "2026-07-08T22:27:04.150Z",
+            "confirmedAbsence": null,
+            "partialAmount": 0,
+            "visualFlag": "blocked",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "billingBatchId": null,
+            "paidAt": "2026-07-08T22:27:04.155Z",
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": true,
+            "commissionRate": null,
+            "commissionValue": null,
+            "commissionSnapshot": {
+              "ruleId": "6a3ed94a2d62337354ec074d",
+              "version": 2,
+              "commissionType": "fixed",
+              "value": 65,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": 65,
+              "calculatedAt": "2026-07-08T22:27:04.148Z"
+            },
+            "revenueRecognizedAt": "2026-07-08T22:27:04.192Z",
+            "paymentOrigin": "auto_per_session",
+            "correlationId": "complete_1783549623927_ccnsgwc8c",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "scheduled",
+                "at": "2026-07-08T22:27:01.924Z",
+                "_id": "6a4eceb592625ff5e3040f26"
+              },
+              {
+                "status": "completed",
+                "at": "2026-07-08T22:27:04.192Z",
+                "_id": "6a4eceb892625ff5e3040f75"
+              }
+            ],
+            "createdAt": "2026-07-08T22:27:01.923Z",
+            "updatedAt": "2026-07-08T22:27:04.164Z",
+            "__v": 0,
+            "isPaid": true,
+            "paymentStatus": "paid"
+          },
+          "payment": {
+            "_id": "6a4eceb692625ff5e3040f2b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "doctor": "684072213830f473da1b0b0b",
+            "appointment": "6a4eceb592625ff5e3040f22",
+            "session": "6a4eceb592625ff5e3040f25",
+            "package": null,
+            "liminarContract": null,
+            "sessions": [],
+            "advanceSessions": [],
+            "amount": 200,
+            "paymentDate": "2026-07-08T22:27:04.241Z",
+            "serviceDate": null,
+            "paymentMethod": "pix",
+            "status": "paid",
+            "serviceType": "individual_session",
+            "sessionType": null,
+            "kind": "session_payment",
+            "kindConfidence": "high",
+            "kindSource": "inferred_on_validate",
+            "settledPaymentIds": [],
+            "billingType": "particular",
+            "notes": "Pagamento referente à sessão",
+            "canceledAt": null,
+            "canceledReason": null,
+            "convertedAt": null,
+            "convertedPackage": null,
+            "clinicId": "default",
+            "createdBy": null,
+            "paidAt": "2026-07-08T22:27:04.241Z",
+            "confirmedAt": null,
+            "financialDate": "2026-07-08T22:27:04.241Z",
+            "parentPaymentId": null,
+            "isFromPackage": false,
+            "insurance": {
+              "provider": null,
+              "authorizationCode": null,
+              "insuranceProvider": null,
+              "guideNumber": null,
+              "month": null,
+              "status": "pending",
+              "grossAmount": 0,
+              "netAmount": 0
+            },
+            "insuranceGuide": null,
+            "insurancePlan": null,
+            "splitGroupId": null,
+            "source": null,
+            "splitMethods": null,
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "appointmentId": "6a4eceb592625ff5e3040f22",
+            "createdAt": "2026-07-08T22:27:02.161Z",
+            "updatedAt": "2026-07-08T22:27:04.270Z",
+            "__v": 0
+          },
+          "lead": "6a4ea16dbcf1adec14040a84",
+          "completedAt": "2026-07-08T22:27:04.229Z",
+          "completionNotes": "",
+          "evolution": "",
+          "isPaid": true,
+          "paymentStatus": "paid"
+        },
+        "processing": {
+          "async": false,
+          "status": "completed"
+        },
+        "billing": {
+          "type": "particular"
+        },
+        "transitions": []
+      },
+      "at": "2026-07-08T22:27:05.024Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4eceb592625ff5e3040f25",
+        "eventType": "SESSION_COMPLETED",
+        "events": [
+          {
+            "eventType": "SESSION_COMPLETED",
+            "status": "published",
+            "eventId": "498d83ad-8140-404a-83e8-e9f0267df15c"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:05.610Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "2. Particular + cancelamento",
+      "data": null,
+      "at": "2026-07-08T22:27:05.612Z"
+    },
+    {
+      "step": "CREATE_APPOINTMENT",
+      "message": "status=201 time=10:00",
+      "data": {
+        "success": true,
+        "data": {
+          "_id": "6a4eceb992625ff5e3040fe4",
+          "patient": {
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22",
+              "6a4eceb992625ff5e3040fe4"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T22:27:04.645Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:06.161Z",
+            "__v": 0
+          },
+          "patientInfo": {
+            "fullName": "ana teste 2",
+            "phone": "6299999999",
+            "email": null,
+            "birthDate": "Wed May 27 2026 21:00:00 GMT-0300 (Brasilia Standard Time)",
+            "ageUnit": "anos"
+          },
+          "doctor": {
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRules": {
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ]
+            },
+            "commissionRuleVersion": 2
+          },
+          "date": "2026-07-10T12:00:00.000Z",
+          "time": "10:00",
+          "preferredPeriod": null,
+          "duration": 40,
+          "operationalStatus": "pending",
+          "clinicalStatus": "pending",
+          "urgency": "media",
+          "attemptCount": 0,
+          "serviceType": "individual_session",
+          "isJointSession": false,
+          "sessionType": null,
+          "sessionValue": 200,
+          "paymentMethod": "pix",
+          "billingType": "particular",
+          "patientJourneyType": null,
+          "insuranceProvider": null,
+          "insuranceValue": 0,
+          "authorizationCode": null,
+          "insuranceGuide": null,
+          "package": null,
+          "liminarContract": null,
+          "therapeuticPlan": null,
+          "insurancePlan": null,
+          "planVersion": null,
+          "advancedSessions": [],
+          "importedAt": null,
+          "postAppointmentSentAt": null,
+          "reviewRequestSentAt": null,
+          "visualFlag": "pending",
+          "addedToBalance": false,
+          "balanceAmount": 0,
+          "notes": "Validação Outbox - cancelamento",
+          "responsible": "",
+          "specialty": "fonoaudiologia",
+          "history": [
+            {
+              "action": "appointment_requested",
+              "newStatus": "pending",
+              "changedBy": null,
+              "timestamp": "2026-07-08T22:27:05.931Z",
+              "context": "Criação HYBRID: individual_session | Particular - pagamento pendente",
+              "_id": "6a4eceb992625ff5e3040fe5"
+            }
+          ],
+          "leadSnapshot": {
+            "source": "Agenda Direta",
+            "campaign": null,
+            "origin": "Agenda Direta",
+            "conversionScore": 50,
+            "capturedAt": "2026-07-08T19:13:49.559Z"
+          },
+          "isFirstAppointment": false,
+          "patientType": null,
+          "patientTypeMonthsInactive": null,
+          "metadata": {
+            "origin": {
+              "source": "outro"
+            }
+          },
+          "paymentOrigin": null,
+          "correlationId": "4560ca99-5d2a-42f0-aec9-cb209095f760",
+          "isProcessing": false,
+          "processingStartedAt": null,
+          "originalAppointmentId": null,
+          "rescheduledFrom": null,
+          "rootAppointmentId": null,
+          "rescheduleReason": "",
+          "rescheduledAt": null,
+          "canceledAt": null,
+          "cancelReason": "",
+          "forceCancelAudit": {
+            "forceCancelledBy": null,
+            "forceCancelledAt": null,
+            "forceCancelledReason": null,
+            "reverseFinancial": false
+          },
+          "createdBy": null,
+          "updatedBy": null,
+          "completedBy": null,
+          "canceledBy": null,
+          "contactAttempts": [],
+          "paymentForms": [],
+          "createdAt": "2026-07-08T22:27:05.934Z",
+          "updatedAt": "2026-07-08T22:27:06.137Z",
+          "startDateTime": "2026-07-10T13:00:00.000Z",
+          "endDateTime": "2026-07-10T13:40:00.000Z",
+          "__v": 0,
+          "session": {
+            "_id": "6a4eceb992625ff5e3040fe7",
+            "date": "2026-07-10T12:00:00.000Z",
+            "time": "10:00",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 200,
+            "appointmentId": "6a4eceb992625ff5e3040fe4",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": null,
+            "paymentMethod": null,
+            "status": "scheduled",
+            "completedAt": null,
+            "confirmedAbsence": null,
+            "partialAmount": 0,
+            "visualFlag": "blocked",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "billingBatchId": null,
+            "paidAt": null,
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": false,
+            "commissionRate": null,
+            "commissionValue": null,
+            "commissionSnapshot": {
+              "ruleId": null,
+              "version": null,
+              "commissionType": null,
+              "value": null,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": null,
+              "calculatedAt": null,
+              "migrated": false,
+              "migratedAt": null,
+              "originalRuleVersion": null
+            },
+            "revenueRecognizedAt": null,
+            "paymentOrigin": "individual",
+            "correlationId": "4560ca99-5d2a-42f0-aec9-cb209095f760",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "scheduled",
+                "at": "2026-07-08T22:27:05.960Z",
+                "_id": "6a4eceb992625ff5e3040fe8"
+              }
+            ],
+            "createdAt": "2026-07-08T22:27:05.960Z",
+            "updatedAt": "2026-07-08T22:27:05.960Z",
+            "__v": 0
+          },
+          "payment": {
+            "_id": "6a4eceba92625ff5e3040fed",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "doctor": "684072213830f473da1b0b0b",
+            "appointment": "6a4eceb992625ff5e3040fe4",
+            "session": "6a4eceb992625ff5e3040fe7",
+            "package": null,
+            "liminarContract": null,
+            "sessions": [],
+            "advanceSessions": [],
+            "amount": 200,
+            "paymentDate": "2026-07-08T22:27:06.063Z",
+            "serviceDate": null,
+            "paymentMethod": "pix",
+            "status": "pending",
+            "serviceType": "individual_session",
+            "sessionType": null,
+            "kind": "session_payment",
+            "kindConfidence": "high",
+            "kindSource": "inferred_on_validate",
+            "settledPaymentIds": [],
+            "billingType": "particular",
+            "notes": "Pagamento referente à sessão",
+            "canceledAt": null,
+            "canceledReason": null,
+            "convertedAt": null,
+            "convertedPackage": null,
+            "clinicId": "default",
+            "createdBy": null,
+            "paidAt": null,
+            "confirmedAt": null,
+            "financialDate": null,
+            "parentPaymentId": null,
+            "isFromPackage": false,
+            "insurance": {
+              "provider": null,
+              "authorizationCode": null,
+              "insuranceProvider": null,
+              "guideNumber": null,
+              "month": null,
+              "status": "pending",
+              "grossAmount": 0,
+              "netAmount": 0
+            },
+            "insuranceGuide": null,
+            "insurancePlan": null,
+            "splitGroupId": null,
+            "source": null,
+            "splitMethods": [],
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "appointmentId": "6a4eceb992625ff5e3040fe4",
+            "createdAt": "2026-07-08T22:27:06.065Z",
+            "updatedAt": "2026-07-08T22:27:06.065Z",
+            "__v": 0
+          },
+          "lead": "6a4ea16dbcf1adec14040a84"
+        },
+        "message": "Agendamento criado com pagamento pendente"
+      },
+      "at": "2026-07-08T22:27:06.406Z"
+    },
+    {
+      "step": "CANCEL_APPOINTMENT",
+      "message": "status=200",
+      "data": {
+        "success": true,
+        "data": {
+          "patientInfo": {
+            "fullName": "ana teste 2",
+            "phone": "6299999999",
+            "email": null,
+            "birthDate": "Wed May 27 2026 21:00:00 GMT-0300 (Brasilia Standard Time)",
+            "ageUnit": "anos"
+          },
+          "leadSnapshot": {
+            "source": "Agenda Direta",
+            "campaign": null,
+            "origin": "Agenda Direta",
+            "conversionScore": 50,
+            "capturedAt": "2026-07-08T19:13:49.559Z"
+          },
+          "metadata": {
+            "origin": {
+              "source": "outro"
+            }
+          },
+          "forceCancelAudit": {
+            "forceCancelledBy": null,
+            "forceCancelledAt": null,
+            "forceCancelledReason": null,
+            "reverseFinancial": false
+          },
+          "isPaid": false,
+          "_id": "6a4eceb992625ff5e3040fe4",
+          "patient": {
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22",
+              "6a4eceb992625ff5e3040fe4"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T22:27:04.645Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:06.161Z",
+            "__v": 0,
+            "id": "6a285cfa7681a873d5c6a00b"
+          },
+          "doctor": {
+            "commissionRules": {
+              "standardSession": 60,
+              "evaluationSession": 0,
+              "neuropsychEvaluation": 1200,
+              "byInsurance": {},
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ],
+              "customRules": []
+            },
+            "deactivatedAt": null,
+            "status": "ativo",
+            "maxSlots": 30,
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRuleVersion": 2
+          },
+          "date": "2026-07-10T12:00:00.000Z",
+          "time": "10:00",
+          "preferredPeriod": null,
+          "duration": 40,
+          "operationalStatus": "canceled",
+          "clinicalStatus": "pending",
+          "urgency": "media",
+          "attemptCount": 0,
+          "serviceType": "individual_session",
+          "isJointSession": false,
+          "sessionType": null,
+          "sessionValue": 200,
+          "paymentMethod": "pix",
+          "billingType": "particular",
+          "patientJourneyType": null,
+          "insuranceProvider": null,
+          "insuranceValue": 0,
+          "authorizationCode": null,
+          "insuranceGuide": null,
+          "package": null,
+          "liminarContract": null,
+          "therapeuticPlan": null,
+          "insurancePlan": null,
+          "planVersion": null,
+          "advancedSessions": [],
+          "importedAt": null,
+          "postAppointmentSentAt": null,
+          "reviewRequestSentAt": null,
+          "visualFlag": "blocked",
+          "addedToBalance": false,
+          "balanceAmount": 0,
+          "notes": "Validação Outbox - cancelamento",
+          "responsible": "",
+          "specialty": "fonoaudiologia",
+          "history": [
+            {
+              "action": "appointment_requested",
+              "newStatus": "pending",
+              "changedBy": null,
+              "timestamp": "2026-07-08T22:27:05.931Z",
+              "context": "Criação HYBRID: individual_session | Particular - pagamento pendente",
+              "_id": "6a4eceb992625ff5e3040fe5",
+              "id": "6a4eceb992625ff5e3040fe5"
+            },
+            {
+              "action": "cancelamento",
+              "newStatus": "canceled",
+              "timestamp": "2026-07-08T22:27:06.695Z",
+              "context": "operacional",
+              "_id": "6a4eceba92625ff5e304102e",
+              "id": "6a4eceba92625ff5e304102e"
+            }
+          ],
+          "isFirstAppointment": false,
+          "patientType": null,
+          "patientTypeMonthsInactive": null,
+          "paymentOrigin": null,
+          "correlationId": "4560ca99-5d2a-42f0-aec9-cb209095f760",
+          "isProcessing": false,
+          "processingStartedAt": null,
+          "originalAppointmentId": null,
+          "rescheduledFrom": null,
+          "rootAppointmentId": null,
+          "rescheduleReason": "",
+          "rescheduledAt": null,
+          "canceledAt": "2026-07-08T22:27:06.694Z",
+          "cancelReason": "Cancelado em validação de produção",
+          "createdBy": null,
+          "updatedBy": null,
+          "completedBy": null,
+          "canceledBy": null,
+          "contactAttempts": [],
+          "paymentForms": [],
+          "createdAt": "2026-07-08T22:27:05.934Z",
+          "updatedAt": "2026-07-08T22:27:06.697Z",
+          "startDateTime": "2026-07-10T13:00:00.000Z",
+          "endDateTime": "2026-07-10T13:40:00.000Z",
+          "__v": 0,
+          "session": {
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "commissionSnapshot": {
+              "ruleId": null,
+              "version": null,
+              "commissionType": null,
+              "value": null,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": null,
+              "calculatedAt": null,
+              "migrated": false,
+              "migratedAt": null,
+              "originalRuleVersion": null
+            },
+            "_id": "6a4eceb992625ff5e3040fe7",
+            "date": "2026-07-10T12:00:00.000Z",
+            "time": "10:00",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 200,
+            "appointmentId": "6a4eceb992625ff5e3040fe4",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": null,
+            "paymentMethod": null,
+            "status": "canceled",
+            "completedAt": null,
+            "confirmedAbsence": false,
+            "partialAmount": 0,
+            "visualFlag": "blocked",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "billingBatchId": null,
+            "paidAt": null,
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": false,
+            "commissionRate": null,
+            "commissionValue": null,
+            "revenueRecognizedAt": null,
+            "paymentOrigin": "individual",
+            "correlationId": "4560ca99-5d2a-42f0-aec9-cb209095f760",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "scheduled",
+                "at": "2026-07-08T22:27:05.960Z",
+                "_id": "6a4eceb992625ff5e3040fe8",
+                "id": "6a4eceb992625ff5e3040fe8"
+              },
+              {
+                "status": "canceled",
+                "at": "2026-07-08T22:27:06.652Z",
+                "_id": "6a4eceba92625ff5e304102c",
+                "id": "6a4eceba92625ff5e304102c"
+              }
+            ],
+            "createdAt": "2026-07-08T22:27:05.960Z",
+            "updatedAt": "2026-07-08T22:27:06.652Z",
+            "__v": 1,
+            "canceledAt": "2026-07-08T22:27:06.651Z",
+            "isPaid": false,
+            "paymentStatus": "canceled",
+            "id": "6a4eceb992625ff5e3040fe7"
+          },
+          "payment": {
+            "insurance": {
+              "provider": null,
+              "authorizationCode": null,
+              "insuranceProvider": null,
+              "guideNumber": null,
+              "month": null,
+              "status": "pending",
+              "grossAmount": 0,
+              "netAmount": 0
+            },
+            "_id": "6a4eceba92625ff5e3040fed",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "doctor": "684072213830f473da1b0b0b",
+            "appointment": "6a4eceb992625ff5e3040fe4",
+            "session": "6a4eceb992625ff5e3040fe7",
+            "package": null,
+            "liminarContract": null,
+            "sessions": [],
+            "advanceSessions": [],
+            "amount": 200,
+            "paymentDate": "2026-07-08T22:27:06.063Z",
+            "serviceDate": null,
+            "paymentMethod": "pix",
+            "status": "canceled",
+            "serviceType": "individual_session",
+            "sessionType": null,
+            "kind": "session_payment",
+            "kindConfidence": "high",
+            "kindSource": "inferred_on_validate",
+            "settledPaymentIds": [],
+            "billingType": "particular",
+            "notes": "Pagamento referente à sessão",
+            "canceledAt": "2026-07-08T22:27:06.565Z",
+            "canceledReason": "Cancelado em validação de produção",
+            "convertedAt": null,
+            "convertedPackage": null,
+            "clinicId": "default",
+            "createdBy": null,
+            "paidAt": null,
+            "confirmedAt": null,
+            "financialDate": null,
+            "parentPaymentId": null,
+            "isFromPackage": false,
+            "insuranceGuide": null,
+            "insurancePlan": null,
+            "splitGroupId": null,
+            "source": null,
+            "splitMethods": [],
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "appointmentId": "6a4eceb992625ff5e3040fe4",
+            "createdAt": "2026-07-08T22:27:06.065Z",
+            "updatedAt": "2026-07-08T22:27:06.566Z",
+            "__v": 0
+          },
+          "lead": "6a4ea16dbcf1adec14040a84",
+          "paymentStatus": "canceled",
+          "daysUntilDate": 1,
+          "id": "6a4eceb992625ff5e3040fe4"
+        },
+        "message": "Agendamento cancelado. Dados preservados para reagendamento."
+      },
+      "at": "2026-07-08T22:27:07.232Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4eceb992625ff5e3040fe4",
+        "eventType": "APPOINTMENT_CANCELLED",
+        "events": [
+          {
+            "eventType": "APPOINTMENT_CANCELLED",
+            "status": "published",
+            "eventId": "f50ab6d9-14e7-4b2a-bbf8-60ee204d3a73"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:07.802Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "3. Cadastro de paciente",
+      "data": null,
+      "at": "2026-07-08T22:27:07.802Z"
+    },
+    {
+      "step": "CREATE_PATIENT",
+      "message": "status=201",
+      "data": {
+        "success": true,
+        "data": {
+          "patientId": "6a4ecebb92625ff5e3041065",
+          "status": "completed",
+          "patientView": {
+            "stats": {
+              "totalAppointments": 0,
+              "totalCompleted": 0,
+              "totalCanceled": 0,
+              "totalNoShow": 0,
+              "totalSessions": 0,
+              "totalPackages": 0,
+              "totalRevenue": 0,
+              "totalPending": 0,
+              "totalPendingParticular": 0,
+              "firstAppointmentDate": null,
+              "lastAppointmentDate": null,
+              "nextAppointmentDate": null
+            },
+            "lastAppointment": null,
+            "nextAppointment": null,
+            "balance": {
+              "current": 0,
+              "lastUpdated": "2026-07-08T22:27:07.984Z"
+            },
+            "snapshot": {
+              "version": 1,
+              "calculatedAt": "2026-07-08T22:27:08.019Z",
+              "ttl": "2026-10-06T22:27:08.019Z",
+              "isStale": false
+            },
+            "_id": "6a4ecebb92625ff5e3041065",
+            "patientId": "6a4ecebb92625ff5e3041065",
+            "__v": 0,
+            "createdAt": "2026-07-08T22:27:08.020Z",
+            "dateOfBirth": "2015-01-01T00:00:00.000Z",
+            "doctorName": null,
+            "fullName": "Validacao Outbox 1783549627803",
+            "hasLiminarContract": false,
+            "liminarContracts": [],
+            "liminarCredits": 0,
+            "normalizedName": "validacao outbox 1783549627803",
+            "packages": [],
+            "phone": "62999412990",
+            "phoneDigits": "62999412990",
+            "specialty": null,
+            "status": "prospect",
+            "tags": [
+              "novo"
+            ],
+            "updatedAt": "2026-07-08T22:27:08.020Z"
+          }
+        },
+        "meta": {
+          "message": "Paciente criado",
+          "timestamp": "2026-07-08T22:27:08.107Z"
+        }
+      },
+      "at": "2026-07-08T22:27:08.143Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4ecebb92625ff5e3041065",
+        "eventType": "PATIENT_REGISTERED",
+        "events": [
+          {
+            "eventType": "PATIENT_REGISTERED",
+            "status": "published",
+            "eventId": "552e3dea-0c0b-4090-afd8-ebe7662bf1b9"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:08.716Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "4. Pacote per-session",
+      "data": null,
+      "at": "2026-07-08T22:27:08.716Z"
+    },
+    {
+      "step": "CREATE_PACKAGE",
+      "message": "status=201",
+      "data": {
+        "success": true,
+        "message": "Pacote criado com 2 agendamentos",
+        "data": {
+          "packageId": "6a4ecebc92625ff5e304108e",
+          "type": "therapy",
+          "specialty": "fonoaudiologia",
+          "totalSessions": 2,
+          "sessionsDone": 0,
+          "remaining": 2,
+          "totalValue": 360,
+          "totalPaid": 0,
+          "balance": 360,
+          "financialStatus": "unpaid",
+          "paymentType": "per-session",
+          "appointmentsCreated": 2,
+          "adjustedHolidays": [],
+          "sessionsCreated": 2,
+          "appointments": [
+            {
+              "_id": "6a4ecebc92625ff5e3041092",
+              "date": "2026-07-31T18:20:00.000Z",
+              "time": "15:20",
+              "status": "scheduled"
+            },
+            {
+              "_id": "6a4ecebc92625ff5e3041093",
+              "date": "2026-08-07T17:00:00.000Z",
+              "time": "14:00",
+              "status": "scheduled"
+            }
+          ],
+          "payments": [],
+          "paymentStatus": "PENDING"
+        },
+        "meta": {
+          "correlationId": "pkg_v2_1783549628722",
+          "viewBuilt": true,
+          "performance": {
+            "totalDurationMs": 492,
+            "transactionDurationMs": 258,
+            "operationsInTransaction": 5,
+            "estimatedDbQueries": 9,
+            "grade": "GOOD"
+          },
+          "nextSteps": [
+            "Agenda criada - secretária pode operar no calendário"
+          ]
+        }
+      },
+      "at": "2026-07-08T22:27:09.225Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4ecebc92625ff5e304108e",
+        "eventType": "PACKAGE_CREATED",
+        "events": [
+          {
+            "eventType": "PACKAGE_CREATED",
+            "status": "published",
+            "eventId": "dd622bd5-2b3c-41d6-b135-1ae91e36bb31"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:09.809Z"
+    },
+    {
+      "step": "COMPLETE_APPOINTMENT",
+      "message": "status=200",
+      "data": {
+        "success": true,
+        "appointment": {
+          "_id": "6a4ecebc92625ff5e3041092",
+          "patient": {
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22",
+              "6a4eceb992625ff5e3040fe4"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec",
+              "6a4ecebc92625ff5e304108e"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T22:27:10.766Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:10.766Z",
+            "__v": 0
+          },
+          "patientInfo": {
+            "ageUnit": "anos"
+          },
+          "doctor": {
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRules": {
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ]
+            },
+            "commissionRuleVersion": 2
+          },
+          "date": "2026-07-31T18:20:00.000Z",
+          "time": "15:20",
+          "preferredPeriod": null,
+          "duration": 40,
+          "operationalStatus": "completed",
+          "clinicalStatus": "completed",
+          "urgency": "media",
+          "attemptCount": 0,
+          "serviceType": "package_session",
+          "isJointSession": false,
+          "sessionType": null,
+          "sessionValue": 180,
+          "paymentMethod": "pix",
+          "billingType": "particular",
+          "patientJourneyType": null,
+          "insuranceProvider": null,
+          "insuranceValue": 0,
+          "authorizationCode": null,
+          "insuranceGuide": null,
+          "package": {
+            "_id": "6a4ecebc92625ff5e304108e",
+            "version": 0,
+            "durationMonths": 1,
+            "sessionsPerWeek": 1,
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "doctor": "684072213830f473da1b0b0b",
+            "paymentMethod": "pix",
+            "paymentType": "per-session",
+            "sessionType": "fonoaudiologia",
+            "sessionValue": 180,
+            "totalSessions": 2,
+            "sessions": [
+              "6a4ecebc92625ff5e3041095",
+              "6a4ecebc92625ff5e3041096"
+            ],
+            "appointments": [
+              "6a4ecebc92625ff5e3041092",
+              "6a4ecebc92625ff5e3041093"
+            ],
+            "date": "2026-07-08T22:27:08.797Z",
+            "sessionsDone": 1,
+            "preConsumedCount": 0,
+            "payments": [],
+            "status": "active",
+            "balance": 0,
+            "credit": 0,
+            "specialty": "fonoaudiologia",
+            "financialStatus": "paid",
+            "paidSessions": 1,
+            "canceledSessions": 0,
+            "totalPaid": 180,
+            "totalValue": 360,
+            "type": "therapy",
+            "liminarProcessNumber": null,
+            "liminarCourt": null,
+            "liminarExpirationDate": null,
+            "liminarMode": "hybrid",
+            "liminarAuthorized": true,
+            "liminarCreditBalance": 0,
+            "liminarTotalCredit": 0,
+            "recognizedRevenue": 0,
+            "insuranceGuide": null,
+            "insuranceProvider": null,
+            "insuranceGrossAmount": 0,
+            "insuranceBillingStatus": null,
+            "calculationMode": null,
+            "model": "per_session",
+            "liminarCreditHistory": [],
+            "__v": 1
+          },
+          "liminarContract": null,
+          "therapeuticPlan": null,
+          "insurancePlan": null,
+          "planVersion": null,
+          "advancedSessions": [],
+          "importedAt": null,
+          "postAppointmentSentAt": null,
+          "reviewRequestSentAt": null,
+          "paymentStatus": "paid",
+          "isPaid": true,
+          "visualFlag": "ok",
+          "addedToBalance": false,
+          "balanceAmount": 0,
+          "notes": "",
+          "responsible": "",
+          "specialty": "fonoaudiologia",
+          "leadSnapshot": {
+            "source": null,
+            "campaign": null,
+            "origin": null,
+            "conversionScore": null,
+            "capturedAt": null
+          },
+          "isFirstAppointment": true,
+          "patientType": null,
+          "patientTypeMonthsInactive": null,
+          "metadata": {
+            "origin": {
+              "source": "outro"
+            }
+          },
+          "paymentOrigin": "auto_per_session",
+          "isProcessing": false,
+          "originalAppointmentId": null,
+          "rescheduledFrom": null,
+          "rootAppointmentId": null,
+          "rescheduleReason": "",
+          "rescheduledAt": null,
+          "canceledAt": null,
+          "cancelReason": "",
+          "forceCancelAudit": {
+            "forceCancelledBy": null,
+            "forceCancelledAt": null,
+            "forceCancelledReason": null,
+            "reverseFinancial": false
+          },
+          "createdBy": null,
+          "updatedBy": null,
+          "completedBy": null,
+          "canceledBy": null,
+          "contactAttempts": [],
+          "paymentForms": [],
+          "history": [],
+          "__v": 0,
+          "createdAt": "2026-07-08T22:27:08.885Z",
+          "updatedAt": "2026-07-08T22:27:11.121Z",
+          "session": {
+            "_id": "6a4ecebc92625ff5e3041095",
+            "date": "2026-07-31T18:20:00.000Z",
+            "time": "15:20",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 180,
+            "appointmentId": "6a4ecebc92625ff5e3041092",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": "6a4ecebc92625ff5e304108e",
+            "isPaid": true,
+            "paymentMethod": "pix",
+            "status": "completed",
+            "completedAt": "2026-07-08T22:27:10.068Z",
+            "confirmedAbsence": null,
+            "paymentStatus": "paid",
+            "partialAmount": 0,
+            "visualFlag": "pending",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "billingBatchId": null,
+            "paidAt": "2026-07-08T22:27:10.068Z",
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": true,
+            "commissionRate": null,
+            "commissionValue": null,
+            "commissionSnapshot": {
+              "ruleId": "6a3ed94a2d62337354ec074d",
+              "version": 2,
+              "commissionType": "fixed",
+              "value": 65,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": 65,
+              "calculatedAt": "2026-07-08T22:27:10.068Z"
+            },
+            "revenueRecognizedAt": "2026-07-08T22:27:10.103Z",
+            "paymentOrigin": "auto_per_session",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "completed",
+                "at": "2026-07-08T22:27:10.103Z",
+                "_id": "6a4ecebe92625ff5e30410e9"
+              }
+            ],
+            "__v": 0,
+            "createdAt": "2026-07-08T22:27:08.920Z",
+            "updatedAt": "2026-07-08T22:27:10.069Z",
+            "correlationId": "complete_1783549629882_rrl2y1ij6"
+          },
+          "completedAt": "2026-07-08T22:27:10.222Z",
+          "completionNotes": "",
+          "correlationId": "complete_1783549629882_rrl2y1ij6",
+          "evolution": "",
+          "payment": {
+            "_id": "6a4ecebe92625ff5e30410f1",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "appointment": "6a4ecebc92625ff5e3041092",
+            "session": "6a4ecebc92625ff5e3041095",
+            "package": null,
+            "liminarContract": null,
+            "sessions": [],
+            "advanceSessions": [],
+            "amount": 180,
+            "paymentDate": "2026-07-08T22:27:10.321Z",
+            "serviceDate": null,
+            "paymentMethod": "pix",
+            "status": "paid",
+            "serviceType": "session",
+            "sessionType": null,
+            "kind": "session_payment",
+            "kindConfidence": null,
+            "kindSource": null,
+            "settledPaymentIds": [],
+            "billingType": "particular",
+            "notes": null,
+            "canceledAt": null,
+            "canceledReason": null,
+            "convertedAt": null,
+            "convertedPackage": null,
+            "clinicId": "default",
+            "createdBy": null,
+            "paidAt": "2026-07-08T22:27:10.321Z",
+            "confirmedAt": null,
+            "financialDate": "2026-07-08T22:27:10.321Z",
+            "parentPaymentId": null,
+            "isFromPackage": false,
+            "insurance": {
+              "provider": null,
+              "authorizationCode": null,
+              "insuranceProvider": null,
+              "guideNumber": null,
+              "month": null,
+              "status": "pending",
+              "grossAmount": 0,
+              "netAmount": 0
+            },
+            "insuranceGuide": null,
+            "insurancePlan": null,
+            "splitGroupId": null,
+            "splitMethods": null,
+            "source": null,
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "appointmentId": "6a4ecebc92625ff5e3041092",
+            "createdAt": "2026-07-08T22:27:10.357Z",
+            "updatedAt": "2026-07-08T22:27:10.357Z",
+            "__v": 0
+          }
+        },
+        "processing": {
+          "async": false,
+          "status": "completed"
+        },
+        "billing": {
+          "type": "particular"
+        },
+        "transitions": []
+      },
+      "at": "2026-07-08T22:27:11.233Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4ecebc92625ff5e3041095",
+        "eventType": "SESSION_COMPLETED",
+        "events": [
+          {
+            "eventType": "SESSION_COMPLETED",
+            "status": "published",
+            "eventId": "fdb0b7cf-6e0f-4394-8b6c-61ef3a5d09d7"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:27:11.806Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "5. Convênio - criação de guia",
+      "data": null,
+      "at": "2026-07-08T22:27:11.806Z"
+    },
+    {
+      "step": "CREATE_INSURANCE_GUIDE",
+      "message": "status=201",
+      "data": {
+        "success": true,
+        "data": {
+          "guide": {
+            "_id": "6a4ecebf92625ff5e3041166",
+            "number": "VAL-1783549631806",
+            "patientId": "6a285cfa7681a873d5c6a00b",
+            "insurance": "unimed-anapolis",
+            "specialty": "fonoaudiologia",
+            "totalSessions": 5,
+            "usedSessions": 0,
+            "remaining": 5,
+            "status": "active",
+            "expiresAt": "2026-10-06T22:27:11.806Z",
+            "sessionValue": 150,
+            "evaluationAmount": null,
+            "generateEvaluationBilling": true,
+            "evaluationSessionId": null,
+            "totalValue": 750,
+            "doctor": {
+              "_id": "684072213830f473da1b0b0b"
+            },
+            "issuedAt": null,
+            "notes": null,
+            "createdAt": "2026-07-08T22:27:11.875Z",
+            "supersededBy": null,
+            "supersedes": null,
+            "supersededAt": null,
+            "replacementTrigger": null,
+            "replacementMethod": null,
+            "replacementNotes": null,
+            "guidePolicy": {
+              "renewalType": "until_consumed",
+              "renewalDay": "last_day",
+              "renewalDayOfMonth": null,
+              "expirationWarningDays": 5,
+              "autoSuggestRenewal": true,
+              "defaultMigrationStrategy": "eligible"
+            },
+            "defaultSessions": null
+          },
+          "lifecycle": {
+            "state": {
+              "status": "active"
+            },
+            "eligibility": {
+              "canSchedule": true,
+              "canBill": true,
+              "canRenew": false,
+              "canEdit": true,
+              "canBeSuperseded": true
+            },
+            "alerts": []
+          }
+        },
+        "meta": {
+          "version": "2.0",
+          "eventDriven": true,
+          "correlationId": "3c4e4243-afdb-475d-97a6-274bca58249e"
+        }
+      },
+      "at": "2026-07-08T22:27:11.962Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Nenhum evento publicado encontrado a tempo",
+      "data": {
+        "eventType": "INSURANCE_GUIDE_CREATED"
+      },
+      "at": "2026-07-08T22:28:23.448Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "6. Liminar - contrato + plano + sessões",
+      "data": null,
+      "at": "2026-07-08T22:28:23.449Z"
+    },
+    {
+      "step": "CREATE_LIMINAR_CONTRACT",
+      "message": "status=201",
+      "data": {
+        "contract": {
+          "patient": "6a285cfa7681a873d5c6a00b",
+          "doctor": "684072213830f473da1b0b0b",
+          "processNumber": "0001783549703449",
+          "court": "TJGO",
+          "expirationDate": null,
+          "mode": "hybrid",
+          "authorized": true,
+          "totalCredit": 1000,
+          "creditBalance": 1000,
+          "usedCredit": 0,
+          "creditHistory": [
+            {
+              "amount": 1000,
+              "type": "initial",
+              "reason": "contract_created",
+              "appointmentId": null,
+              "createdAt": "2026-07-08T22:28:23.456Z",
+              "createdBy": null
+            }
+          ],
+          "status": "active",
+          "plans": [],
+          "receivedAt": "2026-07-08T22:28:23.449Z",
+          "_id": "6a4ecf0792625ff5e3041204",
+          "createdAt": "2026-07-08T22:28:23.459Z",
+          "updatedAt": "2026-07-08T22:28:23.459Z",
+          "__v": 0,
+          "usedPercent": 0,
+          "id": "6a4ecf0792625ff5e3041204"
+        }
+      },
+      "at": "2026-07-08T22:28:23.565Z"
+    },
+    {
+      "step": "CREATE_THERAPEUTIC_PLAN",
+      "message": "status=201",
+      "data": {
+        "plan": {
+          "patient": "6a285cfa7681a873d5c6a00b",
+          "liminarContract": "6a4ecf0792625ff5e3041204",
+          "version": 1,
+          "startDate": "2026-07-08T22:28:23.596Z",
+          "endDate": null,
+          "status": "active",
+          "therapies": {
+            "fonoaudiologia": {
+              "doctor": "684072213830f473da1b0b0b",
+              "slots": [
+                {
+                  "dayOfWeek": 1,
+                  "time": "09:00"
+                },
+                {
+                  "dayOfWeek": 3,
+                  "time": "09:00"
+                }
+              ],
+              "sessionValue": 200,
+              "sessionDurationMinutes": 40
+            }
+          },
+          "notes": null,
+          "createdBy": null,
+          "_id": "6a4ecf0792625ff5e304121c",
+          "createdAt": "2026-07-08T22:28:23.707Z",
+          "updatedAt": "2026-07-08T22:28:23.707Z",
+          "__v": 0
+        }
+      },
+      "at": "2026-07-08T22:28:23.804Z"
+    },
+    {
+      "step": "GENERATE_LIMINAR_SESSIONS",
+      "message": "status=201",
+      "data": {
+        "created": 0,
+        "skipped": 0,
+        "total": 4,
+        "conflicts": 4,
+        "conflictSlots": [
+          {
+            "date": "2026-07-13T12:00:00.000Z",
+            "time": "09:00",
+            "specialty": "fonoaudiologia",
+            "doctorId": "684072213830f473da1b0b0b",
+            "doctorName": "Lorrany Siqueira Marques",
+            "patientName": "ana teste 2",
+            "message": "segunda-feira, 13/07/2026 às 09:00 — Dr(a). Lorrany Siqueira Marques está indisponível (ocupado com ana teste 2)"
+          },
+          {
+            "date": "2026-07-20T12:00:00.000Z",
+            "time": "09:00",
+            "specialty": "fonoaudiologia",
+            "doctorId": "684072213830f473da1b0b0b",
+            "doctorName": "Lorrany Siqueira Marques",
+            "patientName": "ana teste 2",
+            "message": "segunda-feira, 20/07/2026 às 09:00 — Dr(a). Lorrany Siqueira Marques está indisponível (ocupado com ana teste 2)"
+          },
+          {
+            "date": "2026-07-08T12:00:00.000Z",
+            "time": "09:00",
+            "specialty": "fonoaudiologia",
+            "doctorId": "684072213830f473da1b0b0b",
+            "doctorName": "Lorrany Siqueira Marques",
+            "patientName": "ana teste 2",
+            "message": "quarta-feira, 08/07/2026 às 09:00 — Dr(a). Lorrany Siqueira Marques está indisponível (ocupado com ana teste 2)"
+          },
+          {
+            "date": "2026-07-15T12:00:00.000Z",
+            "time": "09:00",
+            "specialty": "fonoaudiologia",
+            "doctorId": "684072213830f473da1b0b0b",
+            "doctorName": "Lorrany Siqueira Marques",
+            "patientName": "ana teste 2",
+            "message": "quarta-feira, 15/07/2026 às 09:00 — Dr(a). Lorrany Siqueira Marques está indisponível (ocupado com ana teste 2)"
+          }
+        ],
+        "totalCost": 800,
+        "saldo": 1000,
+        "saldoAposTudo": 200
+      },
+      "at": "2026-07-08T22:28:24.184Z"
+    },
+    {
+      "step": "FLUXO",
+      "message": "7. Alteração de pagamento (pending -> paid)",
+      "data": null,
+      "at": "2026-07-08T22:28:24.184Z"
+    },
+    {
+      "step": "REUSE",
+      "message": "Reutilizando agendamento para alteração de pagamento",
+      "data": {
+        "appointmentId": "6a4ecebc92625ff5e3041093"
+      },
+      "at": "2026-07-08T22:28:24.185Z"
+    },
+    {
+      "step": "PATCH_PAYMENT",
+      "message": "status=200",
+      "data": {
+        "success": true,
+        "data": {
+          "insurance": {
+            "provider": null,
+            "authorizationCode": null,
+            "insuranceProvider": null,
+            "guideNumber": null,
+            "month": null,
+            "status": "pending",
+            "grossAmount": 0,
+            "netAmount": 0
+          },
+          "_id": "6a4eceba92625ff5e3040fed",
+          "patient": {
+            "address": {
+              "street": null,
+              "number": null,
+              "district": null,
+              "city": null,
+              "state": null,
+              "zipCode": null
+            },
+            "healthPlan": {
+              "name": null,
+              "policyNumber": null
+            },
+            "emergencyContact": {
+              "name": null,
+              "phone": null,
+              "relationship": null
+            },
+            "_id": "6a285cfa7681a873d5c6a00b",
+            "fullName": "ana teste 2",
+            "dateOfBirth": "2026-05-28T00:00:00.000Z",
+            "gender": null,
+            "phone": "6299999999",
+            "rg": null,
+            "mainComplaint": null,
+            "appointments": [
+              "6a4ea16dbcf1adec14040a8b",
+              "6a4ea251bcf1adec14040cfc",
+              "6a4ea6acc7868b8b3497a817",
+              "6a4ea6bfc7868b8b3497a908",
+              "6a4ea7e50cb83d5226800f2a",
+              "6a4ea8090cb83d5226801052",
+              "6a4ea99a7289398a91557a86",
+              "6a4ea9be7289398a91557bab",
+              "6a4eabae23dcaea2de03a947",
+              "6a4eac7a23dcaea2de03ac4d",
+              "6a4eac7d23dcaea2de03ad14",
+              "6a4eacf423dcaea2de03afe2",
+              "6a4eacf723dcaea2de03b0ae",
+              "6a4eaef186fdd555ca2bde24",
+              "6a4eaef586fdd555ca2bdeee",
+              "6a4ec7c692625ff5e303fc82",
+              "6a4ec7f092625ff5e303fd5f",
+              "6a4ec83a92625ff5e303fe79",
+              "6a4ec83e92625ff5e303ff3b",
+              "6a4eceb592625ff5e3040f22",
+              "6a4eceb992625ff5e3040fe4"
+            ],
+            "packages": [
+              "6a2c8343a07c7c092f8ba538",
+              "6a398724f99760cf530215ce",
+              "6a398778f99760cf53021681",
+              "6a3987edea65c383027de5be",
+              "6a4ea6d2c7868b8b3497a9ce",
+              "6a4ea9e47289398a91557ca2",
+              "6a4eaca223dcaea2de03ae15",
+              "6a4ead1d23dcaea2de03b1a4",
+              "6a4eaf3e86fdd555ca2be03d",
+              "6a4ec84192625ff5e303ffec",
+              "6a4ecebc92625ff5e304108e"
+            ],
+            "imageAuthorization": false,
+            "status": "active",
+            "isLead": false,
+            "createdFromLead": null,
+            "convertedAt": null,
+            "firstSessionAt": "2026-07-06T21:18:06.889Z",
+            "lastSessionAt": "2026-07-08T22:27:10.766Z",
+            "createdAt": "2026-06-09T18:35:38.762Z",
+            "updatedAt": "2026-07-08T22:27:10.766Z",
+            "__v": 0,
+            "id": "6a285cfa7681a873d5c6a00b"
+          },
+          "doctor": {
+            "commissionRules": {
+              "standardSession": 60,
+              "evaluationSession": 0,
+              "neuropsychEvaluation": 1200,
+              "byInsurance": {},
+              "rules": [
+                {
+                  "_id": "6a3ed94a2d62337354ec074d",
+                  "serviceType": "session",
+                  "billingType": "particular",
+                  "insurance": null,
+                  "commissionType": "fixed",
+                  "value": 65,
+                  "minValue": null,
+                  "maxValue": null,
+                  "startDate": null,
+                  "endDate": null,
+                  "effectiveDate": null,
+                  "active": true,
+                  "priority": 0,
+                  "notes": ""
+                }
+              ],
+              "customRules": []
+            },
+            "deactivatedAt": null,
+            "status": "ativo",
+            "maxSlots": 30,
+            "_id": "684072213830f473da1b0b0b",
+            "fullName": "Lorrany Siqueira Marques",
+            "email": "clinicafonoinova@gmail.com",
+            "specialty": "fonoaudiologia",
+            "licenseNumber": "1234456",
+            "phoneNumber": "(61) 99240-0846",
+            "active": true,
+            "role": "doctor",
+            "__v": 1,
+            "updatedAt": "2026-06-26T19:55:54.630Z",
+            "weeklyAvailability": [
+              {
+                "day": "monday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00"
+                ]
+              },
+              {
+                "day": "tuesday",
+                "times": [
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "13:20",
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20"
+                ]
+              },
+              {
+                "day": "wednesday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "18:00",
+                  "08:00",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20"
+                ]
+              },
+              {
+                "day": "thursday",
+                "times": [
+                  "09:20",
+                  "10:00",
+                  "10:40",
+                  "11:20",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "14:00",
+                  "14:40"
+                ]
+              },
+              {
+                "day": "friday",
+                "times": [
+                  "14:00",
+                  "14:40",
+                  "15:20",
+                  "16:00",
+                  "16:40",
+                  "17:20",
+                  "08:40",
+                  "09:20",
+                  "10:00",
+                  "11:20",
+                  "10:40"
+                ]
+              }
+            ],
+            "specialties": [],
+            "commissionRuleVersion": 2
+          },
+          "appointment": "6a4eceb992625ff5e3040fe4",
+          "session": {
+            "guideConsumptionAudit": {
+              "source": null,
+              "reason": null,
+              "evidence": null,
+              "correlationId": null,
+              "executedAt": null
+            },
+            "commissionSnapshot": {
+              "ruleId": null,
+              "version": null,
+              "commissionType": null,
+              "value": null,
+              "minValue": null,
+              "maxValue": null,
+              "effectiveDate": null,
+              "calculatedCommission": null,
+              "calculatedAt": null,
+              "migrated": false,
+              "migratedAt": null,
+              "originalRuleVersion": null
+            },
+            "_id": "6a4eceb992625ff5e3040fe7",
+            "date": "2026-07-10T12:00:00.000Z",
+            "time": "10:00",
+            "sessionType": "fonoaudiologia",
+            "serviceType": null,
+            "sessionValue": 200,
+            "appointmentId": "6a4eceb992625ff5e3040fe4",
+            "doctor": "684072213830f473da1b0b0b",
+            "patient": "6a285cfa7681a873d5c6a00b",
+            "package": null,
+            "paymentMethod": null,
+            "status": "canceled",
+            "completedAt": null,
+            "confirmedAbsence": false,
+            "partialAmount": 0,
+            "visualFlag": "blocked",
+            "insuranceGuide": null,
+            "guideConsumed": false,
+            "guideConsumedAt": null,
+            "billingBatchId": null,
+            "paidAt": null,
+            "paymentId": null,
+            "insuranceBillingProcessed": false,
+            "insuranceBillingProcessedAt": null,
+            "insuranceAppointmentId": null,
+            "_billingEventId": null,
+            "sessionConsumed": false,
+            "commissionRate": null,
+            "commissionValue": null,
+            "revenueRecognizedAt": null,
+            "paymentOrigin": "individual",
+            "correlationId": "4560ca99-5d2a-42f0-aec9-cb209095f760",
+            "wasProvisioned": false,
+            "statusHistory": [
+              {
+                "status": "scheduled",
+                "at": "2026-07-08T22:27:05.960Z",
+                "_id": "6a4eceb992625ff5e3040fe8",
+                "id": "6a4eceb992625ff5e3040fe8"
+              },
+              {
+                "status": "canceled",
+                "at": "2026-07-08T22:27:06.652Z",
+                "_id": "6a4eceba92625ff5e304102c",
+                "id": "6a4eceba92625ff5e304102c"
+              }
+            ],
+            "createdAt": "2026-07-08T22:27:05.960Z",
+            "updatedAt": "2026-07-08T22:27:06.652Z",
+            "__v": 1,
+            "canceledAt": "2026-07-08T22:27:06.651Z",
+            "isPaid": false,
+            "paymentStatus": "canceled",
+            "id": "6a4eceb992625ff5e3040fe7"
+          },
+          "package": null,
+          "liminarContract": null,
+          "sessions": [],
+          "advanceSessions": [],
+          "amount": 200,
+          "paymentDate": "2026-07-08T22:27:06.063Z",
+          "serviceDate": null,
+          "paymentMethod": "credit_card",
+          "status": "paid",
+          "serviceType": "individual_session",
+          "sessionType": null,
+          "kind": "session_payment",
+          "kindConfidence": "high",
+          "kindSource": "inferred_on_validate",
+          "settledPaymentIds": [],
+          "billingType": "particular",
+          "notes": "Pagamento referente à sessão",
+          "canceledAt": "2026-07-08T22:27:06.565Z",
+          "canceledReason": "Cancelado em validação de produção",
+          "convertedAt": null,
+          "convertedPackage": null,
+          "clinicId": "default",
+          "createdBy": null,
+          "paidAt": "2026-07-08T22:28:24.283Z",
+          "confirmedAt": null,
+          "financialDate": "2026-07-08T22:28:24.283Z",
+          "parentPaymentId": null,
+          "isFromPackage": false,
+          "insuranceGuide": null,
+          "insurancePlan": null,
+          "splitGroupId": null,
+          "source": null,
+          "splitMethods": [],
+          "patientId": "6a285cfa7681a873d5c6a00b",
+          "appointmentId": "6a4eceb992625ff5e3040fe4",
+          "createdAt": "2026-07-08T22:27:06.065Z",
+          "updatedAt": "2026-07-08T22:28:24.409Z",
+          "__v": 0
+        },
+        "message": "Pagamento atualizado com sucesso"
+      },
+      "at": "2026-07-08T22:28:24.844Z"
+    },
+    {
+      "step": "OUTBOX",
+      "message": "Evento publicado encontrado",
+      "data": {
+        "aggregateId": "6a4eceba92625ff5e3040fed",
+        "eventType": "PAYMENT_STATUS_CHANGED",
+        "events": [
+          {
+            "eventType": "PAYMENT_STATUS_CHANGED",
+            "status": "published",
+            "eventId": "6a4eceba92625ff5e3040fed_canceled_paid_2026-07-08"
+          }
+        ]
+      },
+      "at": "2026-07-08T22:28:24.883Z"
+    },
+    {
+      "step": "END",
+      "message": "Validação concluída. IDs registrados.",
+      "data": {
+        "outputFile": "/home/user/projetos/crm/back/validacao-producao-ids.json"
+      },
+      "at": "2026-07-08T22:28:24.883Z"
+    }
+  ]
+}

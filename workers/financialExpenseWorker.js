@@ -1,5 +1,9 @@
 /**
- * 💸 Financial Expense Worker — V2
+ * 💸 Financial Expense Service — V2
+ *
+ * ⚠️ NOTA: Este arquivo está em back/workers/ por histórico, mas NÃO é um worker
+ * BullMQ ativo no registry. Ele é chamado como função utilitária por outros
+ * workers, rotas e hooks de eventos.
  *
  * Princípio: ZERO runtime calculation no dashboard.
  * Todo evento de despesa incrementa a projeção diária de despesas.

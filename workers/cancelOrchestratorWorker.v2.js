@@ -289,7 +289,7 @@ async function processCancelJobV2({ job, eventId, correlationId, idempotencyKey,
         
         try {
             await publishEvent(
-                EventTypes.APPOINTMENT_CANCELED,
+                EventTypes.APPOINTMENT_CANCELLED,
                 {
                     appointmentId: appointmentId.toString(),
                     patientId: appointment?.patient?.toString(),

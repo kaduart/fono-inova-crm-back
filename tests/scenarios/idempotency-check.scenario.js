@@ -60,7 +60,7 @@ export default {
     
     // 🔥 VALIDAÇÃO CRÍTICA: Não duplicou evento
     const events = await mongoose.connection.db
-      .collection('outboxevents')
+      .collection('outboxes')
       .countDocuments({ 
         eventType: 'INVOICE_CREATED',
         'payload.patientId': patient._id.toString()

@@ -183,10 +183,9 @@ export class CreateAppointmentService {
      * Determina tipo de evento baseado no cenário
      */
     determineEventType({ serviceType, insuranceGuideId, packageId }) {
-        if (insuranceGuideId) return 'INSURANCE_APPOINTMENT_REQUESTED';
-        if (packageId) return 'PACKAGE_APPOINTMENT_REQUESTED';
-        if (serviceType === 'advance_payment') return 'ADVANCE_APPOINTMENT_REQUESTED';
-        return 'APPOINTMENT_REQUESTED'; // Particular avulso
+        // Evento canônico de domínio: APPOINTMENT_CREATED.
+        // Os eventos *_APPOINTMENT_REQUESTED foram removidos do catálogo por estarem mortos.
+        return 'APPOINTMENT_CREATED';
     }
 
     isValidDate(date) {

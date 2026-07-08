@@ -217,18 +217,24 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    // Publica evento (async)
+    // Salva evento no Outbox (publicado pelo dispatcher)
     try {
-      const { publishEvent } = await import('../infrastructure/events/eventPublisher.js');
-      await publishEvent('INSURANCE_GUIDE_CREATED', {
-        guideId: guide._id.toString(),
-        patientId,
-        number,
-        insurance,
-        totalSessions,
-        correlationId,
-        createdAt: new Date().toISOString()
-      }, { correlationId });
+      const { saveToOutbox } = await import('../infrastructure/outbox/outboxPattern.js');
+      await saveToOutbox({
+        eventType: 'INSURANCE_GUIDE_CREATED',
+        aggregateType: 'insurance_guide',
+        aggregateId: guide._id.toString(),
+        payload: {
+          guideId: guide._id.toString(),
+          patientId,
+          number,
+          insurance,
+          totalSessions,
+          correlationId,
+          createdAt: new Date().toISOString()
+        },
+        correlationId
+      });
     } catch (eventError) {
       console.warn('[InsuranceGuidesV2] Evento falhou (não crítico):', eventError.message);
     }

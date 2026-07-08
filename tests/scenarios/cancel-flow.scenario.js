@@ -149,7 +149,7 @@ export default {
     }
     
     // 5. Eventos emitidos
-    await runner.assertEventEmitted('APPOINTMENT_CANCELED', {
+    await runner.assertEventEmitted('APPOINTMENT_CANCELLED', {
       'payload.appointmentId': appointment._id.toString()
     });
     

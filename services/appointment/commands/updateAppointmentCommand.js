@@ -20,7 +20,7 @@ import { resolveAndMapAppointmentDTO } from '../../../utils/appointmentDto.js';
 import { CANCELED_STATUSES } from '../../../constants/appointmentStatus.js';
 import { appointmentStateOrchestrator } from '../../appointmentStateOrchestrator.js';
 import { syncEvent } from '../../syncService.js';
-import { syncAffectedViews } from '../../projections/syncAffectedViews.js';
+
 import { handlePackageSessionUpdate } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import {
@@ -33,6 +33,7 @@ import {
 import { applyFinancialProtection } from '../policies/appointmentFinancialPolicy.js';
 import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.js';
 import { recordAudit } from '../../auditLogService.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 
 export async function execute(id, payload, user) {
   if (!id) {
@@ -247,6 +248,22 @@ export async function execute(id, payload, user) {
         );
       }
 
+      // Publica evento canônico para projection workers
+      await saveToOutbox({
+        eventType: 'APPOINTMENT_UPDATED',
+        aggregateType: 'appointment',
+        aggregateId: updatedAppointment._id.toString(),
+        payload: {
+          appointmentId: updatedAppointment._id.toString(),
+          patientId: toObjectIdString(updatedAppointment.patient),
+          doctorId: toObjectIdString(updatedAppointment.doctor),
+          packageId: toObjectIdString(updatedAppointment.package),
+          previousPatientId,
+          changes: Object.keys(updateData)
+        },
+        correlationId: `appt_put_${updatedAppointment._id}_${Date.now()}`
+      }, mongoSession);
+
       return { saved: updatedAppointment, previousData };
     });
   } catch (error) {
@@ -304,7 +321,7 @@ export async function execute(id, payload, user) {
     });
 
     if (saved.serviceType === 'package_session') {
-      // handlePackageSessionUpdate primeiro: atualiza Session.date/time antes de buildar a PackagesView
+      // handlePackageSessionUpdate atualiza Session.date/time
       const action = determineActionType(payload, previousData);
       await handlePackageSessionUpdate(
         saved,
@@ -312,12 +329,7 @@ export async function execute(id, payload, user) {
         user,
         { changes: payload, previousData }
       );
-
-      await syncAffectedViews({
-        event: 'appointment.updated',
-        packageId: (saved.package?._id || saved.package)?.toString?.(),
-        correlationId: `appt_put_${saved._id}_${Date.now()}`,
-      });
+      // A PackagesView será atualizada pelo package-projection worker via evento APPOINTMENT_UPDATED.
     }
   } catch (err) {
     console.error('[updateAppointmentCommand] Erro na sincronização pós-atualização:', err);

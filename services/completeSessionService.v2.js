@@ -25,7 +25,8 @@ import { resolveVisualFlag } from './completeSession/shared/resolveVisualFlag.js
 import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
 import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import {
     recordPaymentReceived,
     recordPackageSessionConsumed,
@@ -901,6 +902,35 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             }
         }
 
+        // 🚀 SALVAR EVENTO NO OUTBOX (dentro da transação)
+        // O OutboxDispatcher publicará nas filas após o commit.
+        try {
+            await saveToOutbox(
+                {
+                    eventType: EventTypes.SESSION_COMPLETED,
+                    payload: {
+                        appointmentId: appointmentId?.toString(),
+                        sessionId: sessionId?.toString(),
+                        ...(packageId && { packageId: packageId?.toString() }),
+                        patientId: appointment.patient?._id?.toString(),
+                        doctorId: appointment.doctor?._id?.toString(),
+                        billingType,
+                        sessionValue,
+                        completedAt: new Date().toISOString()
+                    },
+                    aggregateType: 'session',
+                    aggregateId: sessionId?.toString() || appointmentId?.toString(),
+                    correlationId
+                },
+                mongoSession
+            );
+            console.log(`[CompleteSessionV2] 📦 Evento SESSION_COMPLETED salvo no Outbox`);
+        } catch (eventErr) {
+            console.error(`[CompleteSessionV2] ❌ Erro ao salvar evento no Outbox:`, eventErr.message);
+            // Evento é parte da transação: falha aqui aborta o commit, garantindo consistência.
+            throw eventErr;
+        }
+
         if (!externalSession) {
             await mongoSession.commitTransaction();
         }
@@ -947,31 +977,6 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             } catch (viewErr) {
                 console.error(`[CompleteSessionV2] ⚠️ Erro ao reconstruir view:`, viewErr.message);
                 // Não falha a operação, mas loga o erro
-            }
-        }
-
-        // 🚀 PUBLICAR EVENTO para atualizar projections (async)
-        if (packageId) {
-            try {
-                await publishEvent(
-                    EventTypes.SESSION_COMPLETED,
-                    {
-                        appointmentId: appointmentId?.toString(),
-                        sessionId: sessionId?.toString(),
-                        packageId: packageId?.toString(),
-                        patientId: appointment.patient?._id?.toString(),
-                        doctorId: appointment.doctor?._id?.toString(),
-                        billingType,
-                        sessionValue,
-                        viewRebuilt,
-                        completedAt: new Date().toISOString()
-                    },
-                    { correlationId }
-                );
-                console.log(`[CompleteSessionV2] 📡 Evento SESSION_COMPLETED publicado`);
-            } catch (eventErr) {
-                console.error(`[CompleteSessionV2] ⚠️ Erro ao publicar evento:`, eventErr.message);
-                // Não falha a operação se evento falhar
             }
         }
 
