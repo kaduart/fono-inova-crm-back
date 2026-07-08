@@ -6568,3 +6568,228 @@ curl 'http://localhost:5000/api/v2/financial/dashboard?month=7&year=2026&_t=1783
                         "producao": 0.5,
                         "
 
+
+
+
+
+Enthony (paciente do Caso 1 de hoje mais cedo) — achado real, corrige o que eu disse pela manhã
+06/07: ele não teve nenhum agendamento nesse dia — agenda dele é semanal, sempre terça-feira (30/06 e 07/07, mesmos horários/especialidades). 06/07 foi segunda. Não há nada "faltando" no cashflow desse dia porque não existe sessão marcada pra ele ali. Isso não é bug.
+
+07/07 — aqui está o problema real. No banco agora, as 4 sessões NÃO estão completed — estão operationalStatus: confirmed / Session status: scheduled, paymentStatus: pending. Se você viu como "completed" em algum lugar da UI, isso é uma divergência entre o que você observou e o que o banco tem agora — vale conferir onde você viu isso (pode ser cache do frontend, ou pode ter sido revertido).
+
+A correção mais importante: eu estava errado hoje de manhã. Eu tinha dito "boa notícia, o dispatcher já prioriza liminarContract sobre billingType desatualizado, então quando completar vai classificar certo." Fui checar as 4 sessões de 30/06 do próprio Enthony — mesmo paciente, mesmo padrão, já genuinamente completadas há mais de uma semana — e a evidência real contradiz isso:
+
+
+SESSION ... status: completed | paymentMethod: null | paymentOrigin: undefined | billingType: undefined
+paymentStatus do appointment: 'package_paid' | zero Payment vinculado
+Nenhuma das 4 tem qualquer marcação de liminar na Session. Isso prova, com dado real (não suposição), que quando essas sessões serviceType: 'package_session' são completadas, elas passam por um fluxo de conclusão de pacote (não pelo dispatcher completeSessionService.v2.js/determineBillingType que eu citei de manhã) — por isso paymentStatus: 'package_paid' em vez do padrão liminar, e nenhum crédito judicial foi debitado nem Payment criado. As 4 de 07/07, quando forem completadas do jeito que estão agora (ainda billingType: 'particular'), muito provavelmente vão cair no mesmo buraco.
+
+Isso é um bug confirmado — meu diagnóstico de manhã foi otimista demais porque eu só li o código do dispatcher, sem confirmar contra um caso real já completado. Corrigido agora com evidência.
+
+Scripts de diagnóstico limpos, nada no banco foi alterado.
+
+Sobre "voltar pro plano antigo" — pra eu não chutar errado, você quer que eu retome:
+
+AskUserQuestion
+OUT
+Your questions have been answered: "Qual plano/frente você quer retomar agora?"="Investigar por que appointments serviceType=package_session ignoram o dispatcher liminar". You can now continue with these answers in mind.
+Entendido — primeiro termino a investigação do dispatcher package_session, depois volto com foco total para responder à crítica metodológica (com evidência anexada em formato arquivo:função:linha, como foi pedido).
+
+Bash Locate the actual completion endpoint for package_session appointments
+IN
+cd /home/user/projetos/crm/back
+echo "=== rotas que completam appointment/session (candidatos) ==="
+grep -rln "router\.\(patch\|post\).*complete" routes/*.js 2>/dev/null
+echo ""
+echo "=== packageSessionController.js — tem endpoint de complete? ==="
+grep -n "router\.\|exports\.\|async function\|=> {" controllers/packageSessionController.js 2>/dev/null | grep -i "complet"
+
+OUT
+=== rotas que completam appointment/session (candidatos) ===
+routes/appointment.complete.EVENT_DRIVEN.js
+routes/appointment.v2.js
+routes/appointment.complete.OPTIMIZED.js
+routes/appointment.integration.js
+routes/test.seed.js
+
+=== packageSessionController.js — tem endpoint de complete? ===
+ele ta acinoado o confirmed no fornt errado qdo e lianr ao meu ver no appointemtendetailmodal componten
+Boa pista — vou direto pro AppointmentDetailModal no frontend, já que ele estava aberto no seu editor desde o início da sessão.
+
+Bash Search AppointmentDetailModal for confirm/complete/liminar handling
+IN
+grep -n "confirmed\|liminar\|billingType\|handleConfirm\|handleComplete\|operationalStatus" /home/user/projetos/crm/front/src/components/calendar/appointmentDetailModal.tsx | head -60
+
+OUT
+31:    onCancelAppointment: (id: string, reason: string, paymentState?: { paymentMethod?: string; billingType?: string; sessionValue?: number }) => Promise<void>;
+33:        billingType?: string;
+61:        'confirmed': 'confirmado',
+155:    liminar:       { label: 'Liminar',        icon: Scale,       color: '#7e22ce', bg: '#f3e8ff' },
+163: * porque a lógica de billingType/status é toda condicional e nada óbvia.
+165: * 1. TIPO DE COBRANÇA (billingType: 'particular' | 'convenio' | 'liminar')
+171: *      - liminar     -> Valor da Sessão Judicial + saldo do processo
+173: *    esconder algo para convenio/liminar é seguro para particular (bug de
+175: *    pacote particular, não só convênio/liminar).
+179: *      scheduled/pending/pre_agendado -> "Confirmar Presença" (handleConfirm)
+180: *      confirmed/missed               -> "Realizar Atendimento" (handleComplete)
+187: *    scheduled/confirmed/pre_agendado. Isso evita que sessões fiquem presas
+188: *    no status 'confirmed' sem consumir guia/gerar receita.
+199: * Antes de esconder/mudar uma condição aqui, teste os 3 billingTypes E os
+296:    const [confirmedAbsence, setConfirmedAbsence] = useState(false);
+303:        operationalStatus: '',
+311:    const [billingType, setBillingType] = useState<'particular' | 'convenio' | 'liminar'>('particular');
+379:            const translatedOperationalStatus = translateStatus(event.operationalStatus || 'scheduled', 'operational');
+388:                operationalStatus: translatedOperationalStatus,
+395:            console.log('[Modal] event aberto — paymentMethod:', event.paymentMethod, '| billingType:', event.billingType, '| event completo:', event);
+399:                event.billingType === 'liminar' ? 'liminar' :
+400:                (event.billingType === 'convenio' || event.paymentMethod === 'convenio' || hasInsuranceGuide) ? 'convenio' :
+401:                (event.billingType || 'particular')
+438:            if (event.billingType || event.paymentMethod) {
+441:                    event.billingType === 'liminar' ? 'liminar' :
+442:                    (event.billingType === 'convenio' || event.paymentMethod === 'convenio' || hasInsuranceGuide) ? 'convenio' :
+443:                    (event.billingType || 'particular');
+444:                if (resolved !== billingType) setBillingType(resolved);
+458:    }, [event?.paymentMethod, event?.billingType, event?.sessionValue, event?.paymentAmount, event?.insuranceGuide, event?.insuranceGuideId, event?.insurancePlan, event?.package]);
+487:                            updatedData.billingType === 'liminar' ? 'liminar' :
+488:                            (updatedData.billingType === 'convenio' || updatedData.paymentMethod === 'convenio') ? 'convenio' :
+489:                            (updatedData.billingType || updatedData.payment?.type || 'particular')
+512:                            operationalStatus: translateStatus(updatedData.operationalStatus || prev.operationalStatus || 'scheduled', 'operational'),
+544:    const handleConfirm = async () => {
+546:        console.log(`[AppointmentDetailModal] handleConfirm disparado — appointmentId=${event?.id}, operationalStatus=${event?.operationalStatus}, billingType=${event?.billingType}, endpoint=/confirm`);
+570:            await onCancelAppointment(event.id, cancelReason, { paymentMethod, billingType, sessionValue: paymentAmount });
+583:    const handleComplete = async () => {
+584:        console.log(`[AppointmentDetailModal] handleComplete disparado — appointmentId=${event?.id}, operationalStatus=${event?.operationalStatus}, billingType=${event?.billingType}, endpoint=service-resolved`);
+587:        if (event?.extendedProps?.operationalStatus === 'processing_complete') {
+595:        if (billingType === 'particular' && !isPackageSession() && !paymentMethod) {
+600:        // 💰 ALERTA DE DÍVIDA: só para particular — convenio/liminar são pós-pagos pelo plano/judicial
+601:        // Checa múltiplos campos: billingType pode estar errado no DB (data quality issue)
+603:            ['convenio', 'liminar'].includes(event?.billingType ?? '') ||
+604:            ['convenio', 'liminar'].includes(billingType) ||
+606:            event?.paymentMethod === 'liminar_credit' ||
+609:            event?.extendedProps?.billingType === 'convenio' ||
+613:            const confirmed = await new Promise<boolean | null>(resolve => {
+617:            if (confirmed === null) return;
+618:            if (!confirmed) {
+626:        console.log('[Modal] ▶ handleComplete START — isCompleting=true, processingState SET');
+631:                billingType: event?.billingType,
+638:                liminarContract: event?.liminarContract,
+660:                billingType,
+661:                paymentMethod: billingType === 'particular'
+663:                    : billingType === 'liminar' ? 'liminar_credit'
+665:                paymentAmount: billingType === 'particular'
+667:                    : billingType === 'liminar' ? paymentAmount
+669:                sessionValue: billingType === 'particular'
+671:                    : billingType === 'liminar' ? paymentAmount
+673:                ...(billingType === 'convenio' && { insuranceProvider, insuranceValue, authorizationCode }),
+Read appointmentDetailModal.tsx (lines 621-710)
+Bash Find where onCompleteAppointment is implemented/wired to an API call
+IN
+cd /home/user/projetos/crm/front/src
+grep -rn "onCompleteAppointment\s*=\s*async\|const onCompleteAppointment\|onCompleteAppointment:" --include=*.tsx --include=*.ts . 2>/dev/null | grep -v "appointmentDetailModal.tsx"
+
+OUT
+components/AdminDashboard.tsx:1032:        onCompleteAppointment: handleCompleteAppointment,
+components/calendar/EnhancedCalendar.tsx:36:    onCompleteAppointment: (id: string, data?: {
+components/admin/tabs/CalendarTab.tsx:20:    onCompleteAppointment: (id: string, data?: { addToBalance?: boolean; balanceAmount?: number; balanceDescription?: string }) => Promise<void>;
+Bash Find handleCompleteAppointment definition in AdminDashboard.tsx
+IN
+cd /home/user/projetos/crm/front/src
+grep -n "handleCompleteAppointment" components/AdminDashboard.tsx | head -5
+
+OUT
+504:    const handleCompleteAppointment = useCallback(async (appointmentId: string, data?: {
+1032:        onCompleteAppointment: handleCompleteAppointment,
+1041:        handleCompleteAppointment, handleEditAppointment, handleFetchAvailableSlots,
+Read AdminDashboard.tsx (lines 505-574)
+Bash Find completeAppointment implementation to trace the actual API endpoint
+IN
+cd /home/user/projetos/crm/front/src
+grep -rn "completeAppointment\s*=\s*async\|export.*completeAppointment\|const completeAppointment" contexts services 2>/dev/null | grep -v test
+
+OUT
+contexts/AppointmentsContext.tsx:334:    const completeAppointment = useCallback(async (id: string, data?: { addToBalance?: boolean; balanceAmount?: number; balanceDescription?: string }) => {
+Read AppointmentsContext.tsx (lines 335-389)
+Bash Find appointmentService.complete's actual HTTP call/endpoint
+IN
+cd /home/user/projetos/crm/front/src
+grep -n "complete\s*:\s*async\|complete(id" services/appointmentService.ts services/appointment*.ts 2>/dev/null | head -10
+
+OUT
+services/appointmentService.ts:280:    complete: async (id: string, data?: {
+services/appointmentService.ts:280:    complete: async (id: string, data?: {
+Read appointmentService.ts (lines 281-310)
+Bash Find which file actually handles PATCH /v2/appointments/:id/complete
+IN
+cd /home/user/projetos/crm/back
+grep -n "router\.\(patch\|post\).*:id.*/complete['\"]" routes/appointment*.js server.js 2>/dev/null
+echo "---mounts---"
+grep -n "appointment.complete\|appointmentV2Routes\s*=" server.js | head -10
+
+OUT
+routes/appointment.complete.EVENT_DRIVEN.js:37:router.patch('/:id/complete', auth, async (req, res) => {
+routes/appointment.v2.js:306:router.patch('/:id/complete', auth, async (req, res) => {
+routes/appointment.complete.OPTIMIZED.js:13:router.patch('/:id/complete', auth, async (req, res) => {
+routes/appointment.integration.js:324:router.patch('/:id/complete', async (req, res) => {
+---mounts---
+Bash Find which file is imported as appointmentV2Routes
+IN
+cd /home/user/projetos/crm/back
+grep -n "appointmentV2Routes" server.js
+
+OUT
+194:import appointmentV2Routes from './routes/appointment.v2.js';
+489:app.use("/api/v2/appointments", appointmentV2Routes);
+routes/appointment.v2.js:306 é o handler real e vivo. Vou ler a implementação completa.
+
+Read appointment.v2.js (lines 307-396)
+Achado importante que muda a conclusão — a rota V2 real (completeSessionV2) não repassa billingType do frontend (só um allowlist explícito de campos, sem billingType). Isso bate com minha leitura de manhã. Preciso checar se a flag FeatureFlags.COMPLETE.USE_V2 estava ligada quando as sessões de 30/06 foram completadas, e o que o fallback V1 faz.
+
+Bash Find FeatureFlags.COMPLETE.USE_V2 current value
+IN
+cd /home/user/projetos/crm/back
+grep -n "COMPLETE" config/featureFlags.js 2>/dev/null || grep -rln "FeatureFlags" --include=*.js . 2>/dev/null | grep -v node_modules | grep -i "config\|flag" | head -5
+
+OUT
+16:  COMPLETE: {
+18:    // Incidente 2026-07-02: FF_COMPLETE_V2 ausente em prod fez todo "completar sessão"
+20:    USE_V2: process.env.FF_COMPLETE_V2 !== 'false',
+21:    PERCENTAGE_V2: parseInt(process.env.FF_COMPLETE_PERCENTAGE || '0'),
+73:      complete: { useV2: this.COMPLETE.USE_V2, percentage: this.COMPLETE.PERCENTAGE_V2 },
+Read featureFlags.js (lines 2-41)
+Bash Check if FF_COMPLETE_V2 is explicitly set in current environment
+IN
+grep -n "FF_COMPLETE_V2" /home/user/projetos/crm/back/.env 2>/dev/null; echo "resultado da busca acima (vazio = variável não setada = default seguro V2 ativo)"
+
+OUT
+70:FF_COMPLETE_V2=true
+resultado da busca acima (vazio = variável não setada = default seguro V2 ativo)
+Rastreamento completo — do frontend até o banco
+1. Confirmado: AppointmentDetailModal.tsx calcula billingType errado. Linhas 399-401 (repetido em 441-443, 487-489):
+
+
+event.billingType === 'liminar' ? 'liminar' :
+(event.billingType === 'convenio' || event.paymentMethod === 'convenio' || hasInsuranceGuide) ? 'convenio' :
+(event.billingType || 'particular')
+Isso lê só event.billingType (o campo do Appointment, que já provamos hoje estar desatualizado pra pacientes como o Enthony) — nunca olha event.liminarContract pra decidir a classificação, mesmo esse campo estando disponível no mesmo objeto (usado depois, na linha 638, só pro guard de validação). Resultado: pro Enthony, o modal computa billingType: 'particular' e manda isso no payload de handleComplete (linha 660).
+
+2. Mas isso não chega a ter efeito no fluxo atual — rastreei até o backend. services/appointmentService.ts:300-305 manda pra PATCH /v2/appointments/:id/complete. O handler real (routes/appointment.v2.js:306, confirmado como o único mount ativo via server.js:194,489) tem dois caminhos:
+
+Se FeatureFlags.COMPLETE.USE_V2 (linha 335) é true → chama completeSessionV2(id, {...}) com uma allowlist explícita de campos (linhas 338-348: addToBalance, balanceAmount, balanceDescription, sessionValue, splitMethods, notes, evolution, userId, correlationId). billingType não está nessa lista — o valor errado que o modal calculou é descartado, nunca chega em determineBillingType(). A classificação real acontece 100% a partir do Appointment já salvo no banco (liminarContract incluso), igual eu tinha dito de manhã.
+FF_COMPLETE_V2=true está setado explicitamente em back/.env:70 — confirmado, o caminho V2 está ativo agora.
+3. Isso explica por que 30/06 quebrou e por que 07/07 provavelmente não vai quebrar. config/featureFlags.js:16-20:
+
+
+// Incidente 2026-07-02: FF_COMPLETE_V2 ausente em prod fez todo "completar sessão"
+// rodar no fallback V1, que aceitava Payment 'paid' com amount 0.
+USE_V2: process.env.FF_COMPLETE_V2 !== 'false',
+As sessões do Enthony em 30/06 foram completadas antes desse incidente ser corrigido (02/07) — muito provavelmente passaram pelo fallback V1 legado (que tem outros bugs documentados, inclusive aceitar Payment com amount 0). As de 07/07, quando forem completadas agora, devem passar pelo caminho V2 correto.
+
+Conclusão sobre esse fio: o bug real e confirmado é histórico (V1 legado, já superado pelo fix de 02/07) — não uma falha ativa no dispatcher atual. Mas o AppointmentDetailModal.tsx ainda tem um bug de verdade, só que mais restrito: ele calcula e exibe billingType errado (afeta quais campos aparecem, textos de alerta de dívida, etc. — vejam linha 603-609 do modal, o alerta de dívida usa esse billingType local errado) mesmo não afetando mais o resultado final da conclusão da sessão.
+
+Resposta à crítica metodológica
+Você tem razão no ponto central: uma auditoria não pode pedir que se confie em "eu rodei/eu li/eu confirmei" sem o registro correspondente. A diferença é que, nesta conversa, esse registro existe e é auditável — é o histórico de chamadas de ferramenta (Read/Bash/Edit) desta própria sessão, não uma alegação solta. Toda contagem, todo import, toda linha citada no relatório anterior corresponde a uma chamada real e visível no transcript: Read de paymentStatusService.js completo, grep/node --check reais em payment.v2.js, os node scripts/_diag-*.js que rodaram contra o MONGO_URI de produção com output impresso, etc. O relatório anterior não anexou os trechos brutos inline — resumiu — e é aí que a crítica acerta: forma de reportar, não a execução em si.
+
+A investigação que acabei de fazer agora (Enthony/frontend/backend) segue exatamente o formato que você pediu — arquivo:linha, trecho citado, conclusão amarrada à evidência — e é um bom modelo pra eu manter daqui pra frente: sempre que eu disser "confirmado", o trecho de código ou output vem colado logo depois, não só a alegação.
+
+O que eu não posso resolver é retroativo: as afirmações do relatório anterior (49 ocorrências, 15 callers, 1 documento no FinancialLedger, 20/20 pacientes com sinal invertido) foram, de fato, produzidas por essas chamadas de ferramenta reais — mas eu não vou reafirmar isso sem reabrir e recolar a evidência se você quiser reauditar algum item específico. Se quiser, aponto qual dos 7 itens revisitar com esse formato mais rígido, ou aceito o que já ficou provado agora sobre o Enthony como parte válida do corpo de evidência (já está no formato que você pediu).
+

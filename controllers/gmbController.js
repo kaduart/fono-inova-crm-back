@@ -244,31 +244,61 @@ export async function retryPost(req, res) {
 export async function getHealth(req, res) {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const noImageFilter = {
+      status: { $in: ['scheduled', 'publishing_retry'] },
+      $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
+    };
+    const retryingFilter = {
+      status: { $in: ['scheduled', 'publishing_retry'] },
+      retryCount: { $gte: 2 },
+      gmbPostId: { $exists: false },
+      createdAt: { $gte: sevenDaysAgo },
+    };
 
-    const [stuckPublished, failed, noImage, retrying] = await Promise.all([
-      // published mas sem gmbPostId = Make nunca confirmou o GMB
-      GmbPost.countDocuments({
-        status: 'published',
-        gmbPostId: { $exists: false },
-        createdAt: { $gte: sevenDaysAgo },
-      }),
-      GmbPost.countDocuments({ status: 'failed' }),
-      // sem imagem em qualquer status que seria enviado ao Make
-      GmbPost.countDocuments({
-        status: { $in: ['scheduled', 'publishing_retry'] },
-        $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
-      }),
-      // posts falhando repetidamente no Google (≥2 retries sem confirmação)
-      GmbPost.countDocuments({
-        status: { $in: ['scheduled', 'publishing_retry'] },
-        retryCount: { $gte: 2 },
-        gmbPostId: { $exists: false },
-        createdAt: { $gte: sevenDaysAgo },
-      }),
-    ]);
+    const [stuckPublished, failed, noImage, retrying, noImageSample, retryingSample, failedSample] =
+      await Promise.all([
+        GmbPost.countDocuments({
+          status: 'published',
+          gmbPostId: { $exists: false },
+          createdAt: { $gte: sevenDaysAgo },
+        }),
+        GmbPost.countDocuments({ status: 'failed' }),
+        GmbPost.countDocuments(noImageFilter),
+        GmbPost.countDocuments(retryingFilter),
+        // amostras para o painel de detalhe
+        GmbPost.find(noImageFilter)
+          .select('title theme createdAt status')
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean(),
+        GmbPost.find(retryingFilter)
+          .select('title theme createdAt retryCount lastErrorAt error')
+          .sort({ retryCount: -1 })
+          .limit(8)
+          .lean(),
+        GmbPost.find({ status: 'failed' })
+          .select('title theme createdAt lastErrorAt error retryCount')
+          .sort({ lastErrorAt: -1 })
+          .limit(8)
+          .lean(),
+      ]);
 
     const total = stuckPublished + failed + noImage + retrying;
-    res.json({ success: true, data: { stuckPublished, failed, noImage, retrying, total } });
+    res.json({
+      success: true,
+      data: {
+        stuckPublished,
+        failed,
+        noImage,
+        retrying,
+        total,
+        details: {
+          noImageSample,
+          retryingSample,
+          failedSample,
+        },
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

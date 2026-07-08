@@ -12,7 +12,7 @@ import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
 import { startCancelOrchestratorWorkerV2 } from './cancelOrchestratorWorker.v2.js';
 import { startCompleteOrchestratorWorker } from './completeOrchestratorWorker.js';
 import { startCreateAppointmentWorker } from './createAppointmentWorker.js';
-import { startOutboxWorker } from './outboxWorker.js';
+import { startOutboxDispatcher } from '../infrastructure/outbox/OutboxDispatcher.js';
 import { startInvoiceWorker } from './invoiceWorker.js';
 import { startSyncMedicalWorker } from './syncMedicalWorker.js';
 import { startSyncWorker } from './syncWorker.js';
@@ -61,6 +61,19 @@ const isEnabled = (flag, defaultValue = true) => {
 };
 
 const GROUPS = {
+
+  // =========================
+  // OUTBOX — Dispatcher único
+  // =========================
+  outbox: async (workers) => {
+    if (isEnabled('ENABLE_OUTBOX_DISPATCHER', true)) {
+      const stopDispatcher = startOutboxDispatcher(
+        parseInt(process.env.OUTBOX_DISPATCHER_INTERVAL_MS || '1000', 10)
+      );
+      workers.push({ close: stopDispatcher, name: 'outbox-dispatcher' });
+      console.log('[Registry] outbox dispatcher ok');
+    }
+  },
 
   // =========================
   // SCHEDULING
@@ -208,7 +221,12 @@ const GROUPS = {
   reconciliation: async (workers) => {
     if (isEnabled('ENABLE_RECONCILIATION_RECONCILIATION')) workers.push(startReconciliationWorker());
     if (isEnabled('ENABLE_RECONCILIATION_LEAD_RECOVERY')) workers.push(startLeadRecoveryWorker());
-    if (isEnabled('ENABLE_RECONCILIATION_OUTBOX')) workers.push(startOutboxWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_OUTBOX')) {
+      const stopDispatcher = startOutboxDispatcher(
+        parseInt(process.env.OUTBOX_DISPATCHER_INTERVAL_MS || '1000', 10)
+      );
+      workers.push({ close: stopDispatcher, name: 'outbox-dispatcher' });
+    }
     if (isEnabled('ENABLE_RECONCILIATION_INTEGRATION')) workers.push(startIntegrationOrchestratorWorker());
     if (isEnabled('ENABLE_RECONCILIATION_DAILY_CLOSING')) workers.push(startDailyClosingWorker());
     if (isEnabled('ENABLE_RECONCILIATION_FOLLOWUP')) workers.push(startFollowupOrchestratorWorker());

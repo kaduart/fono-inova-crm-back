@@ -1,7 +1,23 @@
+/**
+ * @deprecated
+ *
+ * NÃO FAZ PARTE DO FLUXO CANÔNICO.
+ *
+ * Este arquivo referencia módulos inexistentes e não está no caminho ativo
+ * de criação/completação de agendamentos.
+ *
+ * Não implementar novas features aqui.
+ *
+ * Fluxo oficial:
+ * - docs/architecture/CANONICAL_FLOW.md
+ * - docs/architecture/CANONICAL_FILES.md
+ */
+
 // services/appointmentProxyService.js
 /**
  * Proxy Service - Decide entre legado e 4.0
  * Responsável pela transição gradual dos fluxos
+ * @deprecated Não faz parte do fluxo canônico.
  */
 
 import { FeatureFlags } from '../config/featureFlags.js';

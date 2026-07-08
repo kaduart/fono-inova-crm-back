@@ -24,8 +24,6 @@
     "dev:isolated:whatsapp": "node start-isolated.js whatsapp",
     "dev:isolated:clinical": "node start-isolated.js clinical",
     "dev:isolated:reconciliation": "node start-isolated.js reconciliation",
-    "worker": "node -r dotenv/config ./workers/followup.worker.js",
-    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
     "test": "node tests/complete.js",
     "test:unit": "node tests/complete.js --unit",
@@ -54,9 +52,6 @@
     "test:safety": "vitest run tests/unit/completeWorker.safety.test.js tests/e2e/appointment-edit-sync.e2e.test.js --forceExit",
     "test:all": "vitest run --forceExit",
     "test:pre-deploy": "npm run test:safety && npm run test:billing:pre-deploy",
-    "test:contract": "NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.v2.js",
-    "test:contract:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.v2.js --watch",
-    "test:contract:coverage": "NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.v2.js --coverage",
     "sanity:financial": "node scripts/financial-sanity-check.v2.js",
     "sanity:financial:current": "node -e \"const d=new Date(); require('child_process').spawnSync('node', ['scripts/financial-sanity-check.v2.js', d.getFullYear(), d.getMonth()+1], {stdio: 'inherit'})\"",
     "snapshot:rebuild": "node -e \"const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const y=d.getFullYear(); console.log('POST /api/v2/financial/dashboard/rebuild-snapshot with:', {startDate:`${y}-${m}-01`, endDate:`${y}-${m}-${new Date(y,d.getMonth()+1,0).getDate()}`, clearFirst:true})\""

@@ -26,8 +26,11 @@ vi.mock('../../infrastructure/outbox/outboxPattern.js', () => ({
     saveToOutbox: async (event, session) => {
         mockOutbox.push(event);
         return event;
-    },
-    startOutboxWorker: () => () => {}
+    }
+}));
+
+vi.mock('../../infrastructure/outbox/OutboxDispatcher.js', () => ({
+    startOutboxDispatcher: () => () => {}
 }));
 
 let mongoServer;

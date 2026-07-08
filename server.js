@@ -108,10 +108,8 @@ import googleAdsAuthRoutes from "./routes/google-auth.js";
 import leadRoutes from "./routes/leads.js";
 import loginRoutes from "./routes/login.js";
 
-import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import patientDuplicatesRoutes from "./routes/patients/duplicates.js";
-import PaymentRoutes from "./routes/Payment.js";
 import pixRoutes from "./routes/pix.js";
 import financialAuditRoutes from "./routes/financialAudit.js";
 import proxyMediaRoutes from "./routes/proxyMedia.js";
@@ -771,11 +769,6 @@ server.listen(PORT, '0.0.0.0', () => {
 
     // Workers e Crons DESLIGADOS temporariamente (memória crítica)
     try {
-      // await import("./workers/followup.worker.js");
-      // await import("./workers/followup.cron.js");
-      // await import("./workers/video.worker.js");
-      // await import("./workers/post.worker.js");
-      
       // 🚨 DEBUG: valores RAW das env vars de workers
       console.log('[Server] ENABLE_WORKERS RAW:', JSON.stringify(process.env.ENABLE_WORKERS));
       console.log('[Server] WORKER_GROUP RAW:', JSON.stringify(process.env.WORKER_GROUP));

@@ -1,3 +1,21 @@
+/**
+ * @deprecated
+ *
+ * FORA DO PADRÃO CANÔNICO — EM TRANSIÇÃO.
+ *
+ * Este helper ainda é o caminho vivo para pagamento adiantado, mas foge
+ * do padrão command/handler do fluxo canônico. Deve ser migrado para um
+ * command dedicado (createAdvancePaymentCommand) e integrado ao
+ * BillingOrchestrator.
+ *
+ * Novas features de pagamento adiantado devem ser implementadas no fluxo
+ * canônico, não neste helper.
+ *
+ * Fluxo oficial:
+ * - docs/architecture/CANONICAL_FLOW.md
+ * - docs/architecture/CANONICAL_FILES.md
+ */
+
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';

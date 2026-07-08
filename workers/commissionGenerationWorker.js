@@ -63,10 +63,11 @@ export function startCommissionGenerationWorker() {
         return await processWithGuarantees(
             eventStoreEvent,
             async () => {
-                const { month, year } = payload;
+                const { month, year, regenerate } = payload;
                 const result = await generateMonthlyCommissions(
                     month ? Number(month) : undefined,
-                    year ? Number(year) : undefined
+                    year ? Number(year) : undefined,
+                    { regenerate: !!regenerate }
                 );
 
                 log.info('commissions_generated', 'Comissões geradas com sucesso', {

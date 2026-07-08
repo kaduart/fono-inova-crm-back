@@ -1,14 +1,22 @@
 // services/billing/BillingOrchestrator.js
 import insuranceBilling from './insuranceBilling.js';
-import packageBilling from './packageBilling.js';
-import individualBilling from './individualBilling.js';
-import advanceBilling from './advanceBilling.js';
 
 /**
  * 🎯 Billing Orchestrator
  *
- * Delegador central de faturamento.
- * Detecta tipo de cobrança e roteia para serviço especializado.
+ * Delegador central de faturamento no fluxo canônico de CREATE.
+ *
+ * Responsabilidade:
+ * - Detectar o tipo de cobrança a partir do payload.
+ * - Roteiar apenas para handlers ativos e canônicos.
+ *
+ * Regras:
+ * - Convênio é o único tipo atualmente roteado pelo orchestrator.
+ * - Particular / pacote são tratados por appointmentHybridService.js.
+ * - Pagamento antecipado é tratado por helpers/handleAdvancePayment.js
+ *   (em transição para um command dedicado).
+ *
+ * Fluxo oficial: docs/architecture/CANONICAL_FLOW.md
  */
 class BillingOrchestrator {
 
@@ -28,14 +36,18 @@ class BillingOrchestrator {
         return await insuranceBilling.createInsuranceAppointment(ctx, mongoSession);
 
       case 'advance':
-        return await advanceBilling.handleAdvancePayment(ctx, mongoSession);
+        throw new Error(
+          `[BILLING_ORCHESTRATOR] Pagamento adiantado deve ser tratado pelo fluxo canônico ` +
+          `(helpers/handleAdvancePayment.js em transição). Não roteie 'advance' pelo BillingOrchestrator.`
+        );
 
       case 'package':
-        return await packageBilling.handlePackageSession(ctx, mongoSession);
-
       case 'individual':
       case 'particular':
-        return await individualBilling.handleIndividualSession(ctx, mongoSession);
+        throw new Error(
+          `[BILLING_ORCHESTRATOR] Particular e pacote devem ser tratados por ` +
+          `appointmentHybridService.create() no fluxo canônico. Não roteie '${type}' pelo BillingOrchestrator.`
+        );
 
       default:
         throw new Error(`Tipo de faturamento não suportado: ${type}`);

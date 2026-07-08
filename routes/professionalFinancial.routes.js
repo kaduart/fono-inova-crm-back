@@ -10,7 +10,8 @@ import {
   getProfessionalSummary,
   getProfessionalPatientsBreakdown,
   getProfessionalRanking,
-  getCommissionAudit
+  getCommissionAudit,
+  getCommissionSessions
 } from '../services/professionalFinancial.service.js';
 import {
   createAdvance,
@@ -103,6 +104,23 @@ router.get('/:id/commission-audit', auth, authorize(['admin', 'secretary']), asy
   try {
     const { startDate, endDate } = parseQuery(req);
     const result = await getCommissionAudit({
+      doctorId: req.params.id,
+      startDate,
+      endDate
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+/**
+ * GET /api/v2/professionals/:id/commission-sessions
+ */
+router.get('/:id/commission-sessions', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const { startDate, endDate } = parseQuery(req);
+    const result = await getCommissionSessions({
       doctorId: req.params.id,
       startDate,
       endDate

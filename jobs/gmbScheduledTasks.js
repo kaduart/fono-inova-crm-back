@@ -1,6 +1,7 @@
 // jobs/gmbScheduledTasks.js
 import cron from 'node-cron';
 import * as gmbService from '../services/gmbService.js';
+import { ESPECIALIDADES } from '../services/gmbService.js';
 import * as gmbCalendarService from '../services/gmbCalendarService.js';
 import * as makeService from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
@@ -174,6 +175,35 @@ export const scheduleGmbCron = () => {
             );
             if (stuck.modifiedCount > 0) {
                 console.log(`🔄 [GMB] ${stuck.modifiedCount} post(s) resetado(s) para retry (sem confirmação Make em 40min)`);
+            }
+
+            // ── Recuperação de imagem: gera imagem para posts que ficaram sem ela ──
+            const noImagePosts = await GmbPost.find({
+                status: 'scheduled',
+                $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
+            }).sort({ createdAt: 1 }).limit(3).lean();
+
+            if (noImagePosts.length > 0) {
+                console.log(`🖼️ [GMB] Regenerando imagem para ${noImagePosts.length} post(s) sem imagem...`);
+                for (const noImgPost of noImagePosts) {
+                    try {
+                        const esp = ESPECIALIDADES.find(e => e.id === noImgPost.theme);
+                        if (!esp) {
+                            console.warn(`⚠️ [GMB] Especialidade desconhecida para post ${noImgPost._id} (theme=${noImgPost.theme}) — pulando`);
+                            continue;
+                        }
+                        const imgResult = await gmbService.generateImageForEspecialidade(esp, noImgPost.content || '', false, 'auto', { forceNew: true });
+                        if (imgResult?.url) {
+                            await GmbPost.updateOne({ _id: noImgPost._id }, { $set: { mediaUrl: imgResult.url, mediaType: 'image' } });
+                            console.log(`✅ [GMB] Imagem recuperada para: ${noImgPost.title?.substring(0, 40)}`);
+                        } else {
+                            console.warn(`⚠️ [GMB] Geração de imagem retornou vazio para post ${noImgPost._id}`);
+                        }
+                    } catch (imgErr) {
+                        console.error(`❌ [GMB] Falha ao regenerar imagem do post ${noImgPost._id}:`, imgErr.message);
+                    }
+                    await new Promise(r => setTimeout(r, 3000));
+                }
             }
 
             console.log('🔗 [GMB] Enviando posts agendados ao Make...');

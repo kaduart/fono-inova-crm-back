@@ -100,7 +100,8 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
 /**
  * Gera despesas de comissão para todos os profissionais ativos
  */
-export const generateMonthlyCommissions = async (month, year) => {
+export const generateMonthlyCommissions = async (month, year, options = {}) => {
+  const { regenerate = false } = options;
   if (commissionGenerationLock) {
     throw new Error('GENERATION_ALREADY_IN_PROGRESS');
   }
@@ -141,13 +142,31 @@ export const generateMonthlyCommissions = async (month, year) => {
         const existing = await Expense.findOne({
           category: 'commission',
           relatedDoctor: doctor._id,
-          description: `${doctor.fullName} - ${monthRef}`
+          description: `${doctor.fullName} - ${monthRef}`,
+          status: { $ne: 'canceled' }
         }).session(session);
 
         if (existing) {
-          console.log(`⚠️ Comissão já existe para ${doctor.fullName} - ${monthRef}, ignorando`);
-          results.push({ doctor: doctor.fullName, skipped: true, existingId: existing._id });
-          continue;
+          if (!regenerate) {
+            console.log(`⚠️ Comissão já existe para ${doctor.fullName} - ${monthRef}, ignorando`);
+            results.push({ doctor: doctor.fullName, skipped: true, existingId: existing._id });
+            continue;
+          }
+
+          // 🔒 Comissão já paga é definitiva — nunca cancelar/substituir automaticamente
+          if (existing.status === 'paid') {
+            console.log(`🔒 Comissão de ${doctor.fullName} - ${monthRef} já está paga, mantendo (não regenerada)`);
+            results.push({ doctor: doctor.fullName, skipped: true, reason: 'already_paid', existingId: existing._id });
+            continue;
+          }
+
+          // ♻️ Regenerar: apaga a despesa desatualizada e recria com os dados
+          // atuais de sessões completadas — só a versão nova permanece.
+          await Expense.deleteOne(
+            { _id: existing._id },
+            { session }
+          );
+          console.log(`♻️ Comissão anterior de ${doctor.fullName} - ${monthRef} apagada, gerando nova`);
         }
 
         const notes = {

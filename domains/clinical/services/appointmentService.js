@@ -1,12 +1,21 @@
+/**
+ * @deprecated
+ *
+ * NÃO FAZ PARTE DO FLUXO CANÔNICO.
+ *
+ * Esta é uma API paralela de agendamento no domínio clínico que
+ * não está plugada nas rotas V2 oficiais.
+ *
+ * Não implementar novas features aqui.
+ *
+ * Fluxo oficial:
+ * - docs/architecture/CANONICAL_FLOW.md
+ * - docs/architecture/CANONICAL_FILES.md
+ */
+
 // back/domains/clinical/services/appointmentService.js
 /**
  * Appointment Service - Clinical Domain
- * 
- * Service responsável por operações de Appointment.
- * Este é o orquestrador que coordena Patient + Session + Appointment.
- * 
- * NOTA: Este service trabalha em conjunto com o fluxo V2 existente,
- * mas fornece uma interface limpa para os controllers.
  */
 
 import Appointment from '../../../models/Appointment.js';

@@ -857,3 +857,53 @@ export async function getCommissionAudit({ doctorId, startDate, endDate }) {
 
   return result;
 }
+
+/**
+ * Lista plana dos atendimentos (data, hora, paciente, valor) que compuseram
+ * a comissão de um profissional num período — para exibição no "i" de
+ * detalhamento na tela de Despesas (Comissões).
+ */
+export async function getCommissionSessions({ doctorId, startDate, endDate }) {
+  const startedAt = Date.now();
+  const { start, end } = parseRange(startDate, endDate);
+
+  const [doctor, sessions] = await Promise.all([
+    Doctor.findById(doctorId).select('fullName specialty commissionRules').lean(),
+    Session.find({
+      doctor: new mongoose.Types.ObjectId(doctorId),
+      date: { $gte: start, $lte: end },
+      status: 'completed'
+    })
+      .populate('patient', 'fullName')
+      .populate('package', 'sessionType')
+      .sort({ date: 1, time: 1 })
+      .lean()
+  ]);
+
+  // 🎯 Mesma fonte de verdade da geração oficial (commissionService.js) e da
+  // auditoria (getCommissionAudit) — nunca ler campo gravado na Session, que
+  // pode estar ausente/desatualizado (drift confirmado 2026-07-08).
+  const items = sessions.map((session) => ({
+    sessionId: session._id,
+    date: toDateString(session.date),
+    time: session.time || null,
+    patientName: session.patient?.fullName || 'Sem nome',
+    value: round(resolveSessionFinancialValue(session)),
+    commissionValue: round(doctor ? calculateSessionCommission(doctor, session, session.date) : 0),
+    isPackage: !!session.package,
+    packageSessionType: session.package?.sessionType || null
+  }));
+
+  logMetric('ProfessionalFinancialService', 'getCommissionSessions', {
+    doctorId,
+    executionTimeMs: Date.now() - startedAt,
+    sessionCount: items.length
+  });
+
+  return {
+    doctorId,
+    period: { start: toDateString(start), end: toDateString(end) },
+    count: items.length,
+    items
+  };
+}

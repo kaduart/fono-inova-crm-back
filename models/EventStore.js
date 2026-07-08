@@ -57,7 +57,7 @@ const eventStoreSchema = new mongoose.Schema({
     type: String, 
     required: true,
     index: true,
-    enum: ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance', 'evolution', 'insurance_batch', 'patient_balance', 'preagendamento', 'InsuranceBilling']
+    enum: ['appointment', 'lead', 'patient', 'payment', 'invoice', 'package', 'followup', 'notification', 'system', 'totals', 'daily_closing', 'session', 'clinical', 'expense', 'insurance', 'balance', 'evolution', 'insurance_batch', 'patient_balance', 'preagendamento', 'InsuranceBilling', 'commission']
   },
   
   aggregateId: { 

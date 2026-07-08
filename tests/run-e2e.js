@@ -13,7 +13,7 @@ import { TestRunner } from './framework/TestRunner.js';
 import { Fixtures } from './framework/Fixtures.js';
 import { startAllWorkers, stopAllWorkers } from '../workers/index.js';
 import { startRedis } from '../services/redisClient.js';
-import { startOutboxWorker as startOutboxPoller } from '../infrastructure/outbox/outboxPattern.js';
+import { startOutboxDispatcher as startOutboxPoller } from '../infrastructure/outbox/OutboxDispatcher.js';
 import completeToInvoiceScenario from './scenarios/complete-to-invoice.scenario.js';
 import idempotencyCheckScenario from './scenarios/idempotency-check.scenario.js';
 import cancelFlowScenario from './scenarios/cancel-flow.scenario.js';

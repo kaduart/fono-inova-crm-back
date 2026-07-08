@@ -379,7 +379,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 // POST /api/expenses/generate-commissions
 router.post('/generate-commissions', auth, authorize(['admin']), async (req, res) => {
     try {
-        const { month, year } = req.body || {};
+        const { month, year, regenerate } = req.body || {};
         const m = month ? Number(month) : undefined;
         const y = year ? Number(year) : undefined;
 
@@ -391,7 +391,13 @@ router.post('/generate-commissions', auth, authorize(['admin']), async (req, res
         }
 
         const aggregateId = `commission-${y}-${String(m).padStart(2, '0')}`;
-        const idempotencyKey = `commission-generation:${aggregateId}`;
+        // 🔁 Regenerar precisa de idempotencyKey única (a chave fixa por período nunca
+        // seria reprocessada de novo, mesmo com sessões novas desde a última geração —
+        // ver back/docs, incidente 2026-07-08). O guard de concorrência abaixo (por
+        // aggregateId) continua valendo normalmente.
+        const idempotencyKey = regenerate
+            ? `commission-generation:${aggregateId}:regen-${Date.now()}`
+            : `commission-generation:${aggregateId}`;
 
         // 🛡️ Evita duas gerações simultâneas para o mesmo período
         const inProgress = await EventStore.findOne({
@@ -411,7 +417,7 @@ router.post('/generate-commissions', auth, authorize(['admin']), async (req, res
 
         const result = await publishEvent(
             EventTypes.COMMISSION_GENERATION_REQUESTED,
-            { month: m, year: y, aggregateId },
+            { month: m, year: y, aggregateId, regenerate: !!regenerate },
             {
                 correlationId: req.headers['x-correlation-id'] || `comm_${Date.now()}`,
                 idempotencyKey,

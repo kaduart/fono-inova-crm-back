@@ -1,17 +1,23 @@
+/**
+ * @deprecated
+ *
+ * NÃO FAZ PARTE DO FLUXO CANÔNICO.
+ *
+ * Este orquestrador duplica o sync já realizado por
+ * updateAppointmentCommand.js / appointmentSessionSyncService.js.
+ *
+ * Não implementar novas features aqui.
+ *
+ * Fluxo oficial:
+ * - docs/architecture/CANONICAL_FLOW.md
+ * - docs/architecture/CANONICAL_FILES.md
+ */
+
 // back/services/appointmentStateOrchestrator.js
 /**
  * Appointment State Orchestrator
  *
  * Responsabilidade: centralizar a consistência do estado de Appointment e seus derivados.
- *
- * Regras:
- * - Appointment é a fonte da verdade
- * - Session é derivada de Appointment
- * - Projeções são reativas
- * - Disponibilidade é invalidada, não computada aqui
- *
- * ATENÇÃO: este arquivo ainda não é chamado pelo fluxo legado.
- * Etapa 1 do plano de remoção do appointment.js legado.
  */
 
 import { syncSessionFromAppointment } from './appointmentSessionSyncService.js';
