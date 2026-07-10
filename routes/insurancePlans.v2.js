@@ -19,6 +19,19 @@ import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycle
 
 const router = express.Router();
 
+// Sessões restantes de uma guia = total autorizado - já faturadas (usedSessions) - já
+// agendadas/pendentes (scheduled/pre_agendado/confirmed). Mesma regra usada dentro de
+// generateInsurancePlanSessions.js para não deixar o guide ficar sobre-agendado.
+async function getGuideRemainingCapacity(guideId, guideTotals, mongoSession) {
+  const query = Appointment.countDocuments({
+    insuranceGuide: guideId,
+    operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
+  });
+  if (mongoSession) query.session(mongoSession);
+  const reservedCount = await query;
+  return Math.max(0, (guideTotals.totalSessions || 0) - (guideTotals.usedSessions || 0) - reservedCount);
+}
+
 const VALID_SPECIALTIES = [
   'fonoaudiologia', 'psicologia', 'fisioterapia', 'psicomotricidade',
   'terapia_ocupacional', 'musicoterapia', 'psicopedagogia', 'neuropsicologia'
@@ -37,21 +50,25 @@ router.post('/', auth, async (req, res) => {
       guideId,
       doctorId,
       specialty,
-      sessionsPerWeek,
       startDate,
       slots,
       sessionValue = 0,
       notes
     } = req.body;
 
-    if (!guideId || !doctorId || !specialty || !sessionsPerWeek || !startDate || !slots?.length) {
+    if (!guideId || !doctorId || !specialty || !startDate || !slots?.length) {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
         errorCode: 'VALIDATION_ERROR',
-        message: 'Campos obrigatórios: guideId, doctorId, specialty, sessionsPerWeek, startDate, slots'
+        message: 'Campos obrigatórios: guideId, doctorId, specialty, startDate, slots'
       });
     }
+
+    // sessionsPerWeek nunca é confiado do body: deriva sempre de slots.length
+    // (mesmo princípio do fix de 2026-07-07 no PATCH) para eliminar a possibilidade
+    // do card "Plano ativo" mostrar uma frequência que não bate com os horários reais.
+    const sessionsPerWeek = slots.length;
 
     if (!VALID_SPECIALTIES.includes(specialty)) {
       await session.abortTransaction();
@@ -519,32 +536,18 @@ router.patch('/:id', auth, async (req, res) => {
       metadata: { appointmentsUpdated, appointmentsCanceled, paymentsUpdated },
     });
 
-    // Regenera sessões futuras se o guide ainda tem sessões restantes sem agendamento futuro
-    let appointmentsGenerated = 0;
-    try {
-      const guide = await InsuranceGuide.findById(plan.guide).lean();
-      const remaining = (guide?.totalSessions || 0) - (guide?.usedSessions || 0);
-      if (remaining > 0 && affected.length === 0) {
-        const genResult = await generateInsurancePlanSessions({
-          planId: plan._id,
-          guideId: plan.guide,
-          sessionValue: plan.sessionValue || 0,
-          skipHolidays: true
-        });
-        appointmentsGenerated = genResult?.count || 0;
-      }
-    } catch (genErr) {
-      console.error('[InsurancePlansV2] Erro ao regenerar sessões após edição:', genErr.message);
-    }
-
+    // 🚨 FIX (2026-07-09): "Salvar alterações" NUNCA gera sessão nova — só ajusta/cancela
+    // as já existentes. Regenerar sessões é responsabilidade exclusiva do botão "Gerar",
+    // que o usuário aciona explicitamente. Ter os dois botões criando appointments (Save
+    // implicitamente + Gerar explicitamente) foi o que causou a guia sobre-agendada
+    // (scheduledCount > totalSessions) reportada em 2026-07-09.
     res.json({
       success: true,
       data: {
         plan,
         appointmentsUpdated,
         appointmentsCanceled,
-        paymentsUpdated,
-        appointmentsGenerated
+        paymentsUpdated
       }
     });
 
@@ -665,7 +668,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       });
     }
 
-    const remaining = (guide.totalSessions || 0) - (guide.usedSessions || 0);
+    const remaining = await getGuideRemainingCapacity(guide._id, guide);
 
     const result = await generateInsurancePlanSessions({
       planId: plan._id,

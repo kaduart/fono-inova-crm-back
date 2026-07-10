@@ -168,7 +168,18 @@ export async function generateInsurancePlanSessions({
     throw new Error(blockingAlert?.message || 'Guia não elegível para gerar sessões');
   }
 
-  const remaining = guide.totalSessions - guide.usedSessions;
+  // 🚨 FIX (2026-07-09): "remaining" não pode descontar só usedSessions (sessões já
+  // faturadas/completadas) — precisa descontar também as sessões JÁ agendadas/pendentes
+  // deste guide (scheduled/pre_agendado/confirmed). Sem isso, ao adicionar um novo slot
+  // semanal a um plano que já tinha gerado todas as sessões da guia, "remaining" voltava
+  // a mostrar o total cheio (ex: 10) e o loop abaixo gerava mais sessões em cima das que
+  // já existiam — a guia passava a ter mais appointments agendados do que sessões
+  // autorizadas (scheduledCount > totalSessions), sem nenhum aviso.
+  const reservedCount = await Appointment.countDocuments({
+    insuranceGuide: guide._id,
+    operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
+  }).session(mongoSession);
+  const remaining = Math.max(0, (guide.totalSessions - guide.usedSessions) - reservedCount);
 
   // Guia é a fonte de verdade do valor de sessão do convênio.
   // plan.sessionValue é apenas um espelho; guide.sessionValue prevalece.

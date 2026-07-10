@@ -25,6 +25,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import moment from 'moment-timezone';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import { normalizeAdminEditPayload } from '../utils/adminEditPayloadNormalizer.js';
 import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
 import { getInsuranceFlowConfig } from '../config/insuranceFlowConfig.js';
 import { logMetric } from '../utils/logMetric.js';
@@ -158,6 +159,39 @@ router.post('/', flexibleAuth, checkPackageAvailability, checkAppointmentConflic
     });
   }
 });
+
+// Edição administrativa de agendamento (usada pela Agenda Externa para appointments completed)
+// Fase 1: mesmo command de update, com adapter de payload para manter uma única regra de domínio.
+router.patch(
+  '/:id/admin-edit',
+  validateId,
+  flexibleAuth,
+  checkPackageAvailability,
+  checkAppointmentConflicts,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const normalizedPayload = normalizeAdminEditPayload(req.body);
+
+      const result = await updateAppointment(id, normalizedPayload, req.user);
+      return res.json({
+        success: true,
+        data: result.data,
+        message: result.message || 'Agendamento atualizado administrativamente',
+      });
+    } catch (err) {
+      console.error(`[PATCH /api/v2/appointments/${req.params.id}/admin-edit] erro:`, err);
+
+      const status = err.status || 500;
+      return res.status(status).json({
+        success: false,
+        error: err.message,
+        code: err.code || 'INTERNAL_SERVER_ERROR',
+        ...(err.fields ? { fields: err.fields } : {}),
+      });
+    }
+  }
+);
 
 // Atualizar agendamento
 router.put(

@@ -294,6 +294,9 @@ router.get('/', auth, async (req, res) => {
             const _snapAReceberProducao  = _snapConvenioAReceber + _snapLiminarAReceber + _snapParticularPend + _snapPacotePend;
             const _snapRecebidoProducao  = Math.max(0, (data.producao || 0) - _snapAReceberProducao);
             const _snapRecebimentosAntecipados       = Math.max(0, (data.caixa   || 0) - _snapRecebidoProducao);
+            const _snapPackageSales      = data.caixaDetalhe?.packageSales || 0;
+            const _snapAntecipacoes      = Math.min(_snapPackageSales, _snapRecebimentosAntecipados);
+            const _snapRetroativos       = Math.max(0, _snapRecebimentosAntecipados - _snapAntecipacoes);
             const _snapResultadoCaixa    = data.caixa    || 0;
             const _snapResultadoEcon     = data.producao || 0;
             const _snapRecebimentoProd   = {
@@ -322,7 +325,9 @@ router.get('/', auth, async (req, res) => {
                     particularPendente: _snapParticularPend,
                     pacotePendente: _snapPacotePend,
                     recebimentoProducao: _snapRecebimentoProd,
-                    retroativos: _snapRecebimentosAntecipados,
+                    recebimentosAntecipados: _snapRecebimentosAntecipados,
+                    antecipacoes: _snapAntecipacoes,
+                    retroativos: _snapRetroativos,
                     aReceberProducao: _snapAReceberProducao,
                     aReceber: aReceberSnap,
                     pendentes: pendentesSnap,
@@ -360,7 +365,9 @@ router.get('/', auth, async (req, res) => {
                     particularPendente: _snapParticularPend,
                     pacotePendente: _snapPacotePend,
                     recebimentoProducao: _snapRecebimentoProd,
-                    retroativos: _snapRecebimentosAntecipados,
+                    recebimentosAntecipados: _snapRecebimentosAntecipados,
+                    antecipacoes: _snapAntecipacoes,
+                    retroativos: _snapRetroativos,
                     aReceberProducao: _snapAReceberProducao,
                     metas: metasSnap,
                     profissionais: profissionaisSnap,
@@ -426,6 +433,8 @@ router.get('/', auth, async (req, res) => {
                 pacotePendente: data.pacotePendente,
                 recebimentoProducao: data.recebimentoProducao,
                 recebimentosAntecipados: data.recebimentosAntecipados,
+                antecipacoes: data.antecipacoes,
+                retroativos: data.retroativos,
                 aReceberProducao: data.aReceberProducao,
                 aReceber,
                 pendentes,
@@ -466,6 +475,8 @@ router.get('/', auth, async (req, res) => {
                 pacotePendente: data.pacotePendente,
                 recebimentoProducao: data.recebimentoProducao,
                 recebimentosAntecipados: data.recebimentosAntecipados,
+                antecipacoes: data.antecipacoes,
+                retroativos: data.retroativos,
                 aReceberProducao: data.aReceberProducao,
                 // 🆕 Metas separadas por camada
                 metas: {
@@ -482,10 +493,11 @@ router.get('/', auth, async (req, res) => {
                         atingido: metas.camadas?.caixa?.atingido || data.caixa || 0,
                         percentual: metas.camadas?.caixa?.percentual || 0,
                     },
-                    receitaProjetada: {
+                    // Informativo/liquidez (caixa + pipeline) — nunca é a meta principal.
+                    caixaProjetado: {
                         meta: metas.configuracao?.metaMensal || 0,
-                        atingido: metas.camadas?.receitaProjetada?.atingido || data.receitaReconhecida || 0,
-                        percentual: metas.camadas?.receitaProjetada?.percentual || 0,
+                        atingido: metas.camadas?.caixaProjetado?.atingido || ((data.caixa || 0) + (data.aReceberProducao || 0)),
+                        percentual: metas.camadas?.caixaProjetado?.percentual || 0,
                     }
                 },
                 profissionais,
@@ -723,30 +735,34 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const goal = await loadGoal(year, month, clinicId);
     const metaMensal = goal.metaMensal;
     const diasUteis = goal.diasUteis;
-    // ─── BASE DE CÁLCULO: caixa + a receber da produção do mês (regra de negócio da clínica) ───
-    const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-    const realizadoDia = (data.caixaHoje || 0) + (data.convenioHoje || 0) + (data.particularPendenteHoje || 0);
+    const realizadoDia = data.producaoHoje || 0;
     const producaoDia  = data.producaoHoje || 0;
+
+    // ─── Camadas semânticas ───
+    const caixaRealizadoMes    = data.caixa || 0;
+    const producaoRealizadaMes = data.producao || 0;
+    // Caixa + Pipeline — informativo/liquidez apenas. Contrato (FinancialSemantic.js CAIXA_PROJETADO)
+    // é explícito: "NUNCA usa como meta". Não usar para ritmo/projeção/gap/statusMeta abaixo.
+    const caixaProjetadoMes = data.visaoSemantica?.projecao?.total
+      || (caixaRealizadoMes + (data.aReceberProducao || 0));
+
+    // ─── BASE DE CÁLCULO DA META: PRODUÇÃO (regime de competência) ───
+    // Alinhado ao contrato back/contracts/FinancialSemantic.js — META.base = 'PRODUCTION'.
+    const realizadoMes = producaoRealizadaMes;
+    const pipeline = data.aReceberProducao || 0;
 
     const _gapRestante = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
     const metaDiariaNecessaria = daysRemaining > 0 ? _gapRestante / daysRemaining : 0;
 
-    // ─── Camadas semânticas (mantidas para referência/análise) ───
-    const caixaRealizadoMes    = data.caixa || 0;
-    const producaoRealizadaMes = data.producao || 0;
-    const receitaProjetadaMes  = data.visaoSemantica?.projecao?.total || realizadoMes;
-
-    // ─── RITMO baseado em caixa + a receber ───
+    // ─── RITMO = PRODUÇÃO acumulada ÷ dias decorridos (contrato: RITMO) ───
     const mediaDiariaAtual = daysPassed > 0 ? realizadoMes / daysPassed : 0;
+    // PROJEÇÃO OTIMISTA = extrapolação linear do ritmo (contrato: PROJECAO_OTIMISTA = RITMO * diasNoMes)
     const projecaoFinal = isMonthClosed ? realizadoMes : mediaDiariaAtual * daysInMonth;
 
-    // Projeção ESPERADA (conservadora): realizadoMes já inclui pipeline; projeta 60% da média nos dias restantes
+    // PROJEÇÃO ESPERADA (conservadora, contrato: PRODUCTION + PIPELINE*0.7 + RITMO*diasRestantes*0.6)
     const projecaoEsperada = isMonthClosed
       ? realizadoMes
-      : Math.min(
-          projecaoFinal,
-          realizadoMes + ((mediaDiariaAtual * daysRemaining) * 0.6)
-        );
+      : realizadoMes + (pipeline * 0.7) + ((mediaDiariaAtual * daysRemaining) * 0.6);
 
     const gapValor = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
     const gapPorDia = daysRemaining > 0 ? gapValor / daysRemaining : 0;
@@ -760,7 +776,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     // Percentuais por camada semântica (para análise separada)
     const percentualProducao  = metaMensal > 0 ? (producaoRealizadaMes / metaMensal) * 100 : 0;
     const percentualCaixa     = metaMensal > 0 ? (caixaRealizadoMes / metaMensal) * 100 : 0;
-    const percentualProjetada = metaMensal > 0 ? (receitaProjetadaMes / metaMensal) * 100 : 0;
+    const percentualCaixaProjetado = metaMensal > 0 ? (caixaProjetadoMes / metaMensal) * 100 : 0;
 
     let statusMeta = 'vermelho';
     if (percentualRealizado >= 100) statusMeta = 'verde';
@@ -799,7 +815,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             metaMensal,
             diasUteis,
             metaDiariaNecessaria: parseFloat(metaDiariaNecessaria.toFixed(2)),
-            tipoMeta: 'receitaProjetada',
+            tipoMeta: 'producao',
         },
         realizado: {
             mes: parseFloat(realizadoMes.toFixed(2)),
@@ -863,9 +879,10 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
                 atingido: parseFloat(caixaRealizadoMes.toFixed(2)),
                 percentual: parseFloat(percentualCaixa.toFixed(1)),
             },
-            receitaProjetada: {
-                atingido: parseFloat(receitaProjetadaMes.toFixed(2)),
-                percentual: parseFloat(percentualProjetada.toFixed(1)),
+            // Caixa + Pipeline. Informativo/liquidez apenas — NUNCA usar como meta (ver FinancialSemantic.js).
+            caixaProjetado: {
+                atingido: parseFloat(caixaProjetadoMes.toFixed(2)),
+                percentual: parseFloat(percentualCaixaProjetado.toFixed(1)),
             }
         }
     };
@@ -1505,12 +1522,15 @@ async function calculateRealTime(year, month) {
     const aReceberProducao   = convenioAReceber + particularPendente + pacotePendente + liminarAReceber;
     const recebidoProducao   = Math.max(0, (production.total || 0) - aReceberProducao);
     // dinheiro recebido em caixa que NÃO corresponde à produção do mês
-    // (em junho/2026 auditado: 100% vendas de pacotes antecipadas — zero sessões de meses anteriores)
+    // (mistura retroativos de competências passadas + antecipações de competências futuras)
     const recebimentosAntecipados = Math.max(0, cash.total - recebidoProducao);
+    // Antecipações: venda de pacote para consumo em sessões futuras (competência ainda não ocorrida)
+    const antecipacoes = Math.min(packageSalesTotal, recebimentosAntecipados);
+    // Retroativos: resto do resíduo — majoritariamente convênio/liminar pago em atraso de meses anteriores
+    const retroativos = Math.max(0, recebimentosAntecipados - antecipacoes);
 
-    // 🆕 RECEITA PROJETADA = caixa realizado + a receber
-    // Representa "quanto a clínica vai ter se todo mundo pagar"
-    const receitaProjetada = cash.total + aReceberProducao;
+    // Caixa + Pipeline. Informativo/liquidez apenas — NUNCA usar como meta (ver FinancialSemantic.js CAIXA_PROJETADO).
+    const caixaProjetado = cash.total + aReceberProducao;
 
     const caixaBlock = buildCaixaBlock({
         total: cash.total,
@@ -1574,6 +1594,8 @@ async function calculateRealTime(year, month) {
             liminar:    Math.max(0, (production.liminar    || 0) - liminarAReceber),
         },
         recebimentosAntecipados,
+        antecipacoes,
+        retroativos,
         aReceberProducao,
         receitaReconhecida: production.total,  // INV-3: regime de competência = Session.completed
         novaReceitaMes,
@@ -1618,9 +1640,9 @@ async function calculateRealTime(year, month) {
                 liminar: liminarAReceber,
             },
             projecao: {
-                label: 'Receita Projetada',
-                descricao: 'Quanto a clínica vai ter se todo mundo pagar (caixa + a receber)',
-                total: receitaProjetada,
+                label: 'Caixa Projetado',
+                descricao: 'Quanto a clínica vai ter se todo mundo pagar (caixa + a receber) — informativo, nunca é meta',
+                total: caixaProjetado,
             },
             contextoTemporal: {
                 diasDecorridos,
@@ -1642,9 +1664,9 @@ async function calculateRealTime(year, month) {
                 atingido: cash.total,
                 percentual: 0,
             },
-            receitaProjetada: {
+            caixaProjetado: {
                 meta: null,
-                atingido: receitaProjetada,
+                atingido: caixaProjetado,
                 percentual: 0,
             }
         },

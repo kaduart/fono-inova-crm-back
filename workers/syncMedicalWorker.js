@@ -91,6 +91,10 @@ export function startSyncMedicalWorker() {
           result = await handleAppointmentCompleted(payload, log);
           break;
 
+        case 'APPOINTMENT_DELETED':
+          result = await handleAppointmentDeleted(payload, log);
+          break;
+
         case 'APPOINTMENT_CANCELLED':
           result = await handleAppointmentCancelled(payload, log);
           break;
@@ -267,6 +271,21 @@ async function handleAppointmentCompleted(payload, log) {
   log.info('appointment_completed_ack', 'Appointment completado (invoice já criada)', {
     appointmentId,
     paymentOrigin
+  });
+
+  return {
+    status: 'ack',
+    appointmentId
+  };
+}
+
+async function handleAppointmentDeleted(payload, log) {
+  const { appointmentId } = payload;
+
+  // Este worker apenas confirma o recebimento do delete.
+  // Futuramente pode arquivar registros médicos relacionados ao appointment.
+  log.info('appointment_deleted_ack', 'Appointment deletado', {
+    appointmentId
   });
 
   return {

@@ -193,8 +193,9 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             patient: patientObjectId,
             date: dayRange,
             status: { $nin: ['canceled'] },
+            ...(appointmentId ? { appointmentId: { $ne: toObjectId(appointmentId) } } : {}),
           })
-            .select("time doctor")
+            .select("time doctor appointmentId")
             .populate("doctor", "fullName")
             .lean()
         ]
@@ -231,7 +232,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         error: "Conflito de agenda médica",
         message: "O médico já possui um compromisso neste horário",
         conflict: {
-          appointmentId: metadata._id,
+          appointmentId: metadata.appointmentId || metadata._id,
           patientName: metadata.patient?.fullName || "Nome não disponível",
           existingAppointment: metadata,
         },
@@ -356,7 +357,7 @@ async function fetchOccupancyData(doctorId, date) {
       date: dayRange,
       status: { $nin: ['canceled'] },
     })
-      .select('date time duration startDateTime endDateTime patient _id')
+      .select('date time duration startDateTime endDateTime patient appointmentId _id')
       .populate('patient', 'fullName')
       .lean(),
 

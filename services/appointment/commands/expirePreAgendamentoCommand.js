@@ -19,7 +19,8 @@ import mongoose from 'mongoose';
 import Appointment from '../../../models/Appointment.js';
 import Session from '../../../models/Session.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
-import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
+import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { buildError, assertAppointmentTransition } from './_helpers.js';
 import { recordAudit } from '../../auditLogService.js';
 
@@ -120,6 +121,23 @@ export async function execute(id, options = {}) {
       );
     }
 
+    // ✅ Evento de domínio salvo no Outbox DENTRO da transação
+    await saveToOutbox({
+      eventType: EventTypes.APPOINTMENT_UPDATED,
+      aggregateType: 'appointment',
+      aggregateId: updated._id.toString(),
+      payload: {
+        appointmentId: updated._id.toString(),
+        patientId: updated.patient?.toString?.() || updated.patient,
+        doctorId: updated.doctor?.toString?.() || updated.doctor,
+        previousStatus: beforeSnapshot.operationalStatus,
+        newStatus: 'missed',
+        reason: 'auto_expired',
+        correlationId,
+      },
+      correlationId,
+    }, session);
+
     return updated;
   });
 
@@ -130,16 +148,6 @@ export async function execute(id, options = {}) {
       message: 'Pré-agendamento já foi processado por outra instância.',
     };
   }
-
-  await publishEvent(EventTypes.APPOINTMENT_STATUS_CHANGED, {
-    appointmentId: result._id,
-    patientId: result.patient,
-    doctorId: result.doctor,
-    previousStatus: beforeSnapshot.operationalStatus,
-    newStatus: 'missed',
-    reason: 'auto_expired',
-    correlationId,
-  });
 
   await recordAudit({
     user,

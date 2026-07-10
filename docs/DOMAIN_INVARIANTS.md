@@ -110,6 +110,7 @@ Se alterar Patient, verificar:
 22. `Session.sessionValue` deve espelhar `InsuranceGuide.sessionValue` para fins de produção clínica
 23. `Payment.amount` representa o valor efetivamente faturado/recebido e pode divergir da guia por glosa, pagamento parcial ou ajuste financeiro
 24. Todo endpoint que agrupa/consulta convênio deve usar `InsuranceResolverService` para resolver `provider` e `patient` com a mesma hierarquia
+25. `Payment.status = 'paid'` **NÃO implica** `Appointment.operationalStatus = 'completed'`. Os dois são máquinas de estado independentes — um pagamento pode existir antes, durante ou completamente desacoplado da realização do atendimento (pagamento antecipado, paciente que paga e falta). Somente `completeSessionService.v2` pode transicionar um Appointment/Session para `completed`. Confirmar presença (`confirmed`) nunca conclui atendimento (Investigação 2026-07-09, caso Benjamin/Ercy — ver `back/docs/2026-07-09-appointment-confirmed-socket-and-package-updated-audit.md`)
 
 ### Amanda (WhatsApp)
 21. Nunca disparar mensagem sem `detectAllFlags()` primeiro

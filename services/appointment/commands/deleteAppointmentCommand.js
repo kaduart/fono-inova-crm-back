@@ -19,6 +19,8 @@ import { updatePatientAppointments } from '../../../utils/appointmentUpdater.js'
 import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError } from './_helpers.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
+import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
+import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { recordAudit } from '../../auditLogService.js';
 
 export async function execute(id, user) {
@@ -65,6 +67,21 @@ export async function execute(id, user) {
 
     // 4. Deleta o appointment
     await Appointment.findByIdAndDelete(appointment._id, { session: mongoSession });
+
+    // 5. Registra evento de domínio no Outbox
+    await saveToOutbox({
+      eventType: EventTypes.APPOINTMENT_DELETED,
+      aggregateType: 'appointment',
+      aggregateId: appointment._id.toString(),
+      payload: {
+        appointmentId: appointment._id.toString(),
+        patientId: patient?._id?.toString() || patient?.toString() || null,
+        doctorId: appointment.doctor?._id?.toString() || appointment.doctor?.toString() || null,
+        sessionId: session?._id?.toString() || null,
+        paymentId: payment?._id?.toString() || null,
+      },
+      correlationId: `appt_del_${appointment._id}_${Date.now()}`
+    }, mongoSession);
   });
 
   // Side effects pós-transação

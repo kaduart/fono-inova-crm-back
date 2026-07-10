@@ -20,10 +20,10 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
-import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
+import updatePackageCommand from '../services/billing/commands/updatePackageCommand.js';
+import deletePackageCommand from '../services/billing/commands/deletePackageCommand.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
-import PatientBalance from '../models/PatientBalance.js';
 import healthRoutes from './package.v2.health.js';
 import { rebuildPackageFromSource, auditPackage } from '../domain/package/rebuildPackageFromSource.js';
 
@@ -330,17 +330,17 @@ router.get('/:id/debug', flexibleAuth, async (req, res) => {
 
 // ============================================
 // PUT /api/v2/packages/:id
-// Atualiza pacote (event-driven)
+// Atualiza pacote via Command + Outbox
 // ============================================
 
 router.put('/:id', flexibleAuth, async (req, res) => {
   const startTime = Date.now();
   const correlationId = `pkg_update_${Date.now()}`;
   const { id } = req.params;
-  
+
   try {
     const updateData = req.body;
-    
+
     // Validação: pacote existe (aceita tanto packageId real quanto _id da view)
     const existing = await PackagesView.findOne({ $or: [{ packageId: id }, { _id: id }] });
     if (!existing) {
@@ -349,28 +349,35 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     const realPackageId = existing.packageId?.toString() || id;
 
     logger.info('[PackageV2] Updating package', { correlationId, packageId: realPackageId });
-    
-    // Publica evento para processamento assíncrono
-    await publishEvent('PACKAGE_UPDATE_REQUESTED', {
-      packageId: realPackageId,
-      updates: updateData,
-      updatedBy: req.user?._id
-    }, { correlationId });
+
+    const result = await updatePackageCommand.execute(
+      realPackageId,
+      updateData,
+      req.user,
+      correlationId
+    );
 
     const duration = Date.now() - startTime;
 
-    res.status(202).json(formatSuccess({
-      message: 'Atualização em processamento',
+    res.status(200).json(formatSuccess({
+      message: result.message,
       packageId: realPackageId,
-      correlationId,
-      status: 'processing'
+      data: result.data,
+      eventEmitted: result.eventEmitted,
+      correlationId: result.correlationId,
     }, {
       duration: `${duration}ms`
     }));
-    
+
   } catch (error) {
     logger.error('[PackageV2] Error updating package', { correlationId, error: error.message });
-    res.status(500).json(formatError('Erro ao atualizar pacote', 500, { correlationId }));
+
+    const status = error.status || 500;
+    res.status(status).json(formatError(
+      error.message || 'Erro ao atualizar pacote',
+      status,
+      { correlationId, code: error.code || 'INTERNAL_SERVER_ERROR' }
+    ));
   }
 });
 

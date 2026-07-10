@@ -67,6 +67,7 @@ export const EventTypes = {
     APPOINTMENT_UPDATED: 'APPOINTMENT_UPDATED',
     APPOINTMENT_CANCELLED: 'APPOINTMENT_CANCELLED',
     APPOINTMENT_COMPLETED: 'APPOINTMENT_COMPLETED',
+    APPOINTMENT_DELETED: 'APPOINTMENT_DELETED',
     APPOINTMENT_REJECTED: 'APPOINTMENT_REJECTED',
     APPOINTMENT_RESCHEDULED: 'APPOINTMENT_RESCHEDULED',
     
@@ -91,6 +92,7 @@ export const EventTypes = {
     PACKAGE_CREATED: 'PACKAGE_CREATED',
     PACKAGE_UPDATED: 'PACKAGE_UPDATED',
     PACKAGE_CANCELLED: 'PACKAGE_CANCELLED',
+    PACKAGE_DELETED: 'PACKAGE_DELETED',
     PACKAGE_CREDIT_CONSUMED: 'PACKAGE_CREDIT_CONSUMED',
     
     INSURANCE_GUIDE_CREATED: 'INSURANCE_GUIDE_CREATED',
@@ -223,6 +225,7 @@ export const eventToQueueMap = {
     [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection', 'appointment-integration'],
     [EventTypes.APPOINTMENT_CANCELLED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator', 'package-projection'],
     [EventTypes.APPOINTMENT_COMPLETED]: ['complete-orchestrator', 'sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
+    [EventTypes.APPOINTMENT_DELETED]: ['sync-medical', 'patient-projection', 'package-projection'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
     [EventTypes.APPOINTMENT_RESCHEDULED]: ['notification', 'patient-projection'],
     
@@ -260,6 +263,7 @@ export const eventToQueueMap = {
     [EventTypes.PACKAGE_CREATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_UPDATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_CANCELLED]: ['package-projection', 'package-validation', 'patient-projection'],
+    [EventTypes.PACKAGE_DELETED]: ['package-projection', 'patient-projection'],
     [EventTypes.PACKAGE_CREDIT_CONSUMED]: 'package-validation',
     'PACKAGE_CREDIT_RESTORED': ['package-projection', 'package-validation', 'patient-projection'],
     
@@ -345,6 +349,29 @@ export const eventToQueueMap = {
     [EventTypes.COMMISSION_GENERATION_REQUESTED]: 'commission-generation',
     [EventTypes.COMMISSION_GENERATION_COMPLETED]: [],
 };
+
+// =============================================================================
+// NOTAS TÉCNICAS — Higienização do catálogo (Fase 4)
+// =============================================================================
+//
+// Eventos fantasmas (referenciados no código, mas não neste catálogo):
+// - APPOINTMENT_STATUS_CHANGED → usado por expirePreAgendamentoCommand.js
+//   Deve ser substituído por APPOINTMENT_UPDATED ou PREAGENDAMENTO_EXPIRED.
+// - APPOINTMENT_UPDATE_REQUESTED, PATIENT_UPDATE_REQUESTED, INVOICE_UPDATE_REQUESTED,
+//   PAYMENT_UPDATE_REQUESTED, LEAD_UPDATED, INVOICE_PAID → usados por
+//   updateOrchestratorWorker.js / updateHelper.js. Devem ser catalogados ou removidos.
+//
+// Eventos salvos no Outbox mas sem fila mapeada (causam UNKNOWN_EVENT_TYPE):
+// - INSURANCE_BATCH_PROCESSING, INSURANCE_BATCH_COMPLETED,
+//   INSURANCE_BATCH_PARTIAL_SUCCESS, INSURANCE_ITEM_RETRYING
+//   → produzidos por insuranceOrchestratorWorker.js.
+//   Decisão pendente: mapear filas ou mover para publicação direta legada.
+//
+// APPOINTMENT_COMPLETED:
+// - Existe no catálogo e tem consumers, mas NÃO TEM producer em produção.
+// - NÃO criar novo producer. Os consumers devem migrar para SESSION_COMPLETED,
+//   que é o evento de domínio correto para sessão concluída.
+// =============================================================================
 
 /**
  * Publica um evento para a fila apropriada

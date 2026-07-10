@@ -515,7 +515,10 @@ router.get('/', flexibleAuth, async (req, res) => {
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' })
             .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
-            .populate({ path: 'payment', select: 'status amount paymentMethod splitMethods' })
+            // createdAt exposto para uso futuro (paymentTiming) — NÃO usar como proxy
+            // de "pago antes/depois de completar" comparando com appointment.updatedAt;
+            // esse campo não representa o momento da conclusão. Ver auditoria 2026-07-09.
+            .populate({ path: 'payment', select: 'status amount paymentMethod splitMethods createdAt' })
             .sort({ date: -1, time: 1 })
             .lean();
         console.log(`[GET /appointments] MongoDB retornou ${appointments.length} documentos`);

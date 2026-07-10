@@ -236,6 +236,21 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
     metadata: { reason, confirmedAbsence },
   });
 
+  try {
+    await emitSocket('appointmentCanceled', {
+      _id: result._id,
+      appointmentId: result._id,
+      patient: result.patient,
+      doctor: result.doctor,
+      date: result.date,
+      time: result.time,
+      operationalStatus: result.operationalStatus,
+      source: 'crm_cancel',
+    });
+  } catch (socketErr) {
+    console.error('[cancelAppointmentCommand] Erro ao emitir socket:', socketErr.message);
+  }
+
   return {
     data: result,
     message: 'Agendamento cancelado. Dados preservados para reagendamento.',

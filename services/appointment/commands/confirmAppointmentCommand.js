@@ -59,6 +59,21 @@ export async function execute(id, user) {
       metadata: { from: oldStatus, to: 'confirmed' },
     });
 
+    try {
+      await emitSocket('appointmentUpdated', {
+        _id: updatedAppointment._id,
+        patient: updatedAppointment.patient,
+        doctor: updatedAppointment.doctor,
+        date: updatedAppointment.date,
+        time: updatedAppointment.time,
+        specialty: updatedAppointment.specialty,
+        operationalStatus: updatedAppointment.operationalStatus,
+        source: 'crm_confirm',
+      });
+    } catch (socketErr) {
+      console.error('[confirmAppointmentCommand] Erro ao emitir socket:', socketErr.message);
+    }
+
     return {
       data: await resolveAndMapAppointmentDTO(updatedAppointment),
       message: 'Agendamento confirmado com sucesso',

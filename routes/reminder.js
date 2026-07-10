@@ -22,6 +22,22 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/reminders/:id
+ * Busca um lembrete específico
+ */
+router.get('/:id', async (req, res) => {
+    try {
+        const reminder = await Reminder.findById(req.params.id);
+        if (!reminder) {
+            return res.status(404).json({ error: 'Lembrete não encontrado' });
+        }
+        res.json(reminder);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+/**
  * POST /api/reminders
  * Cria um novo lembrete
  */

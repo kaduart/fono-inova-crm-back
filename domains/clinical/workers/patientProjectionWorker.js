@@ -131,6 +131,7 @@ async function processEvent(eventType, payload, correlationId) {
     case 'APPOINTMENT_UPDATED':
     case 'APPOINTMENT_COMPLETED':
     case 'APPOINTMENT_CANCELLED':
+    case 'APPOINTMENT_DELETED':
     case 'APPOINTMENT_RESCHEDULED':
     case 'APPOINTMENT_NO_SHOW':
       // 📅 Qualquer mudança em agendamento = rebuild

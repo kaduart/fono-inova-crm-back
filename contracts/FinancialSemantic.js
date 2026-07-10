@@ -27,9 +27,9 @@ export const SEMANTIC = Object.freeze({
     query: { status: { $in: ['pending', 'billed'] } },
     source: 'Payment',
   },
-  RECEITA_PROJETADA: {
-    field: 'visaoSemantica.projecao.total',
-    definition: 'Caixa realizado + Pipeline (a receber). NUNCA usa como meta.',
+  CAIXA_PROJETADO: {
+    field: 'metas.camadas.caixaProjetado',
+    definition: 'Caixa realizado + Pipeline (a receber). Informativo/liquidez apenas. NUNCA usa como meta.',
     formula: 'CASH + PIPELINE',
   },
 
