@@ -17,6 +17,11 @@ const reminderSchema = new mongoose.Schema({
     appointmentId: { type: String, default: null }, // Referência externa ou interna
     patient: { type: String, default: "" },
     professional: { type: String, default: "" },
+    patientPhone: { type: String, default: "" },
+    professionalPhone: { type: String, default: "" },
+    date: { type: String, default: "" },
+    time: { type: String, default: "" },
+    specialty: { type: String, default: "" },
     status: {
         type: String,
         enum: ['pending', 'done', 'canceled'],

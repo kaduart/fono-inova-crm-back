@@ -304,10 +304,43 @@ convenioAReceber = produção.convenio - caixa.convenio
 
 ---
 
+## ADR-011: Projeção financeira de caixa baseada em heurística de lote retroativo (transição)
+
+**Status:** Accepted (Temporary) — deve ser substituída quando existir classificação explícita de natureza do recebimento.
+
+**Data:** 2026-07-10  
+**Contexto:** A projeção de fechamento do mês (`cashflow.v2.js`, `comparativos.projecaoMes`) usava `média diária × dias do mês`, sensível a outliers — um recebimento retroativo de uma paciente quitando 13 sessões antigas de uma vez (R$1.990) inflou a projeção de um dia de R$27 mil de ritmo real para R$48.650 projetados. Discussão levou a duas iterações rejeitadas antes de fechar nesta:
+
+1. **v1** (excluir qualquer atraso >3 dias + venda de pacote): dados reais mostraram que `package_receipt` é 20-29 vendas/mês nesta clínica — receita recorrente, não extraordinária. Excluí-la era um falso positivo baseado em suposição, não em evidência.
+2. **v2** (final): só remove da base da projeção pagamentos que formam **lote retroativo real** — 2+ sessões distintas do mesmo paciente liquidadas no mesmo dia, com defasagem >7 dias em ao menos uma. Um atraso isolado (boleto D+10, PIX alguns dias depois) não é mais tratado como extraordinário.
+
+**Decisão:** Enquanto `Payment` não tiver um campo explícito de natureza econômica do recebimento, a projeção usa a heurística de lote acima (parâmetros em `PROJECTION_RULES` — `retroactiveGapDays`, `minimumBatchSessions` — em `cashflow.v2.js`). `liminar_contract_receipt` continua sempre excluído da base de projeção (crédito judicial, cadência imprevisível por natureza — sem venda regular para contradizer, 0 registros legítimos nos últimos 6 meses). O **Caixa realizado nunca exclui nada** — a heurística só afeta a base da extrapolação, não o total mostrado.
+
+**Por que é heurística, não regra contábil:** o sistema infere intenção financeira por data e repetição, não pela razão real do pagamento. Casos legítimos e recorrentes podem passar o mesmo padrão de "lote" (ex: paciente que sempre paga várias sessões do mês de uma vez; empresa que paga funcionários todo dia 30) e seriam falsos positivos.
+
+**Consequências:**
+- Pode haver falso positivo em padrões de pagamento em lote que são, na prática, recorrentes.
+- Thresholds são configuráveis (`PROJECTION_RULES`), não regra de negócio fixa — ajustar sem tocar na lógica.
+- **Esta ADR deve ser revisitada/removida** quando `Payment` ganhar uma classificação explícita de natureza (ex.: `nature: RECURRING_OPERATION | RECOVERY | JUDICIAL | ADVANCE | ADJUSTMENT`, ou `projectionBehavior: include | exclude`) preenchida no momento da criação do pagamento — nesse cenário a projeção deixa de inferir por data/quantidade e passa a refletir uma decisão de domínio.
+
+**Evolução alvo:**
+```
+Hoje:      Payment → heurística (data + repetição) → projeção
+Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem inferência)
+```
+
+**Roadmap de aposentadoria** (critério explícito para esta ADR não virar permanente por inércia):
+- **Curto prazo (atual, 2026-07-10):** heurística operacional de lote retroativo (esta ADR). `PROJECTION_RULES` configurável, sem alterar lógica.
+- **Médio prazo:** adicionar `Payment.nature` (`RECURRING_OPERATION | RECOVERY | JUDICIAL | ADVANCE | ADJUSTMENT`) ou `Payment.projectionBehavior` (`include | exclude`) ao modelo de domínio, preenchido no momento da criação do pagamento pelos handlers/services que já sabem a origem (ex.: `liminarContractController.js` sempre grava `JUDICIAL`/`exclude`; quitação em lote registrada manualmente grava `RECOVERY`/`exclude`; sessão/pacote normal grava `RECURRING_OPERATION`/`include`).
+- **Longo prazo:** `cashflow.v2.js` para de inferir por data/quantidade de sessões — a projeção passa a somar só por `projectionBehavior === 'include'`, e esta ADR-011 é encerrada (marcar `Status: Superseded by ADR-0XX`), removendo a heurística de lote do código.
+
+---
+
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
+| 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
 | 2026-06-25 | billingMode per_month/per_guide: paidAt projetado em getInsuranceReceivables |
 | 2026-06-23 | Criação — consolidação de invariantes, ADRs e mapas de impacto para entrada de qualquer IA |

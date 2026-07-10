@@ -241,8 +241,83 @@ router.get('/', auth, async (req, res) => {
         console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tMonthCash}ms`);
         const totalMes = monthCash.total;
         const dayOfMonth = moment.tz(targetDate, 'America/Sao_Paulo').date();
-        const mediaDiariaMes = dayOfMonth > 0 ? totalMes / dayOfMonth : 0;
-        const projecaoMes = mediaDiariaMes * 30;
+
+        // 🎯 Classificação de eventos extraordinários — não devem puxar a PROJEÇÃO,
+        // mas continuam 100% presentes no Caixa realizado (totalMes/totalAcumuladoMes).
+        //
+        // ⚠️ HEURÍSTICA OPERACIONAL, NÃO REGRA CONTÁBIL. Isto é uma inferência por
+        // comportamento (data + repetição), não uma classificação de negócio explícita.
+        // O sistema não sabe *por que* um paciente pagou várias sessões juntas — só que
+        // pagou. Falsos positivos são esperados (ex: paciente que sempre paga mensalmente
+        // várias sessões de uma vez, ou empresa que paga funcionários todo dia 30 — ambos
+        // são recorrentes na prática, mas passam o mesmo padrão de "lote").
+        // Evolução futura: introduzir um campo explícito de natureza do recebimento no
+        // Payment (ex: `projectionBehavior: 'include' | 'exclude'`, ou um enum de natureza
+        // econômica RECURRING_OPERATION/RECOVERY/JUDICIAL/ADVANCE/ADJUSTMENT preenchido no
+        // momento da criação do pagamento) para eliminar a necessidade desta inferência.
+        //
+        // Extraordinário = natureza econômica do recebimento, não "quantos dias atrasou":
+        // - liminar_contract_receipt: crédito judicial, cadência imprevisível por natureza
+        //   (não é venda recorrente — depende de decisão da Justiça).
+        // - venda de pacote (package_receipt) NÃO entra aqui: é operação regular desta
+        //   clínica (20-29 vendas/mês nos últimos meses, receita recorrente de verdade).
+        // - retroativo em LOTE: um pagamento isolado de sessão atrasada (boleto D+10, PIX
+        //   alguns dias depois) é atraso operacional normal, não extraordinário. O critério
+        //   (configurável abaixo) é "N+ sessões distintas do mesmo paciente liquidadas no
+        //   mesmo dia, com defasagem real em pelo menos uma delas", não um corte aplicado a
+        //   qualquer pagamento isolado.
+        const PROJECTION_RULES = {
+            retroactiveGapDays: 7,
+            minimumBatchSessions: 2,
+        };
+        const sessionIds = monthCash.payments
+            .filter(p => p.session && p.kind !== 'liminar_contract_receipt')
+            .map(p => p.session);
+        const sessionDateMap = new Map();
+        if (sessionIds.length > 0) {
+            const sessionDocs = await Session.find({ _id: { $in: sessionIds } }).select('date').lean();
+            for (const s of sessionDocs) sessionDateMap.set(s._id.toString(), s.date);
+        }
+
+        // Agrupa pagamentos de sessão (não-liminar) por paciente + dia de recebimento,
+        // para detectar quitação em lote de sessões antigas.
+        const porPacienteDia = new Map();
+        for (const p of monthCash.payments) {
+            if (p.kind === 'liminar_contract_receipt' || !p.session) continue;
+            const sessionDate = sessionDateMap.get(p.session.toString());
+            const financialDate = p.financialDate || p.paymentDate;
+            if (!sessionDate || !financialDate) continue;
+            const patientKey = (p.patient?._id || p.patient || '').toString();
+            const dayKey = moment(financialDate).format('YYYY-MM-DD');
+            const key = `${patientKey}|${dayKey}`;
+            if (!porPacienteDia.has(key)) porPacienteDia.set(key, []);
+            const gapDays = moment(financialDate).diff(moment(sessionDate), 'days');
+            porPacienteDia.get(key).push({ payment: p, gapDays });
+        }
+        const loteRetroativoPaymentIds = new Set();
+        for (const items of porPacienteDia.values()) {
+            const sessoesDistintas = new Set(items.map(it => it.payment.session.toString()));
+            const temDefasagemReal = items.some(it => it.gapDays > PROJECTION_RULES.retroactiveGapDays);
+            if (sessoesDistintas.size >= PROJECTION_RULES.minimumBatchSessions && temDefasagemReal) {
+                for (const it of items) loteRetroativoPaymentIds.add(it.payment._id.toString());
+            }
+        }
+
+        let extraordinaryTotal = 0;
+        for (const p of monthCash.payments) {
+            const isExtraordinary = p.kind === 'liminar_contract_receipt' || loteRetroativoPaymentIds.has(p._id.toString());
+            if (isExtraordinary) extraordinaryTotal += p.amount || 0;
+        }
+        const recurringTotal = Math.max(0, totalMes - extraordinaryTotal);
+
+        const daysInMonthReal = moment.tz(targetDate, 'America/Sao_Paulo').daysInMonth();
+        const recurringDailyAvg = dayOfMonth > 0 ? recurringTotal / dayOfMonth : 0;
+        const diasRestantesMes = Math.max(daysInMonthReal - dayOfMonth, 0);
+        // Projeção = tudo que já entrou (fato) + extrapolação apenas do ritmo recorrente
+        // para os dias restantes — um evento extraordinário pontual não é tratado como
+        // se fosse se repetir todo dia até o fim do mês.
+        const projecaoMes = totalMes + (recurringDailyAvg * diasRestantesMes);
+        const mediaDiariaMes = recurringDailyAvg;
         console.log(`[cashflow.v2] comparativos = ${Date.now() - _tComparativos}ms`);
 
         // ============================================================
@@ -672,7 +747,10 @@ router.get('/', auth, async (req, res) => {
                     vsMediaMes: parseFloat(vsMediaMes),
                     totalAcumuladoMes: totalMes,
                     projecaoMes: parseFloat(projecaoMes.toFixed(2)),
-                    diasDecorridos: dayOfMonth
+                    diasDecorridos: dayOfMonth,
+                    // Informativo — não removido do caixa, só não usado como base da projeção.
+                    caixaRecorrente: parseFloat(recurringTotal.toFixed(2)),
+                    caixaExtraordinario: parseFloat(extraordinaryTotal.toFixed(2))
                 },
                 estatisticas: {
                     quantidade: countCaixaFiltrado,

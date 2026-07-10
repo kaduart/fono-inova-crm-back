@@ -2,7 +2,17 @@
 # Arquitetura: API + Workers separados por domínio (ledger + event-driven)
 # Última atualização: 2026-04-16
 #
-# Como usar:
+# ⚠️ ARQUITETURA FUTURA — AINDA NÃO IMPLANTADA (confirmado em 2026-07-10).
+# Produção hoje roda apenas 3 serviços (ver /render.yaml na raiz):
+#   fono-inova-crm-back (web) + crm-worker (worker único) + redis-fono-inova
+#   (Redis gerenciado pelo Render).
+# O código já suporta isolamento lógico por domínio (billing/scheduling/
+# clinical/whatsapp/reconciliation rodando dentro do mesmo crm-worker), mas o
+# deploy físico em 5 workers separados descrito abaixo ainda não foi aplicado.
+# Migrar para cá só quando o volume justificar o isolamento (ver decisão
+# 2026-07-10: ganho pequeno hoje, custo/complexidade maior).
+#
+# Como usar (quando for migrar):
 #   1. Configure MONGODB_URI, REDIS_URL e JWT_SECRET no dashboard do Render
 #   2. Conecte este repo via "Blueprints" no Render
 #   3. Cada serviço será provisionado automaticamente
