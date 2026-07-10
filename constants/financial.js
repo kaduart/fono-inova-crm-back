@@ -29,6 +29,12 @@ export const PAYMENT_KIND = Object.freeze({
 //     dois é dupla contagem (bug real encontrado em produção 2026-07-07, ver
 //     back/docs/finance-integrity-audit/).
 // Toda query que soma `Payment.amount WHERE status='paid'` DEVE excluir esses kinds.
+//
+// ⚠️ NÃO tocar nesta constante pra corrigir o caso "particularPaid zerado em pacote
+// prepaid" (2026-07-10) — ela é usada por paymentSync.service.js com uma semântica
+// própria (package_receipt nunca é reconciliado por edição de paymentForms, motivo
+// diferente do "caixa"). O fix desse caso fica local em financialSummary.js, escopado
+// por packageId — ver PARTICULAR_CASH_EXCLUDED_KINDS lá.
 export const CASH_EXCLUDED_KINDS = Object.freeze([
   PAYMENT_KIND.PACKAGE_CONSUMED,
   PAYMENT_KIND.PACKAGE_RECEIPT,

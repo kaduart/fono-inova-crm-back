@@ -16,7 +16,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { CASH_EXCLUDED_KINDS } from '../constants/financial.js';
+import { CASH_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
 
 const router = Router();
 
@@ -211,8 +211,26 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
     }
 
     // 🆕 SSOT: Breakdown por billingType para evitar inflar particular com liminar
+    //
+    // 🚨 FIX LOCAL (2026-07-10): NÃO reusar `match.kind` (CASH_EXCLUDED_KINDS) aqui.
+    // Essa constante exclui `package_receipt` pensando no modelo LIMINAR, onde a venda
+    // (package_receipt) e o reconhecimento de receita por sessão (revenue_recognition)
+    // são dois eventos financeiros independentes — somar os dois duplicaria.
+    // Só que pra pacote PARTICULAR prepaid/per_session, `package_receipt` É o único
+    // registro do dinheiro recebido (ver back/docs/finance-integrity-audit/
+    // classification-rules.md, categoria PREPAID) — excluí-lo zera o "Pago" de todo
+    // pacote particular pré-pago. Como esta query já filtra billingType:'particular'
+    // (nunca 'liminar'), é seguro reincluir package_receipt aqui, sem tocar na constante
+    // global nem afetar paymentSync.service.js ou os demais totais deste endpoint.
     const particularPaidAgg = await Payment.aggregate([
-        { $match: { ...match, status: 'paid', billingType: 'particular' } },
+        {
+            $match: {
+                ...match,
+                kind: { $nin: [PAYMENT_KIND.PACKAGE_CONSUMED, PAYMENT_KIND.MONTHLY_SETTLEMENT, PAYMENT_KIND.DEBT_SETTLEMENT] },
+                status: 'paid',
+                billingType: 'particular'
+            }
+        },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]);
 
