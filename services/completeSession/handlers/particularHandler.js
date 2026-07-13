@@ -109,6 +109,11 @@ export const ParticularHandler = {
         if (!sessionValue || sessionValue <= 0) return null;
 
         const now = new Date();
+        // Competência clínica (ver back/docs/DOMAIN_INVARIANTS.md) — mesmo padrão de
+        // fallback já usado em completeSessionService.v2.js (LEGACY PACKAGE FALLBACK)
+        // e em convenioHandler.js. appointment.date é required no schema (sempre presente);
+        // sessionDoc?.date tem prioridade quando existe por já refletir eventual ajuste na Session.
+        const serviceDate = sessionDoc?.date || appointment.date || now;
 
         // Sub-caso 1: pacote pre-pago quitado
         // ⚠️ Só aplica a pacotes prepaid (model='prepaid' ou paymentType='full')
@@ -166,6 +171,7 @@ export const ParticularHandler = {
                 paymentMethod: appointment.paymentMethod || 'cash',
                 paymentDate:   now,
                 financialDate: null,
+                serviceDate,
                 description:   `Sessao particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
                 appointment:   appointmentId,
                 session:       sessionId,
@@ -202,6 +208,7 @@ export const ParticularHandler = {
                                 amount:        sessionValue,
                                 kind:          'session_payment',
                                 billingType:   'particular',
+                                serviceDate,
                                 updatedAt:     now,
                                 ...(isPrepaidFallback ? { isFromPackage: true } : {})
                                 // ⛔ NÃO adicionar financialDate, paidAt, paymentDate aqui ⛔
@@ -224,6 +231,7 @@ export const ParticularHandler = {
                                 status:        'paid',
                                 paidAt:        now,
                                 financialDate: now,
+                                serviceDate,
                                 amount:        sessionValue,
                                 paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
                                 kind:          'session_payment',
@@ -285,6 +293,7 @@ export const ParticularHandler = {
                                 amount:      sessionValue,
                                 kind:        'session_payment',
                                 billingType: 'particular',
+                                serviceDate,
                                 updatedAt:   now,
                                 // Adota orphan: linka ao appointment e session se ainda não linkado
                                 ...(!preRegistered.appointment && appointmentId ? { appointment: appointmentId } : {}),
@@ -314,6 +323,7 @@ export const ParticularHandler = {
                         paymentDate:   now,
                         paidAt:        now,
                         financialDate: now,
+                        serviceDate,
                         description:   `Sessao per-session realizada - ${appointment.patient?.fullName || 'Paciente'}`,
                         appointment:   appointmentId,
                         session:       sessionId,
@@ -376,6 +386,7 @@ export const ParticularHandler = {
                         paidAt:        now,
                         paymentDate:   preservePaymentDate,
                         financialDate: preserveFinancialDate,
+                        serviceDate,
                         amount:        sessionValue,
                         paymentMethod: preservePaymentMethod,
                         kind:          'session_payment',
@@ -424,6 +435,7 @@ export const ParticularHandler = {
                             ...(sessionId ? { session: sessionId } : {}),
                             kind:          'session_payment',
                             billingType:   'particular',
+                            serviceDate,
                             updatedAt:     now,
                             ...(isPrepaidFallback ? { isFromPackage: true } : {})
                         }
@@ -444,6 +456,7 @@ export const ParticularHandler = {
                     paymentDate:   now,
                     paidAt:        now,
                     financialDate: now,
+                    serviceDate,
                     description:   `Sessao realizada - ${appointment.patient?.fullName || 'Paciente'}`,
                     appointment:   appointmentId,
                     session:       sessionId,

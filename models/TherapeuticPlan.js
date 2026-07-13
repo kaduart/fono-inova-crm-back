@@ -22,7 +22,8 @@ const therapyScheduleSchema = new mongoose.Schema({
   doctor:                { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', default: null },
   slots:                 { type: [slotSchema], default: [] },
   sessionValue:          { type: Number, required: true, min: 0.01 },
-  sessionDurationMinutes:{ type: Number, default: 40 }
+  sessionDurationMinutes:{ type: Number, default: 40 },
+  notes:                 { type: String, default: null }
 }, { _id: false });
 
 const therapeuticPlanSchema = new mongoose.Schema({

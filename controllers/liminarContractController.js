@@ -5,6 +5,7 @@ import TherapeuticPlan from '../models/TherapeuticPlan.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import { generateLiminarSessions } from '../services/schedule/generateLiminarSessions.js';
+import { computeExhaustionProjection } from '../services/liminar/liminarProjectionService.js';
 import { createContextLogger } from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 
@@ -401,12 +402,14 @@ export async function getCommittedBalance(req, res) {
 
   const committed = agg[0]?.committed || 0;
   const available = contract.creditBalance - committed;
+  const projection = await computeExhaustionProjection(contract);
 
   return res.json({
     creditBalance: contract.creditBalance,
     usedCredit:    contract.usedCredit,
     committed,
-    available
+    available,
+    projection
   });
 }
 
@@ -424,7 +427,7 @@ const SLOT_BLOCKING_STATUSES = [
 
 export async function updateTherapy(req, res) {
   const { id: contractId, planId, specialty } = req.params;
-  const { doctorId, sessionValue, sessionDurationMinutes, slots } = req.body;
+  const { doctorId, sessionValue, sessionDurationMinutes, slots, notes } = req.body;
 
   const session = await mongoose.startSession();
 
@@ -536,6 +539,7 @@ export async function updateTherapy(req, res) {
     if (sessionValue !== undefined) therapy.sessionValue = sessionValue;
     if (sessionDurationMinutes !== undefined) therapy.sessionDurationMinutes = sessionDurationMinutes;
     if (slots !== undefined) therapy.slots = slots;
+    if (notes !== undefined) therapy.notes = notes || null;
 
     await plan.save({ session });
 
