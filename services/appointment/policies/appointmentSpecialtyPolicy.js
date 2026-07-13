@@ -42,14 +42,19 @@ function buildError(message, status = 400, code = 'DOCTOR_SPECIALTY_MISMATCH') {
 export async function validateDoctorSpecialty({ doctorId, specialty }, mongoSession = null) {
   if (!doctorId || !specialty) return;
 
-  const query = Doctor.findById(doctorId).select('specialty fullName');
+  const query = Doctor.findById(doctorId).select('specialty specialties fullName');
   if (mongoSession) query.session(mongoSession);
   const doctor = await query.lean();
 
   // Médico não encontrado é responsabilidade de outro guard (ex: doctor obrigatório).
   if (!doctor || !doctor.specialty) return;
 
-  if (doctor.specialty !== specialty) {
+  // Além da especialidade principal, o médico pode atender subespecialidades
+  // cadastradas em Doctor.specialties (mesmo campo usado pelo filtro de
+  // agendamento da Amanda — ver amandaBookingService.js).
+  const allowedSpecialties = [doctor.specialty, ...(doctor.specialties || [])];
+
+  if (!allowedSpecialties.includes(specialty)) {
     throw buildError(
       `Especialidade do agendamento ('${specialty}') não corresponde à especialidade do ` +
         `profissional ${doctor.fullName ? `'${doctor.fullName}' ` : ''}('${doctor.specialty}').`,
