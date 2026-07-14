@@ -177,7 +177,7 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     const [doctors, total] = await Promise.all([
       Doctor.find(query)
-        .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability createdAt updatedAt deactivatedAt')
+        .select('_id fullName email specialty specialties licenseNumber phoneNumber active role status maxSlots weeklyAvailability createdAt updatedAt deactivatedAt')
         .sort({ fullName: 1 })
         .skip(parseInt(skip))
         .limit(parseInt(limit))
@@ -210,7 +210,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 router.get('/active', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: true })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
+      .select('_id fullName email specialty specialties licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
 
@@ -227,7 +227,7 @@ router.get('/active', flexibleAuth, async (req, res) => {
 router.get('/inactive', flexibleAuth, async (req, res) => {
   try {
     const doctors = await Doctor.find({ active: false })
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
+      .select('_id fullName email specialty specialties licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
 
@@ -479,7 +479,7 @@ router.get('/stats', flexibleAuth, async (req, res) => {
     if (status === 'inactive') query.active = false;
 
     const doctors = await Doctor.find(query)
-      .select('_id fullName email specialty licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
+      .select('_id fullName email specialty specialties licenseNumber phoneNumber active role status maxSlots weeklyAvailability deactivatedAt')
       .sort({ fullName: 1 })
       .lean();
 

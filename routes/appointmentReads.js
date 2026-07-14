@@ -509,12 +509,13 @@ router.get('/', flexibleAuth, async (req, res) => {
         const appointments = await Appointment.find(filter)
             .skip(skip)
             .limit(limit)
-            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason cancelReason canceledAt canceledBy urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' })
             .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
+            .populate({ path: 'canceledBy', select: 'fullName' })
             // createdAt exposto para uso futuro (paymentTiming) — NÃO usar como proxy
             // de "pago antes/depois de completar" comparando com appointment.updatedAt;
             // esse campo não representa o momento da conclusão. Ver auditoria 2026-07-09.
