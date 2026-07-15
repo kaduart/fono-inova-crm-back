@@ -36,7 +36,6 @@ router.get('/', async (req, res) => {
   const queueNames = [
     'appointment-processing',
     'payment-processing',
-    'cancel-orchestrator',
     'complete-orchestrator',
     'outbox-processor',
     'patient-projection',

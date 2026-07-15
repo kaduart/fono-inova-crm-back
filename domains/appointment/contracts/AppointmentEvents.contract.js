@@ -100,17 +100,6 @@ export function registerAppointmentEventContracts() {
         description: 'Solicitação de completar agendamento'
     });
 
-    defineEventContract('APPOINTMENT_CANCEL_REQUESTED', {
-        version: 1,
-        required: ['appointmentId'],
-        optional: ['reason', 'correlationId', 'userId'],
-        validators: {
-            appointmentId: V.isMongoId(),
-            userId: V.isOptionalMongoId(),
-        },
-        description: 'Solicitação de cancelamento de agendamento'
-    });
-
     defineEventContract('APPOINTMENT_CANCELLED', {
         version: 1,
         required: ['appointmentId'],

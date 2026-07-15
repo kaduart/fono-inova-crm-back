@@ -953,7 +953,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             operationalStatus: 'canceled',
                             clinicalStatus: 'canceled',
                             status: 'canceled',
-                            cancellationReason: 'Pacote finalizado - sessões esgotadas',
+                            cancelReason: 'Pacote finalizado - sessões esgotadas',
                             updatedAt: new Date()
                         }
                     }

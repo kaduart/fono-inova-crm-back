@@ -115,7 +115,7 @@ function determineBillingType(appointment) {
 1. **services/financialGuard/index.js** - Core do Financial Guard
 2. **services/financialGuard/guards/package.guard.js** - Regras de pacote
 3. **services/financialGuard/guards/particular.guard.js** - Regras de particular
-4. **workers/cancelOrchestratorWorker.v2.js** - Integração no cancelamento
+4. **services/appointment/commands/cancelAppointmentCommand.js** - Integração no cancelamento (`workers/cancelOrchestratorWorker.v2.js` foi removido em 2026-07-15 — código morto, nunca recebia jobs)
 5. **services/completeSessionEventService.v2.js** - Integração no complete
 
 ---

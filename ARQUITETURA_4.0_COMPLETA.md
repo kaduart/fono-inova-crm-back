@@ -23,7 +23,6 @@ back/
 │   └── index.js                     # Exportações
 │
 ├── workers/                         # 🎼 ORQUESTRADORES
-│   ├── cancelOrchestratorWorker.js  # Coordena cancelamento
 │   ├── completeOrchestratorWorker.js # Coordena complete
 │   ├── createAppointmentWorker.js   # Cria sessão (com reaproveitamento)
 │   ├── paymentWorker.js             # Processa pagamentos
@@ -124,12 +123,15 @@ back/
 
 ### 1. CANCELAMENTO
 
+> ⚠️ Diagrama desatualizado: o `cancelOrchestratorWorker` (assíncrono, via evento)
+> foi removido em 2026-07-15 por ser código morto — a fila que ele consumia nunca
+> recebia jobs. O cancelamento hoje é síncrono em `cancelAppointmentCommand.js`.
+> Ver `docs/architecture/CANONICAL_FILES.md`.
+
 ```
 PATCH /appointments/:id/cancel
     ↓
-Publica: APPOINTMENT_CANCELED
-    ↓
-cancelOrchestratorWorker
+cancelAppointmentCommand.execute() (síncrono, dentro de transação)
     ↓
 cancelSession()         → Preserva original*, cancela
 cancelPayment()         → Cancela se não for pacote

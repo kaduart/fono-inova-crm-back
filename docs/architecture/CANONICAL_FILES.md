@@ -1,7 +1,7 @@
 # Arquivos Canônicos do Fluxo de Agendamentos
 
-> **Versão:** 1.1  
-> **Data:** 2026-07-08  
+> **Versão:** 1.2  
+> **Data:** 2026-07-15  
 > **Status:** Oficial
 
 Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendamentos. Qualquer arquivo relacionado a agendamento que não esteja nesta lista deve ser tratado como legado, transição ou experimental.
@@ -71,8 +71,37 @@ Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendame
 ### Rota de entrada
 - `back/routes/appointment.v2.js` — rota `PATCH /api/v2/appointments/:id/cancel`
 
-### Worker
-- `back/workers/cancelOrchestratorWorker.v2.js`
+### Command
+- `back/services/appointment/commands/cancelAppointmentCommand.js` (síncrono, dentro de transação)
+
+---
+
+## PRÉ-AGENDAMENTO (TRIAGEM COMERCIAL)
+
+> Histórico: até 2026-05, `PreAppointment` e `Appointment` eram entidades separadas. Hoje só existe `Appointment` — `operationalStatus: 'pre_agendado'` é apenas um estado do ciclo de vida. `preAgendamento.engine.js` é uma **fachada especializada** de triagem sobre `Appointment`, não um domínio à parte. Auditoria completa + migração feita em 2026-07-15.
+
+### Rota de entrada
+- `back/routes/preAgendamento.engine.js`, montada em `/api/v2/pre-appointments`
+
+### Endpoints ativos (consumidor confirmado em `crm/front`)
+- `GET /` — listagem com filtros de triagem (urgência, telefone, especialidade) — query especializada, direto no router, sem command
+- `POST /:id/confirm` — delega a `back/services/appointment/commands/confirmPreAgendamentoCommand.js`
+- `POST /:id/discard` — delega a `cancelAppointmentCommand` via `appointmentV2Service.cancelAppointment`
+- `GET /stats/dashboard` — agregação exclusiva de triagem, direto no router
+- `POST /:id/contact` — grava `contactAttempts`/`attemptCount`, direto no router
+- `POST /:id/assign` — grava `assignedTo`, direto no router
+
+### Command de confirmação (canônico desde 2026-07-15)
+- `back/services/appointment/commands/confirmPreAgendamentoCommand.js` — transição **in-place** `pre_agendado → scheduled` (mesmo `_id`), cria `Session`/`Payment` só se ainda não existirem (reaproveita `appointmentSessionSyncService.createSessionFromAppointment`). Substituiu o padrão antigo de criar um `Appointment` novo + cancelar o original, que já causou duplicação real de registros em produção (histórico documentado em `/projetos/agenda/BACKEND_CLEANUP_REQUIRED.md` e commit `5d50ff9` desse repo).
+
+### Removidos em 2026-07-15 (código morto confirmado, sem consumidor em `crm/front`/`agenda`/`crm-v2-migracao`)
+- `GET /:id`, `POST /` (criar), `PATCH /:id`, `POST /:id/cancel` — todos tinham equivalente 100% coberto pelas rotas genéricas de `appointment.v2.js`
+
+### Pendente de decisão — aguardando período de observação (ver memória de projeto)
+- `back/workers/preAgendamentoWorker.js` — hoje dormente: reage a `PREAGENDAMENTO_CREATED`/`PREAGENDAMENTO_IMPORTED`, mas nenhum dos dois é publicado de forma que chegue à fila (`PREAGENDAMENTO_IMPORTED` nem está mapeado em `eventToQueueMap`, lança `UNKNOWN_EVENT_TYPE` engolido por `.catch()`). Não remover ainda — decisão do usuário foi observar antes.
+- Eliminação completa do router `preAgendamento.engine.js` (incorporando `discard`/`contact`/`assign`/`dashboard`/`GET /` a `appointment.v2.js`) e limpeza de `PREAGENDAMENTO_*` em `EventTypes`/`eventToQueueMap`.
+
+> ⚠️ `back/services/appointmentHybridService.js` **continua canônico** (usado por `createAppointmentCommand.js`, seção CREATE acima) — não faz parte desta limpeza. Só sua reutilização dentro do `confirm` de pré-agendamento foi removida.
 
 ---
 
@@ -118,7 +147,6 @@ Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendame
 
 | Worker | Responsabilidade |
 |--------|------------------|
-| `back/workers/cancelOrchestratorWorker.v2.js` | Consome `APPOINTMENT_CANCELLED` |
 | `back/workers/completeOrchestratorWorker.js` | Consome `APPOINTMENT_COMPLETED` |
 | `back/domains/clinical/workers/patientProjectionWorker.js` | Consome eventos de paciente e rebuilda `PatientsView` |
 | `back/domains/billing/workers/packageProjectionWorker.js` | Consome eventos de pacote e rebuilda `PackagesView` |
@@ -149,9 +177,9 @@ Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendame
 
 > Estes arquivos **não** devem receber novas features. Novos desenvolvedores não devem perdê-los analisando-os.
 
-- `back/services/appointmentProxyService.js` — referências quebradas, não canônico
-- `back/services/appointmentStateOrchestrator.js` — duplica sync do update command
-- `back/domains/clinical/services/appointmentService.js` — API paralela não plugada
+- `back/services/appointmentProxyService.js` — referências quebradas, não canônico. **Removido**.
+- `back/services/appointmentStateOrchestrator.js` — duplica sync do update command, mas ainda é chamado por ele (`updateAppointmentCommand.js`). Não remover sem resolver a duplicação primeiro.
+- `back/domains/clinical/services/appointmentService.js` — API paralela não plugada. `cancelAppointment()` **removido**; `createAppointment()` mantido (usado em teste e2e).
 - `back/services/billing/individualBilling.js` — placeholder **removido**
 - `back/services/billing/packageBilling.js` — placeholder **removido**
 - `back/services/billing/advanceBilling.js` — placeholder **removido**

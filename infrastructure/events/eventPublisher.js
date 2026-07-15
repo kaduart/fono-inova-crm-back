@@ -54,7 +54,6 @@ export const queues = new Proxy({}, {
 export const EventTypes = {
     // 🎯 Intenções (REQUESTED) → entrada da API
     APPOINTMENT_CREATE_REQUESTED: 'APPOINTMENT_CREATE_REQUESTED',
-    APPOINTMENT_CANCEL_REQUESTED: 'APPOINTMENT_CANCEL_REQUESTED',
     APPOINTMENT_COMPLETE_REQUESTED: 'APPOINTMENT_COMPLETE_REQUESTED',
     PAYMENT_REQUESTED: 'PAYMENT_REQUESTED',
     PAYMENT_PROCESS_REQUESTED: 'PAYMENT_PROCESS_REQUESTED',
@@ -208,7 +207,6 @@ export const eventToQueueMap = {
     [EventTypes.EVOLUTION_CREATED]: 'evolution-processing',
     [EventTypes.EVOLUTION_UPDATED]: 'evolution-processing',
     [EventTypes.EVOLUTION_DELETED]: 'evolution-processing',
-    [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
     [EventTypes.APPOINTMENT_COMPLETE_REQUESTED]: 'complete-orchestrator',
     [EventTypes.PAYMENT_REQUESTED]: 'payment-processing',
     [EventTypes.PAYMENT_PROCESS_REQUESTED]: 'payment-processing',

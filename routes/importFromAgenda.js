@@ -666,7 +666,7 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
           clinicalStatus: confirmedAbsence ? "missed" : "pending",
           paymentStatus: "canceled",
           visualFlag: "blocked",
-          canceledReason: reason,
+          cancelReason: reason,
           canceledAt: new Date(),
           confirmedAbsence,
           updatedAt: new Date()

@@ -94,7 +94,7 @@ Read Model (View)
 
 | Campo | Valor |
 |-------|-------|
-| **Publicadores** | `workers/cancelOrchestratorWorker.v2.js` |
+| **Publicadores** | `services/appointment/commands/cancelAppointmentCommand.js` (`workers/cancelOrchestratorWorker.v2.js` removido em 2026-07-15 — código morto, nunca era alcançado) |
 | **Mecanismo** | `saveToOutbox` |
 | **Consumidores ativos** | `syncMedicalWorker.js`, `patientProjectionWorker.js`, `clinicalOrchestrator.js`, `packageProjectionWorker.js` |
 | **Idempotência** | Sim |
@@ -148,6 +148,16 @@ Read Model (View)
 | `INSURANCE_GUIDE_CREATED` | `routes/insuranceGuides.v2.js` | `patient-projection` | 🟢 Canônico via Outbox |
 | `LIMINAR_CONTRACT_CREATED` | `controllers/liminarContractController.js` | `patient-projection` | 🟢 Canônico via Outbox |
 
+### 2.9 Eventos de pré-agendamento (dormentes — confirmado em 2026-07-15)
+
+| Evento | Publicadores | Consumidores | Status |
+|--------|--------------|--------------|--------|
+| `PREAGENDAMENTO_CREATED` | Nenhum desde 2026-07-15 (publicador era `POST /api/v2/pre-appointments`, removido por falta de uso) | `workers/preAgendamentoWorker.js:handleCreated` | 🔴 Dormente — worker não recebe mais jobs |
+| `PREAGENDAMENTO_IMPORTED` | Nenhum desde 2026-07-15 (publicador era o `/confirm` legado, substituído por `confirmPreAgendamentoCommand` que usa `saveToOutbox(APPOINTMENT_UPDATED)`) | `workers/preAgendamentoWorker.js:handleImported` | 🔴 **Já era dormente antes da migração** — não está mapeado em `eventToQueueMap`, toda chamada antiga já lançava `UNKNOWN_EVENT_TYPE` (engolido por `.catch()`). O worker nunca era de fato acionado por este evento. |
+| `PREAGENDAMENTO_STATUS_CHANGED` | Nenhum publicador encontrado em todo o código | `workers/preAgendamentoWorker.js:handleStatusChanged` | 🔴 Dormente desde sempre (confirmado por grep exaustivo) |
+
+`workers/preAgendamentoWorker.js` inteiro está dormente hoje. Não removido ainda — aguardando período de observação (decisão do usuário, 2026-07-15) antes de eliminar o worker, o router `routes/preAgendamento.engine.js`, e as entradas `PREAGENDAMENTO_*` de `EventTypes`/`eventToQueueMap`.
+
 ---
 
 ## 3. Views / Read Models
@@ -167,10 +177,10 @@ Read Model (View)
 | Aspecto | Detalhe |
 |---------|---------|
 | **Fonte da verdade** | `Package` + `Session` + `Appointment` |
-| **Atualizadores** | `packageProjectionWorker.js` (canônico), `syncAffectedViews()` (residual), `cancelOrchestratorWorker.v2.js` (pós-commit residual) |
+| **Atualizadores** | `packageProjectionWorker.js` (canônico), `syncAffectedViews()` (residual). (`cancelOrchestratorWorker.v2.js` removido em 2026-07-15 — nunca era alcançado, então nunca escreveu de fato aqui.) |
 | **Rebuild** | `buildPackageView()`; scripts `rebuild-packages-view.js`, `rebuild-package-view.js` |
-| **Múltiplos writers** | **Sim** — três caminhos diferentes |
-| **Status** | 🟡 **Maior risco de inconsistência** |
+| **Múltiplos writers** | **Sim** — dois caminhos diferentes |
+| **Status** | 🟡 **Risco de inconsistência** |
 
 ### 3.3 `PaymentsView`
 
@@ -212,6 +222,7 @@ Read Model (View)
 | 4 | Documentar/criar mecanismo de rebuild para `InsuranceGuideView` / `InsuranceBatchView` | Média | 2.5 |
 | 5 | Criar evento genérico `REBUILD_VIEW_REQUESTED { viewName, entityId }` | Média | 2.5 |
 | 6 | Mover scripts de rebuild para commands reutilizáveis | Baixa | 2.6 |
+| 7 | Remover `workers/preAgendamentoWorker.js`, `routes/preAgendamento.engine.js` e `PREAGENDAMENTO_*` de `EventTypes`/`eventToQueueMap` (dormentes, ver 2.9) | Baixa — aguardando período de observação | — |
 
 ---
 

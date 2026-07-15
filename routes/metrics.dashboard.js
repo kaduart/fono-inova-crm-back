@@ -58,7 +58,6 @@ const monitoredQueueNames = [
   'appointment-processing',
   'create-appointment-processing',
   'payment-processing',
-  'cancel-orchestrator',
   'complete-orchestrator',
   'clinical-orchestrator',
   'dlq',

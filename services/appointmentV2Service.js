@@ -14,6 +14,7 @@ import createAppointmentCommand from './appointment/commands/createAppointmentCo
 import updateAppointmentCommand from './appointment/commands/updateAppointmentCommand.js';
 import cancelAppointmentCommand from './appointment/commands/cancelAppointmentCommand.js';
 import confirmAppointmentCommand from './appointment/commands/confirmAppointmentCommand.js';
+import confirmPreAgendamentoCommand from './appointment/commands/confirmPreAgendamentoCommand.js';
 import clinicalStatusCommand from './appointment/commands/clinicalStatusCommand.js';
 import deleteAppointmentCommand from './appointment/commands/deleteAppointmentCommand.js';
 import postAppointmentCommand from './appointment/commands/postAppointmentCommand.js';
@@ -34,6 +35,10 @@ export async function confirmAppointment(id, user) {
   return confirmAppointmentCommand.execute(id, user);
 }
 
+export async function confirmPreAgendamento(id, payload, user) {
+  return confirmPreAgendamentoCommand.execute(id, payload, user);
+}
+
 export async function updateClinicalStatus(id, status, user) {
   return clinicalStatusCommand.execute(id, status, user);
 }
@@ -51,6 +56,7 @@ export default {
   updateAppointment,
   cancelAppointment,
   confirmAppointment,
+  confirmPreAgendamento,
   updateClinicalStatus,
   deleteAppointment,
   postAppointment,

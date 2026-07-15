@@ -546,6 +546,11 @@ export const cancelConvenioSession = async (req, res) => {
     await mongoSession.startTransaction();
 
     const { packageId, sessionId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim()) {
+      throw new Error('O motivo do cancelamento é obrigatório');
+    }
 
     // ===================================
     // 1. VALIDAR PACOTE
@@ -652,6 +657,8 @@ export const cancelConvenioSession = async (req, res) => {
         {
           operationalStatus: 'canceled',
           clinicalStatus: 'missed',
+          cancelReason: reason,
+          canceledAt: new Date(),
           _fromWriteGateway: true,
         },
         { session: mongoSession }

@@ -9,7 +9,6 @@ import { startAppointmentWorker } from './appointmentWorker.js';
 import { startPreAgendamentoWorker } from './preAgendamentoWorker.js';
 import { startAppointmentIntegrationWorker } from './appointmentIntegrationWorker.js';
 import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
-import { startCancelOrchestratorWorkerV2 } from './cancelOrchestratorWorker.v2.js';
 import { startCompleteOrchestratorWorker } from './completeOrchestratorWorker.js';
 import { startCreateAppointmentWorker } from './createAppointmentWorker.js';
 import { startOutboxDispatcher } from '../infrastructure/outbox/OutboxDispatcher.js';
@@ -81,9 +80,6 @@ const GROUPS = {
   scheduling: async (workers) => {
     if (isEnabled('ENABLE_SCHEDULING_CREATE_APPOINTMENT')) workers.push(startCreateAppointmentWorker());
 
-    if (isEnabled('ENABLE_SCHEDULING_CANCEL')) {
-      try { workers.push(await startCancelOrchestratorWorkerV2()); } catch {}
-    }
     if (isEnabled('ENABLE_SCHEDULING_COMPLETE')) {
       try { workers.push(await startCompleteOrchestratorWorker()); } catch {}
     }

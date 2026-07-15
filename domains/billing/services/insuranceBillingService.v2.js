@@ -986,9 +986,9 @@ export class InsuranceBillingService {
         throw createError('Appointment not found', ERROR_CODES.NOT_FOUND, 404);
       }
       
-      appointment.status = 'cancelled';
-      appointment.cancellationReason = reason;
-      appointment.cancelledAt = new Date();
+      appointment.operationalStatus = 'canceled';
+      appointment.cancelReason = reason;
+      appointment.canceledAt = new Date();
       await appointment.save({ session: mongoSession });
       
       const Guide = mongoose.model('InsuranceGuide');

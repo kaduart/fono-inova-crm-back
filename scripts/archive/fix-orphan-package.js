@@ -1,3 +1,5 @@
+// DEPRECATED — script pontual já executado para o pacote órfão específico abaixo
+// (paciente deletado, 69d3107ba14c560c7eb92aca). Não reexecutar sem revisar o pkgId.
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
@@ -65,7 +67,7 @@ async function main() {
   if (sessionIds.length > 0) {
     await db.collection('sessions').updateMany(
       { _id: { $in: sessionIds } },
-      { $set: { status: 'cancelled', cancelledAt: new Date(), cancellationReason: 'orphan_patient_deleted' } }
+      { $set: { status: 'canceled', canceledAt: new Date(), notes: 'orphan_patient_deleted' } }
     );
     console.log(`  ✓ ${sessionIds.length} sessions canceladas`);
   }

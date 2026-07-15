@@ -51,7 +51,7 @@ const liminarContractSchema = new mongoose.Schema({
   receivedAt: { type: Date, default: null },
 
   // ─── IDEMPOTÊNCIA ──────────────────────────────────────────
-  idempotencyKey: { type: String, index: true, unique: true, sparse: true }
+  idempotencyKey: { type: String, index: true, unique: true, sparse: true },
 
 }, { timestamps: true });
 

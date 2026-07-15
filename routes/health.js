@@ -66,7 +66,7 @@ router.get('/monitor', async (req, res) => {
         const workers = await redis.hgetall('bull:complete-orchestrator:workers');
         
         // Verifica filas
-        const queueNames = ['complete-orchestrator', 'cancel-orchestrator', 'appointment-processing'];
+        const queueNames = ['complete-orchestrator', 'appointment-processing'];
         const queueStats = {};
         for (const name of queueNames) {
             try {
@@ -193,7 +193,6 @@ router.get('/queues', async (req, res) => {
     try {
         const queueNames = [
             'complete-orchestrator',
-            'cancel-orchestrator',
             'package-projection',
             'package-validation',
             'patient-projection',
@@ -258,7 +257,6 @@ router.get('/full', async (req, res) => {
         // Busca estatísticas das filas
         const queueNames = [
             'complete-orchestrator',
-            'cancel-orchestrator', 
             'appointment-processing'
         ];
         const queues = {};
@@ -448,7 +446,6 @@ router.get('/workers', async (req, res) => {
                 'preagendamento-processing',
                 'appointment-integration',
                 'appointment-update',
-                'cancel-orchestrator',
                 'complete-orchestrator',
                 'create-appointment'
             ],

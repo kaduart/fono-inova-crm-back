@@ -2727,11 +2727,15 @@ export const bulkCancelSessions = async (req, res) => {
     let transactionCommitted = false;
 
     try {
-        const { sessionIds, confirmedAbsence = false } = req.body;
+        const { sessionIds, confirmedAbsence = false, reason } = req.body;
         const packageId = req.params.id;
 
         if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
             return res.status(400).json({ error: 'sessionIds deve ser um array não vazio' });
+        }
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
         }
 
         // 📝 LOG: Início da operação
@@ -2810,7 +2814,9 @@ export const bulkCancelSessions = async (req, res) => {
                 {
                     $set: {
                         operationalStatus: 'canceled',
-                        clinicalStatus: 'missed'
+                        clinicalStatus: 'missed',
+                        cancelReason: reason,
+                        canceledAt: new Date(),
                     }
                 },
                 { session: mongoSession }
@@ -2927,7 +2933,11 @@ export const cancelAllSessions = async (req, res) => {
     let transactionCommitted = false;
 
     try {
-        const { confirmedAbsence = false } = req.body;
+        const { confirmedAbsence = false, reason } = req.body;
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
+        }
 
         // 🔄 ATUALIZA STATUS PARA 'CANCELING' (UX + controle)
         await Package.findByIdAndUpdate(
@@ -2965,7 +2975,9 @@ export const cancelAllSessions = async (req, res) => {
             {
                 $set: {
                     operationalStatus: 'canceled',
-                    clinicalStatus: 'missed'
+                    clinicalStatus: 'missed',
+                    cancelReason: reason,
+                    canceledAt: new Date(),
                 }
             },
             { session: mongoSession }

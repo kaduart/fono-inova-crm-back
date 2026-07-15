@@ -80,7 +80,6 @@ const MONITORED_QUEUES = [
   'package-validation',
   'patient-projection',
   'complete-orchestrator',
-  'cancel-orchestrator',
   'totals-calculation',
   'daily-closing',
   'whatsapp-inbound',

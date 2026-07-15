@@ -66,7 +66,7 @@ Read Model
 | Create appointment | `back/services/appointment/commands/createAppointmentCommand.js` |
 | Update appointment | `back/services/appointment/commands/updateAppointmentCommand.js` |
 | Complete appointment | `back/services/completeSessionService.v2.js` |
-| Cancel appointment | `back/workers/cancelOrchestratorWorker.v2.js` |
+| Cancel appointment | `back/services/appointment/commands/cancelAppointmentCommand.js` |
 | Publish domain events | `back/infrastructure/outbox/outboxPattern.js` → `saveToOutbox()` |
 | Dispatch events | `back/infrastructure/outbox/OutboxDispatcher.js` |
 | Register workers | `back/workers/registry.js` |
@@ -131,8 +131,34 @@ routes/appointment.v2.js
     ↓
 services/appointment/commands/updateAppointmentCommand.js
     OR
-workers/cancelOrchestratorWorker.v2.js
+services/appointment/commands/cancelAppointmentCommand.js
 ```
+
+---
+
+## Appointment: PRE-AGENDAMENTO CONFIRM (commercial triage)
+
+`pre_agendado` is an `operationalStatus` value on `Appointment`, not a separate entity — `PreAppointment` and `Appointment` were unified before 2026-07. `routes/preAgendamento.engine.js` is a specialized triage facade over `Appointment`, not its own bounded context.
+
+```text
+Frontend (secretary triage screen)
+    ↓
+POST /api/v2/pre-appointments/:id/confirm
+    ↓
+routes/preAgendamento.engine.js
+    ↓
+services/appointmentV2Service.js
+    ↓
+services/appointment/commands/confirmPreAgendamentoCommand.js
+    ↓
+SAME Appointment, in-place (pre_agendado → scheduled, same _id)
+    + Session (created only if missing)
+    + Payment (created only if missing and amount > 0)
+```
+
+Before 2026-07-15, this endpoint created a brand new `Appointment` (via `appointmentHybridService.create()`) and canceled the original one, leaving two documents per real booking — a pattern that already caused a real duplication incident in production for an external consumer. Do not replicate that pattern anywhere else.
+
+Other endpoints on the same router (`GET /`, `/discard`, `/contact`, `/assign`, `/stats/dashboard`) remain active for commercial triage — see `CANONICAL_FILES.md` for the full list and what was already removed.
 
 ---
 
@@ -230,13 +256,15 @@ The following are legacy, transition, or experimental. Do not add features to th
 
 - `POST /api/V2/appointments/:id/complete-insurance` — **removed**.
 - Fallback V1 inside `PATCH /complete` — **removed**.
-- `services/appointmentProxyService.js` — deprecated.
-- `services/appointmentStateOrchestrator.js` — deprecated.
-- `domains/clinical/services/appointmentService.js` — parallel, not wired.
+- `services/appointmentProxyService.js` — **removed**.
+- `services/appointmentStateOrchestrator.js` — deprecated, but still called by `updateAppointmentCommand.js`. Do not remove without resolving that first.
+- `domains/clinical/services/appointmentService.js` — parallel, not wired. `cancelAppointment()` **removed**; `createAppointment()` kept (used in e2e test).
 - `appendEvent()` / `EventStore` as a publication mechanism — use `saveToOutbox()`.
 - `publishEvent()` called directly by domain code, controllers, or routes — use `saveToOutbox()`.
 - `syncAffectedViews()` for projections that already have an official projection worker — use the worker queue.
 - Workers not registered in `workers/registry.js` — if a worker file is not wired, it is not part of the architecture.
+- `GET /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments` (create), `PATCH /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments/:id/cancel` — **removed 2026-07-15**, no consumer, fully covered by `appointment.v2.js`.
+- `workers/preAgendamentoWorker.js` — dormant (the event it reacts to is never actually published/routed). Not removed yet; the team is observing production before deleting it and the rest of `preAgendamento.engine.js`.
 
 ### Temporary architectural exception
 

@@ -72,7 +72,6 @@ const ALL_QUEUES = [
   'preagendamento-processing',
   'appointment-integration',
   'appointment-update',
-  'cancel-orchestrator',
   'complete-orchestrator',
   'create-appointment',
   // billing

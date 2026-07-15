@@ -1,7 +1,7 @@
 # Fluxo Canônico de Agendamentos
 
-> **Versão:** 1.1  
-> **Data:** 2026-07-08  
+> **Versão:** 1.2  
+> **Data:** 2026-07-15  
 > **Status:** Oficial — único caminho válido para operações de agendamento.
 
 Este documento define o **fluxo único** de criação, completação, atualização, cancelamento e leitura de agendamentos no CRM.
@@ -140,7 +140,7 @@ PATCH /api/v2/appointments/:id/cancel
     ↓
 routes/appointment.v2.js
     ↓
-workers/cancelOrchestratorWorker.v2.js
+services/appointment/commands/cancelAppointmentCommand.js (síncrono, dentro de transação)
     ↓
 Appointment + Session + Payment + Package/Guide reversal
     ↓
@@ -149,7 +149,35 @@ saveToOutbox(APPOINTMENT_CANCELLED | PAYMENT_STATUS_CHANGED)
 
 ---
 
-## 5. READ — Leitura
+## 5. PRÉ-AGENDAMENTO (TRIAGEM) — Confirmar
+
+> `pre_agendado` é um estado de `operationalStatus` do próprio `Appointment`, não uma entidade separada (isso foi unificado antes de 2026-07). `preAgendamento.engine.js` é uma fachada especializada de triagem comercial sobre o mesmo `Appointment` — não cria um domínio novo.
+
+```text
+Frontend (crm/front, tela da secretária)
+    ↓
+POST /api/v2/pre-appointments/:id/confirm
+    ↓
+routes/preAgendamento.engine.js
+    ↓
+services/appointmentV2Service.js
+    ↓
+services/appointment/commands/confirmPreAgendamentoCommand.js
+    ↓
+MESMO Appointment (in-place: pre_agendado → scheduled, mesmo _id)
+    + Session (criada só se ainda não existir)
+    + Payment (criado só se ainda não existir e houver valor)
+    ↓
+saveToOutbox(APPOINTMENT_UPDATED)
+```
+
+**Antes de 2026-07-15**, esse endpoint criava um `Appointment` novo (via `appointmentHybridService.create()`) e cancelava o pré-agendamento original, deixando dois documentos para o mesmo atendimento — padrão que já causou duplicação real de registros em produção num consumidor externo. Não replicar esse padrão em nenhum outro fluxo.
+
+Outros endpoints de `preAgendamento.engine.js` (`GET /`, `/discard`, `/contact`, `/assign`, `/stats/dashboard`) seguem ativos para a triagem comercial — ver `CANONICAL_FILES.md` para o detalhamento completo e o que já foi removido por falta de uso.
+
+---
+
+## 6. READ — Leitura
 
 ```text
 Frontend
@@ -172,22 +200,25 @@ GET /api/v2/insurance-guides/* → InsuranceGuideView
 
 ---
 
-## 6. O que NÃO faz parte do fluxo
+## 7. O que NÃO faz parte do fluxo
 
 | Elemento | Motivo |
 |----------|--------|
 | `POST /api/v2/appointments/:id/complete-insurance` | **Removida**. Convênio usa `PATCH /complete`. |
 | Fallback V1 dentro de `PATCH /complete` | **Removido**. |
 | `services/completeFallbackMetrics.js` | Métricas do fallback V1. **Removido**. |
-| `services/appointmentProxyService.js` | Referencia módulos inexistentes; não faz parte do fluxo ativo. |
-| `domains/clinical/services/appointmentService.js` | API paralela não plugada nas rotas V2. |
-| `services/appointmentStateOrchestrator.js` | Duplica sync já feito por `updateAppointmentCommand.js`. |
+| `services/appointmentProxyService.js` | Referenciava módulos inexistentes; não fazia parte do fluxo ativo. **Removido**. |
+| `domains/clinical/services/appointmentService.js` | API paralela não plugada nas rotas V2. `cancelAppointment()` **removido**; `createAppointment()` mantido (usado em teste e2e). |
+| `services/appointmentStateOrchestrator.js` | Duplica sync já feito por `updateAppointmentCommand.js` — mas ainda é chamado por ele. Não remover sem revisar essa duplicação. |
 | `appendEvent()` / `EventStore` como publicador | Use `saveToOutbox()`. |
 | `publishEvent()` chamado por domínio | Use `saveToOutbox()`. |
+| `GET /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments` (criar), `PATCH /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments/:id/cancel` | **Removidos em 2026-07-15**. Sem consumidor; equivalente 100% coberto por `appointment.v2.js`. |
+| Padrão antigo do `confirm` de pré-agendamento (criar Appointment novo + cancelar original) | **Removido em 2026-07-15**. Ver seção 5. |
+| `workers/preAgendamentoWorker.js` | Dormente (evento que o alimentava nunca chegava à fila). Aguardando período de observação antes de remover — não remover ainda. |
 
 ---
 
-## 7. Decisões arquiteturais
+## 8. Decisões arquiteturais
 
 1. **Um único endpoint por operação.** Não criar rotas alternativas para o mesmo comando.
 2. **Frontend não decide billing.** O backend resolve `particular` / `convenio` / `liminar` a partir dos dados do agendamento.
@@ -198,7 +229,7 @@ GET /api/v2/insurance-guides/* → InsuranceGuideView
 
 ---
 
-## 8. Links relacionados
+## 9. Links relacionados
 
 - [`CANONICAL_FILES.md`](./CANONICAL_FILES.md) — lista exata dos arquivos canônicos.
 - [`ARCHITECTURE_RULES.md`](./ARCHITECTURE_RULES.md) — regras para futuras PRs.

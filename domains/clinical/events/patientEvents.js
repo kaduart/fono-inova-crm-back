@@ -104,7 +104,7 @@ export const AppointmentEvents = {
 
   /**
    * Appointment cancelado
-   * Emitido por: appointmentService.cancel, cancelOrchestratorWorker
+   * Emitido por: cancelAppointmentCommand
    * IMPACTO: Atualiza stats
    */
   APPOINTMENT_CANCELLED: {

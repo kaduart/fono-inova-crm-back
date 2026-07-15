@@ -166,7 +166,16 @@ export async function listLiminarContracts(req, res) {
   const filter = {};
 
   if (patientId) filter.patient = patientId;
-  if (status)    filter.status  = status;
+
+  // Sem status explícito → visão operacional (esconde contratos fechados/migrados).
+  // status=all → sem filtro, pra auditoria. status=<valor> → filtro exato.
+  if (status === 'all') {
+    // sem filtro de status
+  } else if (status) {
+    filter.status = status;
+  } else {
+    filter.status = { $in: ['active', 'suspended', 'exhausted'] };
+  }
 
   const contracts = await LiminarContract.find(filter)
     .sort({ createdAt: -1 })
