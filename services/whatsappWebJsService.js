@@ -622,8 +622,9 @@ export async function sendMessage(phone, message) {
       throw new Error(`Número ${clean} não possui WhatsApp`);
     }
     const result = await client.sendMessage(numberId._serialized, message);
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${result?.id?._serialized || 'unknown'}`);
-    return { success: true, messageId: result.id._serialized };
+    const messageId = result?.id?._serialized || 'unknown';
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
+    return { success: true, messageId };
   } catch (err) {
     console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);
     throw err;
