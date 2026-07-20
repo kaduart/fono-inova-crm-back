@@ -196,6 +196,14 @@ function buildConvenioMatch(prefix = '') {
  * tiveram sessões pendentes naquele mês. O faturamento em si, via
  * buildBatchFromGuides, sempre pega todas as sessões pendentes da guia.
  *
+ * IMPORTANTE (achado 2026-07-20, caso Joaquim Rocha Simão): o filtro por `month`
+ * é eliminatório, não apenas visual — sessões pendentes de faturamento em meses
+ * anteriores ao selecionado somem da resposta e não aparecem em nenhuma outra
+ * tela. Isso pode fazer a clínica esquecer de faturar convênio indefinidamente.
+ * `includeOverdue: true` resolve isso trazendo, além da lista do mês
+ * selecionado, um resumo agrupado por competência de tudo que ficou pendente
+ * ANTES do período filtrado (guias e sessões órfãs).
+ *
  * @param {Object} filters
  * @param {string} [filters.insurance] - Filtrar por convênio
  * @param {string} [filters.patientId] - Filtrar por paciente
@@ -204,10 +212,11 @@ function buildConvenioMatch(prefix = '') {
  * @param {Date} [filters.endDate] - Fim do período (alternativa ao month)
  * @param {number} [filters.page=1]
  * @param {number} [filters.limit=50]
- * @returns {Promise<{ guides: Array, orphanSessions: Array, total: number, page: number, limit: number }>}
+ * @param {boolean} [filters.includeOverdue=false] - Se true, inclui `overdue`/`overdueSummary` com pendências anteriores ao período filtrado
+ * @returns {Promise<{ guides: Array, orphanSessions: Array, total: number, page: number, limit: number, overdue: Array|null, overdueSummary: Object|null }>}
  */
 export async function listGuidesPendingBilling(filters = {}) {
-  const { insurance, patientId, month, startDate, endDate, page = 1, limit = 50 } = filters;
+  const { insurance, patientId, month, startDate, endDate, page = 1, limit = 50, includeOverdue = false } = filters;
 
   // Resolver período
   let periodStart = startDate ? new Date(startDate) : null;
@@ -426,10 +435,25 @@ export async function listGuidesPendingBilling(filters = {}) {
     }
   }
 
+  // Pendências de competências anteriores ao período filtrado. Só faz sentido
+  // quando há um período de referência (month/startDate+endDate) — sem período,
+  // a própria listagem já é "tudo", não há "antes" para comparar.
+  let overdue = null;
+  let overdueSummary = null;
+  if (includeOverdue && periodStart) {
+    overdue = await buildOverdueBuckets({ periodStart, insurance, patientId });
+    overdueSummary = {
+      totalValue: overdue.reduce((sum, bucket) => sum + bucket.totalValue, 0),
+      totalSessions: overdue.reduce((sum, bucket) => sum + bucket.sessionsCount, 0),
+      competenceCount: overdue.length
+    };
+  }
+
   logger.info('listGuidesPendingBilling done', {
     guidesFound: enrichedGuides.length,
     orphanSessionsFound: enrichedOrphans.length,
-    total
+    total,
+    overdueCompetences: overdue?.length ?? null
   });
 
   return {
@@ -437,8 +461,127 @@ export async function listGuidesPendingBilling(filters = {}) {
     orphanSessions: enrichedOrphans,
     total,
     page,
-    limit
+    limit,
+    overdue,
+    overdueSummary
   };
+}
+
+/**
+ * Agrupa por competência (YYYY-MM) tudo que ficou pendente de faturamento
+ * ANTES de `periodStart` — tanto sessões vinculadas a guia quanto órfãs
+ * (session.insuranceGuide null, ver nota em listGuidesPendingBilling sobre
+ * `orphanSessions`). Sem paginação: é um resumo de alerta, não uma listagem
+ * de trabalho.
+ *
+ * Sessões órfãs só entram no resumo quando nenhum filtro de `insurance` está
+ * ativo — sem guia vinculada, o provider real exige a mesma heurística de
+ * inferência usada em `enrichedOrphans`, e replicá-la aqui só pra filtrar por
+ * convênio específico não vale a complexidade adicional neste resumo.
+ */
+async function buildOverdueBuckets({ periodStart, insurance, patientId }) {
+  const guideMatch = {};
+  if (insurance) guideMatch.insurance = insurance.toLowerCase();
+  if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
+    guideMatch.patientId = new mongoose.Types.ObjectId(patientId);
+  }
+
+  const baseSessionMatch = {
+    status: 'completed',
+    $or: [{ billingBatchId: { $exists: false } }, { billingBatchId: null }],
+    date: { $lt: periodStart },
+    $and: [buildConvenioMatch()]
+  };
+
+  const buckets = new Map(); // competence (YYYY-MM) -> { competence, sessionsCount, totalValue, guides: [], orphanSessions: [] }
+  const getBucket = (competence) => {
+    if (!buckets.has(competence)) {
+      buckets.set(competence, { competence, sessionsCount: 0, totalValue: 0, guides: [], orphanSessions: [] });
+    }
+    return buckets.get(competence);
+  };
+
+  // 1. Sessões vinculadas a guia
+  const guidePendingAgg = await Session.aggregate([
+    { $match: { ...baseSessionMatch, insuranceGuide: { $ne: null } } },
+    {
+      $group: {
+        _id: { guide: '$insuranceGuide', competence: { $dateToString: { format: '%Y-%m', date: '$date' } } },
+        sessionsCount: { $sum: 1 },
+        totalValue: { $sum: { $ifNull: ['$sessionValue', 0] } },
+        minDate: { $min: '$date' },
+        maxDate: { $max: '$date' }
+      }
+    }
+  ]);
+
+  if (guidePendingAgg.length > 0) {
+    const guideIds = [...new Set(guidePendingAgg.map(row => row._id.guide.toString()))]
+      .map(id => new mongoose.Types.ObjectId(id));
+    const guides = await InsuranceGuide.find({ _id: { $in: guideIds }, ...guideMatch })
+      .populate('patientId', 'fullName')
+      .lean();
+    const guideById = new Map(guides.map(g => [g._id.toString(), g]));
+
+    for (const row of guidePendingAgg) {
+      const guideId = row._id.guide.toString();
+      const guide = guideById.get(guideId);
+      if (!guide) continue; // filtrado por insurance/patientId
+      const bucket = getBucket(row._id.competence);
+      bucket.sessionsCount += row.sessionsCount;
+      bucket.totalValue += row.totalValue;
+      bucket.guides.push({
+        guideId,
+        number: guide.number,
+        insurance: guide.insurance,
+        specialty: guide.specialty,
+        patient: guide.patientId,
+        sessionsCount: row.sessionsCount,
+        totalValue: row.totalValue,
+        firstSessionDate: row.minDate,
+        lastSessionDate: row.maxDate
+      });
+    }
+  }
+
+  // 2. Sessões órfãs (sem guia vinculada na Session) — só quando não há filtro de convênio ativo
+  if (!insurance) {
+    const orphanMatch = {
+      status: 'completed',
+      $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
+      date: { $lt: periodStart },
+      $and: [
+        { $or: [{ billingBatchId: { $exists: false } }, { billingBatchId: null }] },
+        { $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }
+      ]
+    };
+    if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
+      orphanMatch.patient = new mongoose.Types.ObjectId(patientId);
+    }
+
+    const orphanSessions = await Session.find(orphanMatch)
+      .populate('patient', 'fullName')
+      .select('_id date patient sessionValue specialty')
+      .sort({ date: 1 })
+      .lean();
+
+    for (const session of orphanSessions) {
+      const competence = session.date.toISOString().slice(0, 7);
+      const bucket = getBucket(competence);
+      const value = session.sessionValue || 0;
+      bucket.sessionsCount += 1;
+      bucket.totalValue += value;
+      bucket.orphanSessions.push({
+        sessionId: session._id.toString(),
+        date: session.date,
+        patient: session.patient,
+        specialty: session.specialty || null,
+        sessionValue: value
+      });
+    }
+  }
+
+  return [...buckets.values()].sort((a, b) => a.competence.localeCompare(b.competence));
 }
 
 export default {

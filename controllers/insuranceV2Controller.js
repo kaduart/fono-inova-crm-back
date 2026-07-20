@@ -437,20 +437,23 @@ export async function receiveSession(req, res) {
  */
 export async function listPendingGuides(req, res) {
   try {
-    const { insurance, patientId, month, page, limit } = req.query;
+    const { insurance, patientId, month, page, limit, includeOverdue } = req.query;
 
     const result = await listGuidesPendingBilling({
       insurance,
       patientId,
       month,
       page: parseInt(page) || 1,
-      limit: parseInt(limit) || 50
+      limit: parseInt(limit) || 50,
+      includeOverdue: includeOverdue === 'true'
     });
 
     res.json({
       success: true,
       data: result.guides,
       orphanSessions: result.orphanSessions,
+      overdue: result.overdue,
+      overdueSummary: result.overdueSummary,
       pagination: {
         page: result.page,
         limit: result.limit,
