@@ -16,6 +16,8 @@ import mongoose from 'mongoose';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
+import InsuranceCommunication from '../models/InsuranceCommunication.js';
+import InsuranceBatch from '../models/InsuranceBatch.js';
 import { createContextLogger } from '../utils/logger.js';
 
 
@@ -380,10 +382,57 @@ export async function listGuidesPendingBilling(filters = {}) {
     });
   }
 
+  // Documentação (guia + lista de presença) já enviada por e-mail ao convênio,
+  // via BillingCommunicationWizard — não significa faturado (billingBatchId),
+  // só que a etapa de envio já ocorreu. Sem isso, a tela não distingue "nunca
+  // mexi nessa guia" de "já mandei e-mail, falta criar o lote".
+  const sentCommunications = await InsuranceCommunication.find({
+    guideId: { $in: guides.map(g => g._id) },
+    purpose: 'billing',
+    status: 'sent'
+  }).select('guideId updatedAt').sort({ updatedAt: -1 }).lean();
+  const documentationSentAtByGuide = new Map();
+  for (const comm of sentCommunications) {
+    const gid = comm.guideId?.toString();
+    if (gid && !documentationSentAtByGuide.has(gid)) {
+      documentationSentAtByGuide.set(gid, comm.updatedAt);
+    }
+  }
+
+  // Guia pode estar parcialmente faturada: parte das sessões já entrou num lote
+  // anterior, e só a sobra (sessão nova ou esquecida) aparece como pendente aqui.
+  // Sem isso, o card não distingue "nunca faturada" de "sobrou 1 sessão de um
+  // lote de 15" — achado real 2026-07-21 (guia 15650231: 12 sessões já em 3
+  // lotes `sent`, 1 sessão de 04/05 esquecida fora de todos eles).
+  const billedSessions = await Session.find({
+    insuranceGuide: { $in: guides.map(g => g._id) },
+    billingBatchId: { $ne: null }
+  }).select('insuranceGuide billingBatchId').lean();
+
+  const billedBatchIds = [...new Set(billedSessions.map(s => s.billingBatchId?.toString()).filter(Boolean))];
+  const batches = billedBatchIds.length
+    ? await InsuranceBatch.find({ _id: { $in: billedBatchIds } }).select('createdAt').lean()
+    : [];
+  const batchCreatedAtById = new Map(batches.map(b => [b._id.toString(), b.createdAt]));
+
+  const billingStatsByGuide = new Map();
+  for (const s of billedSessions) {
+    const gid = s.insuranceGuide?.toString();
+    if (!gid) continue;
+    const stats = billingStatsByGuide.get(gid) || { count: 0, lastBatchSentAt: null };
+    stats.count += 1;
+    const batchDate = batchCreatedAtById.get(s.billingBatchId?.toString());
+    if (batchDate && (!stats.lastBatchSentAt || batchDate > stats.lastBatchSentAt)) {
+      stats.lastBatchSentAt = batchDate;
+    }
+    billingStatsByGuide.set(gid, stats);
+  }
+
   const enrichedGuides = guides.map(guide => {
     const pending = pendingByGuide.get(guide._id.toString()) || { sessionsCount: 0, totalValue: 0 };
     const sessions = sessionsByGuide.get(guide._id.toString()) || [];
     const billingMode = guide.billingMode || 'per_month';
+    const billingStats = billingStatsByGuide.get(guide._id.toString()) || { count: 0, lastBatchSentAt: null };
 
     // "A faturar" deve refletir apenas o valor das sessões já realizadas e
     // pendentes de faturamento no período filtrado, independente do modo de
@@ -415,6 +464,10 @@ export async function listGuidesPendingBilling(filters = {}) {
       pendingValue,
       firstSessionDate: pending.minDate,
       lastSessionDate: pending.maxDate,
+      documentationSentAt: documentationSentAtByGuide.get(guide._id.toString()) || null,
+      alreadyBilledSessions: billingStats.count,
+      lastBatchSentAt: billingStats.lastBatchSentAt,
+      guideStatus: guide.status,
       sessions
     };
   });
