@@ -13,11 +13,34 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Convenio from '../models/Convenio.js';
 import { generateInsurancePlanSessions } from '../services/schedule/generateInsurancePlanSessions.js';
+import { replanInsurancePlanSessions } from '../services/schedule/replanInsurancePlanSessions.js';
 import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 
 const router = express.Router();
+
+// Lock em memória para evitar execuções simultâneas de generate-sessions no mesmo plano.
+// O frontend também desabilita o botão, mas o lock protege contra double-click races
+// e requisições paralelas (ex: refresh + clique manual).
+const generateSessionsLocks = new Map();
+const LOCK_TTL_MS = 60_000; // 1 minuto de segurança — libera automaticamente se algo travar
+
+function acquireGenerateSessionsLock(planId) {
+  const existing = generateSessionsLocks.get(planId);
+  if (existing && Date.now() - existing < LOCK_TTL_MS) {
+    console.log(`[InsurancePlansV2][generate-sessions] Lock ativo para plano ${planId}. Requisição rejeitada.`);
+    return false;
+  }
+  generateSessionsLocks.set(planId, Date.now());
+  console.log(`[InsurancePlansV2][generate-sessions] Lock adquirido para plano ${planId}`);
+  return true;
+}
+
+function releaseGenerateSessionsLock(planId) {
+  generateSessionsLocks.delete(planId);
+  console.log(`[InsurancePlansV2][generate-sessions] Lock liberado para plano ${planId}`);
+}
 
 // Sessões restantes de uma guia = total autorizado - já faturadas (usedSessions) - já
 // agendadas/pendentes (scheduled/pre_agendado/confirmed). Mesma regra usada dentro de
@@ -110,9 +133,13 @@ router.post('/', auth, async (req, res) => {
       replacedPlanSnapshot = pickInsurancePlanFields(existingPlan);
       const today = new Date().toISOString().split('T')[0];
       // Cancela appointments futuros do plano antigo
+      // 🚨 FIX (2026-07-20): 'scheduled' sozinho não pega appointments 'pre_agendado'
+      // (todo appointment nasce pre_agendado desde a migração 2026-05-07 — ver
+      // CLAUDE.md, invariante 6). Um plano/guia substituído deixava os appointments
+      // pre_agendado do plano antigo órfãos, ainda ocupando a agenda.
       const oldAppointments = await Appointment.find({
         _id: { $in: existingPlan.generatedAppointments },
-        operationalStatus: 'scheduled',
+        operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
         date: { $gte: today }
       }).session(session).select('_id');
 
@@ -281,7 +308,11 @@ router.post('/', auth, async (req, res) => {
 router.get('/guide/:guideId', auth, async (req, res) => {
   try {
     const { guideId } = req.params;
-    const plan = await InsurancePlan.findOne({ guide: guideId })
+    // 🚨 FIX (2026-07-20): sem filtro de status, um plano CANCELADO continuava sendo
+    // devolvido aqui pra sempre — o front renderiza qualquer plano retornado como
+    // "PLANO ATIVO" (não checa plan.status), então cancelar um plano nunca tirava o
+    // card fantasma da tela (achado real: guia #319995, Daiane, após cancelamento).
+    const plan = await InsurancePlan.findOne({ guide: guideId, status: 'active' })
       .populate('doctor', 'fullName name specialty')
       .populate('generatedAppointments', 'date time operationalStatus specialty')
       .lean();
@@ -313,13 +344,100 @@ router.get('/guide/:guideId', auth, async (req, res) => {
  * Atualiza plano de convênio e sincroniza appointments futuros pendentes.
  * Sessões já completadas NÃO são alteradas.
  */
+// POST /api/v2/insurance-plans/:id/replan-preview
+// Só leitura — não cancela nem gera nada. Calcula o impacto de uma mudança de
+// slots ANTES do usuário confirmar, usando a mesma fórmula de `remaining` que
+// generateInsurancePlanSessions.js usa de verdade (reservedCount excluindo os
+// appointments que seriam cancelados). Ver auditoria-output/diagnostico-alteracao-
+// -frequencia-plano-convenio-2026-07-20.md, seção 8.2/8.5.
+router.post('/:id/replan-preview', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { slots } = req.body;
+
+    if (!Array.isArray(slots) || slots.length === 0) {
+      return res.status(400).json({ success: false, errorCode: 'INVALID_SLOTS', message: 'Informe ao menos um dia/horário.' });
+    }
+
+    const plan = await InsurancePlan.findById(id).lean();
+    if (!plan) {
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+    }
+    if (plan.status !== 'active') {
+      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo.' });
+    }
+
+    const slotFullSignature = (arr) => (arr || [])
+      .map(s => `${s.dayOfWeek}-${s.time}`)
+      .slice()
+      .sort()
+      .join('|');
+    const slotsChanged = slotFullSignature(plan.slots) !== slotFullSignature(slots);
+
+    if (!slotsChanged) {
+      return res.json({
+        success: true,
+        data: { slotsChanged: false, appointmentsToCancel: { count: 0, dates: [] }, estimatedGenerated: 0 }
+      });
+    }
+
+    const guide = await InsuranceGuide.findById(plan.guide).lean();
+    if (!guide) {
+      return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const futureNonCompleted = await Appointment.find({
+      _id: { $in: plan.generatedAppointments },
+      date: { $gte: today },
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
+    }).select('_id date').sort({ date: 1 }).lean();
+
+    const idsToCancel = futureNonCompleted.map(a => a._id);
+
+    // reservedCount "depois de cancelar" = reservedCount atual da guia, excluindo
+    // exatamente os appointments que este replanejamento cancelaria.
+    const reservedCountAfterCancel = await Appointment.countDocuments({
+      insuranceGuide: guide._id,
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
+      _id: { $nin: idsToCancel }
+    });
+    const estimatedGenerated = Math.max(0, (guide.totalSessions - guide.usedSessions) - reservedCountAfterCancel);
+
+    const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
+
+    res.json({
+      success: true,
+      data: {
+        slotsChanged: true,
+        appointmentsToCancel: {
+          count: idsToCancel.length,
+          dates: futureNonCompleted.map(a => a.date)
+        },
+        estimatedGenerated,
+        guide: {
+          totalSessions: guide.totalSessions,
+          usedSessions: guide.usedSessions
+        },
+        eligible: lifecycle.eligibility.canSchedule,
+        eligibilityMessage: lifecycle.eligibility.canSchedule
+          ? null
+          : (lifecycle.alerts.find(a => a.severity === 'error')?.message || null)
+      }
+    });
+  } catch (error) {
+    console.error('[InsurancePlans][replan-preview] Erro:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 router.patch('/:id', auth, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const { id } = req.params;
-    const { doctorId, sessionValue, slots, notes } = req.body;
+    const { doctorId, sessionValue, slots, notes, startDate } = req.body;
 
     const plan = await InsurancePlan.findById(id).session(session);
     if (!plan) {
@@ -335,7 +453,13 @@ router.patch('/:id', auth, async (req, res) => {
     const beforeSnapshot = pickInsurancePlanFields(plan);
     const today = new Date().toISOString().split('T')[0];
 
-    // Appointments futuros pendentes gerados por este plano
+    console.log('[InsurancePlansV2][PATCH] Iniciando edição do plano', {
+      planId: plan._id.toString(),
+      guideId: plan.guide?.toString(),
+      payload: { doctorId, sessionValue: sessionValue != null ? 'present' : 'absent', slots: slots?.length ?? 'absent', notes: notes != null ? 'present' : 'absent' },
+      currentSlots: plan.slots,
+      sessionsPerWeek: plan.sessionsPerWeek
+    });
     // 'confirmed' incluído: PATCH de sessionValue/doctor deve propagar mesmo após confirmação
     const affected = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
@@ -343,20 +467,94 @@ router.patch('/:id', auth, async (req, res) => {
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
     }).select('_id date time patient').session(session).lean();
 
-    // Sincronização de horário se slots mudaram
+    // 🚨 FIX (2026-07-20): detecta mudança ESTRUTURAL de frequência (conjunto de dias
+    // da semana), não só de horário. Achado real: guia #319995 foi criada com 1 slot/semana,
+    // consumindo os 14 appointments autorizados 1x/semana ao longo de 14 semanas. Ao editar
+    // o plano para 3 slots/semana, o sync incremental abaixo só ajustava o horário dos
+    // appointments que JÁ existiam nos dias antigos — os dias novos nunca ganhavam appointment,
+    // e "Gerar sessões" retornava 0 porque a guia já estava 100% reservada pelo padrão antigo.
+    // Quando os slots mudam (dia e/ou horário), a agenda futura precisa ser
+    // recriada para refletir a nova configuração. Marca o plano como pendente
+    // de regeneração e não atualiza/cancela nada automaticamente no PATCH — a
+    // sincronização acontece no botão "Gerar sessões".
+    const slotFullSignature = (arr) => (arr || [])
+      .map(s => `${s.dayOfWeek}-${s.time}`)
+      .slice()
+      .sort()
+      .join('|');
+    const slotsChanged = slots !== undefined && slotFullSignature(plan.slots) !== slotFullSignature(slots);
+
+    // 🚨 FIX (2026-07-20): a ordem do array `slots` é a prioridade que
+    // generateInsurancePlanSessions.js usa pra decidir qual slot ganha sessão primeiro
+    // quando o orçamento restante da guia não cobre a semana inteira (ex: 2 sessões
+    // sobrando pra 3 slots/semana). Reordenar via drag-and-drop no front (sem alterar o
+    // CONJUNTO de pares dayOfWeek/time) já é persistido corretamente e já vale pra
+    // qualquer geração futura — mas antes disso o usuário não tinha nenhum sinal de que
+    // a reordenação "pegou". orderSignature (sem sort) detecta isso e também marca
+    // needsSessionRegeneration, mesmo quando slotsChanged (que ignora ordem) é false.
+    const orderSignature = (arr) => (arr || []).map(s => `${s.dayOfWeek}-${s.time}`).join('|');
+    const orderChanged = slots !== undefined && orderSignature(plan.slots) !== orderSignature(slots);
+
+    console.log('[InsurancePlansV2][PATCH] Slots alterados?', {
+      slotsChanged,
+      orderChanged,
+      oldSlots: slotFullSignature(plan.slots),
+      newSlots: slots !== undefined ? slotFullSignature(slots) : 'n/a'
+    });
+
+    // Sincronização de horário se slots mudaram (só quando a frequência NÃO mudou —
+    // mudança de frequência é tratada via cancelar+regenerar, ver bloco abaixo)
     const timeSyncMap = new Map();
     const toCancelIds = [];
-    if (slots !== undefined) {
-      const newDayToTime = new Map((slots || []).map(s => [s.dayOfWeek, s.time]));
+    if (slots !== undefined && !slotsChanged) {
+      // 🚨 FIX (2026-07-20): dayOfWeek -> time só é 1:1 quando há no máximo 1 slot por dia.
+      // Planos com múltiplos horários no mesmo dia (ex: 2x Terça) faziam o Map colapsar
+      // pra um único horário (o último do array vence), sincronizando TODOS os appointments
+      // daquele dia da semana pro mesmo horário — dois appointments diferentes acabavam
+      // setados pra data+hora idênticas, violando o índice único (unique_appointment_slot)
+      // e retornando E11000 disfarçado de "horário ficou indisponível" (achado real: guia
+      // #319995, Daiane, 2 slots de Terça, 10:40 e 11:20).
+      //
+      // Como slotsChanged é false nesta branch, o CONJUNTO de pares (dayOfWeek,time) do
+      // plano não mudou — só a ordem do array pode ter mudado. Logo, o horário atual de
+      // cada appointment já deveria bater com um dos pares vigentes daquele dia: cada um
+      // sincroniza pro PRÓPRIO horário (a.time), não pro horário de um slot vizinho. Isso
+      // preserva os 2 appointments de Terça em horários distintos e ainda propaga o valor
+      // pra Session (self-heal de drift legado, ver fix 2026-07-16 abaixo).
+      // Só quando o horário do appointment não bate com NENHUM slot vigente daquele dia
+      // (drift real) é que precisamos escolher um valor novo — o que só é seguro fazer
+      // quando há um único slot possível naquele dia (senão não há como saber pra qual
+      // dos vários horários migrar).
+      const timesByDay = new Map();
+      for (const s of (slots || [])) {
+        if (!timesByDay.has(s.dayOfWeek)) timesByDay.set(s.dayOfWeek, new Set());
+        timesByDay.get(s.dayOfWeek).add(s.time);
+      }
 
       for (const a of affected) {
         const dow = new Date(a.date).getDay();
-        const newTime = newDayToTime.get(dow);
-        if (newTime) {
-          if (newTime !== a.time) timeSyncMap.set(String(a._id), newTime);
-        } else {
+        const dayTimes = timesByDay.get(dow);
+
+        if (!dayTimes || dayTimes.size === 0) {
           toCancelIds.push(a._id);
+          continue;
         }
+
+        if (dayTimes.has(a.time)) {
+          // 🚨 FIX (2026-07-16): sempre sincroniza, mesmo se newTime === Appointment.time.
+          // O check "newTime !== a.time" comparava só contra o Appointment — mas o Appointment
+          // já podia estar correto (atualizado numa edição anterior a este fix) enquanto a
+          // Session ficava presa no horário antigo pra sempre, sem nenhuma edição subsequente
+          // conseguir corrigi-la (achado real: guia da Antonella, 26 sessions travadas em 10:00
+          // com Appointment já em 10:40). Resalvar o plano agora sempre força Session.time a
+          // bater com o slot vigente, fechando esse buraco de autocorreção.
+          timeSyncMap.set(String(a._id), a.time);
+        } else if (dayTimes.size === 1) {
+          // Único slot possível nesse dia e não bate — drift real, corrige pro valor vigente.
+          timeSyncMap.set(String(a._id), [...dayTimes][0]);
+        }
+        // dayTimes.size > 1 e a.time não bate com nenhum: ambíguo, não sabe pra qual dos
+        // vários horários do dia esse appointment deveria migrar — não mexe.
       }
     }
 
@@ -366,7 +564,7 @@ router.patch('/:id', auth, async (req, res) => {
       'missed', 'processing_create', 'processing_complete', 'processing_cancel', 'force_cancelled'
     ];
 
-    if (doctorId && affected.length > 0) {
+    if (doctorId && affected.length > 0 && !slotsChanged) {
       const newDoctorObjId = new mongoose.Types.ObjectId(doctorId);
       const movingIds = affected.map(a => a._id);
 
@@ -415,6 +613,34 @@ router.patch('/:id', auth, async (req, res) => {
     }
     if (notes !== undefined) plan.notes = notes;
 
+    // 🚨 FIX (2026-07-21): startDate era travado como "Não editável" no front pra planos
+    // ativos, mas isso significa que uma data de início errada/desatualizada (ex: setada
+    // na criação original, dias antes do usuário realmente precisar) nunca podia ser
+    // corrigida — generateInsurancePlanSessions.js usa esse campo como piso rígido
+    // (`if (sessionDate < startDate) continue`), então nenhuma sessão anterior a ele é
+    // gerada, mesmo que o slot da semana exista. Agora aceita edição; startDateChanged
+    // força o mesmo caminho de replan usado por mudança de slots.
+    let startDateChanged = false;
+    if (startDate !== undefined) {
+      const newStartDate = new Date(startDate);
+      newStartDate.setHours(0, 0, 0, 0);
+      const currentStartDate = new Date(plan.startDate);
+      currentStartDate.setHours(0, 0, 0, 0);
+      startDateChanged = newStartDate.getTime() !== currentStartDate.getTime();
+      if (startDateChanged) plan.startDate = newStartDate;
+    }
+
+    // Quando a estrutura dos slots muda (dias/frequência), só a ordem muda (prioridade
+    // de geração) OU o início do plano muda, marca o plano como pendente de regeneração
+    // para que o card exiba o alerta "Plano alterado". Note: se a guia já está com a
+    // capacidade 100% reservada (remaining=0), clicar em "Gerar sessões" depois disso
+    // não recria nada por si só (não há appointment faltando pra gerar) — por isso
+    // startDateChanged também é usado no POST /generate-sessions para forçar replan
+    // mesmo sem divergência de dayOfWeek/time.
+    if (slotsChanged || orderChanged || startDateChanged) {
+      plan.needsSessionRegeneration = true;
+    }
+
     await plan.save({ session });
 
     // Atualiza appointments pendentes (doctor, time e valores)
@@ -426,7 +652,30 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     let appointmentsUpdated = 0;
-    if (affected.length > 0 && (Object.keys(baseSet).length > 0 || timeSyncMap.size > 0)) {
+    if (!slotsChanged && affected.length > 0 && (Object.keys(baseSet).length > 0 || timeSyncMap.size > 0)) {
+      // Valida ANTES de escrever: se dois appointments deste lote resolverem pra
+      // mesma data+horário (ex: bug de sincronização por dayOfWeek colapsando dois
+      // slots do mesmo dia), o Mongo rejeitaria com E11000 genérico, sem dizer qual
+      // horário colidiu. Detectar aqui dá uma mensagem específica pro usuário em vez
+      // de "recarregue a página e tente novamente".
+      const seenSlots = new Map();
+      for (const a of affected) {
+        const resolvedTime = timeSyncMap.get(String(a._id)) || a.time;
+        const dateKey = new Date(a.date).toISOString().split('T')[0];
+        const slotKey = `${dateKey}T${resolvedTime}`;
+        if (seenSlots.has(slotKey)) {
+          const error = new Error('APPOINTMENT_SLOT_SELF_CONFLICT');
+          error.code = 'APPOINTMENT_SLOT_CONFLICT';
+          error.conflict = {
+            type: 'patient',
+            date: dateKey,
+            time: resolvedTime
+          };
+          throw error;
+        }
+        seenSlots.set(slotKey, a._id);
+      }
+
       const bulkOps = affected
         .map(a => {
           const set = { ...baseSet };
@@ -469,7 +718,7 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     // Atualiza doctor e sessionValue nas sessions futuras pendentes
-    if ((doctorId !== undefined || sessionValue !== undefined) && affected.length > 0) {
+    if (!slotsChanged && (doctorId !== undefined || sessionValue !== undefined) && affected.length > 0) {
       const affectedIds = affected.map(a => a._id);
       const sessionSet = {};
       if (doctorId !== undefined) sessionSet.doctor = new mongoose.Types.ObjectId(doctorId);
@@ -503,7 +752,7 @@ router.patch('/:id', auth, async (req, res) => {
 
     // Atualiza insurance.grossAmount nos payments pendentes vinculados aos appointments futuros
     let paymentsUpdated = 0;
-    if (sessionValue !== undefined && affected.length > 0) {
+    if (!slotsChanged && sessionValue !== undefined && affected.length > 0) {
       const affectedIds = affected.map(a => a._id);
       const paymentRes = await Payment.updateMany(
         {
@@ -522,6 +771,13 @@ router.patch('/:id', auth, async (req, res) => {
       paymentsUpdated = paymentRes.modifiedCount;
     }
 
+    // Mudança estrutural de frequência: não é mais acionada automaticamente no PATCH.
+    // O replanejamento da agenda futura acontece apenas quando o usuário clica em
+    // "Gerar sessões" (POST /generate-sessions), que detecta divergência entre os slots
+    // atuais do plano e os appointments futuros existentes. O PATCH salva apenas a
+    // configuração do plano.
+    let appointmentsGenerated = 0;
+
     await session.commitTransaction();
 
     await recordAudit({
@@ -533,22 +789,34 @@ router.patch('/:id', auth, async (req, res) => {
       after: pickInsurancePlanFields(plan),
       source: 'api:insurance_plans:patch',
       pickFn: (x) => x,
-      metadata: { appointmentsUpdated, appointmentsCanceled, paymentsUpdated },
+      metadata: { appointmentsUpdated, appointmentsCanceled, paymentsUpdated, slotsChanged, appointmentsGenerated },
     });
 
-    // 🚨 FIX (2026-07-09): "Salvar alterações" NUNCA gera sessão nova — só ajusta/cancela
-    // as já existentes. Regenerar sessões é responsabilidade exclusiva do botão "Gerar",
-    // que o usuário aciona explicitamente. Ter os dois botões criando appointments (Save
-    // implicitamente + Gerar explicitamente) foi o que causou a guia sobre-agendada
-    // (scheduledCount > totalSessions) reportada em 2026-07-09.
+    // 🚨 FIX (2026-07-20): o PATCH salva apenas a configuração do plano. O replanejamento
+    // estrutural (cancelar futuras pendentes e regenerar pelo novo padrão) é responsabilidade
+    // exclusiva do POST /generate-sessions, que detecta divergência entre os slots atuais do
+    // plano e os appointments futuros existentes. Assim o usuário controla o momento da
+    // regeneração clicando em "Gerar sessões", e o PATCH não gera efeitos colaterais
+    // inesperados ao salvar. Ainda assim, appointments cujo dia da semana saiu do plano são
+    // cancelados incrementalmente abaixo, preservando sessões já realizadas.
     res.json({
       success: true,
       data: {
         plan,
         appointmentsUpdated,
         appointmentsCanceled,
-        paymentsUpdated
+        paymentsUpdated,
+        slotsChanged,
+        appointmentsGenerated
       }
+    });
+
+    console.log('[InsurancePlansV2][PATCH] Resposta enviada', {
+      planId: plan._id.toString(),
+      slotsChanged,
+      appointmentsUpdated,
+      appointmentsCanceled,
+      appointmentsGenerated
     });
 
   } catch (error) {
@@ -560,6 +828,33 @@ router.patch('/:id', auth, async (req, res) => {
         success: false,
         errorCode: 'CONFLITO_AGENDA',
         message: 'O horário ficou indisponível durante a operação. Tente novamente.'
+      });
+    }
+
+    // Erros vindos de generateInsurancePlanSessions ao regenerar por mudança de frequência
+    if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
+      const conflict = error.conflict || {};
+      const prefix = conflict.type === 'doctor'
+        ? 'Conflito de agenda: o profissional já possui um compromisso'
+        : 'Conflito de agenda: o paciente já possui um compromisso';
+      return res.status(409).json({
+        success: false,
+        errorCode: 'APPOINTMENT_SLOT_CONFLICT',
+        message: `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informado'}. Ajuste os horários do plano e tente novamente.`
+      });
+    }
+    if (error.message === 'GUIDE_EXHAUSTED') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_EXHAUSTED',
+        message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
+      });
+    }
+    if (error.code === 'GUIDE_NOT_ELIGIBLE') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_NOT_ELIGIBLE',
+        message: error.message
       });
     }
 
@@ -588,10 +883,16 @@ router.delete('/:id', auth, async (req, res) => {
     const cancelBeforeSnapshot = pickInsurancePlanFields(plan);
     const today = new Date().toISOString().split('T')[0];
 
-    // Cancela appointments futuros scheduled
+    // Cancela appointments futuros pendentes
+    // 🚨 FIX (2026-07-20): 'scheduled' sozinho não pega appointments 'pre_agendado'
+    // (todo appointment nasce pre_agendado desde a migração 2026-05-07 — ver
+    // CLAUDE.md, invariante 6). O DELETE marcava o plano como 'canceled' mas deixava
+    // os appointments pre_agendado órfãos, ainda visíveis/ocupando a agenda (achado
+    // real: guia #319995, Daiane — 14 appointments pre_agendado sobraram após cancelar
+    // o plano).
     const appointmentsToCancel = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
-      operationalStatus: 'scheduled',
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
       date: { $gte: today }
     }).session(session).select('_id');
 
@@ -649,16 +950,33 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
   }
 
-  try {
-    const plan = await InsurancePlan.findById(id).lean();
-    if (!plan) return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
-    if (plan.status !== 'active') return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Plano não está ativo' });
+  if (!acquireGenerateSessionsLock(id)) {
+    return res.status(429).json({ success: false, errorCode: 'ALREADY_PROCESSING', message: 'Geração de sessões já em andamento para este plano. Aguarde a conclusão.' });
+  }
 
-    const guide = await InsuranceGuide.findById(plan.guide).lean();
-    if (!guide) return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const plan = await InsurancePlan.findById(id).session(session).lean();
+    if (!plan) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+    }
+    if (plan.status !== 'active') {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Plano não está ativo' });
+    }
+
+    const guide = await InsuranceGuide.findById(plan.guide).session(session).lean();
+    if (!guide) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+    }
 
     const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
     if (!lifecycle.eligibility.canSchedule) {
+      await session.abortTransaction();
       const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
       return res.status(400).json({
         success: false,
@@ -668,25 +986,128 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       });
     }
 
-    const remaining = await getGuideRemainingCapacity(guide._id, guide);
+    const today = new Date().toISOString().split('T')[0];
+
+    // Busca appointments futuros pendentes pela fonte de verdade (relacionamento),
+    // não pelo cache generatedAppointments, que pode ficar inconsistente.
+    const futureAppointments = await Appointment.find({
+      insurancePlan: plan._id,
+      date: { $gte: today },
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
+    }).session(session).select('date time').lean();
+
+    // Assinatura dos slots atuais do plano.
+    const slotSignatures = new Set((plan.slots || []).map(s => `${s.dayOfWeek}-${s.time}`));
+
+    // Verifica se há divergência entre a configuração atual do plano e os
+    // appointments futuros pendentes. Divergência ocorre quando:
+    // 1. Algum appointment futuro não bate com nenhum slot atual (dia/horário); ou
+    // 2. A quantidade de slots do plano mudou, o que exige redistribuição das sessões.
+    const futureSignatures = new Set(futureAppointments.map(a => {
+      const dow = new Date(a.date).getDay();
+      return `${dow}-${a.time}`;
+    }));
+    const mismatched = futureAppointments.filter(a => {
+      const dow = new Date(a.date).getDay();
+      const signature = `${dow}-${a.time}`;
+      return !slotSignatures.has(signature);
+    });
+
+    // 🚨 FIX (2026-07-21): needsSessionRegeneration cobre casos que a comparação de
+    // assinatura (dayOfWeek-time) não pega — em especial mudança de startDate, que não
+    // altera nenhum par dayOfWeek/time, só o piso de datas válidas. Sem isso, editar o
+    // início do plano marcava o banner "Plano alterado" mas "Gerar sessões" continuava
+    // um no-op quando a guia já estava com a capacidade reservada no padrão antigo.
+    const needsReplan = mismatched.length > 0 || slotSignatures.size !== futureSignatures.size || Boolean(plan.needsSessionRegeneration);
+
+    console.log('[InsurancePlansV2][generate-sessions] Verificando divergência de agenda', {
+      planId: plan._id.toString(),
+      futureAppointmentsCount: futureAppointments.length,
+      slotSignatures: Array.from(slotSignatures),
+      futureSignatures: Array.from(futureSignatures),
+      mismatchedCount: mismatched.length,
+      slotCountMismatch: slotSignatures.size !== futureSignatures.size,
+      needsReplan
+    });
+
+    let replanResult = null;
+    if (needsReplan) {
+      replanResult = await replanInsurancePlanSessions({
+        planId: plan._id,
+        guideId: plan.guide,
+        mongoSession: session,
+        user: req.user,
+        reason: 'plan_slots_mismatch'
+      });
+      console.log('[InsurancePlansV2][generate-sessions] Replanejamento executado', {
+        appointmentsCanceled: replanResult.appointmentsCanceled,
+        appointmentsGenerated: replanResult.appointmentsGenerated
+      });
+    }
+
+    const remaining = await getGuideRemainingCapacity(guide._id, guide, session);
 
     const result = await generateInsurancePlanSessions({
       planId: plan._id,
       guideId: guide._id,
       sessionValue: plan.sessionValue || 0,
+      mongoSession: session,
       skipHolidays: true
     });
+
+    // Após aplicar o plano na agenda (replan ou geração normal), a flag de
+    // pendência de sincronização é limpa.
+    await InsurancePlan.findByIdAndUpdate(
+      plan._id,
+      { needsSessionRegeneration: false },
+      { session }
+    );
+
+    await session.commitTransaction();
 
     return res.json({
       success: true,
       data: {
-        appointmentsGenerated: result?.count || 0,
-        remaining
+        appointmentsGenerated: (replanResult?.appointmentsGenerated || 0) + (result?.count || 0),
+        remaining,
+        replanned: needsReplan,
+        appointmentsCanceled: replanResult?.appointmentsCanceled || 0
       }
     });
   } catch (error) {
+    await session.abortTransaction();
     console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
+
+    if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
+      const conflict = error.conflict || {};
+      const prefix = conflict.type === 'doctor'
+        ? 'Conflito de agenda: o profissional já possui um compromisso'
+        : 'Conflito de agenda: o paciente já possui um compromisso';
+      return res.status(409).json({
+        success: false,
+        errorCode: 'APPOINTMENT_SLOT_CONFLICT',
+        message: `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informada'}. Ajuste os horários do plano e tente novamente.`
+      });
+    }
+    if (error.message === 'GUIDE_EXHAUSTED') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_EXHAUSTED',
+        message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
+      });
+    }
+    if (error.code === 'GUIDE_NOT_ELIGIBLE') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'GUIDE_NOT_ELIGIBLE',
+        message: error.message
+      });
+    }
+
     return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+  } finally {
+    session.endSession();
+    releaseGenerateSessionsLock(id);
   }
 });
 
