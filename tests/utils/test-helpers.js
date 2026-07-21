@@ -10,8 +10,30 @@ import Redis from 'ioredis';
 const API_URL = process.env.API_URL || 'http://localhost:5000';
 const REDIS_URL = process.env.REDIS_URL;
 
+// 🛑 Guarda de segurança: os packs em tests/packs/*.pack.js chamam a API real via HTTP
+// (context.api), mas o cleanup (afterAll) só apaga dados na conexão Mongo EM MEMÓRIA
+// do próprio teste. Se o servidor alvo estiver usando o Mongo de produção, o teste cria
+// Appointment/Payment reais em prod que o cleanup nunca alcança — vira lixo órfão
+// ("Paciente não identificado") acumulando no caixa/produção indefinidamente.
+function assertNotProductionDatabase() {
+  const uri = process.env.MONGO_URI || process.env.MONGODB_URI || '';
+  const looksProd = /prod/i.test(uri);
+  if (looksProd && process.env.ALLOW_PROD_INTEGRATION_TESTS !== 'true') {
+    const masked = uri.replace(/:\/\/[^@]*@/, '://***@');
+    throw new Error(
+      `[SAFETY] MONGO_URI aponta para um banco de produção (${masked}). ` +
+      'Os testes que usam createTestContext() chamam a API real via HTTP e o cleanup só limpa o Mongo ' +
+      'em memória do teste — rodar isso contra produção cria Appointments/Payments reais e órfãos. ' +
+      'Aponte MONGO_URI para um banco de teste antes de rodar, ou defina ALLOW_PROD_INTEGRATION_TESTS=true ' +
+      'se tiver certeza absoluta do que está fazendo.'
+    );
+  }
+}
+
 // Cliente HTTP para testes
 export function createTestContext() {
+  assertNotProductionDatabase();
+
   const api = axios.create({
     baseURL: API_URL,
     timeout: 30000,

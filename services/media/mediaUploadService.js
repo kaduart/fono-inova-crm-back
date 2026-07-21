@@ -6,6 +6,7 @@
 
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
+import path from 'path';
 import { Readable } from 'stream';
 
 cloudinary.config({
@@ -22,7 +23,13 @@ const ALLOWED_MIMETYPES = [
   'image/gif',
   'video/mp4',
   'video/quicktime',
-  'video/x-msvideo'
+  'video/x-msvideo',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain'
 ];
 
 const MAX_SIZE_MB = 100;
@@ -35,7 +42,7 @@ export const uploadMiddleware = multer({
     if (ALLOWED_MIMETYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Tipo não suportado: ${file.mimetype}. Use JPG, PNG, WebP, GIF, MP4 ou MOV.`));
+      cb(new Error(`Tipo não suportado: ${file.mimetype}. Use imagens, vídeos, PDF, DOC, XLS ou TXT.`));
     }
   }
 }).single('file');
@@ -48,17 +55,15 @@ export const uploadMiddleware = multer({
  * @returns {Promise<{url: string, publicId: string, resourceType: string}>}
  */
 export async function uploadToCloudinary(buffer, mimetype, folder = 'crm-posts') {
-  const resourceType = mimetype.startsWith('video/') ? 'video' : 'image';
+  const resourceType = mimetype.startsWith('video/') ? 'video' : 'auto';
 
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
         resource_type: resourceType,
-        // Garante URL HTTPS para Meta
         secure: true,
-        // Qualidade automática para imagens
-        ...(resourceType === 'image' && { quality: 'auto', fetch_format: 'auto' })
+        ...(resourceType !== 'video' && { quality: 'auto', fetch_format: 'auto' })
       },
       (error, result) => {
         if (error) return reject(new Error(`Cloudinary upload falhou: ${error.message}`));
@@ -70,7 +75,44 @@ export async function uploadToCloudinary(buffer, mimetype, folder = 'crm-posts')
       }
     );
 
-    // Converte buffer em stream
+    const readable = new Readable();
+    readable.push(buffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+}
+
+/**
+ * Faz upload de documentos para Cloudinary preservando o arquivo original.
+ * @param {Buffer} buffer        Conteúdo do arquivo
+ * @param {string} originalName  Nome original do arquivo
+ * @param {string} mimetype      MIME type do arquivo
+ * @param {string} folder        Pasta no Cloudinary
+ * @returns {Promise<{url: string, publicId: string, resourceType: string}>}
+ */
+export async function uploadDocumentToCloudinary(buffer, originalName, mimetype, folder = 'patient-documents') {
+  const ext = originalName ? path.extname(originalName).toLowerCase() : '';
+  const isPdf = ext === '.pdf' || mimetype === 'application/pdf';
+  const resourceType = isPdf ? 'raw' : 'auto';
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: resourceType,
+        secure: true,
+        ...(resourceType !== 'raw' && resourceType !== 'video' && { quality: 'auto', fetch_format: 'auto' })
+      },
+      (error, result) => {
+        if (error) return reject(new Error(`Cloudinary upload falhou: ${error.message}`));
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType
+        });
+      }
+    );
+
     const readable = new Readable();
     readable.push(buffer);
     readable.push(null);

@@ -162,6 +162,28 @@ export async function execute(id, payload, user) {
         );
         pre.session = newSession._id;
         await pre.save({ session: mongoSession });
+      } else {
+        // 🚨 FIX (2026-07-20): pre.doctor/date/time/patient acabaram de ser resolvidos/
+        // alterados acima (linhas 123-126) — mas a Session já existia (criada junto com
+        // o pré-agendamento, é o caso normal pelo invariante do domínio) e nunca era
+        // atualizada aqui. Mesmo padrão dos outros 4 gaps já corrigidos nesta sessão
+        // (insurancePlans.v2.js, liminarContractController.js, insuranceGuides.v2.js,
+        // package.v2.js): Appointment fica certo, Session trava no valor antigo e o
+        // conflictDetection.js (que lê Session.doctor/time) passa a bloquear com dado
+        // desatualizado.
+        await Session.updateOne(
+          { _id: pre.session, status: { $nin: ['completed', 'canceled'] } },
+          {
+            $set: {
+              patient: pre.patient,
+              doctor: pre.doctor,
+              date: pre.date,
+              time: pre.time,
+              updatedAt: new Date(),
+            },
+          },
+          { session: mongoSession }
+        );
       }
 
       // Cria Payment se ainda não existir e houver valor a cobrar.

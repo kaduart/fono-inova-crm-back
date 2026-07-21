@@ -443,7 +443,6 @@ router.get('/workers', async (req, res) => {
         const GROUP_QUEUES = {
             scheduling: [
                 'appointment-processing',
-                'preagendamento-processing',
                 'appointment-integration',
                 'appointment-update',
                 'complete-orchestrator',

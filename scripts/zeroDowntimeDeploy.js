@@ -69,7 +69,6 @@ const DEPLOY_ID = `deploy_${Date.now()}`;
 const ALL_QUEUES = [
   // scheduling
   'appointment-processing',
-  'preagendamento-processing',
   'appointment-integration',
   'appointment-update',
   'complete-orchestrator',

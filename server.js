@@ -94,6 +94,7 @@ import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOV
 import { warmupDashboardCache } from './services/adminDashboard/index.js';
 import adminFinancialMetricsRoutes from './routes/admin/financialMetrics.routes.js';  // 📊 Métricas financeiras internas
 import adminSystemRoutes, { serverAdapter as bullBoardAdapter } from './routes/adminSystem.js';  // 🖥️ Monitor de filas + Bull Board
+import adminWhatsappQueueRoutes from './routes/adminWhatsappQueue.routes.js';  // 🚨 Kill switch da fila whatsapp-send
 import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
 // 🚫 INATIVADO: appointmentRoutes V1 removido (usando apenas V2)
@@ -150,7 +151,7 @@ import spyRoutes from './routes/spy.routes.js';
 import metaAdsRoutes from './routes/metaAds.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
-import preAgendamentoEngineRoutes from './routes/preAgendamento.engine.js';
+import preAgendamentoTriageRoutes from './routes/preAgendamentoTriage.routes.js';
 import evolutionV2Routes from './routes/evolution.v2.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
@@ -171,6 +172,9 @@ import insuranceV2Routes from './routes/insuranceV2.routes.js';
 import insuranceGuidesV2Routes from './routes/insuranceGuides.v2.js';
 import insurancePlansV2Routes from './routes/insurancePlans.v2.js';
 import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
+import communicationRoutes from './routes/communication.routes.js';  // 🏥 Central de Comunicações
+import patientDocumentsRoutes from './routes/patientDocuments.routes.js';  // 📎 Document Center de pacientes
+import billingDocumentsRoutes from './routes/billingDocuments.routes.js';  // 📄 Dossiê de faturamento
 import reminderRoutes from './routes/reminder.js';
 
 import imageBankRoutes from './routes/imageBank.routes.js';
@@ -215,6 +219,7 @@ import healthRoutes from './routes/health.js';  // 🚀 NOVO: Health Check Compl
 import healthV2Routes from './routes/health.v2.js';  // 🚀 NOVO: Health Check V2
 import healthMigrationRoutes from './routes/health.migration.js';  // 🚀 NOVO: Health Check de Migração V1→V2
 import packageMetricsRoutes from './routes/package.metrics.js';  // 🚀 NOVO: Métricas Package V2
+import fiscalRoutes from './routes/fiscal.routes.js';  // 📄 MVP: Módulo Fiscal NFS-e
 
 
 // ======================================================
@@ -469,6 +474,7 @@ app.use("/api/login", loginRoutes);
 app.use("/api/admin", etagMiddleware({ ttl: 300 }), adminRoutes);
 app.use("/api/v2/admin/dashboard", adminDashboardV2Routes);  // 🚀 NOVO: Admin Dashboard V2
 app.use("/api/admin", adminSystemRoutes);  // 🖥️ Bull Board + system-monitor
+app.use("/api/admin/whatsapp-queue", adminWhatsappQueueRoutes);  // 🚨 Kill switch da fila whatsapp-send
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
@@ -537,7 +543,7 @@ function legacyRouteAlert(req, res, next) {
   next();
 }
 
-app.use('/api/v2/pre-appointments', preAgendamentoEngineRoutes);  // 🚀 V2 REAL: engine transacional + hybrid service
+app.use('/api/v2/pre-appointments', preAgendamentoTriageRoutes);  // Triagem comercial sobre Appointment (ver docs/architecture/CANONICAL_FILES.md)
 app.use('/api/v2/evolutions', evolutionV2Routes);  // 🧬 V2: evolution event-driven
 app.use('/api/v2/operational', operationalV2Routes);  // 🏥 NOVO: Painel Operacional V2
 
@@ -562,6 +568,9 @@ app.use('/api/financial/convenio', convenioRoutes);
 app.use('/api/v2', insuranceV2Routes);
 app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
 app.use('/api/v2/insurance-plans', insurancePlansV2Routes);
+app.use('/api/v2/communications', communicationRoutes);  // 🏥 Central de Comunicações
+app.use('/api/v2/patient-documents', patientDocumentsRoutes);  // 📎 Document Center de pacientes
+app.use('/api/v2/billing-documents', billingDocumentsRoutes);  // 📄 Dossiê de faturamento
 app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
 app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
 app.use('/api/reminders', reminderRoutes);
@@ -584,6 +593,7 @@ app.use('/api/calendar', calendarRoutes);
 app.use('/api/v2/financial', financialSummaryRoutes);  // 💰 Fonte de verdade financeira (Payment-based)
 app.use('/api/observability', observabilityRoutes);  // 🚀 NOVO: Dashboard de Observabilidade
 app.use('/api/v2/admin/financial-metrics', adminFinancialMetricsRoutes);  // 📊 Métricas financeiras internas
+app.use('/api/v2/fiscal', fiscalRoutes);  // 📄 MVP: Módulo Fiscal NFS-e
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

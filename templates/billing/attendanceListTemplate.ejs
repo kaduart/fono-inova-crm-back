@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Lista de Presença</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
+        h1 { color: #333; font-size: 18px; margin-bottom: 4px; }
+        .subtitle { color: #666; font-size: 12px; margin-bottom: 16px; }
+        .info { margin-bottom: 16px; }
+        .info div { margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f3f4f6; }
+        .footer { margin-top: 24px; font-size: 11px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>Lista de Presença</h1>
+    <div class="subtitle">
+        <%= data.clinicName || 'Clínica Fono Inova' %> · <%= data.insuranceName || data.insuranceProvider %>
+    </div>
+
+    <div class="info">
+        <div><strong>Paciente:</strong> <%= data.patientName %></div>
+        <div><strong>Período:</strong> <%= data.periodLabel %></div>
+        <div><strong>Total de sessões:</strong> <%= data.sessions.length %></div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Data</th>
+                <th>Hora</th>
+                <th>Profissional</th>
+                <th>Especialidade</th>
+                <th>Tipo</th>
+                <th>Assinatura</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% data.sessions.forEach(function(session, index) { %>
+            <tr>
+                <td><%= index + 1 %></td>
+                <td><%= session.date %></td>
+                <td><%= session.time || '-' %></td>
+                <td><%= session.professionalName || '-' %></td>
+                <td><%= session.specialty || '-' %></td>
+                <td><%= session.serviceType || '-' %></td>
+                <td></td>
+            </tr>
+            <% }); %>
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Documento gerado automaticamente em <%= data.generatedAt %>.
+    </div>
+</body>
+</html>

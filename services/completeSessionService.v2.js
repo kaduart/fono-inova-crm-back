@@ -801,14 +801,12 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         }
 
         if ((billingType === 'particular' || billingType === 'liminar') && sessionValue > 0) {
-            if (paymentCreated) {
-                await recordPaymentReceived(
-                    paymentCreated,
-                    { userId, correlationId },
-                    mongoSession
-                );
-                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado (${billingType})`);
-            } else if (billingType === 'particular' && isBalanceOrigin) {
+            // ⚠️ isBalanceOrigin (fiado) PRECISA ser checado antes de paymentCreated:
+            // o sub-caso fiado em particularHandler.js TAMBÉM cria um Payment (status 'pending')
+            // e retorna paymentCreated truthy. Se checássemos paymentCreated primeiro, todo
+            // addToBalance seria lançado como payment_received (dinheiro recebido de verdade)
+            // em vez de payment_pending + débito no PatientBalance — duplicando receita no caixa.
+            if (billingType === 'particular' && isBalanceOrigin) {
                 await FinancialLedger.credit({
                     type: 'payment_pending',
                     amount: sessionValue,
@@ -857,6 +855,13 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     patientId: appointment.patient?._id?.toString(),
                     newBalance: balanceResult ? balanceResult.currentBalance : sessionValue
                 });
+            } else if (paymentCreated) {
+                await recordPaymentReceived(
+                    paymentCreated,
+                    { userId, correlationId },
+                    mongoSession
+                );
+                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado (${billingType})`);
             }
         }
 

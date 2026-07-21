@@ -108,6 +108,7 @@
     "puppeteer": "^24.42.0",
     "qrcode": "^1.5.4",
     "redis": "^5.8.3",
+    "resend": "^6.17.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "uuid": "^13.0.0",

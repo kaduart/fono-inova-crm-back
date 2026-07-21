@@ -466,8 +466,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
             statusCode: error.statusCode || 500
         });
 
-        res.status(500).json({
-            error: 'Erro interno no servidor',
+        const statusCode = error.statusCode && error.statusCode < 500 ? error.statusCode : 500;
+        const isBusinessError = statusCode < 500;
+
+        res.status(statusCode).json({
+            error: isBusinessError ? error.message : 'Erro interno no servidor',
+            code: isBusinessError ? error.code : undefined,
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }

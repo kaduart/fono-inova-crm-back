@@ -6,7 +6,6 @@ import { startBalanceWorker } from './balanceWorker.js';
 import { startPackageValidationWorker } from './packageValidationWorker.js';
 import { startReconciliationWorker } from './reconciliationWorker.js';
 import { startAppointmentWorker } from './appointmentWorker.js';
-import { startPreAgendamentoWorker } from './preAgendamentoWorker.js';
 import { startAppointmentIntegrationWorker } from './appointmentIntegrationWorker.js';
 import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
 import { startCompleteOrchestratorWorker } from './completeOrchestratorWorker.js';
@@ -28,6 +27,7 @@ import { patientProjectionWorker } from '../domains/clinical/workers/patientProj
 
 import { packageProjectionWorker } from '../domains/billing/workers/packageProjectionWorker.js';
 import { packageProcessingWorker } from '../domains/billing/workers/packageProcessingWorker.js';
+import { communicationEmailWorker } from '../domains/billing/workers/communicationEmailWorker.js';
 import { startClinicalOrchestratorWorker } from '../domains/clinical/workers/clinicalOrchestrator.js';
 import { startSessionWorker } from '../domains/clinical/workers/sessionWorker.js';
 
@@ -85,7 +85,6 @@ const GROUPS = {
     }
 
     if (isEnabled('ENABLE_SCHEDULING_APPOINTMENT')) workers.push(startAppointmentWorker());
-    if (isEnabled('ENABLE_SCHEDULING_PRE_AGENDAMENTO')) workers.push(startPreAgendamentoWorker());
     if (isEnabled('ENABLE_SCHEDULING_APPOINTMENT_INTEGRATION')) workers.push(startAppointmentIntegrationWorker());
     if (isEnabled('ENABLE_SCHEDULING_UPDATE')) workers.push(startUpdateOrchestratorWorker());
     if (isEnabled('ENABLE_SCHEDULING_SYNC_MEDICAL')) workers.push(startSyncMedicalWorker());
@@ -104,6 +103,7 @@ const GROUPS = {
     if (isEnabled('ENABLE_BILLING_TOTALS')) workers.push(startTotalsWorker());
     if (isEnabled('ENABLE_BILLING_PACKAGE_PROJECTION')) workers.push(packageProjectionWorker);
     if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
+    if (isEnabled('ENABLE_BILLING_COMMUNICATION_EMAIL', true)) workers.push(communicationEmailWorker);
     if (isEnabled('ENABLE_BILLING_CONSUMER')) workers.push(startBillingConsumerWorker());
     if (isEnabled('ENABLE_BILLING_INSURANCE')) workers.push(startInsuranceOrchestratorWorker());
     if (isEnabled('ENABLE_BILLING_COMMISSION_GENERATION', true)) workers.push(startCommissionGenerationWorker());

@@ -24,6 +24,11 @@ const insurancePlanSchema = new mongoose.Schema({
     { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }
   ],
 
+  // Flag que indica que a configuração do plano mudou estruturalmente e a agenda
+  // futura ainda não foi sincronizada. O card exibe um alerta e o botão "Gerar
+  // sessões" aplica a nova configuração.
+  needsSessionRegeneration: { type: Boolean, default: false },
+
   status: {
     type: String,
     enum: ['active', 'completed', 'canceled'],

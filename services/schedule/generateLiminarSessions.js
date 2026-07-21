@@ -222,16 +222,49 @@ export async function generateLiminarSessions({
     return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
   }
 
-  // ── 6. Alerta de saldo (não bloqueia) ─────────────────────────
+  // ── 6. Trava de saldo: nunca gera além do crédito disponível ───
+  // 🚨 FIX (2026-07-16): antes só avisava (console.warn) sem impedir a criação —
+  // permitia agendar mais sessões do que a liminar tinha crédito pra cobrir,
+  // diferente do convênio (generateInsuranceSessions.js), que trava em
+  // `remaining = totalSessions - usedSessions - reservado`. Ordena os slots
+  // gerados por data e mantém só os que cabem no saldo disponível; o resto
+  // (mais distante no tempo) é cortado e reportado, nunca criado.
+  slots.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+
+  let runningCost = 0;
+  let cutoffIndex = slots.length;
+  for (let i = 0; i < slots.length; i++) {
+    runningCost += slots[i].sessionValue;
+    if (runningCost > contract.creditBalance) {
+      cutoffIndex = i;
+      break;
+    }
+  }
+
+  const blockedSlots = slots.slice(cutoffIndex);
+  slots.length = cutoffIndex; // trunca in-place — só sobra o que cabe no saldo
+
   const totalCost = slots.reduce((s, sl) => s + sl.sessionValue, 0);
   console.log('[generateLiminarSessions] 📋 Especialidades ativas:', activeEntries.map(([sp]) => sp));
-  if (contract.creditBalance < totalCost) {
-    console.warn('[generateLiminarSessions] ⚠️ Saldo insuficiente para toda a janela', {
-      contractId:    contract._id,
-      creditBalance: contract.creditBalance,
-      totalCost,
-      slotCount:     slots.length
+
+  if (blockedSlots.length > 0) {
+    console.warn('[generateLiminarSessions] ⛔ Saldo insuficiente — geração cortada além do crédito disponível', {
+      contractId:        contract._id,
+      creditBalance:     contract.creditBalance,
+      slotsSolicitados:  slots.length + blockedSlots.length,
+      slotsGerados:      slots.length,
+      slotsBloqueados:   blockedSlots.length,
+      primeiroBloqueado: `${blockedSlots[0].dateStr} ${blockedSlots[0].time} (${blockedSlots[0].specialty})`
     });
+  }
+
+  if (slots.length === 0) {
+    return {
+      created: 0, skipped: 0, total: 0, totalCost: 0,
+      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
+      saldoInsuficiente: blockedSlots.length > 0,
+      slotsBloqueadosPorSaldo: blockedSlots.length
+    };
   }
 
   // ── 7. bulkWrite upsert ────────────────────────────────────────
@@ -407,6 +440,8 @@ export async function generateLiminarSessions({
     conflictSlots,
     totalCost,
     saldo:         contract.creditBalance,
-    saldoAposTudo: contract.creditBalance - totalCost
+    saldoAposTudo: contract.creditBalance - totalCost,
+    saldoInsuficiente:       blockedSlots.length > 0,
+    slotsBloqueadosPorSaldo: blockedSlots.length
   };
 }

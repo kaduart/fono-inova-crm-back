@@ -63,7 +63,6 @@ Uso:
 
 const ALL_QUEUES = [
   'appointment-processing',
-  'preagendamento-processing',
   'appointment-integration',
   'appointment-update',
   'complete-orchestrator',

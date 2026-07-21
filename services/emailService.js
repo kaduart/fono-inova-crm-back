@@ -1,6 +1,5 @@
 // services/emailService.js
-import axios from 'axios';
-import nodemailer from 'nodemailer';
+import { getEmailProvider } from './email/EmailProviderFactory.js';
 
 function buildResetUrl(resetToken, role) {
   const isProd = process.env.NODE_ENV === 'production';
@@ -11,107 +10,28 @@ function buildResetUrl(resetToken, role) {
   return `${base}/reset-password/${resetToken}${role ? `?role=${role}` : ''}`;
 }
 
-function createTransporter() {
-  const host = process.env.SMTP_HOST || 'in-v3.mailjet.com';
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER;   // Mailjet API Key
-  const pass = process.env.SMTP_PASS;   // Mailjet Secret Key
-
-  if (!user || !pass) {
-    throw new Error('SMTP_USER/SMTP_PASS ausentes (Mailjet).');
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    // 587 => STARTTLS; 465 => SSL
-    secure: port === 465,
-    requireTLS: port === 587,
-    auth: { user, pass },
-    // Em alguns ambientes o certificado intermediário quebra a verificação.
-    // Mantém true por padrão, mas permite desativar por env se necessário.
-    tls: {
-      rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
-      ciphers: 'TLSv1.2',
-      minVersion: 'TLSv1.2',
-    },
-    pool: true,
-    maxConnections: 3,
-    maxMessages: 50,
-    socketTimeout: 20000,
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    // authMethod: 'LOGIN', // comente/ative se seu provedor exigir
-  });
-}
-
-function parseFrom(fromEmail, fromName) {
-  if (fromName) return `"${fromName}" <${fromEmail}>`;
-  return fromEmail;
+function buildDefaultFrom(fromEmail, fromName) {
+  const defaultFromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
+  const defaultFromName = process.env.EMAIL_FROM_NAME || 'Clinica Fono Inova';
+  return {
+    fromEmail: fromEmail || defaultFromEmail,
+    fromName: fromName || defaultFromName
+  };
 }
 
 /**
- * Fallback Mailjet REST
- */
-async function sendViaMailjetREST({ to, subject, html, text }) {
-  const key = process.env.SMTP_USER;   // Mailjet API Key
-  const secret = process.env.SMTP_PASS; // Mailjet Secret
-  if (!key || !secret) throw new Error('Mailjet REST sem credenciais');
-
-  const fromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
-  const fromName = process.env.EMAIL_FROM_NAME || 'Clinica Fono Inova';
-
-  const res = await axios.post(
-    'https://api.mailjet.com/v3.1/send',
-    {
-      Messages: [
-        {
-          From: { Email: fromEmail, Name: fromName },
-          To: [{ Email: to }],
-          Subject: subject,
-          HTMLPart: html,
-          TextPart: text,
-          CustomID: `pwd-reset-${Date.now()}`,
-        },
-      ],
-    },
-    {
-      auth: { username: key, password: secret },
-      timeout: 15000,
-    }
-  );
-
-  const status = res?.data?.Messages?.[0]?.Status;
-  if (status !== 'success') {
-    throw new Error(`Mailjet REST retorno: ${status || 'desconhecido'}`);
-  }
-  return true;
-}
-
-/**
- * Envia e-mail de reset de senha usando Mailjet (SMTP). Se falhar, usa REST.
+ * Envia e-mail de reset de senha.
  * @param {{ email:string, resetToken:string, role?:'admin'|'doctor' }} params
  * @returns {Promise<boolean>}
  */
 export async function sendPasswordResetEmail({ email, resetToken, role }) {
-  const transporter = createTransporter();
-
-  // ⚠️ verify() só para log — não aborta o fluxo se falhar
-  try {
-    await transporter.verify();
-  } catch (e) {
-    console.warn('[Mailjet SMTP] verify falhou (seguindo para sendMail):', e?.code || e?.message || e);
-  }
-
-  const fromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
-  const fromName = process.env.EMAIL_FROM_NAME || 'Clinica Fono Inova';
-
+  const { fromEmail, fromName } = buildDefaultFrom();
   const resetUrl = buildResetUrl(resetToken, role);
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="background: #f3f4f6; padding: 16px; text-align: center;">
-        <img src="${process.env.LOGO_URL || 'https://via.placeholder.com/150'}" alt="Logo" style="height: 48px;">
+        <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 48px;">
       </div>
       <div style="padding: 24px;">
         <h2 style="color: #2563eb; margin: 0 0 8px;">Redefina sua senha</h2>
@@ -127,35 +47,48 @@ export async function sendPasswordResetEmail({ email, resetToken, role }) {
     </div>
   `;
 
-  const mailOptions = {
-    from: parseFrom(fromEmail, fromName),
+  const text = `Redefina sua senha: ${resetUrl}\n\nLink válido por 10 minutos.`;
+  const provider = getEmailProvider();
+
+  const result = await provider.sendEmail({
     to: email,
     subject: 'Redefinição de Senha - Fono Inova',
-    text: `Redefina sua senha: ${resetUrl}\n\nLink válido por 10 minutos.`,
     html,
-    headers: { 'X-Entity-Ref-ID': `pwd-reset-${Date.now()}` },
-  };
+    text,
+    customId: `pwd-reset-${Date.now()}`,
+    fromEmail,
+    fromName
+  });
 
-  // 1) Tenta SMTP
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    if (!info?.messageId) throw new Error('SMTP: envio sem messageId');
-    return true;
-  } catch (smtpErr) {
-    console.error('[Mailjet SMTP] sendMail falhou:', smtpErr?.code, smtpErr?.response?.toString?.() || smtpErr?.message || smtpErr);
-    // 2) Fallback REST
-    try {
-      await sendViaMailjetREST({
-        to: email,
-        subject: mailOptions.subject,
-        html: mailOptions.html,
-        text: mailOptions.text,
-      });
-      return true;
-    } catch (restErr) {
-      console.error('[Mailjet REST] falhou:', restErr?.response?.data || restErr?.message || restErr);
-      // Propaga para o controller retornar 502 (mantendo tua regra)
-      throw restErr;
-    }
-  }
+  return result.success;
 }
+
+/**
+ * Envia e-mail genérico com anexos via provider configurado (Resend/SMTP/Mailjet).
+ * @param {{ to: string, subject: string, html: string, text?: string, attachments?: Array<{ url: string, name?: string, publicId?: string }>, customId?: string, fromEmail?: string, fromName?: string }} params
+ * @returns {Promise<{ success: boolean, messageId?: string, protocol?: string }>}
+ */
+export async function sendEmailWithAttachments({
+  to,
+  subject,
+  html,
+  text = '',
+  attachments = [],
+  customId,
+  fromEmail,
+  fromName
+}) {
+  const provider = getEmailProvider();
+  return provider.sendEmail({
+    to,
+    subject,
+    html,
+    text,
+    attachments,
+    customId,
+    fromEmail,
+    fromName
+  });
+}
+
+export { getEmailProvider };

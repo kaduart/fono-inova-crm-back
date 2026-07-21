@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import GuidePolicySchema from './schemas/GuidePolicySchema.js';
+import CommunicationRuleSchema from './schemas/CommunicationRuleSchema.js';
 
 /**
  * 🏥 Convenio Model
@@ -55,6 +56,30 @@ const convenioSchema = new mongoose.Schema({
   // Regras operacionais de renovação — define como as guias deste convênio funcionam
   guidePolicy: GuidePolicySchema,
 
+  // Regras de comunicação com convênio — por propósito (autorização, faturamento, etc.)
+  communicationRules: {
+    authorization: CommunicationRuleSchema,
+    billing: CommunicationRuleSchema,
+    appeal: CommunicationRuleSchema,
+    documentation: CommunicationRuleSchema
+  },
+
+  // LEGADO: mantido para compatibilidade durante migration; usar communicationRules.authorization
+  authorizationRules: CommunicationRuleSchema,
+
+  // Dados fiscais do convênio — usados como destinatário ao emitir a NF (não é comportamento de guia)
+  legalName: {
+    type: String,
+    default: '',
+    trim: true
+  },
+
+  taxId: {
+    type: String,
+    default: '',
+    trim: true
+  },
+
   // Observações
   notes: {
     type: String,
@@ -67,6 +92,11 @@ const convenioSchema = new mongoose.Schema({
 
 // Índices — code já indexado via unique:true
 convenioSchema.index({ active: 1 });
+
+// Método para obter regras de comunicação por propósito (com fallback legado)
+convenioSchema.methods.getCommunicationRules = function(purpose = 'authorization') {
+  return this.communicationRules?.[purpose] || this.communicationRules?.authorization || this.authorizationRules || {};
+};
 
 // Método estático para obter valor por código
 convenioSchema.statics.getSessionValue = async function(code) {

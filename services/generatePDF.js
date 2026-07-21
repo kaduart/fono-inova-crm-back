@@ -7,6 +7,27 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export async function generatePdfFromTemplate(data, templateName) {
+    try {
+        const templatePath = path.join(__dirname, '../templates', `${templateName}.ejs`);
+        const html = await ejs.renderFile(templatePath, { data });
+
+        const browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({ format: 'A4' });
+
+        await browser.close();
+        return pdfBuffer;
+    } catch (error) {
+        throw new Error(`Erro ao gerar PDF do template ${templateName}: ${error.message}`);
+    }
+}
+
 export async function generatePdfFromEvolution(evolution) {
     try {
         // Caminho do template HTML
@@ -16,7 +37,7 @@ export async function generatePdfFromEvolution(evolution) {
         const html = await ejs.renderFile(templatePath, { evolution });
 
         const browser = await puppeteer.launch({
-            headless: 'new', // headless: false se quiser ver o navegador
+            headless: 'new',
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 

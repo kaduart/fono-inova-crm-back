@@ -148,15 +148,15 @@ Read Model (View)
 | `INSURANCE_GUIDE_CREATED` | `routes/insuranceGuides.v2.js` | `patient-projection` | 🟢 Canônico via Outbox |
 | `LIMINAR_CONTRACT_CREATED` | `controllers/liminarContractController.js` | `patient-projection` | 🟢 Canônico via Outbox |
 
-### 2.9 Eventos de pré-agendamento (dormentes — confirmado em 2026-07-15)
+### 2.9 Eventos de pré-agendamento (removidos em 2026-07-15)
 
-| Evento | Publicadores | Consumidores | Status |
-|--------|--------------|--------------|--------|
-| `PREAGENDAMENTO_CREATED` | Nenhum desde 2026-07-15 (publicador era `POST /api/v2/pre-appointments`, removido por falta de uso) | `workers/preAgendamentoWorker.js:handleCreated` | 🔴 Dormente — worker não recebe mais jobs |
-| `PREAGENDAMENTO_IMPORTED` | Nenhum desde 2026-07-15 (publicador era o `/confirm` legado, substituído por `confirmPreAgendamentoCommand` que usa `saveToOutbox(APPOINTMENT_UPDATED)`) | `workers/preAgendamentoWorker.js:handleImported` | 🔴 **Já era dormente antes da migração** — não está mapeado em `eventToQueueMap`, toda chamada antiga já lançava `UNKNOWN_EVENT_TYPE` (engolido por `.catch()`). O worker nunca era de fato acionado por este evento. |
-| `PREAGENDAMENTO_STATUS_CHANGED` | Nenhum publicador encontrado em todo o código | `workers/preAgendamentoWorker.js:handleStatusChanged` | 🔴 Dormente desde sempre (confirmado por grep exaustivo) |
+| Evento | Situação encontrada | Ação |
+|--------|---------------------|------|
+| `PREAGENDAMENTO_CREATED` | Publicador era `POST /api/v2/pre-appointments` (removido antes por falta de uso); consumidor era `workers/preAgendamentoWorker.js:handleCreated` | **Removido** de `EventTypes` |
+| `PREAGENDAMENTO_IMPORTED` | Publicador era o `/confirm` legado (substituído por `confirmPreAgendamentoCommand`, que usa `saveToOutbox(APPOINTMENT_UPDATED)`). **Já era dormente antes mesmo da migração** — não estava mapeado em `eventToQueueMap`, toda chamada antiga já lançava `UNKNOWN_EVENT_TYPE` (engolido por `.catch()`) | **Removido** de `EventTypes` |
+| `PREAGENDAMENTO_STATUS_CHANGED` | Nenhum publicador encontrado em todo o código (confirmado por grep exaustivo) — nunca existiu no enum `EventTypes`, só no `switch` do worker | Sem ação de código (nunca existiu fora do worker) |
 
-`workers/preAgendamentoWorker.js` inteiro está dormente hoje. Não removido ainda — aguardando período de observação (decisão do usuário, 2026-07-15) antes de eliminar o worker, o router `routes/preAgendamento.engine.js`, e as entradas `PREAGENDAMENTO_*` de `EventTypes`/`eventToQueueMap`.
+`workers/preAgendamentoWorker.js` (que continha os 3 handlers acima, todos dormentes) foi **removido** — inclusive o registro em `workers/registry.js` e a fila `preagendamento-processing` em `health.js`/`queueOps.js`/`zeroDowntimeDeploy.js`. O router `routes/preAgendamento.engine.js` também foi removido; conteúdo ativo migrado para `routes/preAgendamentoTriage.routes.js` (mesma URL, mesmo contrato).
 
 ---
 
@@ -181,6 +181,7 @@ Read Model (View)
 | **Rebuild** | `buildPackageView()`; scripts `rebuild-packages-view.js`, `rebuild-package-view.js` |
 | **Múltiplos writers** | **Sim** — dois caminhos diferentes |
 | **Status** | 🟡 **Risco de inconsistência** |
+| **Incidente documentado** | [`2026-07-18-packagesview-projection-consistency.md`](./2026-07-18-packagesview-projection-consistency.md) — sessão cancelada some do calendário do pacote por rebuild assíncrono não confirmado. Bug relacionado (não causal): [`2026-07-18-package-sessions-id-inconsistency.md`](./2026-07-18-package-sessions-id-inconsistency.md) |
 
 ### 3.3 `PaymentsView`
 
@@ -222,7 +223,9 @@ Read Model (View)
 | 4 | Documentar/criar mecanismo de rebuild para `InsuranceGuideView` / `InsuranceBatchView` | Média | 2.5 |
 | 5 | Criar evento genérico `REBUILD_VIEW_REQUESTED { viewName, entityId }` | Média | 2.5 |
 | 6 | Mover scripts de rebuild para commands reutilizáveis | Baixa | 2.6 |
-| 7 | Remover `workers/preAgendamentoWorker.js`, `routes/preAgendamento.engine.js` e `PREAGENDAMENTO_*` de `EventTypes`/`eventToQueueMap` (dormentes, ver 2.9) | Baixa — aguardando período de observação | — |
+| 8 | Fechar o caminho residual `syncAffectedViews()` em `PackagesView` (única exceção viva à ADR 6) — ver [`2026-07-18-packagesview-projection-consistency.md`](./2026-07-18-packagesview-projection-consistency.md) | Alta | — |
+| 9 | Corrigir `adjustPackageSession()` para usar `Session._id` em vez de `Appointment._id` em `Package.sessions` — ver [`2026-07-18-package-sessions-id-inconsistency.md`](./2026-07-18-package-sessions-id-inconsistency.md) | Média | — |
+| 7 | ~~Remover `workers/preAgendamentoWorker.js`, `routes/preAgendamento.engine.js` e `PREAGENDAMENTO_*`~~ | ✅ Concluído 2026-07-15 (ver 2.9) | — |
 
 ---
 

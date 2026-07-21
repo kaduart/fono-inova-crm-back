@@ -173,7 +173,7 @@ export async function getConvenioDetailsHandler(req, res) {
  */
 export async function createConvenioHandler(req, res) {
     try {
-        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy } = req.body;
+        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy, legalName, taxId } = req.body;
         
         // Validação
         const validation = validateConvenioData({ code, name, sessionValue });
@@ -200,13 +200,16 @@ export async function createConvenioHandler(req, res) {
         // Valida guidePolicy se fornecido
         let validatedGuidePolicy = undefined;
         if (guidePolicy !== undefined && guidePolicy !== null) {
-            const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity'];
+            const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity', 'advance_authorization'];
             const validStrategies = ['eligible', 'manual', 'none'];
             if (guidePolicy.renewalType && !validRenewalTypes.includes(guidePolicy.renewalType)) {
                 return res.status(400).json({ success: false, error: 'guidePolicy.renewalType inválido' });
             }
             if (guidePolicy.defaultMigrationStrategy && !validStrategies.includes(guidePolicy.defaultMigrationStrategy)) {
                 return res.status(400).json({ success: false, error: 'guidePolicy.defaultMigrationStrategy inválido' });
+            }
+            if (guidePolicy.billingSubmissionDay != null && (guidePolicy.billingSubmissionDay < 1 || guidePolicy.billingSubmissionDay > 31)) {
+                return res.status(400).json({ success: false, error: 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31' });
             }
             validatedGuidePolicy = guidePolicy;
         }
@@ -220,7 +223,9 @@ export async function createConvenioHandler(req, res) {
             notes: notes.trim(),
             active: true,
             ...(defaultSessions !== undefined && { defaultSessions: defaultSessions === null ? null : Number(defaultSessions) || null }),
-            ...(validatedGuidePolicy && { guidePolicy: validatedGuidePolicy })
+            ...(validatedGuidePolicy && { guidePolicy: validatedGuidePolicy }),
+            ...(legalName !== undefined && { legalName: String(legalName).trim() }),
+            ...(taxId !== undefined && { taxId: String(taxId).trim() })
         });
         
         await convenio.save();
@@ -254,7 +259,7 @@ export async function createConvenioHandler(req, res) {
 export async function updateConvenioHandler(req, res) {
     try {
         const { code } = req.params;
-        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy } = req.body;
+        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy, legalName, taxId } = req.body;
         
         const normalizedCode = code.toLowerCase().trim();
         
@@ -311,14 +316,25 @@ export async function updateConvenioHandler(req, res) {
             updateData.defaultSessions = defaultSessions === null ? null : Number(defaultSessions) || null;
         }
 
+        if (legalName !== undefined) {
+            updateData.legalName = String(legalName).trim();
+        }
+
+        if (taxId !== undefined) {
+            updateData.taxId = String(taxId).trim();
+        }
+
         if (guidePolicy !== undefined && guidePolicy !== null) {
-            const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity'];
+            const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity', 'advance_authorization'];
             const validStrategies = ['eligible', 'manual', 'none'];
             if (guidePolicy.renewalType && !validRenewalTypes.includes(guidePolicy.renewalType)) {
                 return res.status(400).json({ success: false, error: 'guidePolicy.renewalType inválido' });
             }
             if (guidePolicy.defaultMigrationStrategy && !validStrategies.includes(guidePolicy.defaultMigrationStrategy)) {
                 return res.status(400).json({ success: false, error: 'guidePolicy.defaultMigrationStrategy inválido' });
+            }
+            if (guidePolicy.billingSubmissionDay != null && (guidePolicy.billingSubmissionDay < 1 || guidePolicy.billingSubmissionDay > 31)) {
+                return res.status(400).json({ success: false, error: 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31' });
             }
             // Merge parcial para não apagar campos não enviados
             updateData.guidePolicy = { ...convenio.guidePolicy?.toObject?.() ?? {}, ...guidePolicy };

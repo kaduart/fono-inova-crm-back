@@ -101,7 +101,8 @@ const paymentSchema = new mongoose.Schema({
             type: String,
             enum: ['pix', 'cartão', 'dinheiro', 'bank_transfer', 'outro', 'credit_card', 'debit_card', 'other'],
         },
-        amount: { type: Number, min: 0 }
+        amount: { type: Number, min: 0 },
+        date: { type: Date, default: null }
     }],
     source: {
         type: String,

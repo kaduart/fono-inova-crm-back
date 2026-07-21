@@ -148,3 +148,4 @@ Read models are updated exclusively by their official projection workers. The sy
 - [`docs/architecture/ARCHITECTURE_RULES.md`](ARCHITECTURE_RULES.md) — rules every PR must follow.
 - [`docs/architecture/CANONICAL_FLOW.md`](CANONICAL_FLOW.md) — end-to-end canonical flow.
 - [`docs/architecture/EVENT_PROJECTION_INVENTORY.md`](EVENT_PROJECTION_INVENTORY.md) — event → queue → worker → view mapping.
+- [`docs/architecture/2026-07-18-packagesview-projection-consistency.md`](2026-07-18-packagesview-projection-consistency.md) — real-world case of the ADR 6 exception (`syncAffectedViews()`) causing a visible bug in `PackagesView`.

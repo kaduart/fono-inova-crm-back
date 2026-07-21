@@ -161,20 +161,39 @@ export const scheduleGmbCron = () => {
         try {
             if (!makeService.isMakeConfigured()) return;
 
-            // Limpa posts travados em publishing_retry sem callback do Make (timeout 40min)
-            const stuck = await GmbPost.updateMany(
+            // Limpa posts travados em publishing_retry — reseta apenas se ainda abaixo do limite
+            // gmbPostId ausente = Google não confirmou; retryCount < 4 = evita loop infinito
+            const MAX_RETRIES = 4;
+            await GmbPost.updateMany(
                 {
                     status: 'publishing_retry',
                     nextRetryAt: { $lte: new Date() },
-                    publishedAt: { $exists: false }, // não tem publishedAt = não foi confirmado
+                    publishedAt: { $exists: false },
+                    gmbPostId: { $exists: false },
+                    retryCount: { $lt: MAX_RETRIES },
+                },
+                { $set: { status: 'scheduled', nextRetryAt: null }, $inc: { retryCount: 1 } }
+            );
+            // Posts que esgotaram retries → marca como falha permanente (para de enviar)
+            const exhausted = await GmbPost.updateMany(
+                {
+                    status: 'publishing_retry',
+                    nextRetryAt: { $lte: new Date() },
+                    publishedAt: { $exists: false },
+                    gmbPostId: { $exists: false },
+                    retryCount: { $gte: MAX_RETRIES },
                 },
                 {
-                    $set: { status: 'scheduled', nextRetryAt: null },
-                    $inc: { retryCount: 1 },
+                    $set: {
+                        status: 'failed',
+                        nextRetryAt: null,
+                        error: `Sem confirmação do Make após ${MAX_RETRIES} tentativas — possível duplicata no GMB`,
+                        lastErrorAt: new Date(),
+                    },
                 }
             );
-            if (stuck.modifiedCount > 0) {
-                console.log(`🔄 [GMB] ${stuck.modifiedCount} post(s) resetado(s) para retry (sem confirmação Make em 40min)`);
+            if (exhausted.modifiedCount > 0) {
+                console.log(`🚫 [GMB] ${exhausted.modifiedCount} post(s) marcados como failed (esgotou ${MAX_RETRIES} retries sem confirmação)`);
             }
 
             // ── Recuperação de imagem: gera imagem para posts que ficaram sem ela ──
@@ -192,7 +211,7 @@ export const scheduleGmbCron = () => {
                             console.warn(`⚠️ [GMB] Especialidade desconhecida para post ${noImgPost._id} (theme=${noImgPost.theme}) — pulando`);
                             continue;
                         }
-                        const imgResult = await gmbService.generateImageForEspecialidade(esp, noImgPost.content || '', false, 'auto', { forceNew: true });
+                        const imgResult = await gmbService.generateImageForEspecialidade(esp, noImgPost.content || '', false, 'auto', { forceNew: true, postId: noImgPost._id });
                         if (imgResult?.url) {
                             await GmbPost.updateOne({ _id: noImgPost._id }, { $set: { mediaUrl: imgResult.url, mediaType: 'image' } });
                             console.log(`✅ [GMB] Imagem recuperada para: ${noImgPost.title?.substring(0, 40)}`);
@@ -208,14 +227,22 @@ export const scheduleGmbCron = () => {
 
             console.log('🔗 [GMB] Enviando posts agendados ao Make...');
 
-            const posts = await GmbPost.findScheduledForPublish(5);
+            const posts = await GmbPost.findScheduledForPublish(2);
             if (posts.length === 0) return;
 
             for (const post of posts) {
                 try {
-                    // 🚨 Verifica se o post tem imagem antes de enviar
                     if (!post.mediaUrl) {
                         console.error(`❌ [GMB] Post ${post._id} não tem imagem. Pulando.`);
+                        continue;
+                    }
+                    // Para de enviar posts que já esgotaram retries (evita duplicatas no GMB)
+                    if ((post.retryCount || 0) >= MAX_RETRIES) {
+                        post.status = 'failed';
+                        post.error = `Esgotou ${MAX_RETRIES} tentativas`;
+                        post.lastErrorAt = new Date();
+                        await post.save();
+                        console.log(`🚫 [GMB] Post ${post._id} marcado como failed (${MAX_RETRIES} retries)`);
                         continue;
                     }
 

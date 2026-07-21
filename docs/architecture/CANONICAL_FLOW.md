@@ -151,14 +151,14 @@ saveToOutbox(APPOINTMENT_CANCELLED | PAYMENT_STATUS_CHANGED)
 
 ## 5. PRÉ-AGENDAMENTO (TRIAGEM) — Confirmar
 
-> `pre_agendado` é um estado de `operationalStatus` do próprio `Appointment`, não uma entidade separada (isso foi unificado antes de 2026-07). `preAgendamento.engine.js` é uma fachada especializada de triagem comercial sobre o mesmo `Appointment` — não cria um domínio novo.
+> `pre_agendado` é um estado de `operationalStatus` do próprio `Appointment`, não uma entidade separada (isso foi unificado antes de 2026-07). `preAgendamentoTriage.routes.js` é uma fachada especializada de triagem comercial sobre o mesmo `Appointment` — não cria um domínio novo.
 
 ```text
 Frontend (crm/front, tela da secretária)
     ↓
 POST /api/v2/pre-appointments/:id/confirm
     ↓
-routes/preAgendamento.engine.js
+routes/preAgendamentoTriage.routes.js
     ↓
 services/appointmentV2Service.js
     ↓
@@ -173,7 +173,7 @@ saveToOutbox(APPOINTMENT_UPDATED)
 
 **Antes de 2026-07-15**, esse endpoint criava um `Appointment` novo (via `appointmentHybridService.create()`) e cancelava o pré-agendamento original, deixando dois documentos para o mesmo atendimento — padrão que já causou duplicação real de registros em produção num consumidor externo. Não replicar esse padrão em nenhum outro fluxo.
 
-Outros endpoints de `preAgendamento.engine.js` (`GET /`, `/discard`, `/contact`, `/assign`, `/stats/dashboard`) seguem ativos para a triagem comercial — ver `CANONICAL_FILES.md` para o detalhamento completo e o que já foi removido por falta de uso.
+Outros endpoints de `preAgendamentoTriage.routes.js` (`GET /`, `/discard`, `/contact`, `/assign`, `/stats/dashboard`) seguem ativos para a triagem comercial — ver `CANONICAL_FILES.md` para o detalhamento completo e o que já foi removido por falta de uso.
 
 ---
 
@@ -214,7 +214,9 @@ GET /api/v2/insurance-guides/* → InsuranceGuideView
 | `publishEvent()` chamado por domínio | Use `saveToOutbox()`. |
 | `GET /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments` (criar), `PATCH /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments/:id/cancel` | **Removidos em 2026-07-15**. Sem consumidor; equivalente 100% coberto por `appointment.v2.js`. |
 | Padrão antigo do `confirm` de pré-agendamento (criar Appointment novo + cancelar original) | **Removido em 2026-07-15**. Ver seção 5. |
-| `workers/preAgendamentoWorker.js` | Dormente (evento que o alimentava nunca chegava à fila). Aguardando período de observação antes de remover — não remover ainda. |
+| `routes/preAgendamento.engine.js` | **Removido em 2026-07-15**. Conteúdo ativo migrado para `routes/preAgendamentoTriage.routes.js` (mesma URL, mesmo contrato). |
+| `workers/preAgendamentoWorker.js` | **Removido em 2026-07-15**. Estava dormente — evento que o alimentava nunca chegava à fila. |
+| `EventTypes.PREAGENDAMENTO_CREATED` / `PREAGENDAMENTO_IMPORTED`, fila `preagendamento-processing` | **Removidos em 2026-07-15**. Ver `EVENT_PROJECTION_INVENTORY.md` seção 2.9. |
 
 ---
 

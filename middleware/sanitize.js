@@ -42,9 +42,13 @@ function deepSanitize(value) {
 
 // ⛔ Rejeita payloads muito grandes (proteção simples anti-DoS/overposting)
 function guardPayloadSize(req, res, next) {
+    // Ignora uploads multipart (deixar para o multer tratar)
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+        return next();
+    }
     const len = parseInt(req.headers['content-length'] || '0', 10);
-    // Ajuste esse valor conforme sua realidade (ex.: 200 KB)
-    const MAX = 200 * 1024;
+    // Ajuste esse valor conforme sua realidade (ex.: 50 MB)
+    const MAX = 50 * 1024 * 1024;
     if (len > MAX) {
         return res.status(413).json({ success: false, message: 'Payload muito grande.' });
     }

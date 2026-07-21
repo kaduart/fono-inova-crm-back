@@ -172,6 +172,51 @@ function resolveMonthRange(month) {
   };
 }
 
+// Status de Payment que significam "já entrou no fluxo de faturamento" — não
+// devem aparecer como pendente mesmo que Session.billingBatchId nunca tenha
+// sido setado. Achado real 2026-07-20: sessões antigas (fluxo legado que só
+// atualizava Payment.insurance.status, sem popular billingBatchId na Session)
+// continuavam aparecendo como "a faturar" meses depois de já pagas — caso
+// Davi Felipe Araújo, 19 de 41 sessões "pendentes" já billed/received.
+const ALREADY_HANDLED_PAYMENT_STATUSES = ['billed', 'received', 'partial'];
+
+/**
+ * Sessões cujo Payment já mostra billed/received/partial não são pendentes de
+ * faturamento, independente do estado de billingBatchId na Session.
+ */
+async function findAlreadyHandledSessionIds(sessionIds) {
+  if (!sessionIds.length) return new Set();
+  const payments = await Payment.find({
+    session: { $in: sessionIds },
+    $or: [
+      { 'insurance.status': { $in: ALREADY_HANDLED_PAYMENT_STATUSES } },
+      { status: { $in: ALREADY_HANDLED_PAYMENT_STATUSES } }
+    ]
+  }).select('session').lean();
+  return new Set(payments.map(p => p.session?.toString()).filter(Boolean));
+}
+
+// Piso padrão da listagem de "A Faturar" quando nenhum período é passado
+// explicitamente. Decisão de produto 2026-07-20: pendências anteriores a essa
+// data são legado conhecido (Session.sessionValue nunca propagado da guia na
+// criação, Unimed Anápolis ainda em billingMode per_month) — não aparecem mais
+// na tela padrão. O dado continua intacto no banco, só não entra nesta query;
+// quem passar month/startDate/endDate explicitamente ainda enxerga qualquer
+// período, incluindo antes do corte.
+const LEGACY_PENDING_CUTOFF = new Date('2026-05-01T00:00:00');
+
+/**
+ * Filtro de data flexível: aceita início sem fim (período aberto), os dois, ou
+ * nenhum. `periodStart` sozinho é o caso comum agora que existe LEGACY_PENDING_CUTOFF.
+ */
+function buildDateFilter(start, end) {
+  if (!start && !end) return null;
+  const filter = {};
+  if (start) filter.$gte = start;
+  if (end) filter.$lte = end;
+  return filter;
+}
+
 /**
  * Filtro Mongo para sessões de convênio (independentemente de terem guia).
  */
@@ -227,6 +272,13 @@ export async function listGuidesPendingBilling(filters = {}) {
     periodEnd = monthRange.end;
   }
 
+  // Sem período explícito: aplica o piso de legado por padrão (ver LEGACY_PENDING_CUTOFF).
+  // Quem pedir um período explicitamente (month/startDate/endDate) continua vendo
+  // qualquer data, incluindo antes do corte — o piso é só o comportamento default.
+  if (!month && !startDate && !endDate) {
+    periodStart = LEGACY_PENDING_CUTOFF;
+  }
+
   logger.info('listGuidesPendingBilling start', { month, periodStart, periodEnd, insurance, patientId, page, limit });
 
   // Pipeline: encontrar guias que têm ao menos uma sessão elegível
@@ -245,13 +297,22 @@ export async function listGuidesPendingBilling(filters = {}) {
     ]
   };
 
-  if (periodStart && periodEnd) {
-    sessionMatch.date = { $gte: periodStart, $lte: periodEnd };
+  const mainDateFilter = buildDateFilter(periodStart, periodEnd);
+  if (mainDateFilter) {
+    sessionMatch.date = mainDateFilter;
   }
 
   // Só considera sessões de convênio (com ou sem guia)
   const convenioMatch = buildConvenioMatch();
   sessionMatch.$and = [convenioMatch];
+
+  // Exclui sessões cujo Payment já mostra billed/received/partial (fluxo legado
+  // que não seta billingBatchId na Session — ver findAlreadyHandledSessionIds).
+  const candidateIds = await Session.find(sessionMatch).select('_id').lean();
+  const handledIds = await findAlreadyHandledSessionIds(candidateIds.map(c => c._id));
+  if (handledIds.size > 0) {
+    sessionMatch._id = { $nin: [...handledIds].map(id => new mongoose.Types.ObjectId(id)) };
+  }
 
   const guidesWithPending = await Session.aggregate([
     { $match: sessionMatch },
@@ -294,7 +355,10 @@ export async function listGuidesPendingBilling(filters = {}) {
     insuranceGuide: { $in: guideIds },
     $or: [{ billingBatchId: { $exists: false } }, { billingBatchId: null }]
   };
-  if (periodStart && periodEnd) sessionDetailMatch.date = { $gte: periodStart, $lte: periodEnd };
+  if (mainDateFilter) sessionDetailMatch.date = mainDateFilter;
+  if (handledIds.size > 0) {
+    sessionDetailMatch._id = { $nin: [...handledIds].map(id => new mongoose.Types.ObjectId(id)) };
+  }
 
   const sessionDetails = await Session.find(sessionDetailMatch)
     .select('_id insuranceGuide date sessionValue specialty doctor')
@@ -377,7 +441,7 @@ export async function listGuidesPendingBilling(filters = {}) {
       { $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }
     ]
   };
-  if (periodStart && periodEnd) orphanMatch.date = { $gte: periodStart, $lte: periodEnd };
+  if (mainDateFilter) orphanMatch.date = mainDateFilter;
 
   const orphanSessions = await Session.find(orphanMatch)
     .populate('patient', 'fullName')
@@ -397,7 +461,15 @@ export async function listGuidesPendingBilling(filters = {}) {
 
   const paymentBySession = new Map(orphanPayments.map(p => [p.session?.toString(), p]));
 
-  const enrichedOrphans = orphanSessions.map(session => {
+  // Mesma exclusão do fluxo principal: órfã cujo Payment já mostra
+  // billed/received/partial não é pendente de faturamento.
+  const orphanSessionsFiltered = orphanSessions.filter(session => {
+    const payment = paymentBySession.get(session._id.toString());
+    const payStatus = payment?.insurance?.status || payment?.status;
+    return !ALREADY_HANDLED_PAYMENT_STATUSES.includes(payStatus);
+  });
+
+  const enrichedOrphans = orphanSessionsFiltered.map(session => {
     const payment = paymentBySession.get(session._id.toString());
     return {
       paymentId: payment?._id?.toString() || null,
@@ -493,6 +565,14 @@ async function buildOverdueBuckets({ periodStart, insurance, patientId }) {
     $and: [buildConvenioMatch()]
   };
 
+  // Mesma exclusão de listGuidesPendingBilling: Payment já billed/received/partial
+  // não é pendente, mesmo sem billingBatchId setado na Session (fluxo legado).
+  const overdueCandidateIds = await Session.find(baseSessionMatch).select('_id').lean();
+  const overdueHandledIds = await findAlreadyHandledSessionIds(overdueCandidateIds.map(c => c._id));
+  if (overdueHandledIds.size > 0) {
+    baseSessionMatch._id = { $nin: [...overdueHandledIds].map(id => new mongoose.Types.ObjectId(id)) };
+  }
+
   const buckets = new Map(); // competence (YYYY-MM) -> { competence, sessionsCount, totalValue, guides: [], orphanSessions: [] }
   const getBucket = (competence) => {
     if (!buckets.has(competence)) {
@@ -565,7 +645,10 @@ async function buildOverdueBuckets({ periodStart, insurance, patientId }) {
       .sort({ date: 1 })
       .lean();
 
+    const orphanHandledIds = await findAlreadyHandledSessionIds(orphanSessions.map(s => s._id));
+
     for (const session of orphanSessions) {
+      if (orphanHandledIds.has(session._id.toString())) continue;
       const competence = session.date.toISOString().slice(0, 7);
       const bucket = getBucket(competence);
       const value = session.sessionValue || 0;

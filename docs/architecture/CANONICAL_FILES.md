@@ -78,10 +78,10 @@ Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendame
 
 ## PRÉ-AGENDAMENTO (TRIAGEM COMERCIAL)
 
-> Histórico: até 2026-05, `PreAppointment` e `Appointment` eram entidades separadas. Hoje só existe `Appointment` — `operationalStatus: 'pre_agendado'` é apenas um estado do ciclo de vida. `preAgendamento.engine.js` é uma **fachada especializada** de triagem sobre `Appointment`, não um domínio à parte. Auditoria completa + migração feita em 2026-07-15.
+> Histórico: até 2026-05, `PreAppointment` e `Appointment` eram entidades separadas. Hoje só existe `Appointment` — `operationalStatus: 'pre_agendado'` é apenas um estado do ciclo de vida. `preAgendamentoTriage.routes.js` é uma **fachada especializada** de triagem sobre `Appointment`, não um domínio à parte. Auditoria + migração + limpeza final completas em 2026-07-15.
 
 ### Rota de entrada
-- `back/routes/preAgendamento.engine.js`, montada em `/api/v2/pre-appointments`
+- `back/routes/preAgendamentoTriage.routes.js`, montada em `/api/v2/pre-appointments` (substituiu `preAgendamento.engine.js`, removido)
 
 ### Endpoints ativos (consumidor confirmado em `crm/front`)
 - `GET /` — listagem com filtros de triagem (urgência, telefone, especialidade) — query especializada, direto no router, sem command
@@ -94,14 +94,11 @@ Esta lista define os arquivos que fazem parte do **fluxo canônico** de agendame
 ### Command de confirmação (canônico desde 2026-07-15)
 - `back/services/appointment/commands/confirmPreAgendamentoCommand.js` — transição **in-place** `pre_agendado → scheduled` (mesmo `_id`), cria `Session`/`Payment` só se ainda não existirem (reaproveita `appointmentSessionSyncService.createSessionFromAppointment`). Substituiu o padrão antigo de criar um `Appointment` novo + cancelar o original, que já causou duplicação real de registros em produção (histórico documentado em `/projetos/agenda/BACKEND_CLEANUP_REQUIRED.md` e commit `5d50ff9` desse repo).
 
-### Removidos em 2026-07-15 (código morto confirmado, sem consumidor em `crm/front`/`agenda`/`crm-v2-migracao`)
-- `GET /:id`, `POST /` (criar), `PATCH /:id`, `POST /:id/cancel` — todos tinham equivalente 100% coberto pelas rotas genéricas de `appointment.v2.js`
+### Removidos em 2026-07-15
+**Fase 1 — endpoints mortos:** `GET /:id`, `POST /` (criar), `PATCH /:id`, `POST /:id/cancel` — sem consumidor em `crm/front`/`agenda`/`crm-v2-migracao`, equivalente 100% coberto por `appointment.v2.js`.
+**Fase final — worker e router antigo:** `back/workers/preAgendamentoWorker.js` (dormente — reagia a `PREAGENDAMENTO_CREATED`/`PREAGENDAMENTO_IMPORTED`, nenhum dos dois chegava à fila; `PREAGENDAMENTO_IMPORTED` nem estava mapeado em `eventToQueueMap`, lançava `UNKNOWN_EVENT_TYPE` engolido por `.catch()`); `EventTypes.PREAGENDAMENTO_CREATED`/`PREAGENDAMENTO_IMPORTED` e a fila `preagendamento-processing`; o arquivo `preAgendamento.engine.js` (conteúdo ativo migrado para `preAgendamentoTriage.routes.js`, mesma URL, mesmo contrato — zero mudança de frontend).
 
-### Pendente de decisão — aguardando período de observação (ver memória de projeto)
-- `back/workers/preAgendamentoWorker.js` — hoje dormente: reage a `PREAGENDAMENTO_CREATED`/`PREAGENDAMENTO_IMPORTED`, mas nenhum dos dois é publicado de forma que chegue à fila (`PREAGENDAMENTO_IMPORTED` nem está mapeado em `eventToQueueMap`, lança `UNKNOWN_EVENT_TYPE` engolido por `.catch()`). Não remover ainda — decisão do usuário foi observar antes.
-- Eliminação completa do router `preAgendamento.engine.js` (incorporando `discard`/`contact`/`assign`/`dashboard`/`GET /` a `appointment.v2.js`) e limpeza de `PREAGENDAMENTO_*` em `EventTypes`/`eventToQueueMap`.
-
-> ⚠️ `back/services/appointmentHybridService.js` **continua canônico** (usado por `createAppointmentCommand.js`, seção CREATE acima) — não faz parte desta limpeza. Só sua reutilização dentro do `confirm` de pré-agendamento foi removida.
+> ⚠️ `back/services/appointmentHybridService.js` **continua canônico** (usado por `createAppointmentCommand.js`, seção CREATE acima) — nunca fez parte desta limpeza. Só sua reutilização dentro do `confirm` de pré-agendamento foi removida em 2026-07-15.
 
 ---
 

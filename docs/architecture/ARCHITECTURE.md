@@ -138,14 +138,14 @@ services/appointment/commands/cancelAppointmentCommand.js
 
 ## Appointment: PRE-AGENDAMENTO CONFIRM (commercial triage)
 
-`pre_agendado` is an `operationalStatus` value on `Appointment`, not a separate entity — `PreAppointment` and `Appointment` were unified before 2026-07. `routes/preAgendamento.engine.js` is a specialized triage facade over `Appointment`, not its own bounded context.
+`pre_agendado` is an `operationalStatus` value on `Appointment`, not a separate entity — `PreAppointment` and `Appointment` were unified before 2026-07. `routes/preAgendamentoTriage.routes.js` (formerly `preAgendamento.engine.js`, removed 2026-07-15) is a specialized triage facade over `Appointment`, not its own bounded context.
 
 ```text
 Frontend (secretary triage screen)
     ↓
 POST /api/v2/pre-appointments/:id/confirm
     ↓
-routes/preAgendamento.engine.js
+routes/preAgendamentoTriage.routes.js
     ↓
 services/appointmentV2Service.js
     ↓
@@ -264,7 +264,9 @@ The following are legacy, transition, or experimental. Do not add features to th
 - `syncAffectedViews()` for projections that already have an official projection worker — use the worker queue.
 - Workers not registered in `workers/registry.js` — if a worker file is not wired, it is not part of the architecture.
 - `GET /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments` (create), `PATCH /api/v2/pre-appointments/:id`, `POST /api/v2/pre-appointments/:id/cancel` — **removed 2026-07-15**, no consumer, fully covered by `appointment.v2.js`.
-- `workers/preAgendamentoWorker.js` — dormant (the event it reacts to is never actually published/routed). Not removed yet; the team is observing production before deleting it and the rest of `preAgendamento.engine.js`.
+- `routes/preAgendamento.engine.js` — **removed 2026-07-15**. Active content moved to `routes/preAgendamentoTriage.routes.js` (same URL, same contract, zero frontend change).
+- `workers/preAgendamentoWorker.js` — **removed 2026-07-15**. Was dormant (the event it reacted to was never actually published/routed).
+- `EventTypes.PREAGENDAMENTO_CREATED` / `PREAGENDAMENTO_IMPORTED`, queue `preagendamento-processing` — **removed 2026-07-15**. See `EVENT_PROJECTION_INVENTORY.md` section 2.9.
 
 ### Temporary architectural exception
 

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Guia de Convênio</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
+        h1 { color: #333; font-size: 18px; margin-bottom: 4px; }
+        .subtitle { color: #666; font-size: 12px; margin-bottom: 16px; }
+        .info { margin-bottom: 16px; }
+        .info div { margin-bottom: 4px; }
+        .section { margin-bottom: 16px; }
+        .section-title { font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f3f4f6; }
+    </style>
+</head>
+<body>
+    <h1>Guia de Convênio</h1>
+    <div class="subtitle"><%= data.insuranceName || data.insuranceProvider %></div>
+
+    <div class="section">
+        <div class="section-title">Dados da Guia</div>
+        <div class="info">
+            <div><strong>Número:</strong> <%= data.guideNumber %></div>
+            <div><strong>Especialidade:</strong> <%= data.specialty || '-' %></div>
+            <div><strong>Emissão:</strong> <%= data.issuedAt || '-' %></div>
+            <div><strong>Validade:</strong> <%= data.expiresAt || '-' %></div>
+            <div><strong>Status:</strong> <%= data.status || '-' %></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Paciente</div>
+        <div class="info">
+            <div><strong>Nome:</strong> <%= data.patientName %></div>
+            <div><strong>Carteirinha:</strong> <%= data.policyNumber || '-' %></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Autorização</div>
+        <div class="info">
+            <div><strong>Sessões autorizadas:</strong> <%= data.totalSessions %></div>
+            <div><strong>Sessões utilizadas:</strong> <%= data.usedSessions %></div>
+            <div><strong>Sessões restantes:</strong> <%= data.remainingSessions %></div>
+            <div><strong>Valor por sessão:</strong> <%= data.sessionValue %></div>
+            <div><strong>Valor total autorizado:</strong> <%= data.totalAuthorizedValue %></div>
+        </div>
+    </div>
+</body>
+</html>

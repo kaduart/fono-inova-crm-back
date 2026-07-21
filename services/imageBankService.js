@@ -63,7 +63,8 @@ export async function saveImageToBank(data) {
       tema,
       provider,
       prompt,
-      tags = []
+      tags = [],
+      gmbPostId = null
     } = data;
     
     // Verifica se já existe
@@ -96,6 +97,7 @@ export async function saveImageToBank(data) {
       provider: provider || 'unknown',
       prompt,
       isGeneric: false,
+      metadata: gmbPostId ? { gmbPostId: String(gmbPostId) } : {},
       ...cloudinaryInfo
     });
     

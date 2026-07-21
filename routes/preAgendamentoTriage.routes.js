@@ -1,9 +1,17 @@
 /**
- * 🔥 PRE-APPOINTMENT V2 ENGINE
- * 
- * Rotas V2 OFICIAIS de pré-agendamento.
- * Síncronas, transacionais e idempotentes.
- * Único ponto de entrada para Agenda Externa → CRM Core V2.
+ * Rotas de triagem comercial de pré-agendamentos.
+ *
+ * `pre_agendado` é um valor de `operationalStatus` do próprio `Appointment` —
+ * não existe mais uma entidade `PreAppointment` separada (unificação anterior
+ * a 2026-05). Este arquivo é uma fachada especializada sobre `Appointment`
+ * para o fluxo de triagem da secretária: listar, confirmar, descartar,
+ * registrar contato e atribuir. Não é um domínio próprio.
+ *
+ * Substitui `routes/preAgendamento.engine.js` (removido em 2026-07-15), que
+ * também tinha `GET /:id`, `POST /` (criar), `PATCH /:id` e `POST /:id/cancel`
+ * — removidos por falta de consumidor, já cobertos por `appointment.v2.js`.
+ *
+ * Ver `docs/architecture/CANONICAL_FILES.md` para o inventário completo.
  */
 
 import express from 'express';
@@ -91,7 +99,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao listar:', error);
+        console.error('[PreAgendamentoTriage] Erro ao listar:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao listar pré-agendamentos: ' + error.message
@@ -139,7 +147,7 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao confirmar:', error);
+        console.error('[PreAgendamentoTriage] Erro ao confirmar:', error);
         const status = error.status || 500;
         res.status(status).json({
             success: false,
@@ -162,8 +170,7 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
         const { reason } = req.body;
 
         // Delega ao command canônico (transação + cancela Session vinculada +
-        // libera o slot). Antes escrevia direto no Model sem tocar a Session,
-        // que ficava "ocupando" o horário mesmo após o descarte.
+        // libera o slot).
         await cancelAppointment(id, { reason: reason || 'Pré-agendamento descartado' }, req.user);
 
         const pre = await Appointment.findByIdAndUpdate(
@@ -185,7 +192,7 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
 
         res.json({ success: true, message: 'Descartado com sucesso', data: mapAppointmentDTO(pre) });
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao descartar:', error);
+        console.error('[PreAgendamentoTriage] Erro ao descartar:', error);
         const status = error.status || 500;
         res.status(status).json({
             success: false,
@@ -272,7 +279,7 @@ router.get('/stats/dashboard', flexibleAuth, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao buscar stats:', error);
+        console.error('[PreAgendamentoTriage] Erro ao buscar stats:', error);
         res.status(500).json({ success: false, error: 'Erro ao buscar estatísticas: ' + error.message });
     }
 });
@@ -314,7 +321,7 @@ router.post('/:id/contact', flexibleAuth, async (req, res) => {
 
         res.json({ success: true, data: mapAppointmentDTO(pre) });
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao registrar contato:', error);
+        console.error('[PreAgendamentoTriage] Erro ao registrar contato:', error);
         res.status(500).json({ success: false, error: 'Erro ao registrar contato: ' + error.message });
     }
 });
@@ -345,7 +352,7 @@ router.post('/:id/assign', flexibleAuth, async (req, res) => {
 
         res.json({ success: true, data: mapAppointmentDTO(pre) });
     } catch (error) {
-        console.error('[PreAppointmentEngine] Erro ao atribuir:', error);
+        console.error('[PreAgendamentoTriage] Erro ao atribuir:', error);
         res.status(500).json({ success: false, error: 'Erro ao atribuir pré-agendamento: ' + error.message });
     }
 });

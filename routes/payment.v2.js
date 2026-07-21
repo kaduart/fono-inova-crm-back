@@ -25,7 +25,9 @@ import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
 import { recordPaymentReceived } from '../services/financialLedgerService.js';
 import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
+import FinancialLedger from '../models/FinancialLedger.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
@@ -1125,6 +1127,180 @@ router.patch('/:id', auth, async (req, res) => {
             success: false,
             error: 'Erro ao atualizar pagamento',
             code: 'PAYMENT_UPDATE_ERROR'
+        });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// ============================================
+// PATCH /api/v2/payments/:id/register-debit
+// Converte um Payment 'pending' particular em débito formal (fiado):
+// lança payment_pending no ledger + debita no PatientBalance.
+// Não recria/duplica o Payment — reaproveita o existente (caso Isis 2026-07-17:
+// refazer o complete pra marcar débito criava um segundo Payment e duplicava o caixa).
+// ============================================
+router.patch('/:id/register-debit', auth, async (req, res) => {
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+        return res.status(400).json({ success: false, error: 'ID de pagamento inválido', code: 'INVALID_PAYMENT_ID' });
+    }
+
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
+    try {
+        const payment = await Payment.findById(id).session(mongoSession);
+
+        if (!payment) {
+            await mongoSession.abortTransaction();
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado', code: 'PAYMENT_NOT_FOUND' });
+        }
+
+        if (payment.billingType !== 'particular') {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: `Só é possível registrar débito em pagamentos particulares. Este é ${payment.billingType}.`,
+                code: 'PAYMENT_TYPE_BLOCKED'
+            });
+        }
+
+        if (!['pending', 'paid'].includes(payment.status)) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: `Só é possível registrar débito em pagamentos pendentes ou pagos. Status atual: ${payment.status}.`,
+                code: 'INVALID_STATUS_FOR_DEBIT'
+            });
+        }
+
+        if (!payment.patient) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, error: 'Pagamento sem paciente vinculado.', code: 'PAYMENT_WITHOUT_PATIENT' });
+        }
+
+        // Idempotência: evita débito duplicado se o botão for clicado 2x
+        const alreadyRegistered = await FinancialLedger.findOne({
+            payment: id,
+            type: 'payment_pending',
+            'metadata.source': 'manual_debit_registration'
+        }).session(mongoSession).lean();
+
+        if (alreadyRegistered) {
+            await mongoSession.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                error: 'Este pagamento já foi registrado como débito.',
+                code: 'ALREADY_REGISTERED_AS_DEBIT'
+            });
+        }
+
+        const wasPaid = payment.status === 'paid';
+        const correlationId = `manual_debit_${id}_${Date.now()}`;
+        const now = new Date();
+
+        // Se já estava marcado como pago (secretária completou sem marcar débito),
+        // reverte o payment_received original antes de lançar o débito — senão o caixa
+        // fica contando a mesma sessão como recebida E como fiada ao mesmo tempo.
+        if (wasPaid) {
+            await FinancialLedger.debit({
+                type: 'reversal',
+                amount: payment.amount,
+                billingType: 'particular',
+                patient: payment.patient,
+                appointment: payment.appointment,
+                session: payment.session,
+                payment: payment._id,
+                correlationId: `${correlationId}_reversal`,
+                description: 'Reversão: pagamento marcado como pago, convertido para débito via tela financeira',
+                occurredAt: now,
+                createdBy: req.user?._id,
+                metadata: { source: 'manual_debit_registration', reason: 'secretary_forgot_addToBalance' }
+            }, mongoSession);
+        }
+
+        await FinancialLedger.credit({
+            type: 'payment_pending',
+            amount: payment.amount,
+            billingType: 'particular',
+            patient: payment.patient,
+            appointment: payment.appointment,
+            session: payment.session,
+            payment: payment._id,
+            correlationId,
+            description: 'Sessão particular fiada - registrado manualmente via tela financeira',
+            occurredAt: now,
+            createdBy: req.user?._id,
+            metadata: { source: 'manual_debit_registration', reason: 'secretary_forgot_addToBalance' }
+        }, mongoSession);
+
+        // Se estava pago, reverte o Payment de volta pra pending (fiado) — sem isso
+        // o caixa continua mostrando o valor como recebido apesar do estorno acima.
+        if (wasPaid) {
+            await Payment.findByIdAndUpdate(
+                id,
+                { $set: { status: 'pending', paidAt: null, financialDate: null } },
+                { session: mongoSession }
+            );
+        }
+
+        const balanceResult = await PatientBalance.findOneAndUpdate(
+            { patient: payment.patient },
+            {
+                $push: {
+                    transactions: {
+                        type: 'debit',
+                        amount: payment.amount,
+                        description: 'Sessão fiada (registrada via tela financeira)',
+                        sessionId: payment.session || null,
+                        appointmentId: payment.appointment || null,
+                        correlationId,
+                        registeredBy: req.user?._id,
+                        transactionDate: now
+                    }
+                },
+                $inc: { currentBalance: payment.amount, totalDebited: payment.amount },
+                $setOnInsert: { patient: payment.patient, createdAt: now },
+                $set: { lastTransactionAt: now }
+            },
+            { session: mongoSession, upsert: true, new: true }
+        );
+
+        // Sincroniza Session/Appointment pra refletir estado de fiado (se existirem)
+        if (payment.session) {
+            await Session.findByIdAndUpdate(
+                payment.session,
+                { $set: { isPaid: false, paymentStatus: 'unpaid', paymentOrigin: 'manual_balance' } },
+                { session: mongoSession }
+            );
+        }
+        if (payment.appointment) {
+            await Appointment.findByIdAndUpdate(
+                payment.appointment,
+                { $set: { isPaid: false, paymentStatus: 'unpaid' } },
+                { session: mongoSession }
+            );
+        }
+
+        await mongoSession.commitTransaction();
+
+        const updated = await Payment.findById(id).populate('patient doctor session');
+        return res.json({
+            success: true,
+            data: updated,
+            balance: balanceResult?.currentBalance,
+            message: 'Pagamento registrado como débito com sucesso'
+        });
+
+    } catch (error) {
+        await safeAbortTransaction(mongoSession);
+        logger.error(`[V2 register-debit ${id}] ❌ Erro: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: 'Erro ao registrar débito',
+            code: 'DEBIT_REGISTRATION_ERROR'
         });
     } finally {
         await mongoSession.endSession();

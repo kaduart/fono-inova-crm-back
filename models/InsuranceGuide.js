@@ -520,16 +520,25 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
 insuranceGuideSchema.methods.consumeSession = async function (mongoSession, context = {}) {
   // Validações críticas
   if (this.status !== 'active') {
-    throw new Error(`Guia está ${this.status} e não pode ser utilizada`);
+    const err = new Error(`Guia está ${this.status} e não pode ser utilizada`);
+    err.code = 'GUIDE_NOT_ACTIVE';
+    err.statusCode = 422;
+    throw err;
   }
 
   if (this.usedSessions >= this.totalSessions) {
-    throw new Error('Guia não possui sessões disponíveis');
+    const err = new Error('Guia não possui sessões disponíveis');
+    err.code = 'GUIDE_EXHAUSTED';
+    err.statusCode = 422;
+    throw err;
   }
 
   const now = new Date();
   if (this.expiresAt < now) {
-    throw new Error('Guia expirada e não pode ser utilizada');
+    const err = new Error('Guia expirada e não pode ser utilizada');
+    err.code = 'GUIDE_EXPIRED';
+    err.statusCode = 422;
+    throw err;
   }
 
   // Incrementa contador

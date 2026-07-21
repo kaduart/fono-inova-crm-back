@@ -8,6 +8,9 @@ import { generateLiminarSessions } from '../services/schedule/generateLiminarSes
 import { computeExhaustionProjection } from '../services/liminar/liminarProjectionService.js';
 import { createContextLogger } from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { cancelAppointments } from '../domain/appointment/cancelAppointments.js';
+import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
+import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
 
 const logger = createContextLogger('LiminarContract');
 
@@ -485,7 +488,12 @@ export async function updateTherapy(req, res) {
         const dow = new Date(a.date).getDay();
         const newTime = newDayToTime.get(dow);
         if (newTime) {
-          if (newTime !== a.time) timeSyncMap.set(String(a._id), newTime);
+          // 🚨 FIX (2026-07-16): sempre sincroniza, mesmo se newTime === Appointment.time — não
+          // depende de detectar mudança no Appointment. Espelha o mesmo bug/fix já identificado
+          // em routes/insurancePlans.v2.js: o Appointment pode já estar correto (de uma sync
+          // anterior a este fix) enquanto a Session correspondente ficou presa no horário antigo
+          // pra sempre, porque só o Appointment era comparado aqui e a Session nunca era tocada.
+          timeSyncMap.set(String(a._id), newTime);
         } else {
           toCancelIds.push(a._id);
         }
@@ -574,6 +582,26 @@ export async function updateTherapy(req, res) {
       if (bulkOps.length > 0) {
         const result = await Appointment.bulkWrite(bulkOps, { session });
         appointmentsUpdated = result.modifiedCount;
+      }
+    }
+
+    // 🚨 FIX (2026-07-16): sincroniza o novo horário também na Session vinculada.
+    // Mesmo bug já corrigido em routes/insurancePlans.v2.js (convênio): o bloco acima só
+    // propagava doctor/sessionValue/time pro Appointment — a Session ficava travada no
+    // horário antigo pra sempre, e o slot antigo continuava "fantasma" bloqueando a agenda
+    // do médico (conflictDetection.js lê o horário direto da Session, não do Appointment).
+    // Precisa ser bulkWrite (não updateMany) porque cada appointment pode ter um horário
+    // novo diferente.
+    if (timeSyncMap.size > 0) {
+      const sessionTimeBulkOps = Array.from(timeSyncMap.entries()).map(([apptId, newTime]) => ({
+        updateOne: {
+          filter: { appointmentId: new mongoose.Types.ObjectId(apptId), status: { $ne: 'completed' } },
+          update: { $set: { time: newTime, updatedAt: new Date() } }
+        }
+      }));
+
+      if (sessionTimeBulkOps.length > 0) {
+        await Session.bulkWrite(sessionTimeBulkOps, { session });
       }
     }
 
@@ -769,5 +797,72 @@ export async function getContractIntegrity(req, res) {
       missing: totalMissing,
       integrityPercent,
     }
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// POST /api/v2/liminar-contracts/:id/inactivate
+// Inativa contrato: cancela sessions/appointments/payments pendentes, mantém histórico.
+// NÃO mexe em totalCredit/usedCredit/creditBalance — o crédito só é debitado em
+// COMPLETE_SESSION (services/financialGuard/guards/liminar.guard.js), agendamento
+// nunca debita, então não existe "crédito reservado" a devolver ao cancelar
+// sessões futuras (mesmo invariante já documentado para Package.sessionsUsed).
+// ──────────────────────────────────────────────────────────────
+export async function inactivateContract(req, res) {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  const contractObjId = new mongoose.Types.ObjectId(id);
+  const contract = await LiminarContract.findById(contractObjId).lean();
+  if (!contract) {
+    return res.status(404).json({ error: 'Contrato não encontrado' });
+  }
+  if (contract.status === 'canceled') {
+    return res.status(400).json({ error: 'Contrato já está inativo' });
+  }
+
+  const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
+
+  // Session não tem campo liminarContract direto — encontra via Appointment.liminarContract
+  const pendingAppointments = await Appointment.find({
+    liminarContract: contractObjId,
+    operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
+  }).select('_id').lean();
+  const appointmentIds = pendingAppointments.map(a => a._id);
+
+  const [sessionsResult, appointmentsResult, paymentsResult] = await Promise.all([
+    appointmentIds.length > 0
+      ? cancelPendingSessions({ appointmentId: { $in: appointmentIds }, status: { $in: pendingStatuses } })
+      : Promise.resolve({ modifiedCount: 0 }),
+    appointmentIds.length > 0
+      ? cancelAppointments({
+          _id: { $in: appointmentIds },
+          operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
+        })
+      : Promise.resolve({ modifiedCount: 0 }),
+    cancelPendingPayments({ liminarContract: contractObjId, status: { $in: ['pending', 'scheduled'] } })
+  ]);
+
+  await LiminarContract.findByIdAndUpdate(
+    contractObjId,
+    { status: 'canceled', updatedAt: new Date() },
+    { runValidators: true }
+  );
+
+  logger.info('Contrato liminar inativado', {
+    contractId: id,
+    sessionsCanceled: sessionsResult.modifiedCount,
+    appointmentsCanceled: appointmentsResult.modifiedCount,
+    paymentsCanceled: paymentsResult.modifiedCount
+  });
+
+  return res.json({
+    contractId: id,
+    sessionsCanceled: sessionsResult.modifiedCount,
+    appointmentsCanceled: appointmentsResult.modifiedCount,
+    paymentsCanceled: paymentsResult.modifiedCount
   });
 }

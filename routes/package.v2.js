@@ -19,6 +19,9 @@ import Package from '../models/Package.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
+import { cancelAppointments } from '../domain/appointment/cancelAppointments.js';
+import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
+import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { createContextLogger } from '../utils/logger.js';
 import updatePackageCommand from '../services/billing/commands/updatePackageCommand.js';
@@ -398,7 +401,8 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
 
     const pkg = await Package.findById(pkgObjectId).lean();
     if (!pkg) return res.status(404).json(formatError('Pacote não encontrado'));
-    if (pkg.status === 'cancelled' || pkg.status === 'inactive') {
+    const inactiveStatuses = ['canceled', 'cancelled']; // 'cancelled' mantido até a migration rodar em todo o histórico
+    if (inactiveStatuses.includes(pkg.status)) {
       return res.status(400).json(formatError('Pacote já está inativo'));
     }
 
@@ -416,24 +420,22 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       .filter(Boolean);
 
     const [sessionsResult, appointmentsResult, paymentsResult] = await Promise.all([
-      Session.updateMany(
-        { _id: { $in: pendingSessionIds } },
-        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-      ),
+      cancelPendingSessions({ _id: { $in: pendingSessionIds } }),
       appointmentIds.length > 0
-        ? Appointment.updateMany(
-            { _id: { $in: appointmentIds }, status: { $nin: ['completed', 'canceled', 'cancelled'] } },
-            { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-          )
+        ? cancelAppointments({
+            _id: { $in: appointmentIds },
+            operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
+          })
         : Promise.resolve({ modifiedCount: 0 }),
-      Payment.updateMany(
-        { package: pkgObjectId, status: { $in: ['pending', 'scheduled'] } },
-        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-      )
+      cancelPendingPayments({ package: pkgObjectId, status: { $in: ['pending', 'scheduled'] } })
     ]);
 
     // Inativa o pacote
-    await Package.findByIdAndUpdate(pkgObjectId, { status: 'cancelled', updatedAt: new Date() });
+    await Package.findByIdAndUpdate(
+      pkgObjectId,
+      { status: 'canceled', updatedAt: new Date() },
+      { runValidators: true }
+    );
 
     // Reconstrói a view
     await buildPackageView(realPackageId.toString(), { correlationId, force: true });
@@ -496,6 +498,14 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
 
   const pendingStatuses = ['pre_agendado', 'scheduled'];
 
+  // 🚨 FIX (2026-07-20): este endpoint só escrevia em Appointment — a Session vinculada
+  // (mesmo appointmentId) nunca era tocada. Mesmo padrão já corrigido em
+  // insuranceGuides.v2.js (PATCH /:id/appointments/doctor), insurancePlans.v2.js e
+  // liminarContractController.js: doctor/time/date ficavam corretos no Appointment e
+  // travados no valor antigo na Session, e o conflictDetection.js lê Session.doctor/time
+  // pra checar ocupação — causava falso conflito de agenda com o profissional/horário
+  // ERRADO pra pacotes particular/therapy.
+
   // Se dayOfWeek foi fornecido, precisa recalcular a data de cada appointment individualmente
   if (dayOfWeek !== undefined) {
     const appointments = await Appointment.find(
@@ -503,6 +513,7 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
     ).select('_id date').lean();
 
     let updated = 0;
+    let sessionsUpdated = 0;
     for (const appt of appointments) {
       const current = new Date(appt.date);
       const currentDay = current.getDay(); // 0=dom … 6=sab
@@ -518,8 +529,25 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
 
       const r = await Appointment.updateOne({ _id: appt._id }, { $set: setFields });
       updated += r.modifiedCount;
+
+      const sr = await Session.updateOne(
+        { appointmentId: appt._id, status: { $nin: ['completed', 'canceled'] } },
+        { $set: { ...setFields, updatedAt: new Date() } }
+      );
+      sessionsUpdated += sr.modifiedCount;
+
+      // 🚨 FIX (2026-07-20): Payment.doctor é usado em relatórios financeiros por
+      // profissional — mesma classe de bug, escopo reduzido de propósito: só doctor
+      // (nunca time/date, que têm semântica financeira própria) e só em payments
+      // ainda pending (nunca paid/canceled, pra não reescrever histórico financeiro).
+      if (doctorId) {
+        await Payment.updateOne(
+          { appointment: appt._id, status: { $nin: ['paid', 'canceled'] } },
+          { $set: { doctor: new mongoose.Types.ObjectId(doctorId), updatedAt: new Date() } }
+        );
+      }
     }
-    return res.json({ success: true, data: { updated } });
+    return res.json({ success: true, data: { updated, sessionsUpdated } });
   }
 
   // Sem dayOfWeek: updateMany simples (mais eficiente)
@@ -527,12 +555,28 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
   if (doctorId) patch.doctor = new mongoose.Types.ObjectId(doctorId);
   if (time) patch.time = time;
 
+  const affectedIds = await Appointment.find(
+    { package: realPackageId, operationalStatus: { $in: pendingStatuses } }
+  ).select('_id').lean();
+
   const result = await Appointment.updateMany(
     { package: realPackageId, operationalStatus: { $in: pendingStatuses } },
     { $set: patch }
   );
 
-  return res.json({ success: true, data: { updated: result.modifiedCount } });
+  const sessionResult = await Session.updateMany(
+    { appointmentId: { $in: affectedIds.map(a => a._id) }, status: { $nin: ['completed', 'canceled'] } },
+    { $set: { ...patch, updatedAt: new Date() } }
+  );
+
+  if (doctorId) {
+    await Payment.updateMany(
+      { appointment: { $in: affectedIds.map(a => a._id) }, status: { $nin: ['paid', 'canceled'] } },
+      { $set: { doctor: new mongoose.Types.ObjectId(doctorId), updatedAt: new Date() } }
+    );
+  }
+
+  return res.json({ success: true, data: { updated: result.modifiedCount, sessionsUpdated: sessionResult.modifiedCount } });
 }));
 
 // ============================================

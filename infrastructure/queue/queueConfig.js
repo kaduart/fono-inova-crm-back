@@ -46,6 +46,14 @@ export const queueConfigs = {
             removeOnFail: 20
         }
     },
+    'communication-email': {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 3000 },
+        defaultJobOptions: {
+            removeOnComplete: 100,
+            removeOnFail: 50
+        }
+    },
     'dlq': {
         defaultJobOptions: {
             removeOnComplete: false,

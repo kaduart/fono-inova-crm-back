@@ -1460,11 +1460,63 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 1: fal.ai FLUX dev (PRIORIDADE #1 - melhor custo/benefício!)
+  // TENTATIVA 1: HuggingFace FLUX.1-schnell (gratuito, alta qualidade — PRIORIDADE #1)
+  // ═══════════════════════════════════════════════════════════
+  if (!skipHF && process.env.HUGGINGFACE_API_KEY) {
+    try {
+      console.log('🔄 [1/3] HuggingFace FLUX.1-schnell...');
+      const hfResponse = await fetch(
+        'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: { width: 1024, height: 1024, num_inference_steps: 4, guidance_scale: 0 }
+          }),
+          signal: AbortSignal.timeout(90000),
+        }
+      );
+      if (hfResponse.ok) {
+        const fotoBuf = Buffer.from(await hfResponse.arrayBuffer());
+        console.log(`✅ HuggingFace FLUX.1-schnell → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        const url = await uploadFotoLimpa(fotoBuf);
+        if (url) {
+          console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
+          try {
+            const publicId = url.split('/upload/').pop()?.split('.')[0] || url.split('/').pop().split('.')[0];
+            await saveImageToBank({
+              url,
+              publicId: `fono-inova/gmb/${publicId.split('/').pop()}`,
+              especialidade: especialidade.id,
+              tema: postContent.split('\n')[0].substring(0, 50) || 'general',
+              provider: 'hf-flux-schnell',
+              prompt,
+              gmbPostId: options.postId || null
+            });
+          } catch (e) {
+            console.warn('⚠️ [HF] Não foi possível salvar no ImageBank:', e.message);
+          }
+          return { url, provider: 'hf-flux-schnell' };
+        }
+        console.warn('⚠️ HF: Upload Cloudinary falhou, tentando próximo provider...');
+      } else {
+        console.warn('⚠️ HF retornou erro:', hfResponse.status);
+      }
+    } catch (e) {
+      console.warn('⚠️ HF falhou:', e.message);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 2: fal.ai FLUX dev (pago, alta qualidade)
   // ═══════════════════════════════════════════════════════════
   if (!skipFal && process.env.FAL_API_KEY) {
     try {
-      console.log('🚀 [1/3] fal.ai FLUX dev...');
+      console.log('🚀 [2/3] fal.ai FLUX dev...');
       
       // Função para extrair tema específico do post e gerar prompt contextualizado
       function extrairTemaParaPrompt(postContent, especialidadeId) {
@@ -1747,7 +1799,8 @@ export async function generateImageForEspecialidade(especialidade, postContent =
                 especialidade: especialidade.id,
                 tema: postContent.split('\n')[0].substring(0, 50) || 'general',
                 provider: 'fal-flux-dev',
-                prompt: falPrompt
+                prompt: falPrompt,
+                gmbPostId: options.postId || null
               });
             } catch (e) {
               console.warn('⚠️ Não foi possível salvar no ImageBank:', e.message);
@@ -1773,11 +1826,11 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 2: Freepik API (fallback #2)
+  // TENTATIVA 3: Freepik API (fallback #3)
   // ═══════════════════════════════════════════════════════════
   if (!skipFreepik && process.env.FREEPIK_API_KEY) {
     try {
-      console.log('🎨 [2/3] Freepik AI Image Generator...');
+      console.log('🎨 [3/3] Freepik AI Image Generator...');
       
       // Prompt otimizado para Freepik gerar FOTO REAL de ALTA QUALIDADE
       // Mapeamento de especialidades para evitar confusões (ex: freio lingual -> planta!)
@@ -1895,44 +1948,20 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 3: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
-  if (!skipHF && process.env.HUGGINGFACE_API_KEY) {
+  // Fallback de emergência: reutiliza qualquer imagem ativa do ImageBank da mesma especialidade
+  // Evita que o post fique bloqueado quando todos os providers de IA estão indisponíveis
+  if (especialidade?.id) {
     try {
-      console.log('🔄 [3/3] HuggingFace FLUX.1-dev...');
-      const response = await fetch(
-        'https://router.huggingface.co/black-forest-labs/FLUX.1-dev',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: { width: 1024, height: 1024, num_inference_steps: 28, guidance_scale: 3.5 }
-          }),
-          signal: AbortSignal.timeout(90000),
-        }
-      );
-
-      if (response.ok) {
-        const fotoBuf = Buffer.from(await response.arrayBuffer());
-        console.log(`✅ HuggingFace FLUX.1-dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        const url = await uploadFoto(fotoBuf);
-        if (url) {
-          console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
-          return { url, provider: 'hf-flux-dev' };
-        }
-        console.warn('⚠️ HF: Upload Cloudinary falhou, tentando próximo provider...');
+      const emergencyImg = await findExistingImage(especialidade.id, '', { limit: 5, maxUsage: 999 });
+      if (emergencyImg?.url) {
+        console.warn(`⚠️ [GMB] Usando imagem de emergência do ImageBank (${especialidade.id}): ${emergencyImg.url.substring(0, 60)}...`);
+        return { url: emergencyImg.url, provider: 'imagebank-emergency' };
       }
-      console.warn('⚠️ HF retornou erro:', response.status);
     } catch (e) {
-      console.warn('⚠️ HF falhou:', e.message);
+      console.warn('⚠️ [GMB] ImageBank emergência falhou:', e.message);
     }
   }
 
-  // Todos os providers falharam — não retorna URL temporária
   console.error('❌ [GMB] Todos os providers de imagem falharam. Post ficará sem imagem.');
   return null;
 }

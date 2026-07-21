@@ -114,6 +114,11 @@ export const ParticularHandler = {
         // e em convenioHandler.js. appointment.date é required no schema (sempre presente);
         // sessionDoc?.date tem prioridade quando existe por já refletir eventual ajuste na Session.
         const serviceDate = sessionDoc?.date || appointment.date || now;
+        // Data efetiva do pagamento: respeita a data digitada pela secretária em
+        // "Formas de Pagamento" (splitMethods[0].date). Com múltiplas formas, usa a
+        // primeira como financialDate do Payment — cada item mantém sua própria date
+        // para auditoria. Sem data informada, cai em `now` (comportamento anterior).
+        const paymentDate = splitMethods?.[0]?.date ? new Date(splitMethods[0].date) : now;
 
         // Sub-caso 1: pacote pre-pago quitado
         // ⚠️ Só aplica a pacotes prepaid (model='prepaid' ou paymentType='full')
@@ -162,26 +167,57 @@ export const ParticularHandler = {
 
         // Sub-caso 2: fiado / addToBalance
         if (isBalanceOrigin) {
-            const [paymentDoc] = await Payment.create([{
-                patient:       appointment.patient?._id,
-                amount:        sessionValue,
-                status:        'pending',
-                type:          'service',
-                serviceType:   'session',
-                paymentMethod: appointment.paymentMethod || 'cash',
-                paymentDate:   now,
-                financialDate: null,
-                serviceDate,
-                description:   `Sessao particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
-                appointment:   appointmentId,
-                session:       sessionId,
-                createdBy:     userId,
-                kind:          'session_payment',
-                billingType:   'particular',
-                ...(isPrepaidFallback ? { isFromPackage: true } : {})
-            }], { session: mongoSession });
-            appointmentUpdate.$set.payment = paymentDoc._id;
-            console.log(`[ParticularHandler] [FIADO] Payment pending criado (addToBalance): ${paymentDoc._id}`);
+            // ⛔ NÃO REMOVER este lookup — sem ele, re-completar um appointment que já
+            // tem payment (ex: reverter completed→scheduled e completar de novo) cria um
+            // SEGUNDO Payment 'pending' em vez de atualizar o existente, duplicando o
+            // lançamento no FinancialLedger (payment_pending/payment_received em dobro).
+            // Bug confirmado 2026-07-17 (caso Isis): duas tentativas de complete geraram
+            // dois Payments de R$160 e R$320 lançados no caixa para uma sessão só.
+            let paymentDoc;
+            if (appointment.payment) {
+                const existingPaymentId = appointment.payment._id || appointment.payment;
+                paymentDoc = await Payment.findByIdAndUpdate(
+                    existingPaymentId,
+                    {
+                        $set: {
+                            amount:        sessionValue,
+                            status:        'pending',
+                            paymentMethod: appointment.paymentMethod || 'cash',
+                            paymentDate,
+                            financialDate: null,
+                            serviceDate,
+                            description:   `Sessao particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
+                            kind:          'session_payment',
+                            billingType:   'particular',
+                            updatedAt:     now,
+                            ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                console.log(`[ParticularHandler] [FIADO] Payment existente atualizado (addToBalance): ${paymentDoc._id}`);
+            } else {
+                paymentDoc = (await Payment.create([{
+                    patient:       appointment.patient?._id,
+                    amount:        sessionValue,
+                    status:        'pending',
+                    type:          'service',
+                    serviceType:   'session',
+                    paymentMethod: appointment.paymentMethod || 'cash',
+                    paymentDate,
+                    financialDate: null,
+                    serviceDate,
+                    description:   `Sessao particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment:   appointmentId,
+                    session:       sessionId,
+                    createdBy:     userId,
+                    kind:          'session_payment',
+                    billingType:   'particular',
+                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
+                }], { session: mongoSession }))[0];
+                appointmentUpdate.$set.payment = paymentDoc._id;
+                console.log(`[ParticularHandler] [FIADO] Payment pending criado (addToBalance): ${paymentDoc._id}`);
+            }
 
             return paymentDoc;
         }
@@ -229,8 +265,8 @@ export const ParticularHandler = {
                         {
                             $set: {
                                 status:        'paid',
-                                paidAt:        now,
-                                financialDate: now,
+                                paidAt:        paymentDate,
+                                financialDate: paymentDate,
                                 serviceDate,
                                 amount:        sessionValue,
                                 paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
@@ -247,7 +283,7 @@ export const ParticularHandler = {
                     if (sessionId) {
                         await Session.findByIdAndUpdate(
                             sessionId,
-                            { $set: { isPaid: true, paymentStatus: 'paid', paidAt: now } },
+                            { $set: { isPaid: true, paymentStatus: 'paid', paidAt: paymentDate } },
                             { session: mongoSession }
                         );
                     }
@@ -320,9 +356,9 @@ export const ParticularHandler = {
                         type:          'service',
                         serviceType:   'session',
                         paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
-                        paymentDate:   now,
-                        paidAt:        now,
-                        financialDate: now,
+                        paymentDate,
+                        paidAt:        paymentDate,
+                        financialDate: paymentDate,
                         serviceDate,
                         description:   `Sessao per-session realizada - ${appointment.patient?.fullName || 'Paciente'}`,
                         appointment:   appointmentId,
@@ -374,8 +410,8 @@ export const ParticularHandler = {
             const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
 
             const alreadyPaid = existingPayment?.status === 'paid';
-            const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : now;
-            const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : now;
+            const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : paymentDate;
+            const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : paymentDate;
             const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (splitMethods?.[0]?.method || appointment.paymentMethod || 'cash');
 
             paymentCreated = await Payment.findByIdAndUpdate(
@@ -453,9 +489,9 @@ export const ParticularHandler = {
                     type:          'service',
                     serviceType:   'session',
                     paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || 'cash',
-                    paymentDate:   now,
-                    paidAt:        now,
-                    financialDate: now,
+                    paymentDate,
+                    paidAt:        paymentDate,
+                    financialDate: paymentDate,
                     serviceDate,
                     description:   `Sessao realizada - ${appointment.patient?.fullName || 'Paciente'}`,
                     appointment:   appointmentId,

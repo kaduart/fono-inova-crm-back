@@ -16,6 +16,9 @@ import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
 import InsurancePlan from '../models/InsurancePlan.js';
 import Doctor from '../models/Doctor.js';
+import { deleteAppointmentsWithChildren } from '../domain/appointment/deleteAppointmentsWithChildren.js';
+import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
+import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideService.js';
@@ -696,7 +699,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
       : { insuranceGuide: guideObjId };
 
     let appointments = await Appointment.find(query)
-      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom')
+      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom cancelReason')
       .populate('doctor', 'fullName')
       .sort({ date: -1 })
       .lean();
@@ -770,10 +773,19 @@ router.patch('/:id/appointments/doctor', auth, async (req, res) => {
 
   const pendingFilter = { ...baseQuery, operationalStatus: { $in: ['pre_agendado', 'scheduled'] } };
 
+  // 🚨 FIX (2026-07-16): este endpoint só escrevia em Appointment — a Session vinculada
+  // (mesmo appointmentId) nunca era tocada. doctor/time/date ficavam corretos no
+  // Appointment e travados no valor antigo na Session, e o conflictDetection.js lê
+  // Session.doctor pra checar ocupação — causava falso conflito de agenda com o
+  // profissional ERRADO (caso real: Enthony reatribuído de Mikaelly pra Lorrany no
+  // Appointment, Session ficou em Mikaelly, bloqueando a agenda dela por engano).
+  // Mesmo padrão já corrigido em insurancePlans.v2.js e liminarContractController.js.
+
   // Se dayOfWeek fornecido: recalcula data de cada appointment individualmente
   if (dayOfWeek !== undefined) {
     const appointments = await Appointment.find(pendingFilter).select('_id date').lean();
     let updated = 0;
+    let sessionsUpdated = 0;
     for (const appt of appointments) {
       const current = new Date(appt.date);
       const currentDay = current.getDay();
@@ -788,8 +800,26 @@ router.patch('/:id/appointments/doctor', auth, async (req, res) => {
 
       const r = await Appointment.updateOne({ _id: appt._id }, { $set: setFields });
       updated += r.modifiedCount;
+
+      const sr = await Session.updateOne(
+        { appointmentId: appt._id, status: { $nin: ['completed', 'canceled'] } },
+        { $set: { ...setFields, updatedAt: new Date() } }
+      );
+      sessionsUpdated += sr.modifiedCount;
+
+      // 🚨 FIX (2026-07-20): Payment.doctor é usado em relatórios financeiros por
+      // profissional — mesma classe de bug, escopo reduzido de propósito: só doctor
+      // (nunca time/date, que têm semântica financeira própria — financialDate/
+      // paymentDate não são a mesma coisa que a data do atendimento) e só em payments
+      // ainda pending (nunca paid/canceled, pra não reescrever histórico financeiro).
+      if (doctorId) {
+        await Payment.updateOne(
+          { appointment: appt._id, status: { $nin: ['paid', 'canceled'] } },
+          { $set: { doctor: new mongoose.Types.ObjectId(doctorId), updatedAt: new Date() } }
+        );
+      }
     }
-    return res.json({ success: true, data: { updated } });
+    return res.json({ success: true, data: { updated, sessionsUpdated } });
   }
 
   // Sem dayOfWeek: updateMany simples
@@ -797,8 +827,22 @@ router.patch('/:id/appointments/doctor', auth, async (req, res) => {
   if (doctorId) patch.doctor = new mongoose.Types.ObjectId(doctorId);
   if (time) patch.time = time;
 
+  const affectedIds = await Appointment.find(pendingFilter).select('_id').lean();
   const result = await Appointment.updateMany(pendingFilter, { $set: patch });
-  return res.json({ success: true, data: { updated: result.modifiedCount } });
+
+  const sessionResult = await Session.updateMany(
+    { appointmentId: { $in: affectedIds.map(a => a._id) }, status: { $nin: ['completed', 'canceled'] } },
+    { $set: { ...patch, updatedAt: new Date() } }
+  );
+
+  if (doctorId) {
+    await Payment.updateMany(
+      { appointment: { $in: affectedIds.map(a => a._id) }, status: { $nin: ['paid', 'canceled'] } },
+      { $set: { doctor: new mongoose.Types.ObjectId(doctorId), updatedAt: new Date() } }
+    );
+  }
+
+  return res.json({ success: true, data: { updated: result.modifiedCount, sessionsUpdated: sessionResult.modifiedCount } });
 });
 
 /**
@@ -839,69 +883,47 @@ router.post('/:id/inactivate', auth, async (req, res) => {
     ];
 
     // ── 2. Deleta appointments futuros + sessions/payments vinculados ──
-    // Busca IDs primeiro para deletar filhos de forma consistente
-    const apptsToDelete = await Appointment.find({
+    const appointmentsDeletedResult = await deleteAppointmentsWithChildren({
       $or: guideOrPackageQuery,
       operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] },
       date: { $gte: today }
-    }).select('_id').lean();
-    const apptIdsToDelete = apptsToDelete.map(a => a._id);
-
-    if (apptIdsToDelete.length > 0) {
-      await Session.deleteMany({ appointmentId: { $in: apptIdsToDelete } });
-      await Payment.deleteMany({ appointment: { $in: apptIdsToDelete } });
-    }
-    const appointmentsDeletedResult = await Appointment.deleteMany({ _id: { $in: apptIdsToDelete } });
+    });
 
     // ── 3. Cancela sessions pendentes diretamente ──
-    const sessionsResult = await Session.updateMany(
-      {
-        $or: guideOrPackageQuery,
-        status: { $in: pendingStatuses }
-      },
-      { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-    );
+    const sessionsResult = await cancelPendingSessions({
+      $or: guideOrPackageQuery,
+      status: { $in: pendingStatuses }
+    });
 
     // ── 4. Cancela payments pendentes ──
-    const paymentsResult = await Payment.updateMany(
-      {
-        $or: guideOrPackageQuery,
-        status: { $in: ['pending', 'scheduled', 'unpaid'] }
-      },
-      { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-    );
+    const paymentsResult = await cancelPendingPayments({
+      $or: guideOrPackageQuery,
+      status: { $in: ['pending', 'scheduled', 'unpaid'] }
+    });
 
     // ── 5. Cancela InsurancePlan e DELETA seus appointments/sessions/payments futuros ──
     let planCanceled = false;
     let planAppointmentsDeleted = 0;
     const linkedPlan = await InsurancePlan.findOne({ guide: guideObjId }).lean();
     if (linkedPlan) {
-      const planApptsToDelete = await Appointment.find({
+      const planDeleteResult = await deleteAppointmentsWithChildren({
         insurancePlan: linkedPlan._id, date: { $gte: today }, operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
-      }).select('_id').lean();
-      const planApptIds = planApptsToDelete.map(a => a._id);
+      });
 
-      if (planApptIds.length > 0) {
-        await Session.deleteMany({ appointmentId: { $in: planApptIds } });
-        await Payment.deleteMany({ appointment: { $in: planApptIds } });
-      }
-      const planApptResult = await Appointment.deleteMany({ _id: { $in: planApptIds } });
-
-      await Payment.updateMany(
-        { insurancePlan: linkedPlan._id, status: { $in: ['pending', 'scheduled', 'unpaid'] } },
-        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
-      );
+      await cancelPendingPayments({
+        insurancePlan: linkedPlan._id, status: { $in: ['pending', 'scheduled', 'unpaid'] }
+      });
       await InsurancePlan.findByIdAndUpdate(linkedPlan._id, { status: 'cancelled', updatedAt: new Date() });
       planCanceled = true;
-      planAppointmentsDeleted = planApptResult.deletedCount;
+      planAppointmentsDeleted = planDeleteResult.deletedCount;
     }
 
-    // ── 6. Marca Package vinculado como cancelled (para aparecer na aba Inativas) ──
+    // ── 6. Marca Package vinculado como canceled (para aparecer na aba Inativas) ──
     let packageCanceled = false;
     if (linkedPackages.length > 0) {
       await Package.updateMany(
         { _id: { $in: packageIds } },
-        { status: 'cancelled', updatedAt: new Date() }
+        { status: 'canceled', updatedAt: new Date() }
       );
       packageCanceled = true;
     }

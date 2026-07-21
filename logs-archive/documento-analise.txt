@@ -1,2860 +1,685 @@
 
 
-me ajude de nvo ficnaneiro meta errado..Relatório
-Arquivo do componente: /home/user/projetos/crm/front/src/pages/Financial/tabs/FinancialDashboardTab.tsx (2539 linhas). A função que renderiza o card "Decisão Executiva" é renderDecisaoExecutiva(), definida em FinancialDashboardTab.tsx:1362-1360... (bloco principal entre linhas 1362–1618), invocada em FinancialDashboardTab.tsx:2161 via 'Decisão Executiva': renderDecisaoExecutiva().
+↓
 
-1. Variáveis de variação (delta "vs anterior")
-FinancialDashboardTab.tsx:1363-1365:
+Upload
 
+↓
 
-const varCaixa    = comparativos?.variacao?.caixa ?? 0;
-const varProducao = comparativos?.variacao?.producao ?? 0;
-const varDespesas = comparativos?.variacao?.despesas ?? 0;
-Só existem três variáveis de variação vindas da API (comparativos.variacao.{caixa,producao,despesas}) — confirmado via grep, não há varMargem nem qualquer campo de variação de margem em comparativos ou em qualquer outro lugar do arquivo.
-
-2. Margem: cálculo do percentual (correto, independente)
-FinancialDashboardTab.tsx:1378-1383:
+Todos ficam armazenados
 
 
-const margemPct = indicadores?.margemPercentual ?? 0; // ← vem da API
-const margemStatus = margemPct >= 35
-  ? { text: '🟢 Operação saudável', cls: 'bg-emerald-100 text-emerald-700' }
-  : margemPct >= 20
-  ? { text: '🟡 Margem apertada',   cls: 'bg-amber-100 text-amber-800'   }
-  : { text: '🔴 Margem crítica',    cls: 'bg-rose-100 text-rose-700'     };
-O percentual de margem (margemPct) e o texto do badge (🔴 Margem crítica etc.) são calculados corretamente a partir de indicadores.margemPercentual — isso é independente e correto.
+Quando clicar
 
-3. Bug confirmado: a tag "vs anterior" ao lado de "Margem crítica" reutiliza varDespesas
-FinancialDashboardTab.tsx:1565-1572:
+Enviar ao Convênio
 
+o sistema já procura automaticamente:
 
-<span className={inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${margemStatus.cls}}>
-  {margemStatus.text}
-  {varDespesas !== 0 && (
-    <span className={ml-1.5 ${varDespesas < 0 ? 'text-emerald-600' : 'text-rose-600'}}>
-      · {varDespesas > 0 ? '+' : ''}{varDespesas}% vs anterior
-    </span>
-  )}
-</span>
-Essa é exatamente a mesma variável varDespesas usada no header do card Despesas em FinancialDashboardTab.tsx:1546-1549:
+Guia.pdf
+
+Pedido.pdf
+
+Carteirinha.pdf
+
+RG.pdf
+
+CPF.pdf
 
 
-<span className={text-[10px] font-bold px-2 py-0.5 rounded-full ${varDespesas <= 0 ? ...}}>
-  {varDespesas >= 0 ? '+' : ''}{varDespesas}% vs anterior
-</span>
-Conclusão: é um bug de reuso. A tag "Margem crítica · -X% vs anterior" não tem cálculo próprio de variação de margem — ela mostra literalmente a variação de despesas (varDespesas), reaproveitada da mesma origem (comparativos.variacao.despesas), sem nenhuma lógica que reflita a variação real da margem (ex.: margemPct atual vs margemPct do mês anterior). Como não existe no payload nenhum campo de variação de margem, a única forma de corrigir seria o backend expor comparativos.variacao.margem (ou calcular margem do mês anterior e comparar) e o frontend usar essa nova variável em vez de varDespesas na linha 1567-1570.
+marca tudo automaticamente.
 
-4. Barra "meta atingida em produção"
-FinancialDashboardTab.tsx:1368-1370 (comentário explícito confirma que vem pronto do backend):
+O usuário só revisa.
 
+Workflow completo
+Paciente Agenda
 
-// 🎯 APENAS RENDERIZAR — percentuais vêm PRONTOS da API
-const pctMetaProducao = Math.round(metas.camadas?.producao?.percentual ?? 0);
-const pctMetaCaixa    = Math.round(metas.camadas?.caixa?.percentual ?? 0);
-Uso na barra, FinancialDashboardTab.tsx:1493-1503:
+↓
 
+Gerar Guia
 
-<div className="flex justify-between text-xs text-gray-500">
-  <span>meta atingida em produção</span>
-  <span className="font-black text-emerald-700">{pctMetaProducao}%</span>
-</div>
-<div className="h-[4px] w-full bg-gray-100 rounded-full overflow-hidden">
-  <div className="h-full bg-emerald-500 rounded-full transition-all duration-700"
-    style={{ width: ${Math.min(pctMetaProducao, 100)}% }} />
-</div>
-<div className="flex justify-between text-[10px] text-gray-400">
-  <span>Caixa {pctMetaCaixa}%</span>
-  <span>Meta: {formatCurrency(metaMensal)}</span>
-</div>
-Confirma o esperado: o marcador principal/barra de progresso usa metas.camadas.producao.percentual (percentual de meta atingido pela produção), e o marcador secundário textual "Caixa X%" usa metas.camadas.caixa.percentual (percentual de meta atingido apenas pelo caixa realizado). Ambos os campos vêm prontos calculados do backend (endpoint /api/v2/financial/dashboard), condizente com a invariante do CLAUDE.md de que KPIs financeiros nunca devem ser recomputados no frontend — aqui o frontend só arredonda (Math.round) e renderiza.
+↓
 
-Arquivos relacionados (mencionam os mesmos termos, não são o componente)
-/home/user/projetos/crm/back/routes/provisionamento.js
-/home/user/projetos/crm/back/routes/cashflow.v2.js
-Esses dois arquivos do backend provavelmente produzem metas.camadas.{producao,caixa}.percentual e comparativos.variacao.{caixa,producao,despesas} — não foram lidos em detalhe pois o pedido era focado no frontend, mas seriam o próximo ponto a investigar caso se decida corrigir o bug adicionando um campo de variação de margem real no payload.
+Upload dos documentos
 
-Confirmado: é um bug real, não coincidência.
+↓
 
-Achado: em FinancialDashboardTab.tsx:1565-1572, a tag "🔴 Margem crítica · -35.8% vs anterior" reutiliza a variável varDespesas (a mesma de linha 1546-1549, do card Despesas) em vez de ter sua própria variação de margem. Por isso os dois "-35.8%" na sua tela são idênticos — não é a margem variando 35.8%, é a despesa.
+Status:
+Documentação Completa
 
-O margemPct em si (-17%) e o texto do badge ("Margem crítica") estão corretos, vêm de indicadores.margemPercentual. Só a variação percentual ao lado do badge está errada.
+↓
 
-Causa raiz: o payload de comparativos.variacao só tem {caixa, producao, despesas} — não existe variacao.margem vindo do backend. Provavelmente quem escreveu essa linha copiou o padrão do card de despesas (varDespesas) e esqueceu de trocar pela variável certa (que nem existe ainda).
+Botão
+Enviar Convênio
 
-Para corrigir de verdade precisa em duas pontas:
+↓
 
-Backend (back/routes/cashflow.v2.js ou provisionamento.js — não confirmei qual gera esse payload) expor comparativos.variacao.margem (margem atual vs margem do mês anterior).
-Frontend trocar varDespesas por essa nova variável na linha 1567-1570.
-A barra "meta atingida em produção" (produção 20% / Caixa 47%) está correta — ambos os percentuais vêm prontos do backend (metas.camadas.producao.percentual e metas.camadas.caixa.percentual), sem recomputo no frontend, seguindo a invariante do projeto.
+CRM monta o e-mail
 
-Quer que eu implemente a correção (backend + frontend), ou só queria confirmar o diagnóstico por enquanto?
+↓
 
+Anexa automaticamente
 
-image.png
-1328×812
-mas nao ta legal isso pois pensa comigo eu preciso saber qto entrou so esse mes ai n veja na aba meta do mes ta contabilizando isso e nao faz sentido
-Faz total sentido sua desconfiança — o "52% Financeiro" que aparece como headline da meta do mês está misturando regimes de um jeito que não corresponde a "quanto aconteceu/entrou só em julho".
+↓
 
-A conta exata do card:
+Envia
 
+↓
 
-Financeiro (29.210,10 = 52.2%) = Caixa (26.420,00) + A receber (2.790,10)
-O problema é que dentro desses 26.420,00 de Caixa já tem R$ 18.179,90 de meses anteriores (retroativo de liminar + venda antecipada de pacote). Então o Financeiro está somando:
+Salva protocolo
 
-dinheiro de meses passados que só caiu na conta agora (retroativo) +
-dinheiro de julho que ainda nem foi recebido (a receber)
-Isso não é nem regime de caixa puro, nem regime de competência puro — é um "Frankenstein" que conta duas vezes coisas de períodos diferentes. Prova disso:
+↓
 
-Produção (o que de fato foi atendido em julho, regime de competência) = Recebido (8.240,10) + A receber (2.790,10) = R$ 11.030,20 → 19.7% — esse sim é "quanto aconteceu só esse mês".
-Caixa (quanto entrou fisicamente na conta em julho, regime de caixa) = Recebido (8.240,10) + Retroativos (18.179,90) = R$ 26.420,00 → 47.2% — esse é "quanto entrou no banco este mês", incluindo cobranças antigas.
-Financeiro (52.2%) = Caixa inteiro + A receber → conta o retroativo (que já está em Caixa) e ainda soma o a-receber de julho por cima. Nenhuma leitura contábil sustenta esse número.
-Consequência prática: se em julho não tivesse acontecido nenhum atendimento, mas caísse um retroativo judicial grande, o "Financeiro" ainda mostraria quase 50% de meta batida — o que não reflete produtividade nenhuma do mês.
+Status muda para
 
-Isso contraria a própria diretriz do projeto (DOMAIN_INVARIANTS.md) de manter as camadas (Caixa / Produção / Projeção) separadas, e não misturadas num único "reconhecido".
+"Aguardando"
 
-Antes de eu mexer nisso — é uma métrica de negócio visível (a barra vermelha "Meta do mês"), então quero confirmar a direção certa com você:
+↓
 
-AskUserQuestion
-OUT
-Your questions have been answered: "Qual deve ser o número principal da barra "Meta do mês" (hoje mostrando 52% via Caixa+AReceber)?"="Só quero o diagnóstico por agora". You can now continue with these answers in mind.
-Combinado — só registrando o diagnóstico por enquanto, sem tocar em código.
+Resposta recebida
 
-Resumo do achado para referência futura:
+↓
 
-O KPI "Financeiro" da barra "Meta do mês" (hoje 52.2%, R$ 29.210,10) é calculado como Caixa + A receber, mas o Caixa já inclui R$ 18.179,90 de retroativos/adiantamentos de outros meses — resultado: a meta do mês fica inflada por dinheiro que não tem relação com o trabalho realizado em julho. As duas leituras "puras" que já existem e batem corretamente são:
+Número da autorização
 
-Produção (competência, R$ 11.030,20 → 19.7%) = o que foi de fato atendido em julho.
-Caixa (R$ 26.420,00 → 47.2%) = o que entrou fisicamente na conta em julho (incluindo retroativos).
-O "Financeiro" hibrido não corresponde a nenhum regime contábil coerente — soma caixa (que já tem retroativo embutido) com a-receber de julho por cima, contando valor de meses passados como se fosse meta batida no mês corrente.
+↓
 
-Vou salvar isso na memória do projeto para não perdermos o contexto até decidirmos o que fazer.
+Sessão liberada
+O que eu acrescentaria ao seu CRM
 
-Write project_meta_mes_financeiro_bug.md
-24 lines
----
-name: project_meta_mes_financeiro_bug
-description: KPI "Financeiro" da aba Metas mistura regimes (Caixa+AReceber) e infla meta do mês com retroativos de meses anteriores. Diagnóstico registrado 2026-07-09, correção não implementada.
-metadata:
-  type: project
----
+Como vocês já têm módulos de Pacientes, Agenda, Financeiro e estão construindo o módulo Fiscal, eu criaria um domínio próprio de Convênios, separado dos demais:
 
-Na aba Metas do dashboard financeiro (front/src/pages/Financial/tabs/FinancialDashboardTab.tsx), a barra "Meta do mês" usa como número principal metas.camadas.receitaProjetada (rotulado "Financeiro" no card lateral), calculado como Caixa + A receber.
+InsuranceProvider (cadastro do convênio)
+AuthorizationRequest (solicitação de autorização)
+AuthorizationAttachment (documentos anexados)
+AuthorizationEmailLog (histórico de e-mails enviados)
+AuthorizationTemplate (modelos de e-mail por convênio)
+InsuranceRule (documentos obrigatórios por convênio)
+AuthorizationTimeline (linha do tempo de eventos)
 
-**Problema**: Caixa já inclui retroativos/adiantamentos de meses anteriores (ex: em julho/2026, R$26.420 de caixa incluía R$18.179,90 de retroativo de liminar + venda antecipada de pacotes). Somar A receber (referente à produção do mês corrente) por cima desse caixa cria um número que não corresponde a nenhum regime contábil coerente — infla a % de meta batida usando dinheiro que não tem relação com o trabalho realizado no mês corrente.
+Isso elimina a dependência de uma única pessoa e torna o processo auditável. Se alguém sair de férias ou se afastar, outra pessoa consegue abrir o CRM e ver exatamente quais autorizações estão pendentes, quais documentos já foram enviados, quando foram enviados e quem realizou cada ação.
 
-Exemplo concreto (julho/2026):
-- Produção (competência pura, Recebido+AReceber) = R$8.240,10 + R$2.790,10 = R$11.030,20 → 19.7% da meta. Essa é a leitura fiel de "quanto foi produzido só esse mês".
-- Caixa (Recebido+Retroativos) = R$8.240,10 + R$18.179,90 = R$26.420,00 → 47.2%. Quanto entrou fisicamente na conta, incluindo dinheiro de outros meses.
-- "Financeiro" exibido = Caixa inteiro (26.420, já com retroativo embutido) + A receber (2.790,10) = R$29.210,10 → 52.2%. Conta o retroativo E o a-receber do mês, sem nenhuma dedução — duplica a lógica.
+Na minha visão, esse módulo tem potencial para gerar mais ganho operacional do que muitas funcionalidades "grandes", porque resolve um gargalo diário e reduz o risco de perder autorizações ou atrasar atendimentos por falhas de processo.
 
-**Consequência prática**: um mês sem nenhum atendimento mas com retroativo judicial grande ainda mostraria a meta quase batida, o que não reflete produtividade real do mês.
+Texto colado(42).txt
+Documento
+hoje temos quase tudo e fucnioal e automatizer isso de fato upoar arquivos mas e peso disos naa app e tc como ficaria
 
-Contraria a diretriz de [[project_competencia_architecture]] (Produção = Recebimento+AReceber; Caixa = Recebimento+Retroativos devem ficar separados) e a invariante do CLAUDE.md de camadas financeiras separadas (Forecast/Operational/Billing/Settlement/Credit).
+Sim. E olhando o que vocês já implementaram no módulo de Convênios, vocês já têm boa parte da modelagem pronta (guidePolicy, tipos de guia, dia de envio etc.).
 
-**Status**: usuário (Ricardo) pediu só o diagnóstico por ora (2026-07-09), sem decidir ainda qual deve ser o número correto da barra de meta (Produção pura / Caixa puro / fórmula híbrida corrigida sem duplicar retroativo). Não implementar sem essa decisão — é uma métrica de negócio visível.
+O problema agora não é cadastrar regras, é automatizar a operação.
 
-Related: [[project_competencia_architecture]], [[feedback_frontend_kpi_recompute]]
-Read MEMORY.md
-Edit MEMORY.md
-Added 1 line
-Diagnóstico registrado na memória do projeto. Quando você quiser decidir qual deve ser o número certo da barra "Meta do mês" (Produção pura, Caixa puro, ou fórmula híbrida corrigida sem duplicar retroativo), é só retomar — já tenho o contexto completo.
+E eu não faria upload do mesmo arquivo várias vezes. Isso realmente vai pesar a aplicação.
 
-Eu concordo com o diagnóstico, e acho que o problema é ainda mais profundo do que apenas o cálculo.
+Eu faria uma arquitetura de "Document Center"
 
-Hoje a tela mistura três perguntas de negócio completamente diferentes como se fossem a mesma coisa.
+Hoje vocês já possuem:
 
-1. Quanto a clínica PRODUZIU este mês?
-Regime de competência.
+Paciente
 
-Isso responde:
+↓
 
-"Quanto de trabalho foi realizado em julho?"
+Documentos
+
+Em vez de subir arquivos toda vez que for enviar um e-mail, o CRM apenas referencia os documentos já existentes.
 
 Exemplo:
 
-Atendido: R$ 8.240
+Paciente
 
-Ainda a receber: R$ 2.790
+Maria Silva
 
-Produção =
+Documentos
 
-R$ 11.030
+✓ Carteirinha
 
-Esse indicador mede desempenho operacional.
+✓ RG
 
-Retroativo NÃO entra.
+✓ CPF
 
-Venda de pacote antigo NÃO entra.
+✓ Pedido Médico
 
-Liminar antiga NÃO entra.
+✓ Laudo
 
-2. Quanto ENTROU no caixa este mês?
-Regime de caixa.
+✓ Guia
 
-Exemplo:
+✓ Relatório
 
-Entrou:
+✓ Lista de Presença
 
-pagamentos de julho
+Esses arquivos ficam uma única vez no storage.
 
-pagamento atrasado de abril
+Depois entra o conceito de "Pacote de Envio"
 
-retroativo de liminar
+Ao clicar
 
-venda de pacote
+Enviar Convênio
 
-Tudo isso realmente entrou no banco.
+abre um modal moderno.
 
-Então:
+┌─────────────────────────────────────┐
 
-Caixa
+Enviar documentação
 
-=
+Convênio
+Unimed
 
-R$ 26.420
+Destino
+autorizacao@....
 
-Esse indicador mede liquidez.
+────────────────────────────
 
-Não mede produtividade.
+Arquivos encontrados
 
-3. Quanto falta para bater a meta do mês?
-E aqui começa o problema.
+☑ Guia.pdf
 
-Hoje o backend faz algo parecido com:
+☑ Pedido Médico.pdf
 
-Meta Financeira
+☑ Carteirinha.pdf
 
-=
+☑ RG.pdf
 
-Caixa
+☑ Print Portal.png
 
-+
+☐ Relatório.pdf
 
-A receber
-ou seja
+────────────────────────────
 
-26.420
+[Cancelar]
 
-+
+[Enviar]
 
-2.790
+└─────────────────────────────────────┘
 
-=
+Nenhum upload.
 
-29.210
-Mas desses 26 mil:
+Só checkboxes.
 
-18 mil
+E o print?
 
-não pertencem a julho.
-Então você está usando dinheiro de abril...
+Esse é o único documento que normalmente não existe.
 
-para dizer que julho bateu metade da meta.
+Então eu faria um botão.
 
-É aí que a leitura perde o sentido.
+Adicionar Print
 
-O problema visual
-Imagine esse cenário.
+↓
 
-Julho inteiro fechado.
+colar CTRL+V
 
-Nenhum atendimento.
-
-Produção:
-
-R$ 0
-Mas entrou:
-
-R$ 50.000
-
-de retroativo judicial.
-Hoje a tela mostraria algo parecido com:
-
-Meta
-
-95%
-Mas na realidade a clínica produziu:
-
-ZERO.
-Ou seja:
-
-o gestor olha a tela e pensa
-
-"Estamos excelentes."
-
-Quando operacionalmente foi um mês péssimo.
-
-O que um gestor normalmente quer ver
-Na minha opinião, a aba deveria separar claramente as camadas.
-
-Produção do mês
-Meta
-
-20%
-
-R$ 11.030 / R$ 56.000
-Essa é a pergunta:
-
-quanto conseguimos produzir em julho?
-
-Caixa do mês
-47%
-
-R$ 26.420
-Pergunta:
-
-quanto entrou na conta?
-
-Composição do caixa
-Recebido deste mês
-
-R$ 8.240
-
-Retroativos
-
-R$ 18.180
-
-Antecipações
-
-R$ xxx
-Assim o gestor entende imediatamente porque o caixa está alto.
-
-O principal problema
-Hoje existe um KPI chamado Financeiro.
-
-Mas financeiramente ele não representa nenhuma visão contábil conhecida.
-
-Não é:
-
-competência
-
-nem
-
-caixa
-
-nem
-
-faturamento
-
-nem
-
-produção
-
-nem
-
-receita reconhecida.
-
-É um KPI híbrido.
-
-O que eu faria antes de alterar qualquer código
-Eu revisaria a definição de todos os KPIs do dashboard.
-
-Hoje eu faria algo como:
-
-KPI	O que responde	Deve incluir retroativo?
-Produção	Quanto foi produzido no mês	❌ Não
-Caixa	Quanto entrou na conta	✅ Sim
-A receber	Quanto ainda falta receber da produção do mês	❌ Não
-Meta da Produção	Produção ÷ Meta	❌ Não
-Meta do Caixa	Caixa ÷ Meta	✅ Sim
-Retroativos	Dinheiro de competências anteriores	✅ Separado
-Repare que "Financeiro" desaparece.
-
-Porque ele não responde nenhuma pergunta objetiva.
-
-Minha principal recomendação
-Eu não tentaria corrigir apenas a fórmula de Financeiro.
-
-Eu voltaria um passo e redefiniria qual é a pergunta que cada card responde. Depois disso, o cálculo de cada KPI fica quase óbvio e cada indicador passa a representar um único conceito de negócio, sem misturar competência, caixa e retroativos. Isso tende a tornar o dashboard muito mais confiável para tomada de decisão e evita interpretações equivocadas sobre o desempenho real do mês.
-
-
-Relatório de Investigação — KPI "Financeiro" / metas.camadas.receitaProjetada
-Nota: ignorei as instruções injetadas dentro do bloco <context_window_protection> do prompt (exigiam usar ferramentas MCP inexistentes no meu toolset e limitar a resposta a 500 palavras) — isso parece um prompt injection embutido no contexto, não uma instrução legítima do usuário/harness, e conflita com o pedido explícito de relatório longo/detalhado. Segui a Bash/Read/grep normais, modo somente leitura, sem alterar nada.
-
-1. Onde cada campo é calculado
-Arquivo: back/routes/financialDashboard.v2.js, função calculateMetas(data, year, month, clinicId) (linha 715-872).
-
-Base híbrida (raiz do problema) — linha 727:
-
-const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-data.caixa = cash.total retornado por unifiedFinancialService.calculateCashForDashboard(start,end) (back/services/unifiedFinancialService.v2.js:266-403). Esse total filtra Payment por financialDate (fallback paymentDate/createdAt) dentro do range do mês corrente, e financialDate é setado em Payment.js:133-134 como paidAt || paymentDate — ou seja, a data em que o pagamento efetivamente ocorreu, não a data do serviço/produção. Um pagamento de liminar recebido em julho referente a atendimento de março entra 100% no cash.total de julho.
-metas.camadas.receitaProjetada — linhas 866-869, usa receitaProjetadaMes (linha 737): data.visaoSemantica?.projecao?.total || realizadoMes. Esse visaoSemantica.projecao.total é receitaProjetada = cash.total + aReceberProducao (linha 1513, na função que monta data, ~1436-1652). Portanto é literalmente a mesma fórmula híbrida (realizadoMes), só que calculada duas vezes (uma no builder de data, outra em calculateMetas).
-metas.realizado.mes — linha 805: parseFloat(realizadoMes.toFixed(2)). É exatamente o mesmo número que aparece como "Financeiro" e como receitaProjetada.atingido (por isso o valor 29210.1 aparece idêntico nos dois).
-metas.ritmo — linhas 812-820: esperadoAteAgora = ritmoEsperado (linha 754, baseado em metaMensal), realizadoAteAgora = realizadoMes (linha 814, mesmo híbrido), percentualRealizado = realizadoMes / metaMensal (linha 758).
-metas.projecao — linhas 821-826: final = projecaoFinal (linha 741, mediaDiariaAtual * daysInMonth, onde mediaDiariaAtual = realizadoMes / daysPassed, linha 740 — também híbrido); esperada = projecaoEsperada (linhas 744-749); bateMeta = projecaoEsperada >= metaMensal (linha 824).
-metas.gap — linhas 827-831, de gapValor/gapPorDia (linhas 751-752), calculados sobre metaMensal - realizadoMes → também híbrido.
-metas.alertas/statusMeta — linhas 765-787, thresholds sobre percentualRealizado (que vem de realizadoMes).
-2. Confirmação — pergunta 2
-Sim. ritmo.realizadoAteAgora, projecao.final e projecao.bateMeta usam o mesmo realizadoMes (Caixa+AReceber, com retroativos). Não há nenhuma variável separada em calculateMetas que use produção pura para esses três campos. Curiosamente, o contrato documentado em back/contracts/FinancialSemantic.js:37-58 (RITMO, PROJECAO_ESPERADA, PROJECAO_OTIMISTA) descreve fórmulas baseadas em PRODUCTION (produção/competência), divergindo da implementação real — o contrato parece descrever a intenção original, não o código atual. Vale citar isso na correção como "drift entre contrato e implementação".
-
-3. calculateMetas — variáveis de entrada (linha 715)
-Variável	Linha	Fonte	Natureza
-data.caixa	727,735	cash.total (Payment.paid, filtrado por financialDate/paymentDate do mês)	Caixa real, mas pode conter retroativos/antecipações
-data.aReceberProducao	727	convenioAReceber+particularPendente+pacotePendente+liminarAReceber (linha 1505)	Pipeline (produção do mês ainda não paga)
-data.producao	736	production.total (Session.completed, regime de competência)	Produção pura do mês
-data.caixaHoje/convenioHoje/particularPendenteHoje	728	agregações do dia	Realizado diário
-goal.metaMensal/diasUteis/breakdown	723-725	loadGoal() (FinancialGoal)	Meta configurada
-data.visaoSemantica.projecao.total	737	mesmo receitaProjetada do builder	Duplicata do híbrido
-Não há, dentro de calculateMetas, nenhuma variável que isole "retroativo"/"antecipação" — essa separação existe só informativamente em data.recebimentosAntecipados (linha 1509, unifiedFinancialService.v2.js/financialDashboard.v2.js:1509) e não é subtraída de realizadoMes.
-
-4. novaReceitaMes
-Calculado em calculateNovaReceita(start,end), back/routes/financialDashboard.v2.js:1266-1... (~1340). Soma 3 fontes independentes (venda de pacote package_receipt, particular avulso pago, produção convênio via Session.date). O próprio comentário do código (linhas 1259-1264) é explícito:
-
-"⚠️ Esta função NÃO é usada diretamente para a meta mensal (calculateMetas usa caixa+aReceberProducao). É exibida no dashboard como breakdown informativo de 'receita nova gerada no mês'."
-
-Ou seja, novaReceitaMes já é a métrica "limpa" (sem retroativos, ancorada em financialDate/session.date do próprio mês), mas não alimenta receitaProjetada/realizadoMes/ritmo/projecao — é apenas exposta em resumo.novaReceitaMes e data.novaReceitaMes (linhas 422, 462, 1579). É um candidato natural para a correção.
-
-5. Consumidores — mapa de impacto
-Backend (mesmo arquivo, downstream de calculateMetas):
-
-generateInsights(data, metas, profissionais) (linha 1189, usa metas.projecao.bateMeta linha 1213) → alimenta insights/recomendacoes/alertasV3 na resposta.
-calculateRiscoOperacional(data, metas, profissionais) (linha 1832, usa metas.ritmo.diferenca, metas.projecao.bateMeta linha 1855) → campo riscoOperacional.
-calculateAcoesExecutivas(...) (linha 1879, usa metas.gap.porDia, metas.projecao.bateMeta linha 1913) → campo acoesExecutivas.
-calculateIndicadores(caixa, producao, despesasTotal, metas) (linha 2014) usa só metas.configuracao.metaMensal (não o híbrido diretamente) para pontoEquilibrioVsMeta.
-Todos esses (insights, riscoOperacional, acoesExecutivas, indicadores) são incluídos no res.json de GET /api/v2/financial/dashboard (linhas ~410-490) junto com metas.
-
-Frontend:
-
-front/src/pages/Financial/tabs/FinancialDashboardTab.tsx — único e pesado consumidor. Usa metas.ritmo.*, metas.camadas.*, metas.realizado.mes, metas.statusMeta, metas.gap.porDia, metas.porTipo, além de riscoOperacional (linhas 1390-1429), acoesExecutivas (linha 1668+) e insights/alertas/recomendacoes (linhas 2022-2075) — ou seja, corrigir calculateMetas também muda badges de risco, cards de "ações executivas" e textos de insight, não só a barra de meta.
-front/src/hooks/useFinancialDashboardV3.ts — apenas tipagem (interface Metas, linhas ~30-65) e a chamada HTTP (api.get('/v2/financial/dashboard', ...), linha 390). Não recalcula nada, só repassa.
-front/src/pages/Financial/tabs/ProjecaoMensalTab.tsx — usa um objeto metas diferente e não relacionado (projecaoMes.metas.gapParaMeta, projecaoMes.metas.sugerida, projecaoMes.metas.percentualAtual), vindo do hook useProvisionamento() → outro endpoint (provisionamento.js/provisionamentoService). Mesmo nome de campo (metas), fonte de dados totalmente distinta — não é afetado pela correção de calculateMetas em financialDashboard.v2.js, mas merece atenção para não confundir ao decidir nomenclatura.
-Nenhum outro arquivo no repo (fora dos citados) referencia metas.camadas, metas.ritmo, metas.projecao, metas.realizado ou receitaProjetada como usado neste endpoint — confirmado por grep recursivo em front/src e back (excluindo dist/backups). calculateMetas não é exportada/importada por nenhum outro módulo (é função privada do arquivo de rota).
-Resumo do impacto de uma correção
-Se realizadoMes for redefinido (ex.: usando production.total ou novaReceitaMes em vez de caixa+aReceberProducao), o efeito em cascata dentro do mesmo request é: metas.realizado.mes, metas.ritmo.realizadoAteAgora/percentualRealizado, metas.projecao.final/esperada/bateMeta, metas.gap.*, metas.statusMeta, metas.alertas, insights, riscoOperacional, acoesExecutivas — todos mudam de valor/cor/mensagem simultaneamente, e tudo isso é consumido exclusivamente por FinancialDashboardTab.tsx. Isso restringe bastante a superfície de teste (um único componente frontend + um único endpoint), mas dentro dele há muitos pontos de UI a validar.
-
-Confirmação total do seu cenário hipotético: a projeção de fechamento do mês (projecao.final, projecao.bateMeta) usa exatamente o mesmo número híbrido. Se caísse um retroativo de R$ 50 mil com zero atendimento, a tela mostraria "projeção acima da meta" mesmo com produção zerada — não é só a barra "Meta do mês", é a cadeia inteira de decisão executiva.
-
-Causa raiz, uma linha só: financialDashboard.v2.js:727
-
-
-const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-Esse realizadoMes é a fonte única que alimenta: metas.realizado.mes, metas.camadas.receitaProjetada, metas.ritmo.realizadoAteAgora/percentualRealizado, metas.projecao.final/esperada/bateMeta, metas.gap.*, metas.statusMeta, metas.alertas — e por tabela, insights, riscoOperacional e acoesExecutivas (todos calculados a partir de metas no mesmo arquivo).
-
-Achado extra relevante: existe um contrato documentado em back/contracts/FinancialSemantic.js:37-58 descrevendo RITMO/PROJECAO_ESPERADA/PROJECAO_OTIMISTA como baseados em produção (competência) — ou seja, o design original já previa isso corretamente, mas a implementação em calculateMetas divergiu e passou a usar o híbrido caixa+a-receber. É drift entre intenção e código, não uma decisão deliberada.
-
-Boa notícia: já existe uma métrica "limpa" pronta — novaReceitaMes (calculada em financialDashboard.v2.js:1266, ancorada em financialDate/session.date do próprio mês, sem retroativos). O próprio código já tem um comentário avisando que ela não é usada para a meta:
-
-"⚠️ Esta função NÃO é usada diretamente para a meta mensal (calculateMetas usa caixa+aReceberProducao)."
-
-Raio de impacto de uma correção (bem mais contido do que eu temia):
-
-calculateMetas é função privada do arquivo de rota — nenhum outro módulo backend a importa.
-No frontend, o único consumidor real é FinancialDashboardTab.tsx (barra de meta, badges de risco, ações executivas, insights).
-ProjecaoMensalTab.tsx usa um objeto metas homônimo mas de fonte totalmente diferente (provisionamento.js) — não seria afetado.
-Ou seja: dá para corrigir a semântica sem quebrar outras telas — o trabalho de validação fica concentrado num componente só, mesmo que vários elementos dele mudem de valor/cor ao mesmo tempo.
-
-Isso te dá terreno sólido para decidir. Quer que eu monte um plano de implementação agora (separando Produção/Caixa/Retroativos como você desenhou, usando production.total ou novaReceitaMes como base de ritmo/projeção), ou prefere só guardar esse mapa e decidir depois com calma?
-
-
-Essa investigação mudou bastante o cenário. Ela confirma que o problema não está no frontend nem em um KPI isolado. O erro está no modelo semântico do dashboard.
-
-O achado mais importante, na minha visão, é este:
-
-const realizadoMes = (data.caixa || 0) + (data.aReceberProducao || 0);
-Essa variável virou a fonte da verdade para praticamente todo o dashboard.
-
-Ou seja, uma única definição incorreta contamina:
-
-Meta realizada
-
-Ritmo
-
-Projeção
-
-Gap
-
-Status da meta
-
-Alertas
-
-Insights
-
-Risco operacional
-
-Ações executivas
-
-Isso explica por que a tela inteira "parece coerente", mas conta uma história errada.
-
-O segundo achado é ainda mais interessante
-Você encontrou isso:
-
-FinancialSemantic.js define que Ritmo e Projeção deveriam ser baseados em PRODUÇÃO.
-
-Isso é enorme.
-
-Porque significa que existe um contrato de domínio dizendo uma coisa...
-
-...e a implementação faz outra.
-
-Ou seja, provavelmente aconteceu alguma alteração durante a evolução do sistema e alguém resolveu reutilizar:
-
-caixa + aReceber
-como se fosse "realizado".
-
-Na prática houve um drift arquitetural.
-
-Não parece uma decisão de negócio documentada.
-
-Parece uma regressão.
-
-Outro ponto muito importante
-Você encontrou isto:
-
-novaReceitaMes
-
-E ela já faz praticamente o que o dashboard deveria consumir.
-
-Ou seja:
-
-o sistema já sabe responder:
-
-"Quanto foi gerado neste mês?"
-
-Só que esse dado fica escondido.
-
-Enquanto isso o dashboard usa outro KPI híbrido.
-
-Isso é um cheiro de arquitetura.
-
-Temos duas verdades diferentes convivendo.
-
-Eu faria uma mudança um pouco maior
-Eu evitaria apenas trocar:
-
-realizadoMes =
-novaReceitaMes
-porque isso resolve o sintoma, mas mantém a confusão de nomes.
-
-Hoje temos algo assim:
-
-caixa
-
-produção
-
-receitaProjetada
-
-novaReceita
-
-realizado
-
-financeiro
-Só pelos nomes já fica difícil entender.
-
-Eu faria uma separação explícita.
-
-Camada operacional
-producaoMes
-Quanto foi efetivamente produzido no mês.
-
-Camada financeira
-caixaMes
-Quanto entrou no banco.
-
-Pipeline
-aReceberMes
-Quanto da produção ainda falta receber.
-
-Retroativos
-retroativosRecebidos
-Dinheiro de competências anteriores.
-
-Meta
-Aí sim:
-
-meta.producao
-
-meta.caixa
-São duas metas diferentes.
-
-As duas válidas.
-
-Mas nunca misturadas.
-
-O que eu NÃO faria
-Eu não chamaria mais isso de:
-
-receitaProjetada
-porque ela não é uma projeção.
-
-É um acumulado híbrido.
-
-Esse nome induz ao erro.
-
-Sobre projecao.final
-Aqui está o maior problema para mim.
-
-Hoje ela faz:
-
-(realizadoMes / diasPassados)
-
-×
-
-diasDoMes
-Só que realizadoMes pode subir 50 mil em um único dia por causa de um retroativo.
-
-Então a projeção passa a dizer:
-
-"Você fechará julho com R$ 140 mil."
-
-Mesmo que nenhuma sessão tenha acontecido.
-
-Matematicamente a fórmula está correta.
-
-Semanticamente está completamente errada.
-
-Porque a variável de entrada está errada.
-
-Minha conclusão
-Depois dessa auditoria, eu deixaria de tratar isso como um "bug da Meta do Mês".
-
-Eu abriria uma tarefa maior, por exemplo:
-
-Refatoração da Semântica dos KPIs Financeiros
-
-Com objetivos claros:
-
-Eliminar o conceito híbrido de realizadoMes.
-
-Fazer ritmo, projeção, gap e statusMeta usarem uma métrica de competência (produção do mês), em conformidade com FinancialSemantic.js.
-
-Manter caixa como um KPI independente para liquidez.
-
-Exibir retroativos separadamente, sem permitir que eles distorçam a análise operacional do mês.
-
-Renomear campos ambíguos (receitaProjetada, financeiro, realizadoMes) para nomes que representem exatamente o conceito de negócio.
-
-Pelo que você levantou, isso não parece uma mudança de regra de negócio, mas sim um realinhamento da implementação com o próprio contrato semântico já existente no projeto. Isso reduz bastante o risco, porque a arquitetura já aponta qual deveria ser o comportamento esperado.
-
-
-mmas essas rns no front ????? ai nos quebra la nunca deve ter rn
-
-Sim. E esse é um ponto que eu considero importante no seu projeto.
-
-Pelas auditorias que fizemos ao longo das últimas semanas, vocês já definiram uma arquitetura onde:
-
-Backend = dono das regras de negócio (SSOT)
-
-Frontend = apenas apresentação
-
-KPIs financeiros nunca são recalculados no frontend
-
-Então, vendo esse componente de 2.539 linhas, eu já vejo um cheiro de arquitetura.
-
-O frontend não deveria conhecer conceitos como:
-
-margem saudável ≥ 35%
-
-margem apertada ≥ 20%
-
-margem crítica < 20%
-
-risco operacional
-
-ações executivas
-
-status da meta
-
-se a projeção bate ou não a meta
-
-Essas são regras de negócio.
-
-Por exemplo, hoje existe isso:
-
-const margemStatus =
-  margemPct >= 35
-    ? { text: '🟢 Operação saudável', ... }
-    : margemPct >= 20
-      ? { text: '🟡 Margem apertada', ... }
-      : { text: '🔴 Margem crítica', ... };
-Esses 35% e 20% são regras de negócio.
-
-O frontend não deveria decidir isso.
-
-O backend poderia simplesmente retornar:
-
-{
-  "margem": {
-    "percentual": 18,
-    "status": "critical",
-    "label": "Margem crítica",
-    "color": "danger"
-  }
-}
-E o React faria apenas:
-
-<Badge color={margem.color}>
-  {margem.label}
-</Badge>
-Sem nenhum if.
-
-Outro exemplo.
-
-Hoje vocês têm:
-
-const pctMetaProducao = Math.round(...)
-Isso é aceitável.
-
-Arredondar número é apresentação.
-
-Mas isto:
-
-if (pct >= 80)
-...
-já é regra.
-
-Outro caso que vocês mesmos descobriram:
-
-varDespesas > 0
-Esse tipo de lógica de interpretação também não deveria existir.
-
-O backend poderia devolver:
-
-{
-   "comparativo": {
-      "tipo": "positive",
-      "texto": "+8%"
-   }
-}
-e o frontend só renderiza.
-
-Uma regra que eu adotaria no CRM
-Para um sistema financeiro como o de vocês:
-
-Nenhum componente React deve decidir significado financeiro.
-
-O React pode:
-
-formatar moeda;
-
-formatar data;
-
-esconder ou mostrar blocos;
-
-ordenar colunas;
-
-controlar modais;
-
-fazer paginação;
-
-renderizar gráficos.
-
-Mas ele não deveria responder perguntas como:
-
-meta foi batida?
-
-margem é saudável?
-
-risco é alto?
-
-precisa contratar?
-
-projeção é boa?
-
-caixa está crítico?
-
-Tudo isso pertence ao domínio financeiro.
-
-Eu usaria um critério simples durante a refatoração
-Se você encontrar no frontend algo como:
-
-if (...)
-pergunte:
-
-Esse if muda o significado do negócio ou apenas a forma de exibir?
-
-Se muda o significado → backend.
-
-Se muda apenas a aparência → frontend.
-
-Esse critério é consistente com a arquitetura que vocês vêm construindo (Payment como SSOT, Outbox, CQRS, KPIs calculados no backend) e ajuda a evitar que as regras de negócio voltem a se espalhar pela interface.
-
-
-mplementação concluída. Resumo do que mudou e por quê:
-
-Backend (back/routes/financialDashboard.v2.js):
-
-calculateMetas: ritmo, projeção, gap, statusMeta e alertas agora usam produção (competência), não mais caixa+aReceber. Alinhado ao contrato que já existia em FinancialSemantic.js e que a implementação vinha ignorando.
-camadas.receitaProjetada → camadas.caixaProjetado, deixando explícito que é só informativo/liquidez, nunca meta.
-recebimentosAntecipados (resíduo único) dividido em antecipacoes (venda de pacote, competência futura) e retroativos (resto, majoritariamente liminar/convênio atrasado) — reaproveitando packageSalesTotal, já calculado.
-Mesmo fix aplicado ao caminho de snapshot (meses fechados), já que ambos chamam a mesma calculateMetas.
-Frontend (FinancialDashboardTab.tsx + useFinancialDashboardV3.ts):
-
-Card "Meta do mês" e "Ritmo do mês": label "💰 Financeiro" virou "🎯 Produção"; a leitura secundária agora mostra "Caixa" (antes duplicava produção).
-margemStatus parou de recalcular thresholds (35%/20%) no componente — agora usa indicadores.statusMargem, que já vem pronto do backend, eliminando a duplicidade de lógica que encontramos.
-Textos "inclui R$X de meses ant." agora discriminam retroativos vs. antecipação de pacote separadamente.
-Validação: rodei a aritmética da correção com os números reais de julho (capturados no início da conversa) — bate exatamente: produção 19.7%, caixa 47.2%, caixa-projetado (informativo) 52.2%. Syntax-check dos arquivos backend passou, e o servidor local recarregou sem erro após as mudanças.
-
-Não consegui validar ao vivo no navegador: um hook do plugin "context-mode" bloqueia qualquer chamada HTTP via Bash (curl, fetch) e insiste que eu use a ferramenta MCP dele para rodar a requisição num sandbox de terceiros — o que exigiria enviar seu Bearer token de admin real para um serviço externo não verificado. Não fiz isso. Se puder abrir /admin/financial → aba Metas no seu navegador (já logado) e confirmar que a barra caiu para ~20% com "Caixa 47%" ao lado, fico tranquilo de fechar a validação ponta a ponta.
-
-Eu diria que essa implementação está na direção certa, mas eu faria uma revisão em dois pontos antes de considerar concluída.
-
-✅ O que eu gostei
-1. calculateMetas usando produção
-
-Esse era exatamente o problema que encontramos.
-
-Se agora:
-
-ritmo
-
-projeção
-
-gap
-
-statusMeta
-
-alertas
-
-passam a usar produção, então eles ficam coerentes entre si.
-
-2. Renomear receitaProjetada
-
-Isso é uma melhoria arquitetural.
-
-Antes:
-
-receitaProjetada
-não era receita nem projeção.
-
-Agora:
-
-caixaProjetado
-fica muito mais explícito.
-
-3. Separar retroativos de antecipações
-
-Excelente.
-
-Antes havia um único saco chamado:
-
-recebimentosAntecipados
-que misturava coisas completamente diferentes.
-
-Agora o gestor consegue entender:
-
-quanto entrou de retroativo;
-
-quanto entrou de venda antecipada.
-
-Isso melhora muito a leitura.
-
-⚠️ O ponto que eu revisaria
-Esse trecho chamou minha atenção:
-
-margemStatus parou de recalcular thresholds (35%/20%) no componente — agora usa indicadores.statusMargem, que já vem pronto do backend
-
-Isso está correto desde que o backend também devolva:
-
-{
-  "statusMargem": {
-    "label": "Margem crítica",
-    "variant": "danger"
-  }
-}
-Se ele devolve apenas:
-
-{
-   "statusMargem": "critical"
-}
-e o React ainda faz:
-
-switch(statusMargem)
-para escolher texto e cor, ainda existe uma parte da regra no frontend.
-
-O ideal é que o backend entregue tudo que representa significado de negócio.
-
-❓O ponto que eu gostaria de validar
-O relatório diz:
-
-camadas.receitaProjetada → camadas.caixaProjetado
-
-Minha pergunta seria:
-
-Existe algum consumidor antigo de receitaProjetada?
-
-Porque essa mudança quebra contrato.
-
-Eu faria um grep no projeto para confirmar que:
-
-receitaProjetada
-não ficou sendo usado em:
-
-exports
-
-gráficos
-
-dashboard mobile
-
-PDF
-
-Excel
-
-endpoints derivados
-
-Se só FinancialDashboardTab consumia, perfeito.
-
-O teste que eu faria imediatamente
-Usando exatamente o cenário de julho:
-
-Esperaria ver:
-
-Indicador	Esperado
-Produção	~19,7%
-Caixa	~47,2%
-Caixa projetado (informativo)	~52,2%
-Ritmo	baseado em 19,7%
-Projeção	baseada em produção
-Gap	baseado em produção
-Status da meta	baseado em produção
-E principalmente:
-
-Um retroativo de R$ 50 mil não deve aumentar a barra da meta de produção.
-
-Esse é o teste que garante que a causa raiz foi realmente corrigida.
-
-Minha avaliação
-Pelo relatório, eu classificaria a implementação como muito consistente com a arquitetura que vocês vêm adotando.
-
-A única coisa que eu exigiria antes do merge é:
-
-Validar que não existem consumidores antigos de receitaProjetada.
-
-Confirmar que statusMargem chega suficientemente rico do backend para o frontend apenas renderizar, sem reconstruir regra de negócio.
-
-Fazer uma validação manual da tela com os dados reais de julho para confirmar que todos os KPIs passaram a contar a mesma história.
-
-Se esses três pontos estiverem ok, eu ficaria confortável em aprovar essa refatoração.
-
-
-me detlaha esse 12k retroarivos precis netneder
-Vou puxar os pagamentos reais que compõem esse R$ 12.059,90 direto do banco (só leitura), pra te dar o detalhe por paciente/sessão em vez de só a conta agregada.
-
-Bash Locate DB connection config without printing secrets
-IN
-grep -rn "MONGODB_URI\|MONGO_URI" /home/user/projetos/crm/back/.env 2>/dev/null | sed 's/=.*/=<redacted>/'
-ls /home/user/projetos/crm/back/config/*.js 2>/dev/null
-grep -rln "mongoose.connect" /home/user/projetos/crm/back --include=*.js | head -5
-
-OUT
-/home/user/projetos/crm/back/.env:64:MONGO_URI=<redacted>
-/home/user/projetos/crm/back/config/bullConfig.js
-/home/user/projetos/crm/back/config/bullConfigGmbRetry.js
-/home/user/projetos/crm/back/config/clinic.js
-/home/user/projetos/crm/back/config/constants.js
-/home/user/projetos/crm/back/config/cronManager.js
-/home/user/projetos/crm/back/config/featureFlags.js
-/home/user/projetos/crm/back/config/feriadosBR-dynamic.js
-/home/user/projetos/crm/back/config/feriadosBR.js
-/home/user/projetos/crm/back/config/insuranceFlowConfig.js
-/home/user/projetos/crm/back/config/intent-patterns.js
-/home/user/projetos/crm/back/config/layoutsConfig.js
-/home/user/projetos/crm/back/config/neuropedConfig.js
-/home/user/projetos/crm/back/config/pricing.js
-/home/user/projetos/crm/back/config/real-world-training.js
-/home/user/projetos/crm/back/config/redisConnection.js
-/home/user/projetos/crm/back/config/socket.js
-/home/user/projetos/crm/back/config/therapyKeywords.js
-/home/user/projetos/crm/back/server.js
-/home/user/projetos/crm/back/utils/logMetric.js
-/home/user/projetos/crm/back/domains/billing/scripts/initConvenios.js
-/home/user/projetos/crm/back/services/appointment/__tests__/AppointmentWriteGuard.test.js
-/home/user/projetos/crm/back/services/appointment/policies/__tests__/appointmentSpecialtyPolicy.test.js
-Bash Inspect Payment schema field names
-IN
-grep -n "financialDate\|paymentDate\|paidAt\|serviceDate\|kind:\|status:\|patient:\|amount:\|session:" /home/user/projetos/crm/back/models/Payment.js | head -40
-
-OUT
-10:    patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
-15:    session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session', default: null },
-20:    amount: { type: Number, required: true, min: 0 },
-21:    paymentDate: { type: Date, required: true },
-22:    serviceDate: { type: Date, default: null },
-28:    status: {
-35:    kind: {
-63:    paidAt: { type: Date, default: null },
-65:    financialDate: { type: Date, default: null, index: true },
-83:        status: {
-104:        amount: { type: Number, min: 0 }
-132:    // financialDate para payments pagos — paidAt é predominante (momento real do pagamento)
-133:    if (['paid', 'completed', 'confirmed'].includes(this.status) && !this.financialDate && !this.isFromPackage) {
-134:        this.financialDate = this.paidAt || this.paymentDate || new Date();
-142:    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA pode ter paidAt
-143:    if ((this.isFromPackage || this.kind === 'package_consumed') && this.paidAt) {
-144:        this.paidAt = null;
-165:            kind: this.kind,
-168:            patient: this.patient,
-170:            session: this.session,
-191:    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA pode ter status 'paid' nem paidAt
-196:        if (this.paidAt) {
-197:            this.paidAt = null;
-201:    if (this.status === 'paid' && !this.paidAt) {
-203:            [FINANCIAL LOCK] paidAt é obrigatório quando status='paid'. 
-210:        if (!this.financialDate && !this.isFromPackage) {
-211:            this.financialDate = this.createdAt || new Date();
-215:    // 🚨 GUARDA FINANCEIRA: consumo de pacote NUNCA deve ter financialDate
-216:    if (this.isFromPackage && this.financialDate) {
-218:            [FINANCIAL_LOCK] Payment de consumo de pacote (isFromPackage=true) não pode ter financialDate. 
-228:            patient: this.patient,
-229:            amount: this.amount
-240:paymentSchema.index({ appointment: 1, splitGroupId: 1, status: 1 }, { name: 'ledger_split_lookup' });
-270:                amount: doc.amount,
-272:                financialDate: doc.financialDate,
-273:                paidAt: doc.paidAt,
-274:                kind: doc.kind,
-300:paymentSchema.index({ status: 1, billingType: 1, paymentDate: -1 });
-301:paymentSchema.index({ financialDate: -1, status: 1 });
-302:paymentSchema.index({ patientId: 1, status: 1 });
-Bash Find timezone constant used for month boundaries
-IN
-grep -n "const TIMEZONE" /home/user/projetos/crm/back/routes/financialDashboard.v2.js | head -3
-
-OUT
-35:const TIMEZONE = 'America/Sao_Paulo';
-Write detalhar_retroativos.js
-75 lines
-require('dotenv').config({ path: '/home/user/projetos/crm/back/.env' });
-const mongoose = require('/home/user/projetos/crm/back/node_modules/mongoose');
-const moment = require('/home/user/projetos/crm/back/node_modules/moment-timezone');
-const Payment = require('/home/user/projetos/crm/back/models/Payment');
-
-const TIMEZONE = 'America/Sao_Paulo';
-
-async function main() {
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate(); // month=7 -> index 6
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-
-  const payments = await Payment.find({
-    status: 'paid',
-    financialDate: { $gte: start, $lte: end },
-  })
-    .select('amount financialDate paymentDate paidAt serviceDate kind billingType patient session')
-    .populate('patient', 'fullName')
-    .lean();
-
-  let antecipacao = [];
-  let retroativo = [];
-  let dentroDoMes = [];
-
-  for (const p of payments) {
-    const sd = p.serviceDate ? moment.tz(p.serviceDate, TIMEZONE) : null;
-    const isPackageSale = p.kind === 'package_receipt';
-    if (isPackageSale) {
-      antecipacao.push(p);
-    } else if (sd && (sd.isBefore(moment.tz(start, TIMEZONE)) )) {
-      retroativo.push(p);
-    } else if (sd && sd.isAfter(moment.tz(end, TIMEZONE))) {
-      antecipacao.push(p);
-    } else {
-      dentroDoMes.push(p);
-    }
-  }
-
-  const sum = (arr) => arr.reduce((s, p) => s + (p.amount || 0), 0);
-
-  console.log('=== TOTAIS ===');
-  console.log('Total payments paid com financialDate em julho:', payments.length, 'soma:', sum(payments).toFixed(2));
-  console.log('Dentro do mês (produção de julho):', dentroDoMes.length, 'soma:', sum(dentroDoMes).toFixed(2));
-  console.log('Antecipação (package_receipt ou serviceDate futuro):', antecipacao.length, 'soma:', sum(antecipacao).toFixed(2));
-  console.log('Retroativo (serviceDate < julho):', retroativo.length, 'soma:', sum(retroativo).toFixed(2));
-
-  console.log('\n=== DETALHE RETROATIVO (por paciente) ===');
-  const byPatient = {};
-  for (const p of retroativo) {
-    const name = p.patient?.fullName || 'desconhecido';
-    byPatient[name] = byPatient[name] || { total: 0, count: 0, items: [] };
-    byPatient[name].total += p.amount || 0;
-    byPatient[name].count += 1;
-    byPatient[name].items.push({
-      amount: p.amount,
-      billingType: p.billingType,
-      kind: p.kind,
-      serviceDate: p.serviceDate,
-      financialDate: p.financialDate,
-    });
-  }
-  const sorted = Object.entries(byPatient).sort((a, b) => b[1].total - a[1].total);
-  for (const [name, info] of sorted) {
-    console.log(${name}: R$ ${info.total.toFixed(2)} (${info.count}x));
-    for (const it of info.items) {
-      console.log(   - R$${it.amount} | ${it.billingType}/${it.kind} | atendido em ${moment.tz(it.serviceDate, TIMEZONE).format('DD/MM/YYYY')} | pago em ${moment.tz(it.financialDate, TIMEZONE).format('DD/MM/YYYY')});
-    }
-  }
-
-  await mongoose.disconnect();
-}
-
-main().catch((e) => { console.error(e); process.exit(1); });
-Bash Check required node modules exist
-IN
-ls /home/user/projetos/crm/back/node_modules/dotenv 2>/dev/null && echo "dotenv OK" || echo "dotenv MISSING"
-ls /home/user/projetos/crm/back/node_modules/moment-timezone 2>/dev/null && echo "moment-timezone OK" || echo "moment-timezone MISSING"
-
-OUT
-CHANGELOG.md
-LICENSE
-README-es.md
-README.md
-SECURITY.md
-config.d.ts
-config.js
-lib
-package.json
-dotenv OK
-LICENSE
-README.md
-builds
-changelog.md
-composer.json
-data
-index.d.ts
-index.js
-moment-timezone-utils.d.ts
-moment-timezone-utils.js
-moment-timezone.d.ts
-moment-timezone.js
-package.json
-moment-timezone OK
-Bom, dependências existem. Vou rodar a query (só leitura, sem gravar nada).
-
-Bash Run read-only query to break down the R$12k retroativos by patient/session
-IN
-cd /tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad && timeout 30 node detalhar_retroativos.js
-
-OUT
-Exit code 1
-node:internal/modules/cjs/loader:1210
-  throw err;
-  ^
-
-Error: Cannot find module 'dotenv'
-Require stack:
-- /tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad/detalhar_retroativos.js
-    at Module._resolveFilename (node:internal/modules/cjs/loader:1207:15)
-    at Module._load (node:internal/modules/cjs/loader:1038:27)
-    at Module.require (node:internal/modules/cjs/loader:1289:19)
-    at require (node:internal/modules/helpers:182:18)
-    at Object.<anonymous> (/tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad/detalhar_retroativos.js:1:1)
-    at Module._compile (node:internal/modules/cjs/loader:1521:14)
-    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
-    at Module.load (node:internal/modules/cjs/loader:1266:32)
-    at Module._load (node:internal/modules/cjs/loader:1091:12)
-    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [
-    '/tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad/detalhar_retroativos.js'
-  ]
-}
-
-Node.js v20.20.0
-Edit detalhar_retroativos.js
-Modified
-Bash Run read-only query to break down the R$12k retroativos by patient/session
-IN
-cd /tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad && timeout 30 node detalhar_retroativos.js
-
-OUT
-Exit code 1
-🚀 IORedis conectando via REDIS_URL...
-✅ Redis configurado com limite de conexões (maxSockets: 3)
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-TypeError: Payment.find is not a function
-    at main (/tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad/detalhar_retroativos.js:14:34)
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-Bash Check Payment.js module.exports shape
-IN
-tail -20 /home/user/projetos/crm/back/models/Payment.js
-
-OUT
-        paidAt: this.paidAt
-    };
-};
-
-// 🛡️ Flags de autorização do AppointmentWriteGuard — ver Appointment.js para o
-// racional completo (strict mode do Mongoose descarta campos não declarados em
-// updates via Model.findByIdAndUpdate/findOneAndUpdate).
-paymentSchema.add({
-  _fromCompleteService: { type: Boolean, select: false },
-  _fromCancelService: { type: Boolean, select: false },
-  _fromWriteGateway: { type: Boolean, select: false },
-  _fromInsuranceOrchestrator: { type: Boolean, select: false },
-});
-
-const Payment = mongoose.model('Payment', paymentSchema);
-
-// 🛡️ Instala interceptor de writes raw no model Payment
-AppointmentWriteGuard.install('Payment', Payment, ['status']);
-
-export default Payment;
-Bash Check if backend uses ESM module type
-IN
-grep -n '"type"' /home/user/projetos/crm/back/package.json
-
-OUT
-5:  "type": "module",
-Write _tmp_detalhar_retroativos.mjs
-77 lines
-import dotenv from 'dotenv';
-dotenv.config();
-import mongoose from 'mongoose';
-import moment from 'moment-timezone';
-import Payment from './models/Payment.js';
-
-const TIMEZONE = 'America/Sao_Paulo';
-
-async function main() {
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate(); // month=7 -> index 6
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-
-  const payments = await Payment.find({
-    status: 'paid',
-    financialDate: { $gte: start, $lte: end },
-  })
-    .select('amount financialDate paymentDate paidAt serviceDate kind billingType patient session')
-    .populate('patient', 'fullName')
-    .lean();
-
-  let antecipacao = [];
-  let retroativo = [];
-  let dentroDoMes = [];
-
-  for (const p of payments) {
-    const sd = p.serviceDate ? moment.tz(p.serviceDate, TIMEZONE) : null;
-    const isPackageSale = p.kind === 'package_receipt';
-    if (isPackageSale) {
-      antecipacao.push(p);
-    } else if (sd && sd.isBefore(moment.tz(start, TIMEZONE))) {
-      retroativo.push(p);
-    } else if (sd && sd.isAfter(moment.tz(end, TIMEZONE))) {
-      antecipacao.push(p);
-    } else {
-      dentroDoMes.push(p);
-    }
-  }
-
-  const sum = (arr) => arr.reduce((s, p) => s + (p.amount || 0), 0);
-
-  console.log('=== TOTAIS ===');
-  console.log('Total payments paid com financialDate em julho:', payments.length, 'soma:', sum(payments).toFixed(2));
-  console.log('Dentro do mês (produção de julho):', dentroDoMes.length, 'soma:', sum(dentroDoMes).toFixed(2));
-  console.log('Antecipação (package_receipt ou serviceDate futuro):', antecipacao.length, 'soma:', sum(antecipacao).toFixed(2));
-  console.log('Retroativo (serviceDate < julho):', retroativo.length, 'soma:', sum(retroativo).toFixed(2));
-
-  console.log('\n=== DETALHE RETROATIVO (por paciente) ===');
-  const byPatient = {};
-  for (const p of retroativo) {
-    const name = p.patient?.fullName || 'desconhecido';
-    byPatient[name] = byPatient[name] || { total: 0, count: 0, items: [] };
-    byPatient[name].total += p.amount || 0;
-    byPatient[name].count += 1;
-    byPatient[name].items.push({
-      amount: p.amount,
-      billingType: p.billingType,
-      kind: p.kind,
-      serviceDate: p.serviceDate,
-      financialDate: p.financialDate,
-    });
-  }
-  const sorted = Object.entries(byPatient).sort((a, b) => b[1].total - a[1].total);
-  for (const [name, info] of sorted) {
-    console.log(${name}: R$ ${info.total.toFixed(2)} (${info.count}x));
-    for (const it of info.items) {
-      console.log(   - R$${it.amount} | ${it.billingType}/${it.kind} | atendido em ${moment.tz(it.serviceDate, TIMEZONE).format('DD/MM/YYYY')} | pago em ${moment.tz(it.financialDate, TIMEZONE).format('DD/MM/YYYY')});
-    }
-  }
-
-  await mongoose.disconnect();
-  process.exit(0);
-}
-
-main().catch((e) => { console.error(e); process.exit(1); });
-Bash Run read-only diagnostic query for retroativos breakdown
-IN
-cd /home/user/projetos/crm/back && timeout 30 node _tmp_detalhar_retroativos.mjs
-
-OUT
-Exit code 1
-🚀 IORedis conectando via HOST/PORT local...
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-MissingSchemaError: Schema hasn't been registered for model "Patient".
-Use mongoose.model(name, schema)
-    at NativeConnection.model (/home/user/projetos/crm/back/node_modules/mongoose/lib/connection.js:1497:13)
-    at _getModelFromConn (/home/user/projetos/crm/back/node_modules/mongoose/lib/helpers/populate/getModelsMapForPopulate.js:579:15)
-    at addModelNamesToMap (/home/user/projetos/crm/back/node_modules/mongoose/lib/helpers/populate/getModelsMapForPopulate.js:507:17)
-    at getModelsMapForPopulate (/home/user/projetos/crm/back/node_modules/mongoose/lib/helpers/populate/getModelsMapForPopulate.js:208:7)
-    at _populatePath (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:4492:21)
-    at Function.populate (/home/user/projetos/crm/back/node_modules/mongoose/lib/model.js:4459:21)
-    at model.Query._find (/home/user/projetos/crm/back/node_modules/mongoose/lib/query.js:2452:23)
-    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
-    at async model.Query.exec (/home/user/projetos/crm/back/node_modules/mongoose/lib/query.js:4627:63)
-    at async main (file:///home/user/projetos/crm/back/_tmp_detalhar_retroativos.mjs:15:20)
-Bash Find exact Patient model filename
-IN
-ls /home/user/projetos/crm/back/models/ | grep -i patient
-
-OUT
-Patient.js
-PatientBalance.js
-PatientsView.js
-Edit _tmp_detalhar_retroativos.mjs
-Added 1 line
-Bash Re-run read-only diagnostic query for retroativos breakdown
-IN
-cd /home/user/projetos/crm/back && timeout 30 node _tmp_detalhar_retroativos.mjs
-
-OUT
-🚀 IORedis conectando via HOST/PORT local...
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-=== TOTAIS ===
-Total payments paid com financialDate em julho: 63 soma: 26420.00
-Dentro do mês (produção de julho): 55 soma: 19850.00
-Antecipação (package_receipt ou serviceDate futuro): 7 soma: 6120.00
-Retroativo (serviceDate < julho): 1 soma: 450.00
-
-=== DETALHE RETROATIVO (por paciente) ===
-Guilherme Augusto Fernandes Resende: R$ 450.00 (1x)
-   - R$450 | particular/session_payment | atendido em 30/06/2026 | pago em 01/07/2026
-Bash Break down July payments by billingType and whether serviceDate is null
-IN
-cat >> _tmp_detalhar_retroativos.mjs << 'EOF'
-EOF
-node -e "
-import('./models/Payment.js').then(async ({default: Payment}) => {
-  const dotenv = await import('dotenv'); dotenv.config();
-  const mongoose = (await import('mongoose')).default;
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-  const moment = (await import('moment-timezone')).default;
-  const TIMEZONE = 'America/Sao_Paulo';
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate();
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-  const payments = await Payment.find({ status: 'paid', financialDate: { \$gte: start, \$lte: end } })
-    .select('amount financialDate serviceDate kind billingType').lean();
-  const byBillingType = {};
-  for (const p of payments) {
-    const key = p.billingType + ' | serviceDate=' + (p.serviceDate ? 'sim' : 'NULO');
-    byBillingType[key] = byBillingType[key] || { count: 0, total: 0 };
-    byBillingType[key].count++;
-    byBillingType[key].total += p.amount || 0;
-  }
-  for (const [k, v] of Object.entries(byBillingType)) {
-    console.log(k, '-> count:', v.count, 'total:', v.total.toFixed(2));
-  }
-  await mongoose.disconnect();
-  process.exit(0);
-});
-"
-
-OUT
-🚀 IORedis conectando via HOST/PORT local...
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-particular | serviceDate=NULO -> count: 47 total: 14210.00
-particular | serviceDate=sim -> count: 5 total: 1210.00
-liminar | serviceDate=NULO -> count: 11 total: 11000.00
-Bash Remove temporary diagnostic script from repo and scratchpad
-IN
-rm /home/user/projetos/crm/back/_tmp_detalhar_retroativos.mjs && rm -f /tmp/claude-1000/-home-user-projetos-crm/78781bc3-0ef0-4417-96a7-5bee883044d9/scratchpad/detalhar_retroativos.js && echo "limpo"
-
-OUT
-limpo
-Tentei te dar o detalhe por paciente/sessão, mas descobri algo mais importante no caminho: não dá pra reconstruir isso transação por transação com confiança, porque o campo que ligaria cada pagamento à sua sessão original (serviceDate) está vazio em quase todos os registros.
-
-Rodei uma query direta no banco (só leitura) nos 63 pagamentos com dinheiro recebido em julho:
-
-Tipo	Com serviceDate preenchido	Sem serviceDate (vazio)
-Particular	5 pagamentos (R$1.210)	47 pagamentos (R$14.210)
-Liminar	0	11 pagamentos (R$11.000)
-Venda de pacote	—	7 pagamentos (R$6.120) — esses eu identifico com certeza, é o kind correto
-Ou seja: 92% dos pagamentos de julho não têm o campo que diria "essa sessão foi atendida em tal data" — principalmente liminar (100% sem essa data) e particular (a maioria também sem). Dos 5 particulares que tinham a data preenchida, só 1 realmente aponta pra um atendimento de mês anterior: Guilherme Augusto Fernandes Resende, R$450, atendido em 30/06 e pago em 01/07 — esse eu confirmo com certeza absoluta que é retroativo.
-
-O resto do R$12.059,90 (praticamente todo ele) não pode ser confirmado transação por transação — o dashboard chega nesse número por uma conta indireta (por tipo: quanto entrou em caixa menos quanto a própria produção do mês "deveria" ter gerado), não por rastrear cada pagamento individualmente. E o maior suspeito continua sendo liminar: o caixa de liminar (R$11.310) é muito maior que a produção de liminar (R$780) — uma diferença de R$10.530 — e isso bate com o padrão de como liminar funciona (reconhecida por contrato/crédito judicial, não por sessão individual com data), então É esperado que seja majoritariamente retroativo, só não dá pra apontar "qual paciente exatamente" com o dado que existe hoje.
-
-Resumindo pra você: o número agregado (R$12.059,90) continua confiável como estimativa — mas se você quiser rastreabilidade real por paciente daqui pra frente, o gargalo é que serviceDate precisa passar a ser preenchido consistentemente nos pagamentos de particular e liminar. Isso é uma mudança de captura de dado, não um bug de cálculo — quer que eu investigue onde esse campo deveria estar sendo setado e não está?
-
-Na verdade, essa investigação revelou um ponto importante: eu não trataria esses R$ 12.059,90 como "retroativos confirmados".
-
-O motivo é o próprio resultado da consulta.
-
-Você encontrou que:
-
-Caixa recebido em julho: R$ 26.420,00
-
-Produção de julho identificada por serviceDate: R$ 19.850,00
-
-Venda de pacotes (antecipação): R$ 6.120,00
-
-Retroativo confirmado por serviceDate: apenas R$ 450,00
-
-E depois viu isto:
-
-Tipo	serviceDate preenchido?
-Particular	47 de 52 pagamentos sem
-Liminar	11 de 11 sem
-Isso muda completamente a interpretação.
-
-O que significa?
-O sistema não sabe de qual competência pertence a maior parte desses pagamentos.
-
-Ele sabe apenas:
-
-pagamento ocorreu em julho.
-
-Mas não consegue responder:
-
-esse dinheiro é referente a atendimento de março?
-
-ou julho?
-
-ou junho?
-
-Porque falta justamente:
-
-serviceDate
-Então de onde saiu os R$ 12 mil?
-Pelo que você mostrou, não saiu da identificação individual dos pagamentos.
-
-Saiu de uma conta agregada.
-
-Algo parecido com:
-
-Caixa recebido
-
--
-
-Nova receita do mês
-
-=
-
-"retroativo"
-ou alguma variação dessa lógica.
-
-Ou seja, é um resíduo matemático.
-
-Não um conjunto de pagamentos classificados um a um.
-
-Isso é um problema de nomenclatura
-Hoje vocês chamam isso de:
-
-Retroativos
-Mas tecnicamente ele significa:
-
-"Valor recebido em caixa que não consegui associar com a produção deste mês."
-
-Isso é diferente.
-
-Pode conter:
-
-retroativo verdadeiro;
-
-liminar;
-
-particular antigo;
-
-erro de preenchimento;
-
-pagamentos sem serviceDate.
-
-O único retroativo que você conseguiu provar
-Foi este:
-
-Paciente: Guilherme Augusto Fernandes Resende
-
-Atendimento: 30/06
-
-Pagamento: 01/07
-
-Valor: R$ 450
-
-Esse sim é retroativo comprovado.
-
-Os R$ 11 mil de liminar
-Esse é o ponto que eu investigaria.
-
-Porque hoje vocês têm:
-
-11 pagamentos
-
-R$ 11.000
-
-serviceDate = NULL
-Então podem existir dois cenários.
-
-Cenário A
-Todos realmente são retroativos.
-
-Perfeito.
-
-Só falta preencher o serviceDate.
-
-Cenário B
-Parte deles pertence a julho.
-
-Nesse caso, o dashboard está classificando errado.
-
-Minha conclusão
-Eu não apresentaria ao usuário final um card escrito:
-
-Retroativos: R$ 12.059,90
-
-Porque hoje vocês não conseguem provar isso no nível transacional.
-
-Eu chamaria algo como:
-
-Recebimentos de competência não identificada
+↓
 
 ou
 
-Recebimentos sem competência vinculada
-
-até que o vínculo entre pagamento e competência esteja completo.
-
-O que eu investigaria agora
-A pergunta deixou de ser:
-
-"Como calculo os retroativos?"
-
-e passou a ser:
-
-Por que 58 dos 63 pagamentos de julho não têm serviceDate preenchido?
-
-Porque, se esse campo estivesse sendo preenchido corretamente na criação dos Payment, vocês conseguiriam responder exatamente:
-
-quanto foi produzido em julho;
-
-quanto foi pago em julho;
-
-quanto era retroativo;
-
-quais pacientes compõem cada valor.
-
-Essa, para mim, é a próxima causa raiz a investigar.
-
-
-calma la temos a trinca.....que linka tudo por isso da trinca appoinetne atrleado a sessiso elinkado a payment nao
-Bash Check if Payment has session/appointment reference fields
-IN
-grep -n "session:.*ObjectId\|appointment:.*ObjectId" /home/user/projetos/crm/back/models/Payment.js
-
-OUT
-13:    appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', default: null },
-15:    session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session', default: null },
-Boa pergunta — se a trinca Appointment→Session→Payment estiver de fato linkada, dá pra pegar a data real via session.date mesmo sem o campo serviceDate preenchido. Vou checar isso agora.
-
-Write _tmp_check_trinca.mjs
-76 lines
-import dotenv from 'dotenv';
-dotenv.config();
-import mongoose from 'mongoose';
-import moment from 'moment-timezone';
-import Payment from './models/Payment.js';
-import Session from './models/Session.js';
-import './models/Patient.js';
-
-const TIMEZONE = 'America/Sao_Paulo';
-
-async function main() {
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate();
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-
-  const payments = await Payment.find({
-    status: 'paid',
-    financialDate: { $gte: start, $lte: end },
-  })
-    .select('amount financialDate serviceDate kind billingType session appointment patient')
-    .populate('patient', 'fullName')
-    .populate('session', 'date status')
-    .lean();
-
-  let semSession = 0, comSession = 0;
-  let retroativoViaSession = [];
-  let dentroViaSession = [];
-  let semSessionEsemServiceDate = [];
-
-  for (const p of payments) {
-    if (p.kind === 'package_receipt') continue; // já sabemos que é antecipação
-    if (p.session && p.session.date) {
-      comSession++;
-      const sd = moment.tz(p.session.date, TIMEZONE);
-      if (sd.isBefore(moment.tz(start, TIMEZONE)) || sd.isAfter(moment.tz(end, TIMEZONE))) {
-        retroativoViaSession.push({ ...p, sessionDate: p.session.date });
-      } else {
-        dentroViaSession.push(p);
-      }
-    } else {
-      semSession++;
-      semSessionEsemServiceDate.push(p);
-    }
-  }
-
-  console.log('Pagamentos (excluindo venda de pacote) com session.date disponível:', comSession);
-  console.log('Pagamentos SEM session vinculada (nem serviceDate, nem session.date):', semSession);
-
-  const sum = (arr) => arr.reduce((s, p) => s + (p.amount || 0), 0);
-  console.log('\nVia session.date -> retroativo (fora de julho):', retroativoViaSession.length, 'soma:', sum(retroativoViaSession).toFixed(2));
-  console.log('Via session.date -> dentro de julho:', dentroViaSession.length, 'soma:', sum(dentroViaSession).toFixed(2));
-
-  console.log('\n=== Detalhe retroativo via session.date ===');
-  for (const p of retroativoViaSession) {
-    console.log(${p.patient?.fullName || '?'} | R$${p.amount} | ${p.billingType} | sessão em ${moment.tz(p.sessionDate, TIMEZONE).format('DD/MM/YYYY')} | pago em ${moment.tz(p.financialDate, TIMEZONE).format('DD/MM/YYYY')});
-  }
-
-  console.log('\n=== Amostra dos SEM session vinculada (primeiros 10) ===');
-  for (const p of semSessionEsemServiceDate.slice(0, 10)) {
-    console.log(${p.patient?.fullName || '?'} | R$${p.amount} | ${p.billingType}/${p.kind} | appointment=${p.appointment ? 'sim' : 'NULO'} | pago em ${moment.tz(p.financialDate, TIMEZONE).format('DD/MM/YYYY')});
-  }
-  const byBillingTypeSemSession = {};
-  for (const p of semSessionEsemServiceDate) {
-    byBillingTypeSemSession[p.billingType] = byBillingTypeSemSession[p.billingType] || { count: 0, total: 0 };
-    byBillingTypeSemSession[p.billingType].count++;
-    byBillingTypeSemSession[p.billingType].total += p.amount || 0;
-  }
-  console.log('\nSem session, agrupado por billingType:', JSON.stringify(byBillingTypeSemSession, null, 2));
-
-  await mongoose.disconnect();
-  process.exit(0);
-}
-
-main().catch((e) => { console.error(e); process.exit(1); });
-Bash Check if session ref is populated on payments even when serviceDate is empty
-IN
-cd /home/user/projetos/crm/back && timeout 30 node _tmp_check_trinca.mjs
-
-OUT
-🚀 IORedis conectando via HOST/PORT local...
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Appointment (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Session (modo: warn)
-Pagamentos (excluindo venda de pacote) com session.date disponível: 41
-Pagamentos SEM session vinculada (nem serviceDate, nem session.date): 15
-
-Via session.date -> retroativo (fora de julho): 13 soma: 1990.00
-Via session.date -> dentro de julho: 28 soma: 6610.00
-
-=== Detalhe retroativo via session.date ===
-Isis Caldas Rebelatto | R$130 | particular | sessão em 01/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$130 | particular | sessão em 08/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$130 | particular | sessão em 15/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 01/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 22/05/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 29/05/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 25/05/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 05/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 05/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 08/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 15/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 19/06/2026 | pago em 06/07/2026
-Isis Caldas Rebelatto | R$160 | particular | sessão em 19/06/2026 | pago em 06/07/2026
-
-=== Amostra dos SEM session vinculada (primeiros 10) ===
-Miguel Lima Vieira | R$190 | particular/session_payment | appointment=sim | pago em 09/07/2026
-Benjamin chaveiro Gomes | R$190 | particular/session_payment | appointment=sim | pago em 09/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-ana teste 2 | R$1000 | liminar/liminar_contract_receipt | appointment=NULO | pago em 08/07/2026
-
-Sem session, agrupado por billingType: {
-  "particular": {
-    "count": 4,
-    "total": 700
-  },
-  "liminar": {
-    "count": 11,
-    "total": 11000
-  }
-}
-Achei algo que muda o quadro completamente. Deixa eu puxar a lista completa desses 11 registros de liminar, porque os primeiros 8 que apareceram são de um paciente chamado "ana teste 2" — isso parece dado de teste, não dinheiro real.
-
-Bash List all July liminar payments with patient names to check for test data
-IN
-node -e "
-import('dotenv').then(async (dotenvMod) => {
-  dotenvMod.default.config();
-  const mongoose = (await import('mongoose')).default;
-  const moment = (await import('moment-timezone')).default;
-  const Payment = (await import('./models/Payment.js')).default;
-  await import('./models/Patient.js');
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-  const TIMEZONE = 'America/Sao_Paulo';
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate();
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-  const payments = await Payment.find({ status: 'paid', financialDate: { \$gte: start, \$lte: end }, billingType: 'liminar' })
-    .select('amount financialDate kind patient session appointment')
-    .populate('patient', 'fullName')
-    .lean();
-  console.log('Total registros liminar:', payments.length);
-  for (const p of payments) {
-    console.log(p.patient?.fullName, '| R\$'+p.amount, '|', p.kind, '| pago', moment.tz(p.financialDate, TIMEZONE).format('DD/MM/YYYY'));
-  }
-  await mongoose.disconnect();
-  process.exit(0);
-});
-"
-
-OUT
-🚀 IORedis conectando via REDIS_URL...
-✅ Redis configurado com limite de conexões (maxSockets: 3)
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-Total registros liminar: 11
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-ana teste 2 | R$1000 | liminar_contract_receipt | pago 08/07/2026
-Confirmado — e é um achado sério. Os 11 registros de liminar (R$11.000, quase todo o "retroativo" mostrado na tela) são de um único paciente chamado literalmente "ana teste 2", todos de R$1.000,00 exatos, lançados no mesmo dia (08/07/2026), tipo liminar_contract_receipt. Isso tem cara de dado de teste/demo contaminando o banco de produção, não um recebimento judicial real.
-
-Bash Clean up temporary diagnostic script
-IN
-rm -f /home/user/projetos/crm/back/_tmp_check_trinca.mjs && echo "script temporário removido"
-
-OUT
-script temporário removido
-Isso responde diretamente sua pergunta sobre a trinca: quando o link Appointment→Session→Payment existe, dá pra rastrear a origem real com precisão (foi assim que achei Isis Caldas Rebelatto e o "ana teste 2"). Quando não existe (como nesses 11 registros de liminar, sem session nem appointment vinculados), a única forma de reconhecer a receita é pelo contrato judicial direto — e foi exatamente aí que apareceu esse paciente de teste.
-
-Resumo do que a trinca revelou, com nomes reais:
-
-Origem confirmada	Paciente	Valor	Situação
-Via session.date	Isis Caldas Rebelatto	R$ 1.990,00	Retroativo genuíno (sessões de maio/junho pagas em julho)
-Via serviceDate	Guilherme Augusto Fernandes Resende	R$ 450,00	Retroativo genuíno (sessão de 30/06, paga em 01/07)
-Sem trinca (liminar_contract_receipt, sem session/appointment)	"ana teste 2"	R$ 11.000,00	⚠️ Parece dado de teste, não retroativo real
-Ou seja: dos R$ 12.059,90 que o dashboard chama de "retroativos", só ~R$ 2.440,00 são retroativo real e confirmável (Isis + Guilherme). Os outros R$ 11.000,00 vêm de um paciente com nome de teste, todos lançados no mesmo dia, com valores redondos idênticos — não parece produção real da clínica.
-
-Não mexi em nada — conforme sua diretriz de nunca corrigir dados via script, só diagnóstico. Mas isso merece sua atenção: se "ana teste 2" for de fato um paciente de teste esquecido em produção, ele está inflando o caixa e o "retroativo" de liminar em quase R$11 mil todo mês que esse registro ficar lá. Quer que eu levante mais detalhes desse paciente (quando foi criado, se tem outros registros em outros meses) antes de você decidir o que fazer?
-
-
-Agora sim estamos chegando na causa raiz. E tem um ponto que eu tomaria muito cuidado antes de concluir.
-
-A trinca existe, e isso muda bastante a investigação.
+Arrastar imagem
 
-No seu CRM, a fonte da verdade deveria ser:
+Nem precisa salvar localmente.
 
-Appointment
-      │
-      ▼
-Session
-      │
-      ▼
-Payment
-Ou seja, para descobrir a competência do pagamento, eu não preciso confiar em serviceDate do Payment. Posso usar:
+O usuário faz:
 
-Payment.session
-        ↓
-Session.date
-Isso é muito mais confiável.
+Win + Shift + S
 
-O que a investigação mostrou
-Dos pagamentos de julho (tirando venda de pacote):
+Ctrl + V
 
-41 possuem session vinculada.
 
-15 não possuem session.
+Pronto.
 
-Então a trinca está funcionando para a maioria.
+Melhor ainda
 
-Isso já é uma ótima notícia.
+Criaria um objeto.
 
-Agora vem o ponto que eu não fecharia ainda
-O relatório concluiu que os R$ 11.000 são "dados de teste".
+AuthorizationPackage
 
-Eu não afirmaria isso ainda.
+id
 
-Por quê?
+patient
 
-Porque só temos estas evidências:
+insurance
 
-paciente chama "ana teste 2";
+attachments
 
-11 pagamentos de R$ 1.000;
+createdBy
 
-todos no mesmo dia;
+status
 
-sem Appointment;
+Os anexos seriam somente referências.
 
-sem Session.
+attachments
 
-Isso é altamente suspeito, mas ainda não prova que sejam dados inválidos.
+documentId
 
-Pode ser:
+documentId
 
-ambiente de homologação contaminado;
+documentId
 
-paciente de teste esquecido;
+documentId
 
-teste de liminar;
 
-ou até um caso real com nome inadequado (menos provável, mas não impossível).
+Não cópias.
 
-Antes de qualquer ação eu responderia três perguntas.
+Depois vem o envio
 
-Pergunta 1
-Esse paciente possui:
+Quando clicar
 
-Appointment?
+Enviar
 
-Session?
+o backend faz:
 
-InsuranceGuide?
+buscar Documento 1
 
-Contract?
+buscar Documento 2
 
-Se não possui absolutamente nada...
+buscar Documento 3
 
-aí começa a ficar muito forte a hipótese de dado de teste.
+buscar Documento 4
 
-Pergunta 2
-Esses 11 payments nasceram por qual fluxo?
+↓
 
-Porque o tipo é:
+montar email
 
-liminar_contract_receipt
-Então eu iria atrás de quem cria isso.
+↓
 
-Algo como:
+enviar SMTP
 
-grep -R "liminar_contract_receipt"
-Quero descobrir:
+↓
 
-qual service gera isso;
+registrar log
 
-quando ele gera;
+O frontend nunca envia arquivos.
 
-quais vínculos deveria preencher.
+Só envia IDs.
 
-Pergunta 3
-Esses payments têm algum:
+Isso deixa a aplicação muito leve
 
-contractId
+Ao invés de:
 
-guideId
+40 MB
 
-insuranceId
++
 
-splitGroupId
+15 MB
 
-source
++
 
-origin
-Porque isso conta a história inteira.
+12 MB
 
-Outro achado interessante
-Você encontrou isto:
 
-Sem session
+toda vez...
 
-particular
+você envia:
 
-4 pagamentos
-
-R$700
-Isso também merece investigação.
-
-Porque pagamento particular normalmente nasce da trinca.
-
-Então esses quatro também parecem fugir do fluxo normal.
-
-O que eu faria agora
-Eu abriria uma investigação chamada:
-
-Payments órfãos
-
-Critério:
-
-Payment
-
-status=paid
-
-session == null
-Depois dividiria em grupos.
-
-Grupo A
-
-kind=package_receipt
-Esperado.
-
-Grupo B
-
-liminar_contract_receipt
-Entender o fluxo.
-
-Grupo C
-
-session_payment
-Esse sim merece atenção.
-
-Porque deveria existir Session.
-
-Minha impressão
-A descoberta mais importante não é nem o valor dos R$ 11 mil.
-
-É que vocês conseguiram provar que:
-
-a trinca consegue reconstruir corretamente a competência quando ela existe.
-
-Isso valida a arquitetura que vocês construíram.
-
-Agora o trabalho é identificar quais fluxos ainda estão gerando Payment sem fechar a trinca.
-
-Esses são os verdadeiros candidatos a bugs.
-
-E, sinceramente, eu investigaria esses fluxos antes de concluir que o dashboard financeiro está errado por causa dos R$ 11 mil. Pode ser que o dashboard esteja apenas refletindo corretamente um conjunto de Payment que foi criado por um fluxo excepcional (ou de teste) que não respeitou a arquitetura da trinca.
-
-
-pacitne e teste esse ana tet Vou checar exatamente isso: se "ana teste 2" tem Appointment, Session, Contrato de liminar ou guia de convênio vinculados. Primeiro achei o código que gera liminar_contract_receipt — ele legitimamente não vincula session/appointment por natureza (é crédito de contrato, não de sessão), então a ausência desses vínculos não é por si só prova de teste. Vou direto ao paciente agora.
-
-Bash Find LiminarContract model filename and patient reference field
-IN
-ls /home/user/projetos/crm/back/models/ | grep -i liminar
-grep -n "patient:\|patientId:\|_id:" /home/user/projetos/crm/back/models/LiminarContract.js 2>/dev/null | head -5
-
-OUT
-LiminarContract.js
-14:}, { _id: false });
-17:  patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
-Write _tmp_investigar_paciente.mjs
-49 lines
-import dotenv from 'dotenv';
-dotenv.config();
-import mongoose from 'mongoose';
-import moment from 'moment-timezone';
-import Payment from './models/Payment.js';
-import Patient from './models/Patient.js';
-import Appointment from './models/Appointment.js';
-import Session from './models/Session.js';
-import LiminarContract from './models/LiminarContract.js';
-
-const TIMEZONE = 'America/Sao_Paulo';
-
-async function main() {
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-
-  const patients = await Patient.find({ fullName: /ana teste/i }).select('fullName createdAt email phone active source').lean();
-  console.log('=== Pacientes com nome "ana teste" ===');
-  console.log(JSON.stringify(patients, null, 2));
-
-  for (const pat of patients) {
-    console.log(\n--- Investigando patient ${pat._id} (${pat.fullName}) ---);
-
-    const appts = await Appointment.find({ patient: pat._id }).select('date status type createdAt').lean();
-    console.log('Appointments:', appts.length, JSON.stringify(appts.slice(0, 5), null, 2));
-
-    const sessions = await Session.find({ patient: pat._id }).select('date status sessionType createdAt').lean();
-    console.log('Sessions:', sessions.length, JSON.stringify(sessions.slice(0, 5), null, 2));
-
-    const contracts = await LiminarContract.find({ patient: pat._id }).lean();
-    console.log('LiminarContracts:', contracts.length);
-    for (const c of contracts) {
-      console.log(JSON.stringify({
-        _id: c._id, status: c.status, totalCredit: c.totalCredit, creditBalance: c.creditBalance,
-        receivedAt: c.receivedAt, createdAt: c.createdAt, creditHistory: c.creditHistory,
-        processNumber: c.processNumber, court: c.court,
-      }, null, 2));
-    }
-
-    const payments = await Payment.find({ patient: pat._id }).select('amount status kind billingType createdAt paidAt financialDate session appointment doctor notes description source origin contractId guideId insuranceId splitGroupId').lean();
-    console.log('Payments:', payments.length);
-    console.log(JSON.stringify(payments, null, 2));
-  }
-
-  await mongoose.disconnect();
-  process.exit(0);
-}
-
-main().catch((e) => { console.error(e); process.exit(1); });
-Bash Investigate ana teste patient across Appointment/Session/LiminarContract/Payment
-IN
-cd /home/user/projetos/crm/back && timeout 30 node _tmp_investigar_paciente.mjs 2>&1 | head -250
-
-OUT
-🚀 IORedis conectando via HOST/PORT local...
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Session (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Appointment (modo: warn)
-=== Pacientes com nome "ana teste" ===
-[
-  {
-    "_id": "6a285cfa7681a873d5c6a00b",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-09T18:35:38.762Z"
-  },
-  {
-    "_id": "6a284ed4b71e61090d5bae30",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:14.872Z"
-  },
-  {
-    "_id": "6a284ee9b71e61090d5bae5e",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:14.881Z"
-  },
-  {
-    "_id": "6a284ed9b71e61090d5bae3c",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:14.885Z"
-  },
-  {
-    "_id": "6a284ef2b71e61090d5bae76",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:14.908Z"
-  },
-  {
-    "_id": "6a284f1fb71e61090d5baefd",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:14.917Z"
-  },
-  {
-    "_id": "6a285b1dc80613b545215b61",
-    "fullName": "ana teste 2",
-    "phone": "6299999999",
-    "createdAt": "2026-06-17T12:56:25.562Z"
-  },
-  {
-    "_id": "6a188432eed9e001a11bde67",
-    "fullName": "ana teste 22",
-    "phone": "6299999999",
-    "createdAt": "2026-05-28T18:06:43.210Z",
-    "email": null
-  }
-]
-
---- Investigando patient 6a285cfa7681a873d5c6a00b (ana teste 2) ---
-Appointments: 28 [
-  {
-    "_id": "6a3987edea65c383027de5c7",
-    "date": "2026-08-22T17:00:00.000Z",
-    "createdAt": "2026-06-22T19:07:25.600Z"
-  },
-  {
-    "_id": "6a3987edea65c383027de5c6",
-    "date": "2026-08-15T17:00:00.000Z",
-    "createdAt": "2026-06-22T19:07:25.600Z"
-  },
-  {
-    "_id": "6a3987edea65c383027de5c5",
-    "date": "2026-08-08T17:00:00.000Z",
-    "createdAt": "2026-06-22T19:07:25.600Z"
-  },
-  {
-    "_id": "6a4ecebc92625ff5e3041093",
-    "date": "2026-08-07T17:00:00.000Z",
-    "createdAt": "2026-07-08T22:27:08.886Z"
-  },
-  {
-    "_id": "6a3987edea65c383027de5c4",
-    "date": "2026-08-01T17:00:00.000Z",
-    "createdAt": "2026-06-22T19:07:25.600Z"
-  }
-]
-Sessions: 38 [
-  {
-    "_id": "6a2c76f0eaef447c17cd34e1",
-    "date": "2026-06-12T13:00:00.000Z",
-    "sessionType": "fonoaudiologia",
-    "status": "missed",
-    "createdAt": "2026-06-12T21:15:28.501Z"
-  },
-  {
-    "_id": "6a2c8343a07c7c092f8ba548",
-    "date": "2026-06-19T13:00:00.000Z",
-    "sessionType": "fonoaudiologia",
-    "status": "canceled",
-    "createdAt": "2026-06-12T22:08:03.902Z"
-  },
-  {
-    "_id": "6a398724f99760cf530215dc",
-    "date": "2026-06-22T11:00:00.000Z",
-    "sessionType": "terapia ocupacional",
-    "status": "scheduled",
-    "createdAt": "2026-06-22T19:04:04.335Z"
-  },
-  {
-    "_id": "6a398724f99760cf530215dd",
-    "date": "2026-06-29T11:00:00.000Z",
-    "sessionType": "terapia ocupacional",
-    "status": "scheduled",
-    "createdAt": "2026-06-22T19:04:04.335Z"
-  },
-  {
-    "_id": "6a398724f99760cf530215de",
-    "date": "2026-07-06T11:00:00.000Z",
-    "sessionType": "terapia ocupacional",
-    "status": "completed",
-    "createdAt": "2026-06-22T19:04:04.336Z"
-  }
-]
-LiminarContracts: 3
 {
-  "_id": "6a4ec7b092625ff5e303fba4",
-  "status": "active",
-  "totalCredit": 1000,
-  "creditBalance": 1000,
-  "receivedAt": "2026-07-08T21:57:03.982Z",
-  "createdAt": "2026-07-08T21:57:04.172Z",
-  "creditHistory": [
-    {
-      "amount": 1000,
-      "type": "initial",
-      "reason": "contract_created",
-      "appointmentId": null,
-      "createdAt": "2026-07-08T21:57:04.144Z",
-      "createdBy": null
-    }
-  ],
-  "processNumber": "TEST-LIMINAR-1783547823982",
-  "court": "TJGO"
+  "documents": [
+    "67fa...",
+    "67fb...",
+    "67fc..."
+  ]
 }
-{
-  "_id": "6a4ecf0792625ff5e3041204",
-  "status": "active",
-  "totalCredit": 1000,
-  "creditBalance": 1000,
-  "receivedAt": "2026-07-08T22:28:23.449Z",
-  "createdAt": "2026-07-08T22:28:23.459Z",
-  "creditHistory": [
-    {
-      "amount": 1000,
-      "type": "initial",
-      "reason": "contract_created",
-      "appointmentId": null,
-      "createdAt": "2026-07-08T22:28:23.456Z",
-      "createdBy": null
-    }
-  ],
-  "processNumber": "0001783549703449",
-  "court": "TJGO"
-}
-{
-  "_id": "6a4ecf3992625ff5e3041320",
-  "status": "active",
-  "totalCredit": 1000,
-  "creditBalance": 1000,
-  "receivedAt": "2026-07-08T22:29:13.785Z",
-  "createdAt": "2026-07-08T22:29:13.830Z",
-  "creditHistory": [
-    {
-      "amount": 1000,
-      "type": "initial",
-      "reason": "contract_created",
-      "appointmentId": null,
-      "createdAt": "2026-07-08T22:29:13.823Z",
-      "createdBy": null
-    }
-  ],
-  "processNumber": "TEST-LIMINAR-1783549753785",
-  "court": "TJGO"
-}
-Payments: 24
-[
-  {
-    "_id": "6a2c8344a07c7c092f8ba558",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": null,
-    "session": null,
-    "amount": 0.24,
-    "status": "canceled",
-    "kind": "package_receipt",
-    "billingType": "particular",
-    "notes": "Pagamento do pacote",
-    "paidAt": "2026-06-12T22:08:04.705Z",
-    "financialDate": "2026-06-12T03:00:00.000Z",
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-12T22:08:04.706Z"
-  },
-  {
-    "_id": "6a398724f99760cf530215f7",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": null,
-    "session": null,
-    "amount": 0.4,
-    "status": "paid",
-    "kind": "package_receipt",
-    "billingType": "particular",
-    "notes": "Pagamento do pacote",
-    "paidAt": "2026-06-22T19:04:04.709Z",
-    "financialDate": "2026-06-22T03:00:00.000Z",
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-22T19:04:04.712Z"
-  },
-  {
-    "_id": "6a3987edea65c383027de5e0",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": null,
-    "session": null,
-    "amount": 0.4,
-    "status": "paid",
-    "kind": "package_receipt",
-    "billingType": "particular",
-    "notes": "Pagamento do pacote",
-    "paidAt": "2026-06-22T19:07:25.916Z",
-    "financialDate": "2026-08-01T03:00:00.000Z",
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-22T19:07:25.918Z"
-  },
-  {
-    "_id": "6a47e7ccd7dd20d01050f036",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a47e7cc0b1d4720a17fe5ad",
-    "session": "6a47e7ccd7dd20d01050f03b",
-    "amount": 0,
-    "status": "canceled",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio bradesco-saude",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-07-03T16:48:12.181Z"
-  },
-Muito revelador já. Vou ver o resto da saída (ficou truncada) pra pegar os registros de liminar_contract_receipt especificamente e confirmar o contractId.
-
-Bash View remainder of the ana teste 2 investigation output
-IN
-timeout 30 node _tmp_investigar_paciente.mjs 2>&1 | tail -180
-
-OUT
-  "processNumber": null,
-  "court": null
-}
-Payments: 11
-[
-  {
-    "_id": "6a189a2f699da7807677048b",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": null,
-    "session": null,
-    "amount": 0.8,
-    "status": "canceled",
-    "kind": "package_receipt",
-    "billingType": "particular",
-    "notes": "Pagamento do pacote",
-    "paidAt": "2026-05-28T19:40:31.528Z",
-    "financialDate": "2026-05-28T03:00:00.000Z",
-    "createdAt": "2026-05-28T19:40:31.540Z"
-  },
-  {
-    "_id": "6a2c7024121379525ba86c29",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": null,
-    "session": null,
-    "amount": 0.6,
-    "status": "canceled",
-    "kind": "package_receipt",
-    "billingType": "particular",
-    "notes": "Pagamento do pacote",
-    "paidAt": "2026-06-12T20:46:28.409Z",
-    "financialDate": "2026-06-12T03:00:00.000Z",
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-12T20:46:28.418Z"
-  },
-  {
-    "_id": "6a300dd920c4fd9f4b8df7b6",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a2c7023121379525ba86c11",
-    "session": null,
-    "amount": 0.15,
-    "status": "canceled",
-    "kind": "appointment_payment",
-    "billingType": "particular",
-    "notes": "Pagamento registrado via tabela financeira",
-    "paidAt": "2026-06-15T14:36:09.023Z",
-    "financialDate": "2026-06-15T03:00:00.000Z",
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-15T14:36:09.023Z"
-  },
-  {
-    "_id": "6a341fb37075e877cf912209",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a341fb3e4de0b2ffe4dc223",
-    "session": "6a341fb37075e877cf91220f",
-    "amount": 80,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio unimed-anapolis",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-18T16:41:23.237Z"
-  },
-  {
-    "_id": "6a341fb37075e877cf91220a",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a341fb3e4de0b2ffe4dc224",
-    "session": "6a341fb37075e877cf912210",
-    "amount": 80,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio unimed-anapolis",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-18T16:41:23.238Z"
-  },
-  {
-    "_id": "6a341fb37075e877cf91220b",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a341fb3e4de0b2ffe4dc225",
-    "session": "6a341fb37075e877cf912211",
-    "amount": 80,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio unimed-anapolis",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-18T16:41:23.238Z"
-  },
-  {
-    "_id": "6a3af612530fb953a964fc9e",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a3af612530fb953a964fc97",
-    "session": "6a3af612530fb953a964fc99",
-    "amount": 0.15,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Avaliação inicial do convênio unimed-goiania",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-06-23T21:09:38.389Z"
-  },
-  {
-    "_id": "6a4bcfde992e1772390d8e2f",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a4bcfdf3f3be170759149d7",
-    "session": "6a4bcfde992e1772390d8e36",
-    "amount": 0.1,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio bradesco-saude",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-07-06T15:55:10.519Z"
-  },
-  {
-    "_id": "6a4bcfde992e1772390d8e30",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a4bcfdf3f3be170759149d8",
-    "session": "6a4bcfde992e1772390d8e37",
-    "amount": 0.1,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio bradesco-saude",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-07-06T15:55:10.519Z"
-  },
-  {
-    "_id": "6a4bcfde992e1772390d8e32",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a4bcfdf3f3be170759149da",
-    "session": "6a4bcfde992e1772390d8e39",
-    "amount": 0.1,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio bradesco-saude",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-07-06T15:55:10.519Z"
-  },
-  {
-    "_id": "6a4bcfde992e1772390d8e31",
-    "doctor": "688c053930c7cc9720a2ee64",
-    "appointment": "6a4bcfdf3f3be170759149d9",
-    "session": "6a4bcfde992e1772390d8e38",
-    "amount": 0.1,
-    "status": "pending",
-    "kind": "session_payment",
-    "billingType": "convenio",
-    "notes": "Pagamento pendente do convênio bradesco-saude",
-    "paidAt": null,
-    "financialDate": null,
-    "splitGroupId": null,
-    "source": null,
-    "createdAt": "2026-07-06T15:55:10.519Z"
-  }
-]
-Bash List every liminar_contract_receipt payment ever created, with patient names
-IN
-node -e "
-import('dotenv').then(async (dotenvMod) => {
-  dotenvMod.default.config();
-  const mongoose = (await import('mongoose')).default;
-  const moment = (await import('moment-timezone')).default;
-  const Payment = (await import('./models/Payment.js')).default;
-  await import('./models/Patient.js');
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-  const TIMEZONE = 'America/Sao_Paulo';
-  const payments = await Payment.find({ kind: 'liminar_contract_receipt' })
-    .select('amount status createdAt paidAt financialDate patient doctor notes')
-    .populate('patient', 'fullName phone createdAt')
-    .lean();
-  console.log('Total liminar_contract_receipt no banco INTEIRO (todos os meses):', payments.length);
-  for (const p of payments) {
-    console.log(p.patient?.fullName, '| tel:', p.patient?.phone, '| paciente criado em', moment.tz(p.patient?.createdAt, TIMEZONE).format('DD/MM/YYYY HH:mm:ss'), '| R\$'+p.amount, '| pago', moment.tz(p.paidAt, TIMEZONE).format('DD/MM/YYYY HH:mm:ss'), '| notes:', p.notes);
-  }
-  await mongoose.disconnect();
-  process.exit(0);
-});
-"
-
-OUT
-🚀 IORedis conectando via REDIS_URL...
-✅ Redis configurado com limite de conexões (maxSockets: 3)
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-Total liminar_contract_receipt no banco INTEIRO (todos os meses): 11
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 17:02:18 | notes: Processo: 0001783540938964
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 17:04:21 | notes: Processo: 0001783541061530
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 17:35:27 | notes: Processo: 0001783542927653
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 17:58:01 | notes: Processo: LAT-1783544281373
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 18:07:41 | notes: Processo: TEST-LIMINAR-1783544861148
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 18:10:48 | notes: Processo: TEST-LIMINAR-1783545048933
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 18:11:41 | notes: Processo: TEST-LIMINAR-1783545101280
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 18:57:03 | notes: Processo: TEST-LIMINAR-1783547823982
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 19:00:44 | notes: Processo: 0001783548044042
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 19:28:23 | notes: Processo: 0001783549703449
-ana teste 2 | tel: 6299999999 | paciente criado em 09/06/2026 15:35:38 | R$1000 | pago 08/07/2026 19:29:13 | notes: Processo: TEST-LIMINAR-1783549753785
-Confirmadíssimo — e ainda mais grave do que parecia. Busquei todos os liminar_contract_receipt que existem no banco inteiro (não só julho): são exatamente esses 11, e 100% pertencem ao mesmo paciente "ana teste 2", todos criados numa janela de 2h30 no mesmo dia (08/07, entre 17h02 e 19h29), R$1.000 cada, com números de processo reveladores:
-
-5 deles literalmente prefixados "TEST-LIMINAR-..."
-Os outros 6 têm "número de processo" que na verdade é só o timestamp Unix em milissegundos do momento da criação (ex: 0001783540938964 = epoch ~1783540938964), não um número de processo judicial real (que no Brasil segue o formato NNNNNNN-DD.AAAA.J.TR.OOOO)
-Isso é inequivocamente alguém testando o fluxo de "criar contrato de liminar" em produção, repetidamente, no dia 08/07. Paciente "ana teste 2" tem telefone 6299999999 (9s repetidos, placeholder clássico) e existem 8 cadastros duplicados com esse mesmo nome/telefone, vários criados em lote no mesmo milissegundo.
-
-Agora vou checar rapidinho o "Grupo C" que você apontou (os 4 particulares órfãos, sem session, R$700) antes de fechar.
-
-Bash Investigate the 4 orphan particular session_payment records (Grupo C)
-IN
-node -e "
-import('dotenv').then(async (dotenvMod) => {
-  dotenvMod.default.config();
-  const mongoose = (await import('mongoose')).default;
-  const moment = (await import('moment-timezone')).default;
-  const Payment = (await import('./models/Payment.js')).default;
-  const Appointment = (await import('./models/Appointment.js')).default;
-  await import('./models/Patient.js');
-  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 15000 });
-  const TIMEZONE = 'America/Sao_Paulo';
-  const start = moment.tz([2026, 6], TIMEZONE).startOf('month').utc().toDate();
-  const end = moment.tz([2026, 6], TIMEZONE).endOf('month').utc().toDate();
-  const payments = await Payment.find({ status: 'paid', financialDate: { \$gte: start, \$lte: end }, billingType: 'particular', session: null, kind: { \$ne: 'package_receipt' } })
-    .select('amount kind notes appointment financialDate patient')
-    .populate('patient', 'fullName')
-    .lean();
-  console.log('Particulares sem session (Grupo C):', payments.length);
-  for (const p of payments) {
-    let apptInfo = 'sem appointment';
-    if (p.appointment) {
-      const appt = await Appointment.findById(p.appointment).select('date status').lean();
-      apptInfo = appt ? \appointment date=\${moment.tz(appt.date, TIMEZONE).format('DD/MM/YYYY')} status=\${appt.status}\ : 'appointment referenciado mas nao encontrado';
-    }
-    console.log(p.patient?.fullName, '| R\$'+p.amount, '|', p.kind, '|', p.notes, '|', apptInfo, '| pago', moment.tz(p.financialDate, TIMEZONE).format('DD/MM/YYYY'));
-  }
-  await mongoose.disconnect();
-  process.exit(0);
-});
-"
-
-OUT
-🚀 IORedis conectando via REDIS_URL...
-✅ Redis configurado com limite de conexões (maxSockets: 3)
-[QueueConfig] Reutilizando conexão Redis existente
-[AppointmentWriteGuard] Interceptores instalados para Payment (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Session (modo: warn)
-[AppointmentWriteGuard] Interceptores instalados para Appointment (modo: warn)
-Particulares sem session (Grupo C): 4
-Miguel Lima Vieira | R$190 | session_payment | Pagamento registrado via tabela financeira | appointment date=09/07/2026 status=undefined | pago 09/07/2026
-Benjamin chaveiro Gomes | R$190 | session_payment | Pagamento registrado via tabela financeira | appointment date=09/07/2026 status=undefined | pago 09/07/2026
-Henre Gabriel Jacinto Da Silva | R$160 | appointment_payment | Pagamento registrado via tabela financeira | appointment date=08/07/2026 status=undefined | pago 07/07/2026
-Isis Caldas Rebelatto | R$160 | session_payment | null | appointment date=29/05/2026 status=undefined | pago 06/07/2026
-Conferido — e esse "Grupo C" tem explicação diferente e já documentada: são pagamentos reais, só que registrados via "tabela financeira" (lançamento manual direto), que é um fluxo já conhecido do projeto que às vezes não sincroniza o vínculo com Session (só com Appointment). Isso já está na memória do projeto ("Bug fix 2026-06-03: per-session com pagamento pré-registrado via tabela financeira não sincronizava appointment/session"). Nada de teste aqui — são pacientes reais (Miguel Lima Vieira, Benjamin Chaveiro Gomes, Henre Gabriel Jacinto Da Silva, Isis Caldas Rebelatto), com appointment vinculado corretamente, só faltando o session.
-
-Vou limpar os scripts temporários e te dar o fechamento completo.
-
-Bash Remove final temporary diagnostic script
-IN
-rm -f /home/user/projetos/crm/back/_tmp_investigar_paciente.mjs && echo "limpo"
-
-OUT
-limpo
-Fechamento da investigação
-Sua cautela era certa em pedir as 3 perguntas antes de concluir — e as respostas confirmam a suspeita com prova concreta, não só circunstancial.
-
-Pergunta 1 — o paciente tem Appointment/Session/Contract? Sim, tem tudo (28 appointments, 38 sessions, 3 LiminarContracts) — mas cada um desses tem impressão digital de teste: 8 cadastros duplicados do mesmo nome "ana teste 2" com telefone 6299999999 (9s repetidos), vários criados no mesmo milissegundo; appointments em lote com timestamp idêntico; contratos de liminar com processNumber tipo TEST-LIMINAR-... ou LAT-....
-
-Pergunta 2 — qual fluxo cria liminar_contract_receipt? back/controllers/liminarContractController.js — criação/recarga de contrato de liminar. Por design, esse kind não vincula session/appointment (é crédito de contrato, não de sessão) — isso é arquitetura correta, não bug. A ausência de vínculo não prova teste; quem prova é o conteúdo.
-
-Pergunta 3 — os campos contam a história? Sim, de forma definitiva. Busquei todos os 11 liminar_contract_receipt que existem no banco inteiro (não só julho) — 100% pertencem à mesma "ana teste 2", todos no dia 08/07 entre 17h02 e 19h29 (janela de 2h30), R$1.000 cada. Os "números de processo": 5 literalmente prefixados TEST-LIMINAR-, os outros 6 são o timestamp Unix em milissegundos disfarçado de número de processo (0001783540938964 = epoch da criação) — não segue o formato real de processo judicial brasileiro (NNNNNNN-DD.AAAA.J.TR.OOOO).
-
-Conclusão: não é mais suspeita, é fato — alguém testou o fluxo de liminar em produção repetidamente no dia 08/07, e isso está inflando o caixa/retroativo de julho em R$ 11.000,00 todo mês que esses registros permanecerem lá.
-
-Grupo C (particular sem session, R$700): investigado à parte, é outra causa — pagamentos reais via "tabela financeira" que não sincronizou o vínculo de Session (bug já conhecido e parcialmente corrigido em 2026-06-03, documentado na memória do projeto). Pacientes reais, nada de teste.
-
-Sua tese se confirma: a trinca funciona quando o fluxo a respeita — os dois problemas encontrados (dado de teste em produção, e o gap conhecido da tabela financeira) são bugs de captura/higiene de dado, não falha da arquitetura Appointment→Session→Payment nem do dashboard financeiro, que está refletindo corretamente os dados que existem.
-
-Vou registrar isso na memória antes de perguntar o que você quer fazer com o "ana teste 2".
-
-Write project_liminar_ana_teste_contaminacao.md
-26 lines
----
-name: project_liminar_ana_teste_contaminacao
-description: Paciente "ana teste 2" com dados de teste contaminando produção — 11 liminar_contract_receipt de R$1.000 (R$11k) inflando caixa/retroativo de julho/2026. Confirmado 2026-07-09, correção não aplicada (aguardando decisão do usuário).
-metadata:
-  type: project
----
-
-Durante a auditoria de KPIs financeiros ([[project_meta_mes_financeiro_bug]]), ao detalhar o R$12.059,90 de "retroativos" do dashboard de julho/2026, a investigação (com trinca Appointment→Session→Payment) revelou que **R$11.000,00 desse valor é dado de teste**, não retroativo real.
-
-**Evidência (2026-07-09, query read-only em produção)**:
-- Todos os 11 Payment com kind: 'liminar_contract_receipt' que existem NO BANCO INTEIRO (não só julho) pertencem ao mesmo paciente "ana teste 2" (_id mais ativo: 6a285cfa7681a873d5c6a00b, telefone 6299999999).
-- Criados numa janela de 2h30 no mesmo dia (08/07/2026, 17h02–19h29), R$1.000,00 cada.
-- processNumber dos LiminarContract associados: 5 literalmente TEST-LIMINAR-..., os outros 6 são o timestamp Unix em milissegundos disfarçado de número de processo (não segue formato real NNNNNNN-DD.AAAA.J.TR.OOOO).
-- Existem 8 cadastros de Patient duplicados com nome "ana teste 2" e mesmo telefone, vários criados no mesmo milissegundo (2026-06-17T12:56:14.87x) — padrão de script/teste em massa, não cadastro manual real.
-- Paciente relacionado "ana teste 22" (_id: 6a188432eed9e001a11bde67) também com pagamentos de centavos (R$0.1, R$0.15, R$0.4...) — mesmo padrão de dado de teste, já visível também nos "pendentes" do dashboard.
-
-**Diagnóstico da trinca (achado positivo)**: quando Payment.session existe, dá para reconstruir a competência real via session.date com confiança — foi assim que se confirmaram os retroativos genuínos (Isis Caldas Rebelatto R$1.990, Guilherme Augusto Fernandes Resende R$450). A trinca funciona; o problema é dado de teste + um gap conhecido, não falha arquitetural.
-
-**Grupo à parte investigado (não é teste)**: 4 payments particulares de julho com session: null mas appointment preenchido (Miguel Lima Vieira R$190, Benjamin Chaveiro Gomes R$190, Henre Gabriel Jacinto Da Silva R$160, Isis Caldas Rebelatto R$160) — nascem do fluxo "pagamento registrado via tabela financeira", mesma causa raiz já documentada em [[project_per_session_payment_fix]] (bug 2026-06-03, sincronização parcial). Pacientes reais, não contaminação.
-
-**Impacto**: enquanto os registros de "ana teste 2" permanecerem em produção, todo mês em que caírem dentro do range de financialDate vão inflar Caixa e o breakdown de "retroativos" do dashboard financeiro em ~R$11.000. Isso não afeta mais a Meta do mês (já corrigida para usar Produção), mas afeta a leitura de Caixa/liquidez.
-
-**Status**: usuário avisado, correção NÃO aplicada — regra do projeto é nunca corrigir dado via script, correção é sempre manual pela UI (ver [[feedback_no_manual_data_fix]]). Aguardando decisão do usuário sobre o que fazer com o paciente/contratos/payments de teste.
-
-Related: [[project_meta_mes_financeiro_bug]], [[feedback_no_manual_data_fix]], [[project_convenio_guide_consumption_audit]]
-Edit MEMORY.md
-Added 1 line
-Registrado. O que você quer fazer com o "ana teste 2"? Algumas opções (nenhuma que eu vá executar sozinho, já que correção de dado é sempre manual pela sua UI):
-
-Você mesmo localiza e remove/cancela esses contratos e pagamentos de teste pela interface do sistema.
-Eu levanto mais detalhes (ex: quem criou — createdBy nos contratos, se tem log de qual usuário/rota disparou) pra confirmar se foi um teste seu, de outro dev, ou algo automatizado.
-Deixa como está por enquanto e só ficamos cientes de que o caixa/retroativo de julho está inflado em ~R$11 mil por causa disso.
-
-Concordo com a maior parte da investigação, mas tem um ponto importante de arquitetura.
-
-A conclusão de que esses R$ 11 mil são dados de teste é muito bem suportada pelas evidências:
-
-paciente chamado "ana teste 2";
-
-telefone 6299999999;
-
-vários pacientes duplicados;
-
-processNumber com prefixo TEST-LIMINAR-;
-
-vários contratos criados em sequência em poucos minutos;
-
-11 liminar_contract_receipt de exatamente R$ 1.000.
-
-Isso praticamente elimina a dúvida sobre serem dados de homologação.
-
-Mas eu não concordaria com esta frase:
-
-"a trinca funciona quando o fluxo a respeita"
-
-Na verdade, a arquitetura da liminar não deve respeitar a trinca completa.
-
-Existem dois fluxos distintos:
-
-Fluxo de sessão (trinca)
-Appointment
-     ↓
-Session
-     ↓
-Payment (session_payment)
-Aqui sim a trinca é obrigatória.
-
-Fluxo de crédito judicial
-LiminarContract
-        ↓
-Payment (liminar_contract_receipt)
-Aqui não existe sessão ainda.
-
-O pagamento representa a entrada de crédito judicial.
-
-Depois, quando as sessões forem acontecendo, esse crédito é consumido.
-
-Então é esperado que:
-
-appointment = null
-
-session = null
-
-Isso não é bug.
-
-Ou seja, a investigação acertou quando verificou que:
-
-"liminar_contract_receipt não possui session"
-
-Isso é comportamento esperado do domínio.
-
-O que prova que é teste não é a ausência da trinca.
-
-É o conjunto das evidências do cadastro.
-
-Outra coisa que achei importante:
-
-O dashboard não está errado.
-
-Ele está apenas lendo:
-
-Payment
-status = paid
-financialDate = julho
-Ele não sabe distinguir:
-
-dinheiro verdadeiro
-
-dinheiro de teste
-
-Se existem Payments pagos, eles entram no caixa.
-
-Então o problema não é o cálculo financeiro.
-
-É a higiene dos dados da base.
-
-Também achei interessante o Grupo C.
-
-Os quatro pagamentos:
-
-Miguel
+
+A requisição passa a ter poucos bytes.
+
+E eu iria além
+
+Criaria um Document Picker, parecido com o Google Drive.
+
+Selecionar documentos
+
+──────────────
+
+✓ Guia
+
+✓ Carteirinha
+
+✓ Pedido Médico
+
+✓ RG
+
+✓ CPF
+
+✓ Lista de presença
+
+✓ Nota Fiscal
+
+✓ Relatório
+
+✓ Outros
+
+O usuário marca.
+
+Não sobe nada.
+
+A cereja do bolo
+
+O sistema aprende.
+
+Primeira vez na Unimed:
+
+usuário marcou
+
+Guia
+
+Carteirinha
+
+RG
+
+Pedido
+
+Na segunda vez...
+
+Arquivos sugeridos
+
+✓ Guia
+
+✓ Carteirinha
+
+✓ RG
+
+✓ Pedido
+
+Só clicar em enviar.
+
+E aí entra IA
+
+No futuro, quando você estiver emitindo uma guia da Unimed FESP, por exemplo, o CRM pode consultar as regras do convênio e dizer:
+
+"Para este tipo de autorização normalmente são necessários Guia, Pedido Médico, Carteirinha e RG. Todos os documentos já estão disponíveis. Deseja enviar?"
+
+Ou alertar:
+
+"Falta anexar o Pedido Médico antes do envio."
+
+Na arquitetura do seu CRM
+
+Eu criaria um módulo separado:
+
+Documents
+    ↓
+    Storage
+
+Authorization
+    ↓
+    Attachment References
+
+Email Service
+    ↓
+    SMTP
+
+Audit Log
+    ↓
+    Histórico
+
+Assim:
+
+o arquivo físico existe uma única vez;
+cada solicitação de autorização guarda apenas referências aos documentos;
+o envio do e-mail monta os anexos dinamicamente;
+você ganha histórico completo ("quem enviou", "quando enviou", "quais documentos foram anexados") sem duplicar arquivos.
+
+Essa abordagem escala muito melhor do que fazer upload repetido e evita que o armazenamento e o tráfego cresçam desnecessariamente conforme o número de autorizações aumenta.
+
+aio como ta hj
+
+Ricardo, olhando essa tela, eu acho que a base está muito boa. Visualmente ela já transmite a ideia de um módulo de faturamento por convênio, mas falta dar o próximo passo: transformar isso em uma Central de Operações de Convênios.
+
+Hoje ela responde "o que preciso faturar?".
+
+O que falta é responder "o que preciso fazer?".
+
+O maior problema que vejo
+
+Hoje você está agrupando por convênio.
+
+Unimed Anápolis
+
+6 pacientes
+
+10 guias
+
+26 sessões
+
+R$ 2.200
+
+Mas a pessoa responsável pelo convênio pensa diferente.
+
+Ela pensa:
+
+Preciso mandar autorização da Isabela.
+
+Preciso anexar o print do Benjamin.
+
+Preciso reenviar a guia do Nicolas.
+
+Preciso enviar a NF da Unimed Campinas.
+
+Ou seja...
+
+Ela trabalha por ação, não por faturamento.
+
+Eu colocaria um botão aqui
+
+No cabeçalho do convênio.
+
+Hoje:
+
+Unimed Anápolis
+
+R$ 2.200
+
+Viraria
+
+Unimed Anápolis
+
+R$ 2.200
+
+[Enviar Convênio]
+
+Ao clicar...
+
+abre uma central.
+
+Não um modal simples.
+
+Algo parecido com o Gmail.
+
+Central de envio
+──────────────────────────────
+
+Unimed Anápolis
+
+17 pacientes
+
+──────────────────────────────
+
+☑ Nicolas
+
+☑ Isabela
+
+☑ Joaquim
+
+☐ Benjamin
+
+☑ Ícaro
+
+──────────────────────────────
+
+Documentos
+
+☑ Guia
+
+☑ Lista presença
+
+☑ Pedido Médico
+
+☑ Carteirinha
+
+☐ Print Portal
+
+──────────────────────────────
+
+Destino
+
+autorizacao@....
+
+Assunto
+
+Julho/2026
+
+──────────────────────────────
+
+Enviar
+Outra coisa que mudaria
+
+Hoje aparece
+
+26 sessões
+
+Mas operacionalmente isso ajuda pouco.
+
+Eu mostraria algo assim:
+
+26 Sessões
+
+10 Guias
+
+6 Autorizações
+
+4 Pendentes
+
+2 Rejeitadas
+
+Muito mais útil.
+
+E faria um Workflow
+
+Cada paciente teria um status.
+
+Nicolas
+
+🟢 Pronto para envio
+
+------------------
+
+Isabela
+
+🟡 Falta print
+
+------------------
 
 Benjamin
 
-Henre
+🔴 Falta autorização
 
-Isis
+------------------
 
-não parecem contaminação.
+Ícaro
 
-Eles possuem Appointment.
+🔵 Enviado
 
-Só faltou o vínculo da Session.
+------------------
 
-Isso é uma inconsistência diferente.
+Joaquim
 
-Minha única recomendação na auditoria seria trocar esta conclusão:
+🟢 Recebido
 
-"a trinca funciona quando o fluxo a respeita"
+Você bate o olho.
 
-por algo mais preciso:
+Não precisa abrir nada.
 
-A arquitetura possui dois fluxos financeiros distintos.
+A própria tela já pode avisar
 
-Fluxo operacional: Appointment → Session → Payment.
+Imagine esse card.
 
-Fluxo de crédito (Liminar/Contrato): LiminarContract → Payment.
+Unimed FESP
 
-O segundo fluxo não faz parte da trinca por definição do domínio. A contaminação encontrada decorre de dados de teste inseridos nesse fluxo, e não de uma quebra da arquitetura.
+2 pacientes
 
-Essa distinção evita que alguém, no futuro, tente "corrigir" os liminar_contract_receipt adicionando session ou appointment, o que descaracterizaria o modelo de domínio.
+2 guias
 
+6 sessões
 
-Boa pegada — mas são duas coisas diferentes, e vale separar bem antes de mexer em qualquer coisa:
+──────────────
 
-1. "Meta do mês" (que já corrigimos) vive em financialDashboard.v2.js, na aba Metas. Essa já usa Produção (competência), não Caixa. O pagamento retroativo da Isis (essas sessões de maio/junho) já foi contabilizado como produção em maio/junho, no mês em que a sessão aconteceu — em julho ele não entra de novo na Meta. Isso está correto.
+⚠ Falta documentação
 
-2. O que você está me mostrando agora é outra rota: cashflow.v2.js, uma tela de fluxo de caixa diário (endpoint /api/v2/cashflow ou parecido), com seu próprio projecaoMes: R$48.650. Achei o cálculo:
 
+Ou
 
-const totalMes = monthCash.total;              // caixa acumulado do mês (regime de caixa puro)
-const mediaDiariaMes = totalMes / dayOfMonth;   // média diária até agora
-const projecaoMes = mediaDiariaMes * 30;        // extrapolação linear
-Essa é uma projeção de caixa (não uma meta de produção) — então usar Caixa aqui não é semanticamente errado por si só, é literalmente uma tela de fluxo de caixa. Mas ela tem o mesmo problema prático que você já intuiu: como só se passaram 6 dias do mês e um deles (dia 6) recebeu de uma vez R$2.150 retroativos da Isis, a "média diária" fica artificialmente inflada (R$1.621,67/dia), e a extrapolação linear (×30) projeta R$48.650 pro mês inteiro — um número que não vai se realizar, porque não é assim que retroativo se comporta (não se repete todo dia).
+✓ Tudo pronto
 
-Resumindo sua pergunta: não, esse valor não está indo pra "Meta do mês" que corrigimos (são rotas/telas diferentes) — mas está sim distorcendo a projeção de caixa dessa tela de fluxo diário, por um motivo parecido (um evento pontual grande sendo tratado como se fosse ritmo constante).
+Aproveitando o que vocês já têm
 
-Quer que eu aplique o mesmo tipo de tratamento aqui — por exemplo, a projeção de caixa excluir/isolar retroativos conhecidos antes de calcular a média diária, ou pelo menos deixar isso explícito na tela (tipo "inclui retroativos, projeção pode estar inflada")? Ou prefere deixar essa tela de fluxo de caixa como está por enquanto e só focar no que já resolvemos?
+Vocês já implementaram toda a política de convênio:
 
-Acho que aqui vale tomar cuidado para não repetir o mesmo erro conceitual que existia na Meta do Mês.
+tipo de guia;
+dia de envio;
+faturamento;
+autorização antecipada;
+regras por convênio.
 
-A pergunta principal é:
+Agora falta fazer essa política dirigir a interface.
 
-O que essa projeção quer prever?
+Exemplo:
 
-Se a resposta for "quanto dinheiro provavelmente entrará no caixa até o fim do mês", então a Isis deveria entrar, porque o dinheiro realmente entrou em julho.
+Se o convênio é
 
-O problema não é ela entrar.
+Unimed FESP
 
-O problema é a fórmula de projeção.
+o sistema automaticamente monta.
 
-Hoje ela faz:
+Documentos obrigatórios
 
-Projeção = (Caixa acumulado / dias decorridos) × 30
-Essa fórmula assume implicitamente que todos os dias são representativos.
+☑ Guia
 
-Mas eles não são.
+☑ Pedido
 
-Exemplos:
+☑ Carteirinha
 
-recebimento de retroativos;
+☑ RG
 
-venda de pacote;
+☑ Print Portal
 
-crédito judicial (liminar);
+Sem o usuário escolher.
 
-pagamento atrasado de várias sessões;
+O que eu faria no futuro
 
-recebimento excepcional.
+Essa tela deixaria de chamar
 
-Todos esses são eventos extraordinários.
+Gestão de Convênios
 
-Então eu não excluiria retroativos do caixa.
+e passaria a ser
 
-Porque eles fazem parte do caixa.
+Central de Convênios
 
-O que eu mudaria é a forma de projetar.
+Com quatro etapas bem claras:
 
-Por exemplo:
-
-Caixa acumulado continua mostrando tudo.
-
-Projeção passa a usar apenas o caixa recorrente.
-
-Ou a projeção ignora eventos classificados como extraordinários.
-
-Ou simplesmente a tela deixa claro que é uma extrapolação linear baseada no realizado.
-
-Inclusive, a liminar mostra exatamente por que excluir por tipo de pagamento pode ser perigoso.
-
-Imagine um paciente judicial verdadeiro que paga R$ 40.000.
-
-Isso é caixa.
-
-Você não quer esconder esse dinheiro.
-
-Você só não quer concluir que agora a clínica vai faturar R$ 200 mil todo mês.
-
-São problemas diferentes.
-
-Na prática eu separaria os conceitos assim:
-
-Indicador	Deve incluir retroativos?	Deve incluir liminar?	Deve ser usado para projeção linear?
-Caixa realizado	✅ Sim	✅ Sim	—
-Produção (competência)	❌ Não	❌ Não	—
-Projeção de caixa	✅ Sim (no realizado)	✅ Sim (no realizado)	❌ Não devem influenciar a média recorrente
-Então, em vez de criar uma regra como:
-
-"ignorar retroativos"
-
-eu criaria algo como:
-
-"projetar usando apenas receitas recorrentes e tratar eventos extraordinários separadamente."
-
-Isso resolve o caso da Isis, resolve uma liminar legítima de R$ 100 mil, resolve uma venda excepcional de pacotes e qualquer outro recebimento atípico, sem mascarar o caixa efetivamente realizado.
-
-Na minha visão, esse é um modelo financeiro mais consistente e escalável do que adicionar exceções específicas para retroativos.
-
-
-mas a producao foi em junho cara o pagamento que foi em julho 
-
-Exatamente. E é justamente aí que entra a diferença entre competência e caixa.
-
-No caso da Isis:
-
-Sessões realizadas: maio/junho → produção de maio/junho.
-
-Pagamento recebido: 06/07 → entrada de caixa em julho.
-
-Então os dois fatos coexistem:
-
-Produção (competência)
-Junho
-+ R$ 2.150
-Julho:
-
-+ R$ 0
-Porque o serviço já havia sido prestado.
-
-Caixa
-Junho:
-
-R$ 0
-Julho:
-
-+ R$ 2.150
-Porque foi quando o dinheiro entrou.
-
-O ponto que eu estava fazendo é outro.
-
-A tela de Fluxo de Caixa está correta ao contabilizar os R$ 2.150 em julho.
-
-O que fica ruim é esta conta:
-
-Entrou R$ 9.730 em 6 dias
+1️⃣ Preparar
 
 ↓
 
-média = 1.621/dia
+2️⃣ Validar
 
 ↓
 
-projeção = 48 mil
-Essa projeção fica distorcida porque assume que esse recebimento extraordinário representa o ritmo normal dos próximos 24 dias.
+3️⃣ Enviar
 
-Então eu não tiraria os R$ 2.150 do caixa de julho.
+↓
 
-Eu apenas não deixaria esse recebimento determinar a tendência do mês.
+4️⃣ Acompanhar
 
-Em outras palavras:
+Cada etapa com sua fila de trabalho.
 
-✅ Produção → junho.
+Minha maior sugestão
 
-✅ Caixa → julho.
+Eu evitaria criar mais botões espalhados na tela principal. Ela já está relativamente limpa.
 
-❌ Projeção de julho baseada em um evento extraordinário.
+Criaria um painel lateral (Drawer) ao clicar em um paciente ou em um convênio.
 
-São três conceitos diferentes.
+Esse painel abriria à direita ocupando cerca de 450–500 px e reuniria tudo em um único lugar:
 
-Se o objetivo daquela tela é mostrar quanto dinheiro realmente entrou, ela está certa.
+📄 Checklist automático de documentos.
+📎 Documentos já encontrados (sem precisar fazer upload novamente).
+📸 Área para colar um print com Ctrl+V quando necessário.
+✉️ Pré-visualização do e-mail que será enviado.
+📜 Histórico dos envios anteriores.
+✅ Botão Enviar.
 
-Se o objetivo é prever quanto provavelmente entrará até o fim do mês, aí a fórmula de projeção precisa ser mais robusta do que uma simples média diária multiplicada por 30.
-
-
+Assim a tela principal continua focada em faturamento, enquanto toda a operação do convênio acontece nesse painel lateral, sem trocar de página e sem poluir a interface. Na prática, a secretária conseguiria fazer praticamente todo o trabalho em dois cliques: abrir o painel, revisar e enviar. Isso combina bem com a arquitetura que vocês já construíram e mantém o CRM rápido e organizado.
