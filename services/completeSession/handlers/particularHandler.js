@@ -11,6 +11,7 @@
 //     3. Pago no ato        -> Payment paid (entra no caixa)
 //     4. Per-session        -> Payment paid + atualiza Package
 
+import moment from 'moment-timezone';
 import Payment from '../../../models/Payment.js';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
@@ -118,7 +119,11 @@ export const ParticularHandler = {
         // "Formas de Pagamento" (splitMethods[0].date). Com múltiplas formas, usa a
         // primeira como financialDate do Payment — cada item mantém sua própria date
         // para auditoria. Sem data informada, cai em `now` (comportamento anterior).
-        const paymentDate = splitMethods?.[0]?.date ? new Date(splitMethods[0].date) : now;
+        // ⚠️ new Date("YYYY-MM-DD") vira meia-noite UTC → em Brasília (UTC-3) volta pro dia
+        // anterior às 21h. Usar moment.tz(...).startOf('day') como em payment.v2.js:619-621.
+        const paymentDate = splitMethods?.[0]?.date
+            ? moment.tz(splitMethods[0].date, 'America/Sao_Paulo').startOf('day').toDate()
+            : now;
 
         // Sub-caso 1: pacote pre-pago quitado
         // ⚠️ Só aplica a pacotes prepaid (model='prepaid' ou paymentType='full')

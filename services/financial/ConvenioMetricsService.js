@@ -824,15 +824,20 @@ class ConvenioMetricsService {
                 payment.amount = valorEfetivo;
             }
             
+            // ⚠️ dataRecebimento chega como string "YYYY-MM-DD" do formulário. new Date(string)
+            // vira meia-noite UTC → em Brasília (UTC-3) volta pro dia anterior às 21h, fazendo
+            // o recebimento cair fora do Caixa do dia certo (mesmo bug de particularHandler.js).
+            const dataRecebimentoBrasilia = moment.tz(dataRecebimento, 'America/Sao_Paulo').startOf('day').toDate();
+
             // Marca como pago - ISSO FAZ APARECER NO CAIXA DO DIA DO RECEBIMENTO!
             await transitionPaymentStatus(payment._id, 'paid', {
                 paymentMethod: 'convenio',
-                financialDate: new Date(dataRecebimento),
-                paidAt: new Date(dataRecebimento),
+                financialDate: dataRecebimentoBrasilia,
+                paidAt: dataRecebimentoBrasilia,
                 reason: 'convenio_metrics_receipt'
             });
             // Atualiza paymentDate separadamente (não gerenciado pelo paymentStatusService)
-            payment.paymentDate = dataRecebimento;
+            payment.paymentDate = dataRecebimentoBrasilia;
             await payment.save();
 
             console.log(`[ConvenioMetrics] Recebimento registrado no caixa de ${dataRecebimento} - Valor: R$${valorEfetivo}`);
