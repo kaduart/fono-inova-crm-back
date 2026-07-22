@@ -23,6 +23,8 @@ import { emitSocket } from '../helpers/socketHelper.js';
 import { buildError } from './_helpers.js';
 import { recordAudit } from '../../auditLogService.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
+import { syncAffectedViews } from '../../projections/syncAffectedViews.js';
+import { restorePackageOnCancel } from '../../../domain/package/restorePackageOnCancel.js';
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -115,11 +117,26 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false 
   // Ajuste do pacote DENTRO da transação principal
   // remainingSessions é virtual (totalSessions - sessionsDone), então restauramos sessionsDone
   if (appointment.serviceType === 'package_session' && appointment.package) {
+    // 🛡️ sessionsDone/totalPaid/paidSessions/balance/financialStatus via domínio:
+    // só decrementa sessionsDone se o appointment JÁ estava completed (nunca
+    // deixa negativo); estorna totalPaid/paidSessions só quando paymentOrigin
+    // é 'auto_per_session'. appointment.operationalStatus aqui ainda é o status
+    // PRÉ-cancelamento (o $set abaixo só roda depois).
+    await restorePackageOnCancel(appointment.package, {
+      appointmentStatus: appointment.operationalStatus,
+      paymentOrigin: appointment.paymentOrigin,
+      sessionValue: appointment.sessionValue,
+      mongoSession: session,
+      appointmentId: appointment._id,
+    });
+
+    // Limpeza dos arrays do pacote — `sessions` guarda Session._id, `appointments`
+    // guarda Appointment._id (eram tratados como o mesmo ID antes, por isso a
+    // sessão cancelada nunca saía de Package.sessions).
     await Package.findByIdAndUpdate(
       appointment.package,
       {
-        $inc: { sessionsDone: -1 },
-        $pull: { sessions: appointment._id, appointments: appointment._id },
+        $pull: { sessions: appointment.session?._id || appointment.session, appointments: appointment._id },
         $set: { updatedAt: new Date() },
       },
       { session }
@@ -216,6 +233,18 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
         user,
         { changes: { reason, confirmedAbsence } }
       );
+
+      // 🛡️ Rede de segurança síncrona: reconstrói a PackagesView já aqui,
+      // sem depender do worker que consome o evento APPOINTMENT_CANCELLED
+      // da Outbox (que pode estar desligado — ver ENABLE_WORKERS).
+      const packageId = (result.package?._id || result.package)?.toString?.();
+      if (packageId) {
+        await syncAffectedViews({
+          event: 'appointment.cancelled',
+          packageId,
+          correlationId: result.correlationId,
+        });
+      }
     } else if (result.session) {
       const sess = await Session.findById(result.session);
       if (sess) await syncEvent(sess, 'session');

@@ -822,7 +822,20 @@ server.listen(PORT, '0.0.0.0', () => {
         }
       }
     } catch (workerErr) {
-      console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
+      // 🚨 Esse catch pega QUALQUER erro do bloco acima (inclusive falha de
+      // import de módulo, ex: ReferenceError em algum worker), não só Redis.
+      // Rotular tudo como "Redis indisponível" já mascarou um bug real de
+      // código (cancelAppointment is not defined) — não repetir esse erro.
+      const isRedisError = /ECONNREFUSED|ETIMEDOUT|ECONNRESET|Redis/i.test(workerErr.message || '');
+      if (isRedisError) {
+        console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
+      } else {
+        console.error("❌ Workers não iniciados — erro real (NÃO é Redis):", workerErr.message);
+        console.error(workerErr.stack);
+      }
+      global.workersAtivos = false;
+      global.lastWorkerError = workerErr.message;
+      global.lastWorkerStack = workerErr.stack;
     }
 
     // Conexão MongoDB com retry

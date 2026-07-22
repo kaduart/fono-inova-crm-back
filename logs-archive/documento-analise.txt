@@ -1,685 +1,157 @@
-
-
-↓
-
-Upload
-
-↓
-
-Todos ficam armazenados
-
-
-Quando clicar
-
-Enviar ao Convênio
-
-o sistema já procura automaticamente:
-
-Guia.pdf
-
-Pedido.pdf
-
-Carteirinha.pdf
-
-RG.pdf
-
-CPF.pdf
-
-
-marca tudo automaticamente.
-
-O usuário só revisa.
-
-Workflow completo
-Paciente Agenda
-
-↓
-
-Gerar Guia
-
-↓
-
-Upload dos documentos
-
-↓
-
-Status:
-Documentação Completa
-
-↓
-
-Botão
-Enviar Convênio
-
-↓
-
-CRM monta o e-mail
-
-↓
-
-Anexa automaticamente
-
-↓
-
-Envia
-
-↓
-
-Salva protocolo
-
-↓
-
-Status muda para
-
-"Aguardando"
-
-↓
-
-Resposta recebida
-
-↓
-
-Número da autorização
-
-↓
-
-Sessão liberada
-O que eu acrescentaria ao seu CRM
-
-Como vocês já têm módulos de Pacientes, Agenda, Financeiro e estão construindo o módulo Fiscal, eu criaria um domínio próprio de Convênios, separado dos demais:
-
-InsuranceProvider (cadastro do convênio)
-AuthorizationRequest (solicitação de autorização)
-AuthorizationAttachment (documentos anexados)
-AuthorizationEmailLog (histórico de e-mails enviados)
-AuthorizationTemplate (modelos de e-mail por convênio)
-InsuranceRule (documentos obrigatórios por convênio)
-AuthorizationTimeline (linha do tempo de eventos)
-
-Isso elimina a dependência de uma única pessoa e torna o processo auditável. Se alguém sair de férias ou se afastar, outra pessoa consegue abrir o CRM e ver exatamente quais autorizações estão pendentes, quais documentos já foram enviados, quando foram enviados e quem realizou cada ação.
-
-Na minha visão, esse módulo tem potencial para gerar mais ganho operacional do que muitas funcionalidades "grandes", porque resolve um gargalo diário e reduz o risco de perder autorizações ou atrasar atendimentos por falhas de processo.
-
-Texto colado(42).txt
-Documento
-hoje temos quase tudo e fucnioal e automatizer isso de fato upoar arquivos mas e peso disos naa app e tc como ficaria
-
-Sim. E olhando o que vocês já implementaram no módulo de Convênios, vocês já têm boa parte da modelagem pronta (guidePolicy, tipos de guia, dia de envio etc.).
-
-O problema agora não é cadastrar regras, é automatizar a operação.
-
-E eu não faria upload do mesmo arquivo várias vezes. Isso realmente vai pesar a aplicação.
-
-Eu faria uma arquitetura de "Document Center"
-
-Hoje vocês já possuem:
-
-Paciente
-
-↓
-
-Documentos
-
-Em vez de subir arquivos toda vez que for enviar um e-mail, o CRM apenas referencia os documentos já existentes.
-
-Exemplo:
-
-Paciente
-
-Maria Silva
-
-Documentos
-
-✓ Carteirinha
-
-✓ RG
-
-✓ CPF
-
-✓ Pedido Médico
-
-✓ Laudo
-
-✓ Guia
-
-✓ Relatório
-
-✓ Lista de Presença
-
-Esses arquivos ficam uma única vez no storage.
-
-Depois entra o conceito de "Pacote de Envio"
-
-Ao clicar
-
-Enviar Convênio
-
-abre um modal moderno.
-
-┌─────────────────────────────────────┐
-
-Enviar documentação
-
-Convênio
-Unimed
-
-Destino
-autorizacao@....
-
-────────────────────────────
-
-Arquivos encontrados
-
-☑ Guia.pdf
-
-☑ Pedido Médico.pdf
-
-☑ Carteirinha.pdf
-
-☑ RG.pdf
-
-☑ Print Portal.png
-
-☐ Relatório.pdf
-
-────────────────────────────
-
-[Cancelar]
-
-[Enviar]
-
-└─────────────────────────────────────┘
-
-Nenhum upload.
-
-Só checkboxes.
-
-E o print?
-
-Esse é o único documento que normalmente não existe.
-
-Então eu faria um botão.
-
-Adicionar Print
-
-↓
-
-colar CTRL+V
-
-↓
-
-ou
-
-Arrastar imagem
-
-Nem precisa salvar localmente.
-
-O usuário faz:
-
-Win + Shift + S
-
-Ctrl + V
-
-
-Pronto.
-
-Melhor ainda
-
-Criaria um objeto.
-
-AuthorizationPackage
-
-id
-
-patient
-
-insurance
-
-attachments
-
-createdBy
-
-status
-
-Os anexos seriam somente referências.
-
-attachments
-
-documentId
-
-documentId
-
-documentId
-
-documentId
-
-
-Não cópias.
-
-Depois vem o envio
-
-Quando clicar
-
-Enviar
-
-o backend faz:
-
-buscar Documento 1
-
-buscar Documento 2
-
-buscar Documento 3
-
-buscar Documento 4
-
-↓
-
-montar email
-
-↓
-
-enviar SMTP
-
-↓
-
-registrar log
-
-O frontend nunca envia arquivos.
-
-Só envia IDs.
-
-Isso deixa a aplicação muito leve
-
-Ao invés de:
-
-40 MB
-
-+
-
-15 MB
-
-+
-
-12 MB
-
-
-toda vez...
-
-você envia:
-
-{
-  "documents": [
-    "67fa...",
-    "67fb...",
-    "67fc..."
-  ]
+curl 'http://localhost:5000/api/v2/packages?page=1&limit=100&patientId=6a344b783035eb57b1d6f9fa' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4NDc2MTU1MywiZXhwIjoxNzg0NzY1MTUzfQ.kLP-WtHUqMce-waqC4lh9R4TWHeaLuUYF4I3hjMeMAY' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"817-DOMflGbpZGIGFpcDJZrH/hBwG8Y"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1784763046408_v1qywdj3x'
+
+  {
+    "success": true,
+    "data": {
+        "packages": [
+            {
+                "_id": "6a613f7f797f2cba861d2168",
+                "packageId": "6a613f7f4651ae61d11ba015",
+                "__v": 0,
+                "balance": 0.4,
+                "createdAt": "2026-07-22T22:09:03.790Z",
+                "doctorId": "688c053930c7cc9720a2ee64",
+                "endDate": "2026-08-12T09:00:00.000Z",
+                "expiresAt": null,
+                "financialStatus": "unpaid",
+                "patientId": "6a344b783035eb57b1d6f9fa",
+                "searchFields": {
+                    "patientName": "ana testar",
+                    "doctorName": "Ricardo Maia Santos"
+                },
+                "sessionType": "fisioterapia",
+                "sessionValue": 0.1,
+                "sessions": [
+                    {
+                        "sessionId": "6a613f7f4651ae61d11ba020",
+                        "appointmentId": "6a613f7f4651ae61d11ba01b",
+                        "date": "Wed Jul 22 2026 06:00:00 GMT-0300 (Brasilia Standard Time)",
+                        "time": "06:00",
+                        "status": "canceled",
+                        "isPaid": false,
+                        "paymentMethod": "pix",
+                        "_id": "6a613f7f4651ae61d11ba020"
+                    },
+                    {
+                        "sessionId": "6a613f7f4651ae61d11ba021",
+                        "appointmentId": "6a613f7f4651ae61d11ba01c",
+                        "date": "Wed Jul 29 2026 06:00:00 GMT-0300 (Brasilia Standard Time)",
+                        "time": "06:00",
+                        "status": "canceled",
+                        "isPaid": false,
+                        "paymentMethod": "pix",
+                        "_id": "6a613f7f4651ae61d11ba021"
+                    },
+                    {
+                        "sessionId": "6a613f7f4651ae61d11ba022",
+                        "appointmentId": "6a613f7f4651ae61d11ba01d",
+                        "date": "Wed Aug 05 2026 06:00:00 GMT-0300 (Brasilia Standard Time)",
+                        "time": "06:00",
+                        "status": "scheduled",
+                        "isPaid": false,
+                        "paymentMethod": "pix",
+                        "_id": "6a613f7f4651ae61d11ba022"
+                    },
+                    {
+                        "sessionId": "6a613f7f4651ae61d11ba023",
+                        "appointmentId": "6a613f7f4651ae61d11ba01e",
+                        "date": "Wed Aug 12 2026 06:00:00 GMT-0300 (Brasilia Standard Time)",
+                        "time": "06:00",
+                        "status": "scheduled",
+                        "isPaid": false,
+                        "paymentMethod": "pix",
+                        "_id": "6a613f7f4651ae61d11ba023"
+                    }
+                ],
+                "sessionsCanceled": 2,
+                "sessionsDone": 0,
+                "sessionsRemaining": 2,
+                "sessionsUsed": 0,
+                "snapshot": {
+                    "version": 2,
+                    "calculatedAt": "2026-07-22T23:18:04.381Z",
+                    "ttl": "2026-10-20T23:18:04.381Z",
+                    "isStale": false
+                },
+                "specialty": "fisioterapia",
+                "startDate": "2026-07-22T09:00:00.000Z",
+                "status": "active",
+                "totalPaid": 0,
+                "totalSessions": 4,
+                "totalValue": 0.4,
+                "type": "therapy",
+                "updatedAt": "2026-07-22T23:18:04.382Z"
+            }
+        ],
+        "pagination": {
+            "page": 1,
+            "limit": 100,
+            "total": 1,
+            "pages": 1
+        },
+        "meta": {
+            "duration": "49ms",
+            "source": "view",
+            "correlationId": "pkg_list_1784763046735"
+        }
+    },
+    "meta": {
+        "timestamp": "2026-07-22T23:30:46.784Z"
+    }
 }
 
-A requisição passa a ter poucos bytes.
 
-E eu iria além
 
-Criaria um Document Picker, parecido com o Google Drive.
 
-Selecionar documentos
 
-──────────────
-
-✓ Guia
-
-✓ Carteirinha
-
-✓ Pedido Médico
-
-✓ RG
-
-✓ CPF
-
-✓ Lista de presença
-
-✓ Nota Fiscal
-
-✓ Relatório
-
-✓ Outros
-
-O usuário marca.
-
-Não sobe nada.
-
-A cereja do bolo
-
-O sistema aprende.
-
-Primeira vez na Unimed:
-
-usuário marcou
-
-Guia
-
-Carteirinha
-
-RG
-
-Pedido
-
-Na segunda vez...
-
-Arquivos sugeridos
-
-✓ Guia
-
-✓ Carteirinha
-
-✓ RG
-
-✓ Pedido
-
-Só clicar em enviar.
-
-E aí entra IA
-
-No futuro, quando você estiver emitindo uma guia da Unimed FESP, por exemplo, o CRM pode consultar as regras do convênio e dizer:
-
-"Para este tipo de autorização normalmente são necessários Guia, Pedido Médico, Carteirinha e RG. Todos os documentos já estão disponíveis. Deseja enviar?"
-
-Ou alertar:
-
-"Falta anexar o Pedido Médico antes do envio."
-
-Na arquitetura do seu CRM
-
-Eu criaria um módulo separado:
-
-Documents
-    ↓
-    Storage
-
-Authorization
-    ↓
-    Attachment References
-
-Email Service
-    ↓
-    SMTP
-
-Audit Log
-    ↓
-    Histórico
-
-Assim:
-
-o arquivo físico existe uma única vez;
-cada solicitação de autorização guarda apenas referências aos documentos;
-o envio do e-mail monta os anexos dinamicamente;
-você ganha histórico completo ("quem enviou", "quando enviou", "quais documentos foram anexados") sem duplicar arquivos.
-
-Essa abordagem escala muito melhor do que fazer upload repetido e evita que o armazenamento e o tráfego cresçam desnecessariamente conforme o número de autorizações aumenta.
-
-aio como ta hj
-
-Ricardo, olhando essa tela, eu acho que a base está muito boa. Visualmente ela já transmite a ideia de um módulo de faturamento por convênio, mas falta dar o próximo passo: transformar isso em uma Central de Operações de Convênios.
-
-Hoje ela responde "o que preciso faturar?".
-
-O que falta é responder "o que preciso fazer?".
-
-O maior problema que vejo
-
-Hoje você está agrupando por convênio.
-
-Unimed Anápolis
-
-6 pacientes
-
-10 guias
-
-26 sessões
-
-R$ 2.200
-
-Mas a pessoa responsável pelo convênio pensa diferente.
-
-Ela pensa:
-
-Preciso mandar autorização da Isabela.
-
-Preciso anexar o print do Benjamin.
-
-Preciso reenviar a guia do Nicolas.
-
-Preciso enviar a NF da Unimed Campinas.
-
-Ou seja...
-
-Ela trabalha por ação, não por faturamento.
-
-Eu colocaria um botão aqui
-
-No cabeçalho do convênio.
-
-Hoje:
-
-Unimed Anápolis
-
-R$ 2.200
-
-Viraria
-
-Unimed Anápolis
-
-R$ 2.200
-
-[Enviar Convênio]
-
-Ao clicar...
-
-abre uma central.
-
-Não um modal simples.
-
-Algo parecido com o Gmail.
-
-Central de envio
-──────────────────────────────
-
-Unimed Anápolis
-
-17 pacientes
-
-──────────────────────────────
-
-☑ Nicolas
-
-☑ Isabela
-
-☑ Joaquim
-
-☐ Benjamin
-
-☑ Ícaro
-
-──────────────────────────────
-
-Documentos
-
-☑ Guia
-
-☑ Lista presença
-
-☑ Pedido Médico
-
-☑ Carteirinha
-
-☐ Print Portal
-
-──────────────────────────────
-
-Destino
-
-autorizacao@....
-
-Assunto
-
-Julho/2026
-
-──────────────────────────────
-
-Enviar
-Outra coisa que mudaria
-
-Hoje aparece
-
-26 sessões
-
-Mas operacionalmente isso ajuda pouco.
-
-Eu mostraria algo assim:
-
-26 Sessões
-
-10 Guias
-
-6 Autorizações
-
-4 Pendentes
-
-2 Rejeitadas
-
-Muito mais útil.
-
-E faria um Workflow
-
-Cada paciente teria um status.
-
-Nicolas
-
-🟢 Pronto para envio
-
-------------------
-
-Isabela
-
-🟡 Falta print
-
-------------------
-
-Benjamin
-
-🔴 Falta autorização
-
-------------------
-
-Ícaro
-
-🔵 Enviado
-
-------------------
-
-Joaquim
-
-🟢 Recebido
-
-Você bate o olho.
-
-Não precisa abrir nada.
-
-A própria tela já pode avisar
-
-Imagine esse card.
-
-Unimed FESP
-
-2 pacientes
-
-2 guias
-
-6 sessões
-
-──────────────
-
-⚠ Falta documentação
-
-
-Ou
-
-✓ Tudo pronto
-
-Aproveitando o que vocês já têm
-
-Vocês já implementaram toda a política de convênio:
-
-tipo de guia;
-dia de envio;
-faturamento;
-autorização antecipada;
-regras por convênio.
-
-Agora falta fazer essa política dirigir a interface.
-
-Exemplo:
-
-Se o convênio é
-
-Unimed FESP
-
-o sistema automaticamente monta.
-
-Documentos obrigatórios
-
-☑ Guia
-
-☑ Pedido
-
-☑ Carteirinha
-
-☑ RG
-
-☑ Print Portal
-
-Sem o usuário escolher.
-
-O que eu faria no futuro
-
-Essa tela deixaria de chamar
-
-Gestão de Convênios
-
-e passaria a ser
-
-Central de Convênios
-
-Com quatro etapas bem claras:
-
-1️⃣ Preparar
-
-↓
-
-2️⃣ Validar
-
-↓
-
-3️⃣ Enviar
-
-↓
-
-4️⃣ Acompanhar
-
-Cada etapa com sua fila de trabalho.
-
-Minha maior sugestão
-
-Eu evitaria criar mais botões espalhados na tela principal. Ela já está relativamente limpa.
-
-Criaria um painel lateral (Drawer) ao clicar em um paciente ou em um convênio.
-
-Esse painel abriria à direita ocupando cerca de 450–500 px e reuniria tudo em um único lugar:
-
-📄 Checklist automático de documentos.
-📎 Documentos já encontrados (sem precisar fazer upload novamente).
-📸 Área para colar um print com Ctrl+V quando necessário.
-✉️ Pré-visualização do e-mail que será enviado.
-📜 Histórico dos envios anteriores.
-✅ Botão Enviar.
-
-Assim a tela principal continua focada em faturamento, enquanto toda a operação do convênio acontece nesse painel lateral, sem trocar de página e sem poluir a interface. Na prática, a secretária conseguiria fazer praticamente todo o trabalho em dois cliques: abrir o painel, revisar e enviar. Isso combina bem com a arquitetura que vocês já construíram e mantém o CRM rápido e organizado.
+curl 'http://localhost:5000/api/v2/financial/patient/6a344b783035eb57b1d6f9fa/summary?packageId=6a613f7f4651ae61d11ba015' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhMjgwNmZiZDMzMGJkNWJlYzhlOGQzNyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc4NDc2MTU1MywiZXhwIjoxNzg0NzY1MTUzfQ.kLP-WtHUqMce-waqC4lh9R4TWHeaLuUYF4I3hjMeMAY' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"136-tX7TzNkj/JDHweGvqlE4WO9LqrM"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' \
+  -H 'sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'x-correlation-id: front_1784763047367_v53cdxwgp'\\
+
+  {
+    "success": true,
+    "data": {
+        "patientId": "6a344b783035eb57b1d6f9fa",
+        "packageId": "6a613f7f4651ae61d11ba015",
+        "totalPaid": 0,
+        "paidCount": 0,
+        "totalPending": 0,
+        "pendingCount": 0,
+        "completedSessions": 0,
+        "sessionDebt": 0,
+        "particularPaid": 0,
+        "particularCount": 0,
+        "liminarPaid": 0,
+        "liminarCount": 0,
+        "convenioPaid": 0,
+        "convenioCount": 0
+    }
+}

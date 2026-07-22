@@ -420,7 +420,6 @@ export const AppointmentService = {
   scheduleAppointment,
   confirmAppointment,
   rescheduleAppointment,
-  cancelAppointment,
   findAppointmentById,
   findAppointmentsByPatient,
   findAppointmentsByDoctor,

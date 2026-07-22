@@ -242,6 +242,7 @@ FinancialProjection / TotalsSnapshot / FinancialDailySnapshot / financialMetrics
 
 ## REFERÊNCIAS
 
+- Ciclo de vida cancel ⇄ restore de Appointment: `back/docs/architecture/APPOINTMENT_LIFECYCLE.md`
 - Fluxos completos: `back/docs/ARCHITECTURE_FLOW.md`
 - Regras de negócio: `back/REGRAS_NEGOCIO_CONSOLIDADO.md`
 - Event-driven: `back/docs/ARQUITETURA_EVENT_DRIVEN.md`

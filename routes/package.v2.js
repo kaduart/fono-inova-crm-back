@@ -19,6 +19,7 @@ import Package from '../models/Package.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
+import PatientBalance from '../models/PatientBalance.js';
 import { cancelAppointments } from '../domain/appointment/cancelAppointments.js';
 import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
 import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';

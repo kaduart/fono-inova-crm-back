@@ -22,6 +22,7 @@ import { appointmentStateOrchestrator } from '../../appointmentStateOrchestrator
 import { syncEvent } from '../../syncService.js';
 
 import { handlePackageSessionUpdate } from '../../syncService.js';
+import { executeWithSession as restoreCanceledAppointment } from './restoreCanceledAppointmentCommand.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import {
   buildError,
@@ -166,7 +167,31 @@ export async function execute(id, payload, user) {
       if (isReactivating) {
         const pkg = appointment.package;
         const isPrepaid = pkg && pkg.paymentType !== 'per-session' && pkg.model !== 'per_session';
-        updateData.paymentStatus = isPrepaid ? 'package_paid' : 'unpaid';
+        if (isPrepaid) {
+          updateData.paymentStatus = 'package_paid';
+        } else {
+          // per-session/avulso: não assume 'unpaid' cegamente — verifica se a
+          // sessão cancelada tinha sido paga antes, pra não perder esse estado
+          // na reativação (session.original* é gravado pelo cancelAppointmentCommand).
+          const canceledSession = appointment.session;
+          const wasPaid = !!(
+            canceledSession?.originalIsPaid ||
+            canceledSession?.originalPaymentStatus === 'paid' ||
+            (canceledSession?.originalPartialAmount && canceledSession.originalPartialAmount > 0)
+          );
+          updateData.paymentStatus = wasPaid ? 'paid' : 'unpaid';
+        }
+
+        // 🔄 Restaura Session/Package/Payment ao estado anterior ao cancelamento
+        // (inverso simétrico de cancelAppointmentCommand). Roda ANTES do
+        // Appointment.findByIdAndUpdate abaixo, com o `appointment` ainda no
+        // status pré-reativação e populado (session/payment/package).
+        await restoreCanceledAppointment(
+          appointment,
+          { reason: payload.reason || 'Reativação de agendamento cancelado' },
+          user,
+          mongoSession
+        );
       }
 
       // Atualiza appointment usando $set (evita corromper documento populado)
