@@ -149,7 +149,7 @@ export async function sendBatch(batchId, userId) {
   if (linkedPaymentIds.length > 0) {
     await Payment.updateMany(
       { _id: { $in: linkedPaymentIds }, billingType: 'convenio' },
-      { $set: { 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+      { $set: { billedAt: new Date(), 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
     );
   }
   // Fallback: atualiza por session para payments sem link direto no batch
@@ -157,7 +157,7 @@ export async function sendBatch(batchId, userId) {
   if (sessionsWithoutPayment.length > 0) {
     await Payment.updateMany(
       { session: { $in: sessionsWithoutPayment }, billingType: 'convenio' },
-      { $set: { 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+      { $set: { billedAt: new Date(), 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
     );
   }
 

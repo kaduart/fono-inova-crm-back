@@ -34,11 +34,12 @@ import { restorePackageOnCancel } from '../../../domain/package/restorePackageOn
  * @param {Object} params
  * @param {string} params.reason - Motivo do cancelamento
  * @param {boolean} [params.confirmedAbsence=false] - Falta confirmada
+ * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration)
  * @param {Object} [user] - Usuário que disparou
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<Appointment>} Appointment atualizado
  */
-export async function executeWithSession(id, { reason, confirmedAbsence = false }, user, session) {
+export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource }, user, session) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -152,6 +153,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false 
         paymentStatus: 'canceled',
         visualFlag: 'blocked',
         cancelReason: reason,
+        ...(cancelSource ? { cancelSource } : {}),
         canceledAt: new Date(),
         canceledBy: user?._id,
         confirmedAbsence,
@@ -165,7 +167,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false 
           changedBy: user?._id,
           timestamp: new Date(),
           context: 'operacional',
-          details: { reason, confirmedAbsence },
+          details: { reason, confirmedAbsence, cancelSource },
         },
       },
     },

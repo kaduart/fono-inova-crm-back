@@ -377,6 +377,12 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Distingue cancelamento pelo paciente/clínica de cancelamento automático do sistema
+  // (ex: fechamento de ciclo de faturamento de guia). Sem default: não afeta dados antigos.
+  cancelSource: {
+    type: String,
+    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration']
+  },
 
   // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────
   // Preenchido SOMENTE quando forceCancel:true é usado na rota /cancel

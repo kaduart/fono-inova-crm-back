@@ -12,6 +12,7 @@ import InsuranceResolverService from '../services/insuranceResolver.service.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
 import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import { closeGuideBillingPeriod } from '../services/insuranceGuide/closeGuideBillingPeriod.js';
 
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
@@ -206,6 +207,19 @@ export async function faturarLote(req, res) {
 
       await sendBatch(batch._id, userId);
 
+      // 🚫 DESATIVADO 2026-07-23 — fechamento automático NÃO roda mais em todo
+      // faturamento. Auditoria real (scripts/audits/audit-guide-partial-billing-pattern.js
+      // + audit-guide-would-have-cancelled.js) confirmou que guias per_month são
+      // faturadas em múltiplos lotes ao longo de semanas/meses no fluxo real da
+      // clínica (6 guias, 17 sessões faturadas em lote posterior ao primeiro).
+      // Fechar automaticamente no primeiro lote teria cancelado appointments que
+      // ainda seriam completados e faturados depois, legitimamente, na mesma guia.
+      // closeGuideBillingPeriod continua existindo e testado — falta decidir um
+      // gatilho seguro (manual, ou "só fecha se não sobrar pendência futura") antes
+      // de reativar. Ver back/services/insuranceGuide/closeGuideBillingPeriod.js.
+      const guideClosures = [];
+      const totalAppointmentsCanceledOnClosure = 0;
+
       return res.json({
         success: true,
         message: `${adapterResult.sessionIds.length} atendimentos faturados a partir de ${adapterResult.guides.length} guia(s)`,
@@ -218,7 +232,9 @@ export async function faturarLote(req, res) {
           guides: adapterResult.guides,
           ignoredGuides: adapterResult.ignoredGuides,
           startDate: adapterResult.startDate,
-          endDate: adapterResult.endDate
+          endDate: adapterResult.endDate,
+          guideClosures,
+          totalAppointmentsCanceledOnClosure
         }
       });
     }
@@ -370,6 +386,47 @@ export async function receberLote(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][receberLote] Erro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * POST /api/v2/financial/convenio/encerrar-guia
+ * Fechamento MANUAL do período de faturamento de uma guia per_month.
+ * Cancela appointments pendentes vinculados à guia (motivo guide_cycle_closed,
+ * origem guide_closure). Só deve ser chamado explicitamente pelo operador,
+ * nunca automaticamente após faturar lote — auditoria real provou que guias
+ * per_month são faturadas em múltiplos lotes ao longo de semanas/meses.
+ */
+export async function encerrarGuia(req, res) {
+  try {
+    const { guideId } = req.body;
+    const userId = req.user?.id;
+
+    if (!guideId || !mongoose.Types.ObjectId.isValid(guideId)) {
+      return res.status(400).json({ success: false, error: 'guideId inválido' });
+    }
+
+    const result = await closeGuideBillingPeriod(guideId, { userId });
+
+    if (result.skipped) {
+      return res.status(422).json({
+        success: false,
+        error: result.reason === 'not_per_month'
+          ? 'Fechamento manual só é permitido para guias mensais (per_month)'
+          : 'Guia não encontrada'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: result.canceled > 0
+        ? `${result.canceled} agendamento(s) pendente(s) cancelado(s) — período da guia encerrado`
+        : 'Nenhum agendamento pendente para cancelar — período da guia já está limpo',
+      data: result
+    });
+  } catch (error) {
+    console.error('[InsuranceV2][encerrarGuia] Erro:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -1250,6 +1307,7 @@ export default {
   getInsuranceReceivables,
   faturarLote,
   receberLote,
+  encerrarGuia,
   billSession,
   receiveSession,
   listPendingGuides,

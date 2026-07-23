@@ -17,6 +17,9 @@ router.post('/financial/convenio/faturar-lote', auth, controller.faturarLote);
 // POST /api/v2/financial/convenio/receber-lote
 router.post('/financial/convenio/receber-lote', auth, controller.receberLote);
 
+// POST /api/v2/financial/convenio/encerrar-guia
+router.post('/financial/convenio/encerrar-guia', auth, controller.encerrarGuia);
+
 // PATCH /api/v2/insurance/session/:sessionId/bill
 router.patch('/insurance/session/:sessionId/bill', auth, controller.billSession);
 

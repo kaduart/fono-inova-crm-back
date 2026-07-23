@@ -2238,17 +2238,37 @@ async function calculatePendentes(year, month) {
         byBillingType[btype].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
     }
 
-    // Total de débitos de particular/pacote independente do mês (inclui dívidas antigas)
-    const allParticularTotal = paymentsAll
-        .filter(p => p.billingType !== 'convenio' && p.paymentMethod !== 'convenio')
-        .reduce((s, p) => s + (p.amount || 0), 0);
+    // Dívida de competência anterior: pending, não-convênio, sessão REALMENTE realizada
+    // (appointment.operationalStatus === 'completed'), com data anterior ao mês selecionado.
+    // NAO usar allParticularTotal - mesMesAtual (residual): mistura payments de agendamentos
+    // futuros/não realizados com dívida real, inflando o valor (achado 2026-07-23).
+    const previousCompetencePayments = paymentsAll.filter(p => {
+        if (p.billingType === 'convenio' || p.paymentMethod === 'convenio') return false;
+        if (p.appointment?.operationalStatus !== 'completed') return false;
+        const dataRef = p.appointment?.date ? moment(p.appointment.date).format('YYYY-MM-DD')
+            : p.paymentDate ? moment(p.paymentDate).format('YYYY-MM-DD')
+            : p.serviceDate ? moment(p.serviceDate).format('YYYY-MM-DD') : null;
+        return dataRef && dataRef < startStr;
+    });
+    const previousCompetenceTotal = previousCompetencePayments.reduce((s, p) => s + (p.amount || 0), 0);
 
     console.log(`[pendentes] TOTAL = ${Date.now() - _t0}ms`);
 
     const result = {
         total: parseFloat(total.toFixed(2)),
         allPendingTotal: parseFloat(allPendingTotal.toFixed(2)),
-        allParticularTotal: parseFloat(allParticularTotal.toFixed(2)),
+        // Dívida real de competências anteriores (sessão completed, data < início do mês).
+        // Fonte única para o card "Dívidas de Meses Anteriores" — não é residual.
+        previousCompetenceDebt: {
+            total: parseFloat(previousCompetenceTotal.toFixed(2)),
+            count: previousCompetencePayments.length,
+            items: previousCompetencePayments.map(p => ({
+                _id: p._id,
+                amount: parseFloat((p.amount || 0).toFixed(2)),
+                data: p.appointment?.date ? moment(p.appointment.date).format('YYYY-MM-DD') : null,
+                paciente: p.patient?.fullName || 'Paciente'
+            }))
+        },
         convenio: {
             total: parseFloat(convenioTotal.toFixed(2)),
             count: convenioItems.length,

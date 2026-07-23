@@ -74,6 +74,18 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     if (newStatus === 'paid' && !payment.financialDate) {
         payment.financialDate = financialDate || payment.paidAt || new Date();
     }
+    if (newStatus === 'billed' && !payment.billedAt) {
+        payment.billedAt = new Date();
+    }
+    if (newStatus === 'billed') {
+        if (!payment.insurance) {
+            payment.insurance = {};
+        }
+        payment.insurance.status = 'billed';
+        if (!payment.insurance.billedAt) {
+            payment.insurance.billedAt = new Date();
+        }
+    }
     if (paymentMethod) {
         payment.paymentMethod = paymentMethod;
     }

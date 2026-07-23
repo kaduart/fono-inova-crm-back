@@ -154,7 +154,7 @@ const insuranceGuideSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: {
-      values: ['active', 'exhausted', 'expired', 'cancelled', 'linked', 'superseded'],
+      values: ['active', 'exhausted', 'expired', 'cancelled', 'linked', 'superseded', 'closed'],
       message: 'Status "{VALUE}" não é válido'
     },
     default: 'active',
@@ -168,6 +168,19 @@ const insuranceGuideSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+
+  closedAt: {
+    type: Date,
+    default: null,
+    description: 'Momento do fechamento manual do período da guia (per_month)'
+  },
+
+  closedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    description: 'Usuário que executou o fechamento manual do período da guia'
   },
 
   // ======================================================================
