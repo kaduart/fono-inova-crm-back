@@ -621,10 +621,27 @@ export async function sendMessage(phone, message) {
     const numberId = await client.getNumberId(clean);
     console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
 
-    // LID-first: se o WhatsApp retornou um LID, usamos ele.
-    // O retry do BullMQ cobre instabilidades transientes do WhatsApp Web.
+    // Se o WhatsApp retornou LID, resolvemos o PN associado.
+    // O PN é o endereço que o WhatsApp consegue usar para envio, mesmo que
+    // os dígitos pareçam divergentes do número cadastrado no CRM.
     let chatId;
-    if (numberId?._serialized) {
+    if (numberId?._serialized?.endsWith('@lid')) {
+      try {
+        const lidAndPhone = await client.getContactLidAndPhone([numberId._serialized]);
+        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
+        const pn = lidAndPhone?.[0]?.pn;
+        if (pn) {
+          chatId = pn;
+          console.log(`[WhatsAppWeb][DIAG] LID detectado; usando PN resolvido: ${chatId}`);
+        } else {
+          chatId = numberId._serialized;
+          console.log(`[WhatsAppWeb][DIAG] PN não retornado; usando LID: ${chatId}`);
+        }
+      } catch (lidErr) {
+        chatId = numberId._serialized;
+        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou; usando LID: ${chatId} — ${lidErr?.message}`);
+      }
+    } else if (numberId?._serialized) {
       chatId = numberId._serialized;
       console.log(`[WhatsAppWeb][DIAG] Usando id resolvido pelo WhatsApp: ${chatId}`);
     } else {
