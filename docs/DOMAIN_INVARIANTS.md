@@ -372,10 +372,23 @@ Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem in
 **Consequência:** antes de declarar uma fila "sem consumidor", checar histórico real (`completed > 0` já prova que existiu consumidor) via admin/health endpoint — não só leitura de código. Ver checklist adicional (itens 7-10) no topo deste arquivo. Mapa de filas → consumidor → entrypoint documentado em `docs/ARQUITETURA_EVENT_DRIVEN.md` (seção "Filas").
 
 ### ADR-013: dependências GitHub em produção nunca apontam pra branch (`#main`) — sempre tag/release/commit SHA
-**Decisão:** `package.json` fixava `whatsapp-web.js` em `github:wwebjs/whatsapp-web.js#main` — uma branch, não uma tag/commit. Sem `package-lock.json` no repo, cada `npm install` (todo deploy) podia resolver um commit diferente do `main`, sem ninguém decidir isso conscientemente. **Corrigido em 2026-07-24**: pinado no commit `1780711a1c86dfeca7c5ba6a66f950eac93dde28` (HEAD do `main` naquela data — não é um commit "bom" escolhido por corrigir algo, é só o mais recente disponível no momento da fixação, para reprodutibilidade).
-**Motivo:** incidente 2026-07-24 — todo envio via WhatsApp Web passou a falhar com erro `r: r` (stack trace localizado em `Client.sendMessage` → Puppeteer `ExecutionContext.evaluate`). Evidências fortes (issue muito parecida no mesmo repo/lib, [wwebjs/whatsapp-web.js#201838](https://github.com/wwebjs/whatsapp-web.js/issues/201838), aberta 15/07/2026, "after latest WhatsApp Web update") apontam para incompatibilidade externa — **não é confirmação definitiva**, só fica comprovado quando (se) a comunidade publicar um fix e o teste pós-atualização confirmar. Sem lockfile, não dava pra saber com certeza qual commit estava em produção nem reproduzir o bug localmente de forma confiável.
+**Decisão:** `package.json` fixava `whatsapp-web.js` em `github:wwebjs/whatsapp-web.js#main` — uma branch, não uma tag/commit. Sem `package-lock.json` no repo, cada `npm install` (todo deploy) podia resolver um commit diferente do `main`, sem ninguém decidir isso conscientemente.
+
+**Causa raiz técnica identificada com alta confiança (RCA final, 2026-07-24):** uma alteração interna do WhatsApp Web em julho/2026 renomeou a propriedade `id._serialized` para `id.$1`. A versão de `whatsapp-web.js` em uso não tinha compatibilidade com essa mudança, causando falhas em todo o fluxo de `sendMessage()` — erro `r: r`, stack trace localizado em `Client.sendMessage` → Puppeteer `ExecutionContext.evaluate`. Identificado via PR upstream [wwebjs/whatsapp-web.js#201832](https://github.com/wwebjs/whatsapp-web.js/pull/201832) ("fix(client): add fallback for WhatsApp id._serialized renamed to id.$1"), 4 aprovações de revisores, adotada de forma independente por múltiplos forks (waha, Eonus21, telmedola) — corroboração forte, mas **ressalva**: a correção upstream oficial ainda está em revisão, não mesclada no `main` do repo oficial `wwebjs/whatsapp-web.js`.
+
+**Hotfix aplicado (bridge temporário, não solução definitiva):**
+```
+whatsapp-web.js
+origem: fork lindionez/whatsapp-web.js (não é a org oficial)
+commit: f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761
+```
+Diff conferido manualmente antes de aplicar: só adiciona fallback `_serialized || $1` em `Client.js`/`Utils.js` (Injected) + reformatação, sem dependência nova, sem chamada de rede/exec fora de escopo.
+
 **Regra permanente (vale para qualquer dependência, não só esta):** dependências `github:owner/repo#ref` em produção são proibidas apontando para branch (`#main`, `#master` etc). Sempre usar tag, release ou commit SHA explícito. Ao fixar um SHA por causa de um incidente, documentar aqui: qual SHA, em que data, e por quê — para não virar um "commit misterioso" que ninguém entende daqui a meses.
-**Consequência:** `package-lock.json` ainda não existe no repo (não só para essa dependência) — dívida técnica pendente, não implementada nesta sessão. Checklist para quando sair um fix upstream do problema atual: (1) atualizar o SHA deliberadamente, (2) testar envio real antes de considerar resolvido, (3) remover workaround se houver, (4) atualizar este ADR e o RCA (`project_whatsapp_send_queue_no_consumer_incident`, memória) com a confirmação final.
+
+**Tarefa de retorno (não fechar até acontecer):** quando a PR #201832 for mesclada no `main` oficial, trocar `lindionez/whatsapp-web.js#f4ea1e3...` de volta para `wwebjs/whatsapp-web.js#<novo-sha-oficial>` — o fork pessoal é ponte, não destino final. Auditoria futura que encontrar esse fork sem essa nota já sabe o motivo.
+
+**Consequência:** `package-lock.json` ainda não existe no repo — o sandbox onde essa investigação rodou não tem acesso à internet pra gerar o lockfile (`npm install --package-lock-only` travou/timeout); precisa ser gerado num ambiente com acesso real (local do usuário ou build do Render) e commitado. Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra número normal, (3) enviar pra contato com LID, (4) conferir retorno de `sendMessage()`, (5) checar logs sem `Cannot read properties of undefined`. Quando a PR mesclar oficialmente: atualizar o SHA pro oficial, testar de novo, remover a nota de "fork temporário" daqui.
 
 ---
 
@@ -383,7 +396,7 @@ Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem in
 
 | Data | Mudança |
 |------|---------|
-| 2026-07-24 | ADR-013 atualizado: whatsapp-web.js fixado no commit 1780711a (era #main sem lockfile) + regra permanente contra deps GitHub em branch em produção. Causa raiz do incidente de envio: evidências fortes de incompatibilidade externa (WhatsApp Web mudou algo), não confirmação definitiva ainda — sem fix upstream disponível |
+| 2026-07-24 | ADR-013 RCA final: causa raiz identificada com alta confiança (WhatsApp Web renomeou id._serialized→id.$1). Hotfix aplicado: whatsapp-web.js pinado no fork lindionez#f4ea1e3 (patch da PR upstream #201832, ainda não mesclada oficialmente) — bridge temporário, trocar pro oficial quando mergear |
 | 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
