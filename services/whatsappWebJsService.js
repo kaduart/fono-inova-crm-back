@@ -620,56 +620,22 @@ export async function sendMessage(phone, message) {
   try {
     const numberId = await client.getNumberId(clean);
     console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
-    if (!numberId) {
-      throw new Error(`Número ${clean} não possui WhatsApp (getNumberId retornou null)`);
-    }
-    if (!numberId._serialized) {
-      throw new Error(`Número ${clean} retornou id sem _serialized: ${JSON.stringify(numberId)}`);
-    }
 
-    // Estratégia 1: usar o id retornado (pode ser LID ou @c.us)
-    const candidates = [numberId._serialized];
-
-    // Estratégia 2: se for LID, tenta resolver PN via WhatsApp.
-    // O PN retornado pode parecer divergente (ex: falta do dígito 9), mas é o que
-    // o WhatsApp internamente associa ao LID; usamos como prioridade máxima quando disponível.
-    let pnFallback = null;
-    if (numberId._serialized.endsWith('@lid')) {
-      try {
-        const lidAndPhone = await client.getContactLidAndPhone([numberId._serialized]);
-        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
-        pnFallback = lidAndPhone?.[0]?.pn;
-        if (pnFallback) {
-          console.log(`[WhatsAppWeb][DIAG] PN resolvido pelo WhatsApp: ${pnFallback}`);
-          // Coloca PN como primeira opção, pois o WhatsApp o associa ao LID
-          candidates.unshift(pnFallback);
-        }
-      } catch (lidErr) {
-        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou:`, lidErr?.message);
-      }
+    // LID-first: se o WhatsApp retornou um LID, usamos ele.
+    // O retry do BullMQ cobre instabilidades transientes do WhatsApp Web.
+    let chatId;
+    if (numberId?._serialized) {
+      chatId = numberId._serialized;
+      console.log(`[WhatsAppWeb][DIAG] Usando id resolvido pelo WhatsApp: ${chatId}`);
+    } else {
+      chatId = `${clean}@c.us`;
+      console.log(`[WhatsAppWeb][DIAG] getNumberId não retornou id; usando fallback: ${chatId}`);
     }
 
-    // Estratégia 3: número original no formato @c.us como último fallback
-    const originalWid = `${clean}@c.us`;
-    if (!candidates.includes(originalWid)) {
-      candidates.push(originalWid);
-    }
-
-    let lastError = null;
-    for (const chatId of candidates) {
-      try {
-        console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage para ${chatId}...`);
-        const result = await client.sendMessage(chatId, message);
-        const messageId = result?.id?._serialized || 'unknown';
-        console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
-        return { success: true, messageId, chatId };
-      } catch (sendErr) {
-        lastError = sendErr;
-        console.log(`[WhatsAppWeb][DIAG] sendMessage para ${chatId} falhou:`, sendErr?.message);
-      }
-    }
-
-    throw lastError || new Error(`Todas as estratégias de envio falharam para ${clean}`);
+    const result = await client.sendMessage(chatId, message);
+    const messageId = result?.id?._serialized || 'unknown';
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
+    return { success: true, messageId, chatId };
   } catch (err) {
     const diagnostic = {
       phone: clean,
@@ -680,21 +646,6 @@ export async function sendMessage(phone, message) {
       raw: err ? JSON.stringify(err) : null,
     };
     console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, diagnostic);
-
-    // Diagnóstico: tentar enviar mensagem mínima para isolar problema de conteúdo
-    try {
-      console.log(`[WhatsAppWeb][DIAG] Tentando envio mínimo de teste para ${clean}...`);
-      const minimalChatId = `${clean}@c.us`;
-      const minimal = await client.sendMessage(minimalChatId, 'Teste CRM');
-      console.log(`[WhatsAppWeb][DIAG] Envio mínimo funcionou — ID: ${minimal?.id?._serialized || 'unknown'}`);
-    } catch (minimalErr) {
-      console.error(`[WhatsAppWeb][DIAG] Envio mínimo também falhou:`, {
-        message: minimalErr?.message,
-        name: minimalErr?.name,
-        stack: minimalErr?.stack,
-        raw: minimalErr ? JSON.stringify(minimalErr) : null,
-      });
-    }
     throw err;
   }
 }
