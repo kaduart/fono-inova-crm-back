@@ -627,6 +627,7 @@ export async function sendMessage(phone, message) {
     return { success: true, messageId };
   } catch (err) {
     console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);
+    console.error(err.stack);
     throw err;
   }
 }
