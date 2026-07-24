@@ -627,30 +627,51 @@ export async function sendMessage(phone, message) {
       throw new Error(`Número ${clean} retornou id sem _serialized: ${JSON.stringify(numberId)}`);
     }
 
-    // WhatsApp migrou alguns contatos para LID. Se o id for @lid, resolvemos o PN.
-    let chatId = numberId._serialized;
-    if (chatId.endsWith('@lid')) {
-      console.log(`[WhatsAppWeb][DIAG] Número resolvido como LID, buscando PN...`);
+    // Estratégia 1: usar o id retornado (pode ser LID ou @c.us)
+    const candidates = [numberId._serialized];
+
+    // Estratégia 2: se for LID, tenta resolver PN para fallback, mas só confia se bater com o número original
+    let pnFallback = null;
+    if (numberId._serialized.endsWith('@lid')) {
       try {
-        const lidAndPhone = await client.getContactLidAndPhone([chatId]);
+        const lidAndPhone = await client.getContactLidAndPhone([numberId._serialized]);
         console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
-        const pn = lidAndPhone?.[0]?.pn;
-        if (pn) {
-          chatId = pn;
-          console.log(`[WhatsAppWeb][DIAG] Usando PN para envio: ${chatId}`);
-        } else {
-          console.log(`[WhatsAppWeb][DIAG] PN não retornado, mantendo LID: ${chatId}`);
+        pnFallback = lidAndPhone?.[0]?.pn;
+        if (pnFallback) {
+          const pnDigits = pnFallback.replace(/\D/g, '');
+          if (pnDigits === clean) {
+            console.log(`[WhatsAppWeb][DIAG] PN validado e confiável: ${pnFallback}`);
+            if (!candidates.includes(pnFallback)) candidates.push(pnFallback);
+          } else {
+            console.log(`[WhatsAppWeb][DIAG] PN descartado (divergente): ${pnFallback} !== ${clean}`);
+          }
         }
       } catch (lidErr) {
         console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou:`, lidErr?.message);
       }
     }
 
-    console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage para ${chatId}...`);
-    const result = await client.sendMessage(chatId, message);
-    const messageId = result?.id?._serialized || 'unknown';
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
-    return { success: true, messageId };
+    // Estratégia 3: número original no formato @c.us
+    const originalWid = `${clean}@c.us`;
+    if (!candidates.includes(originalWid)) {
+      candidates.push(originalWid);
+    }
+
+    let lastError = null;
+    for (const chatId of candidates) {
+      try {
+        console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage para ${chatId}...`);
+        const result = await client.sendMessage(chatId, message);
+        const messageId = result?.id?._serialized || 'unknown';
+        console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
+        return { success: true, messageId, chatId };
+      } catch (sendErr) {
+        lastError = sendErr;
+        console.log(`[WhatsAppWeb][DIAG] sendMessage para ${chatId} falhou:`, sendErr?.message);
+      }
+    }
+
+    throw lastError || new Error(`Todas as estratégias de envio falharam para ${clean}`);
   } catch (err) {
     const diagnostic = {
       phone: clean,
