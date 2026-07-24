@@ -634,12 +634,10 @@ export async function sendMessage(phone, message) {
           chatId = pn;
           console.log(`[WhatsAppWeb][DIAG] LID detectado; usando PN resolvido: ${chatId}`);
         } else {
-          chatId = numberId._serialized;
-          console.log(`[WhatsAppWeb][DIAG] PN não retornado; usando LID: ${chatId}`);
+          throw new Error(`LID encontrado (${numberId._serialized}) mas PN não resolvido`);
         }
       } catch (lidErr) {
-        chatId = numberId._serialized;
-        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou; usando LID: ${chatId} — ${lidErr?.message}`);
+        throw new Error(`Falha ao resolver PN para LID ${numberId._serialized}: ${lidErr?.message}`);
       }
     } else if (numberId?._serialized) {
       chatId = numberId._serialized;
@@ -648,6 +646,8 @@ export async function sendMessage(phone, message) {
       chatId = `${clean}@c.us`;
       console.log(`[WhatsAppWeb][DIAG] getNumberId não retornou id; usando fallback: ${chatId}`);
     }
+
+    console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
 
     const result = await client.sendMessage(chatId, message);
     const messageId = result?.id?._serialized || 'unknown';
