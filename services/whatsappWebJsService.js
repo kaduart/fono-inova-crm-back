@@ -630,7 +630,9 @@ export async function sendMessage(phone, message) {
     // Estratégia 1: usar o id retornado (pode ser LID ou @c.us)
     const candidates = [numberId._serialized];
 
-    // Estratégia 2: se for LID, tenta resolver PN para fallback, mas só confia se bater com o número original
+    // Estratégia 2: se for LID, tenta resolver PN via WhatsApp.
+    // O PN retornado pode parecer divergente (ex: falta do dígito 9), mas é o que
+    // o WhatsApp internamente associa ao LID; usamos como prioridade máxima quando disponível.
     let pnFallback = null;
     if (numberId._serialized.endsWith('@lid')) {
       try {
@@ -638,20 +640,16 @@ export async function sendMessage(phone, message) {
         console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
         pnFallback = lidAndPhone?.[0]?.pn;
         if (pnFallback) {
-          const pnDigits = pnFallback.replace(/\D/g, '');
-          if (pnDigits === clean) {
-            console.log(`[WhatsAppWeb][DIAG] PN validado e confiável: ${pnFallback}`);
-            if (!candidates.includes(pnFallback)) candidates.push(pnFallback);
-          } else {
-            console.log(`[WhatsAppWeb][DIAG] PN descartado (divergente): ${pnFallback} !== ${clean}`);
-          }
+          console.log(`[WhatsAppWeb][DIAG] PN resolvido pelo WhatsApp: ${pnFallback}`);
+          // Coloca PN como primeira opção, pois o WhatsApp o associa ao LID
+          candidates.unshift(pnFallback);
         }
       } catch (lidErr) {
         console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou:`, lidErr?.message);
       }
     }
 
-    // Estratégia 3: número original no formato @c.us
+    // Estratégia 3: número original no formato @c.us como último fallback
     const originalWid = `${clean}@c.us`;
     if (!candidates.includes(originalWid)) {
       candidates.push(originalWid);
