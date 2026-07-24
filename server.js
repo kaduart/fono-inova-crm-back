@@ -643,9 +643,9 @@ app.use(errorHandler);
 // 🖥️ Bull Board (Dashboard de filas) - DEVE vir antes do catch-all do frontend
 // ======================================================
 try {
-  // Redirecionamento explícito para evitar 404 no adapter do Bull Board
-  app.get("/admin/queues", (req, res) => res.redirect("/admin/queues/"));
-  app.use("/admin/queues/", bullBoardAdapter.getRouter());
+  // basePath (adminSystem.js) e mount aqui têm que casar SEM barra final —
+  // com barra nos dois causa loop de redirect infinito (ERR_TOO_MANY_REDIRECTS)
+  app.use("/admin/queues", bullBoardAdapter.getRouter());
   console.log("🖥️ Bull Board disponível em: /admin/queues");
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message, err.stack);
