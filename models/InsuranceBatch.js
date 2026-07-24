@@ -65,6 +65,10 @@ const insuranceBatchSchema = new mongoose.Schema({
   receivedAmount: { type: Number, default: 0 },
   totalGlosa: { type: Number, default: 0 },
   
+  // Documentos fiscais (copiados da InsuranceCommunication que originou o lote)
+  invoiceNumber: { type: String, index: true },
+  invoiceDate: Date,
+  
   // Status
   status: {
     type: String,

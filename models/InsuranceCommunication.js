@@ -77,6 +77,16 @@ const insuranceCommunicationSchema = new mongoose.Schema({
     ref: 'InsuranceBatch',
     index: true,
     default: null
+  },
+  invoiceNumber: {
+    type: String,
+    default: null,
+    trim: true,
+    index: true
+  },
+  invoiceDate: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true });
 

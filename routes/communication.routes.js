@@ -44,7 +44,7 @@ router.get('/', auth, async (req, res) => {
 // POST /api/v2/communications
 router.post('/', auth, async (req, res) => {
   try {
-    const { patientId, insuranceProvider, guideId, purpose, specialty, requestedSessions, notes } = req.body;
+    const { patientId, insuranceProvider, guideId, purpose, specialty, requestedSessions, notes, invoiceNumber, invoiceDate } = req.body;
     const request = await createCommunicationRequest({
       patientId,
       insuranceProvider,
@@ -53,6 +53,8 @@ router.post('/', auth, async (req, res) => {
       specialty,
       requestedSessions,
       notes,
+      invoiceNumber,
+      invoiceDate,
       userId: req.user.id
     });
     res.status(201).json({ success: true, data: request });

@@ -197,12 +197,21 @@ export async function faturarLote(req, res) {
         });
       }
 
+      if (!adapterResult.invoiceNumber && !notaFiscal) {
+        return res.status(400).json({
+          success: false,
+          error: 'Informe o número da Nota Fiscal para criar o lote. A NF pode ser informada no envio dos documentos ou no momento do faturamento.'
+        });
+      }
+
       const batch = await createBatch({
         insuranceProvider: adapterResult.provider,
         startDate: adapterResult.startDate,
         endDate: adapterResult.endDate,
         userId,
-        sessionIds: adapterResult.sessionIds
+        sessionIds: adapterResult.sessionIds,
+        invoiceNumber: adapterResult.invoiceNumber || notaFiscal || null,
+        invoiceDate: adapterResult.invoiceDate
       });
 
       await sendBatch(batch._id, userId);
@@ -292,7 +301,9 @@ export async function faturarLote(req, res) {
       startDate,
       endDate,
       userId,
-      sessionIds
+      sessionIds,
+      invoiceNumber: notaFiscal || null,
+      invoiceDate: null
     });
 
     // 2. Enviar batch V2

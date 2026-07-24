@@ -14,6 +14,8 @@ export async function createCommunicationRequest({
   specialty,
   requestedSessions,
   notes,
+  invoiceNumber,
+  invoiceDate,
   userId
 }) {
   const communication = await InsuranceCommunication.create({
@@ -24,6 +26,8 @@ export async function createCommunicationRequest({
     specialty,
     requestedSessions,
     notes,
+    invoiceNumber,
+    invoiceDate,
     createdBy: userId
   });
 

@@ -90,6 +90,25 @@ export async function buildBatchFromGuides(guideIds, options = {}) {
 
   const provider = providers[0] || 'convenio';
 
+  // 2.1. Buscar Nota Fiscal da comunicação de faturamento mais recente vinculada às guias.
+  // Por ora o lote armazena uma única NF (mesmo que várias guias). Futuramente,
+  // se cada guia exigir NF distinta, o modelo deverá permitir NFs por sessão.
+  const latestCommunication = await InsuranceCommunication.findOne({
+    guideId: { $in: validIds },
+    purpose: 'billing',
+    status: 'sent'
+  })
+    .sort({ updatedAt: -1 })
+    .select('invoiceNumber invoiceDate')
+    .lean();
+
+  const invoice = latestCommunication
+    ? {
+        invoiceNumber: latestCommunication.invoiceNumber,
+        invoiceDate: latestCommunication.invoiceDate
+      }
+    : { invoiceNumber: null, invoiceDate: null };
+
   // 3. Buscar sessões completed, vinculadas às guias, ainda não faturadas
   const sessions = await Session.find({
     status: 'completed',
@@ -157,7 +176,8 @@ export async function buildBatchFromGuides(guideIds, options = {}) {
     startDate,
     endDate,
     guides: guidesMeta,
-    ignoredGuides
+    ignoredGuides,
+    ...invoice
   };
 }
 
@@ -390,12 +410,18 @@ export async function listGuidesPendingBilling(filters = {}) {
     guideId: { $in: guides.map(g => g._id) },
     purpose: 'billing',
     status: 'sent'
-  }).select('guideId updatedAt').sort({ updatedAt: -1 }).lean();
+  }).select('guideId invoiceNumber updatedAt').sort({ updatedAt: -1 }).lean();
   const documentationSentAtByGuide = new Map();
+  const invoiceNumberByGuide = new Map();
   for (const comm of sentCommunications) {
     const gid = comm.guideId?.toString();
-    if (gid && !documentationSentAtByGuide.has(gid)) {
-      documentationSentAtByGuide.set(gid, comm.updatedAt);
+    if (gid) {
+      if (!documentationSentAtByGuide.has(gid)) {
+        documentationSentAtByGuide.set(gid, comm.updatedAt);
+      }
+      if (comm.invoiceNumber && !invoiceNumberByGuide.has(gid)) {
+        invoiceNumberByGuide.set(gid, comm.invoiceNumber);
+      }
     }
   }
 
@@ -428,11 +454,32 @@ export async function listGuidesPendingBilling(filters = {}) {
     billingStatsByGuide.set(gid, stats);
   }
 
+  // Pagamentos já recebidos do convênio para as guias listadas. Usado para
+  // derivar o estado "Recebida" sem depender de campo mutável na guia.
+  const receivedPayments = await Payment.find({
+    insuranceGuide: { $in: guideIds },
+    billingType: 'convenio',
+    'insurance.status': 'received'
+  }).select('insuranceGuide').lean();
+  const receivedGuideIds = new Set(receivedPayments.map(p => p.insuranceGuide?.toString()).filter(Boolean));
+
   const enrichedGuides = guides.map(guide => {
     const pending = pendingByGuide.get(guide._id.toString()) || { sessionsCount: 0, totalValue: 0 };
     const sessions = sessionsByGuide.get(guide._id.toString()) || [];
     const billingMode = guide.billingMode || 'per_month';
     const billingStats = billingStatsByGuide.get(guide._id.toString()) || { count: 0, lastBatchSentAt: null };
+
+    const hasSentCommunication = documentationSentAtByGuide.has(guide._id.toString());
+    const hasBilledSession = billingStats.count > 0;
+    const hasReceivedPayment = receivedGuideIds.has(guide._id.toString());
+    const isClosed = !!guide.closedAt;
+
+    const billingState = deriveGuideBillingState(guide, {
+      hasSentCommunication,
+      hasBilledSession,
+      hasReceivedPayment,
+      isClosed
+    });
 
     // "A faturar" deve refletir apenas o valor das sessões já realizadas e
     // pendentes de faturamento no período filtrado, independente do modo de
@@ -465,9 +512,11 @@ export async function listGuidesPendingBilling(filters = {}) {
       firstSessionDate: pending.minDate,
       lastSessionDate: pending.maxDate,
       documentationSentAt: documentationSentAtByGuide.get(guide._id.toString()) || null,
+      invoiceNumber: invoiceNumberByGuide.get(guide._id.toString()) || null,
       alreadyBilledSessions: billingStats.count,
       lastBatchSentAt: billingStats.lastBatchSentAt,
       guideStatus: guide.status,
+      billingState,
       sessions
     };
   });
@@ -720,7 +769,37 @@ async function buildOverdueBuckets({ periodStart, insurance, patientId }) {
   return [...buckets.values()].sort((a, b) => a.competence.localeCompare(b.competence));
 }
 
+export const GuideBillingState = {
+  PENDING: 'pending',
+  DOCUMENTATION_SENT: 'documentation_sent',
+  BILLED: 'billed',
+  RECEIVED: 'received',
+  CLOSED: 'closed'
+};
+
+/**
+ * Deriva o estado de faturamento de uma guia a partir dos eventos reais registrados
+ * no sistema. Não há campo mutável `billingStatus` em InsuranceGuide; o estado é
+ * inferido para evitar inconsistências entre UI e banco.
+ *
+ * Hierarquia (mais específico vence):
+ *   closedAt -> CLOSED
+ *   payment insurance.status === 'received' -> RECEIVED
+ *   sessão da guia em InsuranceBatch enviado -> BILLED
+ *   InsuranceCommunication billing sent -> DOCUMENTATION_SENT
+ *   senão -> PENDING
+ */
+export function deriveGuideBillingState(guide, { hasSentCommunication, hasBilledSession, hasReceivedPayment, isClosed }) {
+  if (isClosed) return GuideBillingState.CLOSED;
+  if (hasReceivedPayment) return GuideBillingState.RECEIVED;
+  if (hasBilledSession) return GuideBillingState.BILLED;
+  if (hasSentCommunication) return GuideBillingState.DOCUMENTATION_SENT;
+  return GuideBillingState.PENDING;
+}
+
 export default {
   buildBatchFromGuides,
-  listGuidesPendingBilling
+  listGuidesPendingBilling,
+  deriveGuideBillingState,
+  GuideBillingState
 };

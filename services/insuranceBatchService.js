@@ -22,7 +22,7 @@ async function getDashboardCache() {
 /**
  * Cria um novo lote de faturamento de convênio
  */
-export async function createBatch({ insuranceProvider, startDate, endDate, userId, sessionIds }) {
+export async function createBatch({ insuranceProvider, startDate, endDate, userId, sessionIds, invoiceNumber, invoiceDate }) {
   console.log(`[InsuranceBatch] Criando lote para ${insuranceProvider}`, { startDate, endDate, sessionIds: sessionIds?.length });
   
   // 1. Buscar sessões elegíveis (apenas NÃO vinculadas a lote)
@@ -91,6 +91,8 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
     totalNet: sessions.reduce((sum, s) => sum + (s.sessionValue || 0), 0),
     totalSessions: sessions.length,
     status: 'ready',
+    invoiceNumber,
+    invoiceDate: invoiceDate ? new Date(invoiceDate) : null,
     createdBy: userId,
     correlationId: uuidv4()
   });
