@@ -9,6 +9,11 @@
  * 2. Eventos WHATSAPP_MESSAGE_RECEIVED com status 'pending' há > 5 min → CRITICAL
  * 3. Workers de WhatsApp não detectados → CRITICAL
  * 4. Fila whatsapp-inbound ou whatsapp-persistence com backlog > 20 → WARNING
+ * 5. Fila whatsapp-send pausada, ou com job esperando há > 5 min (sem
+ *    consumidor ativo) → CRITICAL
+ *    — nasceu do incidente de 2026-07-24: a fila não tinha nenhum worker
+ *    registrado no processo de produção e jobs ficavam presos em `waiting`
+ *    para sempre, sem log nenhum. Ver: whatsappWebSendWorker.js.
  */
 
 import mongoose from 'mongoose';
@@ -29,7 +34,9 @@ let lastAlertTimes = {
   pendingWarning: 0,
   pendingCritical: 0,
   workersOff: 0,
-  backlog: 0
+  backlog: 0,
+  sendQueuePaused: 0,
+  sendQueueStuck: 0
 };
 
 const COOLDOWN_MS = 5 * 60_000; // 5 minutos entre alertas do mesmo tipo
@@ -146,6 +153,57 @@ async function checkQueueBacklog() {
 }
 
 // ============================================
+// CHECK 2b: Fila whatsapp-send — pausada ou sem consumidor
+// ============================================
+async function checkWhatsappSendQueue() {
+  try {
+    const sendQ = getQueue('whatsapp-send');
+    const [isPaused, waitingJobs] = await Promise.all([
+      sendQ.isPaused(),
+      sendQ.getWaiting(0, 1),
+    ]);
+
+    if (isPaused && shouldAlert('sendQueuePaused')) {
+      logger.error('whatsapp_send_queue_paused', 'Fila whatsapp-send está PAUSADA');
+      await sendAlert({
+        level: 'critical',
+        type: 'whatsapp_send_queue_paused',
+        message: '🚨 Fila whatsapp-send está PAUSADA — nenhuma mensagem sai',
+        details: { action: 'Verificar admin/whatsapp-queue e retomar a fila' }
+      });
+      return;
+    }
+
+    const oldest = waitingJobs[0];
+    if (!oldest) return;
+
+    const ageMs = Date.now() - oldest.timestamp;
+    const ageMin = Math.round(ageMs / 60_000);
+
+    if (ageMs > CRITICAL_THRESHOLD_MIN * 60_000 && shouldAlert('sendQueueStuck')) {
+      logger.error('whatsapp_send_queue_stuck', `Job ${oldest.id} esperando há ${ageMin}min na fila whatsapp-send`, {
+        jobId: oldest.id,
+        phone: oldest.data?.phone,
+        ageMin
+      });
+      await sendAlert({
+        level: 'critical',
+        type: 'whatsapp_send_queue_stuck',
+        message: `🚨 Mensagem WhatsApp Web presa há ${ageMin}min sem envio (job ${oldest.id})`,
+        details: {
+          jobId: oldest.id,
+          phone: oldest.data?.phone,
+          ageMin,
+          action: 'Verificar se o worker registrou o consumidor da fila whatsapp-send (crm-worker → registry.js) e se o WhatsApp Web está conectado'
+        }
+      });
+    }
+  } catch (err) {
+    logger.error('whatsapp_send_queue_check_failed', err.message);
+  }
+}
+
+// ============================================
 // CHECK 3: Workers ativos (indireto via filas)
 // ============================================
 async function checkWorkersActive() {
@@ -182,6 +240,7 @@ async function runChecks() {
     await Promise.all([
       checkPendingEvents(),
       checkQueueBacklog(),
+      checkWhatsappSendQueue(),
       checkWorkersActive()
     ]);
   } catch (err) {

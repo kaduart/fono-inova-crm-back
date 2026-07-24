@@ -116,6 +116,8 @@ Se alterar Patient, verificar:
 21. Nunca disparar mensagem sem `detectAllFlags()` primeiro
 22. Pipeline: `detectAllFlags → BusinessRulesAdapter → DecisionResolver → ResponseBuilder`
 23. GMB images: usar apenas `sanitizePermanentMedia` — sem fallbacks Unsplash/Pollinations
+24. Toda fila BullMQ de WhatsApp precisa ter exatamente um Worker registrado no grupo `whatsapp` de `back/workers/registry.js` — o grupo que de fato roda em produção (`crm-worker` → `workers/startWorkers.js`). Nunca registrar um consumidor só em `workers/entrypoints/whatsapp-child.js` (modo emergência, não roda em produção) achando que isso basta. Antes de renomear/remover uma fila, checar todos os `.add()` para ela (rotas, outros services, apps externos como `agenda`)
+25. `whatsappPipelineGuard.js` (`startWhatsAppPipelineGuard()`) deve permanecer chamado no boot de `workers/startWorkers.js` — é o único alerta automático que detecta fila de WhatsApp pausada ou sem consumidor. Ficou implementado e sem uso por meses (incidente 2026-07-24) até ser religado
 
 ---
 
@@ -221,6 +223,13 @@ await ResponseBuilder.send(message);
 // ❌ NUNCA — usar entidades deprecated
 FinancialProjection / TotalsSnapshot / FinancialDailySnapshot / financialMetrics.service.js
 // ✅ SEMPRE — unifiedFinancialService.v2.js
+
+// ❌ NUNCA — criar/migrar fila BullMQ sem confirmar quem consome
+export const minhaQueue = new Queue("minha-fila", { connection: bullMqConnection });
+// nenhum `new Worker("minha-fila", ...)` no grupo `whatsapp` de registry.js
+// → jobs ficam em `waiting` para sempre, ZERO log (foi o caso de `whatsapp-send`, 2026-07-24)
+// ✅ SEMPRE — registrar o Worker em registry.js (grupo que roda em produção)
+// e validar com getQueue(nome).getWaitingCount() antes de considerar pronto
 ```
 
 ---
@@ -341,6 +350,7 @@ Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem in
 
 | Data | Mudança |
 |------|---------|
+| 2026-07-24 | Invariantes #24-25 (Amanda): fila whatsapp-send sem Worker em produção (jobs presos sem log) + whatsappPipelineGuard nunca ligado. Fix: whatsappWebSendWorker.js criado, registry.js e startWorkers.js atualizados |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
 | 2026-06-25 | billingMode per_month/per_guide: paidAt projetado em getInsuranceReceivables |

@@ -16,6 +16,7 @@ import dotenv from 'dotenv';
 import '../models/index.js';
 import { startWorkersByGroup, VALID_GROUPS } from './index.js';
 import { initWhatsAppClient, gracefulShutdownWhatsApp, getStatus } from '../services/whatsappWebJsService.js';
+import { startWhatsAppPipelineGuard } from '../infrastructure/observability/whatsappPipelineGuard.js';
 
 dotenv.config();
 
@@ -136,6 +137,7 @@ async function main() {
             console.log('\n[BOOT] ⚡ Iniciando grupos de ALTA prioridade...');
             await startWorkersByGroup('scheduling');
             await startWorkersByGroup('whatsapp');
+            startWhatsAppPipelineGuard();
 
             // 3d. Se WhatsApp ainda não está ready, dá mais uma chance antes de subir o pesado
             if (!isReady) {
@@ -164,6 +166,7 @@ async function main() {
             if (WORKER_GROUP === 'whatsapp') {
                 console.log('🟢 [LIFECYCLE] Inicializando WhatsApp Web...');
                 await initWhatsAppClient();
+                startWhatsAppPipelineGuard();
             }
             console.log('\n🎉 Workers iniciados com sucesso!');
         } else {
