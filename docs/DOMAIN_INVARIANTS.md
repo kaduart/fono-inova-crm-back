@@ -17,6 +17,16 @@
 Só depois disso: proponha código.
 ```
 
+**Se a mudança envolve fila BullMQ ou worker**, checklist adicional (ver ADR-012):
+```
+7. A fila tem um Worker consumidor registrado e confirmado?
+8. O entrypoint validado é o que REALMENTE roda em produção? (checar Start
+   Command no dashboard do Render — não confiar em render.yaml/nome de arquivo)
+9. Existe health check ou watchdog cobrindo essa fila?
+10. Testou publicando um job de verdade e confirmando consumo (log de
+    início + conclusão), não só leitura de código?
+```
+
 ---
 
 ## PROPRIEDADE CANÔNICA DAS ENTIDADES
@@ -356,13 +366,18 @@ Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem in
 - **Médio prazo:** adicionar `Payment.nature` (`RECURRING_OPERATION | RECOVERY | JUDICIAL | ADVANCE | ADJUSTMENT`) ou `Payment.projectionBehavior` (`include | exclude`) ao modelo de domínio, preenchido no momento da criação do pagamento pelos handlers/services que já sabem a origem (ex.: `liminarContractController.js` sempre grava `JUDICIAL`/`exclude`; quitação em lote registrada manualmente grava `RECOVERY`/`exclude`; sessão/pacote normal grava `RECURRING_OPERATION`/`include`).
 - **Longo prazo:** `cashflow.v2.js` para de inferir por data/quantidade de sessões — a projeção passa a somar só por `projectionBehavior === 'include'`, e esta ADR-011 é encerrada (marcar `Status: Superseded by ADR-0XX`), removendo a heurística de lote do código.
 
+### ADR-012: Toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção
+**Decisão:** nenhuma fila é considerada "resolvida" só porque existe um `new Worker(...)` em algum arquivo do repo. O consumidor precisa estar registrado no processo que **de fato** roda em produção — confirmado pelo Start Command real (dashboard do Render, Settings), nunca assumido por `render.yaml` (não-autoritativo, ver topo do arquivo) ou pelo nome/local do arquivo.
+**Motivo:** incidente 2026-07-24 (fila `whatsapp-send`) — diagnóstico inicial presumiu "sem consumidor" batendo o código com `render.yaml`, gerando um segundo Worker desnecessário. A fila sempre teve consumidor; o `render.yaml` mentia sobre qual arquivo sobe no `crm-worker`. Ver [[project_whatsapp_send_queue_no_consumer_incident]] e itens #24-28 (seção Amanda/WhatsApp) para o caso concreto.
+**Consequência:** antes de declarar uma fila "sem consumidor", checar histórico real (`completed > 0` já prova que existiu consumidor) via admin/health endpoint — não só leitura de código. Ver checklist adicional (itens 7-10) no topo deste arquivo. Mapa de filas → consumidor → entrypoint documentado em `docs/ARQUITETURA_EVENT_DRIVEN.md` (seção "Filas").
+
 ---
 
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
-| 2026-07-24 | Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
+| 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
 | 2026-06-25 | billingMode per_month/per_guide: paidAt projetado em getInsuranceReceivables |

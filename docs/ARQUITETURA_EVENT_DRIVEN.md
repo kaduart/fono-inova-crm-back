@@ -69,6 +69,50 @@ Cliente → API → Transação Mongo → Publish Events → Resposta 200
 | `event-sync` | Sincronização MedicalEvent | 3x fixo | Baixa |
 | `dlq` | Falhas irreversíveis | Nenhum | Manual |
 
+### Filas de WhatsApp — dois pipelines paralelos, não confundir
+
+Existem **dois pipelines de envio de WhatsApp completamente separados**, cada um com seu próprio consumidor. Ver ADR-012 e invariantes #24-28 em `DOMAIN_INVARIANTS.md`.
+
+**Pipeline 1 — WhatsApp Web.js (sessão via QR, número da clínica):**
+```
+Agenda externa (app separado)
+        │
+        ▼
+POST /api/whatsapp-web/send   (routes/whatsappWebJs.js)
+        │
+        ▼
+BullMQ: whatsapp-send          (config/bullConfig.js)
+        │
+        ▼
+new Worker('whatsapp-send')    (workers/entrypoints/whatsapp-child.js, linha ~204)
+        │
+        ▼
+whatsappWebJsService.sendMessage()
+        │
+        ▼
+WhatsApp Web (Puppeteer)
+```
+Consumido por: `whatsapp-child.js`, forkado por `whatsapp-only.js`.
+**Roda no serviço `crm-worker`, cujo Start Command real é `node workers/entrypoints/whatsapp-only.js`** — confirmar sempre no dashboard do Render (Settings → Start Command), não no `render.yaml`, que sugere `workers/startWorkers.js` mas não é 1:1 com o que está configurado manualmente.
+
+**Pipeline 2 — Evolution API (pipeline V2 orientado a eventos, Amanda):**
+```
+Eventos do CRM (WHATSAPP_MESSAGE_REQUESTED)
+        │
+        ▼
+BullMQ: whatsapp-notification
+        │
+        ▼
+createWhatsappSendWorker()     (domains/whatsapp/workers/whatsappSendWorker.js)
+        │
+        ▼
+whatsappService.sendTextMessage()
+        │
+        ▼
+Evolution API
+```
+Consumido por: `workers/registry.js` (grupo `whatsapp`), carregado por `workers/startWorkers.js` — hoje só usado em modos `dev:worker*`/`dev:isolated*`, não é o Start Command do `crm-worker` em produção (ver Pipeline 1). Se um dia esses dois entrypoints forem unificados, checar que a fila `whatsapp-send` não ganhe um segundo consumidor.
+
 ---
 
 ## Como Usar
