@@ -618,18 +618,6 @@ export async function sendMessage(phone, message) {
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
 
   try {
-    const registered = await client.isRegisteredUser(clean);
-    console.log(`[WhatsAppWeb][DIAG] isRegisteredUser(${clean}): ${registered}`);
-
-    const chatId = `${clean}@c.us`;
-    let chat = null;
-    try {
-      chat = await client.getChatById(chatId);
-    } catch (chatErr) {
-      console.log(`[WhatsAppWeb][DIAG] getChatById(${chatId}) falhou:`, chatErr?.message);
-    }
-    console.log(`[WhatsAppWeb][DIAG] getChatById(${chatId}): ${!!chat}`);
-
     const numberId = await client.getNumberId(clean);
     console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
     if (!numberId) {
@@ -639,8 +627,27 @@ export async function sendMessage(phone, message) {
       throw new Error(`Número ${clean} retornou id sem _serialized: ${JSON.stringify(numberId)}`);
     }
 
-    console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage original...`);
-    const result = await client.sendMessage(numberId._serialized, message);
+    // WhatsApp migrou alguns contatos para LID. Se o id for @lid, resolvemos o PN.
+    let chatId = numberId._serialized;
+    if (chatId.endsWith('@lid')) {
+      console.log(`[WhatsAppWeb][DIAG] Número resolvido como LID, buscando PN...`);
+      try {
+        const lidAndPhone = await client.getContactLidAndPhone([chatId]);
+        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
+        const pn = lidAndPhone?.[0]?.pn;
+        if (pn) {
+          chatId = pn;
+          console.log(`[WhatsAppWeb][DIAG] Usando PN para envio: ${chatId}`);
+        } else {
+          console.log(`[WhatsAppWeb][DIAG] PN não retornado, mantendo LID: ${chatId}`);
+        }
+      } catch (lidErr) {
+        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone falhou:`, lidErr?.message);
+      }
+    }
+
+    console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage para ${chatId}...`);
+    const result = await client.sendMessage(chatId, message);
     const messageId = result?.id?._serialized || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
     return { success: true, messageId };
@@ -658,10 +665,9 @@ export async function sendMessage(phone, message) {
     // Diagnóstico: tentar enviar mensagem mínima para isolar problema de conteúdo
     try {
       console.log(`[WhatsAppWeb][DIAG] Tentando envio mínimo de teste para ${clean}...`);
-      const minimal = await client.sendMessage(`${clean}@c.us`, 'Teste CRM');
+      const minimalChatId = `${clean}@c.us`;
+      const minimal = await client.sendMessage(minimalChatId, 'Teste CRM');
       console.log(`[WhatsAppWeb][DIAG] Envio mínimo funcionou — ID: ${minimal?.id?._serialized || 'unknown'}`);
-      // Se o mínimo funcionou, o problema era conteúdo/template; ainda assim relança o erro original
-      throw err;
     } catch (minimalErr) {
       console.error(`[WhatsAppWeb][DIAG] Envio mínimo também falhou:`, {
         message: minimalErr?.message,
@@ -669,8 +675,8 @@ export async function sendMessage(phone, message) {
         stack: minimalErr?.stack,
         raw: minimalErr ? JSON.stringify(minimalErr) : null,
       });
-      throw err;
     }
+    throw err;
   }
 }
 
