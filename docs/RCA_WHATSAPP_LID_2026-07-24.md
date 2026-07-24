@@ -1,4 +1,4 @@
-# RCA — Falha no envio de mensagens WhatsApp (LID)
+# RCA — Falha no envio de mensagens WhatsApp (LID + PN divergente)
 
 **Data:** 2026-07-24  
 **Serviço afetado:** `crm-worker` (WhatsApp child process)  
@@ -55,35 +55,72 @@ erro "r"
 
 ---
 
-## Correção
+## Correção inicial
 
-Antes de chamar `sendMessage`, o serviço agora detecta quando o `getNumberId()` retorna um identificador `@lid` e resolve o **Phone Number (PN)** correspondente via `client.getContactLidAndPhone()`.
+A primeira correção tentou resolver o LID para o Phone Number (PN) via `client.getContactLidAndPhone()` e usar o PN no `sendMessage()`.
+
+No entanto, durante a validação descobriu-se que o PN retornado pelo WhatsApp pode ser **divergente** do número original:
+
+```text
+Esperado: 5561981694922@c.us
+Retornado: 556181694922@c.us
+                   ^
+                   falta o dígito 9
+```
+
+Enviar para um PN inconsistente também falhava.
+
+---
+
+## Correção final
+
+O serviço agora tenta enviar em **múltiplas estratégias**, na ordem:
+
+1. **Usar o id retornado por `getNumberId()`** (pode ser LID ou `@c.us`)
+2. **Resolver PN via `getContactLidAndPhone()`**, mas só usar se os dígitos baterem com o número original
+3. **Usar o número original no formato `@c.us`** como fallback
+
+A primeira estratégia que funcionar vence.
 
 ```text
 getNumberId()
   ↓
-detecta @lid
-  ↓
+ tentativa 1: sendMessage(@lid)
+  ↓ se falhar
 getContactLidAndPhone()
   ↓
-extrai pn (5561981694922@c.us)
-  ↓
-sendMessage(@c.us)
-  ↓
-✅ mensagem enviada
+valida PN contra número original
+  ↓ se confiável
+ tentativa 2: sendMessage(PN @c.us)
+  ↓ se falhar ou divergente
+ tentativa 3: sendMessage(numeroOriginal @c.us)
 ```
 
 Código em `back/services/whatsappWebJsService.js`:
 
 ```javascript
-let chatId = numberId._serialized;
-if (chatId.endsWith('@lid')) {
-  const lidAndPhone = await client.getContactLidAndPhone([chatId]);
+const candidates = [numberId._serialized];
+
+if (numberId._serialized.endsWith('@lid')) {
+  const lidAndPhone = await client.getContactLidAndPhone([numberId._serialized]);
   const pn = lidAndPhone?.[0]?.pn;
-  if (pn) chatId = pn;
+  if (pn) {
+    const pnDigits = pn.replace(/\D/g, '');
+    if (pnDigits === clean) candidates.push(pn);
+  }
 }
 
-const result = await client.sendMessage(chatId, message);
+const originalWid = `${clean}@c.us`;
+if (!candidates.includes(originalWid)) candidates.push(originalWid);
+
+for (const chatId of candidates) {
+  try {
+    const result = await client.sendMessage(chatId, message);
+    return { success: true, messageId: result?.id?._serialized, chatId };
+  } catch (sendErr) {
+    console.log(`sendMessage para ${chatId} falhou:`, sendErr?.message);
+  }
+}
 ```
 
 ---
@@ -92,7 +129,7 @@ const result = await client.sendMessage(chatId, message);
 
 - Worker `crm-worker` redeployado no Render.
 - Sessão WhatsApp autenticada e pronta.
-- Job 502 processado com sucesso:
+- Job 502 processado com sucesso usando LID diretamente:
 
 ```text
 [WhatsAppWeb] ✅ Enviado para 5561981694922 — ID: true_257294377951469@lid_3EB0B9A54CEDC73D3FFA77
@@ -105,12 +142,15 @@ const result = await client.sendMessage(chatId, message);
 
 - A dependência `whatsapp-web.js` também foi atualizada para um commit do fork que corrige a mudança interna do WhatsApp de `_serialized` para `$1` em objetos `Wid`.
 - O formato do telefone (`61981694922` → `5561981694922`) não era o problema; a normalização estava correta.
-- O LID continua aparecendo no ID final da mensagem (`true_257294377951469@lid_...`), o que é esperado; o envio, no entanto, deve ser feito usando o PN resolvido.
+- O LID continua aparecendo no ID final da mensagem (`true_257294377951469@lid_...`), o que é esperado.
+- O WhatsApp pode retornar PN divergente do número original; por isso o PN deve ser validado antes de ser usado como destino.
 
 ---
 
-## Commit
+## Commits
 
 ```text
 fix(whatsapp): resolve LID para PN antes do envio
+fix(whatsapp): valida PN e tenta LID, PN e @c.us em ordem
+docs: adiciona RCA do incidente WhatsApp LID
 ```
