@@ -215,6 +215,7 @@ import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio
 import liminarContractRoutes from './routes/liminarContract.js';  // ⚖️ NOVO: Liminar desacoplado
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
 import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';  // 🚀 NOVO: Observabilidade
+import { startWhatsAppPipelineGuard } from './infrastructure/observability/whatsappPipelineGuard.js';
 import healthRoutes from './routes/health.js';  // 🚀 NOVO: Health Check Completo
 import healthV2Routes from './routes/health.v2.js';  // 🚀 NOVO: Health Check V2
 import healthMigrationRoutes from './routes/health.migration.js';  // 🚀 NOVO: Health Check de Migração V1→V2
@@ -879,6 +880,12 @@ server.listen(PORT, '0.0.0.0', () => {
     // 🟢 WhatsApp Web roda no worker dedicado (crm-worker-whatsapp)
     // API web fica livre do Chrome para não travar requests
     console.log("🟢 WhatsApp Web no worker dedicado — API web livre");
+
+    // 🛡️ Watchdog do pipeline WhatsApp — roda aqui porque este é o processo
+    // que de fato sobe em produção (crm-backend). workers/startWorkers.js
+    // também chama isso, mas não é o Start Command real do crm-worker
+    // (que é workers/entrypoints/whatsapp-only.js — ver DOMAIN_INVARIANTS.md)
+    startWhatsAppPipelineGuard();
 
     // 👉 CRONS CRÍTICOS HABILITADOS
     if (process.env.ENABLE_CRONS !== 'false') {

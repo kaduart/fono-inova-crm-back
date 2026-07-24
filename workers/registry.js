@@ -49,7 +49,6 @@ import { createChatProjectionWorker } from '../domains/whatsapp/workers/chatProj
 
 // optional safety worker (se existir)
 import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
-import { createWhatsappWebSendWorker } from '../domains/whatsapp/workers/whatsappWebSendWorker.js';
 import { createIntentClassifierWorker } from '../domains/whatsapp/workers/intentClassifierWorker.js';
 import { createFsmRouterWorker } from '../domains/whatsapp/workers/fsmRouterWorker.js';
 
@@ -207,13 +206,6 @@ const GROUPS = {
     // envio de mensagens (ESSENCIAL — sempre ativo)
     workers.push(createWhatsappSendWorker());
     started.push('send');
-
-    // envio via WhatsApp Web.js — consome fila `whatsapp-send` (usada por
-    // POST /api/whatsapp-web/send, chamada hoje pelo app `agenda`)
-    if (isEnabled('ENABLE_WHATSAPP_WEB_SEND', true)) {
-      workers.push(createWhatsappWebSendWorker());
-      started.push('web-send');
-    }
 
     console.log(`[Registry] whatsapp V2 ok (${started.length} workers: ${started.join(', ')})`);
     console.log(`[Registry] Workers ativos: ${JSON.stringify(started)}`);
