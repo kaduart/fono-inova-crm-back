@@ -616,19 +616,61 @@ export async function sendMessage(phone, message) {
     throw new Error(`Número inválido: ${phone}`);
   }
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
+
   try {
-    const numberId = await client.getNumberId(clean);
-    if (!numberId) {
-      throw new Error(`Número ${clean} não possui WhatsApp`);
+    const registered = await client.isRegisteredUser(clean);
+    console.log(`[WhatsAppWeb][DIAG] isRegisteredUser(${clean}): ${registered}`);
+
+    const chatId = `${clean}@c.us`;
+    let chat = null;
+    try {
+      chat = await client.getChatById(chatId);
+    } catch (chatErr) {
+      console.log(`[WhatsAppWeb][DIAG] getChatById(${chatId}) falhou:`, chatErr?.message);
     }
+    console.log(`[WhatsAppWeb][DIAG] getChatById(${chatId}): ${!!chat}`);
+
+    const numberId = await client.getNumberId(clean);
+    console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
+    if (!numberId) {
+      throw new Error(`Número ${clean} não possui WhatsApp (getNumberId retornou null)`);
+    }
+    if (!numberId._serialized) {
+      throw new Error(`Número ${clean} retornou id sem _serialized: ${JSON.stringify(numberId)}`);
+    }
+
+    console.log(`[WhatsAppWeb][DIAG] Tentando sendMessage original...`);
     const result = await client.sendMessage(numberId._serialized, message);
     const messageId = result?.id?._serialized || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
     return { success: true, messageId };
   } catch (err) {
-    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);
-    console.error(err.stack);
-    throw err;
+    const diagnostic = {
+      phone: clean,
+      originalPhone: phone,
+      message: err?.message,
+      name: err?.name,
+      stack: err?.stack,
+      raw: err ? JSON.stringify(err) : null,
+    };
+    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, diagnostic);
+
+    // Diagnóstico: tentar enviar mensagem mínima para isolar problema de conteúdo
+    try {
+      console.log(`[WhatsAppWeb][DIAG] Tentando envio mínimo de teste para ${clean}...`);
+      const minimal = await client.sendMessage(`${clean}@c.us`, 'Teste CRM');
+      console.log(`[WhatsAppWeb][DIAG] Envio mínimo funcionou — ID: ${minimal?.id?._serialized || 'unknown'}`);
+      // Se o mínimo funcionou, o problema era conteúdo/template; ainda assim relança o erro original
+      throw err;
+    } catch (minimalErr) {
+      console.error(`[WhatsAppWeb][DIAG] Envio mínimo também falhou:`, {
+        message: minimalErr?.message,
+        name: minimalErr?.name,
+        stack: minimalErr?.stack,
+        raw: minimalErr ? JSON.stringify(minimalErr) : null,
+      });
+      throw err;
+    }
   }
 }
 
