@@ -22,7 +22,8 @@ import {
   videoGenerationQueue,
   posProducaoQueue,
   postGenerationQueue,
-  doctorQueue
+  doctorQueue,
+  whatsappSendQueue
 } from '../config/bullConfig.js';
 
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
@@ -46,7 +47,8 @@ const allQueues = [
   posProducaoQueue,
   postGenerationQueue,
   doctorQueue,
-  gmbPublishRetryQueue
+  gmbPublishRetryQueue,
+  whatsappSendQueue
 ];
 
 // Remove duplicatas por nome (safety)
