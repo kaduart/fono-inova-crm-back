@@ -371,12 +371,18 @@ Evolução:  Payment.nature / Payment.projectionBehavior → projeção  (sem in
 **Motivo:** incidente 2026-07-24 (fila `whatsapp-send`) — diagnóstico inicial presumiu "sem consumidor" batendo o código com `render.yaml`, gerando um segundo Worker desnecessário. A fila sempre teve consumidor; o `render.yaml` mentia sobre qual arquivo sobe no `crm-worker`. Ver [[project_whatsapp_send_queue_no_consumer_incident]] e itens #24-28 (seção Amanda/WhatsApp) para o caso concreto.
 **Consequência:** antes de declarar uma fila "sem consumidor", checar histórico real (`completed > 0` já prova que existiu consumidor) via admin/health endpoint — não só leitura de código. Ver checklist adicional (itens 7-10) no topo deste arquivo. Mapa de filas → consumidor → entrypoint documentado em `docs/ARQUITETURA_EVENT_DRIVEN.md` (seção "Filas").
 
+### ADR-013: `whatsapp-web.js` como dependência de branch (`#main`, sem lockfile) é dívida técnica conhecida
+**Decisão:** `package.json` fixa `whatsapp-web.js` em `github:wwebjs/whatsapp-web.js#main` — uma branch, não uma tag/commit. Não existe `package-lock.json` no repo, então cada `npm install` (todo deploy) pode resolver um commit diferente do `main`, sem ninguém decidir isso conscientemente.
+**Motivo:** incidente 2026-07-24 — todo envio via WhatsApp Web passou a falhar com erro `r: r` (stack trace localizado em `Client.sendMessage` → Puppeteer `ExecutionContext.evaluate`), causado por mudança recente do próprio WhatsApp Web quebrando a lib (confirmado via issue externa idêntica: [wwebjs/whatsapp-web.js#201838](https://github.com/wwebjs/whatsapp-web.js/issues/201838)). Sem lockfile, não dá pra saber com certeza qual commit está em produção nem reproduzir o bug localmente de forma confiável.
+**Consequência (não implementado ainda — registrar como dívida técnica pendente):** fixar em tag/commit SHA específico assim que possível; considerar adicionar `package-lock.json` ao repo (hoje ausente até para as demais dependências, não só essa). Até lá, qualquer investigação de bug de WhatsApp Web deve começar checando se há commit novo relevante no `main` do repo da lib antes de assumir causa interna.
+
 ---
 
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
+| 2026-07-24 | ADR-013: whatsapp-web.js pinado em branch #main sem lockfile é dívida técnica — causa raiz real do incidente de envio era mudança do próprio WhatsApp Web quebrando a lib (issue externa confirmada), não bug nosso |
 | 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
