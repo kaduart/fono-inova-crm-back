@@ -95,7 +95,10 @@ WhatsApp Web (Puppeteer)
 Consumido por: `whatsapp-child.js`, forkado por `whatsapp-only.js`.
 **Roda no serviço `crm-worker`, cujo Start Command real é `node workers/entrypoints/whatsapp-only.js`** — confirmar sempre no dashboard do Render (Settings → Start Command), não no `render.yaml`, que sugere `workers/startWorkers.js` mas não é 1:1 com o que está configurado manualmente.
 
-**Pipeline 2 — Evolution API (pipeline V2 orientado a eventos, Amanda):**
+**Pipeline 2 — pipeline V2 orientado a eventos (Amanda):**
+
+⚠️ **Correção 2026-07-24:** este pipeline foi documentado (nesta seção, no mesmo dia) como indo para "Evolution API" — **isso está errado**, confirmado por leitura do código real (estudo de migração, mesmo incidente). `whatsappService.sendTextMessage()` **não chama nenhum serviço Evolution API** — não existe client HTTP, `EVOLUTION_API_URL`/`EVOLUTION_API_KEY` ou qualquer integração desse tipo no repo. Na prática ele cai de volta no `whatsappWebJsService` (mesma tecnologia do Pipeline 1) ou usa um fallback VPS (`whatsappVPSService.js`, também `whatsapp-web.js`/Puppeteer, só que em outro processo). "Evolution API" era uma referência aspiracional num comentário do código, nunca implementada. Ver ADR-013 e `project_whatsapp_send_queue_no_consumer_incident` (memória) para o histórico completo desse erro de documentação.
+
 ```
 Eventos do CRM (WHATSAPP_MESSAGE_REQUESTED)
         │
@@ -109,7 +112,8 @@ createWhatsappSendWorker()     (domains/whatsapp/workers/whatsappSendWorker.js)
 whatsappService.sendTextMessage()
         │
         ▼
-Evolution API
+whatsappWebJsService (WhatsApp Web) — mesmo backend do Pipeline 1 —
+   ou fallback whatsappVPSService.js (VPS externo, também whatsapp-web.js)
 ```
 Consumido por: `workers/registry.js` (grupo `whatsapp`), carregado por `workers/startWorkers.js` — hoje só usado em modos `dev:worker*`/`dev:isolated*`, não é o Start Command do `crm-worker` em produção (ver Pipeline 1). Se um dia esses dois entrypoints forem unificados, checar que a fila `whatsapp-send` não ganhe um segundo consumidor.
 
