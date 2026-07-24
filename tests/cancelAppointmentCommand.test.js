@@ -26,7 +26,7 @@ vi.mock('../models/Appointment.js', () => ({
   default: { findById: vi.fn(), findByIdAndUpdate: vi.fn() },
 }));
 vi.mock('../models/Payment.js', () => ({
-  default: { findById: vi.fn(), findByIdAndUpdate: vi.fn() },
+  default: { find: vi.fn(), findById: vi.fn(), findByIdAndUpdate: vi.fn() },
 }));
 vi.mock('../models/Session.js', () => ({
   default: { findById: vi.fn() },
@@ -68,6 +68,14 @@ function makeSessionDoc(overrides = {}) {
   };
 }
 
+function mockPaymentFind(payments) {
+  Payment.find.mockReturnValue({
+    session: vi.fn().mockReturnValue({
+      lean: vi.fn().mockResolvedValue(payments)
+    })
+  });
+}
+
 function makeAppointment(overrides = {}) {
   return {
     _id: 'appt-1',
@@ -87,6 +95,7 @@ function makeAppointment(overrides = {}) {
 describe('cancelAppointmentCommand.executeWithSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Payment.find.mockReturnValue({ session: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }) });
     Payment.findByIdAndUpdate.mockResolvedValue(true);
     Package.findByIdAndUpdate.mockResolvedValue(true);
     mockAppointmentUpdate(makeAppointment({ operationalStatus: 'canceled' }));
@@ -133,9 +142,9 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     const appt = makeAppointment({ payment: 'pay-1' });
     mockAppointmentFindById(appt);
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
-    Payment.findById.mockReturnValue({
-      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'paid', kind: 'package_receipt' }),
-    });
+    mockPaymentFind([
+      { _id: 'pay-1', status: 'paid', kind: 'package_receipt' }
+    ]);
 
     await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
 
@@ -146,9 +155,9 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     const appt = makeAppointment({ serviceType: 'session', package: null, payment: 'pay-1' });
     mockAppointmentFindById(appt);
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
-    Payment.findById.mockReturnValue({
-      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'paid', kind: 'appointment_payment' }),
-    });
+    mockPaymentFind([
+      { _id: 'pay-1', status: 'paid', kind: 'appointment_payment' }
+    ]);
 
     await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
 
@@ -156,6 +165,32 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     expect(Package.findByIdAndUpdate).not.toHaveBeenCalled();
     // avulso: Payment não-package_receipt é cancelado normalmente
     expect(Payment.findByIdAndUpdate).toHaveBeenCalled();
+  });
+
+  it('cancela TODOS os Payments ativos vinculados à mesma session, não apenas appointment.payment', async () => {
+    const appt = makeAppointment({
+      serviceType: 'session',
+      package: null,
+      session: { _id: 'session-duplicada' },
+      payment: 'pay-legado'
+    });
+    mockAppointmentFindById(appt);
+    Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc({ _id: 'session-duplicada' })) });
+
+    // appointment.payment aponta para pay-legado (cancelado), mas a query por
+    // Payments ativos da mesma session retorna pay-ativo — que deve ser cancelado.
+    mockPaymentFind([
+      { _id: 'pay-ativo', status: 'pending', kind: 'session_payment' },
+    ]);
+
+    await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
+
+    const cancelledIds = Payment.findByIdAndUpdate.mock.calls
+      .filter(c => c[1].$set?.status === 'canceled')
+      .map(c => c[0]);
+
+    expect(cancelledIds).toContain('pay-ativo');
+    expect(cancelledIds).toHaveLength(1);
   });
 
   it('idempotência: appointment já canceled retorna sem tocar em Session/Payment/Package', async () => {

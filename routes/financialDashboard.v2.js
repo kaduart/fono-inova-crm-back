@@ -30,6 +30,7 @@ import Package from '../models/Package.js';
 import unifiedFinancialService, { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
 import { logMetric } from '../utils/logMetric.js';
+import { classifyConvenioPayments } from '../scripts/audits/lib/classifica-payments-convenio.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -2618,6 +2619,27 @@ router.get('/base-recorrente', auth, authorize(['admin', 'secretary']), async (r
         });
     } catch (err) {
         console.error('[DashboardV2] Erro /base-recorrente:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /v2/financial/audits/convenio-payments-review-count
+// Retorna contadores da classificação de Payments de convênio para revisão.
+// Usado pelo dashboard administrativo para manter casos manuais no radar.
+router.get('/audits/convenio-payments-review-count', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { groups } = await classifyConvenioPayments();
+        return res.json({
+            success: true,
+            data: {
+                acaoSegura: groups.acaoSegura.length,
+                revisaoManual: groups.revisaoManual.length,
+                decisaoNegocio: groups.decisaoNegocio.length,
+                naoTocar: groups.naoTocar.length
+            }
+        });
+    } catch (err) {
+        console.error('[DashboardV2] Erro /audits/convenio-payments-review-count:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });

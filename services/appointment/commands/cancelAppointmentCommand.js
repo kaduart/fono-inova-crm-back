@@ -55,26 +55,38 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
     return appointment;
   }
 
-  // Cancelar Payment quando aplicável
-  if (appointment.payment) {
-    const pay = await Payment.findById(appointment.payment).session(session);
-    if (pay && pay.status !== 'canceled') {
-      // Cancela pagamentos avulsos e outros, exceto recibos de pacote já quitados
-      const shouldCancel = pay.kind !== 'package_receipt';
-      if (shouldCancel) {
-        await Payment.findByIdAndUpdate(
-          appointment.payment,
-          {
-            $set: {
-              status: 'canceled',
-              canceledAt: new Date(),
-              canceledReason: reason,
-              updatedAt: new Date(),
-            },
+  // Cancelar TODOS os Payments ativos vinculados à sessão/appointment.
+  // Apenas cancelar appointment.payment deixa "fantasmas" quando existem
+  // duplicatas históricas (legado) ou quando appointment.payment aponta para
+  // um registro diferente do Payment ativo real da session.
+  const activePaymentFilter = {
+    $or: [
+      { session: appointment.session },
+      { appointment: appointment._id }
+    ],
+    status: { $nin: ['canceled', 'cancelled', 'refunded'] }
+  };
+  const activePayments = appointment.session || appointment._id
+    ? await Payment.find(activePaymentFilter).session(session).lean()
+    : [];
+
+  for (const pay of activePayments) {
+    // Cancela pagamentos avulsos e outros, exceto recibos de pacote já quitados
+    const shouldCancel = pay.kind !== 'package_receipt';
+    if (shouldCancel) {
+      await Payment.findByIdAndUpdate(
+        pay._id,
+        {
+          $set: {
+            status: 'canceled',
+            canceledAt: new Date(),
+            canceledReason: reason,
+            updatedAt: new Date(),
           },
-          { session }
-        );
-      }
+        },
+        { session }
+      );
+      console.log(`[cancelAppointmentCommand] Payment cancelado: ${pay._id}`);
     }
   }
 
