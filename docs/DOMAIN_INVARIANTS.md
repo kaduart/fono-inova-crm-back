@@ -388,7 +388,11 @@ Diff conferido manualmente antes de aplicar: só adiciona fallback `_serialized 
 
 **Tarefa de retorno (não fechar até acontecer):** quando a PR #201832 for mesclada no `main` oficial, trocar `lindionez/whatsapp-web.js#f4ea1e3...` de volta para `wwebjs/whatsapp-web.js#<novo-sha-oficial>` — o fork pessoal é ponte, não destino final. Auditoria futura que encontrar esse fork sem essa nota já sabe o motivo.
 
-**Consequência:** `package-lock.json` ainda não existe no repo — o sandbox onde essa investigação rodou não tem acesso à internet pra gerar o lockfile (`npm install --package-lock-only` travou/timeout); precisa ser gerado num ambiente com acesso real (local do usuário ou build do Render) e commitado. Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra número normal, (3) enviar pra contato com LID, (4) conferir retorno de `sendMessage()`, (5) checar logs sem `Cannot read properties of undefined`. Quando a PR mesclar oficialmente: atualizar o SHA pro oficial, testar de novo, remover a nota de "fork temporário" daqui.
+**Consequência:** `package-lock.json` ainda não existe no repo `back` — o projeto é um **monorepo com npm workspaces** (`/home/user/projetos/crm` na raiz), então `node_modules`/`package-lock.json` reais ficam fora de `back/`, numa pasta que não é repositório git. Isso não bloqueia o deploy: o Render clona só o `back` isoladamente e gera seu próprio lockfile no build a partir do `package.json` já commitado — o pin por SHA garante determinismo mesmo sem lockfile local. Gerar/commitar um `package-lock.json` dentro do repo `back` (dívida técnica geral, não urgente) fica pra outra sessão.
+
+**Pipeline validado por rastreamento de código (não suposição):** o botão "Confirmar agendamento" do app `agenda` (`AppointmentRow.jsx` → `sendViaExtension()` → `POST /api/whatsapp-web/send`) usa exatamente este pipeline corrigido — confirmado lendo o código, não assumido.
+
+Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra número normal, (3) enviar pra contato com LID, (4) conferir retorno de `sendMessage()`, (5) checar logs sem `Cannot read properties of undefined`. Quando a PR mesclar oficialmente: atualizar o SHA pro oficial, testar de novo, remover a nota de "fork temporário" daqui.
 
 ---
 
