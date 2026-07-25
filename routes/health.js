@@ -577,6 +577,12 @@ router.get('/whatsapp', async (req, res) => {
         const stateAgeMs = persisted?.updatedAt ? Date.now() - new Date(persisted.updatedAt).getTime() : Infinity;
         const stateStale = stateAgeMs > 120_000; // considera stale se mais velho que 2min
 
+        if (!persisted) {
+            console.warn('[Health][WhatsApp] Nenhum documento WhatsAppWebState encontrado no MongoDB.');
+        } else if (stateStale) {
+            console.warn(`[Health][WhatsApp] Documento WhatsAppWebState está stale: ${Math.round(stateAgeMs / 1000)}s`);
+        }
+
         // Fallback para estado local quando não há persisted ou está stale
         const local = whatsappState;
         const effective = {

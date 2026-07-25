@@ -619,6 +619,10 @@ export async function initWhatsAppClient() {
   initAttempts++;
   console.log(`[WhatsAppWeb] 🚀 Inicializando... (tentativa ${initAttempts}/${MAX_INIT_ATTEMPTS})`);
 
+  // Atualiza estado periodicamente desde o início, não só após ready
+  if (stateSaveInterval) clearInterval(stateSaveInterval);
+  stateSaveInterval = setInterval(() => saveState(), 30_000);
+
   // ─── DIAGNÓSTICO COMPLETO ───────────────────────────────────────────────────
   const chromePath = resolveChromePath();
   console.log('[WhatsAppWeb][DIAG] Chrome path resolvido:', chromePath || 'NULL — usando default do puppeteer');
