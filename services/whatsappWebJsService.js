@@ -21,6 +21,7 @@ import mongoose from 'mongoose';
 import qrcode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { normalizeE164BR } from '../utils/phone.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
@@ -183,6 +184,16 @@ function createClient() {
     }
   } catch (e) {
     console.warn('[WhatsAppWeb] Não foi possível criar authPath:', e.message);
+  }
+
+  // Diagnóstico de armazenamento
+  try {
+    const du = execSync(`du -sh ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
+    const df = execSync(`df -h ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
+    console.log(`[WhatsAppWeb][DIAG] Storage — sessão: ${du}`);
+    console.log(`[WhatsAppWeb][DIAG] Storage — disco:\n${df}`);
+  } catch (e) {
+    console.warn('[WhatsAppWeb][DIAG] Não foi possível verificar storage:', e.message);
   }
 
   const puppeteerOpts = {
@@ -414,14 +425,18 @@ function createClient() {
 export async function initWhatsAppClient() {
   console.log(`[WhatsAppWeb] 📂 Auth path: ${authPath}`);
 
-  // 🧨 LIMPEZA DE SESSÃO DESATIVADA por padrão — sessão deve persistir no disco.
-  // Para forçar limpeza manual: definir WHATSAPP_FORCE_CLEAN_SESSION='true' E WHATSAPP_ALLOW_CLEAN='true'
-  if (process.env.WHATSAPP_FORCE_CLEAN_SESSION === 'true' && process.env.WHATSAPP_ALLOW_CLEAN === 'true') {
+  // 🧨 LIMPEZA DE SESSÃO: definir WHATSAPP_FORCE_CLEAN_SESSION='true' no dashboard.
+  const forceCleanRaw = String(process.env.WHATSAPP_FORCE_CLEAN_SESSION || '').toLowerCase();
+  const forceClean = ['true', '1', 'yes'].includes(forceCleanRaw);
+  console.log(`[WhatsAppWeb][DIAG] FORCE_CLEAN env=${process.env.WHATSAPP_FORCE_CLEAN_SESSION} parsed=${forceClean}`);
+
+  if (forceClean) {
     console.log('[WhatsAppWeb] 🧨 LIMPEZA MANUAL autorizada — removendo sessão...');
     const targets = [
       path.join(authPath, '.wwebjs_auth'),
       path.join(authPath, '.booting'),
       path.join(authPath, '.crash-log.json'),
+      path.join(authPath, 'session'),
       path.join(process.cwd(), '.wwebjs_cache'),
     ];
     for (const t of targets) {
