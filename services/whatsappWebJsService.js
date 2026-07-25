@@ -897,91 +897,50 @@ export async function sendMessage(phone, message) {
     console.log(`[WhatsAppWeb][PERF] ${label}: ${Date.now() - since}ms`);
   }
 
+  let chatId = `${clean}@c.us`;
+  let resolvedVia = 'fallback';
+
   try {
-    // getNumberId pode travar quando o Chromium está lento — timeout curto + retry
+    // Tenta resolver o número via getNumberId. Se travar (timeout), usa fallback direto.
+    // O fallback evita que um getNumberId congelado pare a fila inteira.
     const t1 = Date.now();
-    const numberId = await retryWithBackoff(
-      () => withTimeout(client.getNumberId(clean), 30_000, `getNumberId(${clean})`),
-      { retries: 2, delayMs: 2000, label: `getNumberId(${clean})` }
-    );
-    elapsed(`getNumberId(${clean})`, t1);
-    if (sendDiagnostics) {
-      console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
-    }
+    try {
+      const numberId = await withTimeout(client.getNumberId(clean), 15_000, `getNumberId(${clean})`);
+      elapsed(`getNumberId(${clean})`, t1);
+      if (sendDiagnostics) {
+        console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
+      }
 
-    // Se o WhatsApp retornou LID, resolvemos o PN associado.
-    let chatId;
-    if (numberId?._serialized?.endsWith('@lid')) {
-      const tLid = Date.now();
-      try {
-        const lidAndPhone = await withTimeout(
-          client.getContactLidAndPhone([numberId._serialized]),
-          30_000,
-          `getContactLidAndPhone(${numberId._serialized})`
-        );
-        elapsed('resolveLID', tLid);
-        if (sendDiagnostics) {
-          console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
+      if (numberId?._serialized?.endsWith('@lid')) {
+        const tLid = Date.now();
+        try {
+          const lidAndPhone = await withTimeout(
+            client.getContactLidAndPhone([numberId._serialized]),
+            15_000,
+            `getContactLidAndPhone(${numberId._serialized})`
+          );
+          elapsed('resolveLID', tLid);
+          const pn = lidAndPhone?.[0]?.pn;
+          if (pn) {
+            chatId = pn;
+            resolvedVia = 'lid-pn';
+          } else {
+            console.warn(`[WhatsAppWeb] LID encontrado (${numberId._serialized}) mas PN não resolvido — usando fallback ${chatId}`);
+          }
+        } catch (lidErr) {
+          console.warn(`[WhatsAppWeb] Falha ao resolver PN para LID ${numberId._serialized}: ${lidErr?.message} — usando fallback ${chatId}`);
         }
-        const pn = lidAndPhone?.[0]?.pn;
-        if (pn) {
-          chatId = pn;
-        } else {
-          throw new Error(`LID encontrado (${numberId._serialized}) mas PN não resolvido`);
-        }
-      } catch (lidErr) {
-        throw new Error(`Falha ao resolver PN para LID ${numberId._serialized}: ${lidErr?.message}`);
+      } else if (numberId?._serialized) {
+        chatId = numberId._serialized;
+        resolvedVia = 'number-id';
       }
-    } else if (numberId?._serialized) {
-      chatId = numberId._serialized;
-    } else {
-      chatId = `${clean}@c.us`;
-    }
-    if (sendDiagnostics) {
-      console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
+    } catch (resolveErr) {
+      elapsed(`getNumberId(${clean}) timeout/falha`, t1);
+      console.warn(`[WhatsAppWeb] getNumberId(${clean}) travou (${resolveErr?.message}). Usando envio direto para ${chatId}.`);
     }
 
-    // Diagnósticos opcionais: só rodam se WHATSAPP_SEND_DIAGNOSTICS=true.
-    // Evitam carregar o Chromium no caminho feliz de envio em massa.
     if (sendDiagnostics) {
-      try {
-        const state = await withTimeout(client.getState(), 8_000, 'getState()');
-        console.log(`[WhatsAppWeb][DIAG] Client state:`, state);
-        console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
-      } catch (infoErr) {
-        console.log(`[WhatsAppWeb][DIAG] Não foi possível logar client state/info:`, infoErr?.message);
-      }
-
-      try {
-        const chats = await withTimeout(client.getChats(), 10_000, 'getChats()');
-        console.log(`[WhatsAppWeb][DIAG] getChats():`, { count: chats.length, sample: chats.slice(0, 3).map(c => c.id?._serialized) });
-      } catch (chatsErr) {
-        console.error(`[WhatsAppWeb][DIAG] getChats() falhou:`, {
-          message: chatsErr?.message,
-          name: chatsErr?.name,
-          stack: chatsErr?.stack,
-          raw: chatsErr ? JSON.stringify(chatsErr) : null,
-        });
-      }
-
-      try {
-        const contact = await withTimeout(client.getContactById(chatId), 10_000, `getContactById(${chatId})`);
-        console.log(`[WhatsAppWeb][DIAG] getContactById(${chatId}):`, {
-          id: contact?.id?._serialized,
-          number: contact?.number,
-          isBusiness: contact?.isBusiness,
-          name: contact?.name,
-        });
-      } catch (contactErr) {
-        console.error(`[WhatsAppWeb][DIAG] getContactById(${chatId}) falhou:`, contactErr?.message);
-      }
-
-      try {
-        const chatDiag = await withTimeout(diagnosticGetChatById(chatId), 10_000, `diagnosticGetChatById(${chatId})`);
-        console.log(`[WhatsAppWeb][DIAG] diagnosticGetChatById:`, chatDiag);
-      } catch (chatErr) {
-        console.error(`[WhatsAppWeb][DIAG] diagnosticGetChatById(${chatId}) falhou:`, chatErr?.message);
-      }
+      console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId} (via ${resolvedVia})`);
     }
 
     const tSend = Date.now();
@@ -995,7 +954,7 @@ export async function sendMessage(phone, message) {
     }
     const messageId = result.msgId || 'unknown';
     elapsed('total', startTotal);
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} (${resolvedVia}) — ID: ${messageId}`);
     return { success: true, messageId, chatId };
   } catch (err) {
     elapsed('total (erro)', startTotal);
