@@ -289,7 +289,7 @@ function createClient() {
 
   const puppeteerOpts = {
     headless: 'new',
-    protocolTimeout: 120_000,
+    protocolTimeout: 300_000, // 5min — dá margem para operações lentas do WhatsApp Web
     handleSIGINT: false,
     handleSIGTERM: false,
     handleSIGHUP: false,
@@ -303,6 +303,9 @@ function createClient() {
         '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
@@ -845,6 +848,33 @@ async function diagnosticSendMessage(chatId, content) {
   }, chatId, content);
 }
 
+// ─── Helpers de timeout/retry ────────────────────────────────────────────────
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} (${ms}ms)`)), ms)
+    ),
+  ]);
+}
+
+async function retryWithBackoff(fn, { retries = 2, delayMs = 2000, label = 'op' } = {}) {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isTimeout = err?.message?.includes('timed out') || err?.message?.includes('Timeout');
+      if (!isTimeout || i === retries) throw err;
+      const wait = delayMs * (i + 1);
+      console.log(`[WhatsAppWeb][RETRY] ${label} falhou (${err?.message}) — tentativa ${i + 1}/${retries + 1} em ${wait}ms...`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
 export async function sendMessage(phone, message) {
   if (!isReady || !client) {
@@ -857,7 +887,11 @@ export async function sendMessage(phone, message) {
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
 
   try {
-    const numberId = await client.getNumberId(clean);
+    // getNumberId pode travar quando o Chromium está lento — timeout curto + retry
+    const numberId = await retryWithBackoff(
+      () => withTimeout(client.getNumberId(clean), 30_000, `getNumberId(${clean})`),
+      { retries: 2, delayMs: 2000, label: `getNumberId(${clean})` }
+    );
     console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
 
     // Se o WhatsApp retornou LID, resolvemos o PN associado.
@@ -866,7 +900,11 @@ export async function sendMessage(phone, message) {
     let chatId;
     if (numberId?._serialized?.endsWith('@lid')) {
       try {
-        const lidAndPhone = await client.getContactLidAndPhone([numberId._serialized]);
+        const lidAndPhone = await withTimeout(
+          client.getContactLidAndPhone([numberId._serialized]),
+          30_000,
+          `getContactLidAndPhone(${numberId._serialized})`
+        );
         console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
         const pn = lidAndPhone?.[0]?.pn;
         if (pn) {
@@ -889,15 +927,17 @@ export async function sendMessage(phone, message) {
     console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
 
     // Instrumentação: verifica estado do cliente, store e contato antes de enviar
+    // Usa timeout curto para não bloquear o envio se o Chromium estiver lento
     try {
-      console.log(`[WhatsAppWeb][DIAG] Client state:`, await client.getState());
+      const state = await withTimeout(client.getState(), 8_000, 'getState()');
+      console.log(`[WhatsAppWeb][DIAG] Client state:`, state);
       console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
     } catch (infoErr) {
       console.log(`[WhatsAppWeb][DIAG] Não foi possível logar client state/info:`, infoErr?.message);
     }
 
     try {
-      const chats = await client.getChats();
+      const chats = await withTimeout(client.getChats(), 10_000, 'getChats()');
       console.log(`[WhatsAppWeb][DIAG] getChats():`, { count: chats.length, sample: chats.slice(0, 3).map(c => c.id?._serialized) });
     } catch (chatsErr) {
       console.error(`[WhatsAppWeb][DIAG] getChats() falhou:`, {
@@ -909,7 +949,7 @@ export async function sendMessage(phone, message) {
     }
 
     try {
-      const contact = await client.getContactById(chatId);
+      const contact = await withTimeout(client.getContactById(chatId), 10_000, `getContactById(${chatId})`);
       console.log(`[WhatsAppWeb][DIAG] getContactById(${chatId}):`, {
         id: contact?.id?._serialized,
         number: contact?.number,
@@ -927,7 +967,7 @@ export async function sendMessage(phone, message) {
 
     try {
       console.log(`[WhatsAppWeb][DIAG] Verificando chat ${chatId}...`);
-      const chatDiag = await diagnosticGetChatById(chatId);
+      const chatDiag = await withTimeout(diagnosticGetChatById(chatId), 10_000, `diagnosticGetChatById(${chatId})`);
       console.log(`[WhatsAppWeb][DIAG] diagnosticGetChatById:`, chatDiag);
     } catch (chatErr) {
       console.error(`[WhatsAppWeb][DIAG] diagnosticGetChatById(${chatId}) falhou:`, {
@@ -938,7 +978,10 @@ export async function sendMessage(phone, message) {
       });
     }
 
-    const result = await diagnosticSendMessage(chatId, message);
+    const result = await retryWithBackoff(
+      () => withTimeout(diagnosticSendMessage(chatId, message), 60_000, `diagnosticSendMessage(${chatId})`),
+      { retries: 1, delayMs: 3000, label: `diagnosticSendMessage(${chatId})` }
+    );
     if (!result.ok) {
       throw new Error(`diagnosticSendMessage falhou: ${JSON.stringify(result.error)}`);
     }
