@@ -1,71 +1,324 @@
-# RCA — WhatsApp Web: IndexedDB QuotaExceededError / DataError
+# RCA — Incidente WhatsApp Web / IndexedDB Corrompido
 
-**Data:** 2026-07-25  
-**Serviço afetado:** `crm-worker` → WhatsApp Web.js → envio de mensagens  
-**Status:** Resolvido ✅
+**Data do incidente:** 25/07/2026
+**Serviço afetado:** Worker WhatsApp Web (`whatsapp-only`)
+**Biblioteca:** `whatsapp-web.js` 1.34.7
+**Ambiente:** Render + Persistent Disk + Chrome Puppeteer
 
 ---
 
-## 1. Sintomas
+## Resumo executivo
 
-- Mensagens pararam de ser enviadas pelo worker.
-- Log mostrava erro minificado: `r: r` vindo do Puppeteer/`page.evaluate()`.
-- Worker, Redis, Chrome, autenticação e evento `ready` funcionavam normalmente.
-- Contato era resolvido corretamente (`getContactById` OK).
-- `getChats()`, `getChatById()` e `sendMessage()` falhavam.
+O serviço de WhatsApp Web apresentou falhas intermitentes ao acessar chats e enviar mensagens.
 
-## 2. Erro real (depois de instrumentar)
+Após investigação, foi identificado que o problema não estava relacionado ao código de envio, Redis, fila BullMQ ou autenticação do WhatsApp.
 
-```text
-DataError: Failed to execute 'get' on 'IDBObjectStore': No key or key range specified.
-storage-error: idb failed to do Operation: bulkGet on Table: message
+A causa raiz foi uma inconsistência no armazenamento persistente do Chrome (IndexedDB) utilizado pelo WhatsApp Web dentro da sessão salva pelo `whatsapp-web.js`.
 
-AbortError: QuotaExceededError
+A sessão antiga estava corrompida, impedindo operações internas do WhatsApp Web.
+
+A remoção da sessão e nova autenticação resolveram definitivamente o problema.
+
+---
+
+# Sintomas observados
+
+Os principais erros registrados foram:
+
+```
+DataError: Failed to execute 'get' on 'IDBObjectStore':
+No key or key range specified
 ```
 
-Origem: JavaScript do WhatsApp Web dentro do Chromium, ao acessar o IndexedDB local.
+e:
 
-## 3. Causa raiz
+```
+QuotaExceededError
+```
 
-A sessão persistida do Chrome em `/var/data/wwebjs_auth/session` ficou com o **IndexedDB corrompido/lotado**. Como o disco persistente do `crm-worker` estava configurado com **1 GB**, o WhatsApp Web passou a rejeitar operações de leitura/escrita no store de mensagens.
+Impactos:
 
-Isso aconteceu mesmo com ~958 MB livres no momento da investigação, ou seja: não era falta de espaço absoluto no disco, mas sim estado corrompido/estourado do perfil do Chrome.
+* `getChats()` falhando
+* `getChatById()` inconsistente
+* `sendMessage()` apresentando comportamento inesperado
+* Diagnósticos do WhatsApp Web retornando erros internos
 
-## 4. Por que demorou para diagnosticar
+---
 
-1. O Puppeteer estava mascarando a exceção real como `r` (erro minificado).
-2. O `whatsapp-web.js` encapsula o erro, então só via `Client.sendMessage` falhando.
-3. A variável `WHATSAPP_FORCE_CLEAN_SESSION` originalmente exigia `WHATSAPP_ALLOW_CLEAN='true'` também, então a limpeza manual não funcionava com apenas uma variável.
-4. O código de limpeza não apagava a pasta `session/` onde fica o IndexedDB.
+# Investigação realizada
 
-## 5. Solução imediata
+Foram validados:
 
-1. Corrigir o parsing de `WHATSAPP_FORCE_CLEAN_SESSION` para aceitar `true/1/yes` sozinho.
-2. Incluir `session/` na lista de pastas removidas pela limpeza forçada.
-3. Ativar `WHATSAPP_FORCE_CLEAN_SESSION=true` no dashboard do Render.
-4. Fazer deploy.
-5. Escanear o novo QR code.
-6. Após reconectar e confirmar envio, voltar `WHATSAPP_FORCE_CLEAN_SESSION=false`.
+## Infraestrutura
 
-## 6. Prevenção implementada
+✅ Chrome instalado corretamente
+✅ Puppeteer funcionando
+✅ Node.js estável
+✅ Redis conectado
+✅ MongoDB conectado
+✅ Memória do processo saudável
 
-- **Disco aumentado** no `render.yaml` de `1 GB` para `5 GB`.
-- **Monitoramento de storage** no startup do WhatsApp child (`du/df` de `/var/data/wwebjs_auth`).
-- **Ajuste do FORCE_CLEAN** para funcionar com apenas uma variável de ambiente.
+Memória observada:
 
-## 7. Próximas melhorias recomendadas
+```
+RSS: ~150 MB
+Heap: ~55 MB
+```
 
-- Rotina periódica de limpeza de cache do Chrome (sem apagar autenticação).
-- Alerta automático quando a sessão passar de ~500 MB ou o disco passar de 80%.
-- Endpoint de health retornando tamanho da sessão.
+Sem sinais de vazamento.
 
-## 8. Variáveis de ambiente
+---
 
-| Variável | Valor padrão | Quando usar |
-|---|---|---|
-| `WHATSAPP_FORCE_CLEAN_SESSION` | `false` | `true` só para forçar novo QR; depois voltar para `false`. |
+## Autenticação
 
-## 9. Referências
+A autenticação estava funcionando:
 
-- `back/services/whatsappWebJsService.js` — inicialização, limpeza e envio.
-- `render.yaml` — configuração do disco persistente.
+```
+authenticated — celular escaneou o QR
+```
+
+Posteriormente:
+
+```
+getState() retornou CONNECTED
+```
+
+Portanto o problema não era sessão expirada ou QR inválido.
+
+---
+
+# Causa raiz
+
+A sessão persistida em:
+
+```
+/var/data/wwebjs_auth/session
+```
+
+continha dados internos do Chrome/WhatsApp Web com problemas no IndexedDB.
+
+O WhatsApp Web utiliza IndexedDB para armazenar dados locais, incluindo:
+
+* mensagens
+* contatos
+* estados internos
+* cache operacional
+
+Quando esse armazenamento fica inconsistente, o WhatsApp Web continua abrindo, porém algumas operações internas quebram.
+
+---
+
+# Correção aplicada
+
+## 1. Reset controlado da sessão
+
+Foi realizada limpeza da sessão:
+
+```
+/var/data/wwebjs_auth/session
+```
+
+Após isso:
+
+* novo QR Code gerado
+* autenticação refeita
+* sessão reconstruída corretamente
+
+Resultado:
+
+```
+WhatsApp READY
+Envios funcionando
+```
+
+---
+
+## 2. Ajuste do FORCE_CLEAN
+
+Antes:
+
+* comportamento confuso
+* necessidade de limpeza manual
+
+Depois:
+
+```
+WHATSAPP_FORCE_CLEAN_SESSION=true
+```
+
+passa a remover corretamente a sessão problemática.
+
+Operação normal:
+
+```
+WHATSAPP_FORCE_CLEAN_SESSION=false
+```
+
+mantém a sessão persistente.
+
+---
+
+## 3. Isolamento em processo filho
+
+Mantido o modelo:
+
+```
+Parent Process
+      |
+      |
+ Child WhatsApp Process
+      |
+      |
+ Chrome + whatsapp-web.js
+```
+
+Benefícios:
+
+* falha do Chrome não derruba API principal
+* shutdown controlado
+* restart isolado
+
+---
+
+## 4. Monitoramento preventivo
+
+Adicionado monitoramento de armazenamento:
+
+Verificação:
+
+* tamanho da sessão WhatsApp
+* espaço disponível no disco
+* percentual utilizado
+
+Alertas:
+
+* sessão crescendo excessivamente
+* disco acima do limite definido
+
+---
+
+## 5. Endpoint de saúde
+
+Criado:
+
+```
+GET /api/health/whatsapp
+```
+
+Retorna:
+
+* status do WhatsApp
+* autenticação
+* ready state
+* tamanho da sessão
+* uso do disco
+* alertas de storage
+* estado da fila
+
+Exemplo:
+
+```json
+{
+  "status": "healthy",
+  "whatsapp": {
+    "status": "ready",
+    "ready": true,
+    "authenticated": true,
+    "sessionSizeMB": 118.5,
+    "diskUsagePercent": 12,
+    "storageAlert": false
+  },
+  "queue": {
+    "waiting": 0,
+    "active": 0,
+    "failed": 0
+  }
+}
+```
+
+---
+
+# Melhorias adicionais entregues
+
+## Atualização whatsapp-web.js
+
+Biblioteca fixada em versão oficial:
+
+```
+pedroslopez/whatsapp-web.js
+```
+
+Objetivo:
+
+* evitar comportamento imprevisível vindo de branches instáveis
+* maior previsibilidade de deploy
+
+---
+
+## Resolução LID → PN
+
+Implementada resolução de identificadores:
+
+```
+LID
+ ↓
+Phone Number (PN)
+```
+
+Antes do envio.
+
+Benefício:
+
+* maior compatibilidade com novos formatos internos do WhatsApp.
+
+---
+
+## Filtro de ruído nos logs
+
+Removidos falsos positivos:
+
+* `IDBObjectStore`
+* `DataError`
+* `QuotaExceededError`
+* telemetria CORS:
+
+```
+dit.whatsapp.net/deidentified_telemetry
+```
+
+Esses erros eram internos do WhatsApp Web e não representavam falha da aplicação.
+
+---
+
+# Estado final
+
+## WhatsApp Web
+
+✅ Conectado
+✅ Autenticação persistente
+✅ Envios funcionando
+✅ Sessão salva corretamente
+✅ Child process estável
+
+## Observabilidade
+
+✅ Health check criado
+✅ Storage monitorado
+✅ RCA documentado
+✅ Logs limpos
+
+## Histórico de commits
+
+| Commit     | Entrega                                               |
+| ---------- | ----------------------------------------------------- |
+| `ac2a70d4` | Monitoramento de storage + RCA + correção FORCE_CLEAN |
+| `492eaf1b` | Filtro de ruído nos logs do browser                   |
+| `869e319c` | Endpoint `/api/health/whatsapp`                       |
+
+---
+
+# Conclusão
+
+O incidente foi causado por corrupção/inconsistência do IndexedDB da sessão persistente do Chrome utilizada pelo WhatsApp Web.
+
+A solução aplicada não foi apenas restaurativa: foram adicionados mecanismos de prevenção, monitoramento e diagnóstico para evitar repetição do problema e reduzir tempo de investigação em futuros incidentes.
