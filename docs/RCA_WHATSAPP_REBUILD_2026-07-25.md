@@ -2,20 +2,21 @@
 
 **Data do incidente:** 24–25/07/2026  
 **Data da resolução:** 25/07/2026  
+**Data do merge no `main`:** 25/07/2026  
 **Serviço afetado:** Worker WhatsApp Web (`whatsapp-only` / `whatsapp-child.js`)  
 **Ambiente:** Render + Persistent Disk + Chrome Puppeteer  
-**Branch de resolução:** `whatsapp-rebuild`  
-**Baseline funcional:** `a7b8bdd7`
+**Branch de resolução:** `whatsapp-rebuild` / `whatsapp-main-cleanup`  
+**Baseline funcional:** `a7b8bdd7` (23/07/2026)
 
 ---
 
 ## Resumo executivo
 
-O serviço de WhatsApp Web parou de enviar mensagens de forma confiável. Durante a investigação foram testadas várias hipóteses (memória, sessão corrompida, Chromium, versão da biblioteca) e adicionadas várias camadas de mitigação (retries, fallback, detector de congelamento, etc.).
+O serviço de WhatsApp Web parou de enviar mensagens de forma confiável. Durante a investigação foram testadas várias hipóteses e adicionadas várias camadas de mitigação. A evidência decisiva veio do deploy do commit `a7b8bdd7` (baseline funcional): com a **mesma sessão**, **mesmo Render** e **mesmo Chrome**, o WhatsApp voltou a enviar mensagens imediatamente.
 
-A evidência decisiva veio do deploy do commit `a7b8bdd7` (baseline funcional conhecido): com a **mesma sessão**, **mesmo Render** e **mesmo Chrome**, o WhatsApp voltou a enviar mensagens imediatamente.
+A causa raiz foi uma **regressão introduzida pelas próprias mitigações** criadas durante a investigação (retries, `Promise.race`, detector de congelamento, `softReconnect`, fallback agressivo), que competiram com o ciclo de vida interno do `whatsapp-web.js` e do Chromium.
 
-A partir disso, o serviço foi reconstruído incrementalmente no branch `whatsapp-rebuild`, mantendo apenas as melhorias úteis e descartando as mitigações que introduziram regressão.
+O serviço foi reconstruído incrementalmente mantendo apenas melhorias úteis e o fluxo de envio original do baseline.
 
 ---
 
@@ -37,7 +38,7 @@ Waiting failed
     at Client.initialize
 ```
 
-O processo child continuava vivo, heartbeat normal, memória estável (~135–150 MB RSS), mas chamadas específicas dentro da página do WhatsApp Web travavam.
+O processo child continuava vivo, heartbeat normal, memória estável (~127–150 MB RSS), mas chamadas específicas dentro da página do WhatsApp Web travavam.
 
 ---
 
@@ -45,12 +46,13 @@ O processo child continuava vivo, heartbeat normal, memória estável (~135–15
 
 | Hipótese | Evidência | Conclusão |
 |----------|-----------|-----------|
-| Memória cheia | RSS ~135 MB, container com 37–50 GB livres | Descartado |
+| Memória cheia | RSS ~127–150 MB, container com 31–50 GB livres | Descartado |
 | CPU saturada | Heartbeat regular, processo responsivo | Descartado |
 | Sessão corrompida | Limpeza de sessão + novo QR não resolveu | Descartado |
 | Chromium específico do Render | Mesmo Chrome funcionou no baseline | Descartado |
-| Incompatibilidade `whatsapp-web.js` × WhatsApp Web | Possível, mas baseline com mesma versão funcionou | Parcial |
-| Regressão introduzida por commits após `a7b8bdd7` | **Baseline funcionou imediatamente** | **Mais provável** |
+| Incompatibilidade `whatsapp-web.js` × WhatsApp Web | Baseline `a7b8bdd7` usava a mesma dependência (`wwebjs/main`) e funcionava | Descartado |
+| LID impedindo envio | `getNumberId()` retorna LID, mas `sendMessage` para LID entrega a mensagem | Descartado |
+| Regressão introduzida por commits após `a7b8bdd7` | **Baseline funcionou imediatamente** | **Confirmado** |
 
 ---
 
@@ -62,7 +64,8 @@ O processo child continuava vivo, heartbeat normal, memória estável (~135–15
 4. Detector de página congelada (`pingPage`, `softReconnect`).
 5. Limpeza de cache temporário do Chrome.
 6. Rollback do `whatsapp-web.js` para versões anteriores.
-7. **Deploy do commit `a7b8bdd7` — funcionou imediatamente reutilizando a sessão existente.**
+7. Deploy do commit `a7b8bdd7` — funcionou imediatamente reutilizando a sessão existente.
+8. Reconstrução incremental no `whatsapp-main-cleanup` validando cada melhoria isoladamente.
 
 ---
 
@@ -76,34 +79,55 @@ O processo child continuava vivo, heartbeat normal, memória estável (~135–15
 
 Mesmo número, mesma sessão, mesmo ambiente. A diferença foi o código deployado.
 
----
-
-## Causa raiz provável
-
-Uma ou mais alterações introduzidas após `a7b8bdd7` — provavelmente as mitigações agressivas (retries em cascata, `Promise.race`, detector de congelamento, `softReconnect` com `evaluate` na página) — deixaram o serviço em um estado instável. Essas mudanças podem ter competido com o ciclo de vida interno do `whatsapp-web.js` e do Chromium, causando travamentos nas chamadas de envio.
-
-A versão da biblioteca `whatsapp-web.js` também foi alterada para um SHA específico (`pedroslopez#1780711a`) durante a investigação; o baseline usa a branch `main` oficial (`wwebjs/whatsapp-web.js#main`).
+Logs de diagnóstico posteriores confirmaram que `getNumberId()` pode retornar um identificador LID (`257294377951469@lid`) e que `sendMessage` pode retornar `undefined` nessa versão da biblioteca, **mas a mensagem ainda é entregue ao destinatário**. Portanto, a ausência de `result.id._serialized` não deve ser interpretada como falha.
 
 ---
 
-## Melhorias mantidas no `whatsapp-rebuild`
+## Causa raiz
 
-### 1. Limpeza automática e manual de cache temporário do Chrome
+Uma ou mais alterações introduzidas após `a7b8bdd7` — principalmente as mitigações agressivas criadas durante a investigação — deixaram o serviço em um estado instável. Essas mudanças competiram com o ciclo de vida interno do `whatsapp-web.js` e do Chromium, causando travamentos nas chamadas de envio e inicialização.
+
+Mitigações que introduziram regressão:
+
+- Retries em cascata no `getNumberId()`.
+- Timeout artificial com `Promise.race`.
+- Fallback automático para `@c.us`.
+- Detector de página congelada (`pingPage`).
+- `softReconnect` complexo.
+- Diagnósticos no fluxo normal de envio.
+
+A versão da biblioteca `whatsapp-web.js` **não precisou ser alterada**. O baseline `a7b8bdd7` já usava `github:wwebjs/whatsapp-web.js#main`, e essa dependência foi mantida.
+
+---
+
+## Solução
+
+Reconstrução incremental a partir do baseline `a7b8bdd7`, mantendo:
+
+### 1. Fluxo de envio original
+```js
+const numberId = await client.getNumberId(clean);
+const result = await client.sendMessage(numberId._serialized, message);
+```
+
+Se não houver exceção, o envio é considerado bem-sucedido. O log `ID: unknown` pode ocorrer quando a biblioteca retorna `undefined` ou não expõe `result.id._serialized`, mas isso **não indica falha de entrega**.
+
+### 2. Limpeza automática e manual de cache temporário do Chrome
 - Preserva `IndexedDB`, `Local Storage` e autenticação.
 - Remove caches de rede, GPU, Service Worker, etc.
 - Threshold padrão: **1500 MB** (disco do Render ampliado para 5 GB).
 - Rota manual: `POST /api/admin/whatsapp-queue/cleanup-cache`.
 
-### 2. Health endpoint simples
+### 3. Health endpoint simples
 - `GET /api/health/whatsapp`
 - Apenas leitura de `whatsappState` + fila `whatsapp-send`.
 - Não inicializa cliente, não executa `evaluate`, não toca na sessão.
 
-### 3. Filtro de ruído `pageerror`/`console`
-- Suprime logs comuns do WhatsApp Web/Chromium (CSP, WebSocket, `Failed to load resource`, etc.).
+### 4. Filtro de ruído `pageerror`/`console`
+- Suprime logs comuns do WhatsApp Web/Chromium.
 - Mantém erros reais visíveis.
 
-### 4. Heartbeat e métricas de memória
+### 5. Heartbeat e métricas de memória
 - RSS/Heap do child e memória do container.
 - `childReady`, `pid`, `uptime`.
 
@@ -111,7 +135,7 @@ A versão da biblioteca `whatsapp-web.js` também foi alterada para um SHA espec
 
 ## Mitigações removidas
 
-Não foram reintroduzidas no `whatsapp-rebuild`:
+Não foram reintroduzidas no `main`:
 
 - ❌ Retries em cascata no `getNumberId()`.
 - ❌ Timeout artificial com `Promise.race`.
@@ -121,16 +145,24 @@ Não foram reintroduzidas no `whatsapp-rebuild`:
 - ❌ Diagnósticos no fluxo normal de envio.
 - ❌ Resolução obrigatória de LID/PN.
 
-O envio voltou a ser simples: `client.sendMessage(phone@c.us, message)`.
+---
+
+## Resultado
+
+- Deploy do `whatsapp-main-cleanup` validado em 25/07/2026.
+- Mensagens sendo entregues ao destinatário.
+- Sistema estável, sem `Runtime.callFunctionOn timed out` ou `Waiting failed`.
+- Merge realizado no `main` no commit `c1d442b2`.
 
 ---
 
 ## Ações pós-incidente
 
-1. **Mergear `whatsapp-rebuild` no `main`** de forma cirúrgica, mantendo o inventário acima.
-2. **Atualizar o frontend** apenas se necessário (remover dependências de status `frozen`, etc.).
-3. **Remover código morto**, variáveis de ambiente sem uso e endpoints de diagnóstico temporários.
-4. **Documentar a política:** no WhatsApp Web, menos intervenção no ciclo de vida da biblioteca é melhor.
+1. ✅ Mergear reconstrução no `main`.
+2. ⏳ Monitorar segunda-feira com volume real de envios.
+3. ⏳ Ajustar o frontend apenas se necessário (remover dependências de status `frozen`, etc.).
+4. ⏳ Remover código morto e variáveis de ambiente sem uso, se houver.
+5. ⏳ Documentar política: no WhatsApp Web, menos intervenção no ciclo de vida da biblioteca é melhor.
 
 ---
 
@@ -140,3 +172,5 @@ O envio voltou a ser simples: `client.sendMessage(phone@c.us, message)`.
 - Mitigações acumuladas durante investigação podem se tornar a causa de novos problemas.
 - A fila BullMQ, o Redis e o processo child estavam saudáveis; o gargalo estava no runtime do Chromium/WhatsApp Web.
 - Sessão persistida em disco + LocalAuth continua sendo a estratégia mais confiável.
+- LID não é um erro. O WhatsApp Web está migrando contatos para identificadores LID, e a biblioteca consegue entregar mensagens para esses identificadores.
+- Ausência de `result.id._serialized` não deve ser tratada como falha de entrega.
