@@ -633,6 +633,54 @@ export async function getStatus() {
   };
 }
 
+// ─── Diagnóstico direto no page.evaluate ─────────────────────────────────────
+async function diagnosticGetChatById(chatId) {
+  return client.pupPage.evaluate(async (chatId) => {
+    try {
+      const chat = await window.WWebJS.getChat(chatId);
+      return { ok: true, chat };
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          message: e?.message,
+          name: e?.name,
+          stack: e?.stack,
+          constructor: e?.constructor?.name,
+          keys: e ? Object.keys(e) : [],
+          raw: e ? JSON.stringify(e) : null,
+        },
+      };
+    }
+  }, chatId);
+}
+
+async function diagnosticSendMessage(chatId, content) {
+  return client.pupPage.evaluate(async (chatId, content) => {
+    try {
+      const chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
+      if (!chat) {
+        return { ok: false, error: { message: 'Chat not found in window.WWebJS.getChat' } };
+      }
+      await window.WWebJS.sendSeen(chatId);
+      const msg = await window.WWebJS.sendMessage(chat, content, {});
+      return { ok: true, msgId: msg?.id?._serialized };
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          message: e?.message,
+          name: e?.name,
+          stack: e?.stack,
+          constructor: e?.constructor?.name,
+          keys: e ? Object.keys(e) : [],
+          raw: e ? JSON.stringify(e) : null,
+        },
+      };
+    }
+  }, chatId, content);
+}
+
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
 export async function sendMessage(phone, message) {
   if (!isReady || !client) {
@@ -676,7 +724,7 @@ export async function sendMessage(phone, message) {
 
     console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
 
-    // Instrumentação: verifica estado do cliente e se o chat existe antes de enviar
+    // Instrumentação: verifica estado do cliente, store e contato antes de enviar
     try {
       console.log(`[WhatsAppWeb][DIAG] Client state:`, await client.getState());
       console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
@@ -685,18 +733,40 @@ export async function sendMessage(phone, message) {
     }
 
     try {
+      const chats = await client.getChats();
+      console.log(`[WhatsAppWeb][DIAG] getChats():`, { count: chats.length, sample: chats.slice(0, 3).map(c => c.id?._serialized) });
+    } catch (chatsErr) {
+      console.error(`[WhatsAppWeb][DIAG] getChats() falhou:`, {
+        message: chatsErr?.message,
+        name: chatsErr?.name,
+        stack: chatsErr?.stack,
+        raw: chatsErr ? JSON.stringify(chatsErr) : null,
+      });
+    }
+
+    try {
+      const contact = await client.getContactById(chatId);
+      console.log(`[WhatsAppWeb][DIAG] getContactById(${chatId}):`, {
+        id: contact?.id?._serialized,
+        number: contact?.number,
+        isBusiness: contact?.isBusiness,
+        name: contact?.name,
+      });
+    } catch (contactErr) {
+      console.error(`[WhatsAppWeb][DIAG] getContactById(${chatId}) falhou:`, {
+        message: contactErr?.message,
+        name: contactErr?.name,
+        stack: contactErr?.stack,
+        raw: contactErr ? JSON.stringify(contactErr) : null,
+      });
+    }
+
+    try {
       console.log(`[WhatsAppWeb][DIAG] Verificando chat ${chatId}...`);
-      const chat = await client.getChatById(chatId);
-      console.log(`[WhatsAppWeb][DIAG] Chat encontrado: ${!!chat}`, chat ? {
-        id: chat.id?._serialized,
-        isGroup: chat.isGroup,
-        isReadOnly: chat.isReadOnly,
-        archived: chat.archived,
-        pinned: chat.pinned,
-        name: chat.name,
-      } : null);
+      const chatDiag = await diagnosticGetChatById(chatId);
+      console.log(`[WhatsAppWeb][DIAG] diagnosticGetChatById:`, chatDiag);
     } catch (chatErr) {
-      console.error(`[WhatsAppWeb][DIAG] getChatById(${chatId}) falhou:`, {
+      console.error(`[WhatsAppWeb][DIAG] diagnosticGetChatById(${chatId}) falhou:`, {
         message: chatErr?.message,
         name: chatErr?.name,
         stack: chatErr?.stack,
@@ -704,8 +774,11 @@ export async function sendMessage(phone, message) {
       });
     }
 
-    const result = await client.sendMessage(chatId, message);
-    const messageId = result?.id?._serialized || 'unknown';
+    const result = await diagnosticSendMessage(chatId, message);
+    if (!result.ok) {
+      throw new Error(`diagnosticSendMessage falhou: ${JSON.stringify(result.error)}`);
+    }
+    const messageId = result.msgId || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
     return { success: true, messageId, chatId };
   } catch (err) {
