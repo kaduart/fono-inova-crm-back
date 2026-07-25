@@ -306,6 +306,11 @@ function createClient() {
         '--disable-background-networking',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
+        '--disable-features=CalculateNativeWinOcclusion,BackForwardCache,MediaRouter',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-sync',
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
@@ -884,32 +889,43 @@ export async function sendMessage(phone, message) {
   if (!clean) {
     throw new Error(`Número inválido: ${phone}`);
   }
+  const sendDiagnostics = String(process.env.WHATSAPP_SEND_DIAGNOSTICS || '').toLowerCase() === 'true';
+  const startTotal = Date.now();
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
+
+  function elapsed(label, since) {
+    console.log(`[WhatsAppWeb][PERF] ${label}: ${Date.now() - since}ms`);
+  }
 
   try {
     // getNumberId pode travar quando o Chromium está lento — timeout curto + retry
+    const t1 = Date.now();
     const numberId = await retryWithBackoff(
       () => withTimeout(client.getNumberId(clean), 30_000, `getNumberId(${clean})`),
       { retries: 2, delayMs: 2000, label: `getNumberId(${clean})` }
     );
-    console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
+    elapsed(`getNumberId(${clean})`, t1);
+    if (sendDiagnostics) {
+      console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
+    }
 
     // Se o WhatsApp retornou LID, resolvemos o PN associado.
-    // O PN é o endereço que o WhatsApp consegue usar para envio, mesmo que
-    // os dígitos pareçam divergentes do número cadastrado no CRM.
     let chatId;
     if (numberId?._serialized?.endsWith('@lid')) {
+      const tLid = Date.now();
       try {
         const lidAndPhone = await withTimeout(
           client.getContactLidAndPhone([numberId._serialized]),
           30_000,
           `getContactLidAndPhone(${numberId._serialized})`
         );
-        console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
+        elapsed('resolveLID', tLid);
+        if (sendDiagnostics) {
+          console.log(`[WhatsAppWeb][DIAG] getContactLidAndPhone:`, JSON.stringify(lidAndPhone));
+        }
         const pn = lidAndPhone?.[0]?.pn;
         if (pn) {
           chatId = pn;
-          console.log(`[WhatsAppWeb][DIAG] LID detectado; usando PN resolvido: ${chatId}`);
         } else {
           throw new Error(`LID encontrado (${numberId._serialized}) mas PN não resolvido`);
         }
@@ -918,77 +934,71 @@ export async function sendMessage(phone, message) {
       }
     } else if (numberId?._serialized) {
       chatId = numberId._serialized;
-      console.log(`[WhatsAppWeb][DIAG] Usando id resolvido pelo WhatsApp: ${chatId}`);
     } else {
       chatId = `${clean}@c.us`;
-      console.log(`[WhatsAppWeb][DIAG] getNumberId não retornou id; usando fallback: ${chatId}`);
+    }
+    if (sendDiagnostics) {
+      console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
     }
 
-    console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
+    // Diagnósticos opcionais: só rodam se WHATSAPP_SEND_DIAGNOSTICS=true.
+    // Evitam carregar o Chromium no caminho feliz de envio em massa.
+    if (sendDiagnostics) {
+      try {
+        const state = await withTimeout(client.getState(), 8_000, 'getState()');
+        console.log(`[WhatsAppWeb][DIAG] Client state:`, state);
+        console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
+      } catch (infoErr) {
+        console.log(`[WhatsAppWeb][DIAG] Não foi possível logar client state/info:`, infoErr?.message);
+      }
 
-    // Instrumentação: verifica estado do cliente, store e contato antes de enviar
-    // Usa timeout curto para não bloquear o envio se o Chromium estiver lento
-    try {
-      const state = await withTimeout(client.getState(), 8_000, 'getState()');
-      console.log(`[WhatsAppWeb][DIAG] Client state:`, state);
-      console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
-    } catch (infoErr) {
-      console.log(`[WhatsAppWeb][DIAG] Não foi possível logar client state/info:`, infoErr?.message);
+      try {
+        const chats = await withTimeout(client.getChats(), 10_000, 'getChats()');
+        console.log(`[WhatsAppWeb][DIAG] getChats():`, { count: chats.length, sample: chats.slice(0, 3).map(c => c.id?._serialized) });
+      } catch (chatsErr) {
+        console.error(`[WhatsAppWeb][DIAG] getChats() falhou:`, {
+          message: chatsErr?.message,
+          name: chatsErr?.name,
+          stack: chatsErr?.stack,
+          raw: chatsErr ? JSON.stringify(chatsErr) : null,
+        });
+      }
+
+      try {
+        const contact = await withTimeout(client.getContactById(chatId), 10_000, `getContactById(${chatId})`);
+        console.log(`[WhatsAppWeb][DIAG] getContactById(${chatId}):`, {
+          id: contact?.id?._serialized,
+          number: contact?.number,
+          isBusiness: contact?.isBusiness,
+          name: contact?.name,
+        });
+      } catch (contactErr) {
+        console.error(`[WhatsAppWeb][DIAG] getContactById(${chatId}) falhou:`, contactErr?.message);
+      }
+
+      try {
+        const chatDiag = await withTimeout(diagnosticGetChatById(chatId), 10_000, `diagnosticGetChatById(${chatId})`);
+        console.log(`[WhatsAppWeb][DIAG] diagnosticGetChatById:`, chatDiag);
+      } catch (chatErr) {
+        console.error(`[WhatsAppWeb][DIAG] diagnosticGetChatById(${chatId}) falhou:`, chatErr?.message);
+      }
     }
 
-    try {
-      const chats = await withTimeout(client.getChats(), 10_000, 'getChats()');
-      console.log(`[WhatsAppWeb][DIAG] getChats():`, { count: chats.length, sample: chats.slice(0, 3).map(c => c.id?._serialized) });
-    } catch (chatsErr) {
-      console.error(`[WhatsAppWeb][DIAG] getChats() falhou:`, {
-        message: chatsErr?.message,
-        name: chatsErr?.name,
-        stack: chatsErr?.stack,
-        raw: chatsErr ? JSON.stringify(chatsErr) : null,
-      });
-    }
-
-    try {
-      const contact = await withTimeout(client.getContactById(chatId), 10_000, `getContactById(${chatId})`);
-      console.log(`[WhatsAppWeb][DIAG] getContactById(${chatId}):`, {
-        id: contact?.id?._serialized,
-        number: contact?.number,
-        isBusiness: contact?.isBusiness,
-        name: contact?.name,
-      });
-    } catch (contactErr) {
-      console.error(`[WhatsAppWeb][DIAG] getContactById(${chatId}) falhou:`, {
-        message: contactErr?.message,
-        name: contactErr?.name,
-        stack: contactErr?.stack,
-        raw: contactErr ? JSON.stringify(contactErr) : null,
-      });
-    }
-
-    try {
-      console.log(`[WhatsAppWeb][DIAG] Verificando chat ${chatId}...`);
-      const chatDiag = await withTimeout(diagnosticGetChatById(chatId), 10_000, `diagnosticGetChatById(${chatId})`);
-      console.log(`[WhatsAppWeb][DIAG] diagnosticGetChatById:`, chatDiag);
-    } catch (chatErr) {
-      console.error(`[WhatsAppWeb][DIAG] diagnosticGetChatById(${chatId}) falhou:`, {
-        message: chatErr?.message,
-        name: chatErr?.name,
-        stack: chatErr?.stack,
-        raw: chatErr ? JSON.stringify(chatErr) : null,
-      });
-    }
-
+    const tSend = Date.now();
     const result = await retryWithBackoff(
       () => withTimeout(diagnosticSendMessage(chatId, message), 60_000, `diagnosticSendMessage(${chatId})`),
       { retries: 1, delayMs: 3000, label: `diagnosticSendMessage(${chatId})` }
     );
+    elapsed('sendMessage', tSend);
     if (!result.ok) {
       throw new Error(`diagnosticSendMessage falhou: ${JSON.stringify(result.error)}`);
     }
     const messageId = result.msgId || 'unknown';
+    elapsed('total', startTotal);
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
     return { success: true, messageId, chatId };
   } catch (err) {
+    elapsed('total (erro)', startTotal);
     const diagnostic = {
       phone: clean,
       originalPhone: phone,

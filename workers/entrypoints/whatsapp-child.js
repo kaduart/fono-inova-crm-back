@@ -210,7 +210,8 @@ async function main() {
         return result;
     }, {
         connection: bullMqConnection,
-        limiter: { max: 5, duration: 1000 },
+        concurrency: 1,         // WhatsApp Web + Puppeteer não toleram paralelismo
+        limiter: { max: 1, duration: 1000 }, // 1 msg/s no máximo para não sobrecarregar o Chromium
     });
 
     whatsappWorker.on('completed', (job) => {
