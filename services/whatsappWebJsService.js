@@ -38,7 +38,6 @@ export const whatsappState = {
   lastAuthenticatedAt: null,
   qrCount: 0,
   initAttempts: 0,
-  pageFrozenAt: null,
   updatedAt: null,
   pid: null,
   uptime: null,
@@ -56,90 +55,9 @@ const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
 let readyPollInterval = null;
 let stateSaveInterval = null;
-let pingInterval = null;
-let isPageFrozen = false;
-let pageFrozenAt = null;
-let isReconnecting = false;
 
 function updateState(updates) {
   Object.assign(whatsappState, updates, { updatedAt: new Date().toISOString() });
-}
-
-// ─── Detecção de congelamento da página WhatsApp Web ───────────────────────────
-async function pingPage(timeoutMs = 5000) {
-  if (!client || !client.pupPage) return false;
-  try {
-    await withTimeout(
-      client.pupPage.evaluate(() => 'pong'),
-      timeoutMs,
-      'pingPage'
-    );
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
-async function markPageFrozen(reason = 'ping falhou') {
-  if (isPageFrozen || isReconnecting) return;
-  isPageFrozen = true;
-  pageFrozenAt = new Date().toISOString();
-  whatsappState.pageFrozenAt = pageFrozenAt;
-  connectionStatus = 'frozen';
-  whatsappState.status = 'frozen';
-  whatsappState.ready = false;
-  console.error(`[WhatsAppWeb] 🧊 Página congelada detectada (${reason}). Iniciando recuperação...`);
-  await saveState();
-
-  // Evita múltiplas reconexões simultâneas
-  isReconnecting = true;
-  try {
-    await softReconnect();
-  } finally {
-    isReconnecting = false;
-  }
-}
-
-function startPingInterval() {
-  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-  pingInterval = setInterval(async () => {
-    if (!isReady || !client || isReconnecting) return;
-    const ok = await pingPage(5000);
-    if (!ok) {
-      await markPageFrozen('pingPage timeout 5000ms');
-    } else if (isPageFrozen) {
-      // Recuperou
-      isPageFrozen = false;
-      pageFrozenAt = null;
-      whatsappState.pageFrozenAt = null;
-      console.log('[WhatsAppWeb] 🧊 Página descongelada — envios retomados.');
-    }
-  }, 15_000);
-  console.log('[WhatsAppWeb][DIAG] Ping de congelamento iniciado (a cada 15s).');
-}
-
-function stopPingInterval() {
-  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
-}
-
-function getSessionStorageInfo() {
-  try {
-    const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
-    const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
-    const sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
-
-    const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
-    const dfLine = df.split('\n')[1];
-    let diskUsagePercent = null;
-    if (dfLine) {
-      const match = dfLine.match(/(\d+)%/);
-      if (match) diskUsagePercent = parseInt(match[1], 10);
-    }
-    return { sessionSizeMB, diskUsagePercent };
-  } catch (e) {
-    console.warn('[WhatsAppWeb] Não foi possível obter storage:', e.message);
-    return { sessionSizeMB: null, diskUsagePercent: null };
-  }
 }
 
 // ─── Persistência MongoDB + singleton em memória ─────────────────────────────
@@ -151,9 +69,7 @@ async function saveState() {
     pid: process.pid,
     uptime: process.uptime(),
     initAttempts,
-    pageFrozenAt,
   });
-  const { sessionSizeMB, diskUsagePercent } = getSessionStorageInfo();
   try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
@@ -168,9 +84,6 @@ async function saveState() {
         lastAuthenticatedAt: whatsappState.lastAuthenticatedAt ? new Date(whatsappState.lastAuthenticatedAt) : null,
         qrCount: whatsappState.qrCount,
         initAttempts,
-        pageFrozenAt,
-        sessionSizeMB,
-        diskUsagePercent,
         updatedAt: new Date(),
       },
       { upsert: true }
@@ -263,6 +176,64 @@ function resolveChromePath() {
   return null;
 }
 
+// ─── Filtro de ruído de pageerror/console do Puppeteer ───────────────────────
+const PAGE_NOISE_PATTERNS = [
+  /Failed to load resource: net::ERR_/i,
+  /WebSocket connection to ['"]?wss?:\/\//i,
+  /Failed to execute ['"]postMessage['"] on ['"]DOMWindow['"]/i,
+  /Manifest:/i,
+  /was loaded over HTTPS/i,
+  /has been blocked by CORS/i,
+  /Content Security Policy/i,
+  /Refused to execute inline script/i,
+  /Uncaught \(in promise\) undefined/i,
+  /Error in event handler: TypeError: Cannot read properties of undefined/i,
+  /Extension ['"][^'"]+['"] tried to modify/i,
+  /runtime\.sendMessage/i,
+  /runtime\.onMessage/i,
+  /\[Report Only\]/i,
+];
+
+function isPageNoise(message) {
+  return PAGE_NOISE_PATTERNS.some(re => re.test(message));
+}
+
+function attachPageNoiseFilters(newClient) {
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  const tryAttach = () => {
+    const page = newClient?.pupPage;
+    if (!page) {
+      if (++attempts >= maxAttempts) return;
+      return setTimeout(tryAttach, 1000);
+    }
+
+    page.on('pageerror', (err) => {
+      const msg = err?.message || String(err);
+      if (isPageNoise(msg)) return;
+      console.warn('[WhatsAppWeb][pageerror]', msg);
+    });
+
+    page.on('console', (msg) => {
+      try {
+        const text = msg.text();
+        if (isPageNoise(text)) return;
+        const type = msg.type();
+        if (type === 'error' || type === 'warning') {
+          console.warn(`[WhatsAppWeb][console:${type}]`, text.slice(0, 500));
+        }
+      } catch (e) {
+        // ignora erros ao ler mensagem do console
+      }
+    });
+
+    console.log('[WhatsAppWeb] Filtros de ruído pageerror/console ativados.');
+  };
+
+  setTimeout(tryAttach, 1000);
+}
+
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function getSessionDir() {
   const candidates = ['session', 'session-default'];
@@ -313,7 +284,7 @@ function cleanupChromeCacheIfNeeded() {
     const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
     const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
     const mb = bytes / 1024 / 1024;
-    const threshold = parseFloat(process.env.WHATSAPP_CACHE_CLEANUP_THRESHOLD_MB || '400');
+    const threshold = parseFloat(process.env.WHATSAPP_CACHE_CLEANUP_THRESHOLD_MB || '1500');
 
     if (mb > threshold) {
       console.log(`[WhatsAppWeb] ⚠️ Sessão com ${mb.toFixed(2)} MB. Acima de ${threshold} MB — limpando caches temporários...`);
@@ -338,22 +309,12 @@ function createClient() {
     console.warn('[WhatsAppWeb] Não foi possível criar authPath:', e.message);
   }
 
-  // Diagnóstico de armazenamento
-  try {
-    const du = execSync(`du -sh ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
-    const df = execSync(`df -h ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
-    console.log(`[WhatsAppWeb][DIAG] Storage — sessão: ${du}`);
-    console.log(`[WhatsAppWeb][DIAG] Storage — disco:\n${df}`);
-  } catch (e) {
-    console.warn('[WhatsAppWeb][DIAG] Não foi possível verificar storage:', e.message);
-  }
-
   // Limpeza preventiva de caches temporários do Chrome (mantém IndexedDB/auth)
   cleanupChromeCacheIfNeeded();
 
   const puppeteerOpts = {
     headless: 'new',
-    protocolTimeout: 300_000, // 5min — dá margem para operações lentas do WhatsApp Web
+    protocolTimeout: 120_000,
     handleSIGINT: false,
     handleSIGTERM: false,
     handleSIGHUP: false,
@@ -367,14 +328,6 @@ function createClient() {
         '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
-        '--disable-background-networking',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding',
-        '--disable-features=CalculateNativeWinOcclusion,BackForwardCache,MediaRouter',
-        '--no-default-browser-check',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-sync',
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
@@ -476,52 +429,7 @@ function createClient() {
       retryTimeout = null;
     }
 
-    // Atualiza estado periodicamente (storage, uptime) mesmo sem eventos
-    if (stateSaveInterval) clearInterval(stateSaveInterval);
-    stateSaveInterval = setInterval(() => saveState(), 30_000);
-
-    // Reset de congelamento ao ficar ready
-    isPageFrozen = false;
-    pageFrozenAt = null;
-    whatsappState.pageFrozenAt = null;
-
-    // Inicia ping periódico para detectar congelamento da página WhatsApp Web
-    startPingInterval();
-
-    // Captura erros e logs do WhatsApp Web no browser (filtra ruído conhecido)
-    if (newClient.pupPage) {
-      try {
-        const IGNORED_PAGE_ERRORS = [
-          'IDBObjectStore',
-          'DataError',
-          'QuotaExceededError',
-          'deidentified_telemetry',
-          'dit.whatsapp.net',
-        ];
-        newClient.pupPage.on('pageerror', (err) => {
-          const msg = err?.message || String(err);
-          if (IGNORED_PAGE_ERRORS.some((x) => msg.includes(x))) {
-            return;
-          }
-          console.error('[WhatsAppWeb][BROWSER PAGEERROR]', msg);
-        });
-        newClient.pupPage.on('console', (msg) => {
-          const text = msg.text();
-          if (msg.type() === 'error' && text.includes('deidentified_telemetry')) {
-            return;
-          }
-          console.log(`[WhatsAppWeb][BROWSER CONSOLE ${msg.type()}]`, text);
-        });
-        console.log('[WhatsAppWeb][DIAG] Listeners de pageerror/console registrados.');
-      } catch (e) {
-        console.warn('[WhatsAppWeb][DIAG] Não foi possível registrar listeners do Puppeteer:', e.message);
-      }
-    }
-
     await saveState();
-
-    // Monitoramento de storage para prevenir IndexedDB lotado/corrompido
-    startStorageMonitor();
 
     if (process.send) {
       process.send({ type: 'whatsapp_ready' });
@@ -545,9 +453,6 @@ function createClient() {
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
-    stopPingInterval();
-    isPageFrozen = false;
-    pageFrozenAt = null;
     isReady = false;
     connectionStatus = 'disconnected';
     whatsappState.ready = false;
@@ -579,7 +484,6 @@ function createClient() {
     // → limpa sessão stale e sai para o parent respawnar com QR novo
     if (whatsappState.qrCount === 0) {
       console.log('[WhatsAppWeb] 🧹 Sessão stale detectada (qrCount=0) — removendo e saindo para respawn limpo...');
-      stopPingInterval();
       try {
         const localAuthDir = path.join(authPath, '.wwebjs_auth');
         if (fs.existsSync(localAuthDir)) {
@@ -597,9 +501,6 @@ function createClient() {
     }
 
     // qrCount > 0: QRs expiraram sem ser escaneados — fica disconnected, espera ação manual
-    isPageFrozen = false;
-    pageFrozenAt = null;
-    whatsappState.pageFrozenAt = null;
     connectionStatus = 'auth_failure';
     whatsappState.lastDisconnectReason = `auth_failure: ${msg}`;
     saveState();
@@ -619,37 +520,9 @@ function createClient() {
     }
   });
 
+  attachPageNoiseFilters(newClient);
+
   return newClient;
-}
-
-// ─── Monitoramento de storage (prevenção IndexedDB lotado) ─────────────────────
-function checkStorageHealth() {
-  try {
-    const du = execSync(`du -sh ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
-    const df = execSync(`df -h ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
-    console.log(`[WhatsAppWeb][DIAG] Storage check — sessão: ${du}`);
-    console.log(`[WhatsAppWeb][DIAG] Storage check — disco:\n${df}`);
-
-    const dfLine = df.split('\n')[1];
-    if (dfLine) {
-      const useMatch = dfLine.match(/(\d+)%/);
-      if (useMatch) {
-        const usePct = parseInt(useMatch[1], 10);
-        if (usePct > 80) {
-          console.warn(`[WhatsAppWeb][ALERTA] Disco /var/data acima de 80%: ${usePct}%. Considere limpar a sessão (WHATSAPP_FORCE_CLEAN_SESSION=true) ou aumentar o disco.`);
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[WhatsAppWeb][DIAG] Não foi possível verificar storage:', e.message);
-  }
-}
-
-function startStorageMonitor() {
-  checkStorageHealth();
-  const interval = 60 * 60 * 1000; // a cada 1 hora
-  setInterval(checkStorageHealth, interval);
-  console.log(`[WhatsAppWeb][DIAG] Monitoramento de storage iniciado (a cada ${interval / 60000}min).`);
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
@@ -884,191 +757,27 @@ export async function getStatus() {
   };
 }
 
-// ─── Health check da página WhatsApp Web ───────────────────────────────────────
-export async function checkPageHealth() {
-  const pingOk = await pingPage(5000);
-  return {
-    frozen: !pingOk && isReady,
-    pageFrozenAt: pageFrozenAt,
-    pingOk,
-    isReady,
-    status: connectionStatus,
-  };
-}
-
-// ─── Diagnóstico direto no page.evaluate ─────────────────────────────────────
-async function diagnosticGetChatById(chatId) {
-  return client.pupPage.evaluate(async (chatId) => {
-    try {
-      const chat = await window.WWebJS.getChat(chatId);
-      return { ok: true, chat };
-    } catch (e) {
-      return {
-        ok: false,
-        error: {
-          message: e?.message,
-          name: e?.name,
-          stack: e?.stack,
-          constructor: e?.constructor?.name,
-          keys: e ? Object.keys(e) : [],
-          raw: e ? JSON.stringify(e) : null,
-        },
-      };
-    }
-  }, chatId);
-}
-
-async function diagnosticSendMessage(chatId, content) {
-  return client.pupPage.evaluate(async (chatId, content) => {
-    try {
-      const chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
-      if (!chat) {
-        return { ok: false, error: { message: 'Chat not found in window.WWebJS.getChat' } };
-      }
-      await window.WWebJS.sendSeen(chatId);
-      const msg = await window.WWebJS.sendMessage(chat, content, {});
-      return { ok: true, msgId: msg?.id?._serialized };
-    } catch (e) {
-      return {
-        ok: false,
-        error: {
-          message: e?.message,
-          name: e?.name,
-          stack: e?.stack,
-          constructor: e?.constructor?.name,
-          keys: e ? Object.keys(e) : [],
-          raw: e ? JSON.stringify(e) : null,
-        },
-      };
-    }
-  }, chatId, content);
-}
-
-// ─── Helpers de timeout/retry ────────────────────────────────────────────────
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout: ${label} (${ms}ms)`)), ms)
-    ),
-  ]);
-}
-
-async function retryWithBackoff(fn, { retries = 2, delayMs = 2000, label = 'op' } = {}) {
-  let lastErr;
-  for (let i = 0; i <= retries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const isTimeout = err?.message?.includes('timed out') || err?.message?.includes('Timeout');
-      if (!isTimeout || i === retries) throw err;
-      const wait = delayMs * (i + 1);
-      console.log(`[WhatsAppWeb][RETRY] ${label} falhou (${err?.message}) — tentativa ${i + 1}/${retries + 1} em ${wait}ms...`);
-      await new Promise((r) => setTimeout(r, wait));
-    }
-  }
-  throw lastErr;
-}
-
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
 export async function sendMessage(phone, message) {
   if (!isReady || !client) {
     throw new Error('WhatsApp não está conectado');
   }
-  if (isPageFrozen) {
-    throw new Error('WhatsApp congelado — aguardando reconexão');
-  }
-  // Ping rápido para detectar congelamento antes de aceitar o job.
-  // Se falhar, marca como congelado e devolve o job para retry do BullMQ imediatamente.
-  const pingOk = await pingPage(3000);
-  if (!pingOk) {
-    await markPageFrozen('sendMessage pre-flight ping falhou');
-    throw new Error('WhatsApp congelado — aguardando reconexão');
-  }
-
   const clean = normalizeE164BR(phone);
   if (!clean) {
     throw new Error(`Número inválido: ${phone}`);
   }
-  const sendDiagnostics = String(process.env.WHATSAPP_SEND_DIAGNOSTICS || '').toLowerCase() === 'true';
-  const startTotal = Date.now();
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
-
-  function elapsed(label, since) {
-    console.log(`[WhatsAppWeb][PERF] ${label}: ${Date.now() - since}ms`);
-  }
-
-  let chatId = `${clean}@c.us`;
-  let resolvedVia = 'fallback';
-
   try {
-    // Tenta resolver o número via getNumberId. Se travar (timeout), usa fallback direto.
-    // O fallback evita que um getNumberId congelado pare a fila inteira.
-    const t1 = Date.now();
-    try {
-      const numberId = await withTimeout(client.getNumberId(clean), 15_000, `getNumberId(${clean})`);
-      elapsed(`getNumberId(${clean})`, t1);
-      if (sendDiagnostics) {
-        console.log(`[WhatsAppWeb][DIAG] getNumberId(${clean}):`, JSON.stringify(numberId));
-      }
-
-      if (numberId?._serialized?.endsWith('@lid')) {
-        const tLid = Date.now();
-        try {
-          const lidAndPhone = await withTimeout(
-            client.getContactLidAndPhone([numberId._serialized]),
-            15_000,
-            `getContactLidAndPhone(${numberId._serialized})`
-          );
-          elapsed('resolveLID', tLid);
-          const pn = lidAndPhone?.[0]?.pn;
-          if (pn) {
-            chatId = pn;
-            resolvedVia = 'lid-pn';
-          } else {
-            console.warn(`[WhatsAppWeb] LID encontrado (${numberId._serialized}) mas PN não resolvido — usando fallback ${chatId}`);
-          }
-        } catch (lidErr) {
-          console.warn(`[WhatsAppWeb] Falha ao resolver PN para LID ${numberId._serialized}: ${lidErr?.message} — usando fallback ${chatId}`);
-        }
-      } else if (numberId?._serialized) {
-        chatId = numberId._serialized;
-        resolvedVia = 'number-id';
-      }
-    } catch (resolveErr) {
-      elapsed(`getNumberId(${clean}) timeout/falha`, t1);
-      console.warn(`[WhatsAppWeb] getNumberId(${clean}) travou (${resolveErr?.message}). Usando envio direto para ${chatId}.`);
+    const numberId = await client.getNumberId(clean);
+    if (!numberId) {
+      throw new Error(`Número ${clean} não possui WhatsApp`);
     }
-
-    if (sendDiagnostics) {
-      console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId} (via ${resolvedVia})`);
-    }
-
-    const tSend = Date.now();
-    const result = await retryWithBackoff(
-      () => withTimeout(diagnosticSendMessage(chatId, message), 60_000, `diagnosticSendMessage(${chatId})`),
-      { retries: 1, delayMs: 3000, label: `diagnosticSendMessage(${chatId})` }
-    );
-    elapsed('sendMessage', tSend);
-    if (!result.ok) {
-      throw new Error(`diagnosticSendMessage falhou: ${JSON.stringify(result.error)}`);
-    }
-    const messageId = result.msgId || 'unknown';
-    elapsed('total', startTotal);
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} (${resolvedVia}) — ID: ${messageId}`);
-    return { success: true, messageId, chatId };
+    const result = await client.sendMessage(numberId._serialized, message);
+    const messageId = result?.id?._serialized || 'unknown';
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
+    return { success: true, messageId };
   } catch (err) {
-    elapsed('total (erro)', startTotal);
-    const diagnostic = {
-      phone: clean,
-      originalPhone: phone,
-      message: err?.message,
-      name: err?.name,
-      stack: err?.stack,
-      raw: err ? JSON.stringify(err) : null,
-    };
-    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, diagnostic);
+    console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);
     throw err;
   }
 }
@@ -1077,11 +786,8 @@ export async function sendMessage(phone, message) {
 export async function softReconnect() {
   console.log('[WhatsAppWeb] 🔄 Soft reconnect — preservando sessão no MongoDB...');
   isReady = false;
-  isPageFrozen = false;
-  pageFrozenAt = null;
   whatsappState.ready = false;
   whatsappState.status = 'reconnecting';
-  stopPingInterval();
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
@@ -1107,9 +813,6 @@ export async function clearSession() {
   whatsappState.lastDisconnectReason = null;
   whatsappState.lastAuthenticatedAt = null;
   whatsappState.qrCount = 0;
-  isPageFrozen = false;
-  pageFrozenAt = null;
-  stopPingInterval();
   updateState({});
 
   try {
@@ -1141,8 +844,6 @@ export async function clearSession() {
 export async function reconnect() {
   console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão local...');
   isReady = false;
-  isPageFrozen = false;
-  pageFrozenAt = null;
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
   initAttempts = 0;
@@ -1150,7 +851,6 @@ export async function reconnect() {
   whatsappState.authenticated = false;
   whatsappState.qrCode = null;
   whatsappState.qrCount = 0;
-  stopPingInterval();
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
@@ -1224,5 +924,4 @@ export default {
   clearSession,
   checkExternalReconnectSignal,
   gracefulShutdownWhatsApp,
-  checkPageHealth,
 };

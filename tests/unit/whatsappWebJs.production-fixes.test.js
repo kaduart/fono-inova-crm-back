@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Reproduz: [CRITICO] Graceful shutdown não destrói cliente → corrupção de sessão
 // Reproduz: [ALTO] Reconexão duplicada em 'disconnected' → múltiplos clients
 
-const RemoteAuthMock = vi.fn().mockImplementation(function (opts) {
+const LocalAuthMock = vi.fn().mockImplementation(function (opts) {
   this.opts = opts;
 });
 const ClientMock = vi.fn().mockImplementation(function () {
@@ -17,7 +17,7 @@ const ClientMock = vi.fn().mockImplementation(function () {
 vi.mock('whatsapp-web.js', () => ({
   default: {
     Client: ClientMock,
-    RemoteAuth: RemoteAuthMock,
+    LocalAuth: LocalAuthMock,
   },
 }));
 
@@ -94,15 +94,14 @@ describe('whatsappWebJsService — produção', () => {
     vi.resetModules();
   });
 
-  it('deve passar clientId fixo "fono-inova-main" para RemoteAuth', async () => {
+  it('deve usar LocalAuth com dataPath /var/data/wwebjs_auth', async () => {
     const { initWhatsAppClient } = await import('../../services/whatsappWebJsService.js');
     await initWhatsAppClient();
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(RemoteAuthMock).toHaveBeenCalled();
-    const remoteAuthCall = RemoteAuthMock.mock.calls[0][0];
-    expect(remoteAuthCall).toHaveProperty('clientId', 'fono-inova-main');
-    expect(remoteAuthCall).toHaveProperty('backupSyncIntervalMs', 300_000);
+    expect(LocalAuthMock).toHaveBeenCalled();
+    const localAuthCall = LocalAuthMock.mock.calls[0][0];
+    expect(localAuthCall).toHaveProperty('dataPath', '/var/data/wwebjs_auth');
   });
 
   it('deve chamar client.destroy() no graceful shutdown', async () => {
