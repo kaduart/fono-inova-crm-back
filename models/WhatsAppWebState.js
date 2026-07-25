@@ -18,7 +18,6 @@ const schema = new mongoose.Schema({
   initAttempts: { type: Number, default: 0 },
   sessionSizeMB: { type: Number, default: null },
   diskUsagePercent: { type: Number, default: null },
-  pageFrozenAt: { type: String, default: null },
   reconnectSignal: { type: Date, default: null },
   updatedAt: { type: Date, default: Date.now },
 });

@@ -13,14 +13,10 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
-import fs from 'fs';
-import path from 'path';
-import { execSync } from 'child_process';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { whatsappState } from '../services/whatsappWebJsService.js';
-import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
 const router = express.Router();
 
@@ -567,86 +563,50 @@ router.get('/workers', async (req, res) => {
 });
 
 /**
- * Health check específico do WhatsApp Web
+ * Health check leve do WhatsApp Web
  * GET /api/health/whatsapp
+ *
+ * Apenas leitura de estado. Não inicializa cliente, não executa evaluate
+ * no Chromium e não toca na sessão. Útil para monitoramento e para o
+ * processo pai saber se o child está realmente pronto.
  */
 router.get('/whatsapp', async (req, res) => {
     try {
-        // Busca estado persistente no MongoDB (worker whatsapp-only salva lá)
-        const persisted = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
-        const stateAgeMs = persisted?.updatedAt ? Date.now() - new Date(persisted.updatedAt).getTime() : Infinity;
-        const stateStale = stateAgeMs > 120_000; // considera stale se mais velho que 2min
-
-        if (!persisted) {
-            console.warn('[Health][WhatsApp] Nenhum documento WhatsAppWebState encontrado no MongoDB.');
-        } else if (stateStale) {
-            console.warn(`[Health][WhatsApp] Documento WhatsAppWebState está stale: ${Math.round(stateAgeMs / 1000)}s`);
-        }
-
-        // Fallback para estado local quando não há persisted ou está stale
-        const local = whatsappState;
-        const effective = {
-            status: persisted && !stateStale ? persisted.status : local.status,
-            ready: persisted && !stateStale ? persisted.ready : local.ready,
-            authenticated: persisted && !stateStale ? persisted.authenticated : local.authenticated,
-            updatedAt: persisted?.updatedAt ? persisted.updatedAt.toISOString() : local.updatedAt,
-        };
-
-        // Storage: tenta usar valores persistidos pelo worker; se não houver, calcula localmente
-        let sessionSizeMB = persisted?.sessionSizeMB ?? null;
-        let diskUsagePercent = persisted?.diskUsagePercent ?? null;
-        if (sessionSizeMB == null || diskUsagePercent == null) {
-            try {
-                const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
-                const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
-                const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
-                if (sessionSizeMB == null) sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
-
-                const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
-                const dfLine = df.split('\n')[1];
-                if (dfLine && diskUsagePercent == null) {
-                    const match = dfLine.match(/(\d+)%/);
-                    if (match) diskUsagePercent = parseInt(match[1], 10);
-                }
-            } catch (e) {
-                console.warn('[Health][WhatsApp] Não foi possível obter storage:', e.message);
-            }
-        }
-
         const queue = getQueue('whatsapp-send');
-        const [waiting, active, failed] = await Promise.all([
+        const [waiting, active, failed, delayed] = await Promise.all([
             queue.getWaitingCount(),
             queue.getActiveCount(),
-            queue.getFailedCount()
+            queue.getFailedCount(),
+            queue.getDelayedCount()
         ]);
 
-        const isHealthy = effective.ready && effective.status === 'ready';
-        const isFrozen = effective.status === 'frozen';
-        const storageAlert = (sessionSizeMB && sessionSizeMB > 700) || (diskUsagePercent && diskUsagePercent > 80);
+        const state = whatsappState || {};
 
-        res.status(isHealthy && !isFrozen ? 200 : 503).json({
-            status: isFrozen ? 'frozen' : (isHealthy ? 'healthy' : 'unhealthy'),
-            source: persisted && !stateStale ? 'mongodb' : 'local',
+        res.json({
+            status: state.ready === true ? 'ready' : state.status || 'unknown',
             whatsapp: {
-                status: effective.status,
-                ready: effective.ready,
-                authenticated: effective.authenticated,
-                frozen: isFrozen,
-                pageFrozenAt: persisted?.pageFrozenAt || local.pageFrozenAt || null,
-                lastReady: effective.updatedAt,
-                sessionSizeMB,
-                diskUsagePercent,
-                storageAlert,
+                status: state.status || 'unknown',
+                ready: !!state.ready,
+                authenticated: !!state.authenticated,
+                qrCount: state.qrCount || 0,
+                lastAuthenticatedAt: state.lastAuthenticatedAt || null,
+                lastDisconnectReason: state.lastDisconnectReason || null,
+                pid: state.pid || null,
+                uptime: state.uptime || null,
+                updatedAt: state.updatedAt || null
             },
             queue: {
+                name: 'whatsapp-send',
                 waiting,
                 active,
-                failed
+                failed,
+                delayed
             },
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime()
         });
     } catch (error) {
-        res.status(500).json({
+        res.status(503).json({
             status: 'error',
             error: error.message,
             timestamp: new Date().toISOString()
