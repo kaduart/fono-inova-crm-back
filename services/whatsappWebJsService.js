@@ -464,6 +464,17 @@ export async function initWhatsAppClient() {
   const chromePath = resolveChromePath();
   console.log('[WhatsAppWeb][DIAG] Chrome path resolvido:', chromePath || 'NULL — usando default do puppeteer');
   console.log('[WhatsAppWeb][DIAG] Node.js:', process.version);
+
+  try {
+    const { createRequire } = await import('module');
+    const require = createRequire(import.meta.url);
+    const wwebjsPkg = require('whatsapp-web.js/package.json');
+    const pupPkg = require('puppeteer-core/package.json');
+    console.log('[WhatsAppWeb][DIAG] whatsapp-web.js version:', wwebjsPkg.version, wwebjsPkg.gitHead ? `(git: ${wwebjsPkg.gitHead})` : '');
+    console.log('[WhatsAppWeb][DIAG] puppeteer-core version:', pupPkg.version);
+  } catch (verErr) {
+    console.log('[WhatsAppWeb][DIAG] Não foi possível logar versões:', verErr.message);
+  }
   console.log('[WhatsAppWeb][DIAG] CWD:', process.cwd());
   console.log('[WhatsAppWeb][DIAG] Auth path:', authPath);
   console.log('[WhatsAppWeb][DIAG] FORCE_CLEAN:', process.env.WHATSAPP_FORCE_CLEAN_SESSION);
