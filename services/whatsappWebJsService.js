@@ -329,6 +329,10 @@ function createClient() {
     }
 
     await saveState();
+
+    // Monitoramento de storage para prevenir IndexedDB lotado/corrompido
+    startStorageMonitor();
+
     if (process.send) {
       process.send({ type: 'whatsapp_ready' });
     }
@@ -419,6 +423,36 @@ function createClient() {
   });
 
   return newClient;
+}
+
+// ─── Monitoramento de storage (prevenção IndexedDB lotado) ─────────────────────
+function checkStorageHealth() {
+  try {
+    const du = execSync(`du -sh ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
+    const df = execSync(`df -h ${authPath} 2>/dev/null || echo 'unknown'`).toString().trim();
+    console.log(`[WhatsAppWeb][DIAG] Storage check — sessão: ${du}`);
+    console.log(`[WhatsAppWeb][DIAG] Storage check — disco:\n${df}`);
+
+    const dfLine = df.split('\n')[1];
+    if (dfLine) {
+      const useMatch = dfLine.match(/(\d+)%/);
+      if (useMatch) {
+        const usePct = parseInt(useMatch[1], 10);
+        if (usePct > 80) {
+          console.warn(`[WhatsAppWeb][ALERTA] Disco /var/data acima de 80%: ${usePct}%. Considere limpar a sessão (WHATSAPP_FORCE_CLEAN_SESSION=true) ou aumentar o disco.`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[WhatsAppWeb][DIAG] Não foi possível verificar storage:', e.message);
+  }
+}
+
+function startStorageMonitor() {
+  checkStorageHealth();
+  const interval = 60 * 60 * 1000; // a cada 1 hora
+  setInterval(checkStorageHealth, interval);
+  console.log(`[WhatsAppWeb][DIAG] Monitoramento de storage iniciado (a cada ${interval / 60000}min).`);
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
