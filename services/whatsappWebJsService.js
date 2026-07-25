@@ -649,6 +649,20 @@ export async function sendMessage(phone, message) {
 
     console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
 
+    // Instrumentação: verifica se o chat existe antes de enviar
+    try {
+      console.log(`[WhatsAppWeb][DIAG] Verificando chat ${chatId}...`);
+      const chat = await client.getChatById(chatId);
+      console.log(`[WhatsAppWeb][DIAG] Chat encontrado: ${!!chat}`, chat ? { id: chat.id?._serialized, name: chat.name, isGroup: chat.isGroup } : null);
+    } catch (chatErr) {
+      console.error(`[WhatsAppWeb][DIAG] getChatById(${chatId}) falhou:`, {
+        message: chatErr?.message,
+        name: chatErr?.name,
+        stack: chatErr?.stack,
+        raw: chatErr ? JSON.stringify(chatErr) : null,
+      });
+    }
+
     const result = await client.sendMessage(chatId, message);
     const messageId = result?.id?._serialized || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} via ${chatId} — ID: ${messageId}`);
