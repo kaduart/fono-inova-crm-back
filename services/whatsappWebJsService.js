@@ -176,6 +176,70 @@ function resolveChromePath() {
 }
 
 // ─── Criação do cliente ─────────────────────────────────────────────────────
+function getSessionDir() {
+  const candidates = ['session', 'session-default'];
+  for (const c of candidates) {
+    const p = path.join(authPath, c);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+export function cleanupChromeCache() {
+  const sessionDir = getSessionDir();
+  if (!sessionDir) {
+    console.log('[WhatsAppWeb] Nenhuma sessão encontrada para limpeza de cache.');
+    return { removed: [], skippedReason: 'no_session' };
+  }
+
+  const cacheTargets = [
+    'Default/Cache',
+    'Default/Code Cache',
+    'Default/GPUCache',
+    'Default/Service Worker',
+    'Default/blob_storage',
+    'Default/optimization_guide_model_and_features_store',
+    'Default/optimization_guide_prediction_model_downloads',
+    'Default/PostjumpMetrics',
+  ];
+
+  const removed = [];
+  for (const target of cacheTargets) {
+    const targetPath = path.join(sessionDir, target);
+    try {
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+        removed.push(targetPath);
+      }
+    } catch (e) {
+      console.warn(`[WhatsAppWeb] Não foi possível remover cache ${targetPath}:`, e.message);
+    }
+  }
+
+  console.log(`[WhatsAppWeb] 🧹 Limpeza de cache do Chrome concluída. Itens removidos: ${removed.length}`);
+  return { removed, skippedReason: null };
+}
+
+function cleanupChromeCacheIfNeeded() {
+  try {
+    const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
+    const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
+    const mb = bytes / 1024 / 1024;
+    const threshold = parseFloat(process.env.WHATSAPP_CACHE_CLEANUP_THRESHOLD_MB || '400');
+
+    if (mb > threshold) {
+      console.log(`[WhatsAppWeb] ⚠️ Sessão com ${mb.toFixed(2)} MB. Acima de ${threshold} MB — limpando caches temporários...`);
+      const result = cleanupChromeCache();
+      return { triggered: true, sizeBeforeMB: mb, ...result };
+    }
+
+    return { triggered: false, sizeBeforeMB: mb };
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível verificar cache:', e.message);
+    return { triggered: false, error: e.message };
+  }
+}
+
 function createClient() {
   // Garante pasta de persistência
   try {
@@ -195,6 +259,9 @@ function createClient() {
   } catch (e) {
     console.warn('[WhatsAppWeb][DIAG] Não foi possível verificar storage:', e.message);
   }
+
+  // Limpeza preventiva de caches temporários do Chrome (mantém IndexedDB/auth)
+  cleanupChromeCacheIfNeeded();
 
   const puppeteerOpts = {
     headless: 'new',

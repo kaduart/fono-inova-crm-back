@@ -12,6 +12,7 @@ import {
   clearStuckRetries,
   getRecentAuditLog,
 } from '../services/whatsappQueueControlService.js';
+import { cleanupChromeCache } from '../services/whatsappWebJsService.js';
 
 const router = Router();
 
@@ -62,6 +63,22 @@ router.post('/clear-stuck', auth, authorize(['admin']), async (req, res) => {
   } catch (err) {
     console.error('[AdminWhatsappQueue] Erro ao limpar jobs travados:', err.message);
     res.status(500).json({ error: 'Falha ao limpar jobs travados' });
+  }
+});
+
+router.post('/cleanup-cache', auth, authorize(['admin']), async (req, res) => {
+  try {
+    const result = cleanupChromeCache();
+    res.json({
+      success: true,
+      message: 'Cache temporário do Chrome limpo. A autenticação da sessão foi preservada.',
+      removed: result.removed,
+      skippedReason: result.skippedReason,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[AdminWhatsappQueue] Erro ao limpar cache do Chrome:', err.message);
+    res.status(500).json({ error: 'Falha ao limpar cache do Chrome' });
   }
 });
 
