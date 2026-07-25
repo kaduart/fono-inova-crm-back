@@ -20,6 +20,7 @@ import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { whatsappState } from '../services/whatsappWebJsService.js';
+import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
 const router = express.Router();
 
@@ -571,22 +572,39 @@ router.get('/workers', async (req, res) => {
  */
 router.get('/whatsapp', async (req, res) => {
     try {
-        const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
-        let sessionSizeMB = null;
-        let diskUsagePercent = null;
-        try {
-            const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
-            const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
-            sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
+        // Busca estado persistente no MongoDB (worker whatsapp-only salva lá)
+        const persisted = await WhatsAppWebState.findOne({ instanceId: 'main' }).lean();
+        const stateAgeMs = persisted?.updatedAt ? Date.now() - new Date(persisted.updatedAt).getTime() : Infinity;
+        const stateStale = stateAgeMs > 120_000; // considera stale se mais velho que 2min
 
-            const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
-            const dfLine = df.split('\n')[1];
-            if (dfLine) {
-                const match = dfLine.match(/(\d+)%/);
-                if (match) diskUsagePercent = parseInt(match[1], 10);
+        // Fallback para estado local quando não há persisted ou está stale
+        const local = whatsappState;
+        const effective = {
+            status: persisted && !stateStale ? persisted.status : local.status,
+            ready: persisted && !stateStale ? persisted.ready : local.ready,
+            authenticated: persisted && !stateStale ? persisted.authenticated : local.authenticated,
+            updatedAt: persisted?.updatedAt ? persisted.updatedAt.toISOString() : local.updatedAt,
+        };
+
+        // Storage: tenta usar valores persistidos pelo worker; se não houver, calcula localmente
+        let sessionSizeMB = persisted?.sessionSizeMB ?? null;
+        let diskUsagePercent = persisted?.diskUsagePercent ?? null;
+        if (sessionSizeMB == null || diskUsagePercent == null) {
+            try {
+                const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+                const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
+                const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
+                if (sessionSizeMB == null) sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
+
+                const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
+                const dfLine = df.split('\n')[1];
+                if (dfLine && diskUsagePercent == null) {
+                    const match = dfLine.match(/(\d+)%/);
+                    if (match) diskUsagePercent = parseInt(match[1], 10);
+                }
+            } catch (e) {
+                console.warn('[Health][WhatsApp] Não foi possível obter storage:', e.message);
             }
-        } catch (e) {
-            console.warn('[Health][WhatsApp] Não foi possível obter storage:', e.message);
         }
 
         const queue = getQueue('whatsapp-send');
@@ -596,16 +614,17 @@ router.get('/whatsapp', async (req, res) => {
             queue.getFailedCount()
         ]);
 
-        const isHealthy = whatsappState.ready && whatsappState.status === 'ready';
+        const isHealthy = effective.ready && effective.status === 'ready';
         const storageAlert = (sessionSizeMB && sessionSizeMB > 700) || (diskUsagePercent && diskUsagePercent > 80);
 
         res.status(isHealthy ? 200 : 503).json({
             status: isHealthy ? 'healthy' : 'unhealthy',
+            source: persisted && !stateStale ? 'mongodb' : 'local',
             whatsapp: {
-                status: whatsappState.status,
-                ready: whatsappState.ready,
-                authenticated: whatsappState.authenticated,
-                lastReady: whatsappState.updatedAt,
+                status: effective.status,
+                ready: effective.ready,
+                authenticated: effective.authenticated,
+                lastReady: effective.updatedAt,
                 sessionSizeMB,
                 diskUsagePercent,
                 storageAlert,

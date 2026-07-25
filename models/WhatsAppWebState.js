@@ -16,6 +16,8 @@ const schema = new mongoose.Schema({
   lastAuthenticatedAt: { type: Date, default: null },
   qrCount: { type: Number, default: 0 },
   initAttempts: { type: Number, default: 0 },
+  sessionSizeMB: { type: Number, default: null },
+  diskUsagePercent: { type: Number, default: null },
   reconnectSignal: { type: Date, default: null },
   updatedAt: { type: Date, default: Date.now },
 });

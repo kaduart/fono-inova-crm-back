@@ -54,9 +54,30 @@ let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
 let readyPollInterval = null;
+let stateSaveInterval = null;
 
 function updateState(updates) {
   Object.assign(whatsappState, updates, { updatedAt: new Date().toISOString() });
+}
+
+function getSessionStorageInfo() {
+  try {
+    const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
+    const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
+    const sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
+
+    const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
+    const dfLine = df.split('\n')[1];
+    let diskUsagePercent = null;
+    if (dfLine) {
+      const match = dfLine.match(/(\d+)%/);
+      if (match) diskUsagePercent = parseInt(match[1], 10);
+    }
+    return { sessionSizeMB, diskUsagePercent };
+  } catch (e) {
+    console.warn('[WhatsAppWeb] Não foi possível obter storage:', e.message);
+    return { sessionSizeMB: null, diskUsagePercent: null };
+  }
 }
 
 // ─── Persistência MongoDB + singleton em memória ─────────────────────────────
@@ -69,6 +90,7 @@ async function saveState() {
     uptime: process.uptime(),
     initAttempts,
   });
+  const { sessionSizeMB, diskUsagePercent } = getSessionStorageInfo();
   try {
     await WhatsAppWebState.findOneAndUpdate(
       { instanceId: 'main' },
@@ -83,6 +105,8 @@ async function saveState() {
         lastAuthenticatedAt: whatsappState.lastAuthenticatedAt ? new Date(whatsappState.lastAuthenticatedAt) : null,
         qrCount: whatsappState.qrCount,
         initAttempts,
+        sessionSizeMB,
+        diskUsagePercent,
         updatedAt: new Date(),
       },
       { upsert: true }
@@ -379,6 +403,10 @@ function createClient() {
       clearTimeout(retryTimeout);
       retryTimeout = null;
     }
+
+    // Atualiza estado periodicamente (storage, uptime) mesmo sem eventos
+    if (stateSaveInterval) clearInterval(stateSaveInterval);
+    stateSaveInterval = setInterval(() => saveState(), 30_000);
 
     // Captura erros e logs do WhatsApp Web no browser (filtra ruído conhecido)
     if (newClient.pupPage) {
@@ -694,6 +722,7 @@ export async function initWhatsAppClient() {
 
 async function safeDestroyClient() {
   if (!client) return;
+  if (stateSaveInterval) { clearInterval(stateSaveInterval); stateSaveInterval = null; }
   try {
     await client.destroy();
     console.log('[WhatsAppWeb] Cliente destruído para retry.');
