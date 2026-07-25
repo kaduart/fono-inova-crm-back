@@ -13,9 +13,13 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
+import { whatsappState } from '../services/whatsappWebJsService.js';
 
 const router = express.Router();
 
@@ -551,6 +555,67 @@ router.get('/workers', async (req, res) => {
                 waitingPerQueue: ALERTS.queueWaiting,
                 failedPerGroup: 10
             }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+/**
+ * Health check específico do WhatsApp Web
+ * GET /api/health/whatsapp
+ */
+router.get('/whatsapp', async (req, res) => {
+    try {
+        const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+        let sessionSizeMB = null;
+        let diskUsagePercent = null;
+        try {
+            const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
+            const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
+            sessionSizeMB = parseFloat((bytes / 1024 / 1024).toFixed(2));
+
+            const df = execSync(`df -h ${authPath} 2>/dev/null || echo ''`).toString().trim();
+            const dfLine = df.split('\n')[1];
+            if (dfLine) {
+                const match = dfLine.match(/(\d+)%/);
+                if (match) diskUsagePercent = parseInt(match[1], 10);
+            }
+        } catch (e) {
+            console.warn('[Health][WhatsApp] Não foi possível obter storage:', e.message);
+        }
+
+        const queue = getQueue('whatsapp-send');
+        const [waiting, active, failed] = await Promise.all([
+            queue.getWaitingCount(),
+            queue.getActiveCount(),
+            queue.getFailedCount()
+        ]);
+
+        const isHealthy = whatsappState.ready && whatsappState.status === 'ready';
+        const storageAlert = (sessionSizeMB && sessionSizeMB > 700) || (diskUsagePercent && diskUsagePercent > 80);
+
+        res.status(isHealthy ? 200 : 503).json({
+            status: isHealthy ? 'healthy' : 'unhealthy',
+            whatsapp: {
+                status: whatsappState.status,
+                ready: whatsappState.ready,
+                authenticated: whatsappState.authenticated,
+                lastReady: whatsappState.updatedAt,
+                sessionSizeMB,
+                diskUsagePercent,
+                storageAlert,
+            },
+            queue: {
+                waiting,
+                active,
+                failed
+            },
+            timestamp: new Date().toISOString()
         });
     } catch (error) {
         res.status(500).json({
