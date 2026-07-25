@@ -301,6 +301,22 @@ function createClient() {
       clearTimeout(retryTimeout);
       retryTimeout = null;
     }
+
+    // Captura erros e logs do WhatsApp Web no browser
+    if (newClient.pupPage) {
+      try {
+        newClient.pupPage.on('pageerror', (err) => {
+          console.error('[WhatsAppWeb][BROWSER PAGEERROR]', err?.message || err);
+        });
+        newClient.pupPage.on('console', (msg) => {
+          console.log(`[WhatsAppWeb][BROWSER CONSOLE ${msg.type()}]`, msg.text());
+        });
+        console.log('[WhatsAppWeb][DIAG] Listeners de pageerror/console registrados.');
+      } catch (e) {
+        console.warn('[WhatsAppWeb][DIAG] Não foi possível registrar listeners do Puppeteer:', e.message);
+      }
+    }
+
     await saveState();
     if (process.send) {
       process.send({ type: 'whatsapp_ready' });
@@ -649,11 +665,25 @@ export async function sendMessage(phone, message) {
 
     console.log(`[WhatsAppWeb][DIAG] Destino final escolhido: ${chatId}`);
 
-    // Instrumentação: verifica se o chat existe antes de enviar
+    // Instrumentação: verifica estado do cliente e se o chat existe antes de enviar
+    try {
+      console.log(`[WhatsAppWeb][DIAG] Client state:`, await client.getState());
+      console.log(`[WhatsAppWeb][DIAG] Client info:`, JSON.stringify(client.info));
+    } catch (infoErr) {
+      console.log(`[WhatsAppWeb][DIAG] Não foi possível logar client state/info:`, infoErr?.message);
+    }
+
     try {
       console.log(`[WhatsAppWeb][DIAG] Verificando chat ${chatId}...`);
       const chat = await client.getChatById(chatId);
-      console.log(`[WhatsAppWeb][DIAG] Chat encontrado: ${!!chat}`, chat ? { id: chat.id?._serialized, name: chat.name, isGroup: chat.isGroup } : null);
+      console.log(`[WhatsAppWeb][DIAG] Chat encontrado: ${!!chat}`, chat ? {
+        id: chat.id?._serialized,
+        isGroup: chat.isGroup,
+        isReadOnly: chat.isReadOnly,
+        archived: chat.archived,
+        pinned: chat.pinned,
+        name: chat.name,
+      } : null);
     } catch (chatErr) {
       console.error(`[WhatsAppWeb][DIAG] getChatById(${chatId}) falhou:`, {
         message: chatErr?.message,
