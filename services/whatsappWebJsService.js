@@ -313,14 +313,29 @@ function createClient() {
       retryTimeout = null;
     }
 
-    // Captura erros e logs do WhatsApp Web no browser
+    // Captura erros e logs do WhatsApp Web no browser (filtra ruído conhecido)
     if (newClient.pupPage) {
       try {
+        const IGNORED_PAGE_ERRORS = [
+          'IDBObjectStore',
+          'DataError',
+          'QuotaExceededError',
+          'deidentified_telemetry',
+          'dit.whatsapp.net',
+        ];
         newClient.pupPage.on('pageerror', (err) => {
-          console.error('[WhatsAppWeb][BROWSER PAGEERROR]', err?.message || err);
+          const msg = err?.message || String(err);
+          if (IGNORED_PAGE_ERRORS.some((x) => msg.includes(x))) {
+            return;
+          }
+          console.error('[WhatsAppWeb][BROWSER PAGEERROR]', msg);
         });
         newClient.pupPage.on('console', (msg) => {
-          console.log(`[WhatsAppWeb][BROWSER CONSOLE ${msg.type()}]`, msg.text());
+          const text = msg.text();
+          if (msg.type() === 'error' && text.includes('deidentified_telemetry')) {
+            return;
+          }
+          console.log(`[WhatsAppWeb][BROWSER CONSOLE ${msg.type()}]`, text);
         });
         console.log('[WhatsAppWeb][DIAG] Listeners de pageerror/console registrados.');
       } catch (e) {
