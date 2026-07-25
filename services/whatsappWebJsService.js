@@ -109,7 +109,7 @@ function cleanupChromeCacheIfNeeded() {
     const du = execSync(`du -sb ${authPath} 2>/dev/null || echo 0`).toString().trim();
     const bytes = parseInt(du.split(/\s+/)[0], 10) || 0;
     const mb = bytes / 1024 / 1024;
-    const threshold = parseFloat(process.env.WHATSAPP_CACHE_CLEANUP_THRESHOLD_MB || '400');
+    const threshold = parseFloat(process.env.WHATSAPP_CACHE_CLEANUP_THRESHOLD_MB || '1500');
 
     if (mb > threshold) {
       console.log(`[WhatsAppWeb] ⚠️ Sessão com ${mb.toFixed(2)} MB. Acima de ${threshold} MB — limpando caches temporários...`);
