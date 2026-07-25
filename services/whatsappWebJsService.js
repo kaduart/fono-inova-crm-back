@@ -240,6 +240,64 @@ function resolveChromePath() {
   return null;
 }
 
+// ─── Filtro de ruído de pageerror/console do Puppeteer ───────────────────────
+const PAGE_NOISE_PATTERNS = [
+  /Failed to load resource: net::ERR_/i,
+  /WebSocket connection to ['"]?wss?:\/\//i,
+  /Failed to execute ['"]postMessage['"] on ['"]DOMWindow['"]/i,
+  /Manifest:/i,
+  /was loaded over HTTPS/i,
+  /has been blocked by CORS/i,
+  /Content Security Policy/i,
+  /Refused to execute inline script/i,
+  /Uncaught \(in promise\) undefined/i,
+  /Error in event handler: TypeError: Cannot read properties of undefined/i,
+  /Extension ['"][^'"]+['"] tried to modify/i,
+  /runtime\.sendMessage/i,
+  /runtime\.onMessage/i,
+  /\[Report Only\]/i,
+];
+
+function isPageNoise(message) {
+  return PAGE_NOISE_PATTERNS.some(re => re.test(message));
+}
+
+function attachPageNoiseFilters(newClient) {
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  const tryAttach = () => {
+    const page = newClient?.pupPage;
+    if (!page) {
+      if (++attempts >= maxAttempts) return;
+      return setTimeout(tryAttach, 1000);
+    }
+
+    page.on('pageerror', (err) => {
+      const msg = err?.message || String(err);
+      if (isPageNoise(msg)) return;
+      console.warn('[WhatsAppWeb][pageerror]', msg);
+    });
+
+    page.on('console', (msg) => {
+      try {
+        const text = msg.text();
+        if (isPageNoise(text)) return;
+        const type = msg.type();
+        if (type === 'error' || type === 'warning') {
+          console.warn(`[WhatsAppWeb][console:${type}]`, text.slice(0, 500));
+        }
+      } catch (e) {
+        // ignora erros ao ler mensagem do console
+      }
+    });
+
+    console.log('[WhatsAppWeb] Filtros de ruído pageerror/console ativados.');
+  };
+
+  setTimeout(tryAttach, 1000);
+}
+
 // ─── Criação do cliente ─────────────────────────────────────────────────────
 function createClient() {
   // Garante pasta de persistência
@@ -459,6 +517,8 @@ function createClient() {
       saveState();
     }
   });
+
+  attachPageNoiseFilters(newClient);
 
   return newClient;
 }
