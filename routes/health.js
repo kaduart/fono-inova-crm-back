@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
+import { whatsappState } from '../services/whatsappWebJsService.js';
 
 const router = express.Router();
 
@@ -318,6 +319,58 @@ router.get('/full', async (req, res) => {
                 heapTotalMB: 0,
                 status: 'unknown'
             },
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+/**
+ * Health check leve do WhatsApp Web
+ * GET /api/health/whatsapp
+ *
+ * Apenas leitura de estado. Não inicializa cliente, não executa evaluate
+ * no Chromium e não toca na sessão. Útil para monitoramento e para o
+ * processo pai saber se o child está realmente pronto.
+ */
+router.get('/whatsapp', async (req, res) => {
+    try {
+        const queue = getQueue('whatsapp-send');
+        const [waiting, active, failed, delayed] = await Promise.all([
+            queue.getWaitingCount(),
+            queue.getActiveCount(),
+            queue.getFailedCount(),
+            queue.getDelayedCount()
+        ]);
+
+        const state = whatsappState || {};
+
+        res.json({
+            status: state.ready === true ? 'ready' : state.status || 'unknown',
+            whatsapp: {
+                status: state.status || 'unknown',
+                ready: !!state.ready,
+                authenticated: !!state.authenticated,
+                qrCount: state.qrCount || 0,
+                lastAuthenticatedAt: state.lastAuthenticatedAt || null,
+                lastDisconnectReason: state.lastDisconnectReason || null,
+                pid: state.pid || null,
+                uptime: state.uptime || null,
+                updatedAt: state.updatedAt || null
+            },
+            queue: {
+                name: 'whatsapp-send',
+                waiting,
+                active,
+                failed,
+                delayed
+            },
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime()
+        });
+    } catch (error) {
+        res.status(503).json({
+            status: 'error',
+            error: error.message,
             timestamp: new Date().toISOString()
         });
     }
