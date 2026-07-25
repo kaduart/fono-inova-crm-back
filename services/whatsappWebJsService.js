@@ -769,10 +769,12 @@ export async function sendMessage(phone, message) {
   console.log(`[WhatsAppWeb] 📤 Enviando para ${clean}...`);
   try {
     const numberId = await client.getNumberId(clean);
+    console.log('[WhatsAppWeb][DIAG] numberId:', JSON.stringify(numberId, null, 2));
     if (!numberId) {
       throw new Error(`Número ${clean} não possui WhatsApp`);
     }
     const result = await client.sendMessage(numberId._serialized, message);
+    console.log('[WhatsAppWeb][DIAG] sendMessage result:', JSON.stringify(result, (k, v) => typeof v === 'bigint' ? v.toString() : v, 2));
     const messageId = result?.id?._serialized || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
     return { success: true, messageId };
