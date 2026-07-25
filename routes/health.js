@@ -621,15 +621,18 @@ router.get('/whatsapp', async (req, res) => {
         ]);
 
         const isHealthy = effective.ready && effective.status === 'ready';
+        const isFrozen = effective.status === 'frozen';
         const storageAlert = (sessionSizeMB && sessionSizeMB > 700) || (diskUsagePercent && diskUsagePercent > 80);
 
-        res.status(isHealthy ? 200 : 503).json({
-            status: isHealthy ? 'healthy' : 'unhealthy',
+        res.status(isHealthy && !isFrozen ? 200 : 503).json({
+            status: isFrozen ? 'frozen' : (isHealthy ? 'healthy' : 'unhealthy'),
             source: persisted && !stateStale ? 'mongodb' : 'local',
             whatsapp: {
                 status: effective.status,
                 ready: effective.ready,
                 authenticated: effective.authenticated,
+                frozen: isFrozen,
+                pageFrozenAt: persisted?.pageFrozenAt || local.pageFrozenAt || null,
                 lastReady: effective.updatedAt,
                 sessionSizeMB,
                 diskUsagePercent,

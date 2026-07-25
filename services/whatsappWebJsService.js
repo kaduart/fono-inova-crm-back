@@ -38,6 +38,7 @@ export const whatsappState = {
   lastAuthenticatedAt: null,
   qrCount: 0,
   initAttempts: 0,
+  pageFrozenAt: null,
   updatedAt: null,
   pid: null,
   uptime: null,
@@ -55,9 +56,70 @@ const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
 let readyPollInterval = null;
 let stateSaveInterval = null;
+let pingInterval = null;
+let isPageFrozen = false;
+let pageFrozenAt = null;
+let isReconnecting = false;
 
 function updateState(updates) {
   Object.assign(whatsappState, updates, { updatedAt: new Date().toISOString() });
+}
+
+// ─── Detecção de congelamento da página WhatsApp Web ───────────────────────────
+async function pingPage(timeoutMs = 5000) {
+  if (!client || !client.pupPage) return false;
+  try {
+    await withTimeout(
+      client.pupPage.evaluate(() => 'pong'),
+      timeoutMs,
+      'pingPage'
+    );
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function markPageFrozen(reason = 'ping falhou') {
+  if (isPageFrozen || isReconnecting) return;
+  isPageFrozen = true;
+  pageFrozenAt = new Date().toISOString();
+  whatsappState.pageFrozenAt = pageFrozenAt;
+  connectionStatus = 'frozen';
+  whatsappState.status = 'frozen';
+  whatsappState.ready = false;
+  console.error(`[WhatsAppWeb] 🧊 Página congelada detectada (${reason}). Iniciando recuperação...`);
+  await saveState();
+
+  // Evita múltiplas reconexões simultâneas
+  isReconnecting = true;
+  try {
+    await softReconnect();
+  } finally {
+    isReconnecting = false;
+  }
+}
+
+function startPingInterval() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+  pingInterval = setInterval(async () => {
+    if (!isReady || !client || isReconnecting) return;
+    const ok = await pingPage(5000);
+    if (!ok) {
+      await markPageFrozen('pingPage timeout 5000ms');
+    } else if (isPageFrozen) {
+      // Recuperou
+      isPageFrozen = false;
+      pageFrozenAt = null;
+      whatsappState.pageFrozenAt = null;
+      console.log('[WhatsAppWeb] 🧊 Página descongelada — envios retomados.');
+    }
+  }, 15_000);
+  console.log('[WhatsAppWeb][DIAG] Ping de congelamento iniciado (a cada 15s).');
+}
+
+function stopPingInterval() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
 }
 
 function getSessionStorageInfo() {
@@ -89,6 +151,7 @@ async function saveState() {
     pid: process.pid,
     uptime: process.uptime(),
     initAttempts,
+    pageFrozenAt,
   });
   const { sessionSizeMB, diskUsagePercent } = getSessionStorageInfo();
   try {
@@ -105,6 +168,7 @@ async function saveState() {
         lastAuthenticatedAt: whatsappState.lastAuthenticatedAt ? new Date(whatsappState.lastAuthenticatedAt) : null,
         qrCount: whatsappState.qrCount,
         initAttempts,
+        pageFrozenAt,
         sessionSizeMB,
         diskUsagePercent,
         updatedAt: new Date(),
@@ -416,6 +480,14 @@ function createClient() {
     if (stateSaveInterval) clearInterval(stateSaveInterval);
     stateSaveInterval = setInterval(() => saveState(), 30_000);
 
+    // Reset de congelamento ao ficar ready
+    isPageFrozen = false;
+    pageFrozenAt = null;
+    whatsappState.pageFrozenAt = null;
+
+    // Inicia ping periódico para detectar congelamento da página WhatsApp Web
+    startPingInterval();
+
     // Captura erros e logs do WhatsApp Web no browser (filtra ruído conhecido)
     if (newClient.pupPage) {
       try {
@@ -473,6 +545,9 @@ function createClient() {
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
+    stopPingInterval();
+    isPageFrozen = false;
+    pageFrozenAt = null;
     isReady = false;
     connectionStatus = 'disconnected';
     whatsappState.ready = false;
@@ -504,6 +579,7 @@ function createClient() {
     // → limpa sessão stale e sai para o parent respawnar com QR novo
     if (whatsappState.qrCount === 0) {
       console.log('[WhatsAppWeb] 🧹 Sessão stale detectada (qrCount=0) — removendo e saindo para respawn limpo...');
+      stopPingInterval();
       try {
         const localAuthDir = path.join(authPath, '.wwebjs_auth');
         if (fs.existsSync(localAuthDir)) {
@@ -521,6 +597,9 @@ function createClient() {
     }
 
     // qrCount > 0: QRs expiraram sem ser escaneados — fica disconnected, espera ação manual
+    isPageFrozen = false;
+    pageFrozenAt = null;
+    whatsappState.pageFrozenAt = null;
     connectionStatus = 'auth_failure';
     whatsappState.lastDisconnectReason = `auth_failure: ${msg}`;
     saveState();
@@ -805,6 +884,18 @@ export async function getStatus() {
   };
 }
 
+// ─── Health check da página WhatsApp Web ───────────────────────────────────────
+export async function checkPageHealth() {
+  const pingOk = await pingPage(5000);
+  return {
+    frozen: !pingOk && isReady,
+    pageFrozenAt: pageFrozenAt,
+    pingOk,
+    isReady,
+    status: connectionStatus,
+  };
+}
+
 // ─── Diagnóstico direto no page.evaluate ─────────────────────────────────────
 async function diagnosticGetChatById(chatId) {
   return client.pupPage.evaluate(async (chatId) => {
@@ -885,6 +976,17 @@ export async function sendMessage(phone, message) {
   if (!isReady || !client) {
     throw new Error('WhatsApp não está conectado');
   }
+  if (isPageFrozen) {
+    throw new Error('WhatsApp congelado — aguardando reconexão');
+  }
+  // Ping rápido para detectar congelamento antes de aceitar o job.
+  // Se falhar, marca como congelado e devolve o job para retry do BullMQ imediatamente.
+  const pingOk = await pingPage(3000);
+  if (!pingOk) {
+    await markPageFrozen('sendMessage pre-flight ping falhou');
+    throw new Error('WhatsApp congelado — aguardando reconexão');
+  }
+
   const clean = normalizeE164BR(phone);
   if (!clean) {
     throw new Error(`Número inválido: ${phone}`);
@@ -975,8 +1077,11 @@ export async function sendMessage(phone, message) {
 export async function softReconnect() {
   console.log('[WhatsAppWeb] 🔄 Soft reconnect — preservando sessão no MongoDB...');
   isReady = false;
+  isPageFrozen = false;
+  pageFrozenAt = null;
   whatsappState.ready = false;
   whatsappState.status = 'reconnecting';
+  stopPingInterval();
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
@@ -1002,6 +1107,9 @@ export async function clearSession() {
   whatsappState.lastDisconnectReason = null;
   whatsappState.lastAuthenticatedAt = null;
   whatsappState.qrCount = 0;
+  isPageFrozen = false;
+  pageFrozenAt = null;
+  stopPingInterval();
   updateState({});
 
   try {
@@ -1033,6 +1141,8 @@ export async function clearSession() {
 export async function reconnect() {
   console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão local...');
   isReady = false;
+  isPageFrozen = false;
+  pageFrozenAt = null;
   qrCodeDataUrl = null;
   connectionStatus = 'initializing';
   initAttempts = 0;
@@ -1040,6 +1150,7 @@ export async function reconnect() {
   whatsappState.authenticated = false;
   whatsappState.qrCode = null;
   whatsappState.qrCount = 0;
+  stopPingInterval();
   if (retryTimeout) {
     clearTimeout(retryTimeout);
     retryTimeout = null;
@@ -1113,4 +1224,5 @@ export default {
   clearSession,
   checkExternalReconnectSignal,
   gracefulShutdownWhatsApp,
+  checkPageHealth,
 };
