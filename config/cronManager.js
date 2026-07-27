@@ -67,7 +67,10 @@ export async function startAllCrons() {
     const { scheduleStateMachineConvenioReconciliation } = await import("../crons/stateMachineConvenioReconciliation.cron.js");
     startCron('stateMachineConvenioReconciliation', () => scheduleStateMachineConvenioReconciliation());
 
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation)");
+    const { initCommunicationReconciliationCron } = await import("../crons/communicationReconciliation.cron.js");
+    startCron('communicationReconciliation', () => initCommunicationReconciliationCron());
+
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation + communicationReconciliation)");
 }
 
 export default { startCron, stopCron, stopAllCrons, listActiveCrons, startAllCrons };

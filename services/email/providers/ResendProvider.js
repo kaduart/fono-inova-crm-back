@@ -38,7 +38,7 @@ export class ResendProvider extends BaseEmailProvider {
     fromEmail,
     fromName
   }) {
-    const defaultFromEmail = process.env.EMAIL_FROM || 'noreply@clinicafonoinova.com.br';
+    const defaultFromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
     const defaultFromName = process.env.EMAIL_FROM_NAME || 'Clínica Fono Inova';
 
     const resolvedFromEmail = fromEmail || defaultFromEmail;

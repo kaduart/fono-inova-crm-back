@@ -30,19 +30,26 @@ function buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, me
     ? `Prezados,<br><br>Segue em anexo a documentação solicitada do paciente ${patientName}.<br><br>Atenciosamente,<br>Clínica Fono Inova`
     : `Prezados,<br><br>Segue em anexo a documentação para solicitação de autorização de atendimento do paciente ${patientName}.<br><br>Aguardamos retorno com o número de autorização para prosseguimento.<br><br>Atenciosamente,<br>Clínica Fono Inova`;
 
-  const body = message || defaultBody;
+  // Mensagens customizadas (digitadas no Wizard) vêm com quebra de linha "\n" normal,
+  // mas HTML ignora "\n" solto — sem isso, o corpo do e-mail sai tudo grudado num
+  // parágrafo só (achado em produção 2026-07-27, e-mail real recebido sem quebras).
+  const rawBody = message || defaultBody;
+  const body = message ? rawBody.replace(/\n/g, '<br>') : rawBody;
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto;">
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #1f2937;">
       <div style="background: linear-gradient(135deg, #0F766E 0%, #065F46 100%); padding: 30px 20px; text-align: center;">
         <span style="display: inline-block; background: #ffffff; border-radius: 10px; padding: 10px 18px;">
           <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 64px; display: block;">
         </span>
       </div>
       <div style="padding: 32px 28px;">
-        <h2 style="color: #2563eb; margin: 0 0 8px;">${insuranceName || 'Convênio'}</h2>
-        ${guideNumber ? `<p><strong>Guia:</strong> ${guideNumber}</p>` : ''}
-        <div style="margin-top: 16px;">${body}</div>
+        <h2 style="color: #2563eb; margin: 0 0 4px; font-size: 18px;">${insuranceName || 'Convênio'}</h2>
+        ${guideNumber ? `<p style="margin: 0 0 16px; color: #4b5563;"><strong>Guia:</strong> ${guideNumber}</p>` : ''}
+        <div style="margin-top: 16px; line-height: 1.6; font-size: 14px;">${body}</div>
+      </div>
+      <div style="padding: 18px 28px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
+        Clínica Fono Inova — este e-mail foi enviado automaticamente a partir do sistema de gestão da clínica.
       </div>
     </div>
   `;
@@ -128,7 +135,13 @@ export async function sendCommunicationEmail({
       html,
       text,
       attachments,
-      customId: `communication-${communicationId}-${Date.now()}`
+      customId: `communication-${communicationId}-${Date.now()}`,
+      // Remetente dedicado deste fluxo (envio de documentação/faturamento a convênio) —
+      // usa env var própria em vez do EMAIL_FROM genérico, que outros e-mails do sistema
+      // (reset de senha, etc.) também usam. Evita que uma troca aqui afete o resto do
+      // sistema, ou vice-versa (achado em produção 2026-07-27).
+      fromEmail: process.env.BILLING_EMAIL_FROM || 'financeiro@clinicafonoinova.com.br',
+      fromName: process.env.BILLING_EMAIL_FROM_NAME || 'Financeiro - Clínica Fono Inova'
     });
   } catch (error) {
     logStatus = EmailLogStatus.ERROR;
