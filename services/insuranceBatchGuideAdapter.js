@@ -473,12 +473,14 @@ export async function listGuidesPendingBilling(filters = {}) {
     const hasBilledSession = billingStats.count > 0;
     const hasReceivedPayment = receivedGuideIds.has(guide._id.toString());
     const isClosed = !!guide.closedAt;
+    const hasPendingSessions = pending.sessionsCount > 0;
 
     const billingState = deriveGuideBillingState(guide, {
       hasSentCommunication,
       hasBilledSession,
       hasReceivedPayment,
-      isClosed
+      isClosed,
+      hasPendingSessions
     });
 
     // "A faturar" deve refletir apenas o valor das sessões já realizadas e
@@ -782,18 +784,39 @@ export const GuideBillingState = {
  * no sistema. Não há campo mutável `billingStatus` em InsuranceGuide; o estado é
  * inferido para evitar inconsistências entre UI e banco.
  *
- * Hierarquia (mais específico vence):
- *   closedAt -> CLOSED
- *   payment insurance.status === 'received' -> RECEIVED
- *   sessão da guia em InsuranceBatch enviado -> BILLED
- *   InsuranceCommunication billing sent -> DOCUMENTATION_SENT
- *   senão -> PENDING
+ * Uma guia per_guide fica aberta por meses e é faturada em ciclos sucessivos —
+ * não existe faturamento único no fechamento. Achado real 2026-07-27 (caso
+ * Benjamim Rocha Simão, guia 16145509): sessões de jun/2026 entraram num lote
+ * legado, mas 14 sessões novas (inclusive jul/2026) nunca foram batched. Com
+ * `hasBilledSession` decidindo antes de olhar pendência, a guia virava BILLED
+ * pra sempre a partir do primeiro lote e sumia das abas "A Faturar"/"Aguardando
+ * Faturamento" — mesmo com sessões reais aguardando ação. O mesmo vale pra
+ * RECEIVED: pagamento recebido de um ciclo anterior não significa que não haja
+ * sessão nova pendente agora.
+ *
+ * Por isso "existe sessão pendente?" é a primeira pergunta, não a última —
+ * histórico de faturamento (billed/received) só decide o estado quando não
+ * sobra nenhuma sessão pendente no momento.
+ *
+ * NÃO adicione um `if (hasBilledSession) return BILLED` (ou equivalente para
+ * RECEIVED) ANTES do check de `hasPendingSessions` — foi exatamente essa
+ * ordem que causou a regressão acima. "Já faturou alguma vez" e "terminou de
+ * faturar" são estados diferentes; só o segundo pode aposentar a guia das
+ * abas de pendência.
+ *
+ *   isClosed?
+ *     └── sim -> CLOSED (fechamento é definitivo, vence mesmo com pendência)
+ *     └── não -> hasPendingSessions?
+ *           ├── sim -> hasSentCommunication? DOCUMENTATION_SENT : PENDING
+ *           └── não -> hasReceivedPayment?
+ *                 ├── sim -> RECEIVED
+ *                 └── não -> hasBilledSession? BILLED : PENDING
  */
-export function deriveGuideBillingState(guide, { hasSentCommunication, hasBilledSession, hasReceivedPayment, isClosed }) {
+export function deriveGuideBillingState(guide, { hasSentCommunication, hasBilledSession, hasReceivedPayment, isClosed, hasPendingSessions }) {
   if (isClosed) return GuideBillingState.CLOSED;
+  if (hasPendingSessions) return hasSentCommunication ? GuideBillingState.DOCUMENTATION_SENT : GuideBillingState.PENDING;
   if (hasReceivedPayment) return GuideBillingState.RECEIVED;
   if (hasBilledSession) return GuideBillingState.BILLED;
-  if (hasSentCommunication) return GuideBillingState.DOCUMENTATION_SENT;
   return GuideBillingState.PENDING;
 }
 
