@@ -9,13 +9,18 @@ import http from 'http';
 import path from 'path';
 import { fork } from 'child_process';
 import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import '../models/index.js';
+import { startWorkersByGroup, stopAllWorkers } from './index.js';
 
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || process.env.WORKER_PORT || 10000;
 
-console.log('🆘 MODO EMERGÊNCIA: WhatsApp ONLY (com child process isolado)\n');
+console.log('🆘 MODO RECUPERAÇÃO: WhatsApp isolado + workers scheduling/billing/clinical/reconciliation\n');
 console.log(`📂 CWD: ${process.cwd()}`);
 console.log(`📂 Sessão path: /var/data/wwebjs_auth\n`);
 
@@ -61,7 +66,13 @@ const server = http.createServer((req, res) => {
 
     if (req.url === '/api/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', mode: 'whatsapp-only', childReady, childStatus }));
+        res.end(JSON.stringify({
+            status: 'ok',
+            mode: 'whatsapp-core',
+            childReady,
+            childStatus,
+            coreWorkers: activeWorkers.length,
+        }));
         return;
     }
 
@@ -91,10 +102,45 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
     console.log(`📊 Health Check: http://localhost:${PORT}/api/health`);
     console.log('🟢 Processo principal estável — WhatsApp vai subir em child process\n');
+
+    // Conecta MongoDB e sobe workers core em paralelo com o WhatsApp.
+    // O grupo whatsapp fica no child process (whatsapp-child.js) para não duplicar
+    // o consumo da fila whatsapp-send.
+    try {
+        const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+        if (MONGO_URI) {
+            await mongoose.connect(MONGO_URI, {
+                maxPoolSize: 10,
+                minPoolSize: 2,
+                serverSelectionTimeoutMS: 30000,
+            });
+            console.log('✅ MongoDB conectado (workers core)');
+        }
+
+        await startCoreWorkers();
+    } catch (err) {
+        console.error('❌ Erro ao iniciar workers core:', err.message);
+    }
 });
+
+// ─── Workers core (tudo exceto whatsapp, que fica no child) ──────────────────
+const activeWorkers = [];
+
+async function startCoreWorkers() {
+    const coreGroups = ['scheduling', 'billing', 'clinical', 'reconciliation'];
+    console.log(`[Workers Core] Iniciando grupos: ${coreGroups.join(', ')}`);
+    await Promise.all(
+        coreGroups.map(async (group, idx) => {
+            await new Promise((r) => setTimeout(r, idx * 1000)); // pequeno stagger
+            const workers = await startWorkersByGroup(group);
+            activeWorkers.push(...workers);
+        })
+    );
+    console.log(`[Workers Core] ${activeWorkers.length} workers ativos`);
+}
 
 // ─── Gerenciador do child process ──────────────────────────────────────────
 function spawnWhatsAppChild() {
@@ -203,10 +249,23 @@ function spawnWhatsAppChild() {
 }
 
 // ─── Graceful shutdown ─────────────────────────────────────────────────────
-function shutdown(signal) {
-    console.log(`\n🛑 ${signal} no processo principal. Aguardando child...`);
+async function shutdown(signal) {
+    console.log(`\n🛑 ${signal} no processo principal. Aguardando child e workers core...`);
     isShuttingDown = true;
     server.close();
+
+    try {
+        stopAllWorkers();
+    } catch (e) {
+        console.warn('[PARENT] Erro ao parar workers core:', e.message);
+    }
+
+    try {
+        await mongoose.disconnect();
+    } catch (e) {
+        // ignore
+    }
+
     if (childProcess) {
         childProcess.kill('SIGTERM');
         const timeout = setTimeout(() => {
