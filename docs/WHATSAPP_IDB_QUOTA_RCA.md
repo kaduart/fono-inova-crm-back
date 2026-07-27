@@ -1,7 +1,7 @@
 # RCA — Incidente WhatsApp Web / IndexedDB Corrompido
 
 **Data do incidente:** 25/07/2026
-**Serviço afetado:** Worker WhatsApp Web (`whatsapp-only`)
+**Serviço afetado:** Worker WhatsApp Web (`whatsapp-core`)
 **Biblioteca:** `whatsapp-web.js` 1.34.7
 **Ambiente:** Render + Persistent Disk + Chrome Puppeteer
 

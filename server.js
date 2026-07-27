@@ -884,7 +884,7 @@ server.listen(PORT, '0.0.0.0', () => {
     // 🛡️ Watchdog do pipeline WhatsApp — roda aqui porque este é o processo
     // que de fato sobe em produção (crm-backend). workers/startWorkers.js
     // também chama isso, mas não é o Start Command real do crm-worker
-    // (que é workers/entrypoints/whatsapp-only.js — ver DOMAIN_INVARIANTS.md)
+    // (que é workers/entrypoints/whatsapp-core.js — ver DOMAIN_INVARIANTS.md)
     startWhatsAppPipelineGuard();
 
     // 👉 CRONS CRÍTICOS HABILITADOS

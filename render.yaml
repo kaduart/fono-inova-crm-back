@@ -186,7 +186,7 @@ services:
     branch: main
     rootDir: back
     buildCommand: npm ci --omit=optional && node installChrome.js
-    startCommand: node workers/entrypoints/whatsapp-only.js
+    startCommand: node workers/entrypoints/whatsapp-core.js
     autoDeploy: false
     disk:
       name: whatsapp-session

@@ -126,10 +126,10 @@ Se alterar Patient, verificar:
 21. Nunca disparar mensagem sem `detectAllFlags()` primeiro
 22. Pipeline: `detectAllFlags → BusinessRulesAdapter → DecisionResolver → ResponseBuilder`
 23. GMB images: usar apenas `sanitizePermanentMedia` — sem fallbacks Unsplash/Pollinations
-24. **O Start Command real do `crm-worker` no Render é `node workers/entrypoints/whatsapp-only.js`, NÃO `workers/startWorkers.js`** — apesar do `render.yaml` (que já se declara não-autoritativo) sugerir o segundo. Confirmar sempre no dashboard (Settings → Start Command) antes de assumir qual arquivo está rodando; `workers/startWorkers.js`/`workers/registry.js` (grupo `whatsapp`) hoje só rodam em modos `dev:worker*`/`dev:isolated*`, não em produção
-25. A fila `whatsapp-send` (consumida por `POST /api/whatsapp-web/send`, usada pelo app `agenda`) já tem consumidor **dentro de** `workers/entrypoints/whatsapp-child.js` (forkado por `whatsapp-only.js`) — não registrar um segundo consumidor em `registry.js`/`workers/startWorkers.js` para essa fila; isso cria risco real de dois Workers concorrentes se algum dia os entrypoints forem unificados ou alguém rodar `dev:worker:whatsapp` local pensando que reflete produção
+24. **O Start Command real do `crm-worker` no Render é `node workers/entrypoints/whatsapp-core.js`, NÃO `workers/startWorkers.js`** — apesar do `render.yaml` (que já se declara não-autoritativo) sugerir o segundo. Confirmar sempre no dashboard (Settings → Start Command) antes de assumir qual arquivo está rodando; `workers/startWorkers.js`/`workers/registry.js` (grupo `whatsapp`) hoje só rodam em modos `dev:worker*`/`dev:isolated*`, não em produção
+25. A fila `whatsapp-send` (consumida por `POST /api/whatsapp-web/send`, usada pelo app `agenda`) já tem consumidor **dentro de** `workers/entrypoints/whatsapp-child.js` (forkado por `whatsapp-core.js`) — não registrar um segundo consumidor em `registry.js`/`workers/startWorkers.js` para essa fila; isso cria risco real de dois Workers concorrentes se algum dia os entrypoints forem unificados ou alguém rodar `dev:worker:whatsapp` local pensando que reflete produção
 26. Antes de diagnosticar "fila sem consumidor" num incidente de WhatsApp, checar primeiro `GET /api/admin/whatsapp-queue/status` (ou painel `/admin?tab=WhatsApp`) — se `completed > 0` no histórico, o consumidor existe e sempre existiu; o problema mais provável é a sessão do WhatsApp Web (Puppeteer) desconectada, não a fila
-27. **Nunca rodar um segundo processo `whatsapp-only.js`/`whatsapp-child.js` (local ou em outro serviço) enquanto o de produção está ativo** — como local e produção compartilham o mesmo MongoDB (sinalização de reconexão via `WhatsAppWebState`) e potencialmente a mesma sessão WhatsApp, dois clientes Puppeteer simultâneos derrubam a sessão real (incidente 2026-07-24, causado exatamente assim)
+27. **Nunca rodar um segundo processo `whatsapp-core.js`/`whatsapp-child.js` (local ou em outro serviço) enquanto o de produção está ativo** — como local e produção compartilham o mesmo MongoDB (sinalização de reconexão via `WhatsAppWebState`) e potencialmente a mesma sessão WhatsApp, dois clientes Puppeteer simultâneos derrubam a sessão real (incidente 2026-07-24, causado exatamente assim)
 28. `whatsappPipelineGuard.js` (`startWhatsAppPipelineGuard()`) deve permanecer chamado no boot de `back/server.js` (processo real do `crm-backend`) — é o único alerta automático que detecta fila de WhatsApp pausada ou job parado sem consumidor. Ficou implementado e sem uso por meses (achado durante o incidente de 2026-07-24) até ser religado; tomar cuidado para não religar só em `workers/startWorkers.js` (não roda em produção — mesmo erro do item #24)
 
 ---
@@ -239,7 +239,7 @@ FinancialProjection / TotalsSnapshot / FinancialDailySnapshot / financialMetrics
 
 // ❌ NUNCA — assumir qual arquivo roda em produção pelo render.yaml/nome do worker
 // render.yaml diz "workers/startWorkers.js", mas o Start Command real (dashboard)
-// pode ser outro (ex: workers/entrypoints/whatsapp-only.js) — confirmar sempre
+// pode ser outro (ex: workers/entrypoints/whatsapp-core.js) — confirmar sempre
 // ✅ SEMPRE — checar Settings → Start Command no dashboard do Render antes de
 // registrar/remover um consumidor de fila
 
@@ -249,7 +249,7 @@ if (waiting > 0) throw new Error('sem consumidor'); // completed pode já provar
 // consumidor existe/existiu; investigar a conexão real (ex: sessão WhatsApp
 // Web) antes de criar um Worker novo (incidente 2026-07-24)
 
-// ❌ NUNCA — rodar um segundo whatsapp-only.js/whatsapp-child.js local
+// ❌ NUNCA — rodar um segundo whatsapp-core.js/whatsapp-child.js local
 // enquanto produção está ativa (mesmo Mongo/sessão => derruba a sessão real)
 // ✅ SEMPRE — usar sessão/número de WhatsApp de teste isolado para rodar local
 ```
@@ -401,7 +401,7 @@ Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra númer
 | Data | Mudança |
 |------|---------|
 | 2026-07-24 | ADR-013 RCA final: causa raiz identificada com alta confiança (WhatsApp Web renomeou id._serialized→id.$1). Hotfix aplicado: whatsapp-web.js pinado no fork lindionez#f4ea1e3 (patch da PR upstream #201832, ainda não mesclada oficialmente) — bridge temporário, trocar pro oficial quando mergear |
-| 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
+| 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-core.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |
 | 2026-06-25 | ADR-010: KPI híbrido novaReceitaMes — regime de competência para convênio, caixa para particular/pacote |
 | 2026-06-25 | billingMode per_month/per_guide: paidAt projetado em getInsuranceReceivables |

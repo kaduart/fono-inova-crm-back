@@ -92,8 +92,8 @@ whatsappWebJsService.sendMessage()
         ▼
 WhatsApp Web (Puppeteer)
 ```
-Consumido por: `whatsapp-child.js`, forkado por `whatsapp-only.js`.
-**Roda no serviço `crm-worker`, cujo Start Command real é `node workers/entrypoints/whatsapp-only.js`** — confirmar sempre no dashboard do Render (Settings → Start Command), não no `render.yaml`, que sugere `workers/startWorkers.js` mas não é 1:1 com o que está configurado manualmente.
+Consumido por: `whatsapp-child.js`, forkado por `whatsapp-core.js`.
+**Roda no serviço `crm-worker`, cujo Start Command real é `node workers/entrypoints/whatsapp-core.js`** — confirmar sempre no dashboard do Render (Settings → Start Command), não no `render.yaml`, que sugere `workers/startWorkers.js` mas não é 1:1 com o que está configurado manualmente.
 
 **Pipeline 2 — pipeline V2 orientado a eventos (Amanda):**
 

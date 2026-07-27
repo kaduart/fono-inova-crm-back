@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 /**
- * 🆘 WhatsApp ONLY — Processo principal
- * Sobe APENAS health check. WhatsApp roda em child process isolado.
- * Se o WhatsApp morrer (OOM, crash), reinicia automaticamente.
+ * 🔧 WhatsApp Core Worker — Processo principal unificado
+ *
+ * Entrypoint completo do serviço worker. Responsabilidades:
+ *   - WhatsApp Web.js isolado em child process (envio/recebimento de mensagens)
+ *   - Health check HTTP leve para o Render/frontend
+ *   - Workers core (scheduling, billing, clinical, reconciliation) no processo pai
+ *
+ * O grupo whatsapp fica NO child, para evitar duplicar o consumo da fila whatsapp-send
+ * e para isolar crashes do Puppeteer/Chromium.
+ * Os demais workers sobem em paralelo com o WhatsApp, sem depender dele ficar ready.
  */
 
 import http from 'http';

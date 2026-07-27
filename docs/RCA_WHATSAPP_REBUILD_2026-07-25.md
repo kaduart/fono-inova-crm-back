@@ -3,7 +3,7 @@
 **Data do incidente:** 24–25/07/2026  
 **Data da resolução:** 25/07/2026  
 **Data do merge no `main`:** 25/07/2026  
-**Serviço afetado:** Worker WhatsApp Web (`whatsapp-only` / `whatsapp-child.js`)  
+**Serviço afetado:** Worker WhatsApp Web (`whatsapp-core` / `whatsapp-child.js`)  
 **Ambiente:** Render + Persistent Disk + Chrome Puppeteer  
 **Branch de resolução:** `whatsapp-rebuild` / `whatsapp-main-cleanup`  
 **Baseline funcional:** `a7b8bdd7` (23/07/2026)
