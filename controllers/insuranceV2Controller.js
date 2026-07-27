@@ -522,6 +522,7 @@ export async function listPendingGuides(req, res) {
       orphanSessions: result.orphanSessions,
       overdue: result.overdue,
       overdueSummary: result.overdueSummary,
+      competenceBreakdown: result.competenceBreakdown,
       pagination: {
         page: result.page,
         limit: result.limit,
