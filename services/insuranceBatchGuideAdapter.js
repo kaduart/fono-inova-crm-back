@@ -382,9 +382,16 @@ export async function listGuidesPendingBilling(filters = {}) {
     sessionDetailMatch._id = { $nin: [...handledIds].map(id => new mongoose.Types.ObjectId(id)) };
   }
 
+  // Achado 2026-07-27 (guia 16145509, Benjamim Rocha Simão): comparado com a
+  // lista de presença assinada, o horário embutido em Session.date/Appointment.date
+  // não é confiável (aparecia meia-noite/09h pra sessões que na folha assinada
+  // sempre foram ~17h) — Appointment.date guarda só o DIA, o horário real vive
+  // em Appointment.time (string "HH:mm", setado no agendamento). Por isso
+  // populamos appointmentId aqui, em vez de derivar hora de `date`.
   const sessionDetails = await Session.find(sessionDetailMatch)
-    .select('_id insuranceGuide date sessionValue specialty doctor')
+    .select('_id insuranceGuide date sessionValue specialty doctor appointmentId')
     .populate('doctor', 'fullName')
+    .populate('appointmentId', 'time')
     .sort({ date: 1 })
     .lean();
 
@@ -396,6 +403,7 @@ export async function listGuidesPendingBilling(filters = {}) {
     sessionsByGuide.get(gid).push({
       sessionId: s._id.toString(),
       date: s.date,
+      time: s.appointmentId?.time || null,
       doctorName: s.doctor?.fullName || null,
       specialty: s.specialty || null,
       value: s.sessionValue || 0
@@ -550,7 +558,7 @@ export async function listGuidesPendingBilling(filters = {}) {
   const orphanSessions = await Session.find(orphanMatch)
     .populate('patient', 'fullName')
     .populate('package', 'insuranceProvider')
-    .populate('appointmentId', 'specialty insuranceProvider')
+    .populate('appointmentId', 'specialty insuranceProvider time')
     .sort({ date: 1 })
     .lean();
 
@@ -579,6 +587,7 @@ export async function listGuidesPendingBilling(filters = {}) {
       paymentId: payment?._id?.toString() || null,
       sessionId: session._id.toString(),
       date: session.date,
+      time: session.appointmentId?.time || null,
       patient: session.patient,
       specialty: session.specialty || session.appointmentId?.specialty || payment?.sessionType || 'Outros',
       sessionValue: payment?.insurance?.grossAmount || payment?.amount || session.sessionValue || 0,
