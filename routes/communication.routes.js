@@ -18,8 +18,10 @@ import {
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { transition, CommunicationEvents } from '../services/communication/CommunicationStateMachine.js';
 import { getRulesForInsurance, updateRulesForInsurance } from '../services/communication/InsuranceRuleService.js';
+import { createContextLogger } from '../utils/logger.js';
 
 const router = express.Router();
+const logger = createContextLogger('communication_send_endpoint');
 
 // GET /api/v2/communications
 router.get('/', auth, async (req, res) => {
@@ -107,36 +109,64 @@ router.post('/:id/package', auth, async (req, res) => {
 
 // POST /api/v2/communications/:id/send
 router.post('/:id/send', auth, async (req, res) => {
+  const communicationId = req.params.id;
+  logger.info('send_endpoint_entered', `Endpoint /send chamado para ${communicationId}`, { communicationId });
+
   try {
     const { to, subject, message, template } = req.body;
 
-    const communication = await getCommunicationRequest(req.params.id);
+    const communication = await getCommunicationRequest(communicationId);
 
     // Se ainda estiver em rascunho, marca como pronta antes de enviar
     if (communication.status === 'draft') {
-      await transition(req.params.id, CommunicationEvents.MARK_READY);
+      await transition(communicationId, CommunicationEvents.MARK_READY);
     }
 
     // Transiciona para SENDING antes de enfileirar
-    await transition(req.params.id, CommunicationEvents.SEND);
+    await transition(communicationId, CommunicationEvents.SEND);
 
-    const queue = getQueue('communication-email');
-    const job = await queue.add(
-      'send-communication-email',
-      {
-        communicationId: req.params.id,
-        to,
-        subject,
-        message,
-        template,
-        userId: req.user.id
-      },
-      {
-        jobId: `communication-email-${req.params.id}-${Date.now()}`,
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 3000 }
-      }
-    );
+    let job;
+    try {
+      const queue = getQueue('communication-email');
+      logger.info('queue_add_started', `Enfileirando job de e-mail para ${communicationId}`, { communicationId });
+
+      job = await queue.add(
+        'send-communication-email',
+        {
+          communicationId,
+          to,
+          subject,
+          message,
+          template,
+          userId: req.user.id
+        },
+        {
+          jobId: `communication-email-${communicationId}-${Date.now()}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 3000 }
+        }
+      );
+
+      logger.info('queue_add_completed', `Job ${job.id} enfileirado para ${communicationId}`, { communicationId, jobId: job.id });
+    } catch (enqueueError) {
+      // O enfileiramento falhou DEPOIS que o status já virou SENDING — sem isso,
+      // a comunicação fica presa em "sending" pra sempre, sem job e sem log,
+      // porque nada mais nesse fluxo teria como reverter esse status (achado
+      // em produção em 2026-07-27: 3 comunicações órfãs em "sending" sem
+      // nenhum job correspondente no Redis, ver InsuranceCommunication/back's
+      // finance-integrity-audit da época).
+      logger.error('queue_add_failed', `Falha ao enfileirar job para ${communicationId}: ${enqueueError.message}`, {
+        communicationId,
+        error: enqueueError.message
+      });
+
+      await transition(communicationId, CommunicationEvents.FAIL, {
+        statusReason: `Falha ao enfileirar envio: ${enqueueError.message}`
+      });
+
+      throw enqueueError;
+    }
+
     res.json({
       success: true,
       data: {
