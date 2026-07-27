@@ -625,11 +625,53 @@ export async function listGuidesPendingBilling(filters = {}) {
     };
   }
 
+  // Achado 2026-07-27: a listagem (guides/orphanSessions) é deliberadamente sem
+  // escopo de mês — o operacional pensa em "guia", não em competência, e uma
+  // guia com sessão de junho e julho não pode virar duas linhas na tela. Mas o
+  // "Resumo do mês" da tela precisa saber quanto do total pendente é do mês
+  // corrente vs. backlog de meses anteriores, sem recomputar isso no frontend
+  // (KPI financeiro é sempre computado no backend). Por isso essa quebra usa o
+  // MESMO conjunto de sessões que já compõe `guides`/`orphanSessions` — decompõe
+  // o total pra exibição, não filtra nem duplica nenhuma guia.
+  const currentCompetence = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  let currentCompetenceValue = 0;
+  let currentCompetenceSessions = 0;
+  let previousCompetenceValue = 0;
+  let previousCompetenceSessions = 0;
+  for (const guide of enrichedGuides) {
+    for (const session of guide.sessions || []) {
+      const competence = new Date(session.date).toISOString().slice(0, 7);
+      if (competence === currentCompetence) {
+        currentCompetenceValue += session.value || 0;
+        currentCompetenceSessions += 1;
+      } else {
+        previousCompetenceValue += session.value || 0;
+        previousCompetenceSessions += 1;
+      }
+    }
+  }
+  for (const orphan of enrichedOrphans) {
+    const competence = new Date(orphan.date).toISOString().slice(0, 7);
+    if (competence === currentCompetence) {
+      currentCompetenceValue += orphan.sessionValue || 0;
+      currentCompetenceSessions += 1;
+    } else {
+      previousCompetenceValue += orphan.sessionValue || 0;
+      previousCompetenceSessions += 1;
+    }
+  }
+  const competenceBreakdown = {
+    referenceMonth: currentCompetence,
+    current: { value: currentCompetenceValue, sessions: currentCompetenceSessions },
+    previous: { value: previousCompetenceValue, sessions: previousCompetenceSessions }
+  };
+
   logger.info('listGuidesPendingBilling done', {
     guidesFound: enrichedGuides.length,
     orphanSessionsFound: enrichedOrphans.length,
     total,
-    overdueCompetences: overdue?.length ?? null
+    overdueCompetences: overdue?.length ?? null,
+    competenceBreakdown
   });
 
   return {
@@ -639,7 +681,8 @@ export async function listGuidesPendingBilling(filters = {}) {
     page,
     limit,
     overdue,
-    overdueSummary
+    overdueSummary,
+    competenceBreakdown
   };
 }
 
