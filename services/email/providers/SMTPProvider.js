@@ -10,11 +10,14 @@ export class SMTPProvider extends BaseEmailProvider {
   }
 
   createTransporter() {
-    const host = this.config.host || process.env.SMTP_HOST || 'in-v3.mailjet.com';
+    const host = this.config.host || process.env.SMTP_HOST;
     const port = Number(this.config.port || process.env.SMTP_PORT || 587);
     const user = this.config.user || process.env.SMTP_USER;
     const pass = this.config.pass || process.env.SMTP_PASS;
 
+    if (!host) {
+      throw new Error('SMTP_HOST ausente.');
+    }
     if (!user || !pass) {
       throw new Error('SMTP_USER/SMTP_PASS ausentes.');
     }
@@ -150,6 +153,15 @@ export class SMTPProvider extends BaseEmailProvider {
       return { success: true, messageId: info.messageId, protocol: info.messageId };
     } catch (smtpErr) {
       console.error('[SMTPProvider] sendMail falhou:', smtpErr?.code, smtpErr?.response?.toString?.() || smtpErr?.message || smtpErr);
+
+      const host = this.config.host || process.env.SMTP_HOST || '';
+      if (!/mailjet/i.test(host)) {
+        // Fallback REST só faz sentido quando o host configurado é o Mailjet.
+        // Tentar a API REST do Mailjet com credenciais de outro provedor (ex: Brevo)
+        // só produz um 401 que mascara o erro real do SMTP.
+        throw smtpErr;
+      }
+
       try {
         await this.sendViaMailjetREST({ to, subject, html, text, attachments: downloadedAttachments, customId });
         return { success: true, protocol: `mailjet-rest-${Date.now()}` };
