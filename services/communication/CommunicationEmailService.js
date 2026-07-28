@@ -72,6 +72,11 @@ export async function sendCommunicationEmail({
 
   if (!communication) throw new Error('Comunicação não encontrada');
 
+  // Garante que a comunicação esteja em SENDING antes de processar (essencial para retries da BullMQ)
+  if (communication.status === CommunicationStatus.READY) {
+    await transition(communicationId, CommunicationEvents.SEND);
+  }
+
   const purpose = communication.purpose || 'authorization';
   const convenio = await Convenio.findOne({ code: communication.insuranceProvider }).select('name communicationRules authorizationRules guidePolicy').lean();
 
