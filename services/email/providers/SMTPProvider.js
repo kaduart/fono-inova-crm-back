@@ -44,6 +44,7 @@ export class SMTPProvider extends BaseEmailProvider {
   }
 
   async downloadAttachment({ url, name, publicId }) {
+    const t0 = Date.now();
     const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 20000 });
     const buffer = Buffer.from(response.data, 'binary');
     const contentType = response.headers['content-type'];
@@ -54,6 +55,7 @@ export class SMTPProvider extends BaseEmailProvider {
       filename = `anexo${ext || '.pdf'}`;
     }
 
+    console.log(`[SMTPProvider] anexo "${filename}" baixado em ${Date.now() - t0}ms`);
     return { filename, content: buffer, contentType };
   }
 
@@ -115,21 +117,17 @@ export class SMTPProvider extends BaseEmailProvider {
   }) {
     const transporter = this.createTransporter();
 
-    try {
-      await transporter.verify();
-    } catch (e) {
-      console.warn('[SMTPProvider] verify falhou (seguindo para sendMail):', e?.code || e?.message || e);
-    }
-
     const defaultFromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
     const defaultFromName = process.env.EMAIL_FROM_NAME || 'Clinica Fono Inova';
 
     const resolvedFromEmail = fromEmail || defaultFromEmail;
     const resolvedFromName = fromName || defaultFromName;
 
+    const attachStart = Date.now();
     const downloadedAttachments = attachments.length > 0
       ? await Promise.all(attachments.map(a => this.downloadAttachment(a)))
       : [];
+    console.log(`[SMTPProvider] download de anexos (total, em paralelo): ${Date.now() - attachStart}ms`);
 
     const nodemailerAttachments = downloadedAttachments.map(att => ({
       filename: att.filename,
@@ -147,8 +145,10 @@ export class SMTPProvider extends BaseEmailProvider {
       headers: { 'X-Entity-Ref-ID': customId || `crm-${Date.now()}` }
     };
 
+    const sendStart = Date.now();
     try {
       const info = await transporter.sendMail(mailOptions);
+      console.log(`[SMTPProvider] sendMail concluído em ${Date.now() - sendStart}ms`);
       if (!info?.messageId) throw new Error('SMTP: envio sem messageId');
       return { success: true, messageId: info.messageId, protocol: info.messageId };
     } catch (smtpErr) {

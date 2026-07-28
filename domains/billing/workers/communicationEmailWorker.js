@@ -18,11 +18,16 @@ export const communicationEmailWorker = new Worker(
     } = job.data;
 
     const startTime = Date.now();
+    // Tempo entre o job entrar na fila (job.timestamp, setado pelo BullMQ no enqueue)
+    // e o worker efetivamente começar a processar — separa "preso na fila" (worker
+    // ocupado/sem capacidade) de "processamento lento" (Cloudinary/SMTP).
+    const queueDelayMs = startTime - job.timestamp;
     logger.info('communication_email_started', `Iniciando envio de comunicação ${communicationId}`, {
       jobId: job.id,
       communicationId,
       to,
-      attempt: job.attemptsMade + 1
+      attempt: job.attemptsMade + 1,
+      queueDelayMs
     });
 
     try {
@@ -42,7 +47,9 @@ export const communicationEmailWorker = new Worker(
         logId: result.logId,
         protocol: result.protocol,
         attempt: result.attempt,
-        durationMs: duration
+        queueDelayMs,
+        processingMs: duration,
+        totalMs: queueDelayMs + duration
       });
 
       return {
@@ -51,6 +58,7 @@ export const communicationEmailWorker = new Worker(
         protocol: result.protocol,
         to: result.to,
         attempt: result.attempt,
+        queueDelayMs,
         durationMs: duration
       };
     } catch (error) {
@@ -58,6 +66,8 @@ export const communicationEmailWorker = new Worker(
         jobId: job.id,
         communicationId,
         attempt: job.attemptsMade + 1,
+        queueDelayMs,
+        processingMs: Date.now() - startTime,
         willRetry: job.attemptsMade < 4
       });
 
