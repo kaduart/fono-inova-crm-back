@@ -47,6 +47,7 @@ const paymentSchema = new mongoose.Schema({
         default: null
     },
     settledPaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: [] }],
+    bulkSettlementKey: { type: String, default: null, index: true },
     billingType: {
         type: String,
         enum: ['particular', 'convenio', 'insurance', 'liminar'],

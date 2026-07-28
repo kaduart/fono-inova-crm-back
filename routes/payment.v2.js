@@ -32,6 +32,7 @@ import { syncAffectedViews } from '../services/projections/syncAffectedViews.js'
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
+import logger from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -1322,20 +1323,60 @@ router.post('/bulk-settle', auth, async (req, res) => {
     await mongoSession.startTransaction();
 
     try {
-        const payments = await Payment.find({
-            _id: { $in: paymentIds },
-            status: { $in: ['pending', 'partial'] }
+        // Busca todos os payments pelos IDs (independentemente de status) para:
+        // 1. validar idempotência antes de filtrar pendentes
+        // 2. evitar que uma segunda chamada com os mesmos IDs retorne 400 genérico
+        const allRequestedPayments = await Payment.find({
+            _id: { $in: paymentIds }
         }).session(mongoSession);
+
+        if (allRequestedPayments.length === 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, error: 'Nenhum payment encontrado' });
+        }
+
+        const now = new Date();
+        const patientId = allRequestedPayments[0].patient?.toString() || allRequestedPayments[0].patientId;
+        const clinicId = allRequestedPayments[0].clinicId || 'default';
+
+        // 🛡️ IDEMPOTÊNCIA: recusa fechamento já realizado para o mesmo conjunto de payments
+        const sortedIds = allRequestedPayments.map(p => p._id.toString()).sort().join(',');
+        const bulkSettlementKey = `bulk_settle_${sortedIds}`;
+        const existingSettlement = await Payment.findOne({
+            kind: 'monthly_settlement',
+            bulkSettlementKey,
+            status: { $nin: ['cancelled', 'canceled', 'refunded'] }
+        }).session(mongoSession).lean();
+
+        if (existingSettlement) {
+            await mongoSession.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                error: 'Fechamento já realizado para essas sessões',
+                code: 'BULK_SETTLEMENT_ALREADY_EXISTS',
+                data: { receiptId: existingSettlement._id }
+            });
+        }
+
+        // Filtra apenas os pendentes para quitar
+        const payments = allRequestedPayments.filter(p => ['pending', 'partial'].includes(p.status));
 
         if (payments.length === 0) {
             await mongoSession.abortTransaction();
             return res.status(400).json({ success: false, error: 'Nenhum payment pendente encontrado' });
         }
 
-        const now = new Date();
-        const patientId = payments[0].patient?.toString() || payments[0].patientId;
-        const clinicId = payments[0].clinicId || 'default';
-        const totalSettled = totalAmount || payments.reduce((s, p) => s + (p.amount || 0), 0);
+        // 🛡️ BACKEND é fonte de verdade do valor: soma dos payments efetivamente quitados.
+        // O front pode enviar totalAmount como referência, mas nunca substitui o cálculo real.
+        const computedTotal = payments.reduce((s, p) => s + (p.amount || 0), 0);
+        if (totalAmount !== undefined && Math.abs(totalAmount - computedTotal) > 0.01) {
+            logger.warn('[V2 bulk-settle] totalAmount do front diverge do cálculo real', {
+                received: totalAmount,
+                computed: computedTotal,
+                patientId
+            });
+        }
+        const totalSettled = computedTotal;
 
         // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
         const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
@@ -1460,6 +1501,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             billingType: payments[0].billingType || 'particular',
             kind: 'monthly_settlement',
             settledPaymentIds: payments.map(p => p._id),
+            bulkSettlementKey,
             notes: notes || `Fechamento de ${payments.length} sessão(ões)`,
             createdAt: now,
             updatedAt: now
@@ -1467,11 +1509,9 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
-        // 5b. Publica PAYMENT_STATUS_CHANGED pra cada payment quitado — em paralelo,
-        // depois do commit, pra não segurar a transação nem o round-trip do bulkWrite
-        // (essa é a garantia "regra de ouro" do paymentStatusService, preservada aqui
-        // sem o custo de fazer 1 evento por vez sequencialmente).
-        await Promise.allSettled(
+        // 5b. Publica PAYMENT_STATUS_CHANGED pra cada payment quitado — em background,
+        // depois do commit, pra não segurar a resposta HTTP (evita timeout no front).
+        Promise.allSettled(
             payments.map(p => publishEvent(
                 EventTypes.PAYMENT_STATUS_CHANGED,
                 {
@@ -1503,12 +1543,18 @@ router.post('/bulk-settle', auth, async (req, res) => {
                 console.error(`[V2 bulk-settle] ⚠️ Falha ao publicar evento pra payment ${p._id}: ${pubErr.message}`);
             })
             )
-        );
+        ).then(results => {
+            const failed = results.filter(r => r.status === 'rejected').length;
+            if (failed > 0) {
+                logger.warn(`[V2 bulk-settle] ${failed}/${payments.length} eventos falharam ao publicar em background`);
+            }
+        }).catch(bgErr => {
+            logger.error('[V2 bulk-settle] Erro inesperado publicando eventos em background:', bgErr.message);
+        });
 
-        // 6. Rebuild síncrono das PackagesView para cada pacote afetado
-        //    Domínio: Financial × TherapyPackage — fechamento de sessões pós-pagas
+        // 6. Rebuild das PackagesView em background (não bloqueia resposta)
         if (affectedPackageIds.length > 0) {
-            await Promise.allSettled(
+            Promise.allSettled(
                 affectedPackageIds.map(pkgId =>
                     syncAffectedViews({
                         event: 'therapy_package.payment_settled',
@@ -1516,7 +1562,9 @@ router.post('/bulk-settle', auth, async (req, res) => {
                         correlationId: `bulk_settle_${pkgId}`
                     })
                 )
-            );
+            ).catch(bgErr => {
+                logger.error('[V2 bulk-settle] Erro inesperado rebuildando PackageViews em background:', bgErr.message);
+            });
         }
 
         logger.info('[V2 bulk-settle] Fechamento realizado', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });
