@@ -33,11 +33,13 @@ function buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, me
   const body = message || defaultBody;
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <div style="background: #f3f4f6; padding: 16px; text-align: center;">
-        <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 48px;">
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto;">
+      <div style="background: linear-gradient(135deg, #0F766E 0%, #065F46 100%); padding: 30px 20px; text-align: center;">
+        <span style="display: inline-block; background: #ffffff; border-radius: 10px; padding: 10px 18px;">
+          <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 64px; display: block;">
+        </span>
       </div>
-      <div style="padding: 24px;">
+      <div style="padding: 32px 28px;">
         <h2 style="color: #2563eb; margin: 0 0 8px;">${insuranceName || 'Convênio'}</h2>
         ${guideNumber ? `<p><strong>Guia:</strong> ${guideNumber}</p>` : ''}
         <div style="margin-top: 16px;">${body}</div>
