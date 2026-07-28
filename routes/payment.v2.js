@@ -1389,6 +1389,9 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         }
         const totalSettled = computedTotal;
+        const primaryMethod = splitMethods?.length
+            ? (splitMethods[0].method || paymentMethod || 'dinheiro')
+            : (paymentMethod || 'dinheiro');
 
         // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
         const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
@@ -1424,7 +1427,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
                 update: {
                     $set: {
                         status: 'paid',
-                        paymentMethod: paymentMethod || p.paymentMethod,
+                        paymentMethod: primaryMethod,
                         // 💰 Regime de caixa: a quitação SEMPRE reconhece o dinheiro no dia em
                         // que ela acontece — nunca preserva financialDate/paidAt antigos do
                         // payment (que só existiam enquanto ele era pending, sem sentido de
@@ -1433,6 +1436,8 @@ router.post('/bulk-settle', auth, async (req, res) => {
                         // aparecerem em dias que o dinheiro nunca entrou de fato.
                         paidAt: now,
                         financialDate: now,
+                        // 🧾 Propaga split para os payments individuais para exibição consistente
+                        ...(splitMethods?.length ? { splitMethods: splitMethods.map(s => ({ method: s.method, amount: Number(s.amount) || 0, date: now })) } : {})
                     }
                 }
             }
@@ -1456,7 +1461,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             const Session = mongoose.model('Session');
             await Session.updateMany(
                 { _id: { $in: sessionIds } },
-                { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: paymentMethod || 'dinheiro', paidAt: now } },
+                { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: primaryMethod, paidAt: now } },
                 { session: mongoSession }
             );
         }
@@ -1510,10 +1515,6 @@ router.post('/bulk-settle', auth, async (req, res) => {
             .sort((a, b) => new Date(b) - new Date(a));
         const _receiptServiceDate = _settledDates[0] ? new Date(_settledDates[0]) : now;
 
-        const _receiptPaymentMethod = splitMethods?.length
-            ? (splitMethods[0].method || paymentMethod || 'dinheiro')
-            : (paymentMethod || 'dinheiro');
-
         const receiptData = {
             patient: payments[0].patient,
             patientId,
@@ -1524,7 +1525,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             paymentDate: now,
             serviceDate: _receiptServiceDate,
             paidAt: now,
-            paymentMethod: _receiptPaymentMethod,
+            paymentMethod: primaryMethod,
             billingType: payments[0].billingType || 'particular',
             kind: 'monthly_settlement',
             settledPaymentIds: payments.map(p => p._id),
@@ -1619,7 +1620,8 @@ router.post('/bulk-settle', auth, async (req, res) => {
             data: {
                 settledCount: payments.length,
                 totalSettled,
-                paymentMethod,
+                paymentMethod: primaryMethod,
+                splitMethods: splitMethods?.length ? splitMethods : undefined,
                 receiptId: receipt[0]._id
             }
         });

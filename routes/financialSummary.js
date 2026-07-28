@@ -413,6 +413,7 @@ router.get('/patient/:patientId/paid-payments', asyncHandler(async (req, res) =>
             financialDate: p.financialDate,
             createdAt: p.createdAt,
             paymentMethod: p.paymentMethod,
+            splitMethods: p.splitMethods,
             appointment: p.appointment ? {
                 id: p.appointment._id?.toString(),
                 date: p.appointment.date,

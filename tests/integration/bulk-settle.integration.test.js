@@ -163,6 +163,10 @@ describe('POST /payments/bulk-settle', () => {
         expect(res.status).toBe(200);
         expect(res.body.success).toBe(true);
         expect(res.body.data.totalSettled).toBe(300);
+        expect(res.body.data.paymentMethod).toBe('pix');
+        expect(res.body.data.splitMethods).toHaveLength(2);
+        expect(res.body.data.splitMethods[0].method).toBe('pix');
+        expect(res.body.data.splitMethods[1].method).toBe('dinheiro');
 
         const settlements = await Payment.find({
             patient: patient._id,
@@ -172,6 +176,13 @@ describe('POST /payments/bulk-settle', () => {
         expect(settlements.length).toBe(1);
         expect(settlements[0].splitMethods).toHaveLength(2);
         expect(settlements[0].splitMethods.map(s => s.amount).reduce((a, b) => a + b, 0)).toBe(300);
+
+        // Payments individuais também devem ter o split propagado
+        const paidPayments = await Payment.find({
+            _id: { $in: [p1._id, p2._id] },
+            status: 'paid'
+        }).lean();
+        expect(paidPayments.every(p => p.splitMethods?.length === 2)).toBe(true);
     });
 
     it('deve rejeitar split quando a soma não bate com o total', async () => {
