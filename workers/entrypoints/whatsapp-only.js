@@ -11,8 +11,8 @@ import { fork } from 'child_process';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import '../models/index.js';
-import { startWorkersByGroup, stopAllWorkers } from './index.js';
+import '../../models/index.js';
+import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 
 dotenv.config();
 
