@@ -37,16 +37,18 @@ function buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, me
   const body = message ? rawBody.replace(/\n/g, '<br>') : rawBody;
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
-      <div style="background: #f3f4f6; padding: 20px; text-align: center;">
-        <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 48px;">
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #1f2937;">
+      <div style="background: linear-gradient(135deg, #0F766E 0%, #065F46 100%); padding: 30px 20px; text-align: center;">
+        <span style="display: inline-block; background: #ffffff; border-radius: 10px; padding: 10px 18px;">
+          <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 64px; display: block;">
+        </span>
       </div>
-      <div style="padding: 24px 28px;">
+      <div style="padding: 32px 28px;">
         <h2 style="color: #2563eb; margin: 0 0 4px; font-size: 18px;">${insuranceName || 'Convênio'}</h2>
         ${guideNumber ? `<p style="margin: 0 0 16px; color: #4b5563;"><strong>Guia:</strong> ${guideNumber}</p>` : ''}
         <div style="margin-top: 16px; line-height: 1.6; font-size: 14px;">${body}</div>
       </div>
-      <div style="padding: 16px 28px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
+      <div style="padding: 18px 28px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
         Clínica Fono Inova — este e-mail foi enviado automaticamente a partir do sistema de gestão da clínica.
       </div>
     </div>
