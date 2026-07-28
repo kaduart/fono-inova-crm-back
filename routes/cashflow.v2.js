@@ -143,7 +143,7 @@ router.get('/', auth, async (req, res) => {
                 setImmediate(async () => {
                     try {
                         console.log(`[cashflow.v2] REBUILD async ${cacheKey}`);
-                        const fresh = await _fetchWithTimeout(() => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }), 30000);
+                        const fresh = await _fetchWithTimeout(() => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt, _timers }), 30000);
                         _setCached(cacheKey, fresh, ttlSeconds);
                     } catch (err) {
                         console.warn(`[cashflow.v2] REBUILD async falhou ${cacheKey}:`, err.message);
@@ -159,7 +159,7 @@ router.get('/', auth, async (req, res) => {
         // MISS: calcula e responde
         console.log(`[cashflow.v2] REDIS/LOCAL MISS ${cacheKey} — executando builder...`);
         const responsePayload = await _fetchWithTimeout(
-            () => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }),
+            () => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt, _timers }),
             30000
         );
 
@@ -187,7 +187,7 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
-async function buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }) {
+async function buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt, _timers }) {
     const responseStartedAt = Date.now();
     try {
         // ============================================================
