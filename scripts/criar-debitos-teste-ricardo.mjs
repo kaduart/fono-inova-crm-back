@@ -25,6 +25,11 @@ const NOTAS = process.env.NOTAS || 'Débito de teste - Ricardo';
 const DATA_INPUT = process.env.DATA || '';
 const LOG_FILE = path.resolve(__dirname, '.last-test-debts-ricardo.json');
 
+// ⚠️ ATENÇÃO ARQUITETURAL: pacientes com "teste" ou "test" no nome são
+// filtrados do caixa/dashboard (proteção contra poluir a produção).
+// Se você precisa ver os pagamentos no caixa, use um paciente cujo nome
+// NÃO contenha essas palavras. Para mais detalhes, veja a mensagem no dry-run.
+
 function horariosParaSlots(count) {
   const base = moment.tz('08:00', 'HH:mm', TIMEZONE);
   const slots = [];

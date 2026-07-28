@@ -33,6 +33,7 @@ import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 
 const router = express.Router();
 
@@ -1438,6 +1439,17 @@ router.post('/bulk-settle', auth, async (req, res) => {
             );
         }
 
+        // 2b. Atualiza sessions vinculadas (espelho do estado de pagamento)
+        const sessionIds = payments.filter(p => p.session).map(p => p.session.toString());
+        if (sessionIds.length > 0) {
+            const Session = mongoose.model('Session');
+            await Session.updateMany(
+                { _id: { $in: sessionIds } },
+                { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: paymentMethod || 'dinheiro', paidAt: now } },
+                { session: mongoSession }
+            );
+        }
+
         // 3. Atualiza packages afetados: recalcula totalPaid/balance a partir das sessions pagas
         // (mesma lógica de antes, só que buscando pacotes e contando sessions em lote —
         // 2 round-trips no total em vez de 3 por pacote)
@@ -1507,50 +1519,44 @@ router.post('/bulk-settle', auth, async (req, res) => {
             updatedAt: now
         }], { session: mongoSession });
 
-        await mongoSession.commitTransaction();
+        // 5b. Salva eventos no Outbox DENTRO da transação (garantia arquitetural).
+        // O OutboxDispatcher publica nas filas após o commit. Isso evita eventos
+        // presos no EventStore quando o publishEvent() assíncrono falha ou dá timeout.
+        const outboxEntries = payments.map(p => ({
+            eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+            payload: {
+                paymentId: p._id.toString(),
+                patientId: p.patient?.toString?.() || p.patientId,
+                appointmentId: p.appointment?.toString?.(),
+                sessionId: p.session?.toString?.(),
+                packageId: p.package?.toString?.(),
+                from: oldStatusById.get(p._id.toString()),
+                to: 'paid',
+                amount: p.amount,
+                paymentMethod: paymentMethod || p.paymentMethod,
+                financialDate: now,
+                paidAt: now,
+                kind: p.kind,
+                billingType: p.billingType,
+                isFromPackage: p.isFromPackage,
+                reason: 'bulk_settle',
+                userId: req.user?._id?.toString?.()
+            },
+            aggregateType: 'payment',
+            aggregateId: p._id.toString(),
+            correlationId: `payment_status_${p._id}_${oldStatusById.get(p._id.toString())}_paid_${Date.now()}`
+        }));
 
-        // 5b. Publica PAYMENT_STATUS_CHANGED pra cada payment quitado — em background,
-        // depois do commit, pra não segurar a resposta HTTP (evita timeout no front).
-        Promise.allSettled(
-            payments.map(p => publishEvent(
-                EventTypes.PAYMENT_STATUS_CHANGED,
-                {
-                    paymentId: p._id.toString(),
-                    patientId: p.patient?.toString?.() || p.patientId,
-                    appointmentId: p.appointment?.toString?.(),
-                    sessionId: p.session?.toString?.(),
-                    packageId: p.package?.toString?.(),
-                    from: oldStatusById.get(p._id.toString()),
-                    to: 'paid',
-                    amount: p.amount,
-                    paymentMethod: paymentMethod || p.paymentMethod,
-                    financialDate: now,
-                    paidAt: now,
-                    kind: p.kind,
-                    billingType: p.billingType,
-                    isFromPackage: p.isFromPackage,
-                    reason: 'bulk_settle',
-                    userId: req.user?._id?.toString?.()
-                },
-                {
-                    correlationId: `payment_status_${p._id}_${oldStatusById.get(p._id.toString())}_paid_${Date.now()}`,
-                    idempotencyKey: `${p._id}_${oldStatusById.get(p._id.toString())}_paid_${now.toISOString().slice(0, 10)}`,
-                    aggregateType: 'payment',
-                    aggregateId: p._id.toString(),
-                    metadata: { source: 'bulk-settle', reason: 'bulk_settle', userId: req.user?._id }
-                }
-            ).catch(pubErr => {
-                console.error(`[V2 bulk-settle] ⚠️ Falha ao publicar evento pra payment ${p._id}: ${pubErr.message}`);
-            })
+        await Promise.all(
+            outboxEntries.map(entry =>
+                saveToOutbox(entry, mongoSession).catch(outboxErr => {
+                    logger.error(`[V2 bulk-settle] Falha ao salvar outbox para ${entry.aggregateId}:`, outboxErr.message);
+                    throw outboxErr;
+                })
             )
-        ).then(results => {
-            const failed = results.filter(r => r.status === 'rejected').length;
-            if (failed > 0) {
-                logger.warn(`[V2 bulk-settle] ${failed}/${payments.length} eventos falharam ao publicar em background`);
-            }
-        }).catch(bgErr => {
-            logger.error('[V2 bulk-settle] Erro inesperado publicando eventos em background:', bgErr.message);
-        });
+        );
+
+        await mongoSession.commitTransaction();
 
         // 6. Rebuild das PackagesView em background (não bloqueia resposta)
         if (affectedPackageIds.length > 0) {
