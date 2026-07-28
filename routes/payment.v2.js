@@ -1314,10 +1314,21 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 // Fecha sessões pós-pagas: marca pendentes como pagas + cria 1 recibo consolidado no caixa
 // ============================================
 router.post('/bulk-settle', auth, async (req, res) => {
-    const { paymentIds, paymentMethod, totalAmount, notes } = req.body;
+    const { paymentIds, paymentMethod, totalAmount, notes, splitMethods } = req.body;
 
     if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
         return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
+    }
+
+    // Validação básica de splitMethods
+    if (splitMethods !== undefined) {
+        if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
+            return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
+        }
+        const splitTotal = splitMethods.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        if (Math.abs(splitTotal - totalAmount) > 0.01) {
+            return res.status(400).json({ success: false, error: `Total do split (${splitTotal}) não corresponde ao total (${totalAmount})`, code: 'SPLIT_AMOUNT_MISMATCH' });
+        }
     }
 
     const mongoSession = await mongoose.startSession();
@@ -1499,7 +1510,11 @@ router.post('/bulk-settle', auth, async (req, res) => {
             .sort((a, b) => new Date(b) - new Date(a));
         const _receiptServiceDate = _settledDates[0] ? new Date(_settledDates[0]) : now;
 
-        const receipt = await Payment.create([{
+        const _receiptPaymentMethod = splitMethods?.length
+            ? (splitMethods[0].method || paymentMethod || 'dinheiro')
+            : (paymentMethod || 'dinheiro');
+
+        const receiptData = {
             patient: payments[0].patient,
             patientId,
             doctor: payments[0].doctor,
@@ -1509,7 +1524,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             paymentDate: now,
             serviceDate: _receiptServiceDate,
             paidAt: now,
-            paymentMethod: paymentMethod || 'dinheiro',
+            paymentMethod: _receiptPaymentMethod,
             billingType: payments[0].billingType || 'particular',
             kind: 'monthly_settlement',
             settledPaymentIds: payments.map(p => p._id),
@@ -1517,7 +1532,30 @@ router.post('/bulk-settle', auth, async (req, res) => {
             notes: notes || `Fechamento de ${payments.length} sessão(ões)`,
             createdAt: now,
             updatedAt: now
-        }], { session: mongoSession });
+        };
+
+        if (splitMethods?.length) {
+            receiptData.splitMethods = splitMethods.map(s => ({
+                method: s.method,
+                amount: Number(s.amount) || 0,
+                date: now
+            }));
+        }
+
+        const receipt = await Payment.create([receiptData], { session: mongoSession });
+
+        // Sincroniza paymentForms nos appointments vinculados (espelho para UI/histórico)
+        if (appointmentIds.length > 0) {
+            const Appointment = mongoose.model('Appointment');
+            const paymentForms = splitMethods?.length
+                ? splitMethods.map(s => ({ amount: Number(s.amount) || 0, date: now, method: s.method }))
+                : [{ amount: totalSettled, date: now, method: _receiptPaymentMethod }];
+            await Appointment.updateMany(
+                { _id: { $in: appointmentIds } },
+                { $set: { paymentForms } },
+                { session: mongoSession }
+            );
+        }
 
         // 5b. Salva eventos no Outbox DENTRO da transação (garantia arquitetural).
         // O OutboxDispatcher publica nas filas após o commit. Isso evita eventos

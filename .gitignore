@@ -27,6 +27,7 @@ diagnose-*.js
 scripts/investiga-*
 scripts/debug-*
 scripts/diagnose-*
+scripts/.last-test-debts-*.json
 
 # Local certificates
 certs/

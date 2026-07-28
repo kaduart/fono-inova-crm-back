@@ -143,6 +143,59 @@ describe('POST /payments/bulk-settle', () => {
         expect(settlements[0].amount).toBe(300);
     });
 
+    it('deve aceitar split de pagamento e salvar splitMethods no recibo', async () => {
+        const patient = await createPatient('Bulk Settle Split');
+        const p1 = await createPendingPayment(patient, 100);
+        const p2 = await createPendingPayment(patient, 200);
+
+        const res = await request(server)
+            .post('/payments/bulk-settle')
+            .send({
+                paymentIds: [p1._id.toString(), p2._id.toString()],
+                paymentMethod: 'pix',
+                totalAmount: 300,
+                splitMethods: [
+                    { method: 'pix', amount: 150 },
+                    { method: 'dinheiro', amount: 150 }
+                ]
+            });
+
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.totalSettled).toBe(300);
+
+        const settlements = await Payment.find({
+            patient: patient._id,
+            kind: 'monthly_settlement',
+            status: { $nin: ['cancelled', 'canceled'] }
+        }).lean();
+        expect(settlements.length).toBe(1);
+        expect(settlements[0].splitMethods).toHaveLength(2);
+        expect(settlements[0].splitMethods.map(s => s.amount).reduce((a, b) => a + b, 0)).toBe(300);
+    });
+
+    it('deve rejeitar split quando a soma não bate com o total', async () => {
+        const patient = await createPatient('Bulk Settle Split Mismatch');
+        const p1 = await createPendingPayment(patient, 100);
+        const p2 = await createPendingPayment(patient, 200);
+
+        const res = await request(server)
+            .post('/payments/bulk-settle')
+            .send({
+                paymentIds: [p1._id.toString(), p2._id.toString()],
+                paymentMethod: 'pix',
+                totalAmount: 300,
+                splitMethods: [
+                    { method: 'pix', amount: 100 },
+                    { method: 'dinheiro', amount: 150 }
+                ]
+            });
+
+        expect(res.status).toBe(400);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe('SPLIT_AMOUNT_MISMATCH');
+    });
+
     it('deve retornar erro quando nenhum payment pendente for encontrado', async () => {
         const res = await request(server)
             .post('/payments/bulk-settle')
