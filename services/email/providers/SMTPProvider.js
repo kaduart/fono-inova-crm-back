@@ -25,6 +25,7 @@ export class SMTPProvider extends BaseEmailProvider {
       secure: port === 465,
       requireTLS: port === 587,
       auth: { user, pass },
+      authMethods: /brevo|sendinblue/i.test(host) ? 'LOGIN' : undefined,
       tls: {
         rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
         ciphers: 'TLSv1.2',
