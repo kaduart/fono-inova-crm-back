@@ -380,6 +380,7 @@ router.post('/', flexibleAuth, async (req, res) => {
       phone: req.body.phone?.replace(/\D/g, ''),
       email: req.body.email?.toLowerCase(),
       cpf: req.body.cpf?.replace(/\D/g, ''),
+      cnpj: req.body.cnpj?.replace(/\D/g, ''),
       rg: req.body.rg,
       gender: req.body.gender,
       address: req.body.address,
@@ -449,7 +450,7 @@ router.put('/:id', flexibleAuth, async (req, res) => {
 
     // Atualiza MongoDB diretamente (síncrono sempre)
     const allowedFields = [
-      'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'rg',
+      'fullName', 'dateOfBirth', 'phone', 'email', 'cpf', 'cnpj', 'rg',
       'gender', 'address', 'healthPlan', 'mainComplaint',
       'emergencyContact', 'clinicalHistory', 'medications', 'allergies',
       'familyHistory', 'placeOfBirth', 'profession', 'maritalStatus',
@@ -466,6 +467,7 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     if (updates.fullName) updates.fullName = updates.fullName.trim();
     if (updates.phone) updates.phone = updates.phone.replace(/\D/g, '');
     if (updates.email) updates.email = updates.email.toLowerCase();
+    if (updates.cnpj) updates.cnpj = updates.cnpj.replace(/\D/g, '');
 
     await Patient.findByIdAndUpdate(patientId, {
       ...updates,

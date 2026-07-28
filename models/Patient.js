@@ -27,10 +27,19 @@ const patientSchema = new mongoose.Schema({
     city: { type: String, trim: true },
     state: { type: String, trim: true },
     zipCode: { type: String, trim: true },
+    // Código IBGE do município (7 dígitos) — Anexo I exige end/endNac/cMun, não o nome da cidade
+    // em texto livre. Opcional: se ausente, o módulo fiscal assume o mesmo município da clínica
+    // (FiscalProfile.municipioIBGE) — cobre o caso comum (paciente local); pacientes de outro
+    // município precisam preencher explicitamente.
+    municipioIBGE: { type: String, trim: true },
   },
   phone: { type: String, trim: true },
   email: { type: String, trim: true, lowercase: true },
   cpf: { type: String, trim: true },
+  // Tomador Pessoa Jurídica (decisoes_fiscais_clinica.md #4) — quando a nota fiscal deve sair no
+  // CNPJ de um convênio/empresa em vez do CPF do paciente. Preenchido só quando aplicável; o
+  // DpsBuilder prefere CNPJ sobre CPF quando ambos existem (grupo `toma` é choice, não os dois).
+  cnpj: { type: String, trim: true },
   rg: { type: String, trim: true },
   mainComplaint: { type: String, trim: true },
   clinicalHistory: { type: String, trim: true },

@@ -40,7 +40,7 @@ export async function getFiscalProfile(req, res) {
 
 export async function upsertFiscalProfile(req, res) {
   try {
-    const { cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef } = req.body;
+    const { cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco } = req.body;
     if (!cnpj || !razaoSocial || !municipioIBGE) {
       return res.status(400).json({ success: false, error: 'MISSING_REQUIRED_FIELDS', message: 'cnpj, razaoSocial e municipioIBGE são obrigatórios' });
     }
@@ -48,11 +48,11 @@ export async function upsertFiscalProfile(req, res) {
     let profile = await fiscalProfileRepository.findActiveByCnpj(cnpj);
     if (profile) {
       profile = await fiscalProfileRepository.updateFields(profile._id, {
-        razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef
+        razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco
       });
     } else {
       profile = await fiscalProfileRepository.create({
-        cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, ativo: true
+        cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco, ativo: true
       });
     }
     res.json({ success: true, data: profile });

@@ -243,10 +243,15 @@ console.log("🖥️ INSTANCE INFO:", {
 // scheduleMonthlyCommissions();
 // iniciarJobConfirmacao();
 // scheduleDailyAlerts();
-scheduleGmbCron();  // Geração e envio de posts GMB via Make
-scheduleLandingPageDailyPosts();  // Posts diários vinculados a landing pages
-scheduleGmbAutoRepublish();  // Republicação automática de posts que expiram
+// 🚫 GMB crons desabilitados no web server para evitar bloqueio do event loop
+// (geração de imagens + posts pesam no mesmo processo da API/Socket.IO).
+// Rodar no crm-worker ou em serviço dedicado.
+// scheduleGmbCron();
+// scheduleLandingPageDailyPosts();
+// scheduleGmbAutoRepublish();
 // scheduleDailyScoring()
+
+console.log('🚫 GMB/LandingPage crons desabilitados no web server — rodam no worker dedicado');
 
 
 
@@ -775,8 +780,8 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     }
 
-    // 🏥 Monitor de runtime (memória + filas) - DESABILITADO TEMPORARIAMENTE
-    // startRuntimeMonitor();
+    // 🏥 Monitor de runtime (memória + filas) - habilitado para diagnóstico de gargalo
+    startRuntimeMonitor();
 
     // Workers e Crons DESLIGADOS temporariamente (memória crítica)
     try {

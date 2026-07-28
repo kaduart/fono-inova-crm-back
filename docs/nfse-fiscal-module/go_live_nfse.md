@@ -19,14 +19,15 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 
 ## Bloqueadores atuais
 
-Por que a primeira nota ainda não foi emitida, em uma frase cada:
+*Atualizado 2026-07-28 — regime, certificado e emissor já respondidos em `decisoes_fiscais_clinica.md`. O que resta é técnico + uma janela de calendário.*
 
-- 🔴 Contador não confirmou o regime tributário (`decisoes_fiscais_clinica.md` #1)
-- 🔴 Certificado digital não definido (A1/A3/HSM) nem adquirido (`decisoes_fiscais_clinica.md` #2)
-- 🔴 Certificado não configurado no ambiente — `CertificateManager` ainda é só Mock
+- 🗓️ **`FiscalProviderResolver` só roteia para Sefin Nacional a partir de 01/09/2026** — mesmo com Simples Nacional confirmado, uma emissão hoje ainda cairia no `AnapolisMunicipalAdapter` (bloqueado por 403). Decisão: mirar go-live em/após 01/09/2026, não perseguir o desbloqueio do NotaControl.
+- 🔴 Assinatura digital real não implementada — `CertificateManager` ainda é só Mock (certificado A1 já existe, falta integrar)
 - 🔴 mTLS não implementado — `httpsAgent` do `SefinNacionalAdapter` sempre `undefined`
 - 🔴 Seleção de ambiente (homologação/produção) incorreta — `_attemptSubmission.js:27` ignora `FiscalProfile.ambiente`
-- 🔴 Endereço de prestador e tomador não coletado nem incluído na DPS
+- 🔴 Endereço do prestador e do tomador — endereço da clínica já coletado (ver Bloco 2), mas ainda não está no schema/DPS; endereço do tomador (paciente) ainda falta juntar código IBGE
+- 🟡 Tomador Pessoa Jurídica confirmado como caso real (`decisoes_fiscais_clinica.md` #4) — subiu de Sprint 2 para Sprint 1, `Patient` não tem campo `cnpj`
+- 🟡 Retenção de ISS confirmada com evidência real (nota da Isabela F. Mendonça, Unimed Anápolis — `decisoes_fiscais_clinica.md` #5) — subiu de Sprint 2 para Sprint 1, `DpsBuilder.js:83` hoje fixa "não retido" sempre
 
 ## Definition of Done por bloco
 
@@ -40,24 +41,27 @@ Por que a primeira nota ainda não foi emitida, em uma frase cada:
 
 ## Sequência de execução recomendada
 
-1. Confirmar regime tributário
-2. Definir certificado (A1/A3/HSM)
-3. Completar `FiscalProfile` (principalmente endereço do prestador)
-4. Completar dados do tomador (endereço + código IBGE no `Patient`) e ligar ao `DpsBuilder`
-5. Implementar assinatura real (substituir `MockCertificateManager`)
-6. Configurar mTLS
+*Atualizada 2026-07-28 — itens 1-2 originais já resolvidos, meta de calendário adicionada.*
+
+1. ~~Confirmar regime tributário~~ ✅ Simples Nacional (2026-07-28)
+2. ~~Definir certificado~~ ✅ A1, já possui (2026-07-28)
+3. Completar `FiscalProfile`: endereço do prestador (dado já em mãos, ver Bloco 2) + `regimeTributario=SIMPLES_NACIONAL`
+4. Completar dados do tomador: endereço + código IBGE no `Patient`, e adicionar campo `cnpj` (Tomador PJ confirmado — `decisoes_fiscais_clinica.md` #4) — ligar tudo ao `DpsBuilder`
+5. Obter o arquivo do certificado A1 (.pfx/.p12 + senha) e implementar assinatura real (substituir `MockCertificateManager`)
+6. Configurar mTLS no `SefinNacionalAdapter`
 7. Corrigir a seleção dinâmica de ambiente (`_attemptSubmission.js`)
 8. Emitir uma NFS-e em homologação (Produção Restrita) e validar com o contador
-9. Emitir a primeira NFS-e em produção
+9. **Aguardar 01/09/2026** (ou confirmar que o resolver já aponta para Sefin Nacional) e emitir a primeira NFS-e em produção
 
 ## 1. Cenário confirmado — decisão de negócio, zero código
 
-*Done quando: regime tributário, emissor e certificado definidos pelo contador.*
+*Done quando: regime tributário, emissor e certificado definidos pelo contador.* ✅ **Bloco concluído em 2026-07-28** (com uma ressalva de calendário, ver abaixo).
 
-- [ ] Regime tributário confirmado (`decisoes_fiscais_clinica.md` #1)
-- [ ] Certificado digital decidido e adquirido — A1, A3 ou HSM (`decisoes_fiscais_clinica.md` #2)
-- [ ] Emissor técnico definido — Sefin Nacional **ou** NotaControl/Anápolis (`decisoes_fiscais_clinica.md` #3)
-- [ ] Se NotaControl: contato feito com `suporte.anapolis@notacontrol.com.br`, IP liberado, WSDL/manual em mãos
+- [x] Regime tributário confirmado (`decisoes_fiscais_clinica.md` #1) — **Simples Nacional**
+- [x] Certificado digital decidido — A1, **já possui** (`decisoes_fiscais_clinica.md` #2)
+- [x] Emissor técnico definido — **Sefin Nacional**, decorrente do regime (`decisoes_fiscais_clinica.md` #3)
+- [ ] ~~Se NotaControl: contato...~~ **Não se aplica** — emissor definido é Sefin Nacional, não NotaControl
+- [ ] Ressalva registrada: mesmo com Sefin Nacional definido, o sistema só roteia para lá a partir de 01/09/2026 — meta de go-live ajustada para essa data
 
 ## 2. Dados mínimos obrigatórios (só o que bloqueia emissão)
 
@@ -65,12 +69,16 @@ Por que a primeira nota ainda não foi emitida, em uma frase cada:
 
 **Prestador** (`FiscalProfile`)
 - [x] CNPJ, IM, Razão Social — já existem
-- [ ] Endereço completo (logradouro, número, bairro, CEP, código IBGE do município)
+- [x] Regime tributário — default da tela trocado para `SIMPLES_NACIONAL`
+- [x] **Implementado 2026-07-28**: campo `endereco` (logradouro/número/complemento/bairro/CEP) adicionado ao schema `FiscalProfile`, montado no `prestXml` do `DpsBuilder` (grupo `end`/`endNac`), exposto na tela `FiscalConfiguration.tsx`
+- [ ] Preencher com o dado real na tela (Av. Minas Gerais, 405, Bairro Jundiaí, Anápolis-GO, CEP 75110-770) e CNPJ real (60.359.243/0001-42) — schema pronto, falta só salvar pela UI
 
 **Tomador** (`Patient`)
 - [x] CPF, Nome — já existem
-- [ ] Endereço completo + código IBGE do município (hoje `city` é texto livre, sem código)
-- [ ] `DpsBuilder`/`FiscalSnapshotBuilder` alterados para efetivamente incluir esse endereço na DPS (hoje `tomaXml` só envia CPF+nome)
+- [x] **Implementado 2026-07-28**: campo `cnpj` adicionado ao `Patient` (tomador PJ); `municipioIBGE` opcional no `address` (fallback documentado: assume o município da clínica se ausente — cobre o caso comum, paciente local)
+- [x] `DpsBuilder`/`FiscalSnapshotBuilder` alterados: `tomaXml` agora monta `end` (endereço) e escolhe `CNPJ` ou `CPF` conforme o tomador
+- [x] **Implementado 2026-07-28**: campo "CNPJ (tomador PJ, opcional)" adicionado à tela de cadastro/edição de paciente (`PatientForm.tsx`, seção "Documentos e Contato"). Achado durante a implementação: o backend (`patient.v2.js`) tinha **dois pontos de whitelist de campos** (`POST /` e o `allowedFields` do `PUT /:id`) que descartariam `cnpj` silenciosamente mesmo com o campo na tela — corrigidos os dois. A projeção de leitura (`patientProjectionService.js`, `PatientsView`) também não devolvia `cnpj` de volta para a tela — corrigido também. Sem essas 3 correções, o campo pareceria funcionar (salvaria sem erro) mas o dado se perderia silenciosamente.
+- [ ] Testes automatizados (42/42) continuam verdes, mas nenhum teste novo cobre o `end`/`cnpj` do tomador especificamente — cobertura por enquanto é manual/leitura de código
 
 **Serviço**
 - [x] Código do serviço (LC116), valor, descrição — já existem e já chegam na DPS

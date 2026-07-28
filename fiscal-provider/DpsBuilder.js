@@ -29,6 +29,14 @@ function el(tag, content) {
   return `<${tag}>${escapeXml(content)}</${tag}>`;
 }
 
+// end/{xLgr,nro,xCpl,xBairro} + end/endNac/{cMun,CEP} — dps_field_matrix.md Seção 2.5, mesma
+// estrutura compartilhada por prest/toma/interm. Confirmado Obrigatório (só xCpl é opcional).
+function enderecoXml(end) {
+  if (!end) return '';
+  const endNacXml = `<endNac>${el('cMun', end.cMun)}${el('CEP', end.cep)}</endNac>`;
+  return `<end>${endNacXml}${el('xLgr', end.xLgr)}${el('nro', end.nro)}${el('xCpl', end.xCpl)}${el('xBairro', end.xBairro)}</end>`;
+}
+
 // regTrib/opSimpNac (dps_field_matrix.md Seção 2.5): 1=Não Optante, 2=MEI, 3=ME/EPP
 function mapRegimeTributarioToOpSimpNac(regimeTributario) {
   switch (regimeTributario) {
@@ -63,12 +71,15 @@ export function buildDpsXml(snapshot, fiscalInvoice, fiscalProfile) {
     el('CNPJ', infDPS.prest.cnpj),
     el('xNome', infDPS.prest.xNome),
     el('IM', infDPS.prest.im),
+    enderecoXml(infDPS.prest.end),
     `<regTrib>${el('opSimpNac', opSimpNac)}${el('regEspTrib', 0)}</regTrib>`
   ].join('');
 
+  // CNPJ/CPF é choice (Anexo I §2.5) — tomador PJ (convênio/empresa) usa CNPJ, senão CPF do paciente.
   const tomaXml = [
-    el('CPF', infDPS.toma.cpf),
-    el('xNome', infDPS.toma.nome)
+    infDPS.toma.cnpj ? el('CNPJ', infDPS.toma.cnpj) : el('CPF', infDPS.toma.cpf),
+    el('xNome', infDPS.toma.nome),
+    enderecoXml(infDPS.toma.end)
   ].join('');
 
   const servXml = [

@@ -10,31 +10,94 @@ import Session from '../models/Session.js';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
+import { safeRedis } from '../config/redisConnection.js';
 
 const router = express.Router();
 
-// Cache server-side para CashflowV2 — reduz recálculo na abertura da tela financeira
-const _cashflowCache = new Map();
-const CASHFLOW_CURRENT_TTL = 30_000;   // 30s para dia atual / range atual
-const CASHFLOW_PAST_TTL    = 300_000;  // 5min para períodos passados
+// Cache Redis para CashflowV2 — compartilhado entre instâncias no Render
+const REDIS_CACHE_PREFIX = 'cashflow:v2:';
+const REDIS_TTL_CURRENT_SECONDS = 120;        // 2 min para dia/mês atual
+const REDIS_TTL_PAST_SECONDS = 60 * 60;         // 1 hora para períodos passados
+const REDIS_STALE_REVALIDATE_SECONDS = 60;    // acima de 60s consideramos velho o suficiente para rebuild async
 
-function _cashflowCacheKey(date, startDate, endDate, month = '') {
+// Cache local de fallback (quando Redis indisponível)
+const _cashflowCache = new Map();
+const LOCAL_CURRENT_TTL = 30_000;             // 30s fallback local
+const LOCAL_PAST_TTL = 300_000;               // 5min fallback local
+
+function _cacheKey(date, startDate, endDate, month = '') {
     return `${date || ''}_${startDate || ''}_${endDate || ''}_${month || ''}`;
 }
 
-function _getCashflowCached(key, ttl) {
+function _redisKey(date, startDate, endDate, month = '') {
+    return `${REDIS_CACHE_PREFIX}${_cacheKey(date, startDate, endDate, month)}`;
+}
+
+async function _getRedisCached(key, ttl, staleTtl) {
+    try {
+        const raw = await safeRedis.get(key);
+        if (!raw) return null;
+        const entry = JSON.parse(raw);
+        if (!entry || !entry._cachedAt) return null;
+        const ageMs = Date.now() - new Date(entry._cachedAt).getTime();
+        if (ageMs > ttl) {
+            // Cache expirado: não retorna, deixa rebuild
+            return null;
+        }
+        const isStale = ageMs > staleTtl;
+        console.log(`[cashflow.v2] REDIS HIT ${key} age=${Math.round(ageMs / 1000)}s stale=${isStale}`);
+        return { data: entry, isStale };
+    } catch (e) {
+        console.warn('[cashflow.v2] Redis cache read failed:', e.message);
+        return null;
+    }
+}
+
+async function _setRedisCached(key, data, ttl) {
+    try {
+        data._cachedAt = new Date().toISOString();
+        await safeRedis.set(key, JSON.stringify(data), 'EX', ttl);
+        console.log(`[cashflow.v2] REDIS SET ${key} ttl=${ttl}s`);
+    } catch (e) {
+        console.warn('[cashflow.v2] Redis cache write failed:', e.message);
+    }
+}
+
+function _getLocalCached(key, ttl) {
     const entry = _cashflowCache.get(key);
     if (entry && Date.now() - entry.ts < ttl) {
-        console.log(`[cashflow.v2] CACHE HIT ${key} (age=${Date.now() - entry.ts}ms ttl=${ttl}ms)`);
+        console.log(`[cashflow.v2] LOCAL HIT ${key} age=${Date.now() - entry.ts}ms`);
         return entry.data;
     }
     return null;
 }
 
-function _setCashflowCached(key, data) {
+function _setLocalCached(key, data) {
     if (_cashflowCache.size > 50) _cashflowCache.clear();
     _cashflowCache.set(key, { data, ts: Date.now() });
-    console.log(`[cashflow.v2] CACHE SET ${key}`);
+}
+
+function _setCached(key, data, ttlSeconds) {
+    _setLocalCached(key, data);
+    _setRedisCached(key, data, ttlSeconds).catch(() => {});
+}
+
+async function _getCached(key, ttlSeconds) {
+    const redisResult = await _getRedisCached(key, ttlSeconds * 1000, REDIS_STALE_REVALIDATE_SECONDS * 1000);
+    if (redisResult) return redisResult;
+    const localTtl = ttlSeconds === REDIS_TTL_CURRENT_SECONDS ? LOCAL_CURRENT_TTL : LOCAL_PAST_TTL;
+    const localData = _getLocalCached(key, localTtl);
+    if (localData) return { data: localData, isStale: false };
+    return null;
+}
+
+const revalidating = new Set();
+
+function _fetchWithTimeout(fetchFn, timeoutMs) {
+    return Promise.race([
+        fetchFn(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs))
+    ]);
 }
 
 // GET /api/v2/cashflow?date=2026-04-10 OU ?startDate=2026-04-10&endDate=2026-04-16
@@ -53,38 +116,92 @@ router.get('/', auth, async (req, res) => {
         let start, end, targetDate;
 
         if (startDate && endDate) {
-            // Range customizado (semana, etc.)
             targetDate = startDate;
             start = moment.tz(startDate, 'America/Sao_Paulo').startOf('day').utc().toDate();
             end = moment.tz(endDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
         } else {
-            // Dia único (padrão)
             targetDate = date || moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
             start = moment.tz(targetDate, 'America/Sao_Paulo').startOf('day').utc().toDate();
             end = moment.tz(targetDate, 'America/Sao_Paulo').endOf('day').utc().toDate();
         }
 
         const todayStr = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
-        const cacheKey = _cashflowCacheKey(targetDate, startDate, endDate);
+        const cacheKey = _cacheKey(targetDate, startDate, endDate);
         const isCurrent = (startDate && endDate)
             ? endDate === todayStr
             : targetDate === todayStr;
-        const cached = _getCashflowCached(cacheKey, isCurrent ? CASHFLOW_CURRENT_TTL : CASHFLOW_PAST_TTL);
-        if (cached) {
+        const ttlSeconds = isCurrent ? REDIS_TTL_CURRENT_SECONDS : REDIS_TTL_PAST_SECONDS;
+
+        const cachedResult = await _getCached(cacheKey, ttlSeconds);
+        if (cachedResult) {
             res.set('X-Cache-Hit', 'true');
-            return res.json(cached);
+            const { data, isStale } = cachedResult;
+
+            // Stale-while-revalidate: se cache está velho mas ainda válido, rebuild em background
+            if (isStale && !revalidating.has(cacheKey)) {
+                revalidating.add(cacheKey);
+                setImmediate(async () => {
+                    try {
+                        console.log(`[cashflow.v2] REBUILD async ${cacheKey}`);
+                        const fresh = await _fetchWithTimeout(() => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }), 30000);
+                        _setCached(cacheKey, fresh, ttlSeconds);
+                    } catch (err) {
+                        console.warn(`[cashflow.v2] REBUILD async falhou ${cacheKey}:`, err.message);
+                    } finally {
+                        revalidating.delete(cacheKey);
+                    }
+                });
+            }
+
+            return res.json(data);
         }
 
+        // MISS: calcula e responde
+        console.log(`[cashflow.v2] REDIS/LOCAL MISS ${cacheKey} — executando builder...`);
+        const responsePayload = await _fetchWithTimeout(
+            () => buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }),
+            30000
+        );
+
+        _setCached(cacheKey, responsePayload, ttlSeconds);
+
+        res.json(responsePayload);
+
+        logMetric('CashflowV2', 'getCashflow', {
+          executionTimeMs: Date.now() - startedAt,
+          date: targetDate,
+          cash: responsePayload?.data?.caixa?.total,
+          production: responsePayload?.data?.producao?.total,
+          paymentCount: responsePayload?.data?.estatisticas?.quantidade,
+          sessionCount: responsePayload?.data?.producao?.quantidadeAtendimentos,
+          cached: false
+        });
+
+    } catch (err) {
+        logMetric('CashflowV2', 'getCashflow', {
+          executionTimeMs: Date.now() - startedAt,
+          date: req.query?.date || req.query?.startDate,
+          error: err.message
+        });
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+async function buildCashflowResponse({ start, end, targetDate, startDate, endDate, todayStr, _tick, startedAt }) {
+    const responseStartedAt = Date.now();
+    try {
         // ============================================================
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
         const _tCashflowBase = Date.now();
         const [cash, production, convenioAppts] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end).then(r => {
+                _tick('calculateCash');
                 console.log(`[cashflow.v2] calculateCash = ${Date.now() - _tCashflowBase}ms`);
                 return r;
             }),
-            unifiedFinancialService.calculateProduction(start, end).then(r => {
+            unifiedFinancialService.calculateProduction(start, end, { skipPendente: true }).then(r => {
+                _tick('calculateProduction');
                 console.log(`[cashflow.v2] calculateProduction = ${Date.now() - _tCashflowBase}ms`);
                 return r;
             }),
@@ -319,6 +436,7 @@ router.get('/', auth, async (req, res) => {
         const projecaoMes = totalMes + (recurringDailyAvg * diasRestantesMes);
         const mediaDiariaMes = recurringDailyAvg;
         console.log(`[cashflow.v2] comparativos = ${Date.now() - _tComparativos}ms`);
+        _tick('comparativos');
 
         // ============================================================
         // ========== TRANSAÇÕES DE CAIXA ==========
@@ -467,6 +585,7 @@ router.get('/', auth, async (req, res) => {
             };
         }).filter(Boolean);
         console.log(`[cashflow.v2] transacoesCaixa.process = ${Date.now() - _tTransacoesCaixa}ms (${transacoesCaixa.length} items)`);
+        _tick('transacoesCaixa');
 
         transacoesCaixa.sort((a, b) => a.hora.localeCompare(b.hora));
 
@@ -597,6 +716,7 @@ router.get('/', auth, async (req, res) => {
         });
 
         console.log(`[cashflow.v2] transacoesProducao.process = ${Date.now() - _tTransacoesProducao}ms (${transacoesProducao.length} items)`);
+        _tick('transacoesProducao');
 
         // Appointments convênio sem Session document — injetar como entradas sintéticas
         const sessionCoveredApptIds = new Set(
@@ -655,7 +775,8 @@ router.get('/', auth, async (req, res) => {
             ticketMedio: dados.quantidade > 0 ? (dados.total / dados.quantidade).toFixed(2) : 0
         })).sort((a, b) => b.total - a.total);
 
-        console.log(`[cashflow.v2] TOTAL = ${Date.now() - startedAt}ms`);
+        console.log(`[cashflow.v2] BUILD TOTAL = ${Date.now() - responseStartedAt}ms`);
+        _tick('montagem');
 
         const cashflowResponsePayload = {
             success: true,
@@ -748,7 +869,6 @@ router.get('/', auth, async (req, res) => {
                     totalAcumuladoMes: totalMes,
                     projecaoMes: parseFloat(projecaoMes.toFixed(2)),
                     diasDecorridos: dayOfMonth,
-                    // Informativo — não removido do caixa, só não usado como base da projeção.
                     caixaRecorrente: parseFloat(recurringTotal.toFixed(2)),
                     caixaExtraordinario: parseFloat(extraordinaryTotal.toFixed(2))
                 },
@@ -774,28 +894,16 @@ router.get('/', auth, async (req, res) => {
             }
         };
 
-        _setCashflowCached(cacheKey, cashflowResponsePayload);
+        const buildTotal = Date.now() - responseStartedAt;
+        console.log(`[cashflow.v2] TIMERS summary: calculateCash=${_timers.calculateCash?.elapsed || '?'}ms calculateProduction=${_timers.calculateProduction?.elapsed || '?'}ms comparativos=${_timers.comparativos?.elapsed || '?'}ms transacoesCaixa=${_timers.transacoesCaixa?.elapsed || '?'}ms transacoesProducao=${_timers.transacoesProducao?.elapsed || '?'}ms montagem=${_timers.montagem?.elapsed || '?'}ms buildTotal=${buildTotal}ms`);
 
-        res.json(cashflowResponsePayload);
-
-        logMetric('CashflowV2', 'getCashflow', {
-          executionTimeMs: Date.now() - startedAt,
-          date: targetDate,
-          cash: totalCaixaFiltrado,
-          production: production.total,
-          paymentCount: countCaixaFiltrado,
-          sessionCount: production.count
-        });
+        return cashflowResponsePayload;
 
     } catch (err) {
-        logMetric('CashflowV2', 'getCashflow', {
-          executionTimeMs: Date.now() - startedAt,
-          date: targetDate,
-          error: err.message
-        });
-        res.status(500).json({ success: false, error: err.message });
+        console.error('[cashflow.v2] buildCashflowResponse error:', err.message, err.stack);
+        throw err;
     }
-});
+}
 
 // GET /api/v2/cashflow/month?month=2026-04
 // Retorna resumo diário do mês inteiro em UMA requisição (substitui 30 chamadas diárias)
@@ -807,75 +915,42 @@ router.get('/month', auth, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Parâmetro month obrigatório (formato: YYYY-MM)' });
         }
 
-        const cacheKey = _cashflowCacheKey(undefined, undefined, undefined, month);
         const currentMonthStr = moment.tz('America/Sao_Paulo').format('YYYY-MM');
         const isCurrent = month === currentMonthStr;
-        const cached = _getCashflowCached(cacheKey, isCurrent ? CASHFLOW_CURRENT_TTL : CASHFLOW_PAST_TTL);
-        if (cached) {
+        const cacheKey = _cacheKey(undefined, undefined, undefined, month);
+        const ttlSeconds = isCurrent ? REDIS_TTL_CURRENT_SECONDS : REDIS_TTL_PAST_SECONDS;
+
+        const cachedResult = await _getCached(cacheKey, ttlSeconds);
+        if (cachedResult) {
             res.set('X-Cache-Hit', 'true');
-            return res.json(cached);
-        }
-
-        const [year, monthNum] = month.split('-').map(Number);
-        const monthStart = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day');
-        const monthEnd = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day');
-        const today = moment.tz('America/Sao_Paulo').endOf('day');
-        const start = monthStart.clone().utc().toDate();
-        // Para o mês atual, não buscar além de hoje — evita pagamentos futuros pré-registrados
-        const end = moment.min(monthEnd, today).utc().toDate();
-
-        // 🎯 Fonte única de verdade V2
-        const [cashMap, productionResult, productionTotals] = await Promise.all([
-            unifiedFinancialService.calculateCashByDay(start, end),
-            unifiedFinancialService.calculateProductionByDay(start, end),
-            unifiedFinancialService.calculateProduction(start, end)
-        ]);
-
-        const producaoMap = productionResult.map;
-
-        // Preenche todos os dias do mês
-        const daysInMonth = monthStart.daysInMonth();
-        const result = [];
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dayStr = moment.tz([year, monthNum - 1, d], 'America/Sao_Paulo').format('YYYY-MM-DD');
-            const caixaData = cashMap.get(dayStr);
-            const prodData = producaoMap.get(dayStr);
-            result.push({
-                date: dayStr,
-                caixa: caixaData?.caixa || 0,
-                producao: prodData?.producao || 0,
-                atendimentos: prodData?.atendimentos || 0
-            });
-        }
-
-        const caixaBruto = result.reduce((s, d) => s + d.caixa, 0);
-
-        const responsePayload = {
-            success: true,
-            month,
-            data: result,
-            resumo: {
-                caixaBruto,
-                producaoTotal: productionTotals.total || 0,
-                convenioAReceber: productionTotals.convenio || 0,
-                porTipo: {
-                    particular: productionTotals.particular || 0,
-                    pacote: productionTotals.pacote || 0,
-                    convenio: productionTotals.convenio || 0,
-                    liminar: productionTotals.liminar || 0
-                }
+            const { data, isStale } = cachedResult;
+            if (isStale && !revalidating.has(cacheKey)) {
+                revalidating.add(cacheKey);
+                setImmediate(async () => {
+                    try {
+                        console.log(`[cashflow.v2] REBUILD async /month ${cacheKey}`);
+                        const fresh = await _buildMonthResponse({ month, isCurrent, currentMonthStr });
+                        _setCached(cacheKey, fresh, ttlSeconds);
+                    } catch (err) {
+                        console.warn(`[cashflow.v2] REBUILD async /month falhou ${cacheKey}:`, err.message);
+                    } finally {
+                        revalidating.delete(cacheKey);
+                    }
+                });
             }
-        };
+            return res.json(data);
+        }
 
-        _setCashflowCached(cacheKey, responsePayload);
+        const responsePayload = await _buildMonthResponse({ month, isCurrent, currentMonthStr });
+        _setCached(cacheKey, responsePayload, ttlSeconds);
 
         res.json(responsePayload);
 
         logMetric('CashflowV2', 'getCashflowMonth', {
           executionTimeMs: Date.now() - startedAt,
           month,
-          caixaBruto,
-          producaoTotal: productionTotals.total || 0
+          caixaBruto: responsePayload.resumo?.caixaBruto,
+          producaoTotal: responsePayload.resumo?.producaoTotal || 0
         });
 
     } catch (err) {
@@ -888,14 +963,66 @@ router.get('/month', auth, async (req, res) => {
     }
 });
 
+async function _buildMonthResponse({ month }) {
+    const [year, monthNum] = month.split('-').map(Number);
+    const monthStart = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').startOf('day');
+    const monthEnd = moment.tz([year, monthNum - 1, 1], 'America/Sao_Paulo').endOf('month').endOf('day');
+    const today = moment.tz('America/Sao_Paulo').endOf('day');
+    const start = monthStart.clone().utc().toDate();
+    const end = moment.min(monthEnd, today).utc().toDate();
+
+    const [cashMap, productionResult, productionTotals] = await Promise.all([
+        unifiedFinancialService.calculateCashByDay(start, end),
+        unifiedFinancialService.calculateProductionByDay(start, end),
+        unifiedFinancialService.calculateProduction(start, end)
+    ]);
+
+    const producaoMap = productionResult.map;
+
+    const daysInMonth = monthStart.daysInMonth();
+    const result = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dayStr = moment.tz([year, monthNum - 1, d], 'America/Sao_Paulo').format('YYYY-MM-DD');
+        const caixaData = cashMap.get(dayStr);
+        const prodData = producaoMap.get(dayStr);
+        result.push({
+            date: dayStr,
+            caixa: caixaData?.caixa || 0,
+            producao: prodData?.producao || 0,
+            atendimentos: prodData?.atendimentos || 0
+        });
+    }
+
+    const caixaBruto = result.reduce((s, d) => s + d.caixa, 0);
+
+    return {
+        success: true,
+        month,
+        data: result,
+        resumo: {
+            caixaBruto,
+            producaoTotal: productionTotals.total || 0,
+            convenioAReceber: productionTotals.convenio || 0,
+            porTipo: {
+                particular: productionTotals.particular || 0,
+                pacote: productionTotals.pacote || 0,
+                convenio: productionTotals.convenio || 0,
+                liminar: productionTotals.liminar || 0
+            }
+        }
+    };
+}
+
 export function clearCashflowCache(date) {
     if (date) {
-        // Remove entradas do dia específico
         for (const key of _cashflowCache.keys()) {
             if (key.startsWith(date)) _cashflowCache.delete(key);
         }
+        safeRedis.del(_redisKey(date)).catch(() => {});
+        safeRedis.del(_redisKey(undefined, undefined, undefined, date)).catch(() => {});
     } else {
         _cashflowCache.clear();
+        // Não limpa todo o Redis por prefixo sem cuidado — usar explicitamente se necessário
     }
 }
 

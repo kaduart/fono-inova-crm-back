@@ -13,6 +13,15 @@ const fiscalProfileSchema = new mongoose.Schema({
   cnae: { type: String },
   codigoServicoLC116: { type: String }, // cTribNac — ex. 040803 Fonoaudiologia
   inscricaoMunicipal: { type: String },
+  // end/{xLgr,nro,xCpl,xBairro} do Anexo I §2.5 — Obrigatório (xCpl opcional) para o prestador.
+  // cMun/CEP do grupo end/endNac reaproveitam municipioIBGE (já existe acima) + endereco.cep.
+  endereco: {
+    logradouro: { type: String },
+    numero: { type: String },
+    complemento: { type: String },
+    bairro: { type: String },
+    cep: { type: String }
+  },
   // Mesmo enum de models/ConfiguracaoFiscal.js — decisão de reaproveitar essa fonte ainda em aberto
   // (Fase 2 v3, Seção 0 e Seção 12, item 1)
   regimeTributario: {

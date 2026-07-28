@@ -44,12 +44,31 @@ export async function buildSnapshot(fiscalInvoice, fiscalSubmissionId, { session
         cnpj: fiscalProfile.cnpj,
         xNome: fiscalProfile.razaoSocial,
         im: fiscalProfile.inscricaoMunicipal,
+        end: fiscalProfile.endereco ? {
+          xLgr: fiscalProfile.endereco.logradouro,
+          nro: fiscalProfile.endereco.numero,
+          xCpl: fiscalProfile.endereco.complemento,
+          xBairro: fiscalProfile.endereco.bairro,
+          cMun: fiscalProfile.municipioIBGE,
+          cep: fiscalProfile.endereco.cep
+        } : null,
         professional: professional ? { id: String(professional._id), nome: professional.fullName } : null
       },
       toma: {
         id: String(patient._id),
         nome: patient.fullName,
-        cpf: patient.cpf || null
+        cpf: patient.cpf || null,
+        cnpj: patient.cnpj || null,
+        // Fallback documentado: paciente sem município próprio assume o município da clínica
+        // (cobre o caso comum — ver comentário em models/Patient.js).
+        end: patient.address ? {
+          xLgr: patient.address.street,
+          nro: patient.address.number,
+          xCpl: null,
+          xBairro: patient.address.district,
+          cMun: patient.address.municipioIBGE || fiscalProfile.municipioIBGE,
+          cep: patient.address.zipCode
+        } : null
       },
       serv: {
         cTribNac: fiscalInvoice.serviceCode,

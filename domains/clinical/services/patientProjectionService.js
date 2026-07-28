@@ -211,6 +211,7 @@ export async function buildPatientView(patientId, options = {}) {
       email: patient.email,
       cpf: patient.cpf,
       cpfDigits: patient.cpf?.replace(/\D/g, ''),
+      cnpj: patient.cnpj,
       mainComplaint: patient.mainComplaint,
       healthPlan: patient.healthPlan,
       

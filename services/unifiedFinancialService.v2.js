@@ -466,7 +466,7 @@ const pkgLookupStages = [
  * 🚨 NÃO filtra por appointment deletado/cancelado — produção é execução clínica.
  * 🚨 NÃO filtra por paciente deletado — a sessão foi realizada.
  */
-export async function calculateProduction(start, end) {
+export async function calculateProduction(start, end, { skipPendente = false } = {}) {
     const startedAt = Date.now();
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     const match = {
@@ -562,39 +562,43 @@ export async function calculateProduction(start, end) {
     const pendente = total - recebido;
 
     // 4. Particular Pendente vs Pacote Pendente — fonte: Session (nao Payment)
-    const particularPendenteAggStartedAt = Date.now();
-    // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
-    // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
-    const particularPendenteAgg = await Session.aggregate([
-        { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
-        { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
-        { $unwind: '$appt' },
-        { $match: {
-            'appt.billingType': { $nin: ['convenio', 'liminar'] },
-            'appt.operationalStatus': 'completed'
-        }},
-        // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
-        { $match: {
-            paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
-            paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
-        }},
-        { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
-        { $match: { $or: [
-            { 'appt.package': { $exists: false } },
-            { 'appt.package': null },
-            { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
-            { 'pkg.model': 'per_session' },
-            { pkg: { $size: 0 } }
-        ]}},
-        { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
-        { $match: { $or: [
-            { payment: { $size: 0 } },
-            { 'payment.status': { $ne: 'paid' } }
-        ]}},
-        { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
-    ]);
-    const particularPendenteAggMs = Date.now() - particularPendenteAggStartedAt;
-    const particularPendente = particularPendenteAgg[0]?.total || 0;
+    let particularPendenteAggMs = 0;
+    let particularPendente = 0;
+    if (!skipPendente) {
+        const particularPendenteAggStartedAt = Date.now();
+        // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
+        // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
+        const particularPendenteAgg = await Session.aggregate([
+            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+            { $unwind: '$appt' },
+            { $match: {
+                'appt.billingType': { $nin: ['convenio', 'liminar'] },
+                'appt.operationalStatus': 'completed'
+            }},
+            // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
+            { $match: {
+                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
+            }},
+            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+            { $match: { $or: [
+                { 'appt.package': { $exists: false } },
+                { 'appt.package': null },
+                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+                { 'pkg.model': 'per_session' },
+                { pkg: { $size: 0 } }
+            ]}},
+            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+            { $match: { $or: [
+                { payment: { $size: 0 } },
+                { 'payment.status': { $ne: 'paid' } }
+            ]}},
+            { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+        ]);
+        particularPendenteAggMs = Date.now() - particularPendenteAggStartedAt;
+        particularPendente = particularPendenteAgg[0]?.total || 0;
+    }
 
     // Pacote Pendente: para pacotes prepaid/full, o dinheiro entrou na venda.
     // NAO deve haver pendente — sessoes sem payment vinculado sao normais (payment e do pacote).
