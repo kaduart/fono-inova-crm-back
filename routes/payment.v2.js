@@ -1288,6 +1288,12 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
+        // Invalida cache do cashflow para a data do pagamento reverso/debitado
+        const debitCacheDate = payment.financialDate || payment.paymentDate || payment.createdAt;
+        if (debitCacheDate) {
+            clearCashflowCache(moment.tz(debitCacheDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+        }
+
         const updated = await Payment.findById(id).populate('patient doctor session');
         return res.json({
             success: true,
