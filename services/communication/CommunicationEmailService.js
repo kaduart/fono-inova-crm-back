@@ -38,8 +38,8 @@ function buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, me
 
   return `
     <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #1f2937;">
-      <div style="background: linear-gradient(135deg, #0F766E 0%, #065F46 100%); padding: 22px 20px; text-align: center;">
-        <span style="display: inline-block; background: #ffffff; border-radius: 10px; padding: 8px 20px;">
+      <div style="background: linear-gradient(135deg, #068c67 0%, #068c67 100%); padding: 22px 20px; text-align: center;">
+        <span style="display: inline-block; background: #ffffff; border-radius: 10px; padding: 0px 72px;">
           <img src="${process.env.LOGO_URL || 'https://app.clinicafonoinova.com.br/images/Logo-Fono-Inova-horizontal.png'}" alt="Fono Inova" style="height: 108px; display: block;">
         </span>
       </div>
