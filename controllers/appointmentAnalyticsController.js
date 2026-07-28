@@ -2,11 +2,16 @@ import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import mongoose from 'mongoose';
 import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
+import { safeRedis } from '../config/redisConnection.js';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
-// Cache TTL: 30s para período que inclui hoje, 24h para períodos passados
-// Mês fechado é imutável — não há razão para recalcular em minutos
+// Cache Redis para analytics/by-type — compartilhado entre instâncias no Render
+const REDIS_PREFIX = 'analytics:by-type:';
+const REDIS_TTL_CURRENT_SECONDS = 120;   // 2 min para período atual
+const REDIS_TTL_PAST_SECONDS = 1800;     // 30 min para períodos passados
+
+// Cache local de fallback (quando Redis indisponível)
 const BY_TYPE_CURRENT_TTL = 30_000;
 const BY_TYPE_PAST_TTL    = 24 * 60 * 60 * 1000;
 const _byTypeCache = new Map();
@@ -15,23 +20,78 @@ function _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty) {
     return `${mode}_${startDate || ''}_${endDate || ''}_${date || ''}_${doctorId || ''}_${specialty || ''}`;
 }
 
-function _byTypeCacheGet(key, ttl) {
+function _redisKey(mode, startDate, endDate, date, doctorId, specialty) {
+    return `${REDIS_PREFIX}${_byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty)}`;
+}
+
+async function _redisCacheGet(key) {
+    try {
+        const raw = await safeRedis.get(key);
+        if (!raw) return null;
+        const entry = JSON.parse(raw);
+        if (!entry || !entry._cachedAt) return null;
+        return entry;
+    } catch (e) {
+        console.warn('[by-type] Redis cache read failed:', e.message);
+        return null;
+    }
+}
+
+async function _redisCacheSet(key, data, ttlSeconds) {
+    try {
+        await safeRedis.setex(key, ttlSeconds, JSON.stringify({ ...data, _cachedAt: new Date().toISOString() }));
+    } catch (e) {
+        console.warn('[by-type] Redis cache write failed:', e.message);
+    }
+}
+
+function _localCacheGet(key, ttl) {
     const entry = _byTypeCache.get(key);
     if (entry && Date.now() - entry.ts < ttl) {
-        console.log(`[by-type] CACHE HIT ${key} (age=${Date.now() - entry.ts}ms ttl=${ttl}ms)`);
+        console.log(`[by-type] LOCAL HIT ${key} (age=${Date.now() - entry.ts}ms ttl=${ttl}ms)`);
         return entry.data;
     }
     return null;
 }
 
-function _byTypeCacheSet(key, data) {
+function _localCacheSet(key, data) {
     _byTypeCache.set(key, { data, ts: Date.now() });
-    console.log(`[by-type] CACHE SET ${key}`);
-    // Evita crescimento ilimitado — mantém no máximo 50 entradas
     if (_byTypeCache.size > 50) {
         const oldest = _byTypeCache.keys().next().value;
         _byTypeCache.delete(oldest);
     }
+}
+
+async function _byTypeCacheGet(mode, startDate, endDate, date, doctorId, specialty, ttlSeconds) {
+    const key = _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty);
+    const redisEntry = await _redisCacheGet(_redisKey(mode, startDate, endDate, date, doctorId, specialty));
+    if (redisEntry) {
+        const ageMs = Date.now() - new Date(redisEntry._cachedAt).getTime();
+        console.log(`[by-type] REDIS HIT ${key} (age=${Math.round(ageMs/1000)}s ttl=${ttlSeconds}s)`);
+        return redisEntry;
+    }
+    const localEntry = _localCacheGet(key, ttlSeconds * 1000);
+    if (localEntry) return localEntry;
+    return null;
+}
+
+async function _byTypeCacheSet(mode, startDate, endDate, date, doctorId, specialty, data, ttlSeconds) {
+    const key = _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty);
+    _localCacheSet(key, data);
+    await _redisCacheSet(_redisKey(mode, startDate, endDate, date, doctorId, specialty), data, ttlSeconds);
+    console.log(`[by-type] CACHE SET ${key}`);
+}
+
+/**
+ * Invalida cache Redis/Local para analytics/by-type.
+ * Útil para chamar após mutações em agendamentos.
+ */
+export function invalidateByTypeCache() {
+    const size = _byTypeCache.size;
+    _byTypeCache.clear();
+    console.log(`[by-type] Cache local invalidado (${size} entradas limpas)`);
+    // Não limpamos o Redis por prefixo aqui para evitar operações pesadas;
+    // cada entrada expira pelo TTL.
 }
 
 /**
@@ -147,12 +207,13 @@ export const getAppointmentsByType = async (req, res) => {
     try {
         const { date, startDate, endDate, doctorId, specialty, mode = 'createdAt' } = req.query;
 
-        // Cache: 30s se período inclui hoje, 5min para períodos passados
+        // Cache: 2min se período inclui hoje, 30min para períodos passados
         const periodEnd = endDate || date || new Date().toISOString().split('T')[0];
-        const isPast = new Date(periodEnd) < new Date(new Date().toISOString().split('T')[0]);
-        const cacheTTL = isPast ? BY_TYPE_PAST_TTL : BY_TYPE_CURRENT_TTL;
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isCurrent = periodEnd >= todayStr;
+        const cacheTTLSeconds = isCurrent ? REDIS_TTL_CURRENT_SECONDS : REDIS_TTL_PAST_SECONDS;
         const cacheKey = _byTypeCacheKey(mode, startDate, endDate, date, doctorId, specialty);
-        const cached = _byTypeCacheGet(cacheKey, cacheTTL);
+        const cached = await _byTypeCacheGet(mode, startDate, endDate, date, doctorId, specialty, cacheTTLSeconds);
         if (cached) return res.json(cached);
 
         // mode = 'createdAt' → visão comercial (quando o lead entrou)
@@ -198,10 +259,10 @@ export const getAppointmentsByType = async (req, res) => {
         const filter = { ...dateFilter, ...extraFilters };
         const _t0 = Date.now();
 
-        // ─── 3. Buscar agendamentos do período (com população completa) ───
+        // ─── 3. Buscar agendamentos do período (população mínima) ───
         const appointments = await Appointment.find(filter)
-            .populate('patient', 'fullName phone email dateOfBirth cpf')
-            .populate('doctor', 'fullName specialty phoneNumber')
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName specialty')
             .sort({ date: 1, time: 1 })
             .lean();
         console.log(`[by-type] appointments.find+populate = ${Date.now() - _t0}ms (${appointments.length} docs)`);
@@ -239,8 +300,8 @@ export const getAppointmentsByType = async (req, res) => {
             if (specialty) criadosFilter.specialty = specialty.toLowerCase();
             
             criadosHoje = await Appointment.find(criadosFilter)
-                .populate('patient', 'fullName phone email dateOfBirth cpf')
-                .populate('doctor', 'fullName specialty phoneNumber')
+                .populate('patient', 'fullName')
+                .populate('doctor', 'fullName specialty')
                 .sort({ date: 1, time: 1 })
                 .lean();
         }
@@ -382,7 +443,7 @@ export const getAppointmentsByType = async (req, res) => {
             }
         };
 
-        _byTypeCacheSet(cacheKey, responseBody);
+        await _byTypeCacheSet(mode, startDate, endDate, date, doctorId, specialty, responseBody, cacheTTLSeconds);
         res.json(responseBody);
 
     } catch (error) {
