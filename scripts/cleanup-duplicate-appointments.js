@@ -81,9 +81,24 @@ async function run() {
 
       if (!DRY_RUN) {
         // Limpa sessions órfãs vinculadas
+        const sessionsToRemove = await db.collection('sessions').find({ appointmentId: doc._id }).toArray();
+        const sessionIds = sessionsToRemove.map(s => s._id);
+
+        if (sessionIds.length > 0) {
+          const paymentBySessionResult = await db.collection('payments').deleteMany({ session: { $in: sessionIds } });
+          if (paymentBySessionResult.deletedCount > 0) {
+            console.log(`      💰 ${paymentBySessionResult.deletedCount} payment(s) removido(s) por session`);
+          }
+        }
+
         const sessionResult = await db.collection('sessions').deleteMany({ appointmentId: doc._id });
         if (sessionResult.deletedCount > 0) {
           console.log(`      🧹 ${sessionResult.deletedCount} session(s) removida(s)`);
+        }
+
+        const paymentByApptResult = await db.collection('payments').deleteMany({ appointment: doc._id });
+        if (paymentByApptResult.deletedCount > 0) {
+          console.log(`      💰 ${paymentByApptResult.deletedCount} payment(s) removido(s) por appointment`);
         }
 
         // Deleta o appointment duplicado
