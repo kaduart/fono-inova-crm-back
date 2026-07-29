@@ -22,6 +22,7 @@ import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { getProjectionWorkerStatus, getProjectionMetrics } from '../domains/clinical/workers/patientProjectionWorker.js';
 import patientV2DebugRoutes from './patient.v2.debug.js';
 import { createContextLogger } from '../utils/logger.js';
+import { execute as deletePatientCommand } from '../domains/patient/commands/deletePatientCommand.js';
 
 const router = express.Router();
 const logger = createContextLogger('PatientV2Routes');
@@ -513,13 +514,16 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     if (!isWorkersEnabled()) {
       logger.info(`[${correlationId}] ⚡ Modo síncrono (workers desabilitados ou não iniciados)`);
       
-      await Patient.findByIdAndDelete(patientId);
-      await PatientsView.findOneAndDelete({ patientId });
+      const result = await deletePatientCommand(patientId, {
+        user: req.user,
+        reason: req.body?.reason || 'delete_via_patient_v2_sync_route'
+      });
       
       return res.json(formatSuccess({
         patientId,
         status: 'completed',
-        deleted: true
+        deleted: true,
+        counts: result.counts
       }, { message: 'Paciente removido' }));
     }
 

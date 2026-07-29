@@ -351,11 +351,15 @@ async function handleDeletePatient(payload, correlationId) {
       throw new Error(`Paciente tem ${futureAppointments} agendamentos futuros. Cancele-os primeiro.`);
     }
     
-    // 3. Soft delete (melhor que hard delete)
-    // Ou hard delete se for requisito
-    await Patient.findByIdAndDelete(patientId, { session });
+    // 3. Deleção em cascade via command centralizado
+    const { execute: deletePatientCommand } = await import('../../patient/commands/deletePatientCommand.js');
+    const result = await deletePatientCommand(patientId, {
+      user: deletedBy,
+      reason: reason || 'delete_via_patient_worker',
+      mongoSession: session
+    });
     
-    logger.info(`[${correlationId}] 💾 Patient deleted`, { patientId });
+    logger.info(`[${correlationId}] 💾 Patient deleted`, { patientId, counts: result.counts });
     
     // 4. Publica evento
     await publishEvent(

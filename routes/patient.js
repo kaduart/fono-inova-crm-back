@@ -513,14 +513,18 @@ router.get('/:patientId/sessions/v2', auth, async (req, res) => {
 });
 
 // Delete a patient
+import { execute as deletePatientCommand } from '../domains/patient/commands/deletePatientCommand.js';
+
 router.delete('/:id', validateId, auth, async (req, res) => {
   try {
-    const deleted = await Patient.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Patient not found' });
-    await PatientsView.findOneAndDelete({ patientId: deleted._id });
-    res.json({ message: 'Patient deleted' });
+    const result = await deletePatientCommand(req.params.id, {
+      user: req.user,
+      reason: req.body?.reason || 'delete_via_patient_v1_route'
+    });
+    res.json({ message: 'Patient deleted', ...result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ error: err.message, code: err.code });
   }
 });
 
