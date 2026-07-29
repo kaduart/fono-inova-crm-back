@@ -109,6 +109,25 @@ const paymentSchema = new mongoose.Schema({
         type: String,
         default: null,
         description: 'Origem/fluxo que gerou o payment (ex: appointment_split, complete_session, manual_entry)'
+    },
+    // 🛡️ INTEGRITY STATUS: rastreabilidade de payments cujo vínculo com Patient
+    // foi perdido por deleção antiga sem cascade ou por inconsistência histórica.
+    // Usado pela auditoria para distinguir órfãos novos de registros já tratados.
+    integrityStatus: {
+        type: String,
+        enum: ['healthy', 'relinked', 'legacy_patient_deleted', 'manual_review', null],
+        default: null,
+        index: true,
+        description: 'healthy=consistente, relink=vínculo recuperado, legacy_patient_deleted=paciente deletado, manual_review=precisa de revisão humana'
+    },
+    integrityMetadata: {
+        detectedAt: { type: Date, default: null },
+        originalPatientId: { type: String, default: null },
+        originalPatientName: { type: String, default: null },
+        reason: { type: String, default: null },
+        notes: { type: String, default: null },
+        treatedAt: { type: Date, default: null },
+        treatedBy: { type: String, default: null }
     }
 }, { timestamps: true });
 
@@ -329,6 +348,9 @@ paymentSchema.index(
 // Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
 paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
 paymentSchema.index({ _billingEventId: 1 }, { sparse: true, name: 'billing_event_lock' });
+
+// 🛡️ Auditoria de integridade: só lista órfãos não tratados
+paymentSchema.index({ integrityStatus: 1, patient: 1, appointment: 1 }, { name: 'integrity_audit_orphans', sparse: true });
 
 // ============ MÉTODOS ============
 paymentSchema.methods.toDTO = function() {

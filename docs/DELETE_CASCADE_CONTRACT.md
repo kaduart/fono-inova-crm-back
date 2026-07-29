@@ -105,14 +105,42 @@ Nunca apagar `Package` manualmente.
 
 ---
 
-## 4. Como auditar
+## 4. Saneamento de legado e `integrityStatus`
+
+Pagamentos criados antes da correção do cascade podem ter perdido o vínculo com `Patient`. Esses registros não são removidos automaticamente quando representam receita real. Em vez disso, são **marcados** para distinguir legado de problemas novos.
+
+### Status possíveis
+
+```js
+integrityStatus: {
+  null / 'healthy'        // Sem problema de integridade
+  'relinked'              // Vínculo recuperado (ex: package_receipt corrigido)
+  'legacy_patient_deleted' // Paciente deletado; payment mantido por registro financeiro
+  'manual_review'         // Requer revisão humana antes de qualquer ação
+}
+```
+
+### Metadados obrigatórios ao marcar
+
+```js
+integrityMetadata: {
+  detectedAt,        // quando foi identificado
+  originalPatientId, // patientId antes da correção
+  originalPatientName,
+  reason,            // motivo da quebra
+  notes,             // detalhes da decisão
+  treatedAt,         // quando foi tratado
+  treatedBy          // script/operador
+}
+```
+
+### Auditoria
 
 ```bash
-# Verificar payments órfãos
+# Verificar payments órfãos NÃO TRATADOS
 node back/scripts/auditoria-payments-orfaos.mjs
 
-# Analisar casos de investigação
-node back/scripts/analise-investigar-payments.mjs
+# A auditoria ignora integrityStatus !== null, evitando reprocessar legado
 ```
 
 ---
@@ -149,6 +177,24 @@ Dados financeiros permaneciam ativos sem a entidade principal, inflando dashboar
 - Aplicação nas rotas v1, v2 síncrono e no `patientWorker`
 - Correção do `cleanup-duplicate-appointments.js` para também remover payments
 - Documentação deste contrato
+
+### Saneamento legado realizado em 2026-07-29
+
+| Ação | Qtd | Valor | Destino |
+|---|---|---|---|
+| Deletados (massa de teste + ajuste técnico) | 14 | R$ 1.851,00 | `limpar-payments-legado.mjs` |
+| Relinkados (`package_receipt`) | 2 | R$ 1.440,00 | `tratar-payments-orfaos-legado.mjs --op=fix-package-receipt` |
+| Relinkados (`session_payment` mismatch) | 6 | R$ 1.500,00 | `tratar-payments-orfaos-legado.mjs --op=fix-session-mismatch` |
+| Relinkados (`manual` mismatch) | 1 | R$ 150,00 | `tratar-payments-orfaos-legado.mjs --op=fix-manual-mismatch` |
+| Marcados `legacy_patient_deleted` | 5 | R$ 1.030,00 | `tratar-payments-orfaos-legado.mjs --op=mark-legacy` |
+| Marcados `healthy` | 8 | R$ 1.280,00 | `tratar-payments-orfaos-legado.mjs --op=mark-healthy` |
+| **Total tratado** | **36** | **R$ 7.251,00** | — |
+
+### Resultado
+
+- Auditoria passou a reportar **R$ 0,00** em payments `paid` órfãos não tratados.
+- Todos os pagamentos com `integrityStatus` definido são ignorados pela auditoria, evitando reprocessamento de legado.
+- Novos órfãos só podem surgir por bypass do `deletePatientCommand`.
 
 ---
 

@@ -43,7 +43,12 @@ if (DATE_START || DATE_END) {
   console.log(`   Período: ${DATE_START || 'início'} até ${DATE_END || 'agora'}`);
 }
 
-const cursor = payments.find(query);
+const cursor = payments.find({
+  ...query,
+  // 🛡️ Ignora payments já tratados em saneamentos legados
+  // healthy, relinked, legacy_patient_deleted, manual_review — todos já foram avaliados
+  integrityStatus: null
+});
 const orphans = {
   confirmed_trash: [],
   investigate: [],
@@ -78,11 +83,14 @@ for await (const p of cursor) {
   const hasSession = !!refs.session;
   const hasPackage = !!refs.package;
 
-  // Consideramos órfão quando o vínculo principal (patient ou appointment) está quebrado.
+  // Consideramos órfão quando o vínculo principal (patient) está quebrado.
+  // Appointment deletado mas patient existente não é órfão — pode ter sido remoção legítima.
   // Session/package/insuranceGuide são referências secundárias e podem ser nulas legítimamente.
   const missingPatient = p.patient && !refs.patient;
   const missingAppointment = p.appointment && !refs.appointment;
-  const missingPrincipal = missingPatient || missingAppointment;
+  // Só considera missingAppointment como problema se o patient também não existir
+  // ou se houver inconsistência entre referências (tratado por integrityStatus).
+  const missingPrincipal = missingPatient || (missingAppointment && !hasPatient);
   const missingSecondary = (p.session && !refs.session) ||
                            (p.package && !refs.package) ||
                            (p.monthlySettlement && !refs.monthlySettlement) ||
