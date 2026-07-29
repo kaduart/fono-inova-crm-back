@@ -147,11 +147,13 @@ export async function sendBatch(batchId, userId) {
   const sessionIds = batch.sessions.map(s => s.session.toString());
   const linkedPaymentIds = batch.sessions.map(s => s.payment).filter(Boolean);
 
+  const billedAt = batch.sentDate || new Date();
+
   // 🎯 Atualiza por paymentId quando disponível (mais confiável que session lookup)
   if (linkedPaymentIds.length > 0) {
     await Payment.updateMany(
       { _id: { $in: linkedPaymentIds }, billingType: 'convenio' },
-      { $set: { billedAt: new Date(), 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+      { $set: { billedAt, 'insurance.status': 'billed', 'insurance.billedAt': billedAt, 'insurance.billedAtSource': 'insuranceBatchService', updatedAt: new Date() } }
     );
   }
   // Fallback: atualiza por session para payments sem link direto no batch
@@ -159,7 +161,7 @@ export async function sendBatch(batchId, userId) {
   if (sessionsWithoutPayment.length > 0) {
     await Payment.updateMany(
       { session: { $in: sessionsWithoutPayment }, billingType: 'convenio' },
-      { $set: { billedAt: new Date(), 'insurance.status': 'billed', 'insurance.billedAt': new Date(), updatedAt: new Date() } }
+      { $set: { billedAt, 'insurance.status': 'billed', 'insurance.billedAt': billedAt, 'insurance.billedAtSource': 'insuranceBatchService', updatedAt: new Date() } }
     );
   }
 

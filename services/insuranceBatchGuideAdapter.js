@@ -151,7 +151,8 @@ export async function buildBatchFromGuides(guideIds, options = {}) {
       guidesMeta.push({
         guideId: guide._id.toString(),
         number: guide.number,
-        sessionsCount: guideSessions.length
+        sessionsCount: guideSessions.length,
+        billingMode: guide.billingMode || 'per_month'
       });
     } else {
       ignoredGuides.push({

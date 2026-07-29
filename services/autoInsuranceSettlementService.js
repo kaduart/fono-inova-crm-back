@@ -67,7 +67,7 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
     // Atualiza insurance.status → received
     await Payment.updateOne(
         { _id: paymentId },
-        { $set: { 'insurance.status': 'received', 'insurance.receivedAt': now.toISOString().split('T')[0] } }
+        { $set: { 'insurance.status': 'received', 'insurance.receivedAt': now, 'insurance.receivedAtSource': 'autoInsuranceSettlementService' } }
     );
 
     await saveToOutbox({

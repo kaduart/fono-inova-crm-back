@@ -164,6 +164,34 @@ export function buildInsuranceReceivableFilter(sessionIds, requestedStatuses) {
   return filter;
 }
 
+// "Faturado em julho" significa que a fatura foi emitida/enviada em julho, não
+// que a sessão aconteceu em julho. Filtra por insurance.billedAt.
+// ⚠️ Só usar após backfill de insurance.billedAt (script backfill-insurance-billedAt.mjs).
+export function buildInsuranceBilledFilter(billedAtRange) {
+  const filter = {
+    billingType: 'convenio',
+    amount: { $gt: 0 },
+    status: { $ne: 'canceled' },
+    'insurance.status': 'billed'
+  };
+  if (billedAtRange) filter['insurance.billedAt'] = billedAtRange;
+  return filter;
+}
+
+// "Recebido em julho" significa que o convênio pagou em julho, não que a sessão
+// aconteceu em julho — por isso filtra por insurance.receivedAt, não por
+// Session.date.
+export function buildInsuranceReceivedFilter(receivedAtRange) {
+  const filter = {
+    billingType: 'convenio',
+    amount: { $gt: 0 },
+    status: { $ne: 'canceled' },
+    'insurance.status': 'received'
+  };
+  if (receivedAtRange) filter['insurance.receivedAt'] = receivedAtRange;
+  return filter;
+}
+
 export async function checkScheduleConflict({
   date,
   time,

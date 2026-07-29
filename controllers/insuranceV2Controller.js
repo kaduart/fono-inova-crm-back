@@ -7,7 +7,7 @@ import { settleInsurancePayment, runAvulsoSettlement } from '../services/autoIns
 import { createBatch, sendBatch, processReturn } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import mongoose from 'mongoose';
-import { isConvenioSession, buildInsuranceReceivableFilter } from '../utils/billingHelpers.js';
+import { isConvenioSession, buildInsuranceReceivableFilter, buildInsuranceBilledFilter, buildInsuranceReceivedFilter } from '../utils/billingHelpers.js';
 import InsuranceResolverService from '../services/insuranceResolver.service.js';
 import insuranceBilling from '../services/billing/insuranceBilling.js';
 import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
@@ -29,8 +29,17 @@ export async function getInsuranceReceivables(req, res) {
       ? status.split(',').map(s => s.trim()).filter(Boolean)
       : null;
 
+    // Eventos financeiros de convênio devem ser filtrados pela data do evento,
+    // não pela data da sessão clínica:
+    // - Recebidos: insurance.receivedAt
+    // - Faturados: insurance.billedAt
+    // - A faturar: Session.date (ainda não houve evento financeiro)
+    const isReceivedOnly = requestedStatuses?.length === 1 && requestedStatuses[0] === 'received';
+    const isBilledOnly = requestedStatuses?.length === 1 && requestedStatuses[0] === 'billed';
+
     let sessionIds = null;
     let prevMonthTotal = null;
+    let matchFilter;
 
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -48,22 +57,48 @@ export async function getInsuranceReceivables(req, res) {
       const prevStart = new Date(`${prevY}-${String(prevM).padStart(2, '0')}-01T00:00:00-03:00`);
       const prevEnd = new Date(prevY, prevM, 0, 23, 59, 59, 999); // last day of prevMonth
 
-      const [sessionsInMonth, prevSessionsInMonth] = await Promise.all([
-        Session.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).select('_id').lean(),
-        Session.find({ date: { $gte: prevStart, $lte: prevEnd } }).select('_id').lean()
-      ]);
+      if (isReceivedOnly) {
+        matchFilter = buildInsuranceReceivedFilter({ $gte: startOfMonth, $lte: endOfMonth });
 
-      sessionIds = sessionsInMonth.map(s => s._id);
+        const prevAgg = await Payment.aggregate([
+          { $match: buildInsuranceReceivedFilter({ $gte: prevStart, $lte: prevEnd }) },
+          { $group: { _id: null, total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } } } }
+        ]);
+        prevMonthTotal = prevAgg[0]?.total || 0;
+      } else if (isBilledOnly) {
+        matchFilter = buildInsuranceBilledFilter({ $gte: startOfMonth, $lte: endOfMonth });
 
-      const prevFilter = buildInsuranceReceivableFilter(prevSessionsInMonth.map(s => s._id), null);
-      const prevAgg = await Payment.aggregate([
-        { $match: prevFilter },
-        { $group: { _id: null, total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } } } }
-      ]);
-      prevMonthTotal = prevAgg[0]?.total || 0;
+        const prevAgg = await Payment.aggregate([
+          { $match: buildInsuranceBilledFilter({ $gte: prevStart, $lte: prevEnd }) },
+          { $group: { _id: null, total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } } } }
+        ]);
+        prevMonthTotal = prevAgg[0]?.total || 0;
+      } else {
+        const [sessionsInMonth, prevSessionsInMonth] = await Promise.all([
+          Session.find({ date: { $gte: startOfMonth, $lte: endOfMonth } }).select('_id').lean(),
+          Session.find({ date: { $gte: prevStart, $lte: prevEnd } }).select('_id').lean()
+        ]);
+
+        sessionIds = sessionsInMonth.map(s => s._id);
+
+        const prevFilter = buildInsuranceReceivableFilter(prevSessionsInMonth.map(s => s._id), null);
+        const prevAgg = await Payment.aggregate([
+          { $match: prevFilter },
+          { $group: { _id: null, total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } } } }
+        ]);
+        prevMonthTotal = prevAgg[0]?.total || 0;
+
+        matchFilter = buildInsuranceReceivableFilter(sessionIds, requestedStatuses);
+      }
+    } else {
+      if (isReceivedOnly) {
+        matchFilter = buildInsuranceReceivedFilter(null);
+      } else if (isBilledOnly) {
+        matchFilter = buildInsuranceBilledFilter(null);
+      } else {
+        matchFilter = buildInsuranceReceivableFilter(sessionIds, requestedStatuses);
+      }
     }
-
-    const matchFilter = buildInsuranceReceivableFilter(sessionIds, requestedStatuses);
 
     const payments = await Payment.find(matchFilter)
       .populate('patient', 'fullName phone')
@@ -72,7 +107,7 @@ export async function getInsuranceReceivables(req, res) {
         path: 'session',
         populate: [
           { path: 'patient', select: 'fullName phone' },
-          { path: 'insuranceGuide', select: 'number insurance specialty' }
+          { path: 'insuranceGuide', select: '_id number insurance specialty billingMode status closedAt' }
         ]
       })
       .populate('appointment', 'patient insuranceProvider insuranceGuide date specialty')
@@ -152,6 +187,8 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
     patientGroup.total += grossAmount;
     patientGroup.count += 1;
     
+    const guide = payment.session?.insuranceGuide || null;
+
     patientGroup.payments.push({
       paymentId: payment._id.toString(),
       sessionId: payment.session?._id?.toString() || payment.session?.toString(),
@@ -161,7 +198,12 @@ async function _processPaymentsLegacy(res, payments, provider, prevMonthTotal = 
       paidAt: payment.paidAt || payment.insurance?.receivedAt || null,
       billedAt: payment.insurance?.billedAt || null,
       authorizationCode: payment.insurance?.authorizationCode,
-      specialty: payment.session?.specialty || payment.session?.sessionType || 'Outros'
+      specialty: payment.session?.specialty || payment.session?.sessionType || 'Outros',
+      guideId: guide?._id?.toString() || null,
+      guideNumber: guide?.number || payment.insurance?.guideNumber || null,
+      billingMode: guide?.billingMode || 'per_month',
+      guideStatus: guide?.status || null,
+      guideClosedAt: guide?.closedAt || null
     });
   }
   

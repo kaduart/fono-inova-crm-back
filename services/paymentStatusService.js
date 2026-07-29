@@ -84,6 +84,7 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         payment.insurance.status = 'billed';
         if (!payment.insurance.billedAt) {
             payment.insurance.billedAt = new Date();
+            payment.insurance.billedAtSource = 'paymentStatusService';
         }
     }
     if (paymentMethod) {
