@@ -6,7 +6,6 @@ import Appointment from '../../../models/Appointment.js';
 import Session from '../../../models/Session.js';
 import Package from '../../../models/Package.js';
 import PatientBalance from '../../../models/PatientBalance.js';
-import FinancialLedger from '../../../models/FinancialLedger.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 
 /**
@@ -54,13 +53,14 @@ async function _deleteAll(session, patientId, options) {
   const paymentsResult = await Payment.deleteMany({ patient: pid }).session(session);
   counts.payments = paymentsResult.deletedCount;
 
-  // 2. Deleta Appointments vinculados ao paciente
-  const appointmentsResult = await Appointment.deleteMany({ patient: pid }).session(session);
-  counts.appointments = appointmentsResult.deletedCount;
-
-  // 3. Deleta Sessions vinculadas ao paciente
+  // 2. Deleta Sessions vinculadas ao paciente (antes de appointments para evitar hooks)
   const sessionsResult = await Session.deleteMany({ patient: pid }).session(session);
   counts.sessions = sessionsResult.deletedCount;
+
+  // 3. Deleta Appointments vinculados ao paciente usando collection para bypassar hooks
+  const db = mongoose.connection.db;
+  const appointmentsResult = await db.collection('appointments').deleteMany({ patient: pid });
+  counts.appointments = appointmentsResult.deletedCount;
 
   // 4. Deleta Packages vinculados ao paciente
   const packagesResult = await Package.deleteMany({ patient: pid }).session(session);
@@ -70,9 +70,9 @@ async function _deleteAll(session, patientId, options) {
   const balanceResult = await PatientBalance.deleteMany({ patient: pid }).session(session);
   counts.patientBalances = balanceResult.deletedCount;
 
-  // 6. Deleta FinancialLedger vinculado ao paciente
-  const ledgerResult = await FinancialLedger.deleteMany({ patient: pid }).session(session);
-  counts.financialLedgers = ledgerResult.deletedCount;
+  // 6. FinancialLedger é imutável por design — NÃO deletamos.
+  //    Os registros contábeis permanecem, mesmo sem o paciente.
+  counts.financialLedgers = 0;
 
   // 7. Deleta a view do paciente
   const viewResult = await PatientsView.deleteMany({ patientId: pid }).session(session);

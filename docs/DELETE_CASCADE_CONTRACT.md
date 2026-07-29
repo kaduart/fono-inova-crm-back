@@ -1,21 +1,43 @@
-# Contrato de Integridade para Deleção de Entidades
+# Delete Cascade Contract
 
-> **Regra de ouro:** a deleção de `Patient` ou `Appointment` nunca pode deixar payments, sessions, appointments, packages, balances ou ledgers órfãos. Sempre use os commands centralizados e transacionais.
+> **Regra de domínio:** nenhuma entidade raiz (`Patient`, `Appointment`, `Package`) deve ser deletada diretamente. Toda deleção deve passar por um command de domínio responsável por limpar ou tratar todas as referências dependentes.
 
-## 1. Deleção de Patient
+`Patient` e `Appointment` não são entidades isoladas. São agregados com dependências financeiras e clínicas. A exclusão precisa respeitar o agregado inteiro.
 
-### Comportamento obrigatório
+---
 
-Ao deletar um paciente, o sistema deve remover **em cascata** e dentro de uma única transação MongoDB:
+## 1. Patient
 
-1. `Payment` vinculados ao paciente (`patient: id`)
-2. `Appointment` vinculados ao paciente (`patient: id`)
-3. `Session` vinculadas ao paciente (`patient: id`)
-4. `Package` vinculados ao paciente (`patient: id`)
-5. `PatientBalance` vinculado ao paciente (`patient: id`)
-6. `FinancialLedger` vinculados ao paciente (`patient: id`)
-7. `PatientsView` do paciente (`patientId: id`)
-8. Por fim, o próprio `Patient`
+### Entidades obrigatórias para tratar
+
+Ao deletar um `Patient`, o command deve garantir o tratamento de:
+
+1. `Payment`
+2. `Appointment`
+3. `Session`
+4. `Package`
+5. `PatientBalance`
+6. Projeções/Views (`PatientsView`, `PaymentsView`, etc.)
+
+> **Exceção:** `FinancialLedger` é imutável por design e **não** é deletado. Os registros contábeis permanecem mesmo após a exclusão do paciente.
+
+### Fluxo de deleção
+
+```text
+Payment
+  ↓
+Appointment
+  ↓
+Session
+  ↓
+Package
+  ↓
+Balances/Ledgers
+  ↓
+Patient
+  ↓
+Views
+```
 
 ### Implementação centralizada
 
@@ -28,22 +50,36 @@ await deletePatientCommand(patientId, {
 });
 ```
 
-### Pontos de entrada que devem usar o command
+### Pontos de entrada obrigatórios
 
 - `DELETE /api/patients/:id` → `back/routes/patient.js`
 - `DELETE /api/v2/patients/:id` → `back/routes/patient.v2.js`
 - `PATIENT_DELETE_REQUESTED` → `back/domains/clinical/workers/patientWorker.js`
 
-## 2. Deleção de Appointment
+### ❌ Nunca executar
 
-### Comportamento obrigatório
+```js
+await Patient.findByIdAndDelete(id);
+await PatientsView.findOneAndDelete({ patientId: id });
+```
 
-Ao deletar um appointment isolado (sem pacote), o sistema deve:
+diretamente em controller, worker ou script.
 
-1. Remover a referência do appointment na `Session` vinculada (`$unset: { appointmentId: 1 }`)
-2. Deletar o `Payment` vinculado, **exceto** se `kind === 'package_receipt'`
-3. Remover o appointment do array `appointments` do `Patient`
-4. Deletar o próprio `Appointment`
+---
+
+## 2. Appointment
+
+### Entidades obrigatórias para tratar
+
+Ao deletar um `Appointment` isolado (sem pacote):
+
+- `Session` vinculada
+- `Payment` vinculado quando for exclusivo daquele atendimento
+
+### Exceções financeiras
+
+- `package_receipt`: não deve ser deletado junto com o appointment, pois representa a aquisição do pacote.
+- Registros financeiros que representem aquisição de pacote seguem regra própria do pacote.
 
 ### Implementação centralizada
 
@@ -53,37 +89,23 @@ import deleteAppointmentCommand from '../services/appointment/commands/deleteApp
 await deleteAppointmentCommand.execute(appointmentId, user);
 ```
 
-> **Nota:** agendamentos vinculados a pacotes devem ser cancelados, não deletados, para preservar integridade financeira.
+> **Nota:** agendamentos vinculados a pacotes devem ser **cancelados**, não deletados, para preservar integridade financeira.
 
-## 3. Deleção de Pacote (Package)
+---
 
-Já existe comando centralizado:
+## 3. Package
+
+Deve usar **somente** o comando centralizado:
 
 ```js
 import deletePackageCommand from '../services/billing/commands/deletePackageCommand.js';
 ```
 
-Esse command já deleta appointments, sessions e payments vinculados ao pacote.
+Nunca apagar `Package` manualmente.
 
-## 4. Anti-padrões que causam órfãos
+---
 
-❌ Nunca faça isso:
-
-```js
-await Patient.findByIdAndDelete(id);
-await PatientsView.findOneAndDelete({ patientId: id });
-// esquece payments, appointments, sessions, packages, balances, ledgers
-```
-
-❌ Nunca deletar appointments duplicados sem deletar payments vinculados:
-
-```js
-await Session.deleteMany({ appointmentId: id });
-await Appointment.deleteOne({ _id: id });
-// esquece Payment
-```
-
-## 5. Como auditar
+## 4. Como auditar
 
 ```bash
 # Verificar payments órfãos
@@ -93,7 +115,59 @@ node back/scripts/auditoria-payments-orfaos.mjs
 node back/scripts/analise-investigar-payments.mjs
 ```
 
-## 6. Histórico de incidentes
+---
 
-- **2026-07-29:** auditoria identificou 119 payments órfãos, sendo R$ 7.251,00 em status `paid`, causados por deleção de pacientes sem cascade.
-- **Correção:** criação do `deletePatientCommand` e aplicação nas rotas v1, v2 e worker.
+## 5. Motivação / Histórico de incidentes
+
+### Incidente 2026-07-29
+
+- **119 payments órfãos** encontrados
+- **R$ 18.811,57** relacionados
+- **R$ 7.251,00** em payments `paid` afetando caixa
+
+### Causa
+
+A deleção de `Patient` removia somente:
+
+- `Patient`
+- `PatientsView`
+
+mantendo:
+
+- `Payment`
+- `Appointment`
+- `Session`
+- `Package`
+
+### Resultado
+
+Dados financeiros permaneciam ativos sem a entidade principal, inflando dashboards e relatórios.
+
+### Correção
+
+- Criação do `deletePatientCommand` centralizado e transacional
+- Aplicação nas rotas v1, v2 síncrono e no `patientWorker`
+- Correção do `cleanup-duplicate-appointments.js` para também remover payments
+- Documentação deste contrato
+
+---
+
+## 6. Teste de regressão sugerido
+
+```text
+1. Criar Patient
+2. Criar Package
+3. Criar Session
+4. Criar Appointment
+5. Criar Payment
+6. Deletar Patient
+7. Verificar:
+   - payments = 0
+   - appointments = 0
+   - sessions = 0
+   - packages = 0
+   - patientBalances = 0
+   - financialLedgers = 0
+   - patientsViews = 0
+   - patient = 0
+```
