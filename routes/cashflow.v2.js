@@ -1014,15 +1014,45 @@ async function _buildMonthResponse({ month }) {
 }
 
 export function clearCashflowCache(date) {
-    if (date) {
-        for (const key of _cashflowCache.keys()) {
-            if (key.startsWith(date)) _cashflowCache.delete(key);
-        }
-        safeRedis.del(_redisKey(date)).catch(() => {});
-        safeRedis.del(_redisKey(undefined, undefined, undefined, date)).catch(() => {});
-    } else {
+    if (!date) {
         _cashflowCache.clear();
-        // Não limpa todo o Redis por prefixo sem cuidado — usar explicitamente se necessário
+        return;
+    }
+    const month = date.length >= 7 ? date.substring(0, 7) : date;
+
+    // Local: remove chaves que contêm a data ou o mês (inclui ranges e views de mês)
+    for (const key of _cashflowCache.keys()) {
+        if (key.includes(date) || (month && key.includes(month))) {
+            _cashflowCache.delete(key);
+        }
+    }
+
+    // Redis: chaves conhecidas
+    const keysToDelete = [
+        _redisKey(date),
+        _redisKey(undefined, date, date),
+        _redisKey(undefined, undefined, undefined, month)
+    ];
+    for (const k of keysToDelete) {
+        safeRedis.del(k).catch(() => {});
+    }
+
+    // Redis: scan por qualquer chave de cashflow que contenha a data (ranges variados)
+    try {
+        const pattern = `${REDIS_CACHE_PREFIX}*${date}*`;
+        let cursor = '0';
+        const scanAndDelete = async () => {
+            do {
+                const [nextCursor, keys] = await safeRedis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+                cursor = nextCursor;
+                if (keys.length) {
+                    await safeRedis.del(...keys);
+                }
+            } while (cursor !== '0');
+        };
+        scanAndDelete().catch(() => {});
+    } catch (e) {
+        // ignore
     }
 }
 
