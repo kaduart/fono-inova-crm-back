@@ -14,11 +14,20 @@ import { FiscalProviderName } from '../constants/fiscalProviders.js';
 import { RegimeTributario } from '../constants/fiscalEnums.js';
 import { ANAPOLIS_IBGE_CODE, getDefaultProviderForMunicipio } from './MunicipioProviderRegistry.js';
 
+// Escape hatch de teste (2026-07-29): FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM no .env permite
+// testar o roteamento pra Sefin Nacional antes de 01/09/2026 sem alterar código — só afeta quem
+// setar a variável explicitamente. Sem a variável, comportamento é exatamente o mesmo de antes
+// (data real da migração, hardcoded). Nunca usar essa variável em produção antes da data real.
+const DEFAULT_EFFECTIVE_FROM = new Date('2026-09-01T00:00:00Z');
+const effectiveFromOverride = process.env.FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM
+  ? new Date(process.env.FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM)
+  : null;
+
 const MUNICIPIO_MIGRATION_RULES = {
   [ANAPOLIS_IBGE_CODE]: {
     regime: RegimeTributario.SIMPLES_NACIONAL,
     migratesTo: FiscalProviderName.SEFIN_NACIONAL,
-    effectiveFrom: new Date('2026-09-01T00:00:00Z')
+    effectiveFrom: effectiveFromOverride || DEFAULT_EFFECTIVE_FROM
   }
 };
 

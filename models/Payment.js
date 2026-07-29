@@ -87,7 +87,11 @@ const paymentSchema = new mongoose.Schema({
             default: 'pending'
         },
         grossAmount: { type: Number, default: 0 },
-        netAmount: { type: Number, default: 0 }
+        netAmount: { type: Number, default: 0 },
+        billedAt: { type: Date, default: null },
+        receivedAt: { type: Date, default: null },
+        billedAtSource: { type: String, default: null },
+        receivedAtSource: { type: String, default: null }
     },
     insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
     insurancePlan:  { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePlan',  default: null },

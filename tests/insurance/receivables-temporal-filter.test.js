@@ -7,7 +7,7 @@
  * de julho porque filtrava por Session.date.
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
@@ -30,6 +30,7 @@ let Payment;
 let Patient;
 let Session;
 let Convenio;
+let Doctor;
 let getInsuranceReceivables;
 
 function fakeRes() {
@@ -50,11 +51,12 @@ beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(replSet.getUri());
 
+  await import('../../models/PatientsView.js');
   Patient = (await import('../../models/Patient.js')).default;
   Session = (await import('../../models/Session.js')).default;
   Convenio = (await import('../../models/Convenio.js')).default;
   Payment = (await import('../../models/Payment.js')).default;
-  await import('../../models/Doctor.js');
+  Doctor = (await import('../../models/Doctor.js')).default;
 
   getInsuranceReceivables = (await import('../../controllers/insuranceV2Controller.js')).getInsuranceReceivables;
 }, 60_000);
@@ -75,13 +77,22 @@ describe('Insurance Receivables - Temporal Filter', () => {
   it('Faturados deve usar insurance.billedAt, não Session.date', async () => {
     const patient = await Patient.create({ fullName: 'Paciente Teste', cpf: '12345678901' });
     const convenio = await Convenio.create({ code: 'unimed-anapolis', name: 'Unimed Anápolis' });
+    const doctor = await Doctor.create({
+      fullName: 'Doutora Teste',
+      email: 'doutora.teste@example.com',
+      specialty: 'fonoaudiologia',
+      licenseNumber: 'CRFA-0001',
+      phoneNumber: '62999999999'
+    });
 
     // Sessão clínica em junho
     const session = await Session.create({
       patient: patient._id,
+      doctor: doctor._id,
       date: new Date('2026-06-10T00:00:00-03:00'),
       time: '10:00',
       specialty: 'fonoaudiologia',
+      sessionType: 'fonoaudiologia',
       status: 'completed',
       billingType: 'convenio',
       paymentMethod: 'convenio'

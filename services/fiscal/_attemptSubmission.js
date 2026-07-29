@@ -9,6 +9,7 @@ import { resolveProviderName } from '../../fiscal-provider/FiscalProviderResolve
 import { buildDpsXml, extractFieldsFromNfseResponseXml } from '../../fiscal-provider/DpsBuilder.js';
 import { recordProviderTransaction } from '../../fiscal-provider/recordProviderTransaction.js';
 import { MockCertificateManager } from '../../fiscal-provider/CertificateManager.js';
+import { buildCertificateContext } from '../../fiscal-provider/buildCertificateContext.js';
 import { MockAdapter } from '../../adapters/fiscal/MockAdapter.js';
 import { SefinNacionalAdapter } from '../../adapters/fiscal/SefinNacionalAdapter.js';
 import { AnapolisMunicipalAdapter } from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
@@ -20,11 +21,12 @@ import { fiscalInvoiceRepository } from '../../infrastructure/persistence/Fiscal
 /**
  * Resolve o Adapter concreto a partir do nome já decidido pelo FiscalProviderResolver. Único
  * ponto do CRM que conhece a existência dos 3 Adapters — nem o domínio, nem o Resolver.
+ * `ambiente`/`httpsAgent` só fazem sentido pro Sefin Nacional (mTLS real); os outros ignoram.
  */
-function resolveAdapter(providerName) {
+function resolveAdapter(providerName, { ambiente, httpsAgent } = {}) {
   switch (providerName) {
     case FiscalProviderName.SEFIN_NACIONAL:
-      return new SefinNacionalAdapter({});
+      return new SefinNacionalAdapter({ ambiente, httpsAgent });
     case FiscalProviderName.ANAPOLIS_MUNICIPAL:
       return new AnapolisMunicipalAdapter();
     case FiscalProviderName.MOCK:
@@ -44,15 +46,21 @@ export async function attemptSubmission(fiscalInvoice, submission, snapshot, { c
   const fiscalProfile = await fiscalProfileRepository.findById(fiscalInvoice.fiscalProfileId);
   if (!fiscalProfile) throw new Error('FISCAL_PROFILE_NAO_ENCONTRADO');
 
+  const certificate = fiscalProfile.certificateRef ? await certificateRepository.findById(fiscalProfile.certificateRef) : null;
+  const { httpsAgent, certManager: realCertManager } = buildCertificateContext(certificate);
+
   // `overrideAdapter` existe só para testes de integração (evita bater na Sefin Nacional real
   // ou exigir o endpoint de Anápolis) — em produção nunca é passado, o caminho normal sempre
-  // resolve pelo FiscalProviderResolver.
+  // resolve pelo FiscalProviderResolver. `ambiente` vem do FiscalProfile (bug corrigido em
+  // 2026-07-29 — antes o adapter sempre assumia Produção Restrita, ignorando esse campo).
   const providerName = resolveProviderName(fiscalProfile);
-  const adapter = overrideAdapter || resolveAdapter(providerName);
+  const adapter = overrideAdapter || resolveAdapter(providerName, { ambiente: fiscalProfile.ambiente, httpsAgent });
 
   const xml = buildDpsXml(snapshot.json, fiscalInvoice, fiscalProfile);
-  const certificate = fiscalProfile.certificateRef ? await certificateRepository.findById(fiscalProfile.certificateRef) : null;
-  const certManager = new MockCertificateManager(); // trocar por implementação real quando A1/A3 estiver decidido
+  // Sem certificado real vinculado ainda (perfil incompleto ou ambiente de teste): cai no Mock,
+  // mesmo comportamento de antes — nunca bloqueia o fluxo por falta de certificado aqui, quem
+  // decide se a emissão pode prosseguir sem certificado é o domínio (EmissionEligibilityValidator).
+  const certManager = realCertManager || new MockCertificateManager();
   const signedXml = await certManager.sign(xml, certificate);
 
   let result;

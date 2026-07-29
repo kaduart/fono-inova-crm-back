@@ -27,11 +27,23 @@ export class CertificateRepository {
     }
   }
 
+  // Uso: listagem para a UI — nunca deve devolver os blobs criptografados (não é preciso pra
+  // exibir a lista, e reduzir a superfície de exposição é a prática certa mesmo sendo cifrado).
   async findByStatus(status) {
     try {
-      return await Certificate.find({ status });
+      return await Certificate.find({ status }).select('-encryptedFile -encryptedPassword');
     } catch (error) {
       logger.error('FIND_BY_STATUS_ERROR', { status, error: error.message });
+      throw error;
+    }
+  }
+
+  /** Detecta upload duplicado do mesmo arquivo .pfx sem precisar decifrar nada — compara fileHash (SHA-256), que é texto puro. */
+  async findByFileHash(fileHash) {
+    try {
+      return await Certificate.findOne({ fileHash }).select('-encryptedFile -encryptedPassword');
+    } catch (error) {
+      logger.error('FIND_BY_FILE_HASH_ERROR', { error: error.message });
       throw error;
     }
   }

@@ -19,15 +19,27 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 
 ## Bloqueadores atuais
 
-*Atualizado 2026-07-28 — regime, certificado e emissor já respondidos em `decisoes_fiscais_clinica.md`. O que resta é técnico + uma janela de calendário.*
+*Atualizado 2026-07-29 (fim de sessão) — transporte + certificado + API real confirmados com prova. Único bloqueador real que resta é a assinatura XML-DSig, isolada de propósito.*
 
-- 🗓️ **`FiscalProviderResolver` só roteia para Sefin Nacional a partir de 01/09/2026** — mesmo com Simples Nacional confirmado, uma emissão hoje ainda cairia no `AnapolisMunicipalAdapter` (bloqueado por 403). Decisão: mirar go-live em/após 01/09/2026, não perseguir o desbloqueio do NotaControl.
-- 🔴 Assinatura digital real não implementada — `CertificateManager` ainda é só Mock (certificado A1 já existe, falta integrar)
-- 🔴 mTLS não implementado — `httpsAgent` do `SefinNacionalAdapter` sempre `undefined`
-- 🔴 Seleção de ambiente (homologação/produção) incorreta — `_attemptSubmission.js:27` ignora `FiscalProfile.ambiente`
-- 🔴 Endereço do prestador e do tomador — endereço da clínica já coletado (ver Bloco 2), mas ainda não está no schema/DPS; endereço do tomador (paciente) ainda falta juntar código IBGE
-- 🟡 Tomador Pessoa Jurídica confirmado como caso real (`decisoes_fiscais_clinica.md` #4) — subiu de Sprint 2 para Sprint 1, `Patient` não tem campo `cnpj`
-- 🟡 Retenção de ISS confirmada com evidência real (nota da Isabela F. Mendonça, Unimed Anápolis — `decisoes_fiscais_clinica.md` #5) — subiu de Sprint 2 para Sprint 1, `DpsBuilder.js:83` hoje fixa "não retido" sempre
+**Resolvidos e PROVADOS contra o servidor oficial nesta sessão (2026-07-29):**
+- ✅ Endereço do prestador e do tomador — implementado, dado real da clínica salvo.
+- ✅ Tomador Pessoa Jurídica — `Patient.cnpj` implementado em toda a cadeia.
+- ✅ Seleção de ambiente — `_attemptSubmission.js` lê `FiscalProfile.ambiente` de verdade.
+- ✅ Upload + criptografia de certificado — `.pfx` real da clínica (emitido por AC SyngularID Múltipla, válido até 11/05/2027) sobe pela tela, validado (PKCS#12 real, senha confere), AES-256-GCM em repouso, validade extraída automaticamente.
+- ✅ **mTLS confirmado com o certificado real**: `GET https://adn.producaorestrita.nfse.gov.br/` parou de dar 495 (SSL Certificate Error) assim que trocamos o certificado fake pelo real — rejeição de TLS sumiu.
+- ✅ **basePath real da API descoberto e confirmado**: `https://sefin.producaorestrita.nfse.gov.br/SefinNacional` (não `/API/SefinNacional/` como a doc de topo sugeria — esse prefixo é só da página de docs). Confirmado lendo o Swagger real (`GET /SefinNacional/swagger/docs/v1`, só acessível com certificado válido).
+- ✅ **Chamada real de teste**: `GET /SefinNacional/nfse/{chave-fake}` devolveu **HTTP 404 estruturado, no formato oficial exato** (`{"tipoAmbiente":2,"versaoAplicativo":"SefinNacional_1.6.0","erro":{"codigo":"E2401","descricao":"Chave de acesso não encontrada."}}`) — prova definitiva de autenticação mTLS aceita + basePath correto, não é mais suposição.
+- ✅ **Formato real de `POST /nfse` e `/eventos` corrigido**: achado crítico — o corpo não é XML puro, é JSON com o XML assinado comprimido em gzip + base64 (`{"dpsXmlGZipB64": "..."}` / `{"pedidoRegistroEventoXmlGZipB64": "..."}`). `SefinNacionalAdapter.js` corrigido pra esse formato real (usando `zlib` nativo, sem dependência nova). Sem esse achado, a primeira emissão real teria falhado mesmo com assinatura XML perfeita.
+- ✅ `/ParametrosMunicipais` e `/DANFSe` neste host: **descontinuados** (501, "movido para adn.../parametrizacao/" e "/danfse/") — confirmado no spec real, não é lacuna nossa.
+- ⏸️ Assinatura digital real (XML-DSig) — implementada (`node-forge`+`xml-crypto`), **deliberadamente não testada ainda** — sequência escolhida pelo usuário: provar mTLS+API real isolado antes de somar a variável da assinatura. Próximo passo natural agora que mTLS está 100% provado.
+
+**Ferramenta permanente adicionada**: `POST /api/v2/fiscal/test-connection` — diagnóstico de conectividade mTLS reutilizável (carrega certificado do perfil ativo, monta `https.Agent`, faz uma chamada GET real, devolve `{ok, tls, certificateAccepted, httpStatus, daysUntilExpiry, ...}`). Útil pra checar rapidamente se o certificado ainda funciona sem escrever script descartável — sobretudo quando o certificado for renovado no futuro. Respeita o `FiscalProviderResolver` de verdade (hoje resolve pra `anapolis_municipal` antes de 01/09/2026 — usar `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` pra testar Sefin Nacional antes da data real).
+
+**Ainda em aberto:**
+- 🟡 Testar `POST /nfse` de verdade (precisa da assinatura XML-DSig funcionando — próximo passo).
+- 🟡 `GET /nfse/{chaveAcesso}` (consulta) e `/eventos` — resposta é JSON, formato exato (`NFSeGetResponseSucesso`) ainda não confirmado em detalhe (só o schema de erro foi validado nesta sessão).
+- 🗓️ `FiscalProviderResolver` só roteia para Sefin Nacional a partir de 01/09/2026 em produção real — `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` no `.env` permite testar antes dessa data sem mexer em código.
+- ⚠️ `FISCAL_CERT_ENCRYPTION_KEY` precisa ser adicionada nas variáveis de ambiente do Render (produção) — hoje só existe no `.env` local.
 
 ## Definition of Done por bloco
 
@@ -103,6 +115,21 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 ## Produção homologada
 
 - [ ] Go-live confirmado — clínica emitindo NFS-e real pelo CRM
+
+---
+
+## Débito técnico registrado (não bloqueia go-live)
+
+### Corrigir isolamento e limpeza da suíte `fiscalInvoiceFlow.integration.test.js`
+
+**Achado 2026-07-28**: a suíte roda contra o MongoDB real (não um banco descartável). O teardown remove o `FiscalInvoice` criado no teste, mas não os documentos filhos (`FiscalSubmission`, `FiscalSnapshot`, `ProviderTransaction`) — cada execução deixa resíduo permanente no banco de produção. Descoberto ao comparar o estado do banco antes/depois de uma limpeza manual completa (ver `project_nfse_fiscal_module_architecture.md`, memória do projeto).
+
+**Critérios de aceite**:
+- A suíte não deixa nenhum documento em `fiscalinvoices`, `fiscalsubmissions`, `fiscalsnapshots`, `providertransactions`, `officialfiscalevents` depois de rodar.
+- Rodar a suíte duas vezes consecutivas produz exatamente o mesmo estado do banco (idempotência de teardown).
+- Preferencialmente: banco descartável de teste, ou teardown que cascateia a limpeza pelos IDs criados na própria execução.
+
+**Prioridade**: 🟢 backlog — não impede nenhum item do checklist acima, mas deve ser resolvido antes de rodar essa suíte repetidamente contra produção (cada execução acumula lixo).
 
 ---
 

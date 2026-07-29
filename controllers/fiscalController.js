@@ -20,6 +20,9 @@ import Payment from '../models/Payment.js';
 import FiscalInvoice from '../models/FiscalInvoice.js';
 import { buildDpsXml } from '../fiscal-provider/DpsBuilder.js';
 import { MockAdapter } from '../adapters/fiscal/MockAdapter.js';
+import { encryptBuffer, encryptString } from '../utils/certificateCrypto.js';
+import { inspectPkcs12 } from '../fiscal-provider/CertificateManager.js';
+import { testFiscalConnection } from '../services/fiscal/TestFiscalConnectionService.js';
 
 // ============================================================
 // CONFIGURAÇÃO FISCAL (Perfil + Certificado)
@@ -62,14 +65,90 @@ export async function upsertFiscalProfile(req, res) {
   }
 }
 
+// Recebe o arquivo real do certificado (.pfx/.p12) via multipart (multer, ver fiscal.routes.js),
+// VALIDA que é um PKCS#12 legível com a senha informada (abre de verdade, não só confere
+// extensão) antes de salvar qualquer coisa, criptografa arquivo + senha em repouso (AES-256-GCM,
+// utils/certificateCrypto.js) e nunca guarda nem devolve nenhum dos dois em texto/binário puro.
 export async function createCertificate(req, res) {
   try {
-    const { type, passwordReference, expiresAt, issuer, thumbprint, storageKey, status } = req.body;
-    if (!type || !passwordReference || !expiresAt) {
-      return res.status(400).json({ success: false, error: 'MISSING_REQUIRED_FIELDS', message: 'type, passwordReference e expiresAt são obrigatórios' });
+    const { type, password, issuer, status } = req.body;
+    if (!type || !password || !req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'arquivo do certificado (.pfx/.p12), senha e tipo são obrigatórios'
+      });
     }
-    const certificate = await certificateRepository.create({ type, passwordReference, expiresAt, issuer, thumbprint, storageKey, status });
-    res.status(201).json({ success: true, data: certificate });
+
+    // Abre o certificado de verdade agora — se a senha estiver errada ou o arquivo corrompido/
+    // não for PKCS#12, o erro aparece aqui, não na primeira tentativa de emissão. Também extrai
+    // metadados de auditoria (fileHash/thumbprint/serialNumber/subject) — 2026-07-29.
+    let inspection;
+    try {
+      inspection = inspectPkcs12(req.file.buffer, password);
+    } catch (error) {
+      return res.status(400).json({ success: false, error: 'CERTIFICADO_INVALIDO', message: error.message });
+    }
+
+    // Detecta upload duplicado do mesmo arquivo antes de gastar criptografia/gravação — comparação
+    // é em texto puro (fileHash), não precisa decifrar nenhum certificado já salvo.
+    const duplicate = await certificateRepository.findByFileHash(inspection.fileHash);
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        error: 'CERTIFICADO_DUPLICADO',
+        message: `Este mesmo arquivo já foi cadastrado em ${duplicate.createdAt?.toISOString().slice(0, 10)} (${duplicate.originalFilename}).`,
+        existingCertificateId: duplicate._id
+      });
+    }
+
+    // Certificado já vencido nunca é útil pra assinar nada — bloqueia aqui, não deixa entrar no
+    // banco pra descobrir só na hora de emitir.
+    if (new Date(inspection.notAfter) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        error: 'CERTIFICADO_EXPIRADO',
+        message: `Este certificado venceu em ${new Date(inspection.notAfter).toISOString().slice(0, 10)} — não pode ser cadastrado.`
+      });
+    }
+
+    const daysUntilExpiry = Math.floor((new Date(inspection.notAfter).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+    const encryptedFile = encryptBuffer(req.file.buffer);
+    const encryptedPassword = encryptString(password);
+
+    const certificate = await certificateRepository.create({
+      type,
+      expiresAt: inspection.notAfter, // do certificado real, não do que o usuário digitou
+      issuer: issuer || inspection.issuer,
+      subject: inspection.subject,
+      serialNumber: inspection.serialNumber,
+      thumbprint: inspection.thumbprint,
+      fileHash: inspection.fileHash,
+      keyUsage: inspection.keyUsage,
+      status,
+      encryptedFile,
+      encryptedPassword,
+      originalFilename: req.file.originalname
+    });
+
+    const safe = certificate.toObject();
+    delete safe.encryptedFile;
+    delete safe.encryptedPassword;
+    // Informativo pro admin conferir visualmente — nunca sobrescreve FiscalProfile.cnpj sozinho.
+    safe.subjectInfo = { commonName: inspection.commonName, detectedCnpj: inspection.detectedCnpj, notBefore: inspection.notBefore };
+
+    // Avisos que não bloqueiam o cadastro, só chamam atenção do admin.
+    const warnings = [];
+    if (daysUntilExpiry <= 30) {
+      warnings.push(`Certificado vence em ${daysUntilExpiry} dia(s) (${new Date(inspection.notAfter).toISOString().slice(0, 10)}) — considere renovar em breve.`);
+    }
+    if (inspection.keyUsage && !inspection.keyUsage.digitalSignature) {
+      warnings.push('O certificado não declara a extensão Key Usage "Digital Signature" — pode não ser adequado para assinar documentos fiscais.');
+    }
+    if (warnings.length) safe.warnings = warnings;
+
+    res.status(201).json({ success: true, data: safe });
   } catch (error) {
     console.error('[FiscalController] createCertificate error:', error);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
@@ -82,6 +161,22 @@ export async function listCertificates(req, res) {
     res.json({ success: true, data: certificates });
   } catch (error) {
     console.error('[FiscalController] listCertificates error:', error);
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+  }
+}
+
+/**
+ * Diagnóstico de conectividade mTLS — carrega o certificado, monta o https.Agent, faz UMA
+ * chamada GET real contra o provider e devolve um relatório estruturado. Não emite nada, não
+ * assina XML. Pensado pra checar rapidamente "o certificado ainda está funcionando?" sem precisar
+ * escrever script descartável — sobretudo útil quando o certificado for renovado/trocado.
+ */
+export async function testConnection(req, res) {
+  try {
+    const diagnostic = await testFiscalConnection(req.query.cnpj);
+    res.status(diagnostic.ok ? 200 : 502).json({ success: diagnostic.ok, data: diagnostic });
+  } catch (error) {
+    console.error('[FiscalController] testConnection error:', error);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
   }
 }

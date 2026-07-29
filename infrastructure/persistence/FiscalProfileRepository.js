@@ -26,6 +26,16 @@ export class FiscalProfileRepository {
     }
   }
 
+  /** Usado pelo diagnóstico de conectividade (TestFiscalConnectionService) quando não vem CNPJ explícito — hoje a clínica tem só 1 FiscalProfile ativo. */
+  async findFirstActive() {
+    try {
+      return await FiscalProfile.findOne({ ativo: true });
+    } catch (error) {
+      logger.error('FIND_FIRST_ACTIVE_ERROR', { error: error.message });
+      throw error;
+    }
+  }
+
   async findActiveByMunicipio(municipioIBGE) {
     try {
       return await FiscalProfile.find({ municipioIBGE, ativo: true });
