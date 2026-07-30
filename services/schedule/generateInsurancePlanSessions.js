@@ -332,67 +332,17 @@ export async function generateInsurancePlanSessions({
     );
   }
 
-  // ── 7. Cria payments pendentes (apenas para appointments sem payment convenio ativo) ─────
-  // Busca por appointment._id (não por insurancePlan) para detectar payments de planos anteriores.
-  // Bug anterior: lookup por insurancePlan._id falhava na renovação de guia — novo plan não
-  // encontrava payment do plan anterior, sobrescrevia appointment.payment e deixava session=null.
-  const existingPayments = await Payment.find({
-    appointment: { $in: createdAppointments.map(a => a._id) },
-    billingType: 'convenio',
-    status: { $ne: 'canceled' }
-  }, { appointment: 1 }).session(mongoSession).lean();
-  const existingAppointmentIds = new Set(existingPayments.map(p => p.appointment?.toString()).filter(Boolean));
-
-  const newAppointments = createdAppointments.filter(a => !existingAppointmentIds.has(a._id.toString()));
-
-  const paymentDocs = newAppointments.map(a => ({
-    patient: plan.patient,
-    doctor: plan.doctor,
-    appointment: a._id,
-    specialty: plan.specialty,
-    amount: 0,         // paciente não paga
-    billingType: 'convenio',
-    status: 'pending',
-    financialDate: null,
-    paymentDate: new Date(),
-    paymentMethod: 'convenio',
-    insurance: {
-      provider: guide.insurance,
-      status: 'pending_billing',
-      grossAmount: effectiveSessionValue,
-      guideId: guide._id
-    },
-    insuranceGuide: guide._id,
-    insurancePlan: plan._id,
-    notes: `Pagamento pendente do convênio ${guide.insurance || ''}`,
-    kind: 'session_payment'
-  }));
-
-  let createdPayments = [];
-  if (paymentDocs.length > 0) {
-    createdPayments = await Payment.insertMany(paymentDocs, { session: mongoSession });
-
-    // Linka payment → appointment para que completeSessionV2 atualize (não duplique)
-    const paymentLinkOps = createdPayments.map((p, i) => ({
-      updateOne: {
-        filter: { _id: newAppointments[i]._id },
-        update: { $set: { payment: p._id } }
-      }
-    }));
-    await Appointment.bulkWrite(paymentLinkOps, { session: mongoSession, ordered: false });
-  }
-
-  // ── 8. Cria Sessions para os novos appointments (necessário para cashflow) ──
-  // calculateProduction() usa Session.find({ status: 'completed' }) como fonte única.
-  // Sem Session linked ao appointment, completeSessionV2 não atualiza nada e o
-  // cashflow fica em branco.
+  // ── 7. Cria Sessions ANTES dos Payments ────────────────────────
+  // 🛡️ PR-A: Payment de convênio deve nascer com session preenchida.
+  // Criar Payment sem session e depois linkar expõe uma janela onde dois
+  // processos paralelos podem inserir payments duplicados para a mesma sessão.
   const existingSessions = await Session.find(
-    { appointment: { $in: newAppointments.map(a => a._id) } },
+    { appointment: { $in: createdAppointments.map(a => a._id) } },
     { appointment: 1 }
   ).session(mongoSession).lean();
   const existingSessionApptIds = new Set(existingSessions.map(s => s.appointment?.toString()));
 
-  const appointmentsNeedingSession = newAppointments.filter(
+  const appointmentsNeedingSession = createdAppointments.filter(
     a => !existingSessionApptIds.has(a._id.toString())
   );
 
@@ -429,29 +379,70 @@ export async function generateInsurancePlanSessions({
       }
     }));
     await Appointment.bulkWrite(sessionLinkOps, { session: mongoSession, ordered: false });
+  }
 
-    // Payments são criados antes das Sessions neste fluxo.
-    // Após criar as Sessions, vinculamos payment.session utilizando
-    // appointmentId para manter a consistência da trinca:
-    //
-    //   Appointment -> Session
-    //   Appointment -> Payment
-    //   Payment -> Session
-    //
-    // Atualiza apenas payments recém-criados (session ainda nulo) para evitar
-    // sobrescrever vínculos já existentes em reexecuções do fluxo.
-    const paymentSessionLinkOps = createdSessions.map((s) => ({
+  // Mapa appointment -> session para preencher payment.session desde o nascimento.
+  const sessionByAppointmentId = new Map();
+  for (let i = 0; i < createdSessions.length; i++) {
+    sessionByAppointmentId.set(appointmentsNeedingSession[i]._id.toString(), createdSessions[i]._id);
+  }
+  // Appointments que já tinham session existente também precisam ser considerados
+  // caso venham a criar payment.
+  for (const s of existingSessions) {
+    if (s.appointment) {
+      sessionByAppointmentId.set(s.appointment.toString(), s._id);
+    }
+  }
+
+  // ── 8. Cria payments pendentes (apenas para appointments sem payment convenio ativo) ─────
+  // Busca por appointment._id (não por insurancePlan) para detectar payments de planos anteriores.
+  // Bug anterior: lookup por insurancePlan._id falhava na renovação de guia — novo plan não
+  // encontrava payment do plan anterior, sobrescrevia appointment.payment e deixava session=null.
+  const existingPayments = await Payment.find({
+    appointment: { $in: createdAppointments.map(a => a._id) },
+    billingType: 'convenio',
+    status: { $ne: 'canceled' }
+  }, { appointment: 1 }).session(mongoSession).lean();
+  const existingAppointmentIds = new Set(existingPayments.map(p => p.appointment?.toString()).filter(Boolean));
+
+  const newAppointments = createdAppointments.filter(a => !existingAppointmentIds.has(a._id.toString()));
+
+  const paymentDocs = newAppointments.map(a => ({
+    patient: plan.patient,
+    doctor: plan.doctor,
+    appointment: a._id,
+    session: sessionByAppointmentId.get(a._id.toString()), // ← PR-A: session desde o nascimento
+    specialty: plan.specialty,
+    amount: 0,         // paciente não paga
+    billingType: 'convenio',
+    status: 'pending',
+    financialDate: null,
+    paymentDate: new Date(),
+    paymentMethod: 'convenio',
+    insurance: {
+      provider: guide.insurance,
+      status: 'pending_billing',
+      grossAmount: effectiveSessionValue,
+      guideId: guide._id
+    },
+    insuranceGuide: guide._id,
+    insurancePlan: plan._id,
+    notes: `Pagamento pendente do convênio ${guide.insurance || ''}`,
+    kind: 'session_payment'
+  }));
+
+  let createdPayments = [];
+  if (paymentDocs.length > 0) {
+    createdPayments = await Payment.insertMany(paymentDocs, { session: mongoSession });
+
+    // Linka payment → appointment para que completeSessionV2 atualize (não duplique)
+    const paymentLinkOps = createdPayments.map((p, i) => ({
       updateOne: {
-        filter: {
-          appointment: s.appointmentId,
-          billingType: 'convenio',
-          status: { $ne: 'canceled' },
-          $or: [{ session: { $exists: false } }, { session: null }]
-        },
-        update: { $set: { session: s._id } }
+        filter: { _id: newAppointments[i]._id },
+        update: { $set: { payment: p._id } }
       }
     }));
-    await Payment.bulkWrite(paymentSessionLinkOps, { session: mongoSession, ordered: false });
+    await Appointment.bulkWrite(paymentLinkOps, { session: mongoSession, ordered: false });
   }
 
   // ── 10. Atualiza plano com appointments gerados ────────────────

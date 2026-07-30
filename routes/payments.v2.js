@@ -138,8 +138,8 @@ router.get('/', auth, async (req, res) => {
                 fullName: p.doctor?.name,
                 specialty: p.doctor?.specialty
             },
-            serviceType: p.service?.type,
-            serviceLabel: p.service?.label,
+            serviceType: p.serviceType,
+            serviceLabel: p.serviceLabel,
             specialty: p.specialty,
             amount: p.amount,
             receivedAmount: p.receivedAmount || 0, // 🔥 V2

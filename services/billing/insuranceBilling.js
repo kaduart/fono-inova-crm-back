@@ -6,6 +6,7 @@ import Session from '../../models/Session.js';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import { updatePatientAppointments } from '../../utils/appointmentUpdater.js';
+import { insurancePaymentCreationService } from '../../domains/billing/services/InsurancePaymentCreationService.js';
 import { validateDateTime, checkScheduleConflict } from '../../utils/billingHelpers.js';
 import { recordInsuranceBilled, recordInsuranceReceived } from '../financialLedgerService.js';
 import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.js';
@@ -157,28 +158,32 @@ class InsuranceBillingService {
       newSession.appointmentId = newAppointment._id;
       await newSession.save({ session, validateBeforeSave: false });
 
-      // 9. Criar Payment
-      const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        session: newSession._id,
-        appointment: newAppointment._id,
-        serviceType: 'session',
-        amount: 0, // Valor será definido no faturamento
-        paymentMethod: 'convenio',
-        status: 'pending', // Status inicial
-        billingType: 'convenio',
-        insurance: {
-          provider: guide.insurance,
-          authorizationCode: guide.number,
-          status: 'pending_billing',
-          grossAmount: 0
+      // 9. Criar Payment via serviço central de idempotência
+      const { payment } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+        sessionId: newSession._id,
+        appointmentId: newAppointment._id,
+        patientId,
+        paymentData: {
+          patient: patientId,
+          doctor: doctorId,
+          session: newSession._id,
+          appointment: newAppointment._id,
+          serviceType: 'session',
+          amount: 0, // Valor será definido no faturamento
+          paymentMethod: 'convenio',
+          status: 'pending', // Status inicial
+          billingType: 'convenio',
+          insurance: {
+            provider: guide.insurance,
+            authorizationCode: guide.number,
+            status: 'pending_billing',
+            grossAmount: 0
+          },
+          serviceDate: date,
+          notes: `Aguardando faturamento - Guia ${guide.number}`
         },
-        serviceDate: date,
-        notes: `Aguardando faturamento - Guia ${guide.number}`
+        mongoSession: session
       });
-
-      await payment.save({ session });
 
       // 10. ❌ REMOVIDO: consumo da guia (agora acontece quando Session.status = 'completed')
 

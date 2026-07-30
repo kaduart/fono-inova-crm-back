@@ -24,7 +24,9 @@ import { buildError } from './_helpers.js';
 import { recordAudit } from '../../auditLogService.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { syncAffectedViews } from '../../projections/syncAffectedViews.js';
+import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 import { restorePackageOnCancel } from '../../../domain/package/restorePackageOnCancel.js';
+import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleService.js';
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -74,19 +76,18 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
     // Cancela pagamentos avulsos e outros, exceto recibos de pacote já quitados
     const shouldCancel = pay.kind !== 'package_receipt';
     if (shouldCancel) {
-      await Payment.findByIdAndUpdate(
-        pay._id,
-        {
-          $set: {
-            status: 'canceled',
-            canceledAt: new Date(),
-            canceledReason: reason,
-            updatedAt: new Date(),
-          },
-        },
-        { session }
-      );
-      console.log(`[cancelAppointmentCommand] Payment cancelado: ${pay._id}`);
+      // 🔄 PR C.1: usa lifecycle centralizado para manter appointment.payment sincronizado
+      const cancelResult = await PaymentLifecycleService.cancelPayment(pay._id, {
+        reason,
+        mongoSession: session,
+      });
+      if (cancelResult.canceled || cancelResult.alreadyCanceled) {
+        console.log(`[cancelAppointmentCommand] Payment cancelado: ${pay._id}`);
+      } else {
+        console.warn(`[cancelAppointmentCommand] Payment NÃO cancelado: ${pay._id}`, {
+          reason: cancelResult.reason
+        });
+      }
     }
   }
 
@@ -239,6 +240,17 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
   // Sincronizações pós-transação — await garantido, erro não falha a resposta
   try {
     await syncEvent(result, 'appointment');
+
+    // 🔄 Atualiza PaymentsView para todos os payments vinculados ao appointment cancelado
+    try {
+      await handlePaymentEvent({
+        type: 'APPOINTMENT_CANCELLED',
+        payload: { appointmentId: result._id.toString() },
+        timestamp: new Date().toISOString()
+      });
+    } catch (viewErr) {
+      console.error('[cancelAppointmentCommand] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+    }
 
     if (result.serviceType === 'package_session' && result.session) {
       await handlePackageSessionUpdate(

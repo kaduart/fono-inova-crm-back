@@ -4,7 +4,7 @@
 import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
-import { transitionPaymentStatus } from '../../../services/paymentStatusService.js';
+import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleService.js';
 
 /**
  * Convênio Guard - Regras financeiras de convênio
@@ -38,14 +38,19 @@ export default {
       return { handled: true, alreadyCanceled: true, paymentId };
     }
 
-    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-      session,
-      reason: reason || 'convenio_cancel'
+    // Cancela payment via lifecycle centralizado (sincroniza Appointment)
+    const result = await PaymentLifecycleService.cancelPayment(paymentId, {
+      reason: reason || 'convenio_cancel',
+      mongoSession: session,
     });
 
-    updatedPayment.canceledAt = new Date();
-    updatedPayment.canceledReason = reason;
-    await updatedPayment.save({ session });
+    if (!result.canceled) {
+      return {
+        handled: false,
+        reason: result.reason || 'CANCEL_FAILED',
+        paymentId
+      };
+    }
 
     console.log(`[ConvenioGuard] Payment ${paymentId} cancelado`, { amount: payment.amount, reason });
 

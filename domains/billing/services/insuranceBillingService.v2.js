@@ -31,6 +31,7 @@ import {
 import Appointment from '../../../models/Appointment.js';
 import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
+import { insurancePaymentCreationService } from './InsurancePaymentCreationService.js';
 
 // =============================================================================
 // CONFIGURAÇÃO
@@ -614,34 +615,22 @@ export class InsuranceBillingService {
   }
   
   /**
-   * Cria/atualiza payment com idempotência
+   * Cria/atualiza payment com idempotência.
+   * Delegado para InsurancePaymentCreationService para centralizar a regra
+   * "1 Payment ativo de convênio por Session" e garantir recuperação de
+   * race condition (11000) de forma uniforme em todos os fluxos.
    */
   async createOrUpdateInsurancePayment(session, appointment, amount, guide, mongoSession) {
     const month = new Date(session.date).toISOString().slice(0, 7);
 
-    // 🔒 IDEMPOTÊNCIA ESTRITA: 1 session = 1 payment
-    // NUNCA agrupar sessões no mesmo payment; isso causava o bug de
-    // "ghost aggregation" onde grossAmount era incrementado sem rastreabilidade.
-    const existingPaymentForSession = await Payment.findOne({
-      session: session._id,
-      billingType: 'convenio'
-    }).session(mongoSession);
-
-    if (existingPaymentForSession) {
-      console.log(`[createOrUpdateInsurancePayment] Payment already exists for session ${session._id}: ${existingPaymentForSession._id}`);
-      return existingPaymentForSession;
-    }
-
-    const payment = new Payment({
+    const paymentData = {
       patient: session.patient._id,
       professional: session.doctor?._id,
       date: session.date,
       paymentDate: session.date,
 
       // Campos de compatibilidade
-      session: session._id,                            // ← vínculo Session
       sessions: [session._id],                         // ← array de vínculos Session
-      appointment: appointment._id,                    // ← vínculo Appointment (legado)
       serviceType: 'session',                          // ← LEGADO
       amount: amount,                                  // ← LEGADO: preenchido V2
       paymentMethod: 'convenio',                       // ← LEGADO
@@ -661,11 +650,17 @@ export class InsuranceBillingService {
       },
 
       status: 'pending_billing'
+    };
+
+    const { payment, created: paymentWasCreated } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+      sessionId: session._id,
+      appointmentId: appointment._id,
+      patientId: session.patient._id,
+      paymentData,
+      mongoSession
     });
 
-    await payment.save({ session: mongoSession });
-
-    console.log(`[createOrUpdateInsurancePayment] Created payment ${payment._id} for session ${session._id} amount=${amount}`);
+    console.log(`[createOrUpdateInsurancePayment] ${paymentWasCreated ? 'Created' : 'Reused'} payment ${payment._id} for session ${session._id} amount=${amount}`);
     return payment;
   }
 

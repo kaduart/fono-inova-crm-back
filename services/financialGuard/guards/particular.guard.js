@@ -2,11 +2,11 @@
 // 💵 Guard para regras financeiras de PARTICULAR (per-session)
 
 import Payment from '../../../models/Payment.js';
-import { transitionPaymentStatus } from '../../../services/paymentStatusService.js';
+import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleService.js';
 
 /**
  * Particular Guard - Regras financeiras de particular
- * 
+ *
  * Contextos suportados:
  * - CANCEL_APPOINTMENT: Cancela payment ao cancelar agendamento
  */
@@ -41,22 +41,26 @@ export default {
       console.log(`[ParticularGuard] Payment ${paymentId} é de pacote - preservado`, {
         kind: payment.kind
       });
-      return { 
-        handled: false, 
+      return {
+        handled: false,
         reason: 'PACKAGE_PAYMENT_PRESERVED',
-        kind: payment.kind 
+        kind: payment.kind
       };
     }
 
-    // Cancela payment
-    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-        session,
-        reason: reason || 'guard_cancel'
+    // Cancela payment via lifecycle centralizado (sincroniza Appointment)
+    const result = await PaymentLifecycleService.cancelPayment(paymentId, {
+      reason: reason || 'guard_cancel',
+      mongoSession: session,
     });
 
-    updatedPayment.canceledAt = new Date();
-    updatedPayment.canceledReason = reason;
-    await updatedPayment.save({ session });
+    if (!result.canceled) {
+      return {
+        handled: false,
+        reason: result.reason || 'CANCEL_FAILED',
+        paymentId
+      };
+    }
 
     console.log(`[ParticularGuard] Payment ${paymentId} cancelado`, {
       amount: payment.amount,

@@ -35,6 +35,7 @@ import { applyFinancialProtection } from '../policies/appointmentFinancialPolicy
 import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.js';
 import { recordAudit } from '../../auditLogService.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
+import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 
 export async function execute(id, payload, user) {
   if (!id) {
@@ -344,6 +345,17 @@ export async function execute(id, payload, user) {
       updates: {},
       correlationId: `appt_put_${saved._id}_${Date.now()}`,
     });
+
+    // 🔄 Atualiza PaymentsView para todos os payments vinculados ao appointment
+    try {
+      await handlePaymentEvent({
+        type: 'APPOINTMENT_UPDATED',
+        payload: { appointmentId: saved._id.toString() },
+        timestamp: new Date().toISOString()
+      });
+    } catch (viewErr) {
+      console.error('[updateAppointmentCommand] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+    }
 
     if (saved.serviceType === 'package_session') {
       // handlePackageSessionUpdate atualiza Session.date/time

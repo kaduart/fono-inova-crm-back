@@ -29,6 +29,7 @@ import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
+import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { syncAppointmentPaymentStatus } from '../services/financialGuard/syncAppointmentPaymentStatus.js';
 import { clearCashflowCache } from './cashflow.v2.js';
@@ -719,6 +720,17 @@ router.post('/create-sync', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
+        // 🔄 Atualiza PaymentsView (read-model)
+        try {
+            await handlePaymentEvent({
+                type: 'PAYMENT_CREATED',
+                payload: { paymentId: paymentDoc._id.toString() },
+                timestamp: new Date().toISOString()
+            });
+        } catch (viewErr) {
+            logger.error(`[V2 create-sync] Falha ao atualizar PaymentsView (non-fatal): ${viewErr.message}`);
+        }
+
         return res.status(201).json({
             success: true,
             data: paymentDoc.toObject(),
@@ -1107,7 +1119,23 @@ router.patch('/:id', auth, async (req, res) => {
             }
         }
 
-        // 5b. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
+        // 5b. Atualiza PaymentsView (read-model) imediatamente
+        try {
+            const effectiveStatus = updateData.status ?? payment.status;
+            const eventType = (effectiveStatus === 'canceled' || effectiveStatus === 'refunded')
+                ? 'PAYMENT_CANCELLED'
+                : 'PAYMENT_UPDATED';
+            await handlePaymentEvent({
+                type: eventType,
+                payload: { paymentId: id },
+                timestamp: new Date().toISOString()
+            });
+        } catch (viewErr) {
+            logger.error(`[V2 PATCH ${id}] ⚠️ Falha ao atualizar PaymentsView: ${viewErr.message}`);
+            // Não falha a requisição — view é side-effect
+        }
+
+        // 5c. Publicar evento PAYMENT_UPDATED (side-effect — try/catch isolado)
         try {
             await publishEvent(
                 EventTypes.PAYMENT_UPDATED,

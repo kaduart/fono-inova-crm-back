@@ -13,6 +13,7 @@ import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 import { GuideLifecycleService } from '../../../services/guideLifecycle/GuideLifecycleService.js';
+import { insurancePaymentCreationService } from '../../../domains/billing/services/InsurancePaymentCreationService.js';
 
 export const ConvenioHandler = {
     /**
@@ -144,8 +145,6 @@ export const ConvenioHandler = {
             kind:         'session_payment'
         };
 
-        let paymentCreated;
-
         // 🔍 Log de diagnóstico: dados que serão persistidos
         console.log('[ConvenioHandler] 🔍 paymentData preparado', {
             sessionId: sessionId?.toString?.(),
@@ -155,96 +154,28 @@ export const ConvenioHandler = {
             paymentDataKeys: Object.keys(paymentData)
         });
 
-        // 1. Fonte canônica: Payment ativo vinculado à SESSION.
-        // session + billingType é a chave real do atendimento; appointment.payment
-        // pode apontar para um registro cancelado/legado e ressuscitá-lo se usado
-        // como única fonte de verdade.
-        const existingActiveBySession = await Payment.findOne({
-            session: sessionId,
-            billingType: 'convenio',
-            status: { $nin: ['cancelled', 'canceled', 'refunded'] }
-        }).session(mongoSession).lean();
+        // 🛡️ PR-A: Idempotência centralizada — 1 Payment ativo de convênio por Session.
+        // O serviço cuida de: session (canônico), appointment.payment (fallback),
+        // orphan (fallback) e race condition (11000). Nunca ressuscita cancelados.
+        const { payment: paymentCreated, created: paymentWasCreated } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+            sessionId,
+            appointmentId,
+            appointmentPaymentId: appointment.payment?._id || appointment.payment,
+            patientId: appointment.patient?._id,
+            paymentData,
+            mongoSession
+        });
 
-        // 2. Fallback: Payment ativo vinculado ao Appointment.
-        // NUNCA ressuscitamos um Payment cancelado/refunded a partir de appointment.payment.
-        const existingPaymentId = appointment.payment?._id || appointment.payment;
-        let existingPaymentByAppointment = null;
-        if (existingPaymentId) {
-            const p = await Payment.findById(existingPaymentId).session(mongoSession).lean();
-            if (p && !['cancelled', 'canceled', 'refunded'].includes(p.status)) {
-                existingPaymentByAppointment = p;
-            } else if (p) {
-                console.warn(`[ConvenioHandler] ⚠️ appointment.payment aponta para Payment cancelado/refunded (${existingPaymentId?.toString?.()}). Ignorando e buscando ativo.`);
-            }
+        // Garante que Appointment.payment aponte para o Payment realmente ativo
+        if (String(appointmentUpdate.$set.payment || appointment.payment) !== String(paymentCreated._id)) {
+            appointmentUpdate.$set.payment = paymentCreated._id;
         }
 
-        const existingPayment = existingActiveBySession || existingPaymentByAppointment;
-        const existingPaymentSource = existingActiveBySession ? 'session' : (existingPaymentByAppointment ? 'appointment' : null);
-
-        if (existingPayment) {
-            // Payment ativo encontrado — atualiza sem criar duplicata
-            console.log('[ConvenioHandler] 🔍 payment ANTES do update', {
-                paymentId: existingPayment._id?.toString?.(),
-                source: existingPaymentSource,
-                session: existingPayment?.session?.toString?.() || existingPayment?.session,
-                status: existingPayment?.status,
-                kind: existingPayment?.kind
-            });
-
-            paymentCreated = await Payment.findByIdAndUpdate(
-                existingPayment._id,
-                { $set: paymentData },
-                { session: mongoSession, new: true }
-            );
-
-            // Garante que Appointment.payment aponte para o Payment realmente ativo
-            if (String(appointmentUpdate.$set.payment || appointment.payment) !== String(paymentCreated._id)) {
-                appointmentUpdate.$set.payment = paymentCreated._id;
-            }
-
-            console.log(`[ConvenioHandler] 💰 Payment atualizado: ${paymentCreated._id}`, {
-                session: paymentCreated.session?.toString?.(),
-                status: paymentCreated.status,
-                kind: paymentCreated.kind
-            });
-        } else {
-            // Nenhum Payment ativo encontrado. appointment.payment pode apontar para
-            // um registro cancelado; nesse caso criamos um novo em vez de ressuscitar.
-            if (existingPaymentId && !existingPaymentByAppointment) {
-                console.warn(`[ConvenioHandler] ⚠️ appointment.payment não resolve para Payment ativo (${existingPaymentId?.toString?.()}). Criando/atualizando a partir de orphan.`);
-            }
-
-            // Fallback defensivo: orphan ativo por appointment/session (não cancelado)
-            const orphan = await Payment.findOne({
-                $or: [
-                    { appointment: appointmentId },
-                    { session: sessionId }
-                ],
-                billingType: 'convenio',
-                status: { $nin: ['cancelled', 'canceled', 'refunded'] }
-            }).session(mongoSession).lean();
-
-            if (orphan) {
-                // Adota orphan: atualiza dados e garante link correto
-                paymentCreated = await Payment.findByIdAndUpdate(
-                    orphan._id,
-                    { $set: { ...paymentData, session: sessionId, appointment: appointmentId } },
-                    { session: mongoSession, new: true }
-                );
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[ConvenioHandler] ♻️ Orphan adoptado (sem double-count): ${paymentCreated._id}`, {
-                    orphanId: orphan._id?.toString?.(),
-                    session: paymentCreated.session?.toString?.()
-                });
-            } else {
-                const [paymentDoc] = await Payment.create([paymentData], { session: mongoSession });
-                paymentCreated = paymentDoc;
-                appointmentUpdate.$set.payment = paymentCreated._id;
-                console.log(`[ConvenioHandler] 💰 Payment criado (produção): ${paymentCreated._id}`, {
-                    session: paymentCreated.session?.toString?.()
-                });
-            }
-        }
+        console.log(`[ConvenioHandler] 💰 Payment ${paymentWasCreated ? 'criado' : 'atualizado'}: ${paymentCreated._id}`, {
+            session: paymentCreated.session?.toString?.(),
+            status: paymentCreated.status,
+            kind: paymentCreated.kind
+        });
 
         return paymentCreated;
     }

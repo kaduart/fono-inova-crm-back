@@ -23,6 +23,7 @@ import Appointment from '../../../models/Appointment.js';
 import Payment from '../../../models/Payment.js';
 import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
 import { insuranceBillingService } from './insuranceBillingService.v2.js';
+import { insurancePaymentCreationService } from './InsurancePaymentCreationService.js';
 
 export class PackageBillingService {
   
@@ -289,41 +290,46 @@ export class PackageBillingService {
   }
 
   /**
-   * Cria payment para sessão de pacote
+   * Cria payment para sessão de pacote via serviço central de idempotência.
    */
   async createPackagePayment(session, guide, mongoSession) {
     const packageValue = await this.calculatePackageSessionValue(guide);
     const month = new Date(session.date).toISOString().slice(0, 7);
 
-    const payment = new Payment({
-      patient: session.patient,
-      doctor: session.doctor,
-      session: session._id,
-      appointment: session.appointmentId,
-      serviceType: 'convenio_session',
-      amount: packageValue,
-      paymentMethod: 'convenio',
-      billingType: 'convenio',
-      status: 'pending_billing',
-      insurance: {
-        provider: guide.insurance,
-        authorizationCode: guide.number,
-        month,
-        guideNumber: guide.number,
-        status: 'pending',
-        grossAmount: packageValue,
-        netAmount: packageValue
-      },
-      appointments: [{
+    const { payment } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+      sessionId: session._id,
+      appointmentId: session.appointmentId,
+      patientId: session.patient,
+      paymentData: {
+        patient: session.patient,
+        doctor: session.doctor,
+        session: session._id,
         appointment: session.appointmentId,
+        serviceType: 'convenio_session',
         amount: packageValue,
-        guideNumber: guide.number
-      }],
-      serviceDate: session.date,
-      notes: `Pacote Convênio - Guia ${guide.number}`
+        paymentMethod: 'convenio',
+        billingType: 'convenio',
+        status: 'pending_billing',
+        insurance: {
+          provider: guide.insurance,
+          authorizationCode: guide.number,
+          month,
+          guideNumber: guide.number,
+          status: 'pending',
+          grossAmount: packageValue,
+          netAmount: packageValue
+        },
+        appointments: [{
+          appointment: session.appointmentId,
+          amount: packageValue,
+          guideNumber: guide.number
+        }],
+        serviceDate: session.date,
+        notes: `Pacote Convênio - Guia ${guide.number}`
+      },
+      mongoSession
     });
 
-    await payment.save({ session: mongoSession });
     return payment;
   }
 

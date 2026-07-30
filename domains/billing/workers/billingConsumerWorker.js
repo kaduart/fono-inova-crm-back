@@ -21,6 +21,7 @@ import Payment from '../../../models/Payment.js';
 import Appointment from '../../../models/Appointment.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { validatePaymentEvent, generatePaymentIdempotencyKey } from '../contracts/PaymentEvents.contract.js';
+import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =============================================================================
@@ -352,6 +353,17 @@ async function handleAppointmentBillingRequested(payload, correlationId, job) {
     amount: payment.amount,
     correlationId: finalCorrelationId,
   });
+
+  // 🔄 Atualiza PaymentsView (read-model) de forma síncrona e tolerante a falha
+  try {
+    await handlePaymentEvent({
+      type: 'PAYMENT_CREATED',
+      payload: { paymentId: payment._id.toString() },
+      timestamp: new Date().toISOString()
+    });
+  } catch (viewErr) {
+    console.warn('[BillingWorker] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+  }
 
   return {
     status:        'success',

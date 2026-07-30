@@ -702,6 +702,19 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
         }
 
+        // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
+        try {
+            const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
+            await handlePaymentEvent({
+                type: 'PAYMENT_CREATED',
+                payload: { paymentId: mainPayment._id.toString() },
+                timestamp: new Date()
+            });
+            log.info('payment_projection_updated', `PaymentsView atualizada para ${mainPayment._id}`);
+        } catch (projError) {
+            log.error('payment_projection_error', 'Erro ao atualizar PaymentsView', { error: projError.message });
+        }
+
         // 4. Publica eventos de resultado (com dados para projection)
         await publishEvent(
             EventTypes.PAYMENT_COMPLETED,

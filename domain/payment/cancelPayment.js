@@ -1,20 +1,22 @@
 // domain/payment/cancelPayment.js
 import Payment from '../../models/Payment.js';
-import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
-import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
-import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
+import PaymentLifecycleService from './PaymentLifecycleService.js';
 
 /**
  * Cancela um pagamento (se aplicável)
- * 
+ *
  * REGRA CRÍTICA DO LEGADO (appointment.js:1451-1469):
  * - Se kind === 'package_receipt' → NÃO cancela (mantém histórico)
  * - Se kind === 'session_payment' → NÃO cancela (mantém histórico)
  * - Senão → cancela (status: 'canceled')
- * 
+ *
+ * A partir de PR C.1, a mutação de status passa por PaymentLifecycleService,
+ * que garante sincronização do campo embedded `appointment.payment`.
+ *
  * @param {ObjectId} paymentId - ID do pagamento
  * @param {Object} options - Opções
  * @param {String} options.reason - Motivo do cancelamento
+ * @param {mongoose.ClientSession} [options.mongoSession]
  * @returns {Object} Resultado
  */
 export async function cancelPayment(paymentId, options = {}) {
@@ -31,12 +33,6 @@ export async function cancelPayment(paymentId, options = {}) {
         return { canceled: false, reason: 'PAYMENT_NOT_FOUND' };
     }
 
-    // 🛡️ IDEMPOTÊNCIA
-    if (payment.status === 'canceled') {
-        console.log(`[cancelPayment] Payment ${paymentId} já cancelado`);
-        return { canceled: false, alreadyCanceled: true, payment };
-    }
-
     // 🔴 REGRA SAGRADA DO LEGADO: NÃO cancela payment de pacote
     if (
         payment.kind === 'package_receipt' ||
@@ -45,48 +41,35 @@ export async function cancelPayment(paymentId, options = {}) {
         console.log(`[cancelPayment] Payment ${paymentId} é de pacote - NÃO cancela`, {
             kind: payment.kind
         });
-        return { 
-            canceled: false, 
+        return {
+            canceled: false,
             reason: 'PACKAGE_PAYMENT_PRESERVED',
             kind: payment.kind,
             payment
         };
     }
 
-    // ❌ CANCELA PAYMENT
-    const { payment: updatedPayment } = await transitionPaymentStatus(payment._id, 'canceled', {
-        session: sessionOptions?.session,
-        reason: reason || 'manual_cancel'
+    // ❌ CANCELA PAYMENT via lifecycle centralizado (sincroniza Appointment)
+    const result = await PaymentLifecycleService.cancelPayment(paymentId, {
+        reason: reason || 'manual_cancel',
+        mongoSession,
     });
 
-    updatedPayment.canceledAt = new Date();
-    updatedPayment.canceledReason = reason;
-    updatedPayment.updatedAt = new Date();
-    await updatedPayment.save(sessionOptions);
+    if (result.canceled) {
+        console.log(`[cancelPayment] Payment ${paymentId} cancelado`);
+    }
 
-    // Invalida cache do daily-closing para a data do pagamento
-    await invalidateCacheForPayment(payment);
-
-    // Invalida cache financeiro do dashboard
-    invalidateDashboardCache();
-
-    console.log(`[cancelPayment] Payment ${paymentId} cancelado`);
-
-    return { 
-        canceled: true, 
-        paymentId: payment._id,
-        payment
-    };
+    return result;
 }
 
 /**
  * Cria pagamento para sessão completada (per-session, particular, etc)
- * 
+ *
  * Regras do legado (appointment.js:1715-1772):
  * - Cria FORA da transação principal
  * - Status começa como 'pending'
  * - Vincula a appointment e session
- * 
+ *
  * @param {Object} data - Dados do pagamento
  * @returns {Object} Payment criado
  */
@@ -127,12 +110,7 @@ export async function createPaymentForComplete(data) {
 
     await payment.save();
 
-    // Invalida cache do daily-closing para a data do pagamento (mesmo pendente)
-    await invalidateCacheForPayment(payment);
-
-    // Invalida cache financeiro do dashboard (novo débito/pendente)
-    invalidateDashboardCache();
-
+    // NOTE: caches são invalidados no fluxo completo pelo caller
     console.log(`[createPaymentForComplete] Payment criado: ${payment._id}`, {
         amount,
         paymentOrigin,
@@ -144,9 +122,9 @@ export async function createPaymentForComplete(data) {
 
 /**
  * Confirma pagamento (após commit da transação principal)
- * 
+ *
  * @param {ObjectId} paymentId - ID do pagamento
- * @returns {Object} Resultado
+ * @returns {Object} Payment confirmado
  */
 export async function confirmPayment(paymentId) {
     if (!paymentId) return null;
@@ -163,10 +141,6 @@ export async function confirmPayment(paymentId) {
     );
 
     if (payment) {
-        // Invalida cache do daily-closing quando pagamento é confirmado
-        await invalidateCacheForPayment(payment);
-        // Invalida cache financeiro do dashboard
-        invalidateDashboardCache();
         console.log(`[confirmPayment] Payment ${paymentId} confirmado`);
     }
 

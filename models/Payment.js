@@ -352,6 +352,26 @@ paymentSchema.index(
         name: 'unique_active_payment_per_appt_billingtype'
     }
 );
+
+// 🛡️ AIRBAG PR-A: 1 Payment ativo de convênio por Session.
+// Garante a regra de ouro do domínio: uma sessão de convênio gera um único
+// recebível ativo. O índice é parcial para não afetar payments cancelados,
+// particulares, pacotes, sessions nulas ou histórico legado.
+//
+// Nota: $ne: null não é suportado em partialFilterExpression do MongoDB;
+//       $type: 'objectId' cobre a mesma necessidade (só indexa ObjectIds).
+paymentSchema.index(
+    { session: 1, billingType: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            session: { $type: 'objectId' },
+            billingType: 'convenio',
+            status: { $in: ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'] }
+        },
+        name: 'unique_active_convenio_payment_per_session'
+    }
+);
 // Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
 paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
 paymentSchema.index({ _billingEventId: 1 }, { sparse: true, name: 'billing_event_lock' });

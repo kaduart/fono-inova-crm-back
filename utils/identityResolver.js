@@ -8,8 +8,8 @@
 import mongoose from 'mongoose';
 import logger from './logger.js';
 
-const PatientsView = mongoose.model('PatientsView');
-const Patient = mongoose.model('Patient');
+const getPatientsView = () => mongoose.model('PatientsView');
+const getPatient = () => mongoose.model('Patient');
 
 /**
  * Resolve qualquer identificador de paciente para o patientId canônico
@@ -42,18 +42,18 @@ export async function resolvePatientId(inputId, options = {}) {
   const objectId = new mongoose.Types.ObjectId(inputId);
   
   // 1. Verifica se é um patientId real (collection patients)
-  let patientExists = await Patient.exists({ _id: objectId });
+  let patientExists = await getPatient().exists({ _id: objectId });
   if (patientExists) {
     logger.debug(`[${correlationId}] ✅ ID é patientId real: ${inputId}`);
     return inputId;
   }
   
   // 2. Verifica se é _id da patients_view
-  const viewDoc = await PatientsView.findById(objectId).select('patientId fullName').lean();
+  const viewDoc = await getPatientsView().findById(objectId).select('patientId fullName').lean();
   if (viewDoc?.patientId) {
     const resolvedId = viewDoc.patientId.toString();
     // 🛡️ VALIDAÇÃO: garante que o patientId resolvido existe na collection patients
-    patientExists = await Patient.exists({ _id: new mongoose.Types.ObjectId(resolvedId) });
+    patientExists = await getPatient().exists({ _id: new mongoose.Types.ObjectId(resolvedId) });
     if (patientExists) {
       logger.info(`[${correlationId}] 🔄 Resolvido _id da view para patientId: ${resolvedId}`);
       return resolvedId;
@@ -62,9 +62,9 @@ export async function resolvePatientId(inputId, options = {}) {
   }
   
   // 3. Tenta buscar na view por patientId (caso o input já seja patientId mas não exista mais)
-  const viewByPatientId = await PatientsView.findOne({ patientId: inputId }).select('patientId fullName').lean();
+  const viewByPatientId = await getPatientsView().findOne({ patientId: inputId }).select('patientId fullName').lean();
   if (viewByPatientId?.patientId) {
-    patientExists = await Patient.exists({ _id: objectId });
+    patientExists = await getPatient().exists({ _id: objectId });
     if (patientExists) {
       logger.debug(`[${correlationId}] ✅ ID encontrado na view por patientId: ${inputId}`);
       return inputId;
@@ -104,7 +104,7 @@ export async function resolvePatientIds(inputIds, options = {}) {
   }
   
   // Busca todos de uma vez na view
-  const views = await PatientsView.find({
+  const views = await getPatientsView().find({
     $or: [
       { _id: { $in: uniqueIds.map(id => new mongoose.Types.ObjectId(id)) } },
       { patientId: { $in: uniqueIds } }
@@ -172,7 +172,7 @@ export async function assertCanonicalPatientId(inputId, options = {}) {
   const resolved = await resolvePatientId(inputId, { correlationId });
   
   // Verifica se o resolved é de fato um patient real
-  const exists = await Patient.exists({ _id: new mongoose.Types.ObjectId(resolved) });
+  const exists = await getPatient().exists({ _id: new mongoose.Types.ObjectId(resolved) });
   
   if (!exists) {
     throw new Error('IDENTITY_INVALID: ID não corresponde a um paciente válido');

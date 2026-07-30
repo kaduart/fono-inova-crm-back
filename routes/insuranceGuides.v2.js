@@ -23,6 +23,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideService.js';
 import { buildGuideResponse } from '../services/guideLifecycle/guideResponseBuilder.js';
+import { insurancePaymentCreationService } from '../domains/billing/services/InsurancePaymentCreationService.js';
 
 const router = express.Router();
 
@@ -180,27 +181,32 @@ router.post('/', auth, async (req, res) => {
           createdAt: new Date()
         });
 
-        const payment = await Payment.create({
-          patient: guide.patientId,
-          doctor: guide.doctorId || null,
-          appointment: appointment._id,
-          session: session._id,
-          specialty: guide.specialty,
-          amount: 0,
-          billingType: 'convenio',
-          status: 'pending',
-          financialDate: null,
-          paymentDate: new Date(evalDateStr),
-          paymentMethod: 'convenio',
-          insurance: {
-            provider: guide.insurance,
-            status: 'pending_billing',
-            grossAmount: guide.evaluationAmount,
-            guideId: guide._id
+        const { payment } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+          sessionId: session._id,
+          appointmentId: appointment._id,
+          patientId: guide.patientId,
+          paymentData: {
+            patient: guide.patientId,
+            doctor: guide.doctorId || null,
+            appointment: appointment._id,
+            session: session._id,
+            specialty: guide.specialty,
+            amount: 0,
+            status: 'pending',
+            financialDate: null,
+            paymentDate: new Date(evalDateStr),
+            paymentMethod: 'convenio',
+            insurance: {
+              provider: guide.insurance,
+              status: 'pending_billing',
+              grossAmount: guide.evaluationAmount,
+              guideId: guide._id
+            },
+            insuranceGuide: guide._id,
+            notes: `Avaliação inicial do convênio ${guide.insurance}`,
+            kind: 'session_payment'
           },
-          insuranceGuide: guide._id,
-          notes: `Avaliação inicial do convênio ${guide.insurance}`,
-          kind: 'session_payment'
+          mongoSession: null
         });
 
         await Appointment.findByIdAndUpdate(appointment._id, { session: session._id, payment: payment._id });
@@ -562,27 +568,32 @@ router.put('/:id', auth, async (req, res) => {
           createdAt: new Date()
         });
 
-        const payment = await Payment.create({
-          patient: guide.patientId,
-          doctor: guide.doctorId || null,
-          appointment: appointment._id,
-          session: session._id,
-          specialty: guide.specialty,
-          amount: 0,
-          billingType: 'convenio',
-          status: 'pending',
-          financialDate: null,
-          paymentDate: new Date(evalDateStr),
-          paymentMethod: 'convenio',
-          insurance: {
-            provider: guide.insurance,
-            status: 'pending_billing',
-            grossAmount: guide.evaluationAmount,
-            guideId: guide._id
+        const { payment } = await insurancePaymentCreationService.findOrCreateConvenioPayment({
+          sessionId: session._id,
+          appointmentId: appointment._id,
+          patientId: guide.patientId,
+          paymentData: {
+            patient: guide.patientId,
+            doctor: guide.doctorId || null,
+            appointment: appointment._id,
+            session: session._id,
+            specialty: guide.specialty,
+            amount: 0,
+            status: 'pending',
+            financialDate: null,
+            paymentDate: new Date(evalDateStr),
+            paymentMethod: 'convenio',
+            insurance: {
+              provider: guide.insurance,
+              status: 'pending_billing',
+              grossAmount: guide.evaluationAmount,
+              guideId: guide._id
+            },
+            insuranceGuide: guide._id,
+            notes: `Avaliação inicial do convênio ${guide.insurance}`,
+            kind: 'session_payment'
           },
-          insuranceGuide: guide._id,
-          notes: `Avaliação inicial do convênio ${guide.insurance}`,
-          kind: 'session_payment'
+          mongoSession: null
         });
 
         await Appointment.findByIdAndUpdate(appointment._id, { session: session._id, payment: payment._id });

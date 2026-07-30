@@ -17,7 +17,9 @@ import Patient from "../models/Patient.js";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
 import { transitionPaymentStatus } from "../services/paymentStatusService.js";
+import PaymentLifecycleService from "../domain/payment/PaymentLifecycleService.js";
 import { applyFinancialProtection } from "../services/appointment/policies/appointmentFinancialPolicy.js";
+import { findActiveBatchLink } from "../services/insuranceBatch/insuranceBatchGuard.js";
 
 const router = express.Router();
 
@@ -1054,7 +1056,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
     // 4) Atualizar Pagamento relacionado
     if (appointment.payment) {
       if (operationalStatus === 'canceled') {
-        await transitionPaymentStatus(appointment.payment, 'canceled', {
+        await PaymentLifecycleService.cancelPayment(appointment.payment, {
           reason: 'import_sync_cancel'
         });
       }
@@ -1158,6 +1160,18 @@ router.post("/agenda-externa/delete", agendaAuth, async (req, res) => {
     }
 
     console.log(`[SYNC-DELETE] ✅ Appointment encontrado: ${appointment._id}`);
+
+    // 🛡️ PR D.1: bloqueia deleção se Session/Payment estiver em lote de faturamento ativo
+    const activeBatch = await findActiveBatchLink({
+      sessionId: appointment.session,
+      paymentId: appointment.payment
+    });
+    if (activeBatch) {
+      const msg = `Não é possível excluir este atendimento porque ele pertence ao lote de faturamento ${activeBatch.batchNumber}. Remova-o do lote ou cancele o lote antes de excluir.`;
+      console.warn(`[SYNC-DELETE] ${msg}`);
+      await session.abortTransaction();
+      return res.status(409).json({ success: false, error: msg, code: 'INSURANCE_BATCH_DELETE_BLOCKED' });
+    }
 
     // 2) Deletar em cascata
     // Deletar Session relacionada

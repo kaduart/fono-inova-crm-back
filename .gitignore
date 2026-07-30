@@ -111,3 +111,4 @@ backup_mongo_test_*/
 scripts/backups-migration/
 scripts/audits/backup-*.json
 scripts/audits/*-backup-*.json
+logs-archive/documento-analise.txt

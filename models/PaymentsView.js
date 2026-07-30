@@ -123,12 +123,30 @@ paymentsViewSchema.index({ 'patient.name': 'text', 'doctor.name': 'text' }); // 
 
 // 🔹 Método para atualizar a partir de um Payment
 paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
-    const { 
-        _id, patient, doctor, amount, paymentMethod, status, 
-        serviceType, sessionType, paymentDate, financialDate, notes, clinicId,
-        appointment, package: pkg, session, createdAt
+    const {
+        _id, patient, doctor, amount, paymentMethod, status, billingType, kind,
+        serviceType: rawServiceType, sessionType: rawSessionType,
+        paymentDate: rawPaymentDate, financialDate, notes, clinicId,
+        appointment, package: pkg, session, createdAt, receivedAmount
     } = paymentData;
-    
+
+    // Resolves a melhor fonte para campos que podem vir de Payment, Appointment ou Session
+    const resolvedAppointment = appointment && typeof appointment === 'object' ? appointment : null;
+    const resolvedSession = session && typeof session === 'object' ? session : null;
+
+    const effectiveServiceType = rawServiceType
+        || resolvedSession?.serviceType
+        || resolvedAppointment?.serviceType
+        || 'session';
+
+    const effectiveSessionType = rawSessionType
+        || resolvedSession?.sessionType
+        || resolvedAppointment?.sessionType
+        || resolvedSession?.specialty
+        || resolvedAppointment?.specialty
+        || doctor?.specialty
+        || 'Geral';
+
     // Mapear método
     const methodMap = {
         'pix': { code: 'pix', label: 'PIX' },
@@ -138,36 +156,49 @@ paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
         'cartao_debito': { code: 'card', label: 'Cartão Débito' },
         'cartão': { code: 'card', label: 'Cartão' },
         'card': { code: 'card', label: 'Cartão' },
+        'credit_card': { code: 'card', label: 'Cartão Crédito' },
+        'debit_card': { code: 'card', label: 'Cartão Débito' },
         'convenio': { code: 'insurance', label: 'Convênio' },
         'plano-unimed': { code: 'insurance', label: 'Convênio' },
+        'insurance': { code: 'insurance', label: 'Convênio' },
+        'convenio_receivable': { code: 'insurance', label: 'Convênio' },
         'transferencia_bancaria': { code: 'transfer', label: 'Transferência' },
+        'bank_transfer': { code: 'transfer', label: 'Transferência' },
+        'transfer': { code: 'transfer', label: 'Transferência' },
+        'liminar_credit': { code: 'other', label: 'Crédito Liminar' },
         'outro': { code: 'other', label: 'Outro' }
     };
-    
+
     const methodInfo = methodMap[(paymentMethod || '').toLowerCase()] || { code: 'other', label: 'Outro' };
-    
-    // Mapear categoria
+
+    // Mapear categoria usando billingType (fonte canônica)
     let category = 'particular';
-    if (paymentMethod?.toLowerCase().includes('convenio') || 
-        paymentMethod?.toLowerCase().includes('plano')) {
+    const normalizedBillingType = (billingType || '').toLowerCase();
+    const normalizedKind = (kind || '').toLowerCase();
+
+    if (normalizedBillingType === 'convenio' || normalizedBillingType === 'insurance' ||
+        normalizedKind.includes('convenio') || normalizedKind.includes('insurance')) {
         category = 'insurance';
-    } else if (serviceType === 'package_session' || pkg) {
+    } else if (normalizedBillingType === 'liminar' || normalizedKind.includes('liminar')) {
+        category = 'particular'; // liminar é particular no dashboard financeiro
+    } else if (effectiveServiceType === 'package_session' || pkg ||
+               normalizedKind === 'package_receipt' || normalizedKind === 'package_settlement') {
         category = 'package';
     }
-    
+
     // Extrair dados denormalizados
     const patientData = patient ? {
         id: patient._id || patient.id,
         name: patient.fullName || patient.name || 'Paciente',
         phone: patient.phone || patient.phoneNumber
     } : { name: 'Paciente Desconhecido' };
-    
+
     const doctorData = doctor ? {
         id: doctor._id || doctor.id,
         name: doctor.fullName || doctor.name || 'Profissional',
-        specialty: doctor.specialty || sessionType || 'Geral'
-    } : { name: 'Profissional Desconhecido', specialty: sessionType || 'Geral' };
-    
+        specialty: doctor.specialty || effectiveSessionType || 'Geral'
+    } : { name: 'Profissional Desconhecido', specialty: effectiveSessionType || 'Geral' };
+
     const serviceMap = {
         'evaluation': 'Avaliação',
         'session': 'Sessão',
@@ -179,33 +210,43 @@ paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
         'meet': 'Meet',
         'alignment': 'Alinhamento'
     };
-    
+
+    // Melhor data: financialDate (V2) > paymentDate > appointment.date > session.date > createdAt
+    const bestDateSource = financialDate
+        || rawPaymentDate
+        || resolvedAppointment?.date
+        || resolvedSession?.date
+        || createdAt;
+
+    const bestDate = bestDateSource ? new Date(bestDateSource) : new Date();
+    const dateStr = bestDate.toISOString().split('T')[0];
+    const monthStr = bestDate.toISOString().substring(0, 7);
+
     const doc = {
         paymentId: _id,
         patient: patientData,
         doctor: doctorData,
-        serviceType: serviceType || 'session',
-        serviceLabel: serviceMap[serviceType] || 'Atendimento',
-        specialty: sessionType || doctorData.specialty,
+        serviceType: effectiveServiceType,
+        serviceLabel: serviceMap[effectiveServiceType] || 'Atendimento',
+        specialty: effectiveSessionType,
         amount: amount || 0,
-        receivedAmount: paymentData.receivedAmount || 0, // 🔥 V2: received vs produced
+        receivedAmount: receivedAmount || 0, // 🔥 V2: received vs produced
         method: methodInfo.code,
         methodLabel: methodInfo.label,
         status: status === 'completed' ? 'paid' : status || 'pending',
         type: 'revenue',
         category,
-        // 🎯 PRIORIDADE: financialDate (V2) > paymentDate (legado) > createdAt (fallback)
-        paymentDate: (financialDate || paymentDate || createdAt) ? new Date(financialDate || paymentDate || createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        paymentMonth: (financialDate || paymentDate || createdAt) ? new Date(financialDate || paymentDate || createdAt).toISOString().substring(0, 7) : new Date().toISOString().substring(0, 7),
+        paymentDate: dateStr,
+        paymentMonth: monthStr,
         notes: notes || '',
         clinicId: clinicId || 'default',
-        appointmentId: appointment?._id || appointment,
+        appointmentId: resolvedAppointment?._id || appointment,
         packageId: pkg?._id || pkg,
-        sessionId: session?._id || session,
+        sessionId: resolvedSession?._id || session,
         isDeleted: false,
         updatedAt: new Date()
     };
-    
+
     return this.findOneAndUpdate(
         { paymentId: _id },
         { $set: doc },

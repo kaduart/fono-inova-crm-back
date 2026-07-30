@@ -22,6 +22,7 @@ import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { recordAudit } from '../../auditLogService.js';
+import { findActiveBatchLink } from '../../insuranceBatch/insuranceBatchGuard.js';
 
 export async function execute(id, user) {
   const appointment = await Appointment.findById(id).populate('session payment');
@@ -40,6 +41,18 @@ export async function execute(id, user) {
 
   const { patient, session, payment } = appointment;
   const beforeSnapshot = appointment.toObject({ virtuals: false, getters: false });
+
+  // 🛡️ PR D.1: bloqueia deleção se Session/Payment estiver em lote de faturamento ativo
+  const sessionId = session?._id || appointment.session;
+  const paymentId = payment?._id || appointment.payment;
+  const activeBatch = await findActiveBatchLink({ sessionId, paymentId });
+  if (activeBatch) {
+    throw buildError(
+      `Não é possível excluir este atendimento porque ele pertence ao lote de faturamento ${activeBatch.batchNumber}. Remova-o do lote ou cancele o lote antes de excluir.`,
+      409,
+      'INSURANCE_BATCH_DELETE_BLOCKED'
+    );
+  }
 
   await runTransactionWithRetry(async (mongoSession) => {
     // 1. Remove referência do appointment na Session
