@@ -30,6 +30,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
+import { syncAppointmentPaymentStatus } from '../services/financialGuard/syncAppointmentPaymentStatus.js';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
@@ -1085,6 +1086,24 @@ router.patch('/:id', auth, async (req, res) => {
                 } catch (syncErr) {
                     console.error('[PATCH payment] Falha ao sincronizar paymentForms:', syncErr.message);
                 }
+            }
+        }
+
+        // 5a.1 Sync appointment.paymentStatus/isPaid quando Payment foi cancelado/refunded
+        // (evita ghosts como os documentados em PR E — 2026-07-24).
+        if (status === 'canceled' || status === 'refunded') {
+            try {
+                const syncResult = await syncAppointmentPaymentStatus(payment, {
+                    reason: 'admin_manual_patch_canceled',
+                    userId: req.user?._id
+                });
+                if (syncResult.synced) {
+                    console.log('[PATCH payment] Appointment sincronizado após cancelamento:', syncResult);
+                } else {
+                    console.log('[PATCH payment] Appointment não sincronizado:', syncResult.reason);
+                }
+            } catch (syncErr) {
+                console.error('[PATCH payment] Falha ao sincronizar Appointment após cancelamento:', syncErr.message);
             }
         }
 

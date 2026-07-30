@@ -1,0 +1,324 @@
+{
+  "generatedAt": "2026-07-30T18:29:30.548Z",
+  "count": 30,
+  "category": "GHOST_PAYMENT_STATUS",
+  "historicalEvent": {
+    "date": "2026-07-24",
+    "timeWindow": "~18:42 UTC",
+    "description": "Bulk cancellation of 106 particular session_payment records with canceledReason=guide_cycle_closed without synchronizing Appointment.paymentStatus/isPaid.",
+    "affectedPaymentsBillingType": "particular",
+    "affectedPaymentsKind": "session_payment",
+    "cause": "Probable manual/scripted cleanup operation; does not match current canonical closeGuideBillingPeriod behavior.",
+    "recommendation": "Do not auto-correct. These appointments have operationalStatus=completed and may represent real clinical/financial history. Review case-by-case before any action."
+  },
+  "items": [
+    {
+      "id": 1,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687128ade9d856aef5b7cea8",
+      "patientId": "685c29afaec14c716358622a",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687e4df7902dfb659a5cc6d3",
+      "patientId": "687e4db3902dfb659a5cc621",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 3,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687e7b29902dfb659a5cd476",
+      "patientId": "687e7938902dfb659a5cd314",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 4,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6880e2dacfb03169c5c8dd16",
+      "patientId": "68596121b9ddc9bdd4b29f5f",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=pix)"
+    },
+    {
+      "id": 5,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6874fa4472971cdb8ddd04d2",
+      "patientId": "685c5617aec14c71635865ec",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 6,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687fa13acfb03169c5c8d0e2",
+      "patientId": "685c5617aec14c71635865ec",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=pix)"
+    },
+    {
+      "id": 7,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687fa161cfb03169c5c8d0f6",
+      "patientId": "687f7ddbcfb03169c5c8cd33",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 8,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687fce0acfb03169c5c8d3b5",
+      "patientId": "686e7f2bb26f4da03d426e7b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=pix)"
+    },
+    {
+      "id": 9,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "688a2f398779aa5ee830c014",
+      "patientId": "688259fdcfb03169c5c8e070",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 10,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "68680bb9e00257e3e549d69b",
+      "patientId": "685b0cfaaec14c7163585b5b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 11,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "68712761e9d856aef5b7cca3",
+      "patientId": "685edfa3e00257e3e549a985",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 12,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "687e66fc902dfb659a5ccdcf",
+      "patientId": "685b0cfaaec14c7163585b5b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=cartão)"
+    },
+    {
+      "id": 13,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "688a2fd48779aa5ee830c06d",
+      "patientId": "688a2b3c8779aa5ee830bf0d",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 14,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "686810efe00257e3e549d6fa",
+      "patientId": "685b0cfaaec14c7163585b5b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 15,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "68712739e9d856aef5b7cc93",
+      "patientId": "68596121b9ddc9bdd4b29f5f",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 16,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6889294ad6d2214f6d7b51a4",
+      "patientId": "685b0cfaaec14c7163585b5b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=pix)"
+    },
+    {
+      "id": 17,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "688a27ec8779aa5ee830bef9",
+      "patientId": "685c5617aec14c71635865ec",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=pix)"
+    },
+    {
+      "id": 18,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "68fa897e25de16c17d334d27",
+      "patientId": "68fa895a25de16c17d334d0c",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (method=dinheiro)"
+    },
+    {
+      "id": 19,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69d98628f4c055fd4a8563b1",
+      "patientId": "690511c27abc25e6eb25414e",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular)"
+    },
+    {
+      "id": 20,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69a04f8da264194f6c07df07",
+      "patientId": "685b0cfaaec14c7163585b5b",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular)"
+    },
+    {
+      "id": 21,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69e225394e856f552b1a9a35",
+      "patientId": "69e225384e856f552b1a9a32",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=cash)"
+    },
+    {
+      "id": 22,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69e266191198805572485648",
+      "patientId": "69b995d73fbcf7682605c8ca",
+      "paymentStatus": "paid",
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=cash)"
+    },
+    {
+      "id": 23,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69e27c6c1198805572486932",
+      "patientId": "69e65c68292f470dfe8e9307",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=cash)"
+    },
+    {
+      "id": 24,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a1d9af84bafb710ab15adfa",
+      "patientId": "6a1d9af74bafb710ab15adf6",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 25,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a1dc3e24bafb710ab16148c",
+      "patientId": "69722dd9aeeb528b5b3c0f87",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 26,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a46be72f36c254eafc46de9",
+      "patientId": "6a0e09d98f55e6d47c18fe87",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 27,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a4d01ed1d80a1eb8a330fe5",
+      "patientId": "68f77af4906180bdf2a0549e",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 28,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a563243590f8840a072510d",
+      "patientId": "68f77af4906180bdf2a0549e",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 29,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "6a5682fe513d20312d32b57c",
+      "patientId": "68f77af4906180bdf2a0549e",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=pix)"
+    },
+    {
+      "id": 30,
+      "timestamp": "2026-07-30T18:28:15.689Z",
+      "severity": "HIGH",
+      "category": "GHOST_PAYMENT_STATUS",
+      "appointmentId": "69fcb432a2953d2268b97461",
+      "patientId": "69f1fba400e59de10bf956dc",
+      "paymentStatus": "paid",
+      "isPaid": true,
+      "details": "Appointment marcado como pago mas sem origem financeira válida (billingType=particular | method=cash | origin=auto_per_session)"
+    }
+  ]
+}
