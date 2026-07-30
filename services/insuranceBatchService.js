@@ -2,6 +2,7 @@
 // Serviço de Faturamento de Convênio V2
 
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Session from '../models/Session.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import Payment from '../models/Payment.js';
@@ -312,7 +313,11 @@ export async function processReturn(batchId, returnData) {
   const paidPaymentIds = [];
   const bulkOps = [];
   const skipped = [];
-  const receivedAtStr = new Date().toISOString().split('T')[0];
+  // Bug de timezone (ver project_financialdate_timezone_utc_midnight_bug): string
+  // "YYYY-MM-DD" cast pro campo Date via new Date(str) vira meia-noite UTC = dia
+  // anterior às 21h em Brasília. moment.tz+startOf('day') preserva a semântica de
+  // "hoje" original sem o deslocamento.
+  const receivedAtDate = moment.tz('America/Sao_Paulo').startOf('day').toDate();
 
   for (const item of items) {
     const payment = resolvePayment(item);
@@ -337,7 +342,7 @@ export async function processReturn(batchId, returnData) {
       'insurance.status': insuranceStatus,
       'insurance.receivedAmount': item.returnAmount || 0,
       'insurance.glosaAmount': item.glosaAmount || 0,
-      'insurance.receivedAt': receivedAtStr
+      'insurance.receivedAt': receivedAtDate
     };
 
     bulkOps.push({
