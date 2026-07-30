@@ -67,8 +67,14 @@ export async function restorePackageOnCancel(packageId, options = {}) {
     }
 
     // 2. Se era per-session, estorna financeiro
-    const isPerSession = paymentOrigin === 'auto_per_session';
-    
+    // Achado 2026-07-29 (investigação LEDGER_DIVERGENCE): paymentOrigin === 'auto_per_session'
+    // sozinho é frágil — ParticularHandler.buildSessionUpdate() só seta paymentOrigin na
+    // Session no complete, nunca no Appointment, então appointment.paymentOrigin fica null
+    // pra sessão per-session completada. pkg.paymentType é a fonte estrutural do modelo de
+    // cobrança do pacote inteiro (nunca muda por sessão), então é o sinal primário; paymentOrigin
+    // vira só fallback de compatibilidade com fluxos que ainda o preenchem corretamente.
+    const isPerSession = pkg.paymentType === 'per-session' || paymentOrigin === 'auto_per_session';
+
     if (isPerSession && sessionValue > 0) {
         const amountToRefund = Math.min(sessionValue, pkg.totalPaid || 0);
         

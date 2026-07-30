@@ -228,7 +228,11 @@ async function handleCompleteSession({ payload, session }) {
   };
 
   // Per-session: incrementa totalPaid
-  const isPerSession = paymentOrigin === 'auto_per_session';
+  // Mesmo achado de restorePackageOnCancel.js (2026-07-29): paymentOrigin sozinho é frágil
+  // (appointment.paymentOrigin fica null pra sessão per-session completada). pkg.paymentType
+  // como sinal primário. Este handler roda em SHADOW MODE (completeSessionService.v2.js) —
+  // não escreve dado real, mas mantém a comparação coerente com a fonte de verdade.
+  const isPerSession = pkg.paymentType === 'per-session' || paymentOrigin === 'auto_per_session';
   let amountCharged = 0;
 
   if (isPerSession && sessionValue > 0) {

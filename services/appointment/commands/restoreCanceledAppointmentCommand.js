@@ -112,7 +112,12 @@ export async function executeWithSession(appointment, { reason } = {}, user, ses
 
     // totalPaid/paidSessions só voltam se era per-session E estava pago
     // (pacote pré-pago nunca teve isso mexido no cancelamento — nada a restaurar aqui).
-    if (wasPaid && appointment.paymentOrigin === 'auto_per_session' && appointment.sessionValue > 0) {
+    // Mesmo achado de restorePackageOnCancel.js (2026-07-29): appointment.paymentOrigin
+    // fica null pra sessão per-session completada (só Session.paymentOrigin é setado no
+    // complete), então usa package.paymentType como sinal primário, mais confiável.
+    const pkgDoc = appointment.package;
+    const isPerSessionPackage = pkgDoc?.paymentType === 'per-session' || appointment.paymentOrigin === 'auto_per_session';
+    if (wasPaid && isPerSessionPackage && appointment.sessionValue > 0) {
       await updatePackageFinancials(packageId, appointment.sessionValue, session);
     }
 

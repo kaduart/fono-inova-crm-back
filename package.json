@@ -36,6 +36,7 @@
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",
     "test:e2e:bugfixes:watch": "vitest --config vitest.config.bugfixes-e2e.js --watch",
     "test:coverage": "vitest run --coverage",
+    "finance:health": "node scripts/run-financial-audit.js",
     "billing:validate": "node scripts/validate-billing-v2.js",
     "billing:monitor": "node scripts/monitor-billing-v2.js",
     "billing:rollback": "FORCE_ROLLBACK=true node scripts/rollback-v2-emergency.js",

@@ -4,8 +4,10 @@
  * Cobre os guards que faltavam no cancelAppointmentCommand.js (2026-07-22):
  * - só decrementa sessionsDone quando o appointment cancelado JÁ estava completed
  * - nunca deixa sessionsDone < 0
- * - só estorna totalPaid/paidSessions quando paymentOrigin === 'auto_per_session'
- * - pacote pré-pago (paymentOrigin !== 'auto_per_session') nunca tem Payment/agregados mexidos aqui
+ * - só estorna totalPaid/paidSessions quando é per-session (package.paymentType === 'per-session'
+ *   ou, por compatibilidade, paymentOrigin === 'auto_per_session' — ver fix 2026-07-29)
+ * - pacote pré-pago (paymentType !== 'per-session' e paymentOrigin !== 'auto_per_session')
+ *   nunca tem Payment/agregados mexidos aqui
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -118,5 +120,56 @@ describe('restorePackageOnCancel', () => {
     expect(result.restored).toBe(false);
     expect(result.reason).toBe('ALREADY_CANCELED');
     expect(Package.findById).not.toHaveBeenCalled();
+  });
+
+  // Regressão (investigação LEDGER_DIVERGENCE, 2026-07-29): 6 casos reais em produção
+  // tinham package.paymentType='per-session', payment.kind='session_payment', mas
+  // appointment.paymentOrigin undefined — porque ParticularHandler.buildSessionUpdate()
+  // só seta paymentOrigin na Session no complete, nunca no Appointment. Isso fazia
+  // Package.totalPaid nunca ser estornado no cancelamento.
+  it('regressão — per-session com paymentOrigin undefined: estorna totalPaid via package.paymentType', async () => {
+    Package.findById.mockResolvedValue(makePackage({
+      sessionsDone: 3, totalPaid: 300, totalValue: 400, paymentType: 'per-session'
+    }));
+    Package.findOneAndUpdate.mockResolvedValue(makePackage({
+      sessionsDone: 2, totalPaid: 200, totalValue: 400, paymentType: 'per-session'
+    }));
+    Package.findByIdAndUpdate.mockResolvedValue(makePackage({
+      sessionsDone: 2, totalPaid: 200, totalValue: 400, paymentType: 'per-session', balance: 200, financialStatus: 'partially_paid'
+    }));
+
+    const result = await restorePackageOnCancel('pkg-1', {
+      appointmentStatus: 'completed',
+      paymentOrigin: undefined, // reproduz exatamente os 6 casos reais
+      sessionValue: 100,
+    });
+
+    expect(result.restored).toBe(true);
+    const updateArg = Package.findOneAndUpdate.mock.calls[0][1];
+    expect(updateArg.$inc).toEqual({ sessionsDone: -1, totalPaid: -100, paidSessions: -1 });
+  });
+
+  it('não-regressão — pacote full (paymentType !== per-session) com paymentOrigin undefined: continua sem mexer em totalPaid', async () => {
+    Package.findById.mockResolvedValue(makePackage({
+      sessionsDone: 2, totalPaid: 400, totalValue: 400, paymentType: 'full'
+    }));
+    Package.findOneAndUpdate.mockResolvedValue(makePackage({
+      sessionsDone: 1, totalPaid: 400, totalValue: 400, paymentType: 'full'
+    }));
+    Package.findByIdAndUpdate.mockResolvedValue(makePackage({
+      sessionsDone: 1, totalPaid: 400, totalValue: 400, paymentType: 'full', balance: 0, financialStatus: 'paid'
+    }));
+
+    const result = await restorePackageOnCancel('pkg-1', {
+      appointmentStatus: 'completed',
+      paymentOrigin: undefined,
+      sessionValue: 100,
+    });
+
+    expect(result.restored).toBe(true);
+    const updateArg = Package.findOneAndUpdate.mock.calls[0][1];
+    expect(updateArg.$inc).toEqual({ sessionsDone: -1 });
+    expect(updateArg.$inc.totalPaid).toBeUndefined();
+    expect(updateArg.$inc.paidSessions).toBeUndefined();
   });
 });

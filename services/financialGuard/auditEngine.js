@@ -3,10 +3,17 @@
  *
  * Detecta inconsistências financeiras sistêmicas:
  * - Packages com totalPaid divergente do ledger (Payment)
- * - Sessions órfãs (sem package ou sem appointment)
- * - Payments fantasmas (sem package, patient ou appointment)
  * - Appointments com paymentStatus inconsistente
  * - Divergência de billingType entre payment e appointment
+ * - insurance.status fora do enum do schema (Payment de convênio)
+ * - Payments duplicados na mesma session
+ * - InsuranceBatch referenciando Payment/Session inexistente
+ *
+ * auditOrphanSessions/auditOrphanPayments existem no código mas NÃO rodam mais
+ * (ver comentário "DEPRECATED" em cada um) — calibração 2026-07-29 confirmou que
+ * ambos partiam de premissa falsa pra arquitetura atual (Session/Payment sem
+ * Package não é sinônimo de órfão neste sistema) e respondiam por ~88% de um
+ * relatório de 6841 issues sem sinal acionável.
  */
 
 import mongoose from 'mongoose';
@@ -29,10 +36,15 @@ export class FinancialAuditEngine {
 
   async audit() {
     await this.auditPackageLedger();
-    await this.auditOrphanSessions();
-    await this.auditOrphanPayments();
+    // auditOrphanSessions/auditOrphanPayments DESATIVADOS em 2026-07-29 — ver comentário
+    // "DEPRECATED" em cada método. Calibração real (não amostra, contagem completa) mostrou
+    // que ambos partem de premissa falsa pra arquitetura atual e geravam ~6000 dos ~6841
+    // issues do relatório, sem sinal acionável.
     await this.auditAppointmentPaymentStatus();
     await this.auditBillingTypeMismatch();
+    await this.auditInsuranceStatus();
+    await this.auditDuplicatePaymentsPerSession();
+    await this.auditInsuranceBatchConsistency();
   }
 
   // ========== 1. PACKAGE LEDGER DIVERGENCE ==========
@@ -72,6 +84,14 @@ export class FinancialAuditEngine {
   }
 
   // ========== 2. ORPHAN SESSIONS ==========
+  // ⚠️ DEPRECATED (2026-07-29) — não chamado por audit() mais. Assumia que toda Session
+  // deveria pertencer a um Package. Não é verdade na arquitetura atual: sessão avulsa,
+  // particular per-session, convênio, liminar e ajustes manuais existem legitimamente sem
+  // Package. Confirmado com dado real: 0 sessões com serviceType='package_session' (o único
+  // caso em que Package é esperado) estavam sem package — as ~2586-6017 flagadas eram todas
+  // dos fluxos legítimos acima, espalhadas continuamente por 18 meses (não é resíduo de
+  // migração). Mantido no código como histórico; não reativar sem reformular o critério
+  // (ex: cruzar Payment.package existente vs Session.package ausente, não checar isolado).
   async auditOrphanSessions() {
     const sessions = this.db.collection('sessions');
     const packages = this.db.collection('packages');
@@ -114,6 +134,12 @@ export class FinancialAuditEngine {
   }
 
   // ========== 3. ORPHAN PAYMENTS ==========
+  // ⚠️ DEPRECATED (2026-07-29) — não chamado por audit() mais. Mesma premissa falsa do
+  // auditOrphanSessions: Payment.package == null não significa payment órfão. Confirmado
+  // com dado real: 92% dos 584 casos flagados eram billingType='particular' com
+  // kind='session_payment'/'manual' — exatamente o padrão de cobrança avulsa/per-session,
+  // que por design não referencia Package. Mantido no código como histórico; não reativar
+  // sem reformular o critério.
   async auditOrphanPayments() {
     const payments = this.db.collection('payments');
 
@@ -196,6 +222,95 @@ export class FinancialAuditEngine {
           appointmentBillingType: aType,
           details: `Payment billingType (${pType}) ≠ Appointment billingType (${aType})`
         });
+      }
+    }
+  }
+
+  // ========== 6. INSURANCE STATUS FORA DO ENUM (Payment.insurance.status) ==========
+  // Schema declara enum: ['pending','pending_billing','billed','received','rejected',null].
+  // processReturn (insuranceBatchService.js) escreve via bulkWrite, que não roda os
+  // validators do Mongoose — então 'partial'/'glosa' (usados no mapeamento de retorno
+  // de lote) podem entrar no banco sem nunca terem sido um valor válido do schema.
+  async auditInsuranceStatus() {
+    const payments = this.db.collection('payments');
+    const validStatuses = ['pending', 'pending_billing', 'billed', 'received', 'rejected', null];
+
+    const invalid = await payments.find({
+      billingType: 'convenio',
+      'insurance.status': { $nin: validStatuses }
+    }).toArray();
+
+    for (const p of invalid) {
+      this.addIssue({
+        severity: 'HIGH',
+        category: 'INSURANCE_STATUS_INVALID',
+        paymentId: p._id.toString(),
+        patientId: p.patient?.toString(),
+        insuranceStatus: p.insurance?.status,
+        details: `insurance.status "${p.insurance?.status}" fora do enum do schema — provavelmente escrito via bulkWrite sem validação (ver processReturn)`
+      });
+    }
+  }
+
+  // ========== 7. PAYMENTS DUPLICADOS NA MESMA SESSION ==========
+  async auditDuplicatePaymentsPerSession() {
+    const payments = this.db.collection('payments');
+
+    const dupes = await payments.aggregate([
+      { $match: { session: { $ne: null }, status: { $nin: ['canceled', 'refunded'] } } },
+      { $group: { _id: '$session', count: { $sum: 1 }, paymentIds: { $push: '$_id' }, total: { $sum: '$amount' } } },
+      { $match: { count: { $gt: 1 } } }
+    ]).toArray();
+
+    for (const d of dupes) {
+      this.addIssue({
+        severity: 'CRITICAL',
+        category: 'DUPLICATE_PAYMENT_SESSION',
+        sessionId: d._id?.toString(),
+        paymentIds: d.paymentIds.map(id => id.toString()),
+        count: d.count,
+        totalAmount: d.total,
+        details: `${d.count} payments ativos apontando pra mesma session — possível cobrança duplicada`
+      });
+    }
+  }
+
+  // ========== 8. INSURANCEBATCH REFERENCIANDO PAYMENT/SESSION INEXISTENTE ==========
+  async auditInsuranceBatchConsistency() {
+    const batches = this.db.collection('insurancebatches');
+    const payments = this.db.collection('payments');
+    const sessions = this.db.collection('sessions');
+
+    const allBatches = await batches.find({}).toArray();
+
+    for (const batch of allBatches) {
+      for (const s of batch.sessions || []) {
+        if (s.payment) {
+          const exists = await payments.findOne({ _id: s.payment }, { projection: { _id: 1 } });
+          if (!exists) {
+            this.addIssue({
+              severity: 'HIGH',
+              category: 'INSURANCE_BATCH_ORPHAN_REF',
+              batchId: batch._id.toString(),
+              batchNumber: batch.batchNumber,
+              paymentId: s.payment.toString(),
+              details: 'InsuranceBatch.sessions[].payment aponta pra Payment que não existe mais'
+            });
+          }
+        }
+        if (s.session) {
+          const exists = await sessions.findOne({ _id: s.session }, { projection: { _id: 1 } });
+          if (!exists) {
+            this.addIssue({
+              severity: 'HIGH',
+              category: 'INSURANCE_BATCH_ORPHAN_REF',
+              batchId: batch._id.toString(),
+              batchNumber: batch.batchNumber,
+              sessionId: s.session.toString(),
+              details: 'InsuranceBatch.sessions[].session aponta pra Session que não existe mais'
+            });
+          }
+        }
       }
     }
   }

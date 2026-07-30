@@ -129,6 +129,34 @@ describe('restoreCanceledAppointmentCommand.executeWithSession', () => {
     );
   });
 
+  // Regressão (mesmo achado de restorePackageOnCancel.js, investigação LEDGER_DIVERGENCE
+  // 2026-07-29): appointment.paymentOrigin fica undefined pra sessão per-session completada
+  // (só Session.paymentOrigin é setado no complete). package.paymentType é o sinal confiável.
+  it('regressão — per-session pago com paymentOrigin undefined: restaura totalPaid via package.paymentType', async () => {
+    const sessionDoc = makeSessionDoc({
+      completedAt: new Date(),
+      originalIsPaid: true,
+      originalPaymentStatus: 'paid',
+      originalPartialAmount: 100,
+      originalPaymentMethod: 'pix',
+    });
+    Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(sessionDoc) });
+    Payment.findById.mockReturnValue({
+      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'canceled', kind: 'session_payment' }),
+    });
+
+    const appt = makeAppointment({
+      payment: { _id: 'pay-1' },
+      paymentOrigin: undefined, // reproduz os 6 casos reais
+      package: { _id: 'pkg-1', paymentType: 'per-session' },
+      sessionValue: 100,
+    });
+    const result = await executeWithSession(appt, { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
+
+    expect(result.wasPaid).toBe(true);
+    expect(updatePackageFinancials).toHaveBeenCalledWith('pkg-1', 100, fakeMongoSession);
+  });
+
   it('Payment kind=package_receipt: nunca é restaurado (nunca foi cancelado por essa sessão)', async () => {
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
     Payment.findById.mockReturnValue({
