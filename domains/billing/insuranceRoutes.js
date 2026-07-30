@@ -34,7 +34,13 @@ const router = Router();
 // alguma disparar em produção, o warning abaixo aparece no log com quem chamou.
 function warnDeprecated(routeLabel) {
     return (req, res, next) => {
-        console.warn(`[DEPRECATED] Rota de convênio "${routeLabel}" chamada — candidata a remoção (investigação 2026-07-29), verificar quem ainda usa. IP: ${req.ip}, path: ${req.originalUrl}`);
+        console.warn(
+            `[DEPRECATED] Rota de convênio "${routeLabel}" chamada — candidata a remoção ` +
+            `(investigação 2026-07-29), verificar quem ainda usa. ` +
+            `method=${req.method} path=${req.originalUrl} ip=${req.ip} ` +
+            `userId=${req.user?.id ?? 'não autenticado'} role=${req.user?.role ?? 'n/a'} ` +
+            `userAgent=${req.get('User-Agent') ?? 'n/a'}`
+        );
         next();
     };
 }
