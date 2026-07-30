@@ -167,30 +167,116 @@ export class FinancialAuditEngine {
   async auditAppointmentPaymentStatus() {
     const appointments = this.db.collection('appointments');
     const payments = this.db.collection('payments');
+    const packages = this.db.collection('packages');
 
+    // Appointments marcados como pagos, exceto liminar/crédito judicial.
+    // Liminar: o caixa é reconhecido no recebimento do contrato; a sessão consome
+    // crédito. Não existe Payment individual por sessão esperado.
     const paidAppointments = await appointments.find({
-      $or: [
-        { isPaid: true },
-        { paymentStatus: 'paid' },
-        { paymentStatus: 'package_paid' }
+      $and: [
+        {
+          $or: [
+            { isPaid: true },
+            { paymentStatus: 'paid' },
+            { paymentStatus: 'package_paid' }
+          ]
+        },
+        {
+          billingType: { $ne: 'liminar' },
+          paymentMethod: { $ne: 'liminar_credit' },
+          paymentOrigin: { $ne: 'liminar_credit' },
+          $or: [
+            { liminarContract: { $exists: false } },
+            { liminarContract: null }
+          ]
+        }
       ]
+    }).project({
+      patient: 1,
+      package: 1,
+      billingType: 1,
+      paymentMethod: 1,
+      paymentOrigin: 1,
+      paymentStatus: 1,
+      isPaid: 1
     }).toArray();
 
-    for (const appt of paidAppointments) {
-      const apptPayments = await payments.find({
-        appointment: appt._id,
-        status: 'paid'
-      }).toArray();
+    if (paidAppointments.length === 0) return;
 
-      if (apptPayments.length === 0 && !appt.package) {
+    // Origem financeira válida pode vir de Payment, Package ou recebível convênio.
+    const appointmentIds = paidAppointments.map(a => a._id);
+
+    const paidPayments = await payments.find({
+      $or: [
+        { appointment: { $in: appointmentIds } },
+        { appointmentId: { $in: appointmentIds.map(id => id.toString()) } }
+      ],
+      status: 'paid'
+    }).project({ appointment: 1, appointmentId: 1 }).toArray();
+
+    const convenioPayments = await payments.find({
+      $or: [
+        { appointment: { $in: appointmentIds } },
+        { appointmentId: { $in: appointmentIds.map(id => id.toString()) } }
+      ],
+      billingType: 'convenio',
+      status: { $in: ['pending', 'pending_billing', 'billed', 'received'] }
+    }).project({ appointment: 1, appointmentId: 1, status: 1 }).toArray();
+
+    const packagesByAppointment = await packages.find({
+      appointments: { $in: appointmentIds }
+    }).project({ appointments: 1 }).toArray();
+
+    const resolveAppointmentId = (p) => {
+      if (p.appointment) return p.appointment.toString();
+      if (p.appointmentId) {
+        const str = typeof p.appointmentId === 'string' ? p.appointmentId : p.appointmentId.toString();
+        if (mongoose.Types.ObjectId.isValid(str)) return str;
+      }
+      return null;
+    };
+
+    const paidByAppointment = new Set();
+    for (const p of paidPayments) {
+      const id = resolveAppointmentId(p);
+      if (id) paidByAppointment.add(id);
+    }
+
+    const convenioByAppointment = new Map();
+    for (const p of convenioPayments) {
+      const id = resolveAppointmentId(p);
+      if (id) convenioByAppointment.set(id, p.status);
+    }
+
+    const packageByAppointment = new Set();
+    for (const pkg of packagesByAppointment) {
+      for (const apptId of (pkg.appointments || [])) {
+        packageByAppointment.add(apptId?.toString());
+      }
+    }
+
+    for (const appt of paidAppointments) {
+      const apptId = appt._id.toString();
+      const hasPaidPayment = paidByAppointment.has(apptId);
+      const hasPackage = !!appt.package || packageByAppointment.has(apptId);
+      const hasConvenioReceivable = convenioByAppointment.has(apptId);
+
+      const hasFinancialOrigin = hasPaidPayment || hasPackage || hasConvenioReceivable;
+
+      if (!hasFinancialOrigin) {
+        const originHint = [];
+        if (appt.billingType) originHint.push(`billingType=${appt.billingType}`);
+        if (appt.paymentMethod) originHint.push(`method=${appt.paymentMethod}`);
+        if (appt.paymentOrigin) originHint.push(`origin=${appt.paymentOrigin}`);
+
         this.addIssue({
           severity: 'HIGH',
           category: 'GHOST_PAYMENT_STATUS',
-          appointmentId: appt._id.toString(),
+          appointmentId: apptId,
           patientId: appt.patient?.toString(),
           paymentStatus: appt.paymentStatus,
           isPaid: appt.isPaid,
-          details: 'Appointment marcado como pago mas sem payment e sem package'
+          details: `Appointment marcado como pago mas sem origem financeira válida (${originHint.join(' | ') || 'sem metadados'})`
         });
       }
     }

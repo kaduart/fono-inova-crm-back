@@ -21,12 +21,12 @@ const JSON_MODE = process.argv.includes('--json');
 const CSV_MODE = process.argv.includes('--csv');
 
 async function run() {
-  console.log('🔍 Iniciando Financial Audit Engine...\n');
-  console.time('⏱️ Tempo de execução');
+  if (!JSON_MODE) console.log('🔍 Iniciando Financial Audit Engine...\n');
+  const startTime = Date.now();
 
   const result = await FinancialAuditEngine.run({ mongoUri: MONGO_URI });
 
-  console.timeEnd('⏱️ Tempo de execução');
+  if (!JSON_MODE) console.log(`⏱️ Tempo de execução: ${Date.now() - startTime}ms`);
 
   if (JSON_MODE) {
     console.log(JSON.stringify(result, null, 2));
