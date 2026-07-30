@@ -91,6 +91,7 @@ router.get('/stats', warnDeprecated('getStatsHandler'), getStatsHandler);
 // ADMIN - GERENCIAMENTO DE CONVÊNIOS
 // ============================================
 
+import { auth } from '../../middleware/auth.js';
 import {
     listAllConveniosHandler,
     getConvenioDetailsHandler,
@@ -102,16 +103,19 @@ import {
     validateCodeHandler
 } from './convenioManageController.js';
 
-// CRUD de convênios
-router.get('/admin/convenios', listAllConveniosHandler);
-router.get('/admin/convenios/validar-codigo/:code', validateCodeHandler);
-router.get('/admin/convenios/:code', getConvenioDetailsHandler);
-router.post('/admin/convenios', createConvenioHandler);
-router.put('/admin/convenios/:code', updateConvenioHandler);
-router.delete('/admin/convenios/:code', deactivateConvenioHandler);
-router.post('/admin/convenios/:code/ativar', activateConvenioHandler);
+// CRUD de convênios — gap de auth achado em 2026-07-29 (investigação de arquitetura de
+// convênio): essas rotas nunca tiveram `auth`, nem aqui nem no app.use de server.js.
+// O frontend já manda o JWT em toda chamada (não está na lista de rotas públicas de
+// front/src/services/api.ts), então aplicar auth aqui não deveria quebrar a UI.
+router.get('/admin/convenios', auth, listAllConveniosHandler);
+router.get('/admin/convenios/validar-codigo/:code', auth, validateCodeHandler);
+router.get('/admin/convenios/:code', auth, getConvenioDetailsHandler);
+router.post('/admin/convenios', auth, createConvenioHandler);
+router.put('/admin/convenios/:code', auth, updateConvenioHandler);
+router.delete('/admin/convenios/:code', auth, deactivateConvenioHandler);
+router.post('/admin/convenios/:code/ativar', auth, activateConvenioHandler);
 
 // Importação em massa (Categoria C — validar operacionalmente antes de remover)
-router.post('/admin/convenios/importar', warnDeprecated('importConveniosHandler'), importConveniosHandler);
+router.post('/admin/convenios/importar', auth, warnDeprecated('importConveniosHandler'), importConveniosHandler);
 
 export default router;
