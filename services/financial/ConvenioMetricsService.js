@@ -7,7 +7,7 @@ import Session from '../../models/Session.js';
 import Package from '../../models/Package.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
 import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
-import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
+import { transitionPaymentStatus, batchTransitionStatus } from '../../services/paymentStatusService.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -643,7 +643,6 @@ class ConvenioMetricsService {
      */
     async faturarEmLote({ paymentIds, notaFiscal, dataFaturamento }) {
         const Payment = mongoose.model('Payment');
-        const Package = mongoose.model('Package');
         const Session = mongoose.model('Session');
         
         console.log(`[ConvenioMetrics] Faturando ${paymentIds.length} atendimentos em lote`);
@@ -655,12 +654,19 @@ class ConvenioMetricsService {
             totalValor: 0
         };
 
+        // 1 leitura em lote de todos os payments com package e patient
+        const payments = await Payment.find({ _id: { $in: paymentIds } })
+            .populate('package', 'insuranceProvider insuranceGrossAmount sessionValue')
+            .populate('patient', 'fullName');
+
+        const paymentById = new Map(payments.map(p => [p._id.toString(), p]));
+
+        const paymentBulkOps = [];
+        const sessionBulkOps = [];
+
         for (const paymentId of paymentIds) {
             try {
-                // 🔹 POPULA O PACKAGE para ter acesso ao valor do convênio
-                const payment = await Payment.findById(paymentId)
-                    .populate('package', 'insuranceProvider insuranceGrossAmount sessionValue')
-                    .populate('patient', 'fullName');
+                const payment = paymentById.get(paymentId.toString());
                 
                 if (!payment) {
                     result.erros++;
@@ -674,38 +680,45 @@ class ConvenioMetricsService {
                     continue;
                 }
 
-                // 🔹 DETERMINA O VALOR CORRETO DO CONVÊNIO
-                // Prioridade: 1. insuranceGrossAmount do package, 2. sessionValue do package, 3. valor existente, 4. 0
+                // DETERMINA O VALOR CORRETO DO CONVÊNIO
                 const valorConvenio = payment.package?.insuranceGrossAmount || 
                                      payment.package?.sessionValue || 
                                      payment.insurance?.grossAmount || 
                                      payment.amount || 
                                      0;
 
-                // Atualiza status para faturado
-                payment.insurance.status = 'billed';
-                payment.insurance.billedAt = dataFaturamento;
-                payment.insurance.grossAmount = valorConvenio; // 🔹 GARANTE QUE TEM VALOR
-                payment.amount = valorConvenio; // 🔹 ATUALIZA O AMOUNT TAMBÉM
+                const updateDoc = {
+                    'insurance.status': 'billed',
+                    'insurance.billedAt': dataFaturamento,
+                    'insurance.grossAmount': valorConvenio,
+                    amount: valorConvenio
+                };
                 
                 if (notaFiscal) {
-                    payment.insurance.invoiceNumber = notaFiscal;
+                    updateDoc['insurance.invoiceNumber'] = notaFiscal;
                 }
 
-                await payment.save();
+                paymentBulkOps.push({
+                    updateOne: {
+                        filter: { _id: payment._id },
+                        update: { $set: updateDoc }
+                    }
+                });
 
-                // 🔹 ATUALIZAR SESSION.PAYMENTID para vincular sessão ao payment
+                // Vincular sessão ao payment
                 if (payment.session) {
-                    await Session.updateOne(
-                        { _id: payment.session },
-                        { 
-                            $set: { 
-                                paymentId: payment._id,
-                                isPaid: true,
-                                paidAt: dataFaturamento
-                            } 
+                    sessionBulkOps.push({
+                        updateOne: {
+                            filter: { _id: payment.session },
+                            update: {
+                                $set: {
+                                    paymentId: payment._id,
+                                    isPaid: true,
+                                    paidAt: dataFaturamento
+                                }
+                            }
                         }
-                    );
+                    });
                 }
 
                 result.faturados++;
@@ -722,6 +735,16 @@ class ConvenioMetricsService {
                 result.erros++;
                 result.detalhes.push({ paymentId, status: 'erro', msg: error.message });
             }
+        }
+
+        // 1 bulkWrite para atualizar todos os payments
+        if (paymentBulkOps.length > 0) {
+            await Payment.bulkWrite(paymentBulkOps);
+        }
+
+        // 1 bulkWrite para atualizar todas as sessões
+        if (sessionBulkOps.length > 0) {
+            await Session.bulkWrite(sessionBulkOps);
         }
 
         console.log(`[ConvenioMetrics] Faturamento em lote concluído: ${result.faturados} sucesso, ${result.erros} erros`);
@@ -863,6 +886,8 @@ class ConvenioMetricsService {
      * @returns {Object} resultado
      */
     async receberEmLote({ paymentIds, dataRecebimento }) {
+        const Payment = mongoose.model('Payment');
+        
         const result = {
             recebidos: 0,
             erros: 0,
@@ -870,31 +895,78 @@ class ConvenioMetricsService {
             totalValor: 0
         };
 
+        if (!paymentIds || paymentIds.length === 0) {
+            return result;
+        }
+
+        console.log(`[ConvenioMetrics] Recebendo ${paymentIds.length} pagamentos de convênio em lote`);
+
+        // 1 leitura em lote de todos os payments com package e patient
+        const payments = await Payment.find({ _id: { $in: paymentIds } })
+            .populate('package', 'insuranceProvider insuranceGrossAmount sessionValue')
+            .populate('patient', 'fullName');
+
+        const paymentById = new Map(payments.map(p => [p._id.toString(), p]));
+
+        const bulkOps = [];
+        const transitionIds = [];
+
+        // dataRecebimento chega como string "YYYY-MM-DD". Converter para meia-noite Brasil.
+        const dataRecebimentoBrasilia = moment.tz(dataRecebimento, 'America/Sao_Paulo').startOf('day').toDate();
+
         for (const paymentId of paymentIds) {
             try {
-                const payment = await mongoose.model('Payment').findById(paymentId);
-                
+                const payment = paymentById.get(paymentId.toString());
+
                 if (!payment) {
                     result.erros++;
                     result.detalhes.push({ paymentId, status: 'erro', msg: 'Payment não encontrado' });
                     continue;
                 }
 
-                const valorRecebido = payment.insurance?.grossAmount || 0;
+                // Verifica se já foi recebido (mantém comportamento original: conta como erro)
+                if (payment.insurance?.status === 'received') {
+                    result.erros++;
+                    result.detalhes.push({ paymentId, status: 'erro', msg: 'Pagamento já foi recebido' });
+                    continue;
+                }
 
-                await this.receberPagamentoConvenio({
-                    paymentId,
-                    dataRecebimento,
-                    valorRecebido,
-                    notaFiscal: payment.insurance?.invoiceNumber
+                const valorEfetivo = payment.insurance?.grossAmount || 
+                                     payment.package?.insuranceGrossAmount || 
+                                     payment.package?.sessionValue || 
+                                     payment.amount || 
+                                     0;
+
+                const updateDoc = {
+                    'insurance.status': 'received',
+                    'insurance.receivedAt': dataRecebimento,
+                    'insurance.receivedAmount': valorEfetivo,
+                    'insurance.grossAmount': payment.insurance?.grossAmount || valorEfetivo,
+                    billingType: payment.billingType || 'convenio',
+                    amount: payment.amount || valorEfetivo,
+                    paymentDate: dataRecebimentoBrasilia
+                };
+
+                if (payment.insurance?.invoiceNumber) {
+                    updateDoc['insurance.invoiceNumber'] = payment.insurance.invoiceNumber;
+                }
+
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: payment._id },
+                        update: { $set: updateDoc }
+                    }
                 });
 
+                transitionIds.push(payment._id.toString());
+
                 result.recebidos++;
-                result.totalValor += valorRecebido;
-                result.detalhes.push({ 
-                    paymentId, 
-                    status: 'recebido', 
-                    valor: valorRecebido 
+                result.totalValor += valorEfetivo;
+                result.detalhes.push({
+                    paymentId,
+                    status: 'recebido',
+                    valor: valorEfetivo,
+                    paciente: payment.patient?.fullName
                 });
 
             } catch (error) {
@@ -904,6 +976,26 @@ class ConvenioMetricsService {
             }
         }
 
+        // 1 bulkWrite para atualizar todos os payments
+        if (bulkOps.length > 0) {
+            await Payment.bulkWrite(bulkOps);
+        }
+
+        // Transicionar todos os payments de uma vez (emite eventos via outbox)
+        if (transitionIds.length > 0) {
+            await batchTransitionStatus(
+                transitionIds,
+                'paid',
+                {
+                    paymentMethod: 'convenio',
+                    financialDate: dataRecebimentoBrasilia,
+                    paidAt: dataRecebimentoBrasilia,
+                    reason: 'convenio_metrics_receipt'
+                }
+            );
+        }
+
+        console.log(`[ConvenioMetrics] Recebimento em lote concluído: ${result.recebidos} sucesso, ${result.erros} erros`);
         return result;
     }
 }

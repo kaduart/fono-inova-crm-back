@@ -257,11 +257,11 @@ export async function processReturn(batchId, returnData) {
   // Atualizar totais do lote
   batch.receivedAmount = totalReceived;
   batch.totalGlosa = totalGlosa;
-  
+
   // Determinar status do lote
   const allPaid = batch.sessions.every(s => s.status === 'paid');
   const allProcessed = batch.sessions.every(s => ['paid', 'partial', 'rejected'].includes(s.status));
-  
+
   if (allPaid) {
     batch.status = 'received';
   } else if (allProcessed) {
@@ -269,83 +269,125 @@ export async function processReturn(batchId, returnData) {
   } else {
     batch.status = 'processing';
   }
-  
+
   batch.processedAt = new Date();
   await batch.save();
-  
-  // Atualizar insurance.status dos payments baseado no retorno
-  for (const item of returnData.items || []) {
-    const insuranceStatus = {
-      'paid': 'received',
-      'partial': 'partial',
-      'glosa': 'glosa',
-      'rejected': 'glosa'
-    }[item.status] || 'pending_billing';
-    
-    // Preferencialmente atualiza por paymentId, senão por sessionId
-    const query = item.paymentId 
-      ? { _id: item.paymentId }
-      : { session: item.sessionId };
-    
-    // IDEMPOTÊNCIA: Verifica se payment já foi recebido (exceto se force=true)
-    if (!returnData.force) {
-      const existingPayment = await Payment.findOne(query);
-      if (existingPayment?.insurance?.status === 'received') {
-        console.log(`[InsuranceBatch] Payment ${item.paymentId || item.sessionId} já recebido - ignorando`);
-        continue;
-      }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ATUALIZAÇÃO DOS PAYMENTS — LEITURA EM LOTE + BULKWRITE
+  // ───────────────────────────────────────────────────────────────────────────
+  const items = returnData.items || [];
+  const paymentIds = items.map(item => item.paymentId).filter(Boolean);
+  const sessionIds = items.map(item => item.sessionId).filter(Boolean);
+
+  // 1 leitura de todos os payments relevantes (por _id ou por session)
+  const paymentDocs = await Payment.find({
+    $or: [
+      { _id: { $in: paymentIds.map(id => new mongoose.Types.ObjectId(id)) } },
+      { session: { $in: sessionIds.map(id => new mongoose.Types.ObjectId(id)) } }
+    ]
+  }).lean();
+
+  const paymentById = new Map(paymentDocs.map(p => [p._id.toString(), p]));
+  const paymentBySessionId = new Map();
+  for (const p of paymentDocs) {
+    if (p.session) {
+      paymentBySessionId.set(p.session.toString(), p);
     }
-    
-    const paymentUpdate = {
+  }
+
+  function resolvePayment(item) {
+    if (item.paymentId) return paymentById.get(item.paymentId);
+    if (item.sessionId) return paymentBySessionId.get(item.sessionId);
+    return null;
+  }
+
+  const insuranceStatusMap = {
+    'paid': 'received',
+    'partial': 'partial',
+    'glosa': 'glosa',
+    'rejected': 'glosa'
+  };
+
+  const paidPaymentIds = [];
+  const bulkOps = [];
+  const skipped = [];
+  const receivedAtStr = new Date().toISOString().split('T')[0];
+
+  for (const item of items) {
+    const payment = resolvePayment(item);
+    if (!payment) {
+      console.warn(`[InsuranceBatch] Payment não encontrado para retorno:`, {
+        paymentId: item.paymentId,
+        sessionId: item.sessionId
+      });
+      skipped.push(item);
+      continue;
+    }
+
+    // IDEMPOTÊNCIA: ignorar se já recebido (exceto force=true)
+    if (!returnData.force && payment.insurance?.status === 'received') {
+      console.log(`[InsuranceBatch] Payment ${payment._id} já recebido - ignorando`);
+      skipped.push(item);
+      continue;
+    }
+
+    const insuranceStatus = insuranceStatusMap[item.status] || 'pending_billing';
+    const update = {
       'insurance.status': insuranceStatus,
       'insurance.receivedAmount': item.returnAmount || 0,
       'insurance.glosaAmount': item.glosaAmount || 0,
-      'insurance.receivedAt': new Date().toISOString().split('T')[0]
+      'insurance.receivedAt': receivedAtStr
     };
-    
-    // Se convênio pagou, atualizar status principal via paymentStatusService
-    if (item.status === 'paid') {
-      const mapKey = item.paymentId || item.sessionId;
-      const existingPayment = await Payment.findOne(query);
-      if (existingPayment && existingPayment.status !== 'paid') {
-        await transitionPaymentStatus(existingPayment._id, 'paid', {
-          paymentMethod: 'convenio',
-          financialDate: sessionDateMap.get(mapKey) || new Date(),
-          paidAt: new Date(),
-          reason: 'insurance_return_paid'
-        });
-      }
-      // Remove status/paidAt/financialDate do paymentUpdate pois já tratado
-      delete paymentUpdate.status;
-      delete paymentUpdate.paidAt;
-      delete paymentUpdate.financialDate;
-    }
 
-    await Payment.updateOne(
-      query,
+    bulkOps.push({
+      updateOne: {
+        filter: { _id: payment._id },
+        update: { $set: update }
+      }
+    });
+
+    if (item.status === 'paid') {
+      paidPaymentIds.push(payment._id.toString());
+    }
+  }
+
+  if (bulkOps.length > 0) {
+    await Payment.bulkWrite(bulkOps);
+  }
+
+  // Transicionar payments 'paid' para status principal via paymentStatusService (emite eventos)
+  if (paidPaymentIds.length > 0) {
+    await batchTransitionStatus(
+      paidPaymentIds,
+      'paid',
       {
-        $set: paymentUpdate
+        paymentMethod: 'convenio',
+        reason: 'insurance_return_paid'
+        // financialDate/paidAt são setados pelo transitionPaymentStatus com fallback para new Date()
       }
     );
   }
 
-  // 🏦 LEDGER: registrar insurance_received para payments com status 'received'
-  const receivedItems = (returnData.items || []).filter(i => i.status === 'paid' || i.status === 'partial');
+  // 🏦 LEDGER: registrar insurance_received para payments com status 'paid' ou 'partial'
+  const receivedItems = items.filter(i => i.status === 'paid' || i.status === 'partial');
   for (const item of receivedItems) {
-    const query = item.paymentId ? { _id: item.paymentId } : { session: item.sessionId };
-    const paymentDoc = await Payment.findOne(query).lean();
-    if (paymentDoc) {
-      try {
-        await recordInsuranceReceived(paymentDoc, { receivedAt: new Date() });
-      } catch (ledgerErr) {
-        if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
-          console.warn(`[InsuranceBatch] Ledger received warning:`, ledgerErr.message);
-        }
+    const payment = resolvePayment(item);
+    if (!payment) continue;
+
+    // Se foi ignorado por idempotência, pular ledger também
+    if (!returnData.force && payment.insurance?.status === 'received') continue;
+
+    try {
+      await recordInsuranceReceived(payment, { receivedAt: new Date() });
+    } catch (ledgerErr) {
+      if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+        console.warn(`[InsuranceBatch] Ledger received warning:`, ledgerErr.message);
       }
     }
   }
-  
-  console.log(`[InsuranceBatch] Retorno processado: ${totalReceived} recebido, ${totalGlosa} glosa, ${returnData.items?.length || 0} payments atualizados`);
+
+  console.log(`[InsuranceBatch] Retorno processado: ${totalReceived} recebido, ${totalGlosa} glosa, ${items.length} itens, ${bulkOps.length} payments atualizados, ${paidPaymentIds.length} transicionados para paid, ${skipped.length} ignorados`);
   
   // Log de auditoria
   console.log('[InsuranceBatch] Auditoria do lote:', {

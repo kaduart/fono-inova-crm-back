@@ -1674,13 +1674,14 @@ async function calculateRealTime(year, month) {
     };
 }
 
-async function calculateAReceber(year, month) {
-    const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
-    const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
+export async function calculateAReceber(year, month) {
+    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
+    const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
 
     // INV-4: A Receber = Session.completed → Payment.pending (evento de domínio)
     // Ancora em serviceDate/paymentDate; createdAt removido — inflava R$14.480 de phantoms
-    const payments = await Payment.find({
+    // Filtro por data e por operationalStatus feito no MongoDB (não em JS).
+    const match = {
         status: 'pending',
         $and: [
             {
@@ -1692,19 +1693,41 @@ async function calculateAReceber(year, month) {
             },
             {
                 $or: [
-                    { paymentDate: { $gte: startStr, $lte: endStr } },
-                    { serviceDate: { $gte: startStr, $lte: endStr } }
+                    { paymentDate: { $gte: start, $lte: end } },
+                    { serviceDate: { $gte: start, $lte: end } }
                 ]
             }
         ]
-    }).populate('appointment', 'operationalStatus').lean();
+    };
 
-    // INV-4: inclui apenas pagamentos de sessões já realizadas
-    const realizados = payments.filter(p =>
-        !p.appointment || p.appointment?.operationalStatus === 'completed'
-    );
+    const agg = await Payment.aggregate([
+        { $match: match },
+        {
+            $lookup: {
+                from: 'appointments',
+                localField: 'appointment',
+                foreignField: '_id',
+                as: 'appointmentLookup'
+            }
+        },
+        {
+            $match: {
+                $or: [
+                    { appointmentLookup: { $size: 0 } },
+                    { 'appointmentLookup.0.operationalStatus': 'completed' }
+                ]
+            }
+        },
+        {
+            $group: {
+                _id: null,
+                total: { $sum: '$amount' },
+                count: { $sum: 1 }
+            }
+        }
+    ]);
 
-    const total = realizados.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const total = agg[0]?.total || 0;
     return { total: parseFloat(total.toFixed(2)), mesAtual: parseFloat(total.toFixed(2)), historico: 0 };
 }
 
@@ -2059,7 +2082,70 @@ function calculateIndicadores(caixa, producao, despesasTotal, metas) {
     };
 }
 
-async function calculatePendentes(year, month) {
+/**
+ * Busca payments pendentes filtrados por competência no MongoDB.
+ * Faz lookup seletivo de appointment, patient e doctor via aggregation.
+ * Mantém contrato compatível com populate do Mongoose (campos vêm como objetos).
+ */
+async function fetchPendingPaymentsByDateRange(start, end) {
+    return Payment.aggregate([
+        // Primeiro filtro: status pending e candidato por data (paymentDate/serviceDate) ou por appointment
+        {
+            $match: {
+                status: 'pending',
+                $or: [
+                    { paymentDate: { $gte: start, $lte: end } },
+                    { serviceDate: { $gte: start, $lte: end } },
+                    { appointment: { $exists: true, $ne: null } }
+                ]
+            }
+        },
+        // Lookup seletivo para decisão de data e regras de negócio
+        {
+            $lookup: {
+                from: 'appointments',
+                localField: 'appointment',
+                foreignField: '_id',
+                as: 'appointmentArr'
+            }
+        },
+        { $addFields: { appointment: { $arrayElemAt: ['$appointmentArr', 0] } } },
+        {
+            $lookup: {
+                from: 'patients',
+                localField: 'patient',
+                foreignField: '_id',
+                as: 'patientArr'
+            }
+        },
+        { $addFields: { patient: { $arrayElemAt: ['$patientArr', 0] } } },
+        {
+            $lookup: {
+                from: 'doctors',
+                localField: 'doctor',
+                foreignField: '_id',
+                as: 'doctorArr'
+            }
+        },
+        { $addFields: { doctor: { $arrayElemAt: ['$doctorArr', 0] } } },
+        // Filtro final por competência: qualquer uma das datas cai no range
+        {
+            $match: {
+                $or: [
+                    { paymentDate: { $gte: start, $lte: end } },
+                    { serviceDate: { $gte: start, $lte: end } },
+                    { 'appointment.date': { $gte: start, $lte: end } }
+                ]
+            }
+        },
+        // Remove arrays auxiliares do lookup
+        { $project: { appointmentArr: 0, patientArr: 0, doctorArr: 0 } }
+    ]).allowDiskUse(true);
+}
+
+export async function calculatePendentes(year, month) {
+    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').toDate();
+    const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').toDate();
     const startStr = moment.tz([year, month - 1], TIMEZONE).startOf('month').format('YYYY-MM-DD');
     const endStr = moment.tz([year, month - 1], TIMEZONE).endOf('month').format('YYYY-MM-DD');
 
@@ -2072,16 +2158,16 @@ async function calculatePendentes(year, month) {
 
     const _t0 = Date.now();
 
-    // Única query: busca todos os pending com populates necessários para processamento
-    // allPendingTotal e allParticularTotal são calculados do mesmo dataset
-    const paymentsAll = await Payment.find({ status: 'pending' })
-        .populate('patient', 'fullName')
-        .populate('doctor', 'fullName specialty')
-        .populate('appointment', 'date time operationalStatus')
-        .lean();
+    // Query filtrada por competência no MongoDB — não carrega todo o histórico de pendentes.
+    const paymentsAll = await fetchPendingPaymentsByDateRange(start, end);
     console.log(`[pendentes] paymentsAll.find+populate = ${Date.now() - _t0}ms (${paymentsAll.length} docs)`);
 
-    const allPendingTotal = paymentsAll.reduce((s, p) => s + (p.amount || 0), 0);
+    // Total absoluto de pendentes calculado via aggregation (não requer carregar todos)
+    const allPendingTotalAgg = await Payment.aggregate([
+        { $match: { status: 'pending' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const allPendingTotal = allPendingTotalAgg[0]?.total || 0;
 
     let convenioTotal = 0;
     let particularTotal = 0;
@@ -2095,7 +2181,7 @@ async function calculatePendentes(year, month) {
         const valor = p.amount || 0;
 
         // Determina a data relevante para filtro de mês
-        // appointment.date é ISODate (Date object), paymentDate/serviceDate são strings
+        // appointment.date é ISODate (Date object), paymentDate/serviceDate são Date objects
         let dataRef = null;
         if (p.appointment?.date) {
             dataRef = moment(p.appointment.date).format('YYYY-MM-DD');
@@ -2104,7 +2190,7 @@ async function calculatePendentes(year, month) {
         } else if (p.serviceDate) {
             dataRef = moment(p.serviceDate).format('YYYY-MM-DD');
         }
-        
+
         // Se não tem data de referência, inclui mesmo assim (payment órfão)
         const dentroDoMes = !dataRef || (dataRef >= startStr && dataRef <= endStr);
 
@@ -2177,7 +2263,7 @@ async function calculatePendentes(year, month) {
         const valor = p.amount || 0;
         const isConvenio = p.billingType === 'convenio' || p.paymentMethod === 'convenio';
         const btype = isConvenio ? 'convenio' : 'particular';
-        
+
         // byPatient — apenas particular (convênio não é dívida do paciente)
         const pid = p.patient?._id?.toString() || p.patientId;
         if (pid && !isConvenio) {
@@ -2239,18 +2325,8 @@ async function calculatePendentes(year, month) {
         byBillingType[btype].items.push({ _id: p._id, amount: valor, data: p.appointment?.date || p.paymentDate });
     }
 
-    // Dívida de competência anterior: pending, não-convênio, sessão REALMENTE realizada
-    // (appointment.operationalStatus === 'completed'), com data anterior ao mês selecionado.
-    // NAO usar allParticularTotal - mesMesAtual (residual): mistura payments de agendamentos
-    // futuros/não realizados com dívida real, inflando o valor (achado 2026-07-23).
-    const previousCompetencePayments = paymentsAll.filter(p => {
-        if (p.billingType === 'convenio' || p.paymentMethod === 'convenio') return false;
-        if (p.appointment?.operationalStatus !== 'completed') return false;
-        const dataRef = p.appointment?.date ? moment(p.appointment.date).format('YYYY-MM-DD')
-            : p.paymentDate ? moment(p.paymentDate).format('YYYY-MM-DD')
-            : p.serviceDate ? moment(p.serviceDate).format('YYYY-MM-DD') : null;
-        return dataRef && dataRef < startStr;
-    });
+    // Dívida de competência anterior: busca filtrada no MongoDB em vez de iterar todo histórico
+    const previousCompetencePayments = await fetchPendingPaymentsPreviousCompetence(start, startStr);
     const previousCompetenceTotal = previousCompetencePayments.reduce((s, p) => s + (p.amount || 0), 0);
 
     console.log(`[pendentes] TOTAL = ${Date.now() - _t0}ms`);
@@ -2306,6 +2382,52 @@ async function calculatePendentes(year, month) {
     };
     setPendentesCached(cacheKey, result);
     return result;
+}
+
+/**
+ * Busca payments pendentes de competências anteriores ao mês.
+ * Critérios: particular, appointment completed, data < startStr.
+ */
+async function fetchPendingPaymentsPreviousCompetence(start, startStr) {
+    return Payment.aggregate([
+        {
+            $match: {
+                status: 'pending',
+                billingType: { $nin: ['convenio'] },
+                paymentMethod: { $nin: ['convenio'] },
+                appointment: { $exists: true, $ne: null }
+            }
+        },
+        {
+            $lookup: {
+                from: 'appointments',
+                localField: 'appointment',
+                foreignField: '_id',
+                as: 'appointmentArr'
+            }
+        },
+        { $addFields: { appointment: { $arrayElemAt: ['$appointmentArr', 0] } } },
+        {
+            $lookup: {
+                from: 'patients',
+                localField: 'patient',
+                foreignField: '_id',
+                as: 'patientArr'
+            }
+        },
+        { $addFields: { patient: { $arrayElemAt: ['$patientArr', 0] } } },
+        {
+            $match: {
+                'appointment.operationalStatus': 'completed',
+                $or: [
+                    { paymentDate: { $lt: start } },
+                    { serviceDate: { $lt: start } },
+                    { 'appointment.date': { $lt: start } }
+                ]
+            }
+        },
+        { $project: { appointmentArr: 0, patientArr: 0 } }
+    ]).allowDiskUse(true);
 }
 
 // GET /v2/financial/dashboard/sanity-check

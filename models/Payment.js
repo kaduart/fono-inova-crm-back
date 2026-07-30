@@ -330,6 +330,9 @@ paymentSchema.index({ patientId: 1, status: 1 });
 paymentSchema.index({ status: 1, financialDate: -1, amount: 1, kind: 1 }, { name: 'financial_cash_status_date' });
 paymentSchema.index({ status: 1, doctor: 1, financialDate: -1 }, { name: 'financial_doctor_cash_status_date' });
 
+// 💰 Índices para pendentes / a receber — filtro por status + data (serviceDate como fallback)
+paymentSchema.index({ status: 1, serviceDate: -1 }, { name: 'pendentes_status_serviceDate' });
+
 // 💰 Cobertura dos ramos de fallback do calculateCashTotal ($or com paymentDate/createdAt)
 // Ramo 2/3: financialDate=null → paymentDate como data primária (legado)
 paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
