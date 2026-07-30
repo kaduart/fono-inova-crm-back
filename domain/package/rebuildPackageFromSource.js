@@ -25,16 +25,26 @@ import { buildPackageView } from '../../domains/billing/services/PackageProjecti
  * @param {mongoose.ClientSession} options.mongoSession
  * @returns {Promise<Object>} estado reconstruído
  */
-async function rebuildPackageFromSource(packageId, options = {}) {
+/**
+ * Calcula o estado reconstruído de um Package a partir das fontes de verdade.
+ * NÃO persiste — retorna apenas o estado calculado.
+ */
+async function calculatePackageState(packageId, options = {}) {
   const { mongoSession } = options;
   const sessionOpt = mongoSession ? { session: mongoSession } : {};
 
+  // ─── Carrega o package atual ───
+  const pkg = await Package.findById(packageId, null, sessionOpt).lean();
+  if (!pkg) {
+    throw new Error(`Package ${packageId} not found`);
+  }
+
   // ─── Fonte de verdade: Sessions ───
   const sessions = await Session.find({ package: packageId }, null, sessionOpt).lean();
-  
+
   const completedSessions = sessions.filter(s => s.status === 'completed');
   const canceledSessions  = sessions.filter(s => s.status === 'canceled' || s.status === 'cancelled');
-  const activeSessions    = sessions.filter(s => 
+  const activeSessions    = sessions.filter(s =>
     ['scheduled', 'pending', 'unpaid', 'pre_agendado'].includes(s.status)
   );
 
@@ -52,17 +62,19 @@ async function rebuildPackageFromSource(packageId, options = {}) {
 
   // ─── Recálculo dos campos derivados ───
   const sessionValue = pkg.sessionValue || sessions[0]?.sessionValue || sessions[0]?.value || 0;
-  
+
   // 🔥 PRESERVAR contrato original: totalSessions/totalValue são do pacote, não do banco
   const totalSessions = pkg.totalSessions || sessions.length;
   const totalValue = pkg.totalValue || (totalSessions * sessionValue);
-  
+
   const sessionsDone = completedSessions.length;
   const sessionsCanceled = canceledSessions.length;
   const sessionsUsed = sessionsDone; // compatibilidade
   const sessionsRemaining = Math.max(0, totalSessions - sessionsDone - sessionsCanceled);
 
-  // Balance: quanto ainda está "disponível" em crédito
+  // 🎯 consumedValue: valor estimado das sessões já consumidas (separado de totalPaid)
+  // 💰 totalPaid: soma real dos payments (fonte de verdade financeira)
+  // ⚖️ balance: crédito restante quando totalPaid > consumedValue
   const consumedValue = sessionsDone * sessionValue;
   const balance = Math.max(0, totalPaid - consumedValue);
 
@@ -82,30 +94,61 @@ async function rebuildPackageFromSource(packageId, options = {}) {
     financialStatus = 'partially_paid';
   }
 
+  return {
+    packageId: packageId.toString(),
+    pkg,
+    sessions,
+    appointments,
+    payments,
+    totalSessions,
+    sessionsDone,
+    sessionsCanceled,
+    sessionsUsed,
+    sessionsRemaining,
+    totalValue,
+    sessionValue,
+    totalPaid,
+    consumedValue,
+    balance,
+    status,
+    financialStatus
+  };
+}
+
+/**
+ * Recalcula e persiste o estado derivado de um Package
+ */
+async function rebuildPackageFromSource(packageId, options = {}) {
+  const { mongoSession } = options;
+  const sessionOpt = mongoSession ? { session: mongoSession } : {};
+
+  const state = await calculatePackageState(packageId, options);
+
   // ─── Persistir (usando $set para não tocar em metadata) ───
   const update = {
     $set: {
       // Arrays legados são reconstruídos com IDs REAIS que existem no banco
-      sessions: sessions.map(s => s._id),
-      appointments: appointments.map(a => a._id),
-      
+      sessions: state.sessions.map(s => s._id),
+      appointments: state.appointments.map(a => a._id),
+
       // Contadores derivados
-      totalSessions,
-      sessionsDone,
-      sessionsCanceled,
-      sessionsUsed,
-      sessionsRemaining,
-      
+      totalSessions: state.totalSessions,
+      sessionsDone: state.sessionsDone,
+      sessionsCanceled: state.sessionsCanceled,
+      sessionsUsed: state.sessionsUsed,
+      sessionsRemaining: state.sessionsRemaining,
+
       // Financeiro
-      totalValue,
-      totalPaid,
-      balance,
-      sessionValue: sessionValue || undefined,
-      
+      totalValue: state.totalValue,
+      totalPaid: state.totalPaid,
+      consumedValue: state.consumedValue,
+      balance: state.balance,
+      sessionValue: state.sessionValue || undefined,
+
       // Status
-      status,
-      financialStatus,
-      
+      status: state.status,
+      financialStatus: state.financialStatus,
+
       updatedAt: new Date()
     },
     // Remove campos fantasmas criados por bugs antigos
@@ -124,18 +167,19 @@ async function rebuildPackageFromSource(packageId, options = {}) {
   }
 
   return {
-    packageId: packageId.toString(),
-    totalSessions,
-    sessionsDone,
-    sessionsCanceled,
-    sessionsRemaining,
-    totalPaid,
-    balance,
-    status,
-    financialStatus,
-    sessionCount: sessions.length,
-    appointmentCount: appointments.length,
-    paymentCount: payments.length
+    packageId: state.packageId,
+    totalSessions: state.totalSessions,
+    sessionsDone: state.sessionsDone,
+    sessionsCanceled: state.sessionsCanceled,
+    sessionsRemaining: state.sessionsRemaining,
+    totalPaid: state.totalPaid,
+    consumedValue: state.consumedValue,
+    balance: state.balance,
+    status: state.status,
+    financialStatus: state.financialStatus,
+    sessionCount: state.sessions.length,
+    appointmentCount: state.appointments.length,
+    paymentCount: state.payments.length
   };
 }
 
@@ -146,12 +190,13 @@ async function auditPackage(packageId) {
   const pkg = await Package.findById(packageId).lean();
   if (!pkg) return null;
 
-  const rebuilt = await rebuildPackageFromSource(packageId);
-  
+  const rebuilt = await calculatePackageState(packageId);
+
   const issues = [];
   if (pkg.sessionsDone !== rebuilt.sessionsDone) issues.push(`sessionsDone: ${pkg.sessionsDone} → ${rebuilt.sessionsDone}`);
   if (pkg.totalSessions !== rebuilt.totalSessions) issues.push(`totalSessions: ${pkg.totalSessions} → ${rebuilt.totalSessions}`);
   if (Math.abs((pkg.totalPaid || 0) - rebuilt.totalPaid) > 0.01) issues.push(`totalPaid: ${pkg.totalPaid} → ${rebuilt.totalPaid}`);
+  if (Math.abs((pkg.consumedValue || 0) - rebuilt.consumedValue) > 0.01) issues.push(`consumedValue: ${pkg.consumedValue} → ${rebuilt.consumedValue}`);
   if (pkg.status !== rebuilt.status) issues.push(`status: ${pkg.status} → ${rebuilt.status}`);
 
   return {
@@ -162,13 +207,27 @@ async function auditPackage(packageId) {
       sessionsDone: pkg.sessionsDone,
       totalSessions: pkg.totalSessions,
       totalPaid: pkg.totalPaid,
+      consumedValue: pkg.consumedValue,
       status: pkg.status
     },
-    rebuilt
+    rebuilt: {
+      packageId: rebuilt.packageId,
+      totalSessions: rebuilt.totalSessions,
+      sessionsDone: rebuilt.sessionsDone,
+      sessionsCanceled: rebuilt.sessionsCanceled,
+      sessionsRemaining: rebuilt.sessionsRemaining,
+      totalValue: rebuilt.totalValue,
+      totalPaid: rebuilt.totalPaid,
+      consumedValue: rebuilt.consumedValue,
+      balance: rebuilt.balance,
+      status: rebuilt.status,
+      financialStatus: rebuilt.financialStatus
+    }
   };
 }
 
 export {
+  calculatePackageState,
   rebuildPackageFromSource,
   auditPackage
 };

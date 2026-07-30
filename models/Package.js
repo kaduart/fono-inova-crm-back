@@ -81,11 +81,97 @@ const packageSchema = new mongoose.Schema({
     description: 'Número de sessões canceladas no pacote'
   },
 
+  /**
+   * 💰 VALOR FINANCEIRO REALMENTE RECEBIDO
+   *
+   * Deve refletir o dinheiro que efetivamente entrou no caixa para este pacote:
+   * SUM(Payment.amount WHERE status='paid' AND package=this._id)
+   *
+   * ⚠️ HISTÓRICO: por anos este campo foi usado como "valor consumido"
+   * (sessões pagas × sessionValue), o que gerava distorção quando havia
+   * remarcações, sessões extras ou pagamentos parciais.
+   *
+   * 🔧 MIGRAÇÃO EM ANDAMENTO (PR B):
+   * - B1: adicionar consumedValue
+   * - B2: leituras operacionais passam a usar consumedValue
+   * - B3: totalPaid passa a refletir apenas payments reais
+   * - B4: backfill dos dados históricos
+   *
+   * NÃO usar totalPaid para saber "quanto de sessão foi consumido".
+   * Use consumedValue para isso.
+   */
   totalPaid: {
     type: Number,
     default: 0,
-    description: 'Valor total já pago pelo paciente neste pacote'
+    description: 'Valor financeiro realmente pago pelo paciente neste pacote (SUM payments paid)'
   },
+
+  /**
+   * 🎯 VALOR CONSUMIDO EM SESSÕES
+   *
+   * Representa o valor das sessões já consumidas/quitadas do pacote,
+   * calculado como: sessões consumíveis × sessionValue.
+   *
+   * Diferente de totalPaid, que é o dinheiro que efetivamente entrou.
+   *
+   * Exemplo:
+   * - Pacote 4 sessões × R$180 = R$720 pago
+   * - Adicionou 2 sessões extras (6 total consumidas)
+   * - consumedValue = 6 × R$180 = R$1080
+   * - totalPaid = R$720
+   *
+   * Isso permite identificar pacotes com consumo maior que o pago.
+   */
+  consumedValue: {
+    type: Number,
+    default: 0,
+    description: 'Valor estimado das sessões já consumidas no pacote (sessões × sessionValue)'
+  },
+
+  /**
+   * ⚖️ BALANCE FINANCEIRO
+   *
+   * Quanto ainda falta receber para quitar o pacote:
+   * financialBalance = totalValue - totalPaid
+   *
+   * Quando zero, o pacote está quitado financeiramente.
+   */
+  financialBalance: {
+    type: Number,
+    default: 0,
+    description: 'Saldo financeiro a receber (totalValue - totalPaid)'
+  },
+
+  /**
+   * ⚖️ BALANCE DE CONSUMO
+   *
+   * Quanto de crédito de sessões ainda existe:
+   * consumptionBalance = totalValue - consumedValue
+   *
+   * Pode ficar negativo quando o paciente consome mais sessões do que contratou.
+   */
+  consumptionBalance: {
+    type: Number,
+    default: 0,
+    description: 'Saldo de sessões/crédito restante (totalValue - consumedValue)'
+  },
+
+  /**
+   * 🏛️ CAMPO LEGADO — MANTIDO APENAS POR COMPATIBILIDADE
+   *
+   * O campo `balance` histórico misturava financeiro e consumo. Depois da PR B
+   * ele continua populado, mas novas regras de negócio devem usar:
+   * - financialBalance   para decisões financeiras
+   * - consumptionBalance para decisões operacionais de crédito de sessões
+   *
+   * TODO: deprecar/remover após migrar todos os consumidores.
+   */
+  balance: {
+    type: Number,
+    default: 0,
+    description: '[LEGADO] Mantido por compatibilidade — usar financialBalance ou consumptionBalance'
+  },
+
   totalValue: {
     type: Number,
     required: true,
@@ -233,12 +319,19 @@ packageSchema.set('toJSON', { virtuals: true });
 packageSchema.set('toObject', { virtuals: true })
 
 packageSchema.pre('save', function (next) {
-  // ✅ USAR totalValue FIXO:
   if (this.totalValue !== undefined && !isNaN(this.totalValue)) {
-    this.balance = this.totalValue - (this.totalPaid || 0);
+    // 💰 Balance financeiro: quanto falta receber
+    this.financialBalance = this.totalValue - (this.totalPaid || 0);
+
+    // 🎯 Balance de consumo: quanto de crédito de sessões ainda existe
+    // Pode ser negativo quando o paciente consome mais sessões do que contratou
+    this.consumptionBalance = this.totalValue - (this.consumedValue || 0);
+
+    // 🏛️ Campo legado mantido por compatibilidade: reflete o balance financeiro
+    this.balance = this.financialBalance;
   }
 
-  // Status financeiro
+  // Status financeiro baseado no dinheiro realmente recebido
   if (this.totalPaid === 0) {
     this.financialStatus = 'unpaid';
   } else if (this.totalPaid < this.totalValue) {

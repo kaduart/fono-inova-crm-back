@@ -216,8 +216,10 @@ const calcularCreditoPacotes = async (periodo) => {
     
     // Crédito = sessões pagas - sessões feitas (mas limitado às sessões agendadas)
     // Se o paciente tem mais crédito do que sessões agendadas, limitamos ao agendado
-    const sessoesPagas = pkg.paidSessions || 
-                         Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
+    // 🎯 consumedValue é a fonte correta para "sessões pagas/consumidas".
+    // totalPaid passa a refletir apenas dinheiro realmente recebido (PR B3).
+    const sessoesPagas = pkg.paidSessions ||
+                         Math.floor((pkg.consumedValue || 0) / (pkg.sessionValue || 1));
     const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
     const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
     

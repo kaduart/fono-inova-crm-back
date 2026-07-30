@@ -1494,7 +1494,11 @@ router.post('/bulk-settle', auth, async (req, res) => {
             for (const pkg of packages) {
                 const pkgId = pkg._id.toString();
                 const paidCount = paidCountByPkg.get(pkgId) || 0;
-                const totalPaid = paidCount * (pkg.sessionValue || 0);
+                // 🎯 consumedValue = valor estimado das sessões quitadas (independente do dinheiro real)
+                const consumedValue = paidCount * (pkg.sessionValue || 0);
+                // ⚠️ totalPaid ainda reflete consumedValue neste endpoint por compatibilidade histórica.
+                // Será corrigido na PR B3 para refletir SUM(Payment.amount paid).
+                const totalPaid = consumedValue;
                 const balance = Math.max(0, (pkg.totalValue || 0) - totalPaid);
                 let financialStatus = 'unpaid';
                 if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
@@ -1503,7 +1507,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
                 packageBulkOps.push({
                     updateOne: {
                         filter: { _id: pkg._id },
-                        update: { $set: { totalPaid, balance, financialStatus, updatedAt: now } }
+                        update: { $set: { totalPaid, consumedValue, balance, financialStatus, updatedAt: now } }
                     }
                 });
                 affectedPackageIds.push(pkgId);

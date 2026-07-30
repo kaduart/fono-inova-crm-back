@@ -412,7 +412,9 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       const sessoesFeitas = sessoesValidas.filter(s => s.status === 'completed').length;
       const sessoesAgendadas = sessoesValidas.filter(s => ['scheduled', 'confirmed'].includes(s.status)).length;
 
-      const sessoesPagas = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
+      // 🎯 consumedValue é a fonte correta para "sessões pagas/consumidas".
+      // totalPaid passa a refletir apenas dinheiro realmente recebido (PR B3).
+      const sessoesPagas = pkg.paidSessions || Math.floor((pkg.consumedValue || 0) / (pkg.sessionValue || 1));
       const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
       const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
       const valor = sessoesRemanescentes * (pkg.sessionValue || 0);

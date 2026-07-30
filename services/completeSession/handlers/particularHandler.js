@@ -96,6 +96,7 @@ export const ParticularHandler = {
                     packageId,
                     {
                         $set: {
+                            consumedValue: usedValue,
                             balance: newBalance,
                             financialStatus: newFinancialStatus,
                             updatedAt: new Date()

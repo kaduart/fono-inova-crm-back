@@ -289,7 +289,9 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       const stats           = sessoesMap.get(pkg._id.toString());
       const sessoesFeitas   = stats?.feitas    || 0;
       const sessoesAgendadas = stats?.agendadas || 0;
-      const sessoesPagas    = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
+      // 🎯 consumedValue é a fonte correta para "quanto de sessão foi pago/consumido".
+      // totalPaid passa a refletir apenas dinheiro realmente recebido (PR B3).
+      const sessoesPagas    = pkg.paidSessions || Math.floor((pkg.consumedValue || 0) / (pkg.sessionValue || 1));
       const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
       const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
       const valor = sessoesRemanescentes * (pkg.sessionValue || 0);

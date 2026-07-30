@@ -110,6 +110,10 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
 
   const balance = Math.max(safeTotalValue - safeTotalPaid, 0);
 
+  // 🎯 consumedValue = soma do valor consumido nas sessões (partialAmount)
+  // 💰 totalPaid neste fluxo ainda reflete consumedValue por compatibilidade histórica.
+  //    Será ajustado na PR B3 para refletir o ledger real de payments.
+  pkg.consumedValue = safeTotalPaid;
   pkg.totalPaid = safeTotalPaid;
   pkg.balance = balance;
   pkg.paidSessions = allSessions.filter(s => s.paymentStatus === 'paid').length;
