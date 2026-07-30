@@ -252,34 +252,4 @@ export function createReprocessRequestedEvent(batchId, reprocessData, correlatio
 // EVENT HANDLER MAP
 // ============================================
 
-/**
- * Mapeia eventos para handlers (para uso no orchestrator)
- */
-export const insuranceEventHandlers = {
-    [InsuranceEventTypes.INSURANCE_BATCH_CREATED]: 'handleBatchCreated',
-    [InsuranceEventTypes.INSURANCE_BATCH_SENT]: 'handleBatchSent',
-    [InsuranceEventTypes.INSURANCE_ITEM_APPROVED]: 'handleItemApproved',
-    [InsuranceEventTypes.INSURANCE_ITEM_REJECTED]: 'handleItemRejected',
-    [InsuranceEventTypes.INSURANCE_PAYMENT_RECEIVED]: 'handlePaymentReceived',
-    [InsuranceEventTypes.INSURANCE_BATCH_REPROCESS_REQUESTED]: 'handleReprocessRequested'
-};
-
-// ============================================
-// QUEUE MAPPING
-// ============================================
-
-/**
- * Mapeia eventos para filas BullMQ
- */
-export const insuranceEventToQueueMap = {
-    [InsuranceEventTypes.INSURANCE_BATCH_CREATED]: 'insurance-orchestrator',
-    [InsuranceEventTypes.INSURANCE_BATCH_SEALED]: 'insurance-processing',
-    [InsuranceEventTypes.INSURANCE_BATCH_SENT]: 'insurance-awaiting-response',
-    [InsuranceEventTypes.INSURANCE_BATCH_ACKNOWLEDGED]: 'insurance-processing',
-    [InsuranceEventTypes.INSURANCE_ITEM_APPROVED]: 'insurance-completed',
-    [InsuranceEventTypes.INSURANCE_ITEM_REJECTED]: 'insurance-glosa-handling',
-    [InsuranceEventTypes.INSURANCE_PAYMENT_RECEIVED]: 'insurance-reconciliation',
-    [InsuranceEventTypes.INSURANCE_BATCH_REPROCESS_REQUESTED]: 'insurance-orchestrator'
-};
-
 export default InsuranceEventTypes;

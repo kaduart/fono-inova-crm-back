@@ -33,7 +33,6 @@ import { startSessionWorker } from '../domains/clinical/workers/sessionWorker.js
 
 import { startIntegrationOrchestratorWorker } from '../domains/integration/workers/integrationOrchestratorWorker.js';
 import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
-import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/insuranceOrchestratorWorker.js';
 
 import { startLeadOrchestratorWorkerV2 } from '../domains/whatsapp/workers/leadOrchestratorWorker.v2.js';
 
@@ -105,7 +104,10 @@ const GROUPS = {
     if (isEnabled('ENABLE_BILLING_PACKAGE_PROCESSING')) workers.push(packageProcessingWorker);
     if (isEnabled('ENABLE_BILLING_COMMUNICATION_EMAIL', true)) workers.push(communicationEmailWorker);
     if (isEnabled('ENABLE_BILLING_CONSUMER')) workers.push(startBillingConsumerWorker());
-    if (isEnabled('ENABLE_BILLING_INSURANCE')) workers.push(startInsuranceOrchestratorWorker());
+    // insuranceOrchestratorWorker desregistrado em 2026-07-29: fila 'insurance-orchestrator'
+    // nunca recebe eventos reais (nenhum publisher de INSURANCE_BATCH_* ativo no pipeline em
+    // uso hoje). Código mantido em domains/billing/workers/insuranceOrchestratorWorker.js —
+    // ver investigação de arquitetura de convênio antes de reativar ou remover de vez.
     if (isEnabled('ENABLE_BILLING_COMMISSION_GENERATION', true)) workers.push(startCommissionGenerationWorker());
 
     console.log('[Registry] billing ok');

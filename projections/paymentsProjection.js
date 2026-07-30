@@ -49,9 +49,11 @@ export async function handlePaymentEvent(event) {
  */
 async function upsertPaymentProjection(paymentId) {
     const payment = await Payment.findById(paymentId)
-        .populate('appointmentId', 'date time status')
-        .populate('packageId', '_id name')
-        .populate('sessionId', '_id date time')
+        .populate({ path: 'patient', select: 'fullName phone phoneNumber', strictPopulate: false })
+        .populate({ path: 'doctor', select: 'fullName specialty', strictPopulate: false })
+        .populate({ path: 'appointment', select: 'date time status', strictPopulate: false })
+        .populate({ path: 'package', select: '_id name', strictPopulate: false })
+        .populate({ path: 'session', select: '_id date time', strictPopulate: false })
         .lean();
     
     if (!payment) {

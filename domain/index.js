@@ -16,8 +16,5 @@ export {
     updatePackageFinancials 
 } from './package/consumePackageSession.js';
 
-// Insurance
-export { consumeInsuranceGuide, createInsurancePayment } from './insurance/consumeInsuranceGuide.js';
-
 // Liminar
 export { recognizeLiminarRevenue } from './liminar/recognizeRevenue.js';
