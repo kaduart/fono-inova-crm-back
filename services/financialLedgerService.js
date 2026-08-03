@@ -177,11 +177,11 @@ export async function recordInsuranceBilled(payment, options = {}, mongoSession)
  * Registra recebimento de convênio (entrada de caixa)
  */
 export async function recordInsuranceReceived(payment, options = {}, mongoSession) {
-    const { userId, userName, correlationId, receivedAt } = options;
+    const { userId, userName, correlationId, receivedAt, receivedAmount } = options;
     
     return FinancialLedger.credit({
         type: 'insurance_received',
-        amount: payment.insurance?.receivedAmount || payment.amount || 0,
+        amount: receivedAmount ?? payment.insurance?.receivedAmount ?? payment.amount ?? 0,
         billingType: 'convenio',
         patient: payment.patient,
         appointment: payment.appointment,

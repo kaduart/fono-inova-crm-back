@@ -986,11 +986,22 @@ export async function getInsuranceHistory(req, res) {
     };
     if (provider) avulsoFilter['insurance.provider'] = provider;
 
-    // ── Round 1: 3 fontes em paralelo ─────────────────────────────────
-    const [batches, packages, avulsoPayments] = await Promise.all([
+    const guideFilter = provider
+      ? { insurance: provider, $or: [
+          { issuedAt: { $gte: startDate, $lte: endDate } },
+          { issuedAt: null, createdAt: { $gte: startDate, $lte: endDate } }
+        ] }
+      : { $or: [
+          { issuedAt: { $gte: startDate, $lte: endDate } },
+          { issuedAt: null, createdAt: { $gte: startDate, $lte: endDate } }
+        ] };
+
+    // ── Round 1: 4 fontes em paralelo ─────────────────────────────────
+    const [batches, packages, avulsoPayments, guidesInYear] = await Promise.all([
       InsuranceBatch.find(batchBaseFilter).lean(),
       Package.find(pkgFilter).populate('patient', 'fullName name phone').lean(),
-      Payment.find(avulsoFilter).populate('patient', 'fullName name phone').lean()
+      Payment.find(avulsoFilter).populate('patient', 'fullName name phone').lean(),
+      InsuranceGuide.find(guideFilter).populate('patientId', 'fullName name phone').lean()
     ]);
 
     // Appointment IDs presentes em algum batch (deduplicação JS — sem query extra)
@@ -1004,6 +1015,18 @@ export async function getInsuranceHistory(req, res) {
     const batchApptOids  = [...apptIdsInBatches];
     const allPkgApptIds  = packages.flatMap(p => (p.appointments || []).filter(id => id && id !== 'undefined'));
     const avulsoApptIds  = avulsoPayments.map(p => p.appointment).filter(Boolean);
+    const guideIds       = guidesInYear.map(g => g._id);
+
+    // ── Round 1b: Sessões filhas das guias abertas no ano ─────────────
+    const guideSessions = guideIds.length
+      ? await Session.find({
+          insuranceGuide: { $in: guideIds },
+          status: 'completed'
+        })
+          .populate('patient', 'fullName name phone')
+          .populate('doctor', 'fullName specialty')
+          .lean()
+      : [];
 
     // ── Round 2: 3 lookups de Appointment em paralelo ─────────────────
     const [batchAppts, pkgAppts, avulsoAppts] = await Promise.all([
@@ -1034,6 +1057,23 @@ export async function getInsuranceHistory(req, res) {
     const apptIdsWithPayment = new Set(
       avulsoPayments.map(p => p.appointment).filter(Boolean).map(String)
     );
+
+    // Sessões já contadas por outras fontes (lote, payment avulso, package)
+    // serão ignoradas na quarta fonte (guia) para não duplicar valor/sessão.
+    const countedSessionIds = new Set();
+    for (const batch of batches) {
+      for (const s of (batch.sessions || [])) {
+        if (s.session) countedSessionIds.add(String(s.session));
+      }
+    }
+    for (const pmt of avulsoPayments) {
+      if (pmt.session) countedSessionIds.add(String(pmt.session));
+    }
+    for (const pkg of packages) {
+      for (const apptId of (pkg.appointments || [])) {
+        countedSessionIds.add(String(apptId));
+      }
+    }
 
     // ── 3. AGRUPA por mês → provider → paciente → especialidade ──────
     const byMonth = {};
@@ -1141,6 +1181,41 @@ export async function getInsuranceHistory(req, res) {
       if (batchStatus !== 'pending_batch') trackSentAt(mk, prov, pmt.insurance?.billedAt);
     }
 
+    // ── 3c. GUIAS ATIVAS NÃO LOTADAS (quarta fonte) ─────────────────
+    // Sessões vinculadas a InsuranceGuide cuja competência (mês de emissão)
+    // pertence ao ano filtrado, mas que ainda não entraram em lote nem geraram
+    // Payment avulso/Package. Corrige sumiço de guias antigas cujas sessões
+    // reais ocorreram em meses posteriores ao da abertura (P1/P3).
+    for (const session of guideSessions) {
+      if (countedSessionIds.has(String(session._id))) continue;
+
+      const guide = guidesInYear.find(g => String(g._id) === String(session.insuranceGuide));
+      if (!guide) continue;
+
+      const competenceDate = guide.issuedAt || guide.createdAt;
+      if (!competenceDate || competenceDate < startDate || competenceDate > endDate) continue;
+
+      const d = new Date(competenceDate);
+      const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const prov = guide.insurance || 'outros';
+      const patientId =
+        session.patient?._id?.toString() ||
+        guide.patientId?._id?.toString() ||
+        guide.patientId?.toString?.() ||
+        null;
+      const patName =
+        session.patient?.fullName ||
+        session.patient?.name ||
+        guide.patientId?.fullName ||
+        guide.patientId?.name ||
+        'Desconhecido';
+      const phone = session.patient?.phone || guide.patientId?.phone || '';
+      const specialty = guide.specialty || session.sessionType || 'outros';
+      const value = guide.sessionValue || session.sessionValue || 0;
+
+      addEntry(mk, prov, patientId, patName, phone, specialty, value, 'guia', 'pending_batch');
+    }
+
     // ── 4. Serializa ─────────────────────────────────────────────────
     const result = Object.keys(byMonth).sort().map(mk => {
       const [y, m] = mk.split('-');
@@ -1235,11 +1310,28 @@ export async function getPatientInsuranceSessions(req, res) {
       ]
     };
 
-    const [sessions, avulsoPayments, patientPackages] = await Promise.all([
+    const [sessions, guideSessionsByCompetence, avulsoPayments, patientPackages] = await Promise.all([
       Session.find(sessionMatch)
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
         .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions')
+        .lean(),
+      // Sessões cuja GUIA tem competência no mês escolhido, mesmo que a sessão
+      // clínica tenha ocorrido em outro mês. Essencial pra guias antigas cujas
+      // sessões reais extrapolam o mês de abertura (P1/P3).
+      Session.find({
+        patient: patientOid,
+        status: 'completed',
+        insuranceGuide: { $exists: true, $ne: null },
+        $or: [
+          { billingType: 'convenio' },
+          { paymentMethod: 'convenio' },
+          { paymentOrigin: 'convenio' }
+        ]
+      })
+        .populate('patient', 'fullName phone')
+        .populate('doctor', 'fullName specialty')
+        .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
         .lean(),
       Payment.find({
         patient: patientOid,
@@ -1250,6 +1342,22 @@ export async function getPatientInsuranceSessions(req, res) {
       }).lean(),
       Package.find({ patient: patientOid, type: 'convenio' }).select('specialty insuranceBillingStatus').lean()
     ]);
+
+    // Une sessões do mês (por Session.date) com sessões cuja guia tem competência
+    // no mês, deduplicando por _id.
+    const sessionById = new Map();
+    for (const s of sessions) sessionById.set(String(s._id), s);
+    for (const s of guideSessionsByCompetence) {
+      const guide = s.insuranceGuide;
+      if (!guide) continue;
+      const competence = guide.issuedAt || guide.createdAt;
+      if (!competence) continue;
+      const d = new Date(competence);
+      const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      if (mk !== month) continue;
+      sessionById.set(String(s._id), s);
+    }
+    const mergedSessions = [...sessionById.values()];
 
     const packageSpecialtyById = Object.fromEntries(patientPackages.map(p => [p._id.toString(), p.specialty]));
     // getInsuranceHistory usa pkg.insuranceBillingStatus (nível Package) pra decidir o
@@ -1283,8 +1391,8 @@ export async function getPatientInsuranceSessions(req, res) {
       return candidates.some(c => (c || '').toLowerCase().trim() === target);
     }
 
-    const sessionIds = sessions.map(s => s._id);
-    const appointmentIds = sessions.map(s => s.appointmentId).filter(Boolean);
+    const sessionIds = mergedSessions.map(s => s._id);
+    const appointmentIds = mergedSessions.map(s => s.appointmentId).filter(Boolean);
     const avulsoAppointmentIds = avulsoPayments.map(p => p.appointment).filter(Boolean);
     const allAppointmentIds = [...new Set([...appointmentIds, ...avulsoAppointmentIds])].map(id => id.toString());
 
@@ -1320,7 +1428,7 @@ export async function getPatientInsuranceSessions(req, res) {
     const result = [];
 
     // Sessões com guia/lote
-    for (const session of sessions) {
+    for (const session of mergedSessions) {
       const sessionId = session._id.toString();
       const appt = apptById[session.appointmentId?.toString()];
       const payment = paymentBySession[sessionId] || paymentByAppointment[session.appointmentId?.toString()];
@@ -1363,8 +1471,17 @@ export async function getPatientInsuranceSessions(req, res) {
         provider: sessionProvider,
         guideNumber: session.insuranceGuide?.number || payment?.insurance?.authorizationCode || null,
         value: payment?.insurance?.grossAmount || payment?.amount || session.sessionValue || 0,
+        grossAmount: payment?.insurance?.grossAmount || payment?.amount || session.sessionValue || 0,
+        issRate: payment?.insurance?.issRate ?? null,
+        issAmount: payment?.insurance?.issAmount ?? null,
         billingStatus,
         batchId: batch?._id || session.billingBatchId || null,
+        batchNumber: batch?.batchNumber || null,
+        sentDate: batch?.sentDate || batchSession?.sentAt || null,
+        invoiceNumber: batch?.invoiceNumber || null,
+        billedAt: payment?.insurance?.billedAt || null,
+        receivedAt: payment?.insurance?.receivedAt || null,
+        receivedAmount: payment?.insurance?.receivedAmount || null,
         paymentId: payment?._id || null,
         appointmentId: session.appointmentId || null,
         source: 'lote'
@@ -1404,8 +1521,17 @@ export async function getPatientInsuranceSessions(req, res) {
         provider: sessionProvider,
         guideNumber: pmt.insurance?.authorizationCode || pmt.insurance?.guideNumber || null,
         value: pmt.insurance?.grossAmount || pmt.amount || 0,
+        grossAmount: pmt.insurance?.grossAmount || pmt.amount || 0,
+        issRate: pmt.insurance?.issRate ?? null,
+        issAmount: pmt.insurance?.issAmount ?? null,
         billingStatus,
         batchId: batch?._id || null,
+        batchNumber: batch?.batchNumber || null,
+        sentDate: batch?.sentDate || batchSession?.sentAt || null,
+        invoiceNumber: batch?.invoiceNumber || null,
+        billedAt: pmt.insurance?.billedAt || null,
+        receivedAt: pmt.insurance?.receivedAt || null,
+        receivedAmount: pmt.insurance?.receivedAmount || null,
         paymentId: pmt._id,
         appointmentId: pmt.appointment?.toString() || null,
         source: 'avulso'

@@ -9,6 +9,7 @@ import { updatePatientAppointments } from '../../utils/appointmentUpdater.js';
 import { insurancePaymentCreationService } from '../../domains/billing/services/InsurancePaymentCreationService.js';
 import { validateDateTime, checkScheduleConflict } from '../../utils/billingHelpers.js';
 import { recordInsuranceBilled, recordInsuranceReceived } from '../financialLedgerService.js';
+import { getConvenioIssRate, calculateInsuranceIss } from '../../utils/insuranceIss.js';
 import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.js';
 
 /**
@@ -383,6 +384,11 @@ class InsuranceBillingService {
           ? moment(receivedDate).tz('America/Sao_Paulo').format('YYYY-MM-DD')
           : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
 
+      // Dados atuais do payment para resolver convênio e calcular ISS
+      const paymentBefore = await Payment.findOne({ session: sessionId }).session(session).lean();
+      const issRate = await getConvenioIssRate(paymentBefore?.insurance?.provider);
+      const iss = calculateInsuranceIss(receivedAmount, issRate);
+
       // Atualizar Payment
       const paymentDoc = await Payment.findOneAndUpdate(
         { session: sessionId },
@@ -390,7 +396,10 @@ class InsuranceBillingService {
           $set: {
             status: 'paid',
             'insurance.status': 'received',
-            'insurance.receivedAmount': receivedAmount,
+            'insurance.grossAmount': iss.grossAmount,
+            'insurance.issRate': iss.issRate,
+            'insurance.issAmount': iss.issAmount,
+            'insurance.receivedAmount': iss.netAmount,
             'insurance.receivedAt': receiptDate,
             paidAt: receiptDate,
             amount: receivedAmount
@@ -426,10 +435,10 @@ class InsuranceBillingService {
         { session }
       );
 
-      // 🏦 LEDGER: registrar insurance_received
+      // 🏦 LEDGER: registrar insurance_received (valor líquido após ISS)
       if (paymentDoc) {
         try {
-          await recordInsuranceReceived(paymentDoc, { receivedAt: receiptDate }, session);
+          await recordInsuranceReceived(paymentDoc, { receivedAt: receiptDate, receivedAmount: iss.netAmount }, session);
         } catch (ledgerErr) {
           if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
             console.warn(`[InsuranceBilling] Ledger received warning:`, ledgerErr.message);
@@ -446,7 +455,10 @@ class InsuranceBillingService {
         message: 'Pagamento de convênio registrado',
         data: {
           sessionId,
-          receivedAmount,
+          receivedAmount: iss.netAmount,
+          grossAmount: iss.grossAmount,
+          issRate: iss.issRate,
+          issAmount: iss.issAmount,
           receivedDate: receiptDate,
           status: 'paid'
         }

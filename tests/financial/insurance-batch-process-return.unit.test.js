@@ -70,6 +70,13 @@ vi.mock('/home/user/projetos/crm/back/models/Payment.js', () => ({
     bulkWrite: (...args) => globalThis.__mockPaymentBulkWrite(...args)
   }
 }));
+vi.mock('/home/user/projetos/crm/back/models/Convenio.js', () => ({
+  default: {
+    findOne: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({ lean: () => Promise.resolve({ issRate: 2.01 }) })
+    })
+  }
+}));
 
 vi.mock('/home/user/projetos/crm/back/services/financialLedgerService.js', () => ({
   recordInsuranceBilled: vi.fn().mockResolvedValue({}),
@@ -82,6 +89,8 @@ vi.mock('/home/user/projetos/crm/back/services/paymentStatusService.js', () => (
 }));
 
 import { processReturn } from '../../services/insuranceBatchService.js';
+import Convenio from '../../models/Convenio.js';
+import { clearConvenioIssRateCache } from '../../utils/insuranceIss.js';
 
 // Cria um par (payment real + linha do lote apontando pro mesmo payment/session),
 // já que processReturn casa item.paymentId com batch.sessions[].payment.toString() —
@@ -108,6 +117,7 @@ function buildBatch(sessions) {
   return {
     _id: fakeId(),
     batchNumber: 'LOTE-TESTE-1',
+    insuranceProvider: 'unimed-anapolis',
     status: 'sent',
     sessions,
     totalSessions: sessions.length,
@@ -118,6 +128,7 @@ function buildBatch(sessions) {
 
 describe('insuranceBatchService.processReturn', () => {
   beforeEach(() => {
+    clearConvenioIssRateCache();
     globalThis.__mockPaymentFind = vi.fn();
     globalThis.__mockPaymentBulkWrite = vi.fn().mockResolvedValue({});
     globalThis.__mockBatchTransitionStatus = vi.fn().mockResolvedValue({ success: 0, failed: 0, errors: [] });
@@ -151,11 +162,20 @@ describe('insuranceBatchService.processReturn', () => {
     expect(ops[0].updateOne.update.$set['insurance.status']).toBe('received');
     expect(ops[0].updateOne.update.$set['insurance.receivedAt']).toBeInstanceOf(Date);
 
+    // ISS 2,01% sobre R$ 200 = R$ 4,02 líquido R$ 195,98
+    expect(ops[0].updateOne.update.$set['insurance.grossAmount']).toBe(200);
+    expect(ops[0].updateOne.update.$set['insurance.issRate']).toBe(2.01);
+    expect(ops[0].updateOne.update.$set['insurance.issAmount']).toBe(4.02);
+    expect(ops[0].updateOne.update.$set['insurance.receivedAmount']).toBe(195.98);
+
     expect(globalThis.__mockBatchTransitionStatus).toHaveBeenCalledTimes(1);
     expect(globalThis.__mockBatchTransitionStatus.mock.calls[0][0]).toHaveLength(2);
     expect(globalThis.__mockBatchTransitionStatus.mock.calls[0][1]).toBe('paid');
 
     expect(globalThis.__mockRecordInsuranceReceived).toHaveBeenCalledTimes(2);
+    // Ledger deve receber o valor LÍQUIDO (não bruto)
+    const ledgerAmount = globalThis.__mockRecordInsuranceReceived.mock.calls[0][1]?.receivedAmount;
+    expect(ledgerAmount).toBe(195.98);
 
     expect(batch.status).toBe('received');
     expect(batch.save).toHaveBeenCalledTimes(1);
@@ -237,5 +257,28 @@ describe('insuranceBatchService.processReturn', () => {
     expect(statusByOp).toEqual(['received', 'partial', 'glosa', 'glosa']);
     // ledger só é chamado para paid/partial (2 dos 4 itens)
     expect(globalThis.__mockRecordInsuranceReceived).toHaveBeenCalledTimes(2);
+  });
+
+  it('não deduz ISS quando convênio não tem issRate configurado', async () => {
+    Convenio.findOne.mockReturnValue({
+      select: vi.fn().mockReturnValue({ lean: () => Promise.resolve({ issRate: 0 }) })
+    });
+
+    const { payment: p1, batchSession: s1 } = buildPair();
+    const batch = buildBatch([s1]);
+
+    const insuranceBatchModule = await import('/home/user/projetos/crm/back/models/InsuranceBatch.js');
+    insuranceBatchModule.default.findById = vi.fn().mockResolvedValue(batch);
+    globalThis.__mockPaymentFind.mockReturnValue({ lean: () => Promise.resolve([p1]) });
+
+    await processReturn(batch._id.toString(), {
+      items: [{ paymentId: p1._id.toString(), sessionId: s1.session.toString(), status: 'paid', returnAmount: 200 }]
+    });
+
+    const ops = globalThis.__mockPaymentBulkWrite.mock.calls[0][0];
+    expect(ops[0].updateOne.update.$set['insurance.issRate']).toBe(0);
+    expect(ops[0].updateOne.update.$set['insurance.issAmount']).toBe(0);
+    expect(ops[0].updateOne.update.$set['insurance.receivedAmount']).toBe(200);
+    expect(globalThis.__mockRecordInsuranceReceived.mock.calls[0][1]?.receivedAmount).toBe(200);
   });
 });

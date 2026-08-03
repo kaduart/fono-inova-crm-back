@@ -32,6 +32,7 @@ import Appointment from '../../../models/Appointment.js';
 import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
 import { insurancePaymentCreationService } from './InsurancePaymentCreationService.js';
+import { getConvenioIssRate, calculateInsuranceIss } from '../../../utils/insuranceIss.js';
 
 // =============================================================================
 // CONFIGURAÇÃO
@@ -880,12 +881,19 @@ export class InsuranceBillingService {
       });
       
       // 4. Atualiza Payment (fonte de verdade)
+      // O receivedAmount informado é o BRUTO do convênio; desconta ISS/retido.
+      const issRate = await getConvenioIssRate(payment.insurance?.provider);
+      const iss = calculateInsuranceIss(receivedAmount, issRate);
+
       payment.status = FINANCIAL_STATES.PAID;
       payment.insurance.status = 'received';
-      payment.insurance.receivedAmount = receivedAmount;
+      payment.insurance.grossAmount = iss.grossAmount;
+      payment.insurance.issRate = iss.issRate;
+      payment.insurance.issAmount = iss.issAmount;
+      payment.insurance.receivedAmount = iss.netAmount;
       payment.insurance.receivedAt = receivedAt;
       payment.insurance.receiptNumber = receiptNumber;
-      payment.amount = receivedAmount;  // Valor final
+      payment.amount = receivedAmount;  // Valor bruto permanece como referência do faturado
       payment.paidAt = receivedAt;
       
       await payment.save({ session: mongoSession });
@@ -913,7 +921,7 @@ export class InsuranceBillingService {
             visualFlag: 'ok',
             sessionValue: receivedAmount,
             'insurance.status': 'received',
-            'insurance.receivedAmount': receivedAmount
+            'insurance.receivedAmount': iss.netAmount
           }
         },
         { session: mongoSession }

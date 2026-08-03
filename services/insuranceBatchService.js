@@ -9,6 +9,7 @@ import Payment from '../models/Payment.js';
 import { v4 as uuidv4 } from 'uuid';
 import { recordInsuranceBilled, recordInsuranceReceived } from './financialLedgerService.js';
 import { batchTransitionStatus, transitionPaymentStatus } from './paymentStatusService.js';
+import { getConvenioIssRate, calculateInsuranceIss } from '../utils/insuranceIss.js';
 
 // 🔄 Importação dinâmica do cache para evitar circular dependency
 let dashboardCache;
@@ -277,6 +278,10 @@ export async function processReturn(batchId, returnData) {
   // ───────────────────────────────────────────────────────────────────────────
   // ATUALIZAÇÃO DOS PAYMENTS — LEITURA EM LOTE + BULKWRITE
   // ───────────────────────────────────────────────────────────────────────────
+  // Alíquota de ISS do convênio (ex: Unimed = 2.01%). Usada para calcular o
+  // valor líquido que de fato entra no caixa.
+  const batchIssRate = await getConvenioIssRate(batch.insuranceProvider);
+
   const items = returnData.items || [];
   const paymentIds = items.map(item => item.paymentId).filter(Boolean);
   const sessionIds = items.map(item => item.sessionId).filter(Boolean);
@@ -338,9 +343,17 @@ export async function processReturn(batchId, returnData) {
     }
 
     const insuranceStatus = insuranceStatusMap[item.status] || 'pending_billing';
+
+    // O retorno do convênio informa o valor BRUTO; desconta ISS conforme alíquota
+    // do convênio para obter o líquido que entra no caixa.
+    const returnAmount = item.returnAmount || 0;
+    const iss = calculateInsuranceIss(returnAmount, batchIssRate);
     const update = {
       'insurance.status': insuranceStatus,
-      'insurance.receivedAmount': item.returnAmount || 0,
+      'insurance.grossAmount': returnAmount,
+      'insurance.issRate': iss.issRate,
+      'insurance.issAmount': iss.issAmount,
+      'insurance.receivedAmount': iss.netAmount,
       'insurance.glosaAmount': item.glosaAmount || 0,
       'insurance.receivedAt': receivedAtDate
     };
@@ -383,8 +396,9 @@ export async function processReturn(batchId, returnData) {
     // Se foi ignorado por idempotência, pular ledger também
     if (!returnData.force && payment.insurance?.status === 'received') continue;
 
+    const iss = calculateInsuranceIss(item.returnAmount || 0, batchIssRate);
     try {
-      await recordInsuranceReceived(payment, { receivedAt: new Date() });
+      await recordInsuranceReceived(payment, { receivedAt: new Date(), receivedAmount: iss.netAmount });
     } catch (ledgerErr) {
       if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
         console.warn(`[InsuranceBatch] Ledger received warning:`, ledgerErr.message);

@@ -17,7 +17,9 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import { transitionPaymentStatus } from './paymentStatusService.js';
+import { recordInsuranceReceived } from './financialLedgerService.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { getConvenioIssRate, calculateInsuranceIss } from '../utils/insuranceIss.js';
 
 const TAG = '[AutoInsuranceSettlement]';
 
@@ -57,6 +59,11 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
         ? (await Session.findById(locked.session).select('date').lean())?.date
         : null) || now;
 
+    // Calcula ISS/retido na fonte a partir do convênio. O valor líquido é o que
+    // efetivamente entra no caixa.
+    const issRate = await getConvenioIssRate(locked.insurance?.provider);
+    const iss = calculateInsuranceIss(locked.amount, issRate);
+
     const { payment: updated } = await transitionPaymentStatus(paymentId, 'paid', {
         paymentMethod: 'convenio',
         paidAt: now,
@@ -64,21 +71,38 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
         reason
     });
 
-    // Atualiza insurance.status → received
+    // Atualiza insurance.status → received e congela dados do recebimento
     await Payment.updateOne(
         { _id: paymentId },
-        { $set: { 'insurance.status': 'received', 'insurance.receivedAt': now, 'insurance.receivedAtSource': 'autoInsuranceSettlementService' } }
+        { $set: {
+            'insurance.status': 'received',
+            'insurance.grossAmount': iss.grossAmount,
+            'insurance.issRate': iss.issRate,
+            'insurance.issAmount': iss.issAmount,
+            'insurance.receivedAmount': iss.netAmount,
+            'insurance.receivedAt': now,
+            'insurance.receivedAtSource': 'autoInsuranceSettlementService'
+        } }
     );
+
+    // 🏦 LEDGER: registra o valor LÍQUIDO no caixa
+    try {
+        await recordInsuranceReceived(updated || locked, { receivedAt: now, receivedAmount: iss.netAmount });
+    } catch (ledgerErr) {
+        if (ledgerErr.code !== 'LEDGER_IMMUTABLE') {
+            console.warn(`${TAG} Ledger received warning:`, ledgerErr.message);
+        }
+    }
 
     await saveToOutbox({
         eventType: 'INSURANCE_PAYMENT_AUTO_SETTLED',
         aggregateType: 'payment',
         aggregateId: paymentId.toString(),
-        payload: { paymentId: paymentId.toString(), amount: locked.amount, reason, settledAt: now }
+        payload: { paymentId: paymentId.toString(), amount: iss.netAmount, grossAmount: iss.grossAmount, issAmount: iss.issAmount, reason, settledAt: now }
     });
 
-    console.log(`${TAG} Settled payment ${paymentId} — R$${locked.amount} (${reason})`);
-    return { settled: true, paymentId, amount: locked.amount };
+    console.log(`${TAG} Settled payment ${paymentId} — bruto R$${iss.grossAmount}, ISS R$${iss.issAmount}, líquido R$${iss.netAmount} (${reason})`);
+    return { settled: true, paymentId, amount: iss.netAmount, grossAmount: iss.grossAmount, issAmount: iss.issAmount };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
