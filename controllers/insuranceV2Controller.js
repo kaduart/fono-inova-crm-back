@@ -1371,26 +1371,12 @@ export async function getPatientInsuranceSessions(req, res) {
       ]
     };
 
-    const guideMatch = {
-      patientId: patientOid,
-      $or: [
-        { issuedAt: { $gte: start, $lte: end } },
-        { issuedAt: null, createdAt: { $gte: start, $lte: end } }
-      ]
-    };
-
-    const [
-      sessions,
-      guideSessionsByCompetence,
-      guideSessionsAllMonths,
-      currentModelGuides,
-      avulsoPayments,
-      patientPackages
-    ] = await Promise.all([
+    // FASE 1: busca sessões do mês e guias relacionadas.
+    const [sessions, guideSessionsByCompetence, avulsoPayments, patientPackages] = await Promise.all([
       Session.find(sessionMatch)
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
-        .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions')
+        .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
         .lean(),
       // Sessões cuja GUIA tem competência no mês escolhido, mesmo que a sessão
       // clínica tenha ocorrido em outro mês. Essencial pra guias antigas cujas
@@ -1409,31 +1395,6 @@ export async function getPatientInsuranceSessions(req, res) {
         .populate('doctor', 'fullName specialty')
         .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
         .lean(),
-      // MODELO ATUAL: todas as sessões das guias cuja competência é o mês
-      // selecionado, independente do mês da sessão. Só executa se necessário.
-      billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH
-        ? InsuranceGuide.find(guideMatch).select('_id').lean().then(guides => {
-            const guideIds = guides.map(g => g._id);
-            if (!guideIds.length) return [];
-            return Session.find({
-              patient: patientOid,
-              status: 'completed',
-              insuranceGuide: { $in: guideIds },
-              $or: [
-                { billingType: 'convenio' },
-                { paymentMethod: 'convenio' },
-                { paymentOrigin: 'convenio' }
-              ]
-            })
-              .populate('patient', 'fullName phone')
-              .populate('doctor', 'fullName specialty')
-              .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
-              .lean();
-          })
-        : Promise.resolve([]),
-      InsuranceGuide.find(guideMatch)
-        .select('number insurance specialty totalSessions usedSessions issuedAt createdAt')
-        .lean(),
       Payment.find({
         patient: patientOid,
         billingType: 'convenio',
@@ -1443,6 +1404,38 @@ export async function getPatientInsuranceSessions(req, res) {
       }).lean(),
       Package.find({ patient: patientOid, type: 'convenio' }).select('specialty insuranceBillingStatus').lean()
     ]);
+
+    // MODELO ATUAL: a partir das sessões do mês, identifica as guias envolvidas
+    // e busca TODAS as sessões dessas guias (mesmo as de meses seguintes).
+    // Isso garante que, ao filtrar junho, uma guia iniciada em junho mostre
+    // também suas sessões de julho/agosto.
+    let guideSessionsAllMonths = [];
+    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
+      const guideIdsFromMonthSessions = new Set();
+      for (const s of sessions) {
+        if (s.insuranceGuide?._id) guideIdsFromMonthSessions.add(String(s.insuranceGuide._id));
+      }
+      for (const s of guideSessionsByCompetence) {
+        if (s.insuranceGuide?._id) guideIdsFromMonthSessions.add(String(s.insuranceGuide._id));
+      }
+      const guideIds = [...guideIdsFromMonthSessions];
+      if (guideIds.length) {
+        guideSessionsAllMonths = await Session.find({
+          patient: patientOid,
+          status: 'completed',
+          insuranceGuide: { $in: guideIds.map(id => new mongoose.Types.ObjectId(id)) },
+          $or: [
+            { billingType: 'convenio' },
+            { paymentMethod: 'convenio' },
+            { paymentOrigin: 'convenio' }
+          ]
+        })
+          .populate('patient', 'fullName phone')
+          .populate('doctor', 'fullName specialty')
+          .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
+          .lean();
+      }
+    }
 
     // Une sessões do mês (por Session.date) com sessões cuja guia tem competência
     // no mês, deduplicando por _id.
@@ -1459,7 +1452,7 @@ export async function getPatientInsuranceSessions(req, res) {
       sessionById.set(String(s._id), s);
     }
     // No modelo atual, também adiciona sessões de meses seguintes das guias
-    // cuja competência é o mês selecionado.
+    // encontradas pelas sessões do mês.
     if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
       for (const s of guideSessionsAllMonths) {
         sessionById.set(String(s._id), s);
