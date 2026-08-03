@@ -1372,9 +1372,10 @@ export async function getPatientInsuranceSessions(req, res) {
       return packageStatus === status;
     }
     const specialtyFilter = specialty ? specialty.toLowerCase().trim() : null;
-    function matchesSpecialtyFilter(resolvedSpecialty) {
+    function matchesSpecialtyFilter(candidates) {
       if (!specialtyFilter) return true;
-      return (resolvedSpecialty || '').toLowerCase().trim() === specialtyFilter;
+      const list = Array.isArray(candidates) ? candidates : [candidates];
+      return list.some(c => (c || '').toLowerCase().trim() === specialtyFilter);
     }
 
     // InsuranceResolverService resolve UM provider por prioridade fixa (Payment >
@@ -1456,7 +1457,12 @@ export async function getPatientInsuranceSessions(req, res) {
 
       if (!matchesProviderFilter([sessionProvider, batch?.insuranceProvider, appt?.insuranceProvider, session.insuranceGuide?.insurance, payment?.insurance?.provider])) continue;
       if (!matchesStatusFilter(billingStatus, session.package)) continue;
-      if (!matchesSpecialtyFilter(resolvedSpecialty)) continue;
+      // Aceita a sessão se QUALQUER uma das fontes de especialidade bater com a
+      // especialidade da linha resumo. Antes usávamos só resolvedSpecialty, o que
+      // zerava a busca quando o Package/Guia tinham uma specialty diferente da
+      // Session/Appointment (caso Nicolas Lucca: sessão fonoaudiologia vinculada a
+      // Package/Guia de terapia_ocupacional).
+      if (!matchesSpecialtyFilter([packageSpecialty, session.sessionType, appt?.specialty, session.insuranceGuide?.specialty])) continue;
 
       result.push({
         sessionId,
@@ -1491,7 +1497,7 @@ export async function getPatientInsuranceSessions(req, res) {
     // Payments avulsos (sem sessão/package, ex: Bradesco antigo)
     for (const pmt of avulsoPayments) {
       const appt = apptById[pmt.appointment?.toString()];
-      if (!matchesSpecialtyFilter(appt?.specialty || pmt.serviceType || 'outros')) continue;
+      if (!matchesSpecialtyFilter([appt?.specialty, pmt.serviceType])) continue;
 
       const sessionId = pmt.session?.toString();
       // Evita duplicar se já adicionamos pela sessão
