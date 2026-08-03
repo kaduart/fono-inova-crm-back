@@ -28,7 +28,7 @@ export function classifyPendingSession(session) {
     return 'liminar';
   }
 
-  if (method === 'particular' || origin === 'particular' || status === 'pending_payment' || status === 'unpaid') {
+  if (method === 'particular' || origin === 'particular' || status === 'pending' || status === 'unpaid') {
     return 'privatePending';
   }
 

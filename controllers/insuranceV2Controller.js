@@ -1248,14 +1248,39 @@ export async function getPatientInsuranceSessions(req, res) {
         serviceDate: { $gte: start, $lte: end },
         status: { $nin: ['cancelled', 'canceled'] }
       }).lean(),
-      Package.find({ patient: patientOid, type: 'convenio' }).select('specialty').lean()
+      Package.find({ patient: patientOid, type: 'convenio' }).select('specialty insuranceBillingStatus').lean()
     ]);
 
     const packageSpecialtyById = Object.fromEntries(patientPackages.map(p => [p._id.toString(), p.specialty]));
+    // getInsuranceHistory usa pkg.insuranceBillingStatus (nível Package) pra decidir o
+    // status do card, mas o Payment de cada sessão individual tem seu próprio
+    // insurance.status — achado 2026-08-03: um pode dizer "received" e o outro
+    // "pending_batch" pro mesmo grupo. Aceita bater com qualquer um dos dois.
+    const packageStatusById = Object.fromEntries(patientPackages.map(p => [p._id.toString(), p.insuranceBillingStatus || 'pending_batch']));
+    function matchesStatusFilter(billingStatus, packageId) {
+      if (status === 'all') return true;
+      if (billingStatus === status) return true;
+      const packageStatus = packageId ? packageStatusById[packageId.toString()] : null;
+      return packageStatus === status;
+    }
     const specialtyFilter = specialty ? specialty.toLowerCase().trim() : null;
     function matchesSpecialtyFilter(resolvedSpecialty) {
       if (!specialtyFilter) return true;
       return (resolvedSpecialty || '').toLowerCase().trim() === specialtyFilter;
+    }
+
+    // InsuranceResolverService resolve UM provider por prioridade fixa (Payment >
+    // Session.insuranceProvider > Session.insuranceGuide.insurance > ...), mas
+    // getInsuranceHistory agrupa pelo campo bruto de quem efetivamente processou
+    // o registro (batch.insuranceProvider p/ lote, pkg.insuranceProvider p/ pacote).
+    // Quando esses dois divergem pro mesmo registro (achado 2026-08-03: guia com
+    // insurance="unimed-campinas" mas processada num lote "unimed-anapolis"), um
+    // filtro estrito no valor resolvido zera a busca mesmo a sessão pertencendo
+    // de fato ao card clicado. Aceita bater com qualquer fonte plausível.
+    function matchesProviderFilter(candidates) {
+      if (!provider) return true;
+      const target = provider.toLowerCase().trim();
+      return candidates.some(c => (c || '').toLowerCase().trim() === target);
     }
 
     const sessionIds = sessions.map(s => s._id);
@@ -1321,8 +1346,8 @@ export async function getPatientInsuranceSessions(req, res) {
       const packageSpecialty = session.package ? packageSpecialtyById[session.package.toString()] : null;
       const resolvedSpecialty = packageSpecialty || session.sessionType || appt?.specialty || session.insuranceGuide?.specialty || 'outros';
 
-      if (provider && sessionProvider.toLowerCase() !== provider.toLowerCase()) continue;
-      if (status !== 'all' && billingStatus !== status) continue;
+      if (!matchesProviderFilter([sessionProvider, batch?.insuranceProvider, appt?.insuranceProvider, session.insuranceGuide?.insurance, payment?.insurance?.provider])) continue;
+      if (!matchesStatusFilter(billingStatus, session.package)) continue;
       if (!matchesSpecialtyFilter(resolvedSpecialty)) continue;
 
       result.push({
@@ -1366,8 +1391,8 @@ export async function getPatientInsuranceSessions(req, res) {
         payment: pmt,
         appointment: appt
       });
-      if (provider && sessionProvider.toLowerCase() !== provider.toLowerCase()) continue;
-      if (status !== 'all' && billingStatus !== status) continue;
+      if (!matchesProviderFilter([sessionProvider, batch?.insuranceProvider, appt?.insuranceProvider, pmt.insurance?.provider])) continue;
+      if (!matchesStatusFilter(billingStatus, pmt.package)) continue;
 
       result.push({
         sessionId: sessionId || null,
