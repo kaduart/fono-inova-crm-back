@@ -14,6 +14,42 @@ import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insu
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import { closeGuideBillingPeriod } from '../services/insuranceGuide/closeGuideBillingPeriod.js';
 
+// Constantes do modelo de faturamento — mantidas num único lugar para evitar
+// strings espalhadas e facilitar manutenção.
+const BILLING_MODEL = {
+  LEGACY_MONTHLY_BATCH: 'LEGACY_MONTHLY_BATCH',
+  CURRENT_GUIDE_BATCH: 'CURRENT_GUIDE_BATCH'
+};
+
+/**
+ * Resolve o modelo de faturamento aplicável a um conjunto de sessões.
+ *
+ * Regra de negócio (2026-08-03):
+ * - O modelo legado mensal (guia reutilizada, faturada todo mês) é específico
+ *   do histórico antigo da Unimed Anápolis.
+ * - O corte operacional aproximado é Maio/2026: até esse período a clínica
+ *   usava o modelo mensal; a partir de Junho/2026 passou a acumular sessões
+ *   na guia e enviar só no fim.
+ * - Outros convênios sempre usam o modelo atual (guia → lote único).
+ *
+ * Centralizar essa regra aqui evita ifs espalhados e permite ajustar o corte
+ * ou adicionar novos convênios legados num único ponto.
+ */
+function resolveBillingModel(insuranceProvider, sessions) {
+  const provider = String(insuranceProvider || '').toLowerCase().trim();
+  if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+
+  const cutoff = new Date('2026-06-01T00:00:00-03:00');
+  const hasLegacy = sessions.some(s => {
+    const raw = s.billedAt || s.sentDate || s.date;
+    if (!raw) return false;
+    const d = new Date(raw);
+    return !isNaN(d.getTime()) && d < cutoff;
+  });
+
+  return hasLegacy ? BILLING_MODEL.LEGACY_MONTHLY_BATCH : BILLING_MODEL.CURRENT_GUIDE_BATCH;
+}
+
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
   try {
@@ -1548,23 +1584,10 @@ export async function getPatientInsuranceSessions(req, res) {
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // ── Detecta modelo de faturamento ─────────────────────────────────
-    // LEGACY_MONTHLY_BATCH: a mesma guia aparece em mais de um lote (modelo
-    // antigo em que uma guia era reutilizada e faturada mensalmente).
-    // CURRENT_GUIDE_BATCH: uma guia gera um único lote quando termina.
-    const BILLING_MODEL = {
-      LEGACY_MONTHLY_BATCH: 'LEGACY_MONTHLY_BATCH',
-      CURRENT_GUIDE_BATCH: 'CURRENT_GUIDE_BATCH'
-    };
-
-    const guideBatches = new Map();
-    for (const s of result) {
-      if (!s.guideNumber || !s.batchId) continue;
-      if (!guideBatches.has(s.guideNumber)) guideBatches.set(s.guideNumber, new Set());
-      guideBatches.get(s.guideNumber).add(String(s.batchId));
-    }
-    const billingModel = [...guideBatches.values()].some(set => set.size > 1)
-      ? BILLING_MODEL.LEGACY_MONTHLY_BATCH
-      : BILLING_MODEL.CURRENT_GUIDE_BATCH;
+    // Regra centralizada em resolveBillingModel: somente Unimed Anápolis com
+    // sessões de antes de Junho/2026 usam o modelo legado mensal. Demais
+    // convênios e períodos usam o modelo atual (guia → lote único).
+    const billingModel = resolveBillingModel(provider, result);
 
     function computeGroupStatus(sessions) {
       const statuses = new Set(sessions.map(s => s.billingStatus).filter(Boolean));
