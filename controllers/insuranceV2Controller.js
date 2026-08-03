@@ -50,6 +50,24 @@ function resolveBillingModel(insuranceProvider, sessions) {
   return hasLegacy ? BILLING_MODEL.LEGACY_MONTHLY_BATCH : BILLING_MODEL.CURRENT_GUIDE_BATCH;
 }
 
+/**
+ * Variação que decide o modelo baseado apenas no provider+mês, sem precisar
+ * das sessões. Usada na query do drawer para saber se deve trazer sessões de
+ * outros meses das guias selecionadas.
+ */
+function resolveBillingModelForMonth(insuranceProvider, monthKey) {
+  const provider = String(insuranceProvider || '').toLowerCase().trim();
+  if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+
+  const [y, m] = String(monthKey).split('-').map(Number);
+  if (!y || !m) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+
+  // Corte operacional: até Maio/2026 o modelo era mensal; a partir de Junho/2026
+  // a guia acumula sessões e é enviada só no fim.
+  if (y > 2026 || (y === 2026 && m >= 6)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+  return BILLING_MODEL.LEGACY_MONTHLY_BATCH;
+}
+
 // GET /api/v2/payments/insurance/receivables
 export async function getInsuranceReceivables(req, res) {
   try {
@@ -1325,6 +1343,13 @@ export async function getPatientInsuranceSessions(req, res) {
 
     const patientOid = new mongoose.Types.ObjectId(patientId);
 
+    // Modelo de faturamento aplicável a este provider+mês. No modelo ATUAL
+    // (guia → lote único), selecionar um mês significa "guias cuja competência
+    // é esse mês", e o drawer deve mostrar TODAS as sessões dessas guias,
+    // inclusive as de meses seguintes. No modelo LEGADO, cada mês é um lote e
+    // o drawer mostra apenas as sessões daquela competência.
+    const billingModelForRequest = resolveBillingModelForMonth(provider, month);
+
     // ── 1) Sessões de convênio do paciente no mês ───────────────────────
     // Nota: o filtro de especialidade NÃO entra na query do Mongo — ver abaixo.
     // getInsuranceHistory agrupa sessões vindas de Package pela especialidade
@@ -1346,7 +1371,22 @@ export async function getPatientInsuranceSessions(req, res) {
       ]
     };
 
-    const [sessions, guideSessionsByCompetence, avulsoPayments, patientPackages] = await Promise.all([
+    const guideMatch = {
+      patientId: patientOid,
+      $or: [
+        { issuedAt: { $gte: start, $lte: end } },
+        { issuedAt: null, createdAt: { $gte: start, $lte: end } }
+      ]
+    };
+
+    const [
+      sessions,
+      guideSessionsByCompetence,
+      guideSessionsAllMonths,
+      currentModelGuides,
+      avulsoPayments,
+      patientPackages
+    ] = await Promise.all([
       Session.find(sessionMatch)
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
@@ -1368,6 +1408,31 @@ export async function getPatientInsuranceSessions(req, res) {
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
         .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
+        .lean(),
+      // MODELO ATUAL: todas as sessões das guias cuja competência é o mês
+      // selecionado, independente do mês da sessão. Só executa se necessário.
+      billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH
+        ? InsuranceGuide.find(guideMatch).select('_id').lean().then(guides => {
+            const guideIds = guides.map(g => g._id);
+            if (!guideIds.length) return [];
+            return Session.find({
+              patient: patientOid,
+              status: 'completed',
+              insuranceGuide: { $in: guideIds },
+              $or: [
+                { billingType: 'convenio' },
+                { paymentMethod: 'convenio' },
+                { paymentOrigin: 'convenio' }
+              ]
+            })
+              .populate('patient', 'fullName phone')
+              .populate('doctor', 'fullName specialty')
+              .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
+              .lean();
+          })
+        : Promise.resolve([]),
+      InsuranceGuide.find(guideMatch)
+        .select('number insurance specialty totalSessions usedSessions issuedAt createdAt')
         .lean(),
       Payment.find({
         patient: patientOid,
@@ -1392,6 +1457,13 @@ export async function getPatientInsuranceSessions(req, res) {
       const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
       if (mk !== month) continue;
       sessionById.set(String(s._id), s);
+    }
+    // No modelo atual, também adiciona sessões de meses seguintes das guias
+    // cuja competência é o mês selecionado.
+    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
+      for (const s of guideSessionsAllMonths) {
+        sessionById.set(String(s._id), s);
+      }
     }
     const mergedSessions = [...sessionById.values()];
 
@@ -1584,10 +1656,10 @@ export async function getPatientInsuranceSessions(req, res) {
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // ── Detecta modelo de faturamento ─────────────────────────────────
-    // Regra centralizada em resolveBillingModel: somente Unimed Anápolis com
-    // sessões de antes de Junho/2026 usam o modelo legado mensal. Demais
-    // convênios e períodos usam o modelo atual (guia → lote único).
-    const billingModel = resolveBillingModel(provider, result);
+    // Regra centralizada em resolveBillingModel/resolveBillingModelForMonth:
+    // somente Unimed Anápolis com competências antes de Junho/2026 usam o
+    // modelo legado mensal. Demais convênios/períodos usam o atual.
+    const billingModel = billingModelForRequest;
 
     function computeGroupStatus(sessions) {
       const statuses = new Set(sessions.map(s => s.billingStatus).filter(Boolean));
