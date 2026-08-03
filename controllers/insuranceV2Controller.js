@@ -57,13 +57,19 @@ function resolveBillingModel(insuranceProvider, sessions) {
  */
 function resolveBillingModelForMonth(insuranceProvider, monthKey) {
   const provider = String(insuranceProvider || '').toLowerCase().trim();
-  if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
-
   const [y, m] = String(monthKey).split('-').map(Number);
   if (!y || !m) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
 
-  // Corte operacional: até Maio/2026 o modelo era mensal; a partir de Junho/2026
-  // a guia acumula sessões e é enviada só no fim.
+  // Se o provider não foi informado (ex: chamadas internas/testes), infere pelo
+  // período: o modelo legado mensal só existiu antes de Junho/2026. Períodos a
+  // partir de Junho/2026 sempre usam o modelo atual (guia → lote único).
+  if (!provider) {
+    if (y > 2026 || (y === 2026 && m >= 6)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+    return BILLING_MODEL.LEGACY_MONTHLY_BATCH;
+  }
+
+  // Unimed Anápolis: corte operacional em Junho/2026.
+  if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
   if (y > 2026 || (y === 2026 && m >= 6)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
   return BILLING_MODEL.LEGACY_MONTHLY_BATCH;
 }
@@ -1350,15 +1356,9 @@ export async function getPatientInsuranceSessions(req, res) {
     // o drawer mostra apenas as sessões daquela competência.
     const billingModelForRequest = resolveBillingModelForMonth(provider, month);
 
-    // ── 1) Sessões de convênio do paciente no mês ───────────────────────
-    // Nota: o filtro de especialidade NÃO entra na query do Mongo — ver abaixo.
-    // getInsuranceHistory agrupa sessões vindas de Package pela especialidade
-    // do PRÓPRIO PACKAGE (pkg.specialty), não pela da Session (sessionType).
-    // Pra guias legadas (achado 2026-07-30, paciente com Package "terapia_
-    // ocupacional" cujas Sessions internamente têm sessionType "fonoaudiologia"),
-    // essas duas fontes divergem — filtrar direto por sessionType zerava a busca
-    // mesmo com sessões reais existindo. Resolvemos a especialidade efetiva em
-    // JS, priorizando o Package quando a sessão pertence a um.
+    // Base de busca: sessões de convênio do paciente no mês.
+    // Filtro de especialidade NÃO entra aqui — resolvemos em JS por causa das
+    // divergências entre Package.specialty e Session.sessionType.
     const sessionMatch = {
       patient: patientOid,
       status: 'completed',
@@ -1371,16 +1371,15 @@ export async function getPatientInsuranceSessions(req, res) {
       ]
     };
 
-    // FASE 1: busca sessões do mês e guias relacionadas.
-    const [sessions, guideSessionsByCompetence, avulsoPayments, patientPackages] = await Promise.all([
+    // ── 1) Busca primária: sessões do mês + legado por competência ────────
+    const [monthSessions, guideSessionsByCompetence, avulsoPayments, patientPackages] = await Promise.all([
       Session.find(sessionMatch)
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
         .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
         .lean(),
-      // Sessões cuja GUIA tem competência no mês escolhido, mesmo que a sessão
-      // clínica tenha ocorrido em outro mês. Essencial pra guias antigas cujas
-      // sessões reais extrapolam o mês de abertura (P1/P3).
+      // LEGADO: sessões cuja GUIA tem competência no mês, mesmo que a sessão
+      // clínica tenha ocorrido em outro mês (ex: guia de fev com sessão em mar).
       Session.find({
         patient: patientOid,
         status: 'completed',
@@ -1405,22 +1404,43 @@ export async function getPatientInsuranceSessions(req, res) {
       Package.find({ patient: patientOid, type: 'convenio' }).select('specialty insuranceBillingStatus').lean()
     ]);
 
-    // MODELO ATUAL: a partir das sessões do mês, identifica as guias envolvidas
-    // e busca TODAS as sessões dessas guias (mesmo as de meses seguintes).
-    // Isso garante que, ao filtrar junho, uma guia iniciada em junho mostre
-    // também suas sessões de julho/agosto.
-    let guideSessionsAllMonths = [];
-    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
-      const guideIdsFromMonthSessions = new Set();
-      for (const s of sessions) {
-        if (s.insuranceGuide?._id) guideIdsFromMonthSessions.add(String(s.insuranceGuide._id));
-      }
+    // ── 2) Monta o conjunto de sessões a processar ────────────────────────
+    const sessionById = new Map();
+
+    // MODELO LEGADO: inclui sessões do mês + sessões de guias cuja competência
+    // (issuedAt/createdAt) cai no mês selecionado.
+    if (billingModelForRequest === BILLING_MODEL.LEGACY_MONTHLY_BATCH) {
+      for (const s of monthSessions) sessionById.set(String(s._id), s);
       for (const s of guideSessionsByCompetence) {
-        if (s.insuranceGuide?._id) guideIdsFromMonthSessions.add(String(s.insuranceGuide._id));
+        const guide = s.insuranceGuide;
+        if (!guide) continue;
+        const competence = guide.issuedAt || guide.createdAt;
+        if (!competence) continue;
+        const d = new Date(competence);
+        const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        if (mk !== month) continue;
+        sessionById.set(String(s._id), s);
       }
-      const guideIds = [...guideIdsFromMonthSessions];
-      if (guideIds.length) {
-        guideSessionsAllMonths = await Session.find({
+    }
+
+    // MODELO ATUAL: o filtro de mês significa "guias cuja competência cai no mês".
+    // Depois de encontrar essas guias, busca TODAS as sessões delas — sem
+    // reaplicar filtro por mês. Isso evita que uma guia iniciada em junho, com
+    // sessões também em julho/agosto, apareça pela metade ao filtrar junho.
+    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
+      const guidesInMonth = await InsuranceGuide.find({
+        patientId: patientOid,
+        $or: [
+          { issuedAt: { $gte: start, $lte: end } },
+          { issuedAt: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+          { issuedAt: null, createdAt: { $gte: start, $lte: end } }
+        ]
+      }).select('_id').lean();
+
+      const guideIds = guidesInMonth.map(g => String(g._id));
+
+      if (guideIds.length > 0) {
+        const allGuideSessions = await Session.find({
           patient: patientOid,
           status: 'completed',
           insuranceGuide: { $in: guideIds.map(id => new mongoose.Types.ObjectId(id)) },
@@ -1434,30 +1454,16 @@ export async function getPatientInsuranceSessions(req, res) {
           .populate('doctor', 'fullName specialty')
           .populate('insuranceGuide', 'number insurance specialty totalSessions usedSessions issuedAt createdAt')
           .lean();
+
+        for (const s of allGuideSessions) sessionById.set(String(s._id), s);
+      }
+
+      // Também inclui sessões avulsas do mês (sem guia) e payments avulsos.
+      for (const s of monthSessions) {
+        if (!s.insuranceGuide) sessionById.set(String(s._id), s);
       }
     }
 
-    // Une sessões do mês (por Session.date) com sessões cuja guia tem competência
-    // no mês, deduplicando por _id.
-    const sessionById = new Map();
-    for (const s of sessions) sessionById.set(String(s._id), s);
-    for (const s of guideSessionsByCompetence) {
-      const guide = s.insuranceGuide;
-      if (!guide) continue;
-      const competence = guide.issuedAt || guide.createdAt;
-      if (!competence) continue;
-      const d = new Date(competence);
-      const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      if (mk !== month) continue;
-      sessionById.set(String(s._id), s);
-    }
-    // No modelo atual, também adiciona sessões de meses seguintes das guias
-    // encontradas pelas sessões do mês.
-    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
-      for (const s of guideSessionsAllMonths) {
-        sessionById.set(String(s._id), s);
-      }
-    }
     const mergedSessions = [...sessionById.values()];
 
     const packageSpecialtyById = Object.fromEntries(patientPackages.map(p => [p._id.toString(), p.specialty]));

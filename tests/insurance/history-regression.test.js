@@ -210,6 +210,32 @@ describe('Insurance History - Regression Suite', () => {
     expect(detail.count).toBe(2);
   });
 
+  it('Junho/2026 (modelo atual): guia criada em junho exibe todas as sessões ao filtrar junho', async () => {
+    const { patient, sessions } = await createScenario({
+      issuedAt: new Date('2026-06-10T00:00:00-03:00'),
+      dates: [
+        new Date('2026-06-20T00:00:00-03:00'),
+        new Date('2026-07-05T00:00:00-03:00'),
+        new Date('2026-07-12T00:00:00-03:00')
+      ],
+      patientName: 'Paciente Junho Atual',
+      sessionValue: 100
+    });
+
+    const detail = await reqPatientSessions({
+      patientId: patient._id.toString(),
+      month: '2026-06',
+      specialty: 'fonoaudiologia',
+      provider: 'unimed-anapolis'
+    });
+
+    expect(detail.success).toBe(true);
+    expect(detail.count).toBe(3);
+    expect(detail.data.map(s => s.sessionId).sort()).toEqual(
+      sessions.map(s => s._id.toString()).sort()
+    );
+  });
+
   it('Múltiplas especialidades: paciente com Fono e TO em guias diferentes', async () => {
     const { patient } = await createScenario({
       issuedAt: new Date('2026-02-01T00:00:00-03:00'),
