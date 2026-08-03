@@ -118,3 +118,7 @@ logs-archive/documento-analise.txt
 
 # Logs de execução de scripts de ajuste de dados
 logs/populate-iss-rate-*.json
+
+# Scripts de auditoria/one-off (gerados durante investigações, não fazem parte da aplicação)
+scripts/auditoria*
+scripts/audit*

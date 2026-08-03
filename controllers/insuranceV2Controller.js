@@ -1548,20 +1548,51 @@ export async function getPatientInsuranceSessions(req, res) {
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // ── Detecta modelo de faturamento ─────────────────────────────────
-    // LEGACY: a mesma guia aparece em mais de um lote (modelo antigo em que
-    // uma guia era reutilizada e faturada mensalmente). CURRENT: uma guia gera
-    // um único lote quando termina.
+    // LEGACY_MONTHLY_BATCH: a mesma guia aparece em mais de um lote (modelo
+    // antigo em que uma guia era reutilizada e faturada mensalmente).
+    // CURRENT_GUIDE_BATCH: uma guia gera um único lote quando termina.
+    const BILLING_MODEL = {
+      LEGACY_MONTHLY_BATCH: 'LEGACY_MONTHLY_BATCH',
+      CURRENT_GUIDE_BATCH: 'CURRENT_GUIDE_BATCH'
+    };
+
     const guideBatches = new Map();
     for (const s of result) {
       if (!s.guideNumber || !s.batchId) continue;
       if (!guideBatches.has(s.guideNumber)) guideBatches.set(s.guideNumber, new Set());
       guideBatches.get(s.guideNumber).add(String(s.batchId));
     }
-    const isLegacy = [...guideBatches.values()].some(set => set.size > 1);
+    const billingModel = [...guideBatches.values()].some(set => set.size > 1)
+      ? BILLING_MODEL.LEGACY_MONTHLY_BATCH
+      : BILLING_MODEL.CURRENT_GUIDE_BATCH;
+
+    function computeGroupStatus(sessions) {
+      const statuses = new Set(sessions.map(s => s.billingStatus).filter(Boolean));
+      if (statuses.size === 0) return 'pending_batch';
+      if (statuses.size === 1) return sessions[0].billingStatus;
+      const hasReceived = statuses.has('received');
+      const hasBilled = statuses.has('billed');
+      const hasPending = statuses.has('pending_batch');
+      if (hasReceived && (hasBilled || hasPending)) return 'partial_received';
+      if (hasBilled && hasPending) return 'partial_billed';
+      return 'mixed';
+    }
+
+    function buildSummary(sessions) {
+      const grossAmount = sessions.reduce((sum, s) => sum + (s.grossAmount || s.value || 0), 0);
+      const issAmount = sessions.reduce((sum, s) => sum + (s.issAmount || 0), 0);
+      return {
+        sessions: sessions.length,
+        grossAmount,
+        issAmount,
+        netAmount: grossAmount - issAmount,
+        status: computeGroupStatus(sessions)
+      };
+    }
 
     // Agrupa para o drawer: por lote no legado, por guia no atual.
     let groups = [];
-    if (isLegacy) {
+    if (billingModel === BILLING_MODEL.LEGACY_MONTHLY_BATCH) {
       const byBatch = new Map();
       for (const s of result) {
         const key = String(s.batchId || 'sem-lote');
@@ -1580,7 +1611,7 @@ export async function getPatientInsuranceSessions(req, res) {
       }
       groups = [...byBatch.values()].map(g => ({
         ...g,
-        total: g.sessions.reduce((sum, s) => sum + (s.value || 0), 0)
+        summary: buildSummary(g.sessions)
       }));
     } else {
       const byGuide = new Map();
@@ -1597,7 +1628,7 @@ export async function getPatientInsuranceSessions(req, res) {
       }
       groups = [...byGuide.values()].map(g => ({
         ...g,
-        total: g.sessions.reduce((sum, s) => sum + (s.value || 0), 0)
+        summary: buildSummary(g.sessions)
       }));
     }
 
@@ -1605,7 +1636,7 @@ export async function getPatientInsuranceSessions(req, res) {
       success: true,
       data: result,
       count: result.length,
-      billingModel: isLegacy ? 'legacy' : 'current',
+      billingModel,
       groups
     });
   } catch (error) {
