@@ -23,7 +23,12 @@ export const ParticularHandler = {
      * Fase 1 — campos de pagamento na Session.
      */
     buildSessionUpdate(sessionUpdate, ctx) {
-        const { appointment, packageData, isBalanceOrigin } = ctx;
+        const { appointment, packageData, isBalanceOrigin, splitMethods, paymentMethod: explicitPaymentMethod } = ctx;
+        // Prioridade: forma explícita escolhida na conclusão > split (1ª forma) > valor
+        // salvo previamente no appointment > default. Corrige bug 2026-07-30: usuário
+        // escolhia "dinheiro" no fechar atendimento e o sistema gravava "pix" porque
+        // nada aqui olhava o valor explícito do formulário.
+        const resolvedPaymentMethod = explicitPaymentMethod || splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix';
 
         // Detecta se e pacote prepaid (full / pre-pago)
         const isPrepaid = packageData?.model === 'prepaid' || packageData?.paymentType === 'full';
@@ -41,20 +46,20 @@ export const ParticularHandler = {
             FinanceWriteGuard.setSessionPaid(sessionUpdate, false, { reason: 'per_session_complete' });
             FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'unpaid', { reason: 'per_session_complete' });
             sessionUpdate.paymentOrigin = 'manual_balance';
-            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+            sessionUpdate.paymentMethod = resolvedPaymentMethod;
         } else if (isPerSession) {
             // Per-session sem fiado (isBalanceOrigin=false já garantido acima) = pago no ato
             FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
             FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
             sessionUpdate.paymentOrigin = 'auto_per_session';
-            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+            sessionUpdate.paymentMethod = resolvedPaymentMethod;
             sessionUpdate.paidAt = new Date();
         } else {
             // Pago no ato (avulso)
             FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'per_session_paid_now' });
             FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'paid', { reason: 'per_session_paid_now' });
             sessionUpdate.paymentOrigin = 'auto_per_session';
-            sessionUpdate.paymentMethod = appointment.paymentMethod || packageData?.paymentMethod || 'pix';
+            sessionUpdate.paymentMethod = resolvedPaymentMethod;
             sessionUpdate.paidAt = new Date();
         }
     },
@@ -63,7 +68,7 @@ export const ParticularHandler = {
      * Fase 2 — cria/atualiza Payment e ajusta Package.
      */
     async buildPayment(appointmentUpdate, ctx) {
-        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods } = ctx;
+        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods, paymentMethod: explicitPaymentMethod } = ctx;
 
         // Valida que a soma dos splits bate com o valor da sessão
         if (splitMethods?.length >= 2) {
@@ -188,7 +193,7 @@ export const ParticularHandler = {
                         $set: {
                             amount:        sessionValue,
                             status:        'pending',
-                            paymentMethod: appointment.paymentMethod || 'cash',
+                            paymentMethod: explicitPaymentMethod || appointment.paymentMethod || 'cash',
                             paymentDate,
                             financialDate: null,
                             serviceDate,
@@ -209,7 +214,7 @@ export const ParticularHandler = {
                     status:        'pending',
                     type:          'service',
                     serviceType:   'session',
-                    paymentMethod: appointment.paymentMethod || 'cash',
+                    paymentMethod: explicitPaymentMethod || appointment.paymentMethod || 'cash',
                     paymentDate,
                     financialDate: null,
                     serviceDate,
@@ -275,7 +280,7 @@ export const ParticularHandler = {
                                 financialDate: paymentDate,
                                 serviceDate,
                                 amount:        sessionValue,
-                                paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                                paymentMethod: explicitPaymentMethod || splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
                                 kind:          'session_payment',
                                 billingType:   'particular',
                                 updatedAt:     now,
@@ -361,7 +366,7 @@ export const ParticularHandler = {
                         status:        'paid',
                         type:          'service',
                         serviceType:   'session',
-                        paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
+                        paymentMethod: explicitPaymentMethod || splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod || 'pix',
                         paymentDate,
                         paidAt:        paymentDate,
                         financialDate: paymentDate,
@@ -418,7 +423,14 @@ export const ParticularHandler = {
             const alreadyPaid = existingPayment?.status === 'paid';
             const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : paymentDate;
             const preserveFinancialDate = alreadyPaid ? (existingPayment?.financialDate || existingPayment?.paymentDate  || now) : paymentDate;
-            const preservePaymentMethod = alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (splitMethods?.[0]?.method || appointment.paymentMethod || 'cash');
+            // O guard de "preservar se já pago" protege DATA (não mover caixa de ontem pra
+            // hoje — bug histórico real). Forma de pagamento é diferente: quando o usuário
+            // escolhe explicitamente no formulário de conclusão, é uma correção deliberada
+            // e deve valer mesmo que o payment pré-criado já estivesse (indevidamente) 'paid'
+            // com outro método. Bug confirmado 2026-07-30: explicitPaymentMethod nunca era
+            // lido, então essa branch sempre perdia a forma escolhida pelo usuário.
+            const preservePaymentMethod = explicitPaymentMethod
+                || (alreadyPaid ? (existingPayment?.paymentMethod || appointment.paymentMethod || 'cash') : (splitMethods?.[0]?.method || appointment.paymentMethod || 'cash'));
 
             paymentCreated = await Payment.findByIdAndUpdate(
                 existingPaymentId,
@@ -494,7 +506,7 @@ export const ParticularHandler = {
                     status:        'paid',
                     type:          'service',
                     serviceType:   'session',
-                    paymentMethod: splitMethods?.[0]?.method || appointment.paymentMethod || 'cash',
+                    paymentMethod: explicitPaymentMethod || splitMethods?.[0]?.method || appointment.paymentMethod || 'cash',
                     paymentDate,
                     paidAt:        paymentDate,
                     financialDate: paymentDate,

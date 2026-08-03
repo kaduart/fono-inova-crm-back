@@ -402,6 +402,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 balanceDescription,
                 sessionValue: req.body.sessionValue,
                 splitMethods: req.body.splitMethods,
+                paymentMethod: req.body.paymentMethod,
                 notes: req.body.notes,
                 evolution: req.body.evolution,
                 userId: req.user?._id?.toString(),

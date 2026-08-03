@@ -1038,6 +1038,19 @@ export async function getInsuranceHistory(req, res) {
     // ── 3. AGRUPA por mês → provider → paciente → especialidade ──────
     const byMonth = {};
 
+    // Data de envio mais recente por convênio+mês — granularidade real é por
+    // guia/lote, não por convênio+mês, então aqui é sempre o MAIS RECENTE
+    // dentre tudo que contribuiu pra esse bucket (pode esconder envios mais
+    // antigos do mesmo convênio no mesmo mês, ver P3.1 gap analysis).
+    const lastSentAtByKey = {};
+    function trackSentAt(monthKey, prov, date) {
+      if (!date) return;
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return;
+      const key = `${monthKey}__${prov}`;
+      if (!lastSentAtByKey[key] || d > lastSentAtByKey[key]) lastSentAtByKey[key] = d;
+    }
+
     function addEntry(monthKey, prov, patientId, patientName, phone, specialty, value, source, batchStatus) {
       if (!byMonth[monthKey]) byMonth[monthKey] = {};
       if (!byMonth[monthKey][prov]) byMonth[monthKey][prov] = {};
@@ -1097,6 +1110,7 @@ export async function getInsuranceHistory(req, res) {
         const phone    = appt?.patientInfo?.phone || '';
         const specialty = appt?.specialty || 'outros';
         addEntry(mk, prov, patientId, patName, phone, specialty, s.grossAmount || 0, 'lote', batchStatus);
+        if (batchStatus !== 'pending_batch') trackSentAt(mk, prov, batch.sentDate || batch.createdAt);
       }
     }
 
@@ -1112,16 +1126,19 @@ export async function getInsuranceHistory(req, res) {
       const d  = new Date(serviceDate);
       if (d.getFullYear() !== filterYear) continue;
       const mk       = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      // Usa o slug cru (prov) como chave, igual ao caminho de batches — nunca o label
+      // formatado. Misturar os dois criava 2 entradas pro mesmo convênio no mesmo mês
+      // (achado 2026-07-30) e vazava o label pro frontend como "providerSlug", que
+      // depois não batia com o slug real ao filtrar sessões (retornava lista vazia).
       const prov     = pmt.insurance.provider;
-      const provLabel = prov.split('-').map((w) => w.charAt(0).toUpperCase()+w.slice(1)).join(' ')
-        .replace('Saude', 'Saúde').replace('Anapolis', 'Anápolis');
       const patientId = pmt.patient?._id?.toString() || pmt.patientId?.toString() || null;
       const patName  = pmt.patient?.fullName || pmt.patient?.name || 'Desconhecido';
       const phone    = pmt.patient?.phone || '';
       const specialty = avulsoApptMap[String(pmt.appointment)]?.specialty || pmt.serviceType || 'outros';
       const insStatus = pmt.insurance?.status || 'pending_billing';
       const batchStatus = insStatus === 'received' ? 'received' : insStatus === 'billed' ? 'billed' : 'pending_batch';
-      addEntry(mk, provLabel, patientId, patName, phone, specialty, pmt.amount, 'avulso', batchStatus);
+      addEntry(mk, prov, patientId, patName, phone, specialty, pmt.amount, 'avulso', batchStatus);
+      if (batchStatus !== 'pending_batch') trackSentAt(mk, prov, pmt.insurance?.billedAt);
     }
 
     // ── 4. Serializa ─────────────────────────────────────────────────
@@ -1157,7 +1174,7 @@ export async function getInsuranceHistory(req, res) {
         const provLabel = prov.split('-').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ')
           .replace('Anapolis', 'Anápolis').replace('Goiania', 'Goiânia').replace('Saude', 'Saúde');
 
-        return { provider: prov, providerLabel: provLabel, patients, totalSessions, totalValue, status: providerStatus };
+        return { provider: prov, providerLabel: provLabel, patients, totalSessions, totalValue, status: providerStatus, lastSentAt: lastSentAtByKey[`${mk}__${prov}`] || null };
       });
 
       const monthTotal = providers.reduce((s, p) => s + p.totalValue, 0);
@@ -1198,6 +1215,14 @@ export async function getPatientInsuranceSessions(req, res) {
     const patientOid = new mongoose.Types.ObjectId(patientId);
 
     // ── 1) Sessões de convênio do paciente no mês ───────────────────────
+    // Nota: o filtro de especialidade NÃO entra na query do Mongo — ver abaixo.
+    // getInsuranceHistory agrupa sessões vindas de Package pela especialidade
+    // do PRÓPRIO PACKAGE (pkg.specialty), não pela da Session (sessionType).
+    // Pra guias legadas (achado 2026-07-30, paciente com Package "terapia_
+    // ocupacional" cujas Sessions internamente têm sessionType "fonoaudiologia"),
+    // essas duas fontes divergem — filtrar direto por sessionType zerava a busca
+    // mesmo com sessões reais existindo. Resolvemos a especialidade efetiva em
+    // JS, priorizando o Package quando a sessão pertence a um.
     const sessionMatch = {
       patient: patientOid,
       status: 'completed',
@@ -1210,11 +1235,7 @@ export async function getPatientInsuranceSessions(req, res) {
       ]
     };
 
-    if (specialty) {
-      sessionMatch.sessionType = specialty.toLowerCase().trim();
-    }
-
-    const [sessions, avulsoPayments] = await Promise.all([
+    const [sessions, avulsoPayments, patientPackages] = await Promise.all([
       Session.find(sessionMatch)
         .populate('patient', 'fullName phone')
         .populate('doctor', 'fullName specialty')
@@ -1226,8 +1247,16 @@ export async function getPatientInsuranceSessions(req, res) {
         package: null,
         serviceDate: { $gte: start, $lte: end },
         status: { $nin: ['cancelled', 'canceled'] }
-      }).lean()
+      }).lean(),
+      Package.find({ patient: patientOid, type: 'convenio' }).select('specialty').lean()
     ]);
+
+    const packageSpecialtyById = Object.fromEntries(patientPackages.map(p => [p._id.toString(), p.specialty]));
+    const specialtyFilter = specialty ? specialty.toLowerCase().trim() : null;
+    function matchesSpecialtyFilter(resolvedSpecialty) {
+      if (!specialtyFilter) return true;
+      return (resolvedSpecialty || '').toLowerCase().trim() === specialtyFilter;
+    }
 
     const sessionIds = sessions.map(s => s._id);
     const appointmentIds = sessions.map(s => s.appointmentId).filter(Boolean);
@@ -1238,7 +1267,7 @@ export async function getPatientInsuranceSessions(req, res) {
     const [appointments, payments, batches] = await Promise.all([
       allAppointmentIds.length
         ? Appointment.find({ _id: { $in: allAppointmentIds } })
-            .select('_id patient specialty insuranceProvider insuranceGuide date patientInfo')
+            .select('_id patient specialty insuranceProvider insuranceGuide date time patientInfo')
             .lean()
         : Promise.resolve([]),
       sessionIds.length || allAppointmentIds.length
@@ -1287,15 +1316,25 @@ export async function getPatientInsuranceSessions(req, res) {
         batch
       });
 
+      // Prioriza a especialidade do Package (mesma fonte que getInsuranceHistory usa
+      // pra agrupar) sobre a da Session — ver nota acima sobre a divergência.
+      const packageSpecialty = session.package ? packageSpecialtyById[session.package.toString()] : null;
+      const resolvedSpecialty = packageSpecialty || session.sessionType || appt?.specialty || session.insuranceGuide?.specialty || 'outros';
+
       if (provider && sessionProvider.toLowerCase() !== provider.toLowerCase()) continue;
       if (status !== 'all' && billingStatus !== status) continue;
+      if (!matchesSpecialtyFilter(resolvedSpecialty)) continue;
 
       result.push({
         sessionId,
         date: session.date,
+        // Appointment.time é a hora real do atendimento — a hora embutida em
+        // Session.date não bate com a lista de presença assinada (ver mesma
+        // ressalva documentada em GuidePendingBillingSection/PendingGuideSession).
+        time: appt?.time || null,
         patient: session.patient,
         doctor: session.doctor,
-        specialty: session.sessionType || appt?.specialty || session.insuranceGuide?.specialty || 'outros',
+        specialty: resolvedSpecialty,
         provider: sessionProvider,
         guideNumber: session.insuranceGuide?.number || payment?.insurance?.authorizationCode || null,
         value: payment?.insurance?.grossAmount || payment?.amount || session.sessionValue || 0,
@@ -1310,7 +1349,7 @@ export async function getPatientInsuranceSessions(req, res) {
     // Payments avulsos (sem sessão/package, ex: Bradesco antigo)
     for (const pmt of avulsoPayments) {
       const appt = apptById[pmt.appointment?.toString()];
-      if (specialty && (appt?.specialty || pmt.serviceType || 'outros').toLowerCase() !== specialty.toLowerCase()) continue;
+      if (!matchesSpecialtyFilter(appt?.specialty || pmt.serviceType || 'outros')) continue;
 
       const sessionId = pmt.session?.toString();
       // Evita duplicar se já adicionamos pela sessão
@@ -1333,6 +1372,7 @@ export async function getPatientInsuranceSessions(req, res) {
       result.push({
         sessionId: sessionId || null,
         date: pmt.serviceDate || pmt.paymentDate,
+        time: appt?.time || null,
         patient: pmt.patient,
         doctor: pmt.doctor,
         specialty: appt?.specialty || pmt.serviceType || 'outros',

@@ -21,6 +21,7 @@ function createMockFind(result) {
   return () => {
     const chain = Promise.resolve(result);
     chain.populate = () => chain;
+    chain.select = () => chain;
     chain.lean = () => chain;
     return chain;
   };
@@ -32,6 +33,7 @@ function createMockFind(result) {
 globalThis.__mockPaymentFind = () => {};
 globalThis.__mockPaymentBulkWrite = () => {};
 globalThis.__mockSessionBulkWrite = () => {};
+globalThis.__mockConvenioFind = createMockFind([]);
 
 vi.mock('mongoose', () => {
   function createObjectId() {
@@ -85,6 +87,11 @@ vi.mock('mongoose', () => {
         if (name === 'Session') {
           return {
             bulkWrite: (...args) => globalThis.__mockSessionBulkWrite(...args)
+          };
+        }
+        if (name === 'Convenio') {
+          return {
+            find: (...args) => globalThis.__mockConvenioFind(...args)
           };
         }
         return { find: () => ({}), bulkWrite: () => ({}), updateOne: () => ({}) };
@@ -197,6 +204,7 @@ describe('ConvenioMetricsService — operações em lote', () => {
     globalThis.__mockPaymentBulkWrite = vi.fn();
     globalThis.__mockSessionBulkWrite = vi.fn();
     globalThis.__mockBatchTransitionStatus = vi.fn();
+    globalThis.__mockConvenioFind = vi.fn(createMockFind([]));
 
     globalThis.__mockPaymentBulkWrite.mockResolvedValue({});
     globalThis.__mockSessionBulkWrite.mockResolvedValue({});
@@ -293,6 +301,60 @@ describe('ConvenioMetricsService — operações em lote', () => {
       expect(globalThis.__mockBatchTransitionStatus).not.toHaveBeenCalled();
       expect(result.recebidos).toBe(0);
       expect(result.erros).toBe(1);
+    });
+
+    it('deduz ISS automaticamente pela alíquota cadastrada no convênio (ex: Unimed 2,01%)', async () => {
+      const p1 = buildPayment({
+        insurance: { status: 'billed', grossAmount: 1000 },
+        package: { insuranceProvider: 'unimed-anapolis', insuranceGrossAmount: 1000, sessionValue: 1000 }
+      });
+      const paymentIds = [p1._id.toString()];
+
+      globalThis.__mockPaymentFind.mockImplementation(createMockFind([p1]));
+      globalThis.__mockConvenioFind.mockImplementation(
+        createMockFind([{ code: 'unimed-anapolis', issRate: 2.01 }])
+      );
+
+      const result = await service.receberEmLote({
+        paymentIds,
+        dataRecebimento: '2026-06-20'
+      });
+
+      expect(result.recebidos).toBe(1);
+      expect(result.totalValor).toBe(1000);
+      expect(result.totalIss).toBeCloseTo(20.1, 2);
+      expect(result.totalLiquido).toBeCloseTo(979.9, 2);
+      expect(result.detalhes[0].issRate).toBe(2.01);
+      expect(result.detalhes[0].issAmount).toBeCloseTo(20.1, 2);
+      expect(result.detalhes[0].valorLiquido).toBeCloseTo(979.9, 2);
+
+      const ops = globalThis.__mockPaymentBulkWrite.mock.calls[0][0];
+      expect(ops[0].updateOne.update.$set['insurance.receivedAmount']).toBeCloseTo(979.9, 2);
+      expect(ops[0].updateOne.update.$set['insurance.issRate']).toBe(2.01);
+      expect(ops[0].updateOne.update.$set['insurance.issAmount']).toBeCloseTo(20.1, 2);
+      // amount (valor faturado/bruto) nunca é afetado pela retenção de ISS
+      expect(ops[0].updateOne.update.$set.amount).toBe(200);
+    });
+
+    it('convênio sem issRate cadastrado (default 0) recebe o valor bruto integral', async () => {
+      const p1 = buildPayment({
+        insurance: { status: 'billed', grossAmount: 250 },
+        package: { insuranceProvider: 'ipasgo', insuranceGrossAmount: 250, sessionValue: 250 }
+      });
+      const paymentIds = [p1._id.toString()];
+
+      globalThis.__mockPaymentFind.mockImplementation(createMockFind([p1]));
+      globalThis.__mockConvenioFind.mockImplementation(createMockFind([]));
+
+      const result = await service.receberEmLote({
+        paymentIds,
+        dataRecebimento: '2026-06-20'
+      });
+
+      expect(result.totalIss).toBe(0);
+      expect(result.totalLiquido).toBe(250);
+      const ops = globalThis.__mockPaymentBulkWrite.mock.calls[0][0];
+      expect(ops[0].updateOne.update.$set['insurance.receivedAmount']).toBe(250);
     });
   });
 });

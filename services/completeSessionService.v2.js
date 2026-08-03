@@ -54,6 +54,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         balanceAmount,
         balanceDescription,
         splitMethods = null,
+        paymentMethod = null,
         correlationId = `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     } = options;
 
@@ -325,7 +326,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         packageId, packageData, billingType, sessionValue,
         mongoSession, userId, correlationId,
         isBalanceOrigin, isPerSessionPkg, addToBalance, balanceAmount,
-        splitMethods
+        splitMethods, paymentMethod
     });
     
     try {

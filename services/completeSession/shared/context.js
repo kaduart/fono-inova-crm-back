@@ -43,7 +43,8 @@ export function buildCompleteContext({
     isPerSessionPkg,
     addToBalance,
     balanceAmount,
-    splitMethods
+    splitMethods,
+    paymentMethod
 }) {
     return {
         appointment,
@@ -61,6 +62,14 @@ export function buildCompleteContext({
         isPerSessionPkg: !!isPerSessionPkg,
         addToBalance:    !!addToBalance,
         balanceAmount:   balanceAmount || 0,
-        splitMethods:    Array.isArray(splitMethods) && splitMethods.length >= 2 ? splitMethods : null
+        // splitMethods = múltiplas formas de pagamento para a MESMA sessão (precisa ≥2
+        // entradas pra fazer sentido como "split" — 1 entrada não é divisão de nada).
+        splitMethods:    Array.isArray(splitMethods) && splitMethods.length >= 2 ? splitMethods : null,
+        // paymentMethod = forma única escolhida explicitamente no formulário de conclusão.
+        // Campo separado de splitMethods de propósito: antes, uma única forma de pagamento
+        // enviada como splitMethods de 1 item era descartada aqui (length >= 2 falhava) e o
+        // valor do usuário nunca chegava ao handler, caindo num fallback antigo/errado
+        // (bug confirmado 2026-07-30 — usuário mandava "dinheiro", sistema gravava "pix").
+        paymentMethod:   paymentMethod || null
     };
 }

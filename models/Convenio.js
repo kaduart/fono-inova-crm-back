@@ -53,6 +53,15 @@ const convenioSchema = new mongoose.Schema({
     min: 1
   },
 
+  // Alíquota de imposto retido na fonte pelo convênio ao pagar (ex: ISS Unimed = 2.01), em %.
+  // Deduzida automaticamente do valor bruto ao registrar recebimento (ConvenioMetricsService).
+  issRate: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+
   // Regras operacionais de renovação — define como as guias deste convênio funcionam
   guidePolicy: GuidePolicySchema,
 

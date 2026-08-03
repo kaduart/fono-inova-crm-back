@@ -173,8 +173,8 @@ export async function getConvenioDetailsHandler(req, res) {
  */
 export async function createConvenioHandler(req, res) {
     try {
-        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy, legalName, taxId } = req.body;
-        
+        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy, legalName, taxId, issRate } = req.body;
+
         // Validação
         const validation = validateConvenioData({ code, name, sessionValue });
         if (!validation.valid) {
@@ -213,7 +213,14 @@ export async function createConvenioHandler(req, res) {
             }
             validatedGuidePolicy = guidePolicy;
         }
-        
+
+        if (issRate !== undefined && issRate !== null) {
+            const rate = Number(issRate);
+            if (isNaN(rate) || rate < 0 || rate > 100) {
+                return res.status(400).json({ success: false, error: 'issRate deve ser um número entre 0 e 100' });
+            }
+        }
+
         // Cria convênio
         const convenio = new Convenio({
             code: normalizedCode,
@@ -225,7 +232,8 @@ export async function createConvenioHandler(req, res) {
             ...(defaultSessions !== undefined && { defaultSessions: defaultSessions === null ? null : Number(defaultSessions) || null }),
             ...(validatedGuidePolicy && { guidePolicy: validatedGuidePolicy }),
             ...(legalName !== undefined && { legalName: String(legalName).trim() }),
-            ...(taxId !== undefined && { taxId: String(taxId).trim() })
+            ...(taxId !== undefined && { taxId: String(taxId).trim() }),
+            ...(issRate !== undefined && issRate !== null && { issRate: Number(issRate) })
         });
         
         await convenio.save();
@@ -259,7 +267,7 @@ export async function createConvenioHandler(req, res) {
 export async function updateConvenioHandler(req, res) {
     try {
         const { code } = req.params;
-        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy, legalName, taxId } = req.body;
+        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy, legalName, taxId, issRate } = req.body;
         
         const normalizedCode = code.toLowerCase().trim();
         
@@ -322,6 +330,14 @@ export async function updateConvenioHandler(req, res) {
 
         if (taxId !== undefined) {
             updateData.taxId = String(taxId).trim();
+        }
+
+        if (issRate !== undefined && issRate !== null) {
+            const rate = Number(issRate);
+            if (isNaN(rate) || rate < 0 || rate > 100) {
+                return res.status(400).json({ success: false, error: 'issRate deve ser um número entre 0 e 100' });
+            }
+            updateData.issRate = rate;
         }
 
         if (guidePolicy !== undefined && guidePolicy !== null) {

@@ -1062,6 +1062,22 @@ router.patch('/:id', auth, async (req, res) => {
             await Payment.findByIdAndUpdate(id, { $set: updateData }, { session: mongoSession });
         }
 
+        // 🔄 Sincroniza Session.paymentMethod — Payment é a fonte de verdade financeira,
+        // mas telas centradas em sessão (ex: "sessão avulsa") leem Session.paymentMethod.
+        // Sem isso, editar a forma de pagamento aqui "não aparecia mudar" pra quem olhava
+        // a sessão — o Payment estava certo, só o Session ficava desatualizado (bug
+        // confirmado 2026-07-30, caso Benjamin chaveiro Gomes).
+        if (updateData.paymentMethod !== undefined && (payment.session || payment.appointmentId || payment.appointment)) {
+            const sessionFilter = payment.session
+                ? { _id: payment.session }
+                : { appointmentId: payment.appointmentId || payment.appointment };
+            await Session.updateOne(
+                sessionFilter,
+                { $set: { paymentMethod: updateData.paymentMethod, updatedAt: new Date() } },
+                { session: mongoSession }
+            );
+        }
+
         // Commit antes de side-effects (evento + populate de retorno)
         await mongoSession.commitTransaction();
 

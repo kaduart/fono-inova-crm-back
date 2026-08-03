@@ -8,8 +8,26 @@ import Package from '../../models/Package.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
 import { GuideLifecycleService } from '../../services/guideLifecycle/GuideLifecycleService.js';
 import { transitionPaymentStatus, batchTransitionStatus } from '../../services/paymentStatusService.js';
+import { resolveInsuranceProvider } from '../insuranceResolver.service.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
+
+function round2(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Busca em 1 query a alíquota de ISS (issRate) de cada código de convênio informado.
+ * Usado no recebimento para deduzir automaticamente o imposto retido na fonte (ex: Unimed 2,01%).
+ */
+async function loadIssRateMap(providerCodes) {
+    const codes = [...new Set((providerCodes || []).filter(Boolean))];
+    if (codes.length === 0) return new Map();
+
+    const Convenio = mongoose.model('Convenio');
+    const rows = await Convenio.find({ code: { $in: codes } }).select('code issRate').lean();
+    return new Map(rows.map(c => [c.code, c.issRate || 0]));
+}
 
 /**
  * 💡 CONCEITO IMPORTANTE:
@@ -814,24 +832,42 @@ class ConvenioMetricsService {
                 throw new Error('Pagamento já foi recebido');
             }
 
-            // 🔹 DETERMINA O VALOR A RECEBER (se não fornecido, pega do insurance.grossAmount ou package)
-            const valorEfetivo = valorRecebido || 
-                                 payment.insurance?.grossAmount || 
-                                 payment.package?.insuranceGrossAmount || 
-                                 payment.package?.sessionValue || 
-                                 payment.amount || 
+            // 🔹 DETERMINA O VALOR BRUTO (faturado)
+            const grossAmount = payment.insurance?.grossAmount ||
+                                 payment.package?.insuranceGrossAmount ||
+                                 payment.package?.sessionValue ||
+                                 payment.amount ||
                                  0;
+
+            // 🔹 Se valorRecebido foi informado explicitamente, é uma decisão manual do caller
+            // (ex: glosa parcial) — respeita sem tentar inferir ISS. Senão, calcula automaticamente
+            // a partir da alíquota cadastrada no convênio (ex: ISS Unimed 2,01%).
+            let issRate = 0;
+            let issAmount = 0;
+            let valorEfetivo;
+
+            if (valorRecebido !== undefined && valorRecebido !== null) {
+                valorEfetivo = valorRecebido;
+            } else {
+                const providerCode = resolveInsuranceProvider({ payment, package: payment.package });
+                const issRateMap = await loadIssRateMap([providerCode]);
+                issRate = issRateMap.get(providerCode) || 0;
+                issAmount = round2(grossAmount * issRate / 100);
+                valorEfetivo = round2(grossAmount - issAmount);
+            }
 
             // Garante que o objeto insurance existe
             if (!payment.insurance) {
                 payment.insurance = {};
             }
-            
+
             // Atualiza o payment para recebido
             payment.insurance.status = 'received';
             payment.insurance.receivedAt = dataRecebimento;
             payment.insurance.receivedAmount = valorEfetivo;
-            payment.insurance.grossAmount = payment.insurance.grossAmount || valorEfetivo; // Garante que tem grossAmount
+            payment.insurance.issRate = issRate;
+            payment.insurance.issAmount = issAmount;
+            payment.insurance.grossAmount = payment.insurance.grossAmount || grossAmount; // Garante que tem grossAmount
             
             if (notaFiscal) {
                 payment.insurance.invoiceNumber = notaFiscal;
@@ -842,9 +878,10 @@ class ConvenioMetricsService {
                 payment.billingType = 'convenio';
             }
             
-            // 🔹 ATUALIZA O AMOUNT SE ESTIVER ZERO
+            // 🔹 ATUALIZA O AMOUNT (valor faturado/bruto) SE ESTIVER ZERO — amount nunca reflete
+            // o líquido pós-ISS, isso fica só em insurance.receivedAmount
             if (!payment.amount || payment.amount === 0) {
-                payment.amount = valorEfetivo;
+                payment.amount = grossAmount;
             }
             
             // ⚠️ dataRecebimento chega como string "YYYY-MM-DD" do formulário. new Date(string)
@@ -868,6 +905,9 @@ class ConvenioMetricsService {
             return {
                 success: true,
                 paymentId,
+                valorBruto: grossAmount,
+                issRate,
+                issAmount,
                 valorRecebido: valorEfetivo,
                 dataRecebimento,
                 paciente: payment.patient?.fullName,
@@ -892,7 +932,9 @@ class ConvenioMetricsService {
             recebidos: 0,
             erros: 0,
             detalhes: [],
-            totalValor: 0
+            totalValor: 0,
+            totalIss: 0,
+            totalLiquido: 0
         };
 
         if (!paymentIds || paymentIds.length === 0) {
@@ -907,6 +949,12 @@ class ConvenioMetricsService {
             .populate('patient', 'fullName');
 
         const paymentById = new Map(payments.map(p => [p._id.toString(), p]));
+
+        // 1 leitura em lote das alíquotas de ISS de todos os convênios envolvidos
+        const providerCodeByPaymentId = new Map(
+            payments.map(p => [p._id.toString(), resolveInsuranceProvider({ payment: p, package: p.package })])
+        );
+        const issRateMap = await loadIssRateMap([...providerCodeByPaymentId.values()]);
 
         const bulkOps = [];
         const transitionIds = [];
@@ -931,19 +979,26 @@ class ConvenioMetricsService {
                     continue;
                 }
 
-                const valorEfetivo = payment.insurance?.grossAmount || 
-                                     payment.package?.insuranceGrossAmount || 
-                                     payment.package?.sessionValue || 
-                                     payment.amount || 
+                const grossAmount = payment.insurance?.grossAmount ||
+                                     payment.package?.insuranceGrossAmount ||
+                                     payment.package?.sessionValue ||
+                                     payment.amount ||
                                      0;
+
+                const providerCode = providerCodeByPaymentId.get(paymentId.toString());
+                const issRate = issRateMap.get(providerCode) || 0;
+                const issAmount = round2(grossAmount * issRate / 100);
+                const valorLiquido = round2(grossAmount - issAmount);
 
                 const updateDoc = {
                     'insurance.status': 'received',
                     'insurance.receivedAt': dataRecebimento,
-                    'insurance.receivedAmount': valorEfetivo,
-                    'insurance.grossAmount': payment.insurance?.grossAmount || valorEfetivo,
+                    'insurance.receivedAmount': valorLiquido,
+                    'insurance.issRate': issRate,
+                    'insurance.issAmount': issAmount,
+                    'insurance.grossAmount': payment.insurance?.grossAmount || grossAmount,
                     billingType: payment.billingType || 'convenio',
-                    amount: payment.amount || valorEfetivo,
+                    amount: payment.amount || grossAmount,
                     paymentDate: dataRecebimentoBrasilia
                 };
 
@@ -961,11 +1016,16 @@ class ConvenioMetricsService {
                 transitionIds.push(payment._id.toString());
 
                 result.recebidos++;
-                result.totalValor += valorEfetivo;
+                result.totalValor += grossAmount;
+                result.totalIss += issAmount;
+                result.totalLiquido += valorLiquido;
                 result.detalhes.push({
                     paymentId,
                     status: 'recebido',
-                    valor: valorEfetivo,
+                    valor: grossAmount,
+                    issRate,
+                    issAmount,
+                    valorLiquido,
                     paciente: payment.patient?.fullName
                 });
 

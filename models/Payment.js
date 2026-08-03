@@ -88,6 +88,13 @@ const paymentSchema = new mongoose.Schema({
         },
         grossAmount: { type: Number, default: 0 },
         netAmount: { type: Number, default: 0 },
+        // Valor efetivamente creditado no recebimento (pode divergir de grossAmount por glosa,
+        // pagamento parcial ou retenção de imposto — ver issRate/issAmount abaixo)
+        receivedAmount: { type: Number, default: 0 },
+        // Alíquota (%) e valor de imposto retido na fonte pelo convênio (ex: ISS Unimed), aplicados
+        // automaticamente no recebimento a partir de Convenio.issRate — snapshot da alíquota vigente
+        issRate: { type: Number, default: 0 },
+        issAmount: { type: Number, default: 0 },
         billedAt: { type: Date, default: null },
         receivedAt: { type: Date, default: null },
         billedAtSource: { type: String, default: null },
