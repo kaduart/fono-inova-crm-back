@@ -112,3 +112,9 @@ scripts/backups-migration/
 scripts/audits/backup-*.json
 scripts/audits/*-backup-*.json
 logs-archive/documento-analise.txt
+
+# Resumos gerados automaticamente por ferramentas de análise
+**/mantis-summary.md
+
+# Logs de execução de scripts de ajuste de dados
+logs/populate-iss-rate-*.json
