@@ -1428,7 +1428,10 @@ export async function getPatientInsuranceSessions(req, res) {
     // reaplicar filtro por mês. Isso evita que uma guia iniciada em junho, com
     // sessões também em julho/agosto, apareça pela metade ao filtrar junho.
     if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH) {
-      const guidesInMonth = await InsuranceGuide.find({
+      const guideIdSet = new Set();
+
+      // Fonte 1: InsuranceGuide.patientId (mais direta).
+      const guidesByPatient = await InsuranceGuide.find({
         patientId: patientOid,
         $or: [
           { issuedAt: { $gte: start, $lte: end } },
@@ -1436,8 +1439,16 @@ export async function getPatientInsuranceSessions(req, res) {
           { issuedAt: null, createdAt: { $gte: start, $lte: end } }
         ]
       }).select('_id').lean();
+      for (const g of guidesByPatient) guideIdSet.add(String(g._id));
 
-      const guideIds = guidesInMonth.map(g => String(g._id));
+      // Fonte 2: sessões do mês (fallback robusto). Se InsuranceGuide.patientId
+      // estiver nulo/errado em dados migrados, a Session ainda aponta para a guia
+      // e permite encontrá-la.
+      for (const s of monthSessions) {
+        if (s.insuranceGuide?._id) guideIdSet.add(String(s.insuranceGuide._id));
+      }
+
+      const guideIds = [...guideIdSet];
 
       if (guideIds.length > 0) {
         const allGuideSessions = await Session.find({

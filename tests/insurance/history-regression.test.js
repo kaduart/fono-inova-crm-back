@@ -236,6 +236,30 @@ describe('Insurance History - Regression Suite', () => {
     );
   });
 
+  it('Junho/2026 (modelo atual): encontra guia mesmo sem InsuranceGuide.patientId confiável', async () => {
+    const { patient, doctor } = await createScenario({
+      issuedAt: new Date('2026-06-10T00:00:00-03:00'),
+      dates: [new Date('2026-06-20T00:00:00-03:00')],
+      patientName: 'Paciente Sem Guide PatientId',
+      sessionValue: 100
+    });
+
+    // Simula dado migrado: remove o patientId da guia, mas mantém Session apontando para ela.
+    const guide = await InsuranceGuide.findOne({ patientId: patient._id }).lean();
+    expect(guide).toBeTruthy();
+    await InsuranceGuide.updateOne({ _id: guide._id }, { $unset: { patientId: 1 } });
+
+    const detail = await reqPatientSessions({
+      patientId: patient._id.toString(),
+      month: '2026-06',
+      specialty: 'fonoaudiologia',
+      provider: 'unimed-anapolis'
+    });
+
+    expect(detail.success).toBe(true);
+    expect(detail.count).toBe(1);
+  });
+
   it('Múltiplas especialidades: paciente com Fono e TO em guias diferentes', async () => {
     const { patient } = await createScenario({
       issuedAt: new Date('2026-02-01T00:00:00-03:00'),
