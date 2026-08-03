@@ -1547,7 +1547,67 @@ export async function getPatientInsuranceSessions(req, res) {
     // Ordena por data
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    res.json({ success: true, data: result, count: result.length });
+    // ── Detecta modelo de faturamento ─────────────────────────────────
+    // LEGACY: a mesma guia aparece em mais de um lote (modelo antigo em que
+    // uma guia era reutilizada e faturada mensalmente). CURRENT: uma guia gera
+    // um único lote quando termina.
+    const guideBatches = new Map();
+    for (const s of result) {
+      if (!s.guideNumber || !s.batchId) continue;
+      if (!guideBatches.has(s.guideNumber)) guideBatches.set(s.guideNumber, new Set());
+      guideBatches.get(s.guideNumber).add(String(s.batchId));
+    }
+    const isLegacy = [...guideBatches.values()].some(set => set.size > 1);
+
+    // Agrupa para o drawer: por lote no legado, por guia no atual.
+    let groups = [];
+    if (isLegacy) {
+      const byBatch = new Map();
+      for (const s of result) {
+        const key = String(s.batchId || 'sem-lote');
+        if (!byBatch.has(key)) {
+          byBatch.set(key, {
+            type: 'batch',
+            batchId: s.batchId,
+            batchNumber: s.batchNumber,
+            sentDate: s.sentDate,
+            invoiceNumber: s.invoiceNumber,
+            guideNumber: s.guideNumber,
+            sessions: []
+          });
+        }
+        byBatch.get(key).sessions.push(s);
+      }
+      groups = [...byBatch.values()].map(g => ({
+        ...g,
+        total: g.sessions.reduce((sum, s) => sum + (s.value || 0), 0)
+      }));
+    } else {
+      const byGuide = new Map();
+      for (const s of result) {
+        const key = s.guideNumber || 'sem-guia';
+        if (!byGuide.has(key)) {
+          byGuide.set(key, {
+            type: 'guide',
+            guideNumber: s.guideNumber,
+            sessions: []
+          });
+        }
+        byGuide.get(key).sessions.push(s);
+      }
+      groups = [...byGuide.values()].map(g => ({
+        ...g,
+        total: g.sessions.reduce((sum, s) => sum + (s.value || 0), 0)
+      }));
+    }
+
+    res.json({
+      success: true,
+      data: result,
+      count: result.length,
+      billingModel: isLegacy ? 'legacy' : 'current',
+      groups
+    });
   } catch (error) {
     console.error('[InsuranceV2][getPatientInsuranceSessions] Erro:', error.message);
     res.status(500).json({ success: false, error: error.message });
