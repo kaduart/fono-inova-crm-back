@@ -1591,11 +1591,31 @@ export async function getPatientInsuranceSessions(req, res) {
     }
 
     // Agrupa para o drawer: por lote no legado, por guia no atual.
+    // No modelo legado, sessões sem lote são agrupadas por COMPETÊNCIA
+    // (mês de abertura da guia > mês da sessão), não jogadas todas num
+    // único balde "sem-lote". Assim janeiro e fevereiro da mesma guia não
+    // aparecem misturados.
     let groups = [];
     if (billingModel === BILLING_MODEL.LEGACY_MONTHLY_BATCH) {
       const byBatch = new Map();
       for (const s of result) {
-        const key = String(s.batchId || 'sem-lote');
+        // Determina a competência de agrupamento: lote existente ou mês da guia/sessão
+        let key;
+        let competenceMonth;
+        if (s.batchId) {
+          key = String(s.batchId);
+        } else {
+          // Sem lote: agrupa pela competência da guia quando disponível,
+          // senão pela data da sessão.
+          const guide = s.guideNumber;
+          const rawDate = s.billedAt || s.sentDate || s.date;
+          const d = rawDate ? new Date(rawDate) : null;
+          const monthKey = d && !isNaN(d.getTime())
+            ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+            : 'sem-competencia';
+          competenceMonth = monthKey;
+          key = `no-batch__${guide || 'sem-guia'}__${monthKey}`;
+        }
         if (!byBatch.has(key)) {
           byBatch.set(key, {
             type: 'batch',
@@ -1604,6 +1624,7 @@ export async function getPatientInsuranceSessions(req, res) {
             sentDate: s.sentDate,
             invoiceNumber: s.invoiceNumber,
             guideNumber: s.guideNumber,
+            competenceMonth,
             sessions: []
           });
         }
