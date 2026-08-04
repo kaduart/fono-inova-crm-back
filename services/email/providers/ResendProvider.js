@@ -35,6 +35,7 @@ export class ResendProvider extends BaseEmailProvider {
     text = '',
     attachments = [],
     customId,
+    idempotencyKey,
     fromEmail,
     fromName
   }) {
@@ -56,6 +57,11 @@ export class ResendProvider extends BaseEmailProvider {
       }));
     }
 
+    // Header interno de rastreamento. O Idempotency-Key é passado pelo segundo
+    // argumento do resend.emails.send() para garantir que a SDK o coloque no header
+    // HTTP corretamente (evita duplicar no payload e conflitar).
+    const headers = customId ? { 'X-Entity-Ref-ID': customId } : undefined;
+
     const payload = {
       from,
       to,
@@ -63,16 +69,21 @@ export class ResendProvider extends BaseEmailProvider {
       html,
       text: text || undefined,
       attachments: resendAttachments.length > 0 ? resendAttachments : undefined,
-      headers: customId ? { 'X-Entity-Ref-ID': customId } : undefined
+      headers
     };
 
-    console.log('[ResendProvider] Enviando e-mail:', { from, to: payload.to, subject: payload.subject, attachments: resendAttachments.length });
+    console.log('[ResendProvider] Enviando e-mail:', { from, to: payload.to, subject: payload.subject, attachments: resendAttachments.length, idempotencyKey: idempotencyKey || null });
+    console.log('[RESEND IDEMPOTENCY]', { idempotencyKey: idempotencyKey || null });
 
     let data, error;
     try {
-      const result = await this.resend.emails.send(payload);
+      // idempotencyKey é passado no segundo argumento (options), não no payload.
+      // A Resend SDK seta o header Idempotency-Key corretamente dessa forma
+      // (verificado no source: resend.post(options.idempotencyKey)).
+      const result = await this.resend.emails.send(payload, { idempotencyKey });
       data = result.data;
       error = result.error;
+      console.log('[RESEND RESPONSE]', { id: data?.id, idempotencyKey: idempotencyKey || null });
     } catch (err) {
       console.error('[ResendProvider] Exceção na chamada Resend:', err.response?.data || err.message || err);
       throw err;

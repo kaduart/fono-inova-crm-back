@@ -75,6 +75,7 @@ export async function sendEmailWithAttachments({
   text = '',
   attachments = [],
   customId,
+  idempotencyKey,
   fromEmail,
   fromName
 }) {
@@ -86,6 +87,7 @@ export async function sendEmailWithAttachments({
     text,
     attachments,
     customId,
+    idempotencyKey,
     fromEmail,
     fromName
   });

@@ -201,6 +201,13 @@ export async function sendCommunicationEmail({
   let errorMessage = null;
   const startTime = Date.now();
 
+  // Idempotência no provedor: a mesma chave deve ser usada em todos os retries do
+  // MESMO job BullMQ. Se o worker falhar depois do envio, o retry chega na Resend
+  // com a mesma chave e o provedor descarta a duplicata. Antes usávamos Date.now(),
+  // o que anulava qualquer deduplicação (achado em produção 2026-08-04: 5 e-mails
+  // duplicados por retry do BullMQ).
+  const emailIdempotencyKey = jobId || `communication-${communicationId}-${Date.now()}`;
+
   try {
     result = await sendEmailWithAttachments({
       to: destination,
@@ -208,7 +215,8 @@ export async function sendCommunicationEmail({
       html,
       text,
       attachments,
-      customId: `communication-${communicationId}-${Date.now()}`,
+      customId: emailIdempotencyKey,
+      idempotencyKey: emailIdempotencyKey,
       // Remetente dedicado deste fluxo (envio de documentação/faturamento a convênio) —
       // usa env var própria em vez do EMAIL_FROM genérico, que outros e-mails do sistema
       // (reset de senha, etc.) também usam. Evita que uma troca aqui afete o resto do
@@ -224,30 +232,11 @@ export async function sendCommunicationEmail({
 
   const durationMs = Date.now() - startTime;
 
-  // Marcar pacote como enviado, reenviado ou falho
-  if (logStatus === EmailLogStatus.SUCCESS) {
-    if (pkg.status === PackageStatus.DRAFT || pkg.status === PackageStatus.FAILED) {
-      await markPackageAsSent(communicationId);
-    } else {
-      await markPackageAsResent(communicationId);
-    }
-  } else {
-    await markPackageAsFailed(communicationId);
-  }
-
-  // Atualizar status da comunicação via State Machine — só se este ciclo realmente
-  // passou por SENDING (1º envio). Reenvio/complemento deixam status como estava.
-  if (isFirstSend) {
-    if (logStatus === EmailLogStatus.SUCCESS) {
-      await transition(communicationId, CommunicationEvents.MARK_SENT);
-    } else {
-      await transition(communicationId, CommunicationEvents.FAIL);
-    }
-  }
-
-  // Fecha o registro: atualiza o MESMO marcador 'pending' criado antes do Resend (não
-  // cria um segundo documento) — isso é o que faz o guard de idempotência funcionar,
-  // já que o registro final continua tendo o mesmo jobId da tentativa.
+  // Passo crítico: assim que sabemos o resultado do provedor, persistimos o log.
+  // Isso acontece ANTES de qualquer transição de estado secundária. Se alguma dessas
+  // transições falhar, o efeito externo (e-mail) já está registrado, então um retry
+  // do BullMQ deve ser capaz de detectar que o envio já ocorreu (guard de idempotência
+  // por jobId) e não reenviar às cegas.
   const finalFields = {
     protocol: result?.messageId || result?.protocol || null,
     durationMs,
@@ -260,6 +249,7 @@ export async function sendCommunicationEmail({
     : await CommunicationEmailLog.create({
         communicationId,
         communicationPackageId: pkg._id,
+        jobId,
         to: destination,
         subject: resolvedSubject,
         template: template || null,
@@ -274,6 +264,36 @@ export async function sendCommunicationEmail({
         sentBy: userId,
         ...finalFields
       });
+
+  // Só depois de persistir o log fazemos as transições secundárias. Elas são
+  // importantes para o estado da comunicação/pacote, mas NÃO podem falhar o job
+  // depois que o e-mail já foi enviado. Qualquer erro aqui é logado mas não
+  // impede o retorno de sucesso — senão o BullMQ retenta e reenvia o e-mail.
+  try {
+    if (logStatus === EmailLogStatus.SUCCESS) {
+      if (pkg.status === PackageStatus.DRAFT || pkg.status === PackageStatus.FAILED) {
+        await markPackageAsSent(communicationId);
+      } else {
+        await markPackageAsResent(communicationId);
+      }
+
+      // Atualizar status da comunicação via State Machine — só se este ciclo realmente
+      // passou por SENDING (1º envio). Reenvio/complemento deixam status como estava.
+      // Defesa extra: se por algum motivo a comunicação já estiver sent/approved
+      // (ex.: reenvio sobre comunicação finalizada), não tentar MARK_SENT — isso era
+      // a exceção que causava os 5 retries/reenvios (produção 2026-08-04).
+      if (isFirstSend) {
+        const currentCommunication = await InsuranceCommunication.findById(communicationId).select('status').lean();
+        if (currentCommunication && !['sent', 'approved'].includes(currentCommunication.status)) {
+          await transition(communicationId, CommunicationEvents.MARK_SENT);
+        }
+      }
+    } else if (isFirstSend) {
+      await transition(communicationId, CommunicationEvents.FAIL);
+    }
+  } catch (postSendError) {
+    console.error(`[sendCommunicationEmail] Erro pós-envio para ${communicationId}:`, postSendError.message);
+  }
 
   if (logStatus === EmailLogStatus.ERROR) {
     throw new Error(errorMessage);
