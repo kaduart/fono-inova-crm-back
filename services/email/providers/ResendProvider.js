@@ -36,7 +36,6 @@ export class ResendProvider extends BaseEmailProvider {
     attachments = [],
     customId,
     idempotencyKey,
-    threadMessageId,
     inReplyTo,
     fromEmail,
     fromName
@@ -66,15 +65,11 @@ export class ResendProvider extends BaseEmailProvider {
     if (customId) headers['X-Entity-Ref-ID'] = customId;
 
     // Mantém reenvios/complementos no mesmo thread de conversa (Gmail/Outlook).
-    // Reenvios usam In-Reply-To/References apontando para o Message-ID do primeiro
-    // envio (real, se já obtido via webhook, ou artificial determinístico como
-    // fallback). O primeiro envio recebe References com o ID artificial para que
-    // todos os e-mails da comunicação compartilhem uma referência comum.
+    // Reenvios usam In-Reply-To/References apontando para o Message-ID real do
+    // primeiro envio, obtido via webhook email.sent da Resend.
     if (inReplyTo) {
       headers['In-Reply-To'] = inReplyTo;
       headers['References'] = inReplyTo;
-    } else if (threadMessageId) {
-      headers['References'] = threadMessageId;
     }
 
     const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;

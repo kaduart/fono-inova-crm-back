@@ -112,7 +112,6 @@ export class SMTPProvider extends BaseEmailProvider {
     text = '',
     attachments = [],
     customId,
-    threadMessageId,
     inReplyTo,
     fromEmail,
     fromName
@@ -141,8 +140,6 @@ export class SMTPProvider extends BaseEmailProvider {
     if (inReplyTo) {
       headers['In-Reply-To'] = inReplyTo;
       headers['References'] = inReplyTo;
-    } else if (threadMessageId) {
-      headers['References'] = threadMessageId;
     }
 
     const mailOptions = {

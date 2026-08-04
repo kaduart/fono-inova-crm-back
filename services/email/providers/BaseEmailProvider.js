@@ -19,7 +19,6 @@ export class BaseEmailProvider {
    * @param {Array<{ url: string, name?: string, publicId?: string }>} [message.attachments]
    * @param {string} [message.customId]
    * @param {string} [message.idempotencyKey]
-   * @param {string} [message.threadMessageId]
    * @param {string} [message.inReplyTo]
    * @returns {Promise<{ success: boolean, messageId?: string, protocol?: string }>}
    */
