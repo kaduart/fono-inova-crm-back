@@ -22,6 +22,11 @@ const SUBJECT_BY_PURPOSE = {
   documentation: 'Envio de Documentação'
 };
 
+function generateThreadMessageId(communicationId) {
+  const domain = process.env.EMAIL_THREAD_DOMAIN || 'clinicafonoinova.com.br';
+  return `<communication-${communicationId.toString()}@${domain}>`;
+}
+
 function buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, message }) {
   const defaultBody = purpose === 'billing'
     ? `Prezados,<br><br>Segue em anexo a documentação para faturamento do paciente ${patientName}.<br><br>Aguardamos retorno.<br><br>Atenciosamente,<br>Clínica Fono Inova`
@@ -166,15 +171,20 @@ export async function sendCommunicationEmail({
   // Thread de conversa: reaproveita o Message-ID real (campo messageId) do
   // primeiro envio bem-sucedido da comunicação. Reenvios/complementos recebem
   // headers In-Reply-To/References para que Gmail/Outlook agrupem na mesma
-  // conversa. O primeiro envio não envia esses headers — o Message-ID real é
-  // obtido do provedor após o envio e salvo no log para uso nos próximos.
+  // conversa. Como o Message-ID real só fica disponível depois do evento
+  // email.sent da Resend, usamos um Message-ID artificial determinístico como
+  // fallback até o webhook fazer backfill do messageId real.
   const firstSuccessLog = await CommunicationEmailLog.findOne({
     communicationId,
     status: EmailLogStatus.SUCCESS,
-    messageId: { $exists: true, $ne: null }
+    $or: [
+      { messageId: { $exists: true, $ne: null } },
+      { threadMessageId: { $exists: true, $ne: null } }
+    ]
   }).sort({ sentAt: 1 }).lean();
 
-  const inReplyTo = firstSuccessLog?.messageId || undefined;
+  const threadMessageId = firstSuccessLog?.messageId || firstSuccessLog?.threadMessageId || generateThreadMessageId(communicationId);
+  const inReplyTo = firstSuccessLog ? threadMessageId : undefined;
 
   const attachmentsSnapshot = pkg.attachments.map(a => ({
     documentId: a.documentId,
@@ -206,6 +216,7 @@ export async function sendCommunicationEmail({
       lastAttemptAt,
       provider: getEmailProviderName(),
       status: EmailLogStatus.PENDING,
+      threadMessageId,
       sentBy: userId
     });
   }
@@ -231,6 +242,7 @@ export async function sendCommunicationEmail({
       attachments,
       customId: emailIdempotencyKey,
       idempotencyKey: emailIdempotencyKey,
+      threadMessageId,
       inReplyTo,
       // Remetente dedicado deste fluxo (envio de documentação/faturamento a convênio) —
       // usa env var própria em vez do EMAIL_FROM genérico, que outros e-mails do sistema
@@ -278,6 +290,7 @@ export async function sendCommunicationEmail({
         lastAttemptAt,
         provider: getEmailProviderName(),
         sentBy: userId,
+        threadMessageId,
         ...finalFields
       });
 

@@ -16,7 +16,7 @@ import {
   getEmailLogs,
   listCommunicationEmailLogs
 } from '../services/communication/CommunicationEmailService.js';
-import { EmailLogType } from '../models/CommunicationEmailLog.js';
+import CommunicationEmailLog, { EmailLogType } from '../models/CommunicationEmailLog.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { transition, CommunicationEvents } from '../services/communication/CommunicationStateMachine.js';
 import { getRulesForInsurance, updateRulesForInsurance } from '../services/communication/InsuranceRuleService.js';
@@ -253,6 +253,45 @@ router.patch('/insurance/:insurance/rules', auth, async (req, res) => {
     res.json({ success: true, data: rules });
   } catch (error) {
     console.error('[CommunicationRoutes] update rules:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v2/communications/webhooks/resend
+// Webhook da Resend para atualizar o Message-ID real do e-mail quando ele sai de
+// 'queued' (evento email.sent). Sem isso não conseguimos fazer thread de conversa
+// nos reenvios/complementos, pois o message_id só é disponibilizado pela Resend
+// após o envio efetivo.
+router.post('/webhooks/resend', async (req, res) => {
+  try {
+    const { type, data } = req.body || {};
+
+    if (type === 'email.sent' && data?.email_id && data?.message_id) {
+      const updated = await CommunicationEmailLog.findOneAndUpdate(
+        { protocol: data.email_id },
+        { $set: { messageId: data.message_id } },
+        { new: true }
+      ).lean();
+
+      if (updated) {
+        logger.info('resend_webhook_message_id_updated', `Message-ID atualizado para log ${updated._id}`, {
+          logId: updated._id,
+          communicationId: updated.communicationId,
+          emailId: data.email_id,
+          messageId: data.message_id
+        });
+      } else {
+        logger.warn('resend_webhook_log_not_found', `Log não encontrado para email_id ${data.email_id}`, {
+          emailId: data.email_id,
+          messageId: data.message_id
+        });
+      }
+    }
+
+    // Sempre retorna 200 para a Resend não reenviar o webhook.
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('[CommunicationRoutes] Resend webhook:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
