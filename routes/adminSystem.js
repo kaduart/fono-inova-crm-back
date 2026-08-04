@@ -27,6 +27,7 @@ import {
 } from '../config/bullConfig.js';
 
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
+import { getQueue } from '../infrastructure/queue/queueConfig.js';
 
 const router = Router();
 
@@ -48,7 +49,9 @@ const allQueues = [
   postGenerationQueue,
   doctorQueue,
   gmbPublishRetryQueue,
-  whatsappSendQueue
+  whatsappSendQueue,
+  // Fila de envio de e-mail de comunicação com convênio (BullMQ puro, getQueue)
+  getQueue('communication-email')
 ];
 
 // Remove duplicatas por nome (safety)
