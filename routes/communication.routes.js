@@ -158,6 +158,11 @@ router.post('/:id/send', auth, async (req, res) => {
       const queue = getQueue('communication-email');
       logger.info('queue_add_started', `Enfileirando job de e-mail para ${communicationId}`, { communicationId });
 
+      // Gerado aqui (não deixado pro BullMQ decidir) pra poder repassar dentro do
+      // payload do próprio job — o worker usa isso como chave de idempotência entre
+      // retries do MESMO job (ver sendCommunicationEmail).
+      const emailJobId = `communication-email-${communicationId}-${Date.now()}`;
+
       job = await queue.add(
         'send-communication-email',
         {
@@ -169,10 +174,11 @@ router.post('/:id/send', auth, async (req, res) => {
           sendType: sendType || (alreadySent ? EmailLogType.RESEND : undefined),
           reason: reason || undefined,
           ip: req.ip,
-          userId: req.user.id
+          userId: req.user.id,
+          jobId: emailJobId
         },
         {
-          jobId: `communication-email-${communicationId}-${Date.now()}`,
+          jobId: emailJobId,
           attempts: 5,
           backoff: { type: 'exponential', delay: 3000 }
         }

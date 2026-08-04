@@ -3,6 +3,11 @@
 import mongoose from 'mongoose';
 
 export const EmailLogStatus = {
+  // Gravado ANTES de chamar o provedor de e-mail — marca que este jobId já tentou
+  // contatar o Resend, mesmo que o processo trave/reinicie logo depois (ver
+  // sendCommunicationEmail: sem isso, um reprocessamento do mesmo job não tinha como
+  // saber que um envio real já tinha sido tentado).
+  PENDING: 'pending',
   SUCCESS: 'success',
   ERROR: 'error'
 };
@@ -71,6 +76,15 @@ const communicationEmailLogSchema = new mongoose.Schema({
   reason: {
     type: String,
     trim: true
+  },
+  // Id do job do BullMQ que gerou este envio. Estável entre retries do MESMO job
+  // (mesmo jobId reaproveitado pelo BullMQ em "attempts"/stalled-job) — usado como
+  // chave de idempotência: se já existe um log de sucesso com este jobId, uma nova
+  // tentativa do mesmo job não deve reenviar de verdade (achado 2026-08-04: fila sem
+  // idempotência causou 5 e-mails reais duplicados quando algo travava depois do envio).
+  jobId: {
+    type: String,
+    index: true
   },
   lastAttemptAt: {
     type: Date

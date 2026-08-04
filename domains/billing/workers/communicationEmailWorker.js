@@ -43,7 +43,10 @@ export const communicationEmailWorker = new Worker(
         userId,
         sendType,
         ip,
-        reason
+        reason,
+        // job.id é estável entre retries do MESMO job (BullMQ reaproveita o id que
+        // passamos no enqueue) — usado como chave de idempotência.
+        jobId: job.id
       });
 
       const duration = Date.now() - startTime;
@@ -90,7 +93,11 @@ export const communicationEmailWorker = new Worker(
     concurrency: 2,
     limiter: { max: 20, duration: 60000 },
     stalledInterval: 30000,
-    lockDuration: 30000
+    // Era 30000 — achado 2026-08-04: processamento real (download Cloudinary + Resend)
+    // observado perto de ~20s, deixando pouca margem antes do BullMQ considerar o job
+    // "stalled" e reprocessá-lo (o que, sem a guarda de idempotência abaixo, causava
+    // reenvios reais duplicados). 90s dá folga sem mascarar um worker de fato travado.
+    lockDuration: 90000
   }
 );
 

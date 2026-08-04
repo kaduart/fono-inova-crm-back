@@ -69,8 +69,38 @@ export async function sendCommunicationEmail({
   userId,
   sendType,
   ip,
-  reason
+  reason,
+  jobId
 }) {
+  // Guarda de idempotência: BullMQ garante "at-least-once", não "exactly-once" — um
+  // job pode ser reprocessado (retry após falha tardia, stalled-job) mesmo depois de
+  // já ter enviado o e-mail de verdade com sucesso. Sem isso, cada reprocessamento do
+  // MESMO job disparava um novo e-mail real (achado em produção 2026-08-04: 5 e-mails
+  // duplicados enviados, `attempts:5` da fila, zero logs persistidos — algo travava
+  // depois do envio, o BullMQ via como falha e reenviava de verdade a cada tentativa).
+  // jobId é estável entre essas re-execuções do mesmo job, então um log de sucesso já
+  // gravado com este jobId prova que o e-mail já saiu — não enviar de novo.
+  if (jobId) {
+    const existing = await CommunicationEmailLog.findOne({ jobId }).sort({ createdAt: -1 }).lean();
+    if (existing?.status === EmailLogStatus.SUCCESS) {
+      return {
+        success: true,
+        logId: existing._id,
+        protocol: existing.protocol,
+        to: existing.to,
+        attempt: existing.attempt
+      };
+    }
+    // PENDING = uma execução anterior deste MESMO job chegou a chamar o Resend mas
+    // nunca voltou pra confirmar sucesso/erro (travou, worker reiniciou, etc.) — não
+    // sabemos se o e-mail saiu de verdade, então nunca reenviamos às cegas aqui.
+    // ERROR não bloqueia: significa que o Resend foi chamado e recusou/falhou de forma
+    // limpa, então tentar de novo é seguro (nada foi entregue).
+    if (existing?.status === EmailLogStatus.PENDING) {
+      throw new Error(`Job ${jobId} já iniciou um envio anterior cujo resultado é incerto (travou antes de confirmar sucesso ou erro). Bloqueado para evitar duplicidade — verifique manualmente (ex.: caixa do destinatário) antes de tentar de novo.`);
+    }
+  }
+
   const communication = await InsuranceCommunication.findById(communicationId)
     .populate('patientId', 'fullName')
     .populate('guideId', 'number')
@@ -130,6 +160,41 @@ export async function sendCommunicationEmail({
 
   const html = buildDefaultHtml({ patientName, insuranceName, guideNumber, purpose, message });
   const text = message || `${SUBJECT_BY_PURPOSE[purpose] || 'Solicitação'} para ${patientName}.`;
+  const resolvedSubject = subject || rules?.defaultSubject || SUBJECT_BY_PURPOSE[purpose] || SUBJECT_BY_PURPOSE.authorization;
+  const resolvedType = sendType || (isFirstSend ? EmailLogType.FIRST_SEND : EmailLogType.RESEND);
+  const attachmentsSnapshot = pkg.attachments.map(a => ({
+    documentId: a.documentId,
+    url: a.url,
+    name: a.filename,
+    hash: a.hash,
+    mimeType: a.mimeType,
+    size: a.size
+  }));
+
+  // Marcador gravado ANTES de chamar o Resend — é o que permite o guard de idempotência
+  // acima detectar "este job já tentou enviar" mesmo se o processo travar/reiniciar
+  // logo depois desta chamada, antes de conseguirmos confirmar sucesso ou erro.
+  let pendingLog = null;
+  if (jobId) {
+    pendingLog = await CommunicationEmailLog.create({
+      communicationId,
+      communicationPackageId: pkg._id,
+      jobId,
+      to: destination,
+      subject: resolvedSubject,
+      template: template || null,
+      message: message || null,
+      attachments: attachmentsSnapshot,
+      attempt,
+      type: resolvedType,
+      reason: reason || undefined,
+      ip: ip || undefined,
+      lastAttemptAt,
+      provider: getEmailProviderName(),
+      status: EmailLogStatus.PENDING,
+      sentBy: userId
+    });
+  }
 
   let result;
   let logStatus = EmailLogStatus.SUCCESS;
@@ -139,7 +204,7 @@ export async function sendCommunicationEmail({
   try {
     result = await sendEmailWithAttachments({
       to: destination,
-      subject: subject || rules?.defaultSubject || SUBJECT_BY_PURPOSE[purpose] || SUBJECT_BY_PURPOSE.authorization,
+      subject: resolvedSubject,
       html,
       text,
       attachments,
@@ -180,42 +245,35 @@ export async function sendCommunicationEmail({
     }
   }
 
-  // Registrar log com snapshot dos anexos
-  const emailLog = await CommunicationEmailLog.create({
-    communicationId,
-    communicationPackageId: pkg._id,
-    to: destination,
-    subject: subject || rules?.defaultSubject || SUBJECT_BY_PURPOSE[purpose] || SUBJECT_BY_PURPOSE.authorization,
-    template: template || null,
-    message: message || null,
-    // `pkg` vem de .lean() sem populate — a.documentId aqui é só um ObjectId, então
-    // ler a.documentId?.url/.name nunca resolvia (sempre undefined). O snapshot real
-    // do que foi enviado tem que vir dos campos diretos do subdocumento do pacote
-    // (a.url, a.filename, ...), que são os únicos preenchidos de fato. Bug encontrado
-    // e corrigido em auditoria de arquitetura 2026-08-04 — antes desta correção, todo
-    // log gravado tinha attachments sem url/publicId (confirmado contra dado real).
-    attachments: pkg.attachments.map(a => ({
-      documentId: a.documentId,
-      url: a.url,
-      name: a.filename,
-      hash: a.hash,
-      mimeType: a.mimeType,
-      size: a.size
-    })),
-    attempt,
-    type: sendType || (isFirstSend ? EmailLogType.FIRST_SEND : EmailLogType.RESEND),
-    reason: reason || undefined,
-    ip: ip || undefined,
-    lastAttemptAt,
-    durationMs,
+  // Fecha o registro: atualiza o MESMO marcador 'pending' criado antes do Resend (não
+  // cria um segundo documento) — isso é o que faz o guard de idempotência funcionar,
+  // já que o registro final continua tendo o mesmo jobId da tentativa.
+  const finalFields = {
     protocol: result?.messageId || result?.protocol || null,
-    // Gravado direto (não via result?.provider) pra sobreviver mesmo quando o envio
-    // falha — result vira { success: false } no catch e perderia essa informação.
-    provider: getEmailProviderName(),
+    durationMs,
     status: logStatus,
-    errorMessage,
-    sentBy: userId
-  });
+    errorMessage
+  };
+
+  const emailLog = pendingLog
+    ? await CommunicationEmailLog.findByIdAndUpdate(pendingLog._id, { $set: finalFields }, { new: true })
+    : await CommunicationEmailLog.create({
+        communicationId,
+        communicationPackageId: pkg._id,
+        to: destination,
+        subject: resolvedSubject,
+        template: template || null,
+        message: message || null,
+        attachments: attachmentsSnapshot,
+        attempt,
+        type: resolvedType,
+        reason: reason || undefined,
+        ip: ip || undefined,
+        lastAttemptAt,
+        provider: getEmailProviderName(),
+        sentBy: userId,
+        ...finalFields
+      });
 
   if (logStatus === EmailLogStatus.ERROR) {
     throw new Error(errorMessage);
