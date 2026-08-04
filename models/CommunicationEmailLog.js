@@ -96,6 +96,22 @@ const communicationEmailLogSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  // Message-ID real retornado pelo provedor (Resend: campo message_id obtido via
+  // GET /emails/:id; SMTP: messageId do nodemailer). Usado para manter thread de
+  // conversa quando o usuário reenvia/complementa a comunicação.
+  messageId: {
+    type: String,
+    trim: true,
+    index: true
+  },
+  // Message-ID artificial usado como fallback para agrupar primeiro envio e
+  // reenvios/complementos no mesmo thread de conversa quando o provedor ainda
+  // não devolveu o message_id real (ex.: timeout no lookup).
+  threadMessageId: {
+    type: String,
+    trim: true,
+    index: true
+  },
   // Qual provider (resend/smtp) processou este envio — sem isso, se o provider
   // configurado mudar no futuro, não dá pra saber depois qual serviço enviou
   // um e-mail específico só olhando o protocolo (que é só o id retornado por ele).

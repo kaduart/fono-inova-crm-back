@@ -36,6 +36,8 @@ export class ResendProvider extends BaseEmailProvider {
     attachments = [],
     customId,
     idempotencyKey,
+    threadMessageId,
+    inReplyTo,
     fromEmail,
     fromName
   }) {
@@ -60,7 +62,19 @@ export class ResendProvider extends BaseEmailProvider {
     // Header interno de rastreamento. O Idempotency-Key é passado pelo segundo
     // argumento do resend.emails.send() para garantir que a SDK o coloque no header
     // HTTP corretamente (evita duplicar no payload e conflitar).
-    const headers = customId ? { 'X-Entity-Ref-ID': customId } : undefined;
+    const headers = {};
+    if (customId) headers['X-Entity-Ref-ID'] = customId;
+
+    // Mantém reenvios/complementos no mesmo thread de conversa (Gmail/Outlook).
+    // O primeiro envio não recebe header de thread; o Message-ID real é obtido via
+    // GET /emails/:id após o envio e salvo no log. Reenvios usam In-Reply-To/
+    // References apontando para esse Message-ID real.
+    if (inReplyTo) {
+      headers['In-Reply-To'] = inReplyTo;
+      headers['References'] = inReplyTo;
+    }
+
+    const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;
 
     const payload = {
       from,
@@ -69,11 +83,10 @@ export class ResendProvider extends BaseEmailProvider {
       html,
       text: text || undefined,
       attachments: resendAttachments.length > 0 ? resendAttachments : undefined,
-      headers
+      headers: finalHeaders
     };
 
     console.log('[ResendProvider] Enviando e-mail:', { from, to: payload.to, subject: payload.subject, attachments: resendAttachments.length, idempotencyKey: idempotencyKey || null });
-    console.log('[RESEND IDEMPOTENCY]', { idempotencyKey: idempotencyKey || null });
 
     let data, error;
     try {
@@ -83,7 +96,6 @@ export class ResendProvider extends BaseEmailProvider {
       const result = await this.resend.emails.send(payload, { idempotencyKey });
       data = result.data;
       error = result.error;
-      console.log('[RESEND RESPONSE]', { id: data?.id, idempotencyKey: idempotencyKey || null });
     } catch (err) {
       console.error('[ResendProvider] Exceção na chamada Resend:', err.response?.data || err.message || err);
       throw err;
@@ -94,10 +106,31 @@ export class ResendProvider extends BaseEmailProvider {
       throw new Error(`Resend error: ${error.message || JSON.stringify(error)}`);
     }
 
+    // Busca o Message-ID real (SMTP) gerado pela Resend. O id retornado no send é
+    // o ID interno da API; para threading correto precisamos do message_id que os
+    // clientes de email (Gmail/Outlook) usam em In-Reply-To/References. O message_id
+    // pode demorar algumas centenas de ms para ficar disponível no retrieve.
+    let messageId = null;
+    if (data?.id) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const retrieved = await this.resend.emails.get(data.id);
+          messageId = retrieved?.data?.message_id || null;
+          if (messageId) break;
+        } catch (lookupErr) {
+          console.error(`[ResendProvider] Tentativa ${attempt}/3 falha ao obter message_id do email enviado:`, lookupErr?.response?.data || lookupErr.message || lookupErr);
+        }
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+    }
+
     return {
       success: true,
       messageId: data?.id,
-      protocol: data?.id
+      protocol: data?.id,
+      resendMessageId: messageId || undefined
     };
   }
 }

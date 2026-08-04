@@ -162,6 +162,20 @@ export async function sendCommunicationEmail({
   const text = message || `${SUBJECT_BY_PURPOSE[purpose] || 'Solicitação'} para ${patientName}.`;
   const resolvedSubject = subject || rules?.defaultSubject || SUBJECT_BY_PURPOSE[purpose] || SUBJECT_BY_PURPOSE.authorization;
   const resolvedType = sendType || (isFirstSend ? EmailLogType.FIRST_SEND : EmailLogType.RESEND);
+
+  // Thread de conversa: reaproveita o Message-ID real (campo messageId) do
+  // primeiro envio bem-sucedido da comunicação. Reenvios/complementos recebem
+  // headers In-Reply-To/References para que Gmail/Outlook agrupem na mesma
+  // conversa. O primeiro envio não envia esses headers — o Message-ID real é
+  // obtido do provedor após o envio e salvo no log para uso nos próximos.
+  const firstSuccessLog = await CommunicationEmailLog.findOne({
+    communicationId,
+    status: EmailLogStatus.SUCCESS,
+    messageId: { $exists: true, $ne: null }
+  }).sort({ sentAt: 1 }).lean();
+
+  const inReplyTo = firstSuccessLog?.messageId || undefined;
+
   const attachmentsSnapshot = pkg.attachments.map(a => ({
     documentId: a.documentId,
     url: a.url,
@@ -217,6 +231,7 @@ export async function sendCommunicationEmail({
       attachments,
       customId: emailIdempotencyKey,
       idempotencyKey: emailIdempotencyKey,
+      inReplyTo,
       // Remetente dedicado deste fluxo (envio de documentação/faturamento a convênio) —
       // usa env var própria em vez do EMAIL_FROM genérico, que outros e-mails do sistema
       // (reset de senha, etc.) também usam. Evita que uma troca aqui afete o resto do
@@ -239,6 +254,7 @@ export async function sendCommunicationEmail({
   // por jobId) e não reenviar às cegas.
   const finalFields = {
     protocol: result?.messageId || result?.protocol || null,
+    messageId: result?.resendMessageId || result?.messageId || null,
     durationMs,
     status: logStatus,
     errorMessage

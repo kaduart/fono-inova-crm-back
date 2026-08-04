@@ -112,6 +112,8 @@ export class SMTPProvider extends BaseEmailProvider {
     text = '',
     attachments = [],
     customId,
+    threadMessageId,
+    inReplyTo,
     fromEmail,
     fromName
   }) {
@@ -135,6 +137,12 @@ export class SMTPProvider extends BaseEmailProvider {
       contentType: att.contentType
     }));
 
+    const headers = { 'X-Entity-Ref-ID': customId || `crm-${Date.now()}` };
+    if (inReplyTo) {
+      headers['In-Reply-To'] = inReplyTo;
+      headers['References'] = inReplyTo;
+    }
+
     const mailOptions = {
       from: this.parseFrom(resolvedFromEmail, resolvedFromName),
       to,
@@ -142,7 +150,7 @@ export class SMTPProvider extends BaseEmailProvider {
       text,
       html,
       attachments: nodemailerAttachments,
-      headers: { 'X-Entity-Ref-ID': customId || `crm-${Date.now()}` }
+      headers
     };
 
     const sendStart = Date.now();

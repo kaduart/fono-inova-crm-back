@@ -76,6 +76,8 @@ export async function sendEmailWithAttachments({
   attachments = [],
   customId,
   idempotencyKey,
+  threadMessageId,
+  inReplyTo,
   fromEmail,
   fromName
 }) {
@@ -88,6 +90,8 @@ export async function sendEmailWithAttachments({
     attachments,
     customId,
     idempotencyKey,
+    threadMessageId,
+    inReplyTo,
     fromEmail,
     fromName
   });

@@ -103,18 +103,6 @@ async function startQueueMonitor() {
       }
       lastQueueStats = stats;
 
-      // Só loga se houver algo acumulando (evita spam)
-      const hasBacklog = Object.values(stats).some(c =>
-        (c.waiting || 0) > 10 || (c.active || 0) > 5 || (c.failed || 0) > 0
-      );
-
-      if (hasBacklog) {
-        console.log('📊 [QUEUE] backlog detectado', stats);
-      } else {
-        // Log resumido a cada ciclo
-        const totalWaiting = Object.values(stats).reduce((s, c) => s + (c.waiting || 0), 0);
-        console.log(`📊 [QUEUE] totalWaiting=${totalWaiting} filas=${MONITORED_QUEUES.length}`);
-      }
     } catch (err) {
       logger.error('queue_monitor_failed', err.message);
     }
