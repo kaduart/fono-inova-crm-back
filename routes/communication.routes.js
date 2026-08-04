@@ -267,11 +267,27 @@ router.post('/webhooks/resend', async (req, res) => {
     const { type, data } = req.body || {};
 
     if (type === 'email.sent' && data?.email_id && data?.message_id) {
-      const updated = await CommunicationEmailLog.findOneAndUpdate(
+      // 1ª tentativa: pelo protocol (email_id). Pode falhar se o webhook chegar
+      // antes do job completar e persistir o log.
+      let updated = await CommunicationEmailLog.findOneAndUpdate(
         { protocol: data.email_id },
         { $set: { messageId: data.message_id } },
         { new: true }
       ).lean();
+
+      // 2ª tentativa: pelo header X-Entity-Ref-ID, que é o jobId salvo no log
+      // PENDING antes do envio. Isso cobre a race condition webhook vs. job.
+      if (!updated && Array.isArray(data.headers)) {
+        const refHeader = data.headers.find(h => h.name === 'X-Entity-Ref-ID');
+        const jobId = refHeader?.value;
+        if (jobId) {
+          updated = await CommunicationEmailLog.findOneAndUpdate(
+            { jobId },
+            { $set: { messageId: data.message_id } },
+            { new: true }
+          ).lean();
+        }
+      }
 
       if (updated) {
         logger.info('resend_webhook_message_id_updated', `Message-ID atualizado para log ${updated._id}`, {
