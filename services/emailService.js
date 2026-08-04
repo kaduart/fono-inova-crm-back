@@ -1,5 +1,5 @@
 // services/emailService.js
-import { getEmailProvider } from './email/EmailProviderFactory.js';
+import { getEmailProvider, getEmailProviderName } from './email/EmailProviderFactory.js';
 
 function buildResetUrl(resetToken, role) {
   const isProd = process.env.NODE_ENV === 'production';
@@ -79,7 +79,7 @@ export async function sendEmailWithAttachments({
   fromName
 }) {
   const provider = getEmailProvider();
-  return provider.sendEmail({
+  const result = await provider.sendEmail({
     to,
     subject,
     html,
@@ -89,6 +89,7 @@ export async function sendEmailWithAttachments({
     fromEmail,
     fromName
   });
+  return { ...result, provider: getEmailProviderName() };
 }
 
 export { getEmailProvider };

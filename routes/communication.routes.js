@@ -13,8 +13,10 @@ import {
   getPackageByCommunicationId
 } from '../services/communication/CommunicationPackageService.js';
 import {
-  getEmailLogs
+  getEmailLogs,
+  listCommunicationEmailLogs
 } from '../services/communication/CommunicationEmailService.js';
+import { EmailLogType } from '../models/CommunicationEmailLog.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { transition, CommunicationEvents } from '../services/communication/CommunicationStateMachine.js';
 import { getRulesForInsurance, updateRulesForInsurance } from '../services/communication/InsuranceRuleService.js';
@@ -39,6 +41,25 @@ router.get('/', auth, async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[CommunicationRoutes] list:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/v2/communications/email-logs — precisa vir ANTES de GET /:id, senão
+// Express casa "email-logs" como valor do param :id.
+router.get('/email-logs', auth, async (req, res) => {
+  try {
+    const { purpose, insurance, patientId, page, limit } = req.query;
+    const result = await listCommunicationEmailLogs({
+      purpose,
+      insuranceProvider: insurance,
+      patientId,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 100
+    });
+    res.json({ success: true, data: result.data, pagination: result.pagination });
+  } catch (error) {
+    console.error('[CommunicationRoutes] email-logs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -113,17 +134,24 @@ router.post('/:id/send', auth, async (req, res) => {
   logger.info('send_endpoint_entered', `Endpoint /send chamado para ${communicationId}`, { communicationId });
 
   try {
-    const { to, subject, message, template } = req.body;
+    const { to, subject, message, template, sendType, reason } = req.body;
 
     const communication = await getCommunicationRequest(communicationId);
 
-    // Se ainda estiver em rascunho, marca como pronta antes de enviar
-    if (communication.status === 'draft') {
-      await transition(communicationId, CommunicationEvents.MARK_READY);
-    }
+    // Comunicação já em sent/approved: isto é reenvio ou complemento, não o 1º envio —
+    // pular a máquina de estados por completo (sent/approved não têm transição SEND;
+    // ver CommunicationEmailService.sendCommunicationEmail pro mesmo guard no worker).
+    const alreadySent = ['sent', 'approved'].includes(communication.status);
 
-    // Transiciona para SENDING antes de enfileirar
-    await transition(communicationId, CommunicationEvents.SEND);
+    if (!alreadySent) {
+      // Se ainda estiver em rascunho, marca como pronta antes de enviar
+      if (communication.status === 'draft') {
+        await transition(communicationId, CommunicationEvents.MARK_READY);
+      }
+
+      // Transiciona para SENDING antes de enfileirar
+      await transition(communicationId, CommunicationEvents.SEND);
+    }
 
     let job;
     try {
@@ -138,6 +166,9 @@ router.post('/:id/send', auth, async (req, res) => {
           subject,
           message,
           template,
+          sendType: sendType || (alreadySent ? EmailLogType.RESEND : undefined),
+          reason: reason || undefined,
+          ip: req.ip,
           userId: req.user.id
         },
         {
@@ -160,9 +191,13 @@ router.post('/:id/send', auth, async (req, res) => {
         error: enqueueError.message
       });
 
-      await transition(communicationId, CommunicationEvents.FAIL, {
-        statusReason: `Falha ao enfileirar envio: ${enqueueError.message}`
-      });
+      // Só reverte status se este ciclo chegou a mudá-lo (ver guard acima) — reenvio/
+      // complemento nunca saem de sent/approved, e FAIL não é transição válida daí.
+      if (!alreadySent) {
+        await transition(communicationId, CommunicationEvents.FAIL, {
+          statusReason: `Falha ao enfileirar envio: ${enqueueError.message}`
+        });
+      }
 
       throw enqueueError;
     }

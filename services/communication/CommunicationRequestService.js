@@ -61,6 +61,7 @@ export async function listCommunicationRequests({
   const [data, total] = await Promise.all([
     InsuranceCommunication.find(query)
       .populate('patientId', 'fullName')
+      .populate('guideId', 'number')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -97,8 +98,20 @@ export async function listCommunicationRequests({
       patientName: r.patientId?.fullName || '',
       insuranceName: convenioMap.get(r.insuranceProvider) || r.insuranceProvider,
       patientId: r.patientId?._id || r.patientId,
+      guideNumber: r.guideId?.number || null,
+      guideId: r.guideId?._id || r.guideId,
       packageStatus: pkg?.status || 'draft',
-      lastEmailStatus: latestLog?.status || null
+      lastEmailStatus: latestLog?.status || null,
+      lastEmailType: latestLog?.type || null,
+      lastEmailTo: latestLog?.to || null,
+      lastEmailSubject: latestLog?.subject || null,
+      lastEmailSentAt: latestLog?.sentAt || null,
+      lastEmailProtocol: latestLog?.protocol || null,
+      lastEmailAttachments: (latestLog?.attachments || []).map(a => ({
+        name: a.name,
+        mimeType: a.mimeType,
+        size: a.size
+      }))
     };
   });
 

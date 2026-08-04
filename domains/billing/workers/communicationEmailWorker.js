@@ -14,7 +14,10 @@ export const communicationEmailWorker = new Worker(
       subject,
       message,
       template,
-      userId
+      userId,
+      sendType,
+      ip,
+      reason
     } = job.data;
 
     const startTime = Date.now();
@@ -37,7 +40,10 @@ export const communicationEmailWorker = new Worker(
         subject,
         message,
         template,
-        userId
+        userId,
+        sendType,
+        ip,
+        reason
       });
 
       const duration = Date.now() - startTime;

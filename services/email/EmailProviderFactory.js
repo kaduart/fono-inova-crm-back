@@ -8,9 +8,14 @@ const PROVIDERS = {
   mailjet: SMTPProvider
 };
 
-export function getEmailProvider() {
+export function getEmailProviderName() {
   const providerName = (process.env.EMAIL_PROVIDER || 'smtp').toLowerCase();
-  const ProviderClass = PROVIDERS[providerName] || SMTPProvider;
+  return PROVIDERS[providerName] ? providerName : 'smtp';
+}
+
+export function getEmailProvider() {
+  const providerName = getEmailProviderName();
+  const ProviderClass = PROVIDERS[providerName];
   return new ProviderClass();
 }
 
