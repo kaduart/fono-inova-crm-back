@@ -111,12 +111,19 @@ export class ResendProvider extends BaseEmailProvider {
     // clientes de email (Gmail/Outlook) usam em In-Reply-To/References. O message_id
     // pode demorar algumas centenas de ms para ficar disponível no retrieve.
     let messageId = null;
+    console.log('[RESEND THREAD DEBUG] send response data.id:', data?.id);
     if (data?.id) {
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
+          console.log(`[RESEND THREAD DEBUG] retrieving email ${data.id}, attempt ${attempt}/3`);
           const retrieved = await this.resend.emails.get(data.id);
+          console.log('[RESEND THREAD DEBUG] retrieved:', JSON.stringify(retrieved));
           messageId = retrieved?.data?.message_id || null;
-          if (messageId) break;
+          if (messageId) {
+            console.log('[RESEND THREAD DEBUG] message_id found:', messageId);
+            break;
+          }
+          console.log('[RESEND THREAD DEBUG] message_id empty, retrying...');
         } catch (lookupErr) {
           console.error(`[ResendProvider] Tentativa ${attempt}/3 falha ao obter message_id do email enviado:`, lookupErr?.response?.data || lookupErr.message || lookupErr);
         }
@@ -124,6 +131,8 @@ export class ResendProvider extends BaseEmailProvider {
           await new Promise(r => setTimeout(r, 500));
         }
       }
+    } else {
+      console.log('[RESEND THREAD DEBUG] no data.id from send response');
     }
 
     return {
