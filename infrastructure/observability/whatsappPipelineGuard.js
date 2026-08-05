@@ -78,42 +78,42 @@ async function checkPendingEvents() {
       .toArray()
   ]);
 
-  if (criticalCount > 0 && shouldAlert('pendingCritical')) {
-    logger.error('whatsapp_critical_pending', `${criticalCount} mensagens WhatsApp paradas há +${CRITICAL_THRESHOLD_MIN}min`, {
-      count: criticalCount,
-      oldest: sampleEvents[0]?.createdAt,
-      sampleWamids: sampleEvents.map(e => e.payload?.msg?.id)
-    });
+//   if (criticalCount > 0 && shouldAlert('pendingCritical')) {
+//     logger.error('whatsapp_critical_pending', `${criticalCount} mensagens WhatsApp paradas há +${CRITICAL_THRESHOLD_MIN}min`, {
+//       count: criticalCount,
+//       oldest: sampleEvents[0]?.createdAt,
+//       sampleWamids: sampleEvents.map(e => e.payload?.msg?.id)
+//     });
 
-    await sendAlert({
-      level: 'critical',
-      type: 'whatsapp_pipeline_stuck',
-      message: `🚨 ${criticalCount} mensagens WhatsApp PARADAS há +${CRITICAL_THRESHOLD_MIN} minutos`,
-      details: {
-        stuckCount: criticalCount,
-        thresholdMinutes: CRITICAL_THRESHOLD_MIN,
-        oldestEventAt: sampleEvents[0]?.createdAt,
-        sampleWamids: sampleEvents.map(e => e.payload?.msg?.id?.substring(0, 40)),
-        action: 'Verificar se crm-worker está ativo e consumindo filas BullMQ'
-      }
-    });
-  } else if (warningCount > 0 && shouldAlert('pendingWarning')) {
-    logger.warn('whatsapp_warning_pending', `${warningCount} mensagens WhatsApp atrasadas`, {
-      count: warningCount
-    });
+//     await sendAlert({
+//       level: 'critical',
+//       type: 'whatsapp_pipeline_stuck',
+//       message: `🚨 ${criticalCount} mensagens WhatsApp PARADAS há +${CRITICAL_THRESHOLD_MIN} minutos`,
+//       details: {
+//         stuckCount: criticalCount,
+//         thresholdMinutes: CRITICAL_THRESHOLD_MIN,
+//         oldestEventAt: sampleEvents[0]?.createdAt,
+//         sampleWamids: sampleEvents.map(e => e.payload?.msg?.id?.substring(0, 40)),
+//         action: 'Verificar se crm-worker está ativo e consumindo filas BullMQ'
+//       }
+//     });
+//   } else if (warningCount > 0 && shouldAlert('pendingWarning')) {
+//     logger.warn('whatsapp_warning_pending', `${warningCount} mensagens WhatsApp atrasadas`, {
+//       count: warningCount
+//     });
 
-    await sendAlert({
-      level: 'warning',
-      type: 'whatsapp_pipeline_slow',
-      message: `⚠️ ${warningCount} mensagens WhatsApp atrasadas (>${WARNING_THRESHOLD_MIN}min)`,
-      details: {
-        stuckCount: warningCount,
-        thresholdMinutes: WARNING_THRESHOLD_MIN,
-        action: 'Monitorar crm-worker e filas BullMQ'
-      }
-    });
-  }
-}
+//     await sendAlert({
+//       level: 'warning',
+//       type: 'whatsapp_pipeline_slow',
+//       message: `⚠️ ${warningCount} mensagens WhatsApp atrasadas (>${WARNING_THRESHOLD_MIN}min)`,
+//       details: {
+//         stuckCount: warningCount,
+//         thresholdMinutes: WARNING_THRESHOLD_MIN,
+//         action: 'Monitorar crm-worker e filas BullMQ'
+//       }
+//     });
+//   }
+ }
 
 // ============================================
 // CHECK 2: Backlog nas filas BullMQ

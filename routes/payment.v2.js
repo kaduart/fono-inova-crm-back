@@ -69,6 +69,25 @@ const normalizePaymentMethod = (method) => {
     return methodMap[method] || 'cash';
 };
 
+// Mapeia método do Payment (cash/credit_card/bank_transfer) de volta para o enum do Appointment
+const mapPaymentMethodToAppointment = (method) => {
+    const map = {
+        'cash': 'dinheiro',
+        'dinheiro': 'dinheiro',
+        'pix': 'pix',
+        'credit_card': 'cartao_credito',
+        'cartao': 'cartao_credito',
+        'cartão': 'cartao_credito',
+        'debit_card': 'cartao_debito',
+        'bank_transfer': 'transferencia_bancaria',
+        'transferencia': 'transferencia_bancaria',
+        'transferência': 'transferencia_bancaria',
+        'liminar_credit': 'liminar_credit',
+        'convenio': 'convenio'
+    };
+    return map[method] || method;
+};
+
 // ============================================
 // POST /api/v2/payments/request
 // Inicia pagamento de forma assíncrona - BLINDADO
@@ -1078,6 +1097,46 @@ router.patch('/:id', auth, async (req, res) => {
             );
         }
 
+        // 🔄 Sincroniza Appointment.paymentForms e Appointment.paymentMethod quando
+        // payment/split/data mudou. Sem isso, telas que leem do Appointment
+        // (ex: calendário, DTO de agendamento, caixa/agendamentos) continuam exibindo
+        // o método antigo após editar o Payment (regressão confirmada 2026-08-04).
+        if (splitMethods !== undefined || amount !== undefined || paymentMethod !== undefined || financialDateBody !== undefined) {
+            const appointmentId = payment.appointment || payment.appointmentId;
+            if (appointmentId) {
+                try {
+                    const payDate = updateData.financialDate || payment.financialDate || new Date();
+                    let newPaymentForms;
+                    let newAppointmentMethod;
+                    if (splitMethods !== undefined) {
+                        newPaymentForms = splitMethods.map(s => ({ amount: Number(s.amount), date: payDate, method: s.method }));
+                        newAppointmentMethod = mapPaymentMethodToAppointment(splitMethods[0]?.method || payment.paymentMethod);
+                    } else {
+                        const effectiveMethod = updateData.paymentMethod ?? payment.paymentMethod;
+                        newPaymentForms = [{
+                            amount: updateData.amount ?? payment.amount,
+                            date: payDate,
+                            method: effectiveMethod,
+                        }];
+                        newAppointmentMethod = mapPaymentMethodToAppointment(effectiveMethod);
+                    }
+                    await Appointment.findByIdAndUpdate(
+                        appointmentId,
+                        { $set: { paymentForms: newPaymentForms, paymentMethod: newAppointmentMethod, updatedAt: new Date() } },
+                        { session: mongoSession }
+                    );
+                    console.log('[PATCH payment] paymentForms/paymentMethod sincronizado:', {
+                        appointmentId,
+                        paymentForms: JSON.stringify(newPaymentForms),
+                        paymentMethod: newAppointmentMethod
+                    });
+                } catch (syncErr) {
+                    console.error('[PATCH payment] Falha ao sincronizar paymentForms/paymentMethod:', syncErr.message);
+                    // Não falha a requisição — é side-effect de consistência
+                }
+            }
+        }
+
         // Commit antes de side-effects (evento + populate de retorno)
         await mongoSession.commitTransaction();
 
@@ -1091,30 +1150,6 @@ router.patch('/:id', auth, async (req, res) => {
             if (oldDate) clearCashflowCache(moment.tz(oldDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
             const newDate = updateData.financialDate;
             if (newDate) clearCashflowCache(moment.tz(newDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
-        }
-
-        // 5a. Sync appointment.paymentForms quando payment/split/data mudou (side-effect)
-        if (splitMethods !== undefined || amount !== undefined || paymentMethod !== undefined || financialDateBody !== undefined) {
-            const appointmentId = payment.appointment || payment.appointmentId;
-            if (appointmentId) {
-                try {
-                    const payDate = updateData.financialDate || payment.financialDate || new Date();
-                    let newPaymentForms;
-                    if (splitMethods !== undefined) {
-                        newPaymentForms = splitMethods.map(s => ({ amount: Number(s.amount), date: payDate, method: s.method }));
-                    } else {
-                        newPaymentForms = [{
-                            amount: updateData.amount ?? payment.amount,
-                            date: payDate,
-                            method: updateData.paymentMethod ?? payment.paymentMethod,
-                        }];
-                    }
-                    await Appointment.findByIdAndUpdate(appointmentId, { $set: { paymentForms: newPaymentForms } });
-                    console.log('[PATCH payment] paymentForms sincronizado:', JSON.stringify(newPaymentForms));
-                } catch (syncErr) {
-                    console.error('[PATCH payment] Falha ao sincronizar paymentForms:', syncErr.message);
-                }
-            }
         }
 
         // 5a.1 Sync appointment.paymentStatus/isPaid quando Payment foi cancelado/refunded
@@ -1178,7 +1213,7 @@ router.patch('/:id', auth, async (req, res) => {
             // Não falha a requisição — evento é side-effect
         }
 
-        const updated = await Payment.findById(id).populate('patient doctor session');
+        const updated = await Payment.findById(id).populate('patient doctor session appointment');
         return res.json({
             success: true,
             data: updated,
