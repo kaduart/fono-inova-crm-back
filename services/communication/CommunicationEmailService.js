@@ -168,10 +168,14 @@ export async function sendCommunicationEmail({
   // headers In-Reply-To/References para que Gmail/Outlook agrupem na mesma
   // conversa. O Message-ID real só fica disponível via webhook email.sent da
   // Resend; sem ele, o reenvio sai como novo e-mail.
+  //
+  // Importante: só considera Message-ID real (delimitado por <...>). Logs antigos
+  // podem ter messageId como UUID interno da Resend (protocol) antes da correção
+  // do webhook/sanitize; usar UUID como referência não agrupa a conversa.
   const firstSuccessLog = await CommunicationEmailLog.findOne({
     communicationId,
     status: EmailLogStatus.SUCCESS,
-    messageId: { $exists: true, $ne: null }
+    messageId: { $regex: /^</ }
   }).sort({ sentAt: 1 }).lean();
 
   const inReplyTo = firstSuccessLog?.messageId || undefined;
