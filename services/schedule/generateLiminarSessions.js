@@ -58,6 +58,17 @@ export async function generateLiminarSessions({
   if (!contract)                    throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
   if (contract.status !== 'active') throw new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
 
+  // ── 1b. Controle de sessões autorizadas ───────────────────────
+  const existingSessionsCount = contract.totalSessions != null
+    ? await Appointment.countDocuments({
+        liminarContract: contract._id,
+        operationalStatus: { $ne: 'canceled' }
+      })
+    : 0;
+  const remainingSessions = contract.totalSessions != null
+    ? Math.max(0, contract.totalSessions - existingSessionsCount)
+    : null;
+
   // ── 2. Normaliza therapies ─────────────────────────────────────
   const therapies = plan.therapies instanceof Map
     ? Object.fromEntries(plan.therapies)
@@ -65,7 +76,12 @@ export async function generateLiminarSessions({
 
   const therapyEntries = Object.entries(therapies);
   if (therapyEntries.length === 0) {
-    return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
+    return {
+      created: 0, skipped: 0, total: 0, totalCost: 0,
+      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
+      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
+      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
+    };
   }
 
   // Filtra por especialidades selecionadas (se informado)
@@ -74,7 +90,12 @@ export async function generateLiminarSessions({
     : therapyEntries;
 
   if (activeEntries.length === 0) {
-    return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
+    return {
+      created: 0, skipped: 0, total: 0, totalCost: 0,
+      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
+      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
+      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
+    };
   }
 
   // ── 3. Resolve janela de geração ───────────────────────────────
@@ -219,42 +240,68 @@ export async function generateLiminarSessions({
   }
 
   if (slots.length === 0) {
-    return { created: 0, skipped: 0, total: 0, totalCost: 0, saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance };
+    return {
+      created: 0, skipped: 0, total: 0, totalCost: 0,
+      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
+      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
+      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
+    };
   }
 
-  // ── 6. Trava de saldo: nunca gera além do crédito disponível ───
-  // 🚨 FIX (2026-07-16): antes só avisava (console.warn) sem impedir a criação —
-  // permitia agendar mais sessões do que a liminar tinha crédito pra cobrir,
-  // diferente do convênio (generateInsuranceSessions.js), que trava em
-  // `remaining = totalSessions - usedSessions - reservado`. Ordena os slots
-  // gerados por data e mantém só os que cabem no saldo disponível; o resto
-  // (mais distante no tempo) é cortado e reportado, nunca criado.
+  // ── 6. Travas de saldo e de quantidade de sessões ─────────────
+  // Ordena por data e aplica os limites: saldo financeiro e totalSessions
+  // global do contrato.
   slots.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
 
+  const kept = [];
+  const saldoBlocked = [];
+  const sessionBlocked = [];
   let runningCost = 0;
-  let cutoffIndex = slots.length;
-  for (let i = 0; i < slots.length; i++) {
-    runningCost += slots[i].sessionValue;
-    if (runningCost > contract.creditBalance) {
-      cutoffIndex = i;
-      break;
+  let totalKept = existingSessionsCount; // usado para limite global
+
+  for (const slot of slots) {
+    const value = slot.sessionValue;
+
+    const wouldExceedCost = runningCost + value > contract.creditBalance;
+    const wouldExceedGlobalSessions = remainingSessions != null && totalKept >= contract.totalSessions;
+
+    if (wouldExceedCost || wouldExceedGlobalSessions) {
+      if (wouldExceedGlobalSessions && !wouldExceedCost) {
+        sessionBlocked.push(slot);
+      } else {
+        saldoBlocked.push(slot);
+      }
+      continue;
     }
+
+    kept.push(slot);
+    runningCost += value;
+    totalKept++;
   }
 
-  const blockedSlots = slots.slice(cutoffIndex);
-  slots.length = cutoffIndex; // trunca in-place — só sobra o que cabe no saldo
-
+  slots = kept;
   const totalCost = slots.reduce((s, sl) => s + sl.sessionValue, 0);
   console.log('[generateLiminarSessions] 📋 Especialidades ativas:', activeEntries.map(([sp]) => sp));
 
-  if (blockedSlots.length > 0) {
+  if (saldoBlocked.length > 0) {
     console.warn('[generateLiminarSessions] ⛔ Saldo insuficiente — geração cortada além do crédito disponível', {
       contractId:        contract._id,
       creditBalance:     contract.creditBalance,
-      slotsSolicitados:  slots.length + blockedSlots.length,
+      slotsSolicitados:  slots.length + saldoBlocked.length,
       slotsGerados:      slots.length,
-      slotsBloqueados:   blockedSlots.length,
-      primeiroBloqueado: `${blockedSlots[0].dateStr} ${blockedSlots[0].time} (${blockedSlots[0].specialty})`
+      slotsBloqueados:   saldoBlocked.length,
+      primeiroBloqueado: `${saldoBlocked[0].dateStr} ${saldoBlocked[0].time} (${saldoBlocked[0].specialty})`
+    });
+  }
+
+  if (sessionBlocked.length > 0) {
+    console.warn('[generateLiminarSessions] ⛔ Limite global de sessões autorizadas atingido', {
+      contractId:        contract._id,
+      totalSessions:     contract.totalSessions,
+      existingSessions:  existingSessionsCount,
+      remainingSessions,
+      slotsBloqueados:   sessionBlocked.length,
+      primeiroBloqueado: `${sessionBlocked[0].dateStr} ${sessionBlocked[0].time} (${sessionBlocked[0].specialty})`
     });
   }
 
@@ -262,8 +309,10 @@ export async function generateLiminarSessions({
     return {
       created: 0, skipped: 0, total: 0, totalCost: 0,
       saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
-      saldoInsuficiente: blockedSlots.length > 0,
-      slotsBloqueadosPorSaldo: blockedSlots.length
+      saldoInsuficiente: saldoBlocked.length > 0,
+      slotsBloqueadosPorSaldo: saldoBlocked.length,
+      limiteSessoesAtingido: sessionBlocked.length > 0,
+      slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
     };
   }
 
@@ -441,7 +490,9 @@ export async function generateLiminarSessions({
     totalCost,
     saldo:         contract.creditBalance,
     saldoAposTudo: contract.creditBalance - totalCost,
-    saldoInsuficiente:       blockedSlots.length > 0,
-    slotsBloqueadosPorSaldo: blockedSlots.length
+    saldoInsuficiente:       saldoBlocked.length > 0,
+    slotsBloqueadosPorSaldo: saldoBlocked.length,
+    limiteSessoesAtingido:   sessionBlocked.length > 0,
+    slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
   };
 }

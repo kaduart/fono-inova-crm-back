@@ -141,6 +141,15 @@ export async function execute(id, payload, user) {
           'FORBIDDEN_MANUAL_COMPLETE'
         );
       }
+      // 🛡️ Chegando aqui com incomingOperationalStatus === 'completed', o guard acima já
+      // garantiu que appointment.operationalStatus também é 'completed' (admin-edit de um
+      // agendamento já completado, permanecendo completado — não é uma transição real).
+      // O model tem um guard próprio (pre findOneAndUpdate) que bloqueia QUALQUER
+      // $set.operationalStatus='completed' sem essa flag, sem saber a distinção acima —
+      // por isso precisa ser sinalizado explicitamente aqui, e só aqui.
+      if (incomingOperationalStatus === 'completed') {
+        updateData._fromCompleteService = true;
+      }
       if (incomingOperationalStatus === 'canceled' && !CANCELED_STATUSES.includes(appointment.operationalStatus)) {
         throw buildError(
           'Transição inválida: operationalStatus=canceled só pode ser atingido via cancelAppointment',

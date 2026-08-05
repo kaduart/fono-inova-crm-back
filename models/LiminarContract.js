@@ -33,6 +33,11 @@ const liminarContractSchema = new mongoose.Schema({
   creditBalance: { type: Number, required: true, min: 0 },
   usedCredit:    { type: Number, default: 0 },
 
+  // Quantidade total de sessões autorizadas pela liminar (quando a decisão judicial
+  // define um número máximo de sessões, não apenas um valor em R$).
+  // null = não policia por quantidade, apenas por saldo financeiro.
+  totalSessions: { type: Number, default: null, min: 0 },
+
   creditHistory: [creditHistorySchema],
 
   // ─── STATUS ────────────────────────────────────────────────

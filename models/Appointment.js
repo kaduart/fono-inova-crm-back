@@ -487,9 +487,11 @@ function computeDateTimes(doc) {
   if (!doc.date || !doc.time) return;
   const d = new Date(doc.date);
   const [h, m] = doc.time.split(':').map(Number);
-  // date no MongoDB é UTC 12:00 quando salvo via string YYYY-MM-DD
-  // Usamos construtor local para respeitar o dia correto
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
+  // date pode chegar como string "YYYY-MM-DD" crua (meia-noite UTC) ou já
+  // normalizada (meio-dia UTC, como o banco salva). Getters UTC extraem o
+  // dia certo nos dois casos — getters locais rolam pro dia anterior quando
+  // o servidor roda em fuso negativo (BR) e a entrada é meia-noite UTC.
+  const start = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, 0, 0);
   const duration = doc.duration || 40;
   const end = new Date(start.getTime() + duration * 60000);
   doc.startDateTime = start;

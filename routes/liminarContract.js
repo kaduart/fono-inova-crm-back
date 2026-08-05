@@ -13,6 +13,7 @@ import {
   updateTherapy,
   getContractIntegrity,
   inactivateContract,
+  moveAppointmentSpecialty,
 } from '../controllers/liminarContractController.js';
 
 const router = express.Router();
@@ -25,6 +26,7 @@ router.patch('/:id/recharge', rechargeContract);
 router.get('/:id/committed-balance', getCommittedBalance);
 router.get('/:id/sessions',   getContractSessions);
 router.get('/:id/integrity',  getContractIntegrity);
+router.patch('/:id/appointments/:appointmentId/specialty', moveAppointmentSpecialty);
 router.post('/:id/inactivate', inactivateContract);
 
 // Planos terapêuticos

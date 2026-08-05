@@ -24,6 +24,7 @@ import { resolvePatientId } from '../utils/identityResolver.js';
 import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideService.js';
 import { buildGuideResponse } from '../services/guideLifecycle/guideResponseBuilder.js';
 import { insurancePaymentCreationService } from '../domains/billing/services/InsurancePaymentCreationService.js';
+import { moveAppointmentGuide } from '../services/insuranceGuide/moveAppointmentGuide.js';
 
 const router = express.Router();
 
@@ -1044,6 +1045,54 @@ router.post('/:id/supersede', auth, async (req, res) => {
       success: false,
       code: error.code || 'INTERNAL_ERROR',
       message: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/v2/insurance-guides/move-appointment
+ * Move um atendimento (appointment + session/payment vinculados) de uma guia
+ * pra outra, ajustando usedSessions/status das duas dentro de uma transação.
+ *
+ * Correção administrativa: guia lançada errada, atendimento na guia errada, etc.
+ * Não aceita alterar contadores manualmente — sempre passa pelas mesmas regras
+ * de consumo/liberação usadas no fluxo normal de completar/cancelar convênio.
+ *
+ * Body:
+ *   appointmentId: string (obrigatório) — guia de origem é derivada do próprio appointment
+ *   targetGuideId: string (obrigatório)
+ *   reason?: string
+ *   force?: boolean — ignora mismatches de paciente/especialidade/convênio/janela de
+ *     vigência (NUNCA ignora guia destino esgotada, isso é bloqueado pelo schema)
+ */
+router.post('/move-appointment', auth, async (req, res) => {
+  const { appointmentId, targetGuideId, reason, force } = req.body;
+
+  try {
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, code: 'INVALID_APPOINTMENT_ID', message: 'appointmentId inválido' });
+    }
+    if (!targetGuideId || !mongoose.Types.ObjectId.isValid(targetGuideId)) {
+      return res.status(400).json({ success: false, code: 'INVALID_TARGET_GUIDE_ID', message: 'targetGuideId inválido' });
+    }
+
+    const result = await moveAppointmentGuide({
+      appointmentId,
+      targetGuideId,
+      reason,
+      force: force === true,
+      userId: req.user?._id || req.user?.id,
+    });
+
+    return res.status(200).json({ success: true, data: result });
+
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'INTERNAL_ERROR',
+      message: error.message,
+      details: error.details,
     });
   }
 });

@@ -23,7 +23,11 @@ const therapyScheduleSchema = new mongoose.Schema({
   slots:                 { type: [slotSchema], default: [] },
   sessionValue:          { type: Number, required: true, min: 0.01 },
   sessionDurationMinutes:{ type: Number, default: 40 },
-  notes:                 { type: String, default: null }
+  notes:                 { type: String, default: null },
+
+  // Quantidade máxima de sessões autorizadas para esta especialidade dentro da liminar.
+  // null = não policia por quantidade, apenas pelo saldo financeiro geral.
+  totalSessions:         { type: Number, default: null, min: 0 },
 }, { _id: false });
 
 const therapeuticPlanSchema = new mongoose.Schema({

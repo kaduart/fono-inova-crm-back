@@ -575,9 +575,20 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             // Regressão 2026-07-03: sem isso, appointment completado como 'paid' aparecia 'pending' no cashflow.
             appointmentUpdate.$set.visualFlag = resolveVisualFlag(sessionUpdate, isBalanceOrigin);
 
-            const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
-            const rawMethod = ctx.splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod;
-            appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
+            // 🎯 Propaga billingType/paymentMethod de origens protegidas (liminar/convenio)
+            // Bug histórico: appointments criados com billingType='particular' default
+            // mas vinculados a contrato liminar/convênio ficavam com billingType antigo após complete.
+            if (billingType === 'liminar') {
+                appointmentUpdate.$set.billingType = 'liminar';
+                appointmentUpdate.$set.paymentMethod = 'liminar_credit';
+            } else if (billingType === 'convenio') {
+                appointmentUpdate.$set.billingType = 'convenio';
+                appointmentUpdate.$set.paymentMethod = 'convenio';
+            } else {
+                const validPaymentMethods = ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'];
+                const rawMethod = ctx.splitMethods?.[0]?.method || appointment.paymentMethod || packageData?.paymentMethod;
+                appointmentUpdate.$set.paymentMethod = validPaymentMethods.includes(rawMethod) ? rawMethod : 'pix';
+            }
             // convenio e liminar: paciente nunca deve balance (paga pelo plano/crédito)
             const patientOwesBalance = !['convenio', 'liminar'].includes(billingType);
             appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid) ? 0 : (sessionValue || 0);

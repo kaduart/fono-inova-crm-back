@@ -11,6 +11,7 @@ import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { cancelAppointments } from '../domain/appointment/cancelAppointments.js';
 import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
 import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
+import { moveLiminarAppointmentSpecialty } from '../services/liminar/moveLiminarAppointmentSpecialty.js';
 
 const logger = createContextLogger('LiminarContract');
 
@@ -22,6 +23,7 @@ export async function createLiminarContract(req, res) {
     patientId,
     doctorId,
     totalCredit,
+    totalSessions,
     processNumber,
     court,
     expirationDate,
@@ -60,6 +62,7 @@ export async function createLiminarContract(req, res) {
         totalCredit,
         creditBalance: totalCredit,
         usedCredit:    0,
+        totalSessions: totalSessions ?? null,
         processNumber: processNumber || null,
         court:         court || null,
         expirationDate: expirationDate || null,
@@ -702,7 +705,48 @@ export async function getContractSessions(req, res) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// GET /api/v2/liminar-contracts/:id/integrity
+// PATCH /api/v2/liminar-contracts/:id/appointments/:appointmentId/specialty
+// Move um appointment liminar de uma especialidade para outra dentro do
+// mesmo contrato/plano terapêutico.
+// ──────────────────────────────────────────────────────────────
+export async function moveAppointmentSpecialty(req, res) {
+  const { id, appointmentId } = req.params;
+  const { targetSpecialty, reason } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'ID do contrato inválido' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+    return res.status(400).json({ error: 'ID do agendamento inválido' });
+  }
+  if (!targetSpecialty || typeof targetSpecialty !== 'string') {
+    return res.status(400).json({ error: 'targetSpecialty é obrigatório' });
+  }
+
+  try {
+    const result = await moveLiminarAppointmentSpecialty({
+      appointmentId,
+      targetSpecialty,
+      reason,
+      userId: req.user?._id || req.user?.id,
+    });
+
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    logger.error('Erro ao mover especialidade do appointment liminar', {
+      contractId: id,
+      appointmentId,
+      targetSpecialty,
+      error: error.message,
+    });
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'INTERNAL_ERROR',
+      error: error.message,
+    });
+  }
+}
 // Projeção sem nova coleção: compara TherapeuticPlan (esperado)
 // vs Appointments (gerado) vs Sessions completed (executado).
 // ──────────────────────────────────────────────────────────────
