@@ -164,7 +164,7 @@ export async function sendCommunicationEmail({
   const resolvedType = sendType || (isFirstSend ? EmailLogType.FIRST_SEND : EmailLogType.RESEND);
 
   // Thread de conversa: reaproveita o Message-ID real (campo messageId) do
-  // primeiro envio bem-sucedido da comunicação. Reenvios/complementos recebem
+  // último envio bem-sucedido da comunicação. Reenvios/complementos recebem
   // headers In-Reply-To/References para que Gmail/Outlook agrupem na mesma
   // conversa. O Message-ID real só fica disponível via webhook email.sent da
   // Resend; sem ele, o reenvio sai como novo e-mail.
@@ -172,13 +172,15 @@ export async function sendCommunicationEmail({
   // Importante: só considera Message-ID real (delimitado por <...>). Logs antigos
   // podem ter messageId como UUID interno da Resend (protocol) antes da correção
   // do webhook/sanitize; usar UUID como referência não agrupa a conversa.
-  const firstSuccessLog = await CommunicationEmailLog.findOne({
+  // Usamos o último (não o primeiro) porque o Gmail/Outlook agrupam melhor quando
+  // cada resposta aponta para a mensagem mais recente da conversa.
+  const lastSuccessLog = await CommunicationEmailLog.findOne({
     communicationId,
     status: EmailLogStatus.SUCCESS,
     messageId: { $regex: /^</ }
-  }).sort({ sentAt: 1 }).lean();
+  }).sort({ sentAt: -1 }).lean();
 
-  const inReplyTo = firstSuccessLog?.messageId || undefined;
+  const inReplyTo = lastSuccessLog?.messageId || undefined;
 
   const attachmentsSnapshot = pkg.attachments.map(a => ({
     documentId: a.documentId,
