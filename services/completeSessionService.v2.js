@@ -946,6 +946,21 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         // 🔄 INVALIDA CACHE do dashboard para refletir novo caixa/produção em tempo real
         invalidateDashboardCache();
 
+        // 🔄 ATUALIZA PAYMENTSVIEW (read-model) para todos os payments criados/atualizados
+        if (paymentCreated) {
+            try {
+                const { handlePaymentEvent } = await import('../projections/paymentsProjection.js');
+                await handlePaymentEvent({
+                    type: 'PAYMENT_CREATED',
+                    payload: { paymentId: paymentCreated._id.toString() },
+                    timestamp: new Date().toISOString()
+                });
+                console.log(`[CompleteSessionV2] 🔄 PaymentsView atualizada para ${paymentCreated._id}`);
+            } catch (viewErr) {
+                console.error(`[CompleteSessionV2] ⚠️ Erro ao atualizar PaymentsView:`, viewErr.message);
+            }
+        }
+
         // 🔄 Cancela appointments futuros do pacote (fora da transação — evita abort por Mongoose middleware)
         if (packageJustFinished && packageId) {
             try {

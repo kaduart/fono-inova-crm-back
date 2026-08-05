@@ -87,14 +87,22 @@ router.get('/', auth, async (req, res) => {
       .sort({ 'period.start': -1 });
     console.log(`[Planning GET] 📊 Encontrados ${plannings.length} planejamentos`);
 
-    // Se solicitado refresh, recalcular todos em paralelo
+    // Se solicitado refresh, recalcular com concorrência controlada.
+    // 🛡️ HOTFIX: Promise.all em 66 planejamentos gerava tempestade de queries,
+    // event-loop lag >4s e heap 97%. Limitar a 2 em paralelo evita travar a API.
     if (refresh === 'true') {
-      console.log('[Planning GET] 🔄 Recalculando todos os planejamentos em paralelo...');
-      await Promise.all(plannings.map(planning =>
-        updatePlanningProgress(planning._id).catch(err =>
-          console.error(`[Planning GET] ❌ Erro ao atualizar ${planning._id}:`, err.message)
-        )
-      ));
+      const REFRESH_CONCURRENCY = 2;
+      console.log(`[Planning GET] 🔄 Recalculando ${plannings.length} planejamentos com concorrência=${REFRESH_CONCURRENCY}...`);
+      for (let i = 0; i < plannings.length; i += REFRESH_CONCURRENCY) {
+        const batch = plannings.slice(i, i + REFRESH_CONCURRENCY);
+        await Promise.all(
+          batch.map(planning =>
+            updatePlanningProgress(planning._id).catch(err =>
+              console.error(`[Planning GET] ❌ Erro ao atualizar ${planning._id}:`, err.message)
+            )
+          )
+        );
+      }
       
       // Buscar novamente após atualização
       plannings = await Planning.find(filters)

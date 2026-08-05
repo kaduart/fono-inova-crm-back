@@ -23,6 +23,7 @@
 
 import mongoose from 'mongoose';
 import Payment from '../../../models/Payment.js';
+import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 
 const TERMINAL_STATUSES = ['canceled', 'refunded', 'converted_to_package', 'recognized', 'consumed'];
 
@@ -156,6 +157,17 @@ export class InsurancePaymentCreationService {
         { session: mongoSession, new: true }
       );
 
+      // 🔄 Atualiza PaymentsView (read-model)
+      try {
+        await handlePaymentEvent({
+          type: 'PAYMENT_UPDATED',
+          payload: { paymentId: updated._id.toString() },
+          timestamp: new Date().toISOString()
+        });
+      } catch (viewErr) {
+        console.warn('[InsurancePaymentCreationService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+      }
+
       console.log(`[InsurancePaymentCreationService] Payment atualizado: ${updated._id} (source=${source})`);
       return { payment: updated, created: false, source };
     }
@@ -176,6 +188,18 @@ export class InsurancePaymentCreationService {
     try {
       const [created] = await Payment.create([newPaymentData], { session: mongoSession });
       console.log(`[InsurancePaymentCreationService] Payment criado: ${created._id} (session=${sessionObjectId})`);
+
+      // 🔄 Atualiza PaymentsView (read-model)
+      try {
+        await handlePaymentEvent({
+          type: 'PAYMENT_CREATED',
+          payload: { paymentId: created._id.toString() },
+          timestamp: new Date().toISOString()
+        });
+      } catch (viewErr) {
+        console.warn('[InsurancePaymentCreationService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+      }
+
       return { payment: created, created: true, source: 'created' };
     } catch (err) {
       // 🛡️ RACE CONDITION: o índice único parcial disparou — outro processo criou
@@ -200,6 +224,17 @@ export class InsurancePaymentCreationService {
             { $set: updateData },
             { session: mongoSession, new: true }
           );
+
+          // 🔄 Atualiza PaymentsView (read-model)
+          try {
+            await handlePaymentEvent({
+              type: 'PAYMENT_UPDATED',
+              payload: { paymentId: updated._id.toString() },
+              timestamp: new Date().toISOString()
+            });
+          } catch (viewErr) {
+            console.warn('[InsurancePaymentCreationService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+          }
 
           return { payment: updated, created: false, source: 'race_condition_recovered' };
         }

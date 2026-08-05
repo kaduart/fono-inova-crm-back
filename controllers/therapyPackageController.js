@@ -17,6 +17,7 @@ import Leads from '../models/Leads.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 
 function normalizeTimeHHmm(value) {
@@ -781,6 +782,17 @@ export const packageOperations = {
                     newPackage.payments.push(paymentDoc._id);
                     newPackage.totalPaid += value;
                     amountPaid += value;
+
+                    // 🔄 Atualiza PaymentsView (read-model)
+                    try {
+                        await handlePaymentEvent({
+                            type: 'PAYMENT_CREATED',
+                            payload: { paymentId: paymentDoc._id.toString() },
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (viewErr) {
+                        console.warn('[therapyPackageController] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+                    }
                 }
             }
 

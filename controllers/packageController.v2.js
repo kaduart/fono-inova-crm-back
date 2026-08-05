@@ -30,6 +30,7 @@ import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import { recordPackageMetric } from '../routes/package.metrics.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import FinanceWriteGuard from '../services/financialGuard/FinanceWriteGuard.js';
@@ -1249,6 +1250,19 @@ export const createPackageV2 = async (req, res) => {
         await Package.findByIdAndUpdate(pkg._id, {
           $set: { payments: createdPayments.map(p => p._id) }
         });
+
+        // 🔄 Atualiza PaymentsView (read-model) para cada pagamento criado
+        for (const payment of createdPayments) {
+          try {
+            await handlePaymentEvent({
+              type: 'PAYMENT_CREATED',
+              payload: { paymentId: payment._id.toString() },
+              timestamp: new Date().toISOString()
+            });
+          } catch (viewErr) {
+            console.warn('[packageController.v2] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+          }
+        }
         
         // 🏦 REGISTRAR NO LEDGER FINANCEIRO
         try {

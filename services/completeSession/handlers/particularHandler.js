@@ -17,6 +17,7 @@ import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 import { normalizePaymentMethod } from '../../../utils/paymentResolver.js';
+import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 
 export const ParticularHandler = {
     /**

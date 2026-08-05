@@ -14,6 +14,7 @@ import Payment from '../../models/Payment.js';
 import { transitionPaymentStatus } from '../../services/paymentStatusService.js';
 import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
 import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
+import { handlePaymentEvent } from '../../projections/paymentsProjection.js';
 
 /**
  * Cancela um Payment de forma centralizada.
@@ -64,6 +65,17 @@ export async function cancelPayment(paymentId, options = {}) {
 
   const saveOptions = mongoSession ? { session: mongoSession } : {};
   await updatedPayment.save(saveOptions);
+
+  // 🔄 Atualiza PaymentsView (read-model)
+  try {
+    await handlePaymentEvent({
+      type: 'PAYMENT_CANCELLED',
+      payload: { paymentId: updatedPayment._id.toString() },
+      timestamp: new Date().toISOString()
+    });
+  } catch (viewErr) {
+    console.warn('[PaymentLifecycleService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+  }
 
   try {
     await invalidateCacheForPayment(updatedPayment);
