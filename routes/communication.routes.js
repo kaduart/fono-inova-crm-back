@@ -266,6 +266,14 @@ router.post('/webhooks/resend', async (req, res) => {
   try {
     const { type, data } = req.body || {};
 
+    logger.info('resend_webhook_received', 'Webhook Resend recebido', {
+      type,
+      hasData: !!data,
+      emailId: data?.email_id,
+      hasMessageId: !!data?.message_id,
+      headerNames: Array.isArray(data?.headers) ? data.headers.map(h => h.name) : []
+    });
+
     if (type === 'email.sent' && data?.email_id && data?.message_id) {
       // 1ª tentativa: pelo protocol (email_id). Pode falhar se o webhook chegar
       // antes do job completar e persistir o log.
@@ -274,6 +282,11 @@ router.post('/webhooks/resend', async (req, res) => {
         { $set: { messageId: data.message_id } },
         { new: true }
       ).lean();
+
+      logger.info('resend_webhook_protocol_lookup', 'Busca por protocol', {
+        emailId: data.email_id,
+        found: !!updated
+      });
 
       // 2ª tentativa: pelo header X-Entity-Ref-ID, que é o jobId salvo no log
       // PENDING antes do envio. Isso cobre a race condition webhook vs. job.
@@ -286,6 +299,11 @@ router.post('/webhooks/resend', async (req, res) => {
             { $set: { messageId: data.message_id } },
             { new: true }
           ).lean();
+
+          logger.info('resend_webhook_jobid_lookup', 'Busca por jobId', {
+            jobId,
+            found: !!updated
+          });
         }
       }
 

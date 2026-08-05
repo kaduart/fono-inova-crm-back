@@ -252,9 +252,22 @@ export async function sendCommunicationEmail({
   // transições falhar, o efeito externo (e-mail) já está registrado, então um retry
   // do BullMQ deve ser capaz de detectar que o envio já ocorreu (guard de idempotência
   // por jobId) e não reenviar às cegas.
+  //
+  // Cuidado com race condition do webhook Resend: o evento email.sent pode chegar
+  // ANTES deste update e já ter preenchido messageId com o Message-ID real. Não
+  // podemos sobrescrever esse valor com o UUID interno do provider (protocol), senão
+  // reenvios perdem a thread de conversa.
+  let messageId = result?.resendMessageId || null;
+  if (!messageId && pendingLog && result?.messageId) {
+    const current = await CommunicationEmailLog.findById(pendingLog._id).select('messageId').lean();
+    messageId = current?.messageId || result.messageId;
+  } else if (!messageId && result?.messageId) {
+    messageId = result.messageId;
+  }
+
   const finalFields = {
     protocol: result?.messageId || result?.protocol || null,
-    messageId: result?.resendMessageId || result?.messageId || null,
+    messageId,
     durationMs,
     status: logStatus,
     errorMessage
