@@ -21,6 +21,31 @@ import { createContextLogger } from '../../../utils/logger.js';
 
 const logger = createContextLogger('PackageProjectionService');
 
+// 🩹 Débito técnico: 'completed' era o nome antigo de 'finished' antes do
+// enum atual da PackagesView (['active','finished','canceled','canceling',
+// 'superseded']). Pacotes legados (pré-CQRS) nunca foram migrados.
+const LEGACY_STATUS_MAP = { completed: 'finished' };
+
+// 🩹 Pacotes legados (anteriores à introdução do campo Package.type) não têm
+// 'type' preenchido, mas todos têm 'model' (gravado por
+// scripts/migrate-packages-v2-model.js em 2026-04-12), que serve de proxy
+// confiável: liminar/convenio mapeiam 1:1, prepaid/per_session são formas de
+// pagamento de pacote particular (therapy).
+const MODEL_TO_TYPE = {
+  liminar: 'liminar',
+  convenio: 'convenio',
+  prepaid: 'therapy',
+  per_session: 'therapy'
+};
+
+function normalizeStatus(status) {
+  return LEGACY_STATUS_MAP[status] || status;
+}
+
+function normalizeType(pkg) {
+  return pkg.type || MODEL_TO_TYPE[pkg.model] || pkg.type;
+}
+
 /**
  * Busca dados brutos do pacote e relacionados
  */
@@ -166,8 +191,8 @@ export async function buildPackageView(packageId, options = {}) {
       patientId: pkg.patient?._id,
       doctorId: pkg.doctor?._id,
       
-      type: pkg.type,
-      status: pkg.status,
+      type: normalizeType(pkg),
+      status: normalizeStatus(pkg.status),
       specialty: pkg.specialty,
       sessionType: pkg.sessionType,
       
