@@ -180,6 +180,14 @@ export async function sendCommunicationEmail({
 
   const inReplyTo = firstSuccessLog?.messageId || undefined;
 
+  // DEBUG: rastrear threading até fechar o bug. Remover após validação.
+  console.log('[THREAD DEBUG] firstSuccessLog', {
+    communicationId,
+    selectedLogId: firstSuccessLog?._id,
+    selectedMessageId: firstSuccessLog?.messageId,
+    inReplyTo
+  });
+
   const attachmentsSnapshot = pkg.attachments.map(a => ({
     documentId: a.documentId,
     url: a.url,

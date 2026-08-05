@@ -72,6 +72,14 @@ export class ResendProvider extends BaseEmailProvider {
       headers['References'] = inReplyTo;
     }
 
+    // DEBUG: confirmar threading na Resend. Remover após validação.
+    console.log('[ResendProvider THREAD DEBUG] headers:', {
+      inReplyTo,
+      headers: Object.keys(headers),
+      'In-Reply-To': headers['In-Reply-To'],
+      References: headers['References']
+    });
+
     const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;
 
     const payload = {
