@@ -755,6 +755,38 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             });
         }
 
+        // 🎯 Eficiência financeira do dia: cruza cada atendimento realizado hoje
+        // (transacoesProducao) com o destino do dinheiro — gerou caixa novo,
+        // virou conta a receber, ou consumiu um crédito já recebido antes
+        // (pacote pré-pago ou liminar). Reaproveita categoria/tipo/paymentModel
+        // já calculados acima — nenhuma regra financeira nova.
+        let geraramCaixaCount = 0, geraramCaixaValor = 0;
+        let aReceberFuturamenteCount = 0, aReceberFuturamenteValor = 0;
+        let consumiramCreditoCount = 0, consumiramCreditoValor = 0;
+        for (const t of transacoesProducao) {
+            const isPacotePrepago = t.tipo === 'Pacote' && t.paymentModel === 'prepaid';
+            if (t.tipo === 'Convênio') {
+                aReceberFuturamenteCount++; aReceberFuturamenteValor += t.valor;
+            } else if (t.tipo === 'Liminar' || isPacotePrepago) {
+                consumiramCreditoCount++; consumiramCreditoValor += t.valor;
+            } else if (t.categoria === 'recebido') {
+                geraramCaixaCount++; geraramCaixaValor += t.valor;
+            } else {
+                aReceberFuturamenteCount++; aReceberFuturamenteValor += t.valor;
+            }
+        }
+        const totalAtendimentosHoje = transacoesProducao.length;
+        const monetizacaoImediataPct = totalAtendimentosHoje > 0
+            ? parseFloat(((geraramCaixaCount / totalAtendimentosHoje) * 100).toFixed(1))
+            : 0;
+        const eficienciaFinanceira = {
+            atendimentos: totalAtendimentosHoje,
+            geraramCaixaHoje: { quantidade: geraramCaixaCount, valor: parseFloat(geraramCaixaValor.toFixed(2)) },
+            aReceberFuturamente: { quantidade: aReceberFuturamenteCount, valor: parseFloat(aReceberFuturamenteValor.toFixed(2)) },
+            consumiramCredito: { quantidade: consumiramCreditoCount, valor: parseFloat(consumiramCreditoValor.toFixed(2)) },
+            monetizacaoImediataPct
+        };
+
         // Comparativos e métricas
         const variacao = yesterdayTotal > 0
             ? ((totalCaixaFiltrado - yesterdayTotal) / yesterdayTotal * 100).toFixed(1)
@@ -804,6 +836,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                     return acc;
                 })(),
                 porEspecialidade: porEspecialidadeCaixa,
+                eficienciaFinanceira,
                 despesas: {
                     total: totalDespesas,
                     porCategoria: despesasPorCategoria,
