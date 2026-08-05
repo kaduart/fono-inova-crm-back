@@ -259,63 +259,102 @@ export const getAppointmentsByType = async (req, res) => {
         const filter = { ...dateFilter, ...extraFilters };
         const _t0 = Date.now();
 
-        // ─── 3. Buscar agendamentos do período (população mínima) ───
-        const appointments = await Appointment.find(filter)
-            .populate('patient', 'fullName')
-            .populate('doctor', 'fullName specialty')
-            .sort({ date: 1, time: 1 })
-            .lean();
-        console.log(`[by-type] appointments.find+populate = ${Date.now() - _t0}ms (${appointments.length} docs)`);
-
-        // 🎯 FIX: No modo 'date' a intenção é uma visão OPERACIONAL + AQUISIÇÃO:
-        // buscamos os agendamentos do período (date) E os agendamentos criados
-        // no período (createdAt), mesmo que sua consulta real seja futura.
-        // Inclui tanto pre_agendado quanto scheduled — se é novo na especialidade, aparece.
-        let criadosHoje = [];
-        if (mode === 'date') {
-            const createdAtFilter = {};
-            if (date) {
-                createdAtFilter.createdAt = {
-                    $gte: new Date(date + 'T00:00:00.000Z'),
-                    $lte: new Date(date + 'T23:59:59.999Z')
-                };
-            } else if (startDate && endDate) {
-                createdAtFilter.createdAt = {
-                    $gte: new Date(startDate + 'T00:00:00.000Z'),
-                    $lte: new Date(endDate + 'T23:59:59.999Z')
-                };
-            } else {
+        // ─── 3. Buscar agendamentos do período com aggregation + lookup projetado ───
+        // 🚀 Substitui find().populate() duplo por uma única aggregate.
+        // No modo 'date' usa $or para unir agendamentos do período (date) e criados no período (createdAt),
+        // evitando duas queries separadas, duplo populate e deduplicação manual.
+        const rangeStart = date ? new Date(date + 'T00:00:00.000Z')
+            : (startDate ? new Date(startDate + 'T00:00:00.000Z') : (() => {
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
-                const tomorrow = new Date(today);
+                return today;
+            })());
+        const rangeEnd = date ? new Date(date + 'T23:59:59.999Z')
+            : (endDate ? new Date(endDate + 'T23:59:59.999Z') : (() => {
+                const tomorrow = new Date(rangeStart);
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                createdAtFilter.createdAt = { $gte: today, $lt: tomorrow };
+                return tomorrow;
+            })());
+
+        const lookupPatient = {
+            $lookup: {
+                from: 'patients',
+                localField: 'patient',
+                foreignField: '_id',
+                as: 'patient',
+                pipeline: [{ $project: { fullName: 1 } }]
             }
-            
-            const criadosFilter = {
-                ...createdAtFilter,
-                operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+        };
+        const lookupDoctor = {
+            $lookup: {
+                from: 'doctors',
+                localField: 'doctor',
+                foreignField: '_id',
+                as: 'doctor',
+                pipeline: [{ $project: { fullName: 1, specialty: 1 } }]
+            }
+        };
+
+        let allAppointments;
+        if (mode === 'date') {
+            const matchStage = {
+                $or: [
+                    {
+                        date: { $gte: rangeStart, $lte: rangeEnd },
+                        operationalStatus: { $nin: ['canceled', 'cancelled', 'converted'] }
+                    },
+                    {
+                        createdAt: { $gte: rangeStart, $lte: rangeEnd },
+                        operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+                    }
+                ]
             };
-            if (doctorId) criadosFilter.doctor = new mongoose.Types.ObjectId(doctorId);
-            if (specialty) criadosFilter.specialty = specialty.toLowerCase();
-            
-            criadosHoje = await Appointment.find(criadosFilter)
-                .populate('patient', 'fullName')
-                .populate('doctor', 'fullName specialty')
-                .sort({ date: 1, time: 1 })
-                .lean();
+            if (doctorId) matchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+            if (specialty) matchStage.specialty = specialty.toLowerCase();
+
+            allAppointments = await Appointment.aggregate([
+                { $match: matchStage },
+                {
+                    $addFields: {
+                        _matchesDate: {
+                            $and: [
+                                { $gte: ['$date', rangeStart] },
+                                { $lte: ['$date', rangeEnd] },
+                                { $not: { $in: ['$operationalStatus', ['canceled', 'cancelled', 'converted']] } }
+                            ]
+                        }
+                    }
+                },
+                lookupPatient,
+                { $unwind: { path: '$patient', preserveNullAndEmptyArrays: true } },
+                lookupDoctor,
+                { $unwind: { path: '$doctor', preserveNullAndEmptyArrays: true } },
+                {
+                    $addFields: {
+                        origin: {
+                            $cond: {
+                                if: '$_matchesDate',
+                                then: '$$REMOVE',
+                                else: { $cond: { if: { $eq: ['$operationalStatus', 'pre_agendado'] }, then: 'pre_agendamento', else: 'agendado_hoje' } }
+                            }
+                        }
+                    }
+                },
+                { $project: { _matchesDate: 0 } },
+                { $sort: { date: 1, time: 1 } }
+            ]).allowDiskUse(true);
+        } else {
+            allAppointments = await Appointment.aggregate([
+                { $match: filter },
+                lookupPatient,
+                { $unwind: { path: '$patient', preserveNullAndEmptyArrays: true } },
+                lookupDoctor,
+                { $unwind: { path: '$doctor', preserveNullAndEmptyArrays: true } },
+                { $sort: { date: 1, time: 1 } }
+            ]).allowDiskUse(true);
         }
+        console.log(`[by-type] appointments.aggregate+lookup = ${Date.now() - _t0}ms (${allAppointments.length} docs)`);
 
-        // Deduplica por _id apenas (não por paciente — um paciente pode ter vários agendamentos)
-        const appointmentIds = new Set(appointments.map(a => a._id.toString()));
-        const uniqueCriadosHoje = criadosHoje
-            .filter(c => !appointmentIds.has(c._id.toString()))
-            .map(c => ({ ...c, origin: c.operationalStatus === 'pre_agendado' ? 'pre_agendamento' : 'agendado_hoje' }));
-
-        const allAppointments = [
-            ...appointments,
-            ...uniqueCriadosHoje
-        ];
         // ─── 4. Buscar histórico completo dos pacientes envolvidos ───
         // Suporta patient populado (objeto) OU não populado (string/ObjectId)
         const patientIds = [

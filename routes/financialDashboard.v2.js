@@ -2089,14 +2089,19 @@ function calculateIndicadores(caixa, producao, despesasTotal, metas) {
  */
 async function fetchPendingPaymentsByDateRange(start, end) {
     return Payment.aggregate([
-        // Primeiro filtro: status pending e candidato por data (paymentDate/serviceDate) ou por appointment
+        // 🎯 Filtro inicial: só carrega pendentes que podem cair no período.
+        // Evita puxar todos os pendentes históricos apenas porque têm appointment.
         {
             $match: {
                 status: 'pending',
                 $or: [
                     { paymentDate: { $gte: start, $lte: end } },
                     { serviceDate: { $gte: start, $lte: end } },
-                    { appointment: { $exists: true, $ne: null } }
+                    {
+                        paymentDate: { $exists: false },
+                        serviceDate: { $exists: false },
+                        appointment: { $exists: true, $ne: null }
+                    }
                 ]
             }
         },
@@ -2106,7 +2111,10 @@ async function fetchPendingPaymentsByDateRange(start, end) {
                 from: 'appointments',
                 localField: 'appointment',
                 foreignField: '_id',
-                as: 'appointmentArr'
+                as: 'appointmentArr',
+                pipeline: [
+                    { $project: { date: 1, time: 1, operationalStatus: 1, doctor: 1, specialty: 1, serviceType: 1, patient: 1 } }
+                ]
             }
         },
         { $addFields: { appointment: { $arrayElemAt: ['$appointmentArr', 0] } } },
@@ -2115,7 +2123,10 @@ async function fetchPendingPaymentsByDateRange(start, end) {
                 from: 'patients',
                 localField: 'patient',
                 foreignField: '_id',
-                as: 'patientArr'
+                as: 'patientArr',
+                pipeline: [
+                    { $project: { fullName: 1, phone: 1 } }
+                ]
             }
         },
         { $addFields: { patient: { $arrayElemAt: ['$patientArr', 0] } } },
@@ -2124,7 +2135,10 @@ async function fetchPendingPaymentsByDateRange(start, end) {
                 from: 'doctors',
                 localField: 'doctor',
                 foreignField: '_id',
-                as: 'doctorArr'
+                as: 'doctorArr',
+                pipeline: [
+                    { $project: { fullName: 1, specialty: 1 } }
+                ]
             }
         },
         { $addFields: { doctor: { $arrayElemAt: ['$doctorArr', 0] } } },

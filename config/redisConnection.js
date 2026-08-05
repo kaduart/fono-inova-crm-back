@@ -118,6 +118,16 @@ export const safeRedis = {
       return null;
     }
   },
+  async setex(key, seconds, value) {
+    if (!redisConnection) return null;
+    try {
+      // 🛡️ ioredis v5 mantém setex(key, seconds, value) compatível
+      return await redisConnection.setex(key, seconds, value);
+    } catch (err) {
+      console.error('Redis setex error:', err.message);
+      return null;
+    }
+  },
   async del(key) {
     if (!redisConnection) return null;
     try {

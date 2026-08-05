@@ -836,35 +836,40 @@ export async function calculateCashByCompetencia(start, end) {
         serviceDate: { $gte: start, $lte: end }
     };
 
-    const [totalAgg, typeAgg] = await Promise.all([
-        Payment.aggregate([
-            { $match: match },
-            { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-        ]),
-        Payment.aggregate([
-            { $match: match },
-            { $group: {
-                _id: {
-                    $switch: {
-                        branches: [
-                            { case: { $eq: [{ $toLower: '$billingType' }, 'liminar'] }, then: 'liminar' },
-                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
-                            { case: { $eq: [{ $toLower: '$billingType' }, 'convenio'] }, then: 'convenio' },
-                            { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' },
-                        ],
-                        default: {
-                            $cond: {
-                                if: { $or: [{ $ifNull: ['$package', false] }, { $eq: ['$kind', 'package_receipt'] }] },
-                                then: 'pacote',
-                                else: 'particular'
+    // 🚀 OTIMIZAÇÃO: colapsar total + type em uma única aggregation com $facet
+    const facetResult = (await Payment.aggregate([
+        { $match: match },
+        { $facet: {
+            total: [
+                { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+            ],
+            byType: [
+                { $group: {
+                    _id: {
+                        $switch: {
+                            branches: [
+                                { case: { $eq: [{ $toLower: '$billingType' }, 'liminar'] }, then: 'liminar' },
+                                { case: { $eq: [{ $toLower: '$paymentMethod' }, 'liminar_credit'] }, then: 'liminar' },
+                                { case: { $eq: [{ $toLower: '$billingType' }, 'convenio'] }, then: 'convenio' },
+                                { case: { $eq: [{ $toLower: '$paymentMethod' }, 'convenio'] }, then: 'convenio' },
+                            ],
+                            default: {
+                                $cond: {
+                                    if: { $or: [{ $ifNull: ['$package', false] }, { $eq: ['$kind', 'package_receipt'] }] },
+                                    then: 'pacote',
+                                    else: 'particular'
+                                }
                             }
                         }
-                    }
-                },
-                total: { $sum: '$amount' }
-            }}
-        ])
-    ]);
+                    },
+                    total: { $sum: '$amount' }
+                }}
+            ]
+        }}
+    ]))[0];
+
+    const totalAgg = facetResult.total;
+    const typeAgg = facetResult.byType;
 
     const total   = totalAgg[0]?.total || 0;
     const count   = totalAgg[0]?.count || 0;
