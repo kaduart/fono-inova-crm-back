@@ -21,8 +21,27 @@ import { createContextLogger } from '../utils/logger.js';
 
 const log = createContextLogger(null, 'FinancialSnapshotWorkerV2');
 
-// 🎯 Shadow validation (compara snapshot vs realtime após cada evento)
-const SHADOW_VALIDATE = process.env.FINANCIAL_SNAPSHOT_SHADOW_VALIDATE !== 'false'; // default: true
+// 🎯 Shadow validation (compara snapshot vs realtime após eventos financeiros)
+// Configuração por ambiente:
+//   FINANCIAL_SNAPSHOT_SHADOW_VALIDATE=true  -> habilita mecanismo
+//   FINANCIAL_SNAPSHOT_SHADOW_SAMPLE_RATE=0.01 -> valida 1% dos eventos (default)
+//   FINANCIAL_SNAPSHOT_SHADOW_VALIDATE=false -> desliga totalmente
+//
+// Default: desligado. Em produção, configure explicitamente true + 0.01 para
+// manter detecção de divergências sem custo de ~2,5s por evento.
+const SHADOW_VALIDATE = process.env.FINANCIAL_SNAPSHOT_SHADOW_VALIDATE === 'true' ||
+                        process.env.FINANCIAL_SNAPSHOT_SHADOW_VALIDATE === '1';
+const rawSampleRate = process.env.FINANCIAL_SNAPSHOT_SHADOW_SAMPLE_RATE;
+const SHADOW_SAMPLE_RATE = rawSampleRate !== undefined
+  ? Math.max(0, Math.min(1, Number(rawSampleRate)))
+  : 0.01;
+
+function shouldShadowValidate() {
+  if (!SHADOW_VALIDATE) return false;
+  if (SHADOW_SAMPLE_RATE <= 0) return false;
+  if (SHADOW_SAMPLE_RATE >= 1) return true;
+  return Math.random() < SHADOW_SAMPLE_RATE;
+}
 
 const toDateStr = (d) => {
   if (!d) return null;
@@ -275,9 +294,11 @@ export async function processFinancialEvent(eventType, payload) {
         log.debug('event_ignored', 'Evento não mapeado para snapshot', { eventType });
     }
 
-    // 🎯 SHADOW VALIDATION: compara snapshot vs realtime após processar
-    if (SHADOW_VALIDATE && dateStr) {
+    // 🎯 SHADOW VALIDATION: compara snapshot vs realtime após processar.
+    // Com amostragem, evita custo de ~2,5s em cada evento financeiro.
+    if (dateStr && shouldShadowValidate()) {
       try {
+        log.info('shadow_validation_sample', 'Validando snapshot amostral', { dateStr, sampleRate: SHADOW_SAMPLE_RATE });
         const validation = await validateSnapshotVsRealtime(dateStr);
         if (validation.hasDivergence) {
           log.warn('shadow_divergence', 'Snapshot diverge do realtime', { dateStr, ...validation.diffs });

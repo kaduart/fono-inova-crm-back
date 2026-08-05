@@ -50,14 +50,14 @@ const end   = moment.tz('2026-05-31', TZ).endOf('day').toDate();
  */
 function capturePaymentMatch() {
   let captured = null;
-  let callIdx  = 0;
   mockPaymentAggregate.mockImplementation((pipeline) => {
-    callIdx++;
-    if (callIdx === 1) captured = pipeline[0].$match; // totalAgg
-    if (callIdx === 1) return [{ total: 0, count: 0 }];
-    if (callIdx === 2) return [];                       // methodAgg
-    if (callIdx === 3) return [];                       // typeAgg
-    return [];
+    // 🎯 calculateCash agora usa $facet: 1 chamada retorna total + byMethod + byType
+    if (!captured) captured = pipeline[0].$match;
+    return [{
+      total: [{ total: 0, count: 0 }],
+      byMethod: [],
+      byType: []
+    }];
   });
   mockPaymentFind.mockReturnValue({
     populate: vi.fn().mockReturnThis(),
@@ -71,7 +71,11 @@ function captureSessionMatch() {
   let callIdx   = 0;
   mockSessionAggregate.mockImplementation((pipeline) => {
     callIdx++;
-    if (callIdx === 1) { captured = pipeline[0].$match; return [{ total: 0, count: 0 }]; }
+    // 🎯 calculateProduction agora usa $facet na 1ª chamada (total + byType)
+    if (callIdx === 1) {
+      captured = pipeline[0].$match;
+      return [{ total: [{ total: 0, count: 0 }], byType: [] }];
+    }
     return [];
   });
   mockSessionFind.mockReturnValue({
@@ -219,14 +223,12 @@ describe('anti-double-counting — CRÍTICO', () => {
 
   it('Payment liminar + Session.completed: caixa≠duplo, produção≠duplo', async () => {
     // ── Mock Payment: 1 pagamento liminar = R$160 ─────────────────────────────
-    let payCallIdx = 0;
-    mockPaymentAggregate.mockImplementation(() => {
-      payCallIdx++;
-      if (payCallIdx === 1) return [{ total: 160, count: 1 }]; // totalAgg
-      if (payCallIdx === 2) return [{ _id: 'pix', total: 160 }]; // methodAgg
-      if (payCallIdx === 3) return [{ _id: 'particular', total: 160 }]; // typeAgg
-      return [];
-    });
+    // 🎯 calculateCash agora usa 1 aggregate com $facet (total + byMethod + byType)
+    mockPaymentAggregate.mockImplementation(() => [{
+      total: [{ total: 160, count: 1 }],
+      byMethod: [{ _id: 'pix', total: 160 }],
+      byType: [{ _id: 'particular', total: 160 }]
+    }]);
     mockPaymentFind.mockReturnValue({
       select:   vi.fn().mockReturnThis(),
       limit:    vi.fn().mockReturnThis(),
@@ -240,9 +242,9 @@ describe('anti-double-counting — CRÍTICO', () => {
     let sessCallIdx = 0;
     mockSessionAggregate.mockImplementation(() => {
       sessCallIdx++;
-      if (sessCallIdx === 1) return [{ total: 160, count: 1 }]; // total
-      if (sessCallIdx === 2) return [{ _id: 'particular', total: 160 }]; // byType
-      if (sessCallIdx === 3) return [{ total: 160 }];  // recebido
+      // 🎯 calculateProduction: 1ª chamada é $facet (total + byType)
+      if (sessCallIdx === 1) return [{ total: [{ total: 160, count: 1 }], byType: [{ _id: 'particular', total: 160 }] }];
+      if (sessCallIdx === 2) return [{ total: 160 }];  // recebido
       return [];
     });
     mockSessionFind.mockReturnValue({
@@ -273,12 +275,12 @@ describe('anti-double-counting — CRÍTICO', () => {
   });
 
   it('calculateCash nunca acessa a coleção de sessions diretamente', async () => {
-    let payCallIdx = 0;
-    mockPaymentAggregate.mockImplementation(() => {
-      payCallIdx++;
-      if (payCallIdx === 1) return [{ total: 0, count: 0 }];
-      return [];
-    });
+    // 🎯 calculateCash agora usa 1 aggregate com $facet
+    mockPaymentAggregate.mockImplementation(() => [{
+      total: [{ total: 0, count: 0 }],
+      byMethod: [],
+      byType: []
+    }]);
     mockPaymentFind.mockReturnValue({
       select:   vi.fn().mockReturnThis(),
       populate: vi.fn().mockReturnThis(),
