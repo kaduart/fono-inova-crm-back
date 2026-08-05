@@ -4,6 +4,9 @@ import { auth, authorize } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
 import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
+import { getQueue } from '../infrastructure/queue/queueConfig.js';
+
+const planningRefreshQueue = getQueue('planning-refresh');
 
 const router = express.Router();
 
@@ -87,28 +90,27 @@ router.get('/', auth, async (req, res) => {
       .sort({ 'period.start': -1 });
     console.log(`[Planning GET] 📊 Encontrados ${plannings.length} planejamentos`);
 
-    // Se solicitado refresh, recalcular com concorrência controlada.
-    // 🛡️ HOTFIX: Promise.all em 66 planejamentos gerava tempestade de queries,
-    // event-loop lag >4s e heap 97%. Limitar a 2 em paralelo evita travar a API.
-    if (refresh === 'true') {
-      const REFRESH_CONCURRENCY = 2;
-      console.log(`[Planning GET] 🔄 Recalculando ${plannings.length} planejamentos com concorrência=${REFRESH_CONCURRENCY}...`);
-      for (let i = 0; i < plannings.length; i += REFRESH_CONCURRENCY) {
-        const batch = plannings.slice(i, i + REFRESH_CONCURRENCY);
-        await Promise.all(
-          batch.map(planning =>
-            updatePlanningProgress(planning._id).catch(err =>
-              console.error(`[Planning GET] ❌ Erro ao atualizar ${planning._id}:`, err.message)
-            )
-          )
-        );
-      }
-      
-      // Buscar novamente após atualização
-      plannings = await Planning.find(filters)
-        .populate('byDoctor.doctor', 'fullName specialty')
-        .populate('createdBy', 'fullName')
-        .sort({ 'period.start': -1 });
+    // Se solicitado refresh, enfileirar atualização em background.
+    // O worker processa com concorrência controlada (REFRESH_CONCURRENCY=2),
+    // evitando bloquear a API com dezenas de planejamentos simultâneos.
+    let refreshQueued = false;
+    if (refresh === 'true' && plannings.length > 0) {
+      const planningIds = plannings.map(p => p._id.toString());
+      const jobName = planningIds.length === 1 ? 'refresh-planning' : 'refresh-batch';
+      const jobData = planningIds.length === 1
+        ? { planningId: planningIds[0] }
+        : { planningIds };
+
+      await planningRefreshQueue.add(jobName, jobData);
+      refreshQueued = true;
+
+      console.log(`[Planning GET] 🔄 Refresh enfileirado: ${jobName} (${planningIds.length} planejamento(s))`);
+
+      // Marca planejamentos como "processing" para a UI mostrar estado de atualização
+      await Planning.updateMany(
+        { _id: { $in: planningIds } },
+        { calculationStatus: 'processing', lastCalculationError: null }
+      );
     }
 
     // Se solicitou month/year, calcular projeção operacional do mês
@@ -125,7 +127,8 @@ router.get('/', auth, async (req, res) => {
       success: true,
       count: plannings.length,
       data: plannings,
-      projection
+      projection,
+      refreshQueued
     });
 
   } catch (error) {
@@ -191,16 +194,17 @@ router.patch('/:id/update-progress', auth, async (req, res) => {
  */
 router.post('/refresh-all', auth, authorize(['admin']), async (req, res) => {
   try {
-    const result = await updateAllPlanningsProgress();
+    // Enfileirar atualização de todos os planejamentos em background
+    await planningRefreshQueue.add('refresh-all', {});
 
     res.json({
       success: true,
-      message: `${result.updated} planejamentos atualizados 💚`,
-      data: result
+      message: 'Atualização de todos os planejamentos enfileirada 💚',
+      refreshQueued: true
     });
 
   } catch (error) {
-    console.error('Erro ao atualizar planejamentos:', error);
+    console.error('Erro ao enfileirar atualização de planejamentos:', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao atualizar planejamentos',

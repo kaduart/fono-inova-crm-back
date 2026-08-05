@@ -35,9 +35,17 @@ const planningSchema = new mongoose.Schema({
         actualRevenueParticular: { type: Number, default: 0 },
         actualRevenueConvenio: { type: Number, default: 0 },
         actualRevenueConvenioAReceber: { type: Number, default: 0 },
-                creditoPacotes: { type: Number, default: 0 },
-
+        creditoPacotes: { type: Number, default: 0 },
     },
+
+    // 🔹 Status do cálculo em background
+    calculationStatus: {
+        type: String,
+        enum: ['idle', 'processing', 'completed', 'failed'],
+        default: 'idle'
+    },
+    lastCalculatedAt: { type: Date, default: null },
+    lastCalculationError: { type: String, default: null },
 
     // 🔹 Progresso calculado
     progress: {

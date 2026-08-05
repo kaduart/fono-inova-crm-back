@@ -59,6 +59,13 @@ export const queueConfigs = {
             removeOnComplete: false,
             removeOnFail: false
         }
+    },
+    'planning-refresh': {
+        ...defaultRetryConfig,
+        defaultJobOptions: {
+            removeOnComplete: 100,
+            removeOnFail: 50
+        }
     }
 };
 

@@ -21,6 +21,7 @@ import { startEvolutionWorker } from './evolutionWorker.js';
 import { startCommissionGenerationWorker } from './commissionGenerationWorker.js';
 import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
 import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
+import { startPlanningRefreshWorker } from './planningRefreshWorker.js';
 
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
 import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
@@ -229,6 +230,7 @@ const GROUPS = {
     if (isEnabled('ENABLE_RECONCILIATION_DAILY_CLOSING')) workers.push(startDailyClosingWorker());
     if (isEnabled('ENABLE_RECONCILIATION_FOLLOWUP')) workers.push(startFollowupOrchestratorWorker());
     if (isEnabled('ENABLE_RECONCILIATION_NOTIFICATION')) workers.push(startNotificationOrchestratorWorker());
+    if (isEnabled('ENABLE_RECONCILIATION_PLANNING_REFRESH', true)) workers.push(startPlanningRefreshWorker());
 
     console.log('[Registry] reconciliation ok');
   }

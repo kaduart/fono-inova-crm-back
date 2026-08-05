@@ -68,7 +68,12 @@ export const updatePlanningProgress = async (planningId) => {
         planning.actual.actualRevenue = actualRevenue;
         planning.actual.actualRevenueParticular = actualRevenueParticular;
         planning.actual.actualRevenueConvenio = actualRevenueConvenio;
-        planning.actual.actualRevenueConvenioAReceber = actualRevenueConvenioAReceber;
+        planning.actual.actualRevenueConvenioAReceber = convenioNaoRecebido;
+
+        // Marca status de cálculo
+        planning.calculationStatus = 'processing';
+        planning.lastCalculatedAt = new Date();
+        planning.lastCalculationError = null;
 
         console.log(`[Planning Update] ✅ Dados atualizados:`);
         console.log(`[Planning Update]    - Sessões: ${completedSessions}`);
@@ -84,6 +89,12 @@ export const updatePlanningProgress = async (planningId) => {
         console.log(`[Planning Update]    - Breakdown raw:`, JSON.stringify(productionResult.byPaymentMethod, null, 2));
 
         await planning.save(); // Middleware calcula progresso automaticamente
+
+        // Marca cálculo concluído
+        planning.calculationStatus = 'completed';
+        planning.lastCalculatedAt = new Date();
+        planning.lastCalculationError = null;
+        await planning.save();
 
         // Se for planejamento mensal do mês atual/futuro, recalcular metas futuras
         if (planning.type === 'monthly') {
@@ -103,6 +114,17 @@ export const updatePlanningProgress = async (planningId) => {
 
     } catch (error) {
         console.error('[Planning Update] ❌ Erro ao atualizar progresso:', error);
+        // Tenta marcar o planejamento como falho se encontrá-lo
+        try {
+            const failedPlanning = await Planning.findById(planningId);
+            if (failedPlanning) {
+                failedPlanning.calculationStatus = 'failed';
+                failedPlanning.lastCalculationError = error.message;
+                await failedPlanning.save();
+            }
+        } catch (markErr) {
+            console.error('[Planning Update] ❌ Erro ao marcar falha:', markErr.message);
+        }
         throw error;
     }
 };
