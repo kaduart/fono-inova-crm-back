@@ -57,6 +57,16 @@ function guardPayloadSize(req, res, next) {
 
 // 🧩 Middleware principal
 export function sanitizeInput(req, _res, next) {
+    // Webhooks de provedores confiáveis (Resend, Sicoob, Meta, etc.) enviam payloads
+    // com valores estruturais que não devem ser sanitizados por XSS — exemplos:
+    //   - Message-ID de e-mail: <msg-id@amazonses.com>
+    //   - Headers, assinaturas, tokens de verificação.
+    // Aplicar xss aqui destrói esses valores (ex: stripIgnoreTag remove tudo entre <>),
+    // causando falha silenciosa: webhook responde 200 mas não persiste os dados reais.
+    if (req.originalUrl?.includes('/webhooks/')) {
+        return next();
+    }
+
     // 1) Remove operadores Mongo ($, .) com express-mongo-sanitize
     //    Dica: se você precisa permitir pontos em chaves, mude allowDots: true e gerencie manualmente.
     mongoSanitize({
