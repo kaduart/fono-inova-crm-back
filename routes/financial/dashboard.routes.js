@@ -162,7 +162,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
     const [cashResult, prodResult, overview] = await Promise.all([
       unifiedFinancialService.calculateCash(inicioDate, fimDate, { skipPayments: true }),
-      unifiedFinancialService.calculateProduction(inicioDate, fimDate),
+      unifiedFinancialService.calculateProduction(inicioDate, fimDate, { includeDetails: false }),
       financialMetricsService.getOverview(period)
     ]);
     // ─── Reconciliação (log temporário 7 dias — detecta drift futuro) ──────────

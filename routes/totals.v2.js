@@ -121,7 +121,7 @@ router.get('/', async (req, res) => {
                     ] }, 1, 0] } }
                 }}
             ]),
-            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd),
+            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd, { includeDetails: false }),
             Expense.aggregate([
                 { $match: { status: { $ne: 'canceled' }, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }
@@ -134,7 +134,7 @@ router.get('/', async (req, res) => {
                 isDeleted: { $ne: true },
                 patient: { $exists: true, $ne: null }
             }).select('_id sessionValue billingType insuranceProvider serviceType paymentStatus').lean(),
-            unifiedFinancialService.calculateCash(rangeStart, rangeEnd) // P2a: SSOT de Caixa
+            unifiedFinancialService.calculateCash(rangeStart, rangeEnd, { includeDetails: false }) // P2a: SSOT de Caixa
         ]);
 
         const p = paymentResult[0] || {};

@@ -107,7 +107,7 @@ router.get('/', async (req, res) => {
             ]),
             
             // 📊 PRODUÇÃO DO DIA: Fonte única V2 (Session completed)
-            unifiedFinancialService.calculateProduction(startOfDay, endOfDay)
+            unifiedFinancialService.calculateProduction(startOfDay, endOfDay, { includeDetails: false })
         ]);
 
         // Processar resultados

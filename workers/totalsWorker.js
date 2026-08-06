@@ -74,8 +74,8 @@ export function startTotalsWorker() {
             balanceResult,
             pipelineResult
         ] = await Promise.all([
-            unifiedFinancialService.calculateCash(rangeStart, rangeEnd),
-            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd),
+            unifiedFinancialService.calculateCash(rangeStart, rangeEnd, { includeDetails: false }),
+            unifiedFinancialService.calculateProduction(rangeStart, rangeEnd, { includeDetails: false }),
             Expense.aggregate([
                 { $match: { status: { $ne: 'canceled' }, date: { $gte: startStr.split('T')[0], $lte: endStr.split('T')[0] } } },
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, totalExpensesPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }

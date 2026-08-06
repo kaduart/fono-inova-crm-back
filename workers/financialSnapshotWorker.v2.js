@@ -332,8 +332,8 @@ export async function rebuildSnapshotForDate(dateStr, clinicId = 'default') {
   const end = new Date(`${dateStr}T23:59:59.999-03:00`);
 
   const [cash, production] = await Promise.all([
-    unifiedFinancialService.calculateCash(start, end),
-    unifiedFinancialService.calculateProduction(start, end),
+    unifiedFinancialService.calculateCash(start, end, { includeDetails: false }),
+    unifiedFinancialService.calculateProduction(start, end, { includeDetails: false }),
   ]);
 
   // Monta o documento completo a partir do realtime
@@ -425,9 +425,9 @@ export async function validateSnapshotVsRealtime(dateStr, clinicId = 'default') 
   const end = new Date(`${dateStr}T23:59:59.999-03:00`);
 
   const [realtime, snapshot] = await Promise.all([
-    unifiedFinancialService.calculateCash(start, end)
+    unifiedFinancialService.calculateCash(start, end, { includeDetails: false })
       .then(c => ({ cash: c.total, particular: c.particular, pacote: c.pacote, convenio: c.convenio, liminar: c.liminar })),
-    unifiedFinancialService.calculateProduction(start, end)
+    unifiedFinancialService.calculateProduction(start, end, { includeDetails: false })
       .then(p => ({ production: p.total, count: p.count, particular: p.particular, pacote: p.pacote, convenio: p.convenio, liminar: p.liminar })),
     FinancialDailySnapshot.findOne({ date: dateStr, clinicId }).lean()
   ]);

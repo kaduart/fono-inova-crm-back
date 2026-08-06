@@ -68,7 +68,7 @@ class FinancialMetricsService {
     const start = period.startDate;
     const end = period.endDate;
 
-    const cash = await unifiedFinancialService.calculateCash(start, end);
+    const cash = await unifiedFinancialService.calculateCash(start, end, { includeDetails: false });
 
     return {
       total: cash.total,
@@ -536,7 +536,7 @@ class FinancialMetricsService {
     const start = period.startDate;
     const end = period.endDate;
 
-    const production = await unifiedFinancialService.calculateProduction(start, end);
+    const production = await unifiedFinancialService.calculateProduction(start, end, { includeDetails: false });
 
     return {
       total: production.total,

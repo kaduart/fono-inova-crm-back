@@ -36,8 +36,8 @@ export const updatePlanningProgress = async (planningId) => {
             Session.find({ date: { $gte: startDateObj, $lte: endDateObj }, status: 'completed' }).lean(),
             Payment.find({ paymentDate: { $gte: startDateObj, $lte: endDateObj }, status: 'paid' }).lean(),
             Appointment.find({ date: { $gte: startDateObj, $lte: endDateObj }, clinicalStatus: 'completed' }).lean(),
-            unifiedFinancialService.calculateProduction(startDate, endDate),
-            unifiedFinancialService.calculateCash(startDate, endDate)
+            unifiedFinancialService.calculateProduction(startDate, endDate, { includeDetails: false }),
+            unifiedFinancialService.calculateCash(startDate, endDate, { includeDetails: false })
         ]);
 
         const completedSessions = sessions.length;

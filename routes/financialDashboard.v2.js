@@ -2456,8 +2456,8 @@ router.get('/sanity-check', auth, async (req, res) => {
         const end = moment.tz([targetYear, targetMonth - 1, 1], TIMEZONE).endOf('month').endOf('day').utc().toDate();
 
         const [cash, production, cashByDay, productionByDay] = await Promise.all([
-            unifiedFinancialService.calculateCash(start, end),
-            unifiedFinancialService.calculateProduction(start, end),
+            unifiedFinancialService.calculateCash(start, end, { includeDetails: false }),
+            unifiedFinancialService.calculateProduction(start, end, { includeDetails: false }),
             unifiedFinancialService.calculateCashByDay(start, end),
             unifiedFinancialService.calculateProductionByDay(start, end)
         ]);

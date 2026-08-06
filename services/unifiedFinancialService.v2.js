@@ -24,8 +24,13 @@ import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } f
 const _ufsCache = new Map();
 const UFS_DASHBOARD_TTL = 30_000; // 30s — dados financeiros de curto prazo são estáveis o suficiente
 
-function _ufsCacheKey(fnName, start, end) {
-    return `${fnName}_${start?.toISOString?.()}_${end?.toISOString?.()}`;
+function _ufsCacheKey(fnName, start, end, opts = {}) {
+    const suffix = Object.entries(opts)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('|');
+    return `${fnName}_${start?.toISOString?.()}_${end?.toISOString?.()}${suffix ? '_' + suffix : ''}`;
 }
 
 function _getUfsCached(key) {
@@ -57,8 +62,11 @@ export function invalidateUFSCache() {
 // 1) CAIXA — Payment only (imutável)
 // ============================================================
 
-export async function calculateCash(start, end, { skipPayments = false } = {}) {
+export async function calculateCash(start, end, { skipPayments = false, includeDetails = true } = {}) {
     const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails });
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     // NÃO usar filtragem manual. NÃO usar heurística de texto.
     const match = {
@@ -179,7 +187,7 @@ export async function calculateCash(start, end, { skipPayments = false } = {}) {
     let payments = [];
     let paymentsQueryMs = 0;
     let paymentsFilterMs = 0;
-    if (!skipPayments) {
+    if (includeDetails && !skipPayments) {
         const paymentsStartedAt = Date.now();
         payments = await Payment.find(match).populate('patient', 'fullName').lean();
         paymentsQueryMs = Date.now() - paymentsStartedAt;
@@ -205,7 +213,7 @@ export async function calculateCash(start, end, { skipPayments = false } = {}) {
       }
     });
 
-    return {
+    const result = {
         total,
         particular,
         pacote,
@@ -219,6 +227,9 @@ export async function calculateCash(start, end, { skipPayments = false } = {}) {
         count,
         payments
     };
+
+    _setUfsCached(cacheKey, result);
+    return result;
 }
 
 /**
@@ -474,8 +485,11 @@ const pkgLookupStages = [
  * 🚨 NÃO filtra por appointment deletado/cancelado — produção é execução clínica.
  * 🚨 NÃO filtra por paciente deletado — a sessão foi realizada.
  */
-export async function calculateProduction(start, end, { skipPendente = false } = {}) {
+export async function calculateProduction(start, end, { skipPendente = false, includeDetails = true } = {}) {
     const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateProduction', start, end, { skipPendente, includeDetails });
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
     const match = {
         date: { $gte: start, $lte: end },
@@ -616,12 +630,16 @@ export async function calculateProduction(start, end, { skipPendente = false } =
     const pacotePendente = 0;
 
     // 5. Buscar sessions completas para compatibilidade com endpoints legados
-    const sessionsStartedAt = Date.now();
-    const sessions = await Session.find({
-        date: { $gte: start, $lte: end },
-        status: 'completed'
-    }).populate('package', 'sessionValue totalValue totalSessions').lean();
-    const sessionsMs = Date.now() - sessionsStartedAt;
+    let sessions = [];
+    let sessionsMs = 0;
+    if (includeDetails) {
+        const sessionsStartedAt = Date.now();
+        sessions = await Session.find({
+            date: { $gte: start, $lte: end },
+            status: 'completed'
+        }).populate('package', 'sessionValue totalValue totalSessions').lean();
+        sessionsMs = Date.now() - sessionsStartedAt;
+    }
 
     const executionTimeMs = Date.now() - startedAt;
     logMetric('UnifiedFinancialService', 'calculateProduction', {
@@ -637,7 +655,7 @@ export async function calculateProduction(start, end, { skipPendente = false } =
       }
     });
 
-    return {
+    const result = {
         total,
         particular,
         pacote,
@@ -650,6 +668,9 @@ export async function calculateProduction(start, end, { skipPendente = false } =
         count,
         sessions
     };
+
+    _setUfsCached(cacheKey, result);
+    return result;
 }
 
 /**

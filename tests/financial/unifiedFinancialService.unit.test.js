@@ -37,7 +37,7 @@ vi.mock('../../models/Package.js', () => ({
   default: { find: vi.fn().mockResolvedValue([]) }
 }));
 
-import { calculateCash, calculateProduction } from '../../services/unifiedFinancialService.v2.js';
+import { calculateCash, calculateProduction, invalidateUFSCache } from '../../services/unifiedFinancialService.v2.js';
 
 // ─── Período de teste fixo ────────────────────────────────────────────────────
 const start = moment.tz('2026-05-01', TZ).startOf('day').toDate();
@@ -87,6 +87,7 @@ function captureSessionMatch() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateUFSCache();
 });
 
 // =============================================================================
