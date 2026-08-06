@@ -65,6 +65,8 @@ export async function execute(appointmentId, options = {}) {
     evolution,
     sessionValue,
     forceReconfirm = false,
+    excludeFromProfessionalPayment = false,
+    exclusionReason = '',
     correlationId = generateCorrelationId(),
   } = options;
 
@@ -236,6 +238,8 @@ export async function execute(appointmentId, options = {}) {
     evolution,
     sessionValue,
     userId,
+    excludeFromProfessionalPayment,
+    exclusionReason,
     correlationId,
   });
 

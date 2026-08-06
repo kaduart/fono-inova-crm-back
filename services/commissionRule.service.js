@@ -158,6 +158,11 @@ export function findApplicableCommissionRule(doctor, session, sessionDate = null
  * Calcula a comissão de UMA sessão.
  */
 export function calculateSessionCommission(doctor, session, sessionDate = null) {
+  // Sessão faturada/recebida pela clínica, mas que não deve remunerar o profissional
+  if (session.professionalPaymentStatus === 'non_payable') {
+    return 0;
+  }
+
   // Usa o mesmo valor base da produção (package.sessionValue > prorata > session.sessionValue)
   // Evita divergência entre produção e comissão quando session.sessionValue ≠ package.sessionValue
   const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
@@ -239,29 +244,35 @@ export function calculateCommissionBatch(doctor, sessions) {
 
     const value = session.sessionValue || 0;
     totalProductionBase += value;
-    const commission = calculateSessionCommission(doctor, session);
 
-    totalCommission += commission;
+    // Sessões faturadas pela clínica mas não remuneradas ao profissional
+    // continuam contando para produção, mas não geram comissão.
+    const isNonPayable = session.professionalPaymentStatus === 'non_payable';
+    const commission = isNonPayable ? 0 : calculateSessionCommission(doctor, session);
 
-    const { billingType, insurance } = classifySessionForCommission(session);
+    if (!isNonPayable) {
+      totalCommission += commission;
 
-    if (sessionType === 'evaluation') {
-      breakdown.evaluations.count++;
-      breakdown.evaluations.value += commission;
-    } else {
-      breakdown.standardSessions.count++;
-      breakdown.standardSessions.value += commission;
+      const { billingType, insurance } = classifySessionForCommission(session);
 
-      const insuranceKey = insurance || 'particular';
-      if (!breakdown.standardSessions.byInsurance[insuranceKey]) {
-        breakdown.standardSessions.byInsurance[insuranceKey] = {
-          count: 0,
-          value: 0,
-          rate: isNeuropediatria ? `${Math.round(NEUROPED_PERCENTAGE * 100)}%` : commission
-        };
+      if (sessionType === 'evaluation') {
+        breakdown.evaluations.count++;
+        breakdown.evaluations.value += commission;
+      } else {
+        breakdown.standardSessions.count++;
+        breakdown.standardSessions.value += commission;
+
+        const insuranceKey = insurance || 'particular';
+        if (!breakdown.standardSessions.byInsurance[insuranceKey]) {
+          breakdown.standardSessions.byInsurance[insuranceKey] = {
+            count: 0,
+            value: 0,
+            rate: isNeuropediatria ? `${Math.round(NEUROPED_PERCENTAGE * 100)}%` : commission
+          };
+        }
+        breakdown.standardSessions.byInsurance[insuranceKey].count++;
+        breakdown.standardSessions.byInsurance[insuranceKey].value += commission;
       }
-      breakdown.standardSessions.byInsurance[insuranceKey].count++;
-      breakdown.standardSessions.byInsurance[insuranceKey].value += commission;
     }
   }
 
@@ -374,6 +385,8 @@ export function createCommissionSnapshot(doctor, session, sessionDate = null) {
     minValue: rule?.minValue ?? null,
     maxValue: rule?.maxValue ?? null,
     effectiveDate: rule?.effectiveDate ?? null,
+    professionalPaymentStatus: session.professionalPaymentStatus || 'payable',
+    professionalPaymentOverride: session.professionalPaymentOverride || null,
     calculatedCommission,
     calculatedAt: new Date().toISOString()
   };

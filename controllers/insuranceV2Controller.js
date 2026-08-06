@@ -24,11 +24,11 @@ const BILLING_MODEL = {
 /**
  * Resolve o modelo de faturamento aplicável a um conjunto de sessões.
  *
- * Regra de negócio (2026-08-03):
+ * Regra de negócio (2026-08-06):
  * - O modelo legado mensal (guia reutilizada, faturada todo mês) é específico
  *   do histórico antigo da Unimed Anápolis.
- * - O corte operacional aproximado é Maio/2026: até esse período a clínica
- *   usava o modelo mensal; a partir de Junho/2026 passou a acumular sessões
+ * - O corte operacional aproximado é Fevereiro/2026: até esse período a clínica
+ *   usava o modelo mensal; a partir de Março/2026 passou a acumular sessões
  *   na guia e enviar só no fim.
  * - Outros convênios sempre usam o modelo atual (guia → lote único).
  *
@@ -39,7 +39,7 @@ function resolveBillingModel(insuranceProvider, sessions) {
   const provider = String(insuranceProvider || '').toLowerCase().trim();
   if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
 
-  const cutoff = new Date('2026-06-01T00:00:00-03:00');
+  const cutoff = new Date('2026-03-01T00:00:00-03:00');
   const hasLegacy = sessions.some(s => {
     const raw = s.billedAt || s.sentDate || s.date;
     if (!raw) return false;
@@ -61,16 +61,16 @@ function resolveBillingModelForMonth(insuranceProvider, monthKey) {
   if (!y || !m) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
 
   // Se o provider não foi informado (ex: chamadas internas/testes), infere pelo
-  // período: o modelo legado mensal só existiu antes de Junho/2026. Períodos a
-  // partir de Junho/2026 sempre usam o modelo atual (guia → lote único).
+  // período: o modelo legado mensal só existiu antes de Março/2026. Períodos a
+  // partir de Março/2026 sempre usam o modelo atual (guia → lote único).
   if (!provider) {
-    if (y > 2026 || (y === 2026 && m >= 6)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+    if (y > 2026 || (y === 2026 && m >= 3)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
     return BILLING_MODEL.LEGACY_MONTHLY_BATCH;
   }
 
-  // Unimed Anápolis: corte operacional em Junho/2026.
+  // Unimed Anápolis: corte operacional em Março/2026.
   if (provider !== 'unimed-anapolis') return BILLING_MODEL.CURRENT_GUIDE_BATCH;
-  if (y > 2026 || (y === 2026 && m >= 6)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
+  if (y > 2026 || (y === 2026 && m >= 3)) return BILLING_MODEL.CURRENT_GUIDE_BATCH;
   return BILLING_MODEL.LEGACY_MONTHLY_BATCH;
 }
 
@@ -1064,13 +1064,16 @@ export async function getInsuranceHistory(req, res) {
       InsuranceGuide.find(guideFilter).populate('patientId', 'fullName name phone').lean()
     ]);
 
-    // Appointment IDs presentes em algum batch (deduplicação JS — sem query extra)
+    // Appointment e Session IDs presentes em algum batch (deduplicação JS — sem query extra)
     // IMPORTANTE: filter ANTES do String() — String(undefined) = "undefined" que é truthy
-    const apptIdsInBatches = new Set(
-      batches.flatMap(b => (b.sessions || [])
-        .filter(s => s.appointment != null)
-        .map(s => String(s.appointment)))
-    );
+    const apptIdsInBatches = new Set();
+    const sessionIdsInBatches = new Set();
+    for (const batch of batches) {
+      for (const s of (batch.sessions || [])) {
+        if (s.appointment != null) apptIdsInBatches.add(String(s.appointment));
+        if (s.session != null) sessionIdsInBatches.add(String(s.session));
+      }
+    }
 
     const batchApptOids  = [...apptIdsInBatches];
     const allPkgApptIds  = packages.flatMap(p => (p.appointments || []).filter(id => id && id !== 'undefined'));
@@ -1087,6 +1090,32 @@ export async function getInsuranceHistory(req, res) {
           .populate('doctor', 'fullName specialty')
           .lean()
       : [];
+
+    // Mapa sessão → guia para corrigir provider/specialty quando o Payment
+    // foi criado com dados genéricos (ex: insurance.provider='Outros' mas a
+    // sessão aponta para uma InsuranceGuide real).
+    const guideBySessionId = new Map();
+    for (const session of guideSessions) {
+      const guide = guidesInYear.find(g => String(g._id) === String(session.insuranceGuide));
+      if (guide) guideBySessionId.set(String(session._id), guide);
+    }
+
+    // Mapa de nomes de paciente por ID — fallback robusto para casos onde o
+    // Appointment não tem patientInfo populado (ex: lotes de convênio).
+    const patientNameById = new Map();
+    const patientPhoneById = new Map();
+    function registerPatientName(patient) {
+      if (!patient) return;
+      const id = patient._id?.toString?.() || patient.toString?.();
+      if (!id) return;
+      const name = patient.fullName || patient.name;
+      if (name && !patientNameById.has(id)) patientNameById.set(id, name);
+      if (patient.phone && !patientPhoneById.has(id)) patientPhoneById.set(id, patient.phone);
+    }
+    for (const pmt of avulsoPayments) registerPatientName(pmt.patient);
+    for (const pkg of packages) registerPatientName(pkg.patient);
+    for (const g of guidesInYear) registerPatientName(g.patientId);
+    for (const s of guideSessions) registerPatientName(s.patient);
 
     // ── Round 2: 3 lookups de Appointment em paralelo ─────────────────
     const [batchAppts, pkgAppts, avulsoAppts] = await Promise.all([
@@ -1206,8 +1235,14 @@ export async function getInsuranceHistory(req, res) {
         if (d.getFullYear() !== filterYear) continue;
         const mk       = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
         const patientId = appt?.patient?.toString() || null;
-        const patName  = appt?.patientInfo?.fullName || appt?.patientInfo?.name || 'Desconhecido';
-        const phone    = appt?.patientInfo?.phone || '';
+        // Fallback robusto: se o appointment não tiver patientInfo populado,
+        // busca o nome do paciente no mapa construído a partir de payments,
+        // packages, guias e sessões.
+        const resolvedName = patientId && patientNameById.has(patientId)
+          ? patientNameById.get(patientId)
+          : (appt?.patientInfo?.fullName || appt?.patientInfo?.name || 'Desconhecido');
+        const patName  = resolvedName;
+        const phone    = (patientId && patientPhoneById.get(patientId)) || appt?.patientInfo?.phone || '';
         const specialty = appt?.specialty || 'outros';
         addEntry(mk, prov, patientId, patName, phone, specialty, s.grossAmount || 0, 'lote', batchStatus);
         if (batchStatus !== 'pending_batch') trackSentAt(mk, prov, batch.sentDate || batch.createdAt);
@@ -1223,6 +1258,10 @@ export async function getInsuranceHistory(req, res) {
     for (const pmt of avulsoPayments) {
       const serviceDate = pmt.serviceDate;
       if (!serviceDate) continue;
+      // Deduplica: se a sessão/appointment deste payment já foi contada em um
+      // lote, não deve gerar segunda entrada.
+      if (pmt.session && sessionIdsInBatches.has(String(pmt.session))) continue;
+      if (pmt.appointment && apptIdsInBatches.has(String(pmt.appointment))) continue;
       const d  = new Date(serviceDate);
       if (d.getFullYear() !== filterYear) continue;
       const mk       = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -1230,11 +1269,15 @@ export async function getInsuranceHistory(req, res) {
       // formatado. Misturar os dois criava 2 entradas pro mesmo convênio no mesmo mês
       // (achado 2026-07-30) e vazava o label pro frontend como "providerSlug", que
       // depois não batia com o slug real ao filtrar sessões (retornava lista vazia).
-      const prov     = pmt.insurance.provider;
+      // Se o Payment tiver session vinculada a uma InsuranceGuide, prioriza o provider
+      // da guia — corrige casos onde o payment foi criado com provider genérico
+      // (ex: 'Outros') mas a sessão aponta para o convênio real.
+      const sessionGuide = pmt.session ? guideBySessionId.get(String(pmt.session)) : null;
+      const prov     = sessionGuide?.insurance || pmt.insurance.provider;
       const patientId = pmt.patient?._id?.toString() || pmt.patientId?.toString() || null;
       const patName  = pmt.patient?.fullName || pmt.patient?.name || 'Desconhecido';
       const phone    = pmt.patient?.phone || '';
-      const specialty = avulsoApptMap[String(pmt.appointment)]?.specialty || pmt.serviceType || 'outros';
+      const specialty = avulsoApptMap[String(pmt.appointment)]?.specialty || sessionGuide?.specialty || pmt.serviceType || 'outros';
       const insStatus = pmt.insurance?.status || 'pending_billing';
       const batchStatus = insStatus === 'received' ? 'received' : insStatus === 'billed' ? 'billed' : 'pending_batch';
       addEntry(mk, prov, patientId, patName, phone, specialty, pmt.amount, 'avulso', batchStatus);
@@ -1545,9 +1588,9 @@ export async function getPatientInsuranceSessions(req, res) {
 
     // ── 3) Montar resultado ─────────────────────────────────────────────
     const result = [];
+    const resultSessionIds = new Set();
 
-    // Sessões com guia/lote
-    for (const session of mergedSessions) {
+    function analyzeSession(session) {
       const sessionId = session._id.toString();
       const appt = apptById[session.appointmentId?.toString()];
       const payment = paymentBySession[sessionId] || paymentByAppointment[session.appointmentId?.toString()];
@@ -1573,16 +1616,7 @@ export async function getPatientInsuranceSessions(req, res) {
       const packageSpecialty = session.package ? packageSpecialtyById[session.package.toString()] : null;
       const resolvedSpecialty = packageSpecialty || session.sessionType || appt?.specialty || session.insuranceGuide?.specialty || 'outros';
 
-      if (!matchesProviderFilter([sessionProvider, batch?.insuranceProvider, appt?.insuranceProvider, session.insuranceGuide?.insurance, payment?.insurance?.provider])) continue;
-      if (!matchesStatusFilter(billingStatus, session.package)) continue;
-      // Aceita a sessão se QUALQUER uma das fontes de especialidade bater com a
-      // especialidade da linha resumo. Antes usávamos só resolvedSpecialty, o que
-      // zerava a busca quando o Package/Guia tinham uma specialty diferente da
-      // Session/Appointment (caso Nicolas Lucca: sessão fonoaudiologia vinculada a
-      // Package/Guia de terapia_ocupacional).
-      if (!matchesSpecialtyFilter([packageSpecialty, session.sessionType, appt?.specialty, session.insuranceGuide?.specialty])) continue;
-
-      result.push({
+      const result = {
         sessionId,
         date: session.date,
         // Appointment.time é a hora real do atendimento — a hora embutida em
@@ -1608,8 +1642,74 @@ export async function getPatientInsuranceSessions(req, res) {
         receivedAmount: payment?.insurance?.receivedAmount || null,
         paymentId: payment?._id || null,
         appointmentId: session.appointmentId || null,
-        source: 'lote'
-      });
+        source: 'lote',
+        professionalPaymentStatus: session.professionalPaymentStatus || 'payable',
+        professionalPaymentOverride: session.professionalPaymentOverride || null
+      };
+
+      return {
+        result,
+        providerCandidates: [sessionProvider, batch?.insuranceProvider, appt?.insuranceProvider, session.insuranceGuide?.insurance, payment?.insurance?.provider],
+        specialtyCandidates: [packageSpecialty, session.sessionType, appt?.specialty, session.insuranceGuide?.specialty],
+        packageRef: session.package
+      };
+    }
+
+    // No modelo por guia (CURRENT_GUIDE_BATCH), quando houver filtro de status,
+    // trazemos a GUIA completa se ela tiver ao menos uma sessão do mês filtrado
+    // com o status desejado. Isso reflete a regra de negócio "guia completada":
+    // a clínica vê todas as sessões da guia para contexto, mesmo as já
+    // faturadas/recebidas de meses anteriores. O status individual continua
+    // sendo o real de cada sessão.
+    if (billingModelForRequest === BILLING_MODEL.CURRENT_GUIDE_BATCH && status !== 'all') {
+      const monthSessionIds = new Set(monthSessions.map(s => s._id.toString()));
+      const candidates = [];
+
+      for (const session of mergedSessions) {
+        const analyzed = analyzeSession(session);
+        if (!matchesProviderFilter(analyzed.providerCandidates)) continue;
+        if (!matchesSpecialtyFilter(analyzed.specialtyCandidates)) continue;
+        candidates.push({ session, analyzed, isMonthSession: monthSessionIds.has(analyzed.result.sessionId) });
+      }
+
+      const byGuide = new Map();
+      const avulsos = [];
+      for (const c of candidates) {
+        const guideId = c.session.insuranceGuide?._id?.toString();
+        if (guideId) {
+          if (!byGuide.has(guideId)) byGuide.set(guideId, []);
+          byGuide.get(guideId).push(c);
+        } else {
+          avulsos.push(c);
+        }
+      }
+
+      for (const candidatesOfGuide of byGuide.values()) {
+        const hasMatch = candidatesOfGuide.some(c => c.isMonthSession && matchesStatusFilter(c.analyzed.result.billingStatus, c.analyzed.packageRef));
+        if (!hasMatch) continue;
+        for (const c of candidatesOfGuide) {
+          if (resultSessionIds.has(c.analyzed.result.sessionId)) continue;
+          resultSessionIds.add(c.analyzed.result.sessionId);
+          result.push(c.analyzed.result);
+        }
+      }
+
+      for (const c of avulsos) {
+        if (!c.isMonthSession) continue;
+        if (!matchesStatusFilter(c.analyzed.result.billingStatus, c.analyzed.packageRef)) continue;
+        if (resultSessionIds.has(c.analyzed.result.sessionId)) continue;
+        resultSessionIds.add(c.analyzed.result.sessionId);
+        result.push(c.analyzed.result);
+      }
+    } else {
+      // Comportamento padrão/legado: filtra status por sessão individual.
+      for (const session of mergedSessions) {
+        const analyzed = analyzeSession(session);
+        if (!matchesProviderFilter(analyzed.providerCandidates)) continue;
+        if (!matchesStatusFilter(analyzed.result.billingStatus, analyzed.packageRef)) continue;
+        if (!matchesSpecialtyFilter(analyzed.specialtyCandidates)) continue;
+        result.push(analyzed.result);
+      }
     }
 
     // Payments avulsos (sem sessão/package, ex: Bradesco antigo)
@@ -1658,7 +1758,9 @@ export async function getPatientInsuranceSessions(req, res) {
         receivedAmount: pmt.insurance?.receivedAmount || null,
         paymentId: pmt._id,
         appointmentId: pmt.appointment?.toString() || null,
-        source: 'avulso'
+        source: 'avulso',
+        professionalPaymentStatus: null,
+        professionalPaymentOverride: null
       });
     }
 
@@ -1667,7 +1769,7 @@ export async function getPatientInsuranceSessions(req, res) {
 
     // ── Detecta modelo de faturamento ─────────────────────────────────
     // Regra centralizada em resolveBillingModel/resolveBillingModelForMonth:
-    // somente Unimed Anápolis com competências antes de Junho/2026 usam o
+    // somente Unimed Anápolis com competências antes de Março/2026 usam o
     // modelo legado mensal. Demais convênios/períodos usam o atual.
     const billingModel = billingModelForRequest;
 

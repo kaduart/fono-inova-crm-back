@@ -77,6 +77,8 @@ Se alterar Package, verificar:
 - `Session` — consumo só no complete; nunca adiantar no agendamento
 - `Payment` — `isFromPackage=true` → NUNCA entra em caixa
 - `remainingSessions` — campo virtual; nunca usar `$inc`; alterar `sessionsDone`
+- `PackagesView` — QUALQUER campo novo de configuração/agendamento adicionado ao `Package` precisa ser replicado manualmente no schema da view **e** em `buildPackageView()`; a projeção CQRS não herda campos novos automaticamente (ver ADR-014)
+- `packageService.ts` (frontend) e `createPackageData()` (backend) — ambos têm whitelist própria (`sanitizeV2Payload` / destructuring explícito); campo novo enviado na criação precisa ser adicionado nos dois, senão é descartado silenciosamente antes de chegar no banco
 
 ### Patient
 Se alterar Patient, verificar:
@@ -394,12 +396,18 @@ Diff conferido manualmente antes de aplicar: só adiciona fallback `_serialized 
 
 Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra número normal, (3) enviar pra contato com LID, (4) conferir retorno de `sendMessage()`, (5) checar logs sem `Cannot read properties of undefined`. Quando a PR mesclar oficialmente: atualizar o SHA pro oficial, testar de novo, remover a nota de "fork temporário" daqui.
 
+### ADR-014: Campos novos no Package não aparecem automaticamente em PackagesView
+**Decisão:** Todo campo de configuração adicionado ao schema do `Package` deve ser adicionado também ao schema de `PackagesView` **e** à função `buildPackageView()` (`domains/billing/services/PackageProjectionService.js`) — nenhum dos dois herda automaticamente do outro. Se o campo também precisa ser enviado pelo frontend na criação, checar ainda `sanitizeV2Payload()` (`front/src/services/packageService.ts`) e `createPackageData()` (`packageController.v2.js`) — ambos têm whitelist própria que descarta silenciosamente campos não listados.
+**Motivo:** `PackagesView` é uma projeção CQRS materializada, montada manualmente a partir de um subconjunto de campos do `Package` (`fetchRawData`/`viewData` em `PackageProjectionService.js`). Ao adicionar `frequencyInterval` (feature de pacote quinzenal, 2026-08-06) apenas ao `Package`, o dado gravava certo no write model mas nunca chegava no frontend — todos os endpoints de leitura de Package (`GET /:id`, `GET /patient/:id`, listagem) leem exclusivamente de `PackagesView`, nunca do `Package` direto. Achado só depois de rastrear a cadeia completa: schema → controller → sanitize do frontend → projection builder → schema da view.
+**Consequência:** checklist ao adicionar campo novo no `Package`: (1) schema `Package.js`; (2) schema `PackagesView.js`; (3) `viewData` em `buildPackageView()`; (4) `sanitizeV2Payload()` no frontend, se o campo for enviado na criação/edição; (5) `createPackageData()` no backend, mesma razão.
+
 ---
 
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
+| 2026-08-06 | ADR-014: Package.frequencyInterval (weekly/biweekly, pacote quinzenal) — campo novo no write model não aparece automaticamente em PackagesView (projeção CQRS); precisa espelhar manualmente em schema + buildPackageView(). Mapa de impacto do Package atualizado com PackagesView e whitelists de sanitize (frontend/backend) |
 | 2026-07-24 | ADR-013 RCA final: causa raiz identificada com alta confiança (WhatsApp Web renomeou id._serialized→id.$1). Hotfix aplicado: whatsapp-web.js pinado no fork lindionez#f4ea1e3 (patch da PR upstream #201832, ainda não mesclada oficialmente) — bridge temporário, trocar pro oficial quando mergear |
 | 2026-07-24 | ADR-012 + checklist itens 7-10: toda fila BullMQ precisa de consumidor confirmado no entrypoint real de produção (não assumir por render.yaml). Invariantes #24-28 (Amanda): diagnóstico inicial errado (achou fila whatsapp-send sem consumidor — na verdade whatsapp-child.js sempre teve; Start Command real do crm-worker é whatsapp-only.js, não workers/startWorkers.js como o render.yaml sugere). Causa raiz real: sessão WhatsApp Web desconectada. whatsappPipelineGuard religado em server.js (processo que roda de fato) + checkWhatsappSendQueue() adicionado. CORS fix (allowedHeaders faltando Cache-Control/Pragma) |
 | 2026-07-10 | ADR-011: projeção de caixa por lote retroativo (heurística de transição, thresholds configuráveis) |

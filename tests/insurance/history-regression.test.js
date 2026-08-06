@@ -436,4 +436,143 @@ describe('Insurance History - Regression Suite', () => {
     });
     expect(detail.count).toBe(1);
   });
+
+  it('Modelo atual (março/2026): guia completa aparece ao filtrar mês posterior, incluindo sessão já faturada', async () => {
+    // Cenário Nicolas Lucca: guia aberta em maio/2026, primeira sessão faturada
+    // em maio, demais pendentes em junho/julho/agosto. Ao filtrar agosto como
+    // "pending_batch", a guia completa deve ser exibida — a sessão de maio
+    // aparece como "billed" para contexto.
+    const { patient, guide, sessions } = await createScenario({
+      issuedAt: new Date('2026-05-26T00:00:00-03:00'),
+      dates: [
+        new Date('2026-05-26T00:00:00-03:00'),
+        new Date('2026-06-02T00:00:00-03:00'),
+        new Date('2026-06-09T00:00:00-03:00'),
+        new Date('2026-06-16T00:00:00-03:00'),
+        new Date('2026-06-23T00:00:00-03:00'),
+        new Date('2026-06-30T00:00:00-03:00'),
+        new Date('2026-07-07T00:00:00-03:00'),
+        new Date('2026-07-21T00:00:00-03:00'),
+        new Date('2026-08-04T00:00:00-03:00')
+      ],
+      patientName: 'Paciente Guia Completa',
+      sessionValue: 100
+    });
+
+    // Marca a primeira sessão (26/05) como faturada, simulando lote de maio.
+    const mayAppt = await Appointment.create({
+      patient: patient._id,
+      doctor: sessions[0].doctor,
+      specialty: 'fonoaudiologia',
+      date: sessions[0].date,
+      time: '10:00',
+      duration: 40,
+      session: sessions[0]._id,
+      billingType: 'convenio',
+      insuranceProvider: 'unimed-anapolis'
+    });
+    sessions[0].appointmentId = mayAppt._id;
+    await sessions[0].save();
+
+    await InsuranceBatch.create({
+      batchNumber: 'LOTE-MAIO-2026',
+      insuranceProvider: 'unimed-anapolis',
+      startDate: sessions[0].date,
+      endDate: sessions[0].date,
+      status: 'sent',
+      sessions: [{
+        session: sessions[0]._id,
+        appointment: mayAppt._id,
+        guide: guide._id,
+        grossAmount: 100,
+        status: 'sent',
+        sessionDate: sessions[0].date
+      }],
+      totalGross: 100,
+      totalSessions: 1
+    });
+
+    const detail = await reqPatientSessions({
+      patientId: patient._id.toString(),
+      month: '2026-08',
+      specialty: 'fonoaudiologia',
+      provider: 'unimed-anapolis',
+      status: 'pending_batch'
+    });
+
+    expect(detail.success).toBe(true);
+    expect(detail.billingModel).toBe('CURRENT_GUIDE_BATCH');
+    expect(detail.count).toBe(9);
+
+    const maySession = detail.data.find(s => new Date(s.date).toISOString().startsWith('2026-05-26'));
+    expect(maySession).toBeTruthy();
+    expect(maySession.billingStatus).toBe('billed');
+    expect(maySession.guideNumber).toBe(guide.number);
+
+    const augSessions = detail.data.filter(s => new Date(s.date).toISOString().startsWith('2026-08'));
+    expect(augSessions.length).toBe(1);
+    expect(augSessions[0].billingStatus).toBe('pending_batch');
+
+    const guideGroup = detail.groups.find(g => g.guideNumber === guide.number);
+    expect(guideGroup).toBeTruthy();
+    expect(guideGroup.summary.sessions).toBe(9);
+    expect(guideGroup.summary.grossAmount).toBe(900);
+  });
+
+  it('Payment avulso com provider genérico usa InsuranceGuide para agrupar no histórico', async () => {
+    // Cenário Davi Felipe: sessão criada a partir de uma InsuranceGuide real,
+    // mas o Payment foi gerado com insurance.provider='Outros'. O histórico deve
+    // usar o convênio da guia para não jogar a sessão no provider errado.
+    const { patient, doctor, guide } = await createScenario({
+      issuedAt: new Date('2026-06-01T00:00:00-03:00'),
+      dates: [new Date('2026-06-10T00:00:00-03:00')],
+      specialty: 'fisioterapia',
+      insurance: 'unimed-campinas',
+      patientName: 'Paciente Provider Generico'
+    });
+
+    const appt = await Appointment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      specialty: 'fisioterapia',
+      date: guide.createdAt,
+      time: '10:00',
+      duration: 40,
+      session: (await Session.findOne({ patient: patient._id }).lean())._id,
+      billingType: 'convenio',
+      insuranceProvider: 'unimed-campinas'
+    });
+
+    const session = await Session.findOne({ patient: patient._id }).lean();
+    await Session.updateOne({ _id: session._id }, { appointmentId: appt._id });
+
+    await Payment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      session: session._id,
+      appointment: appt._id,
+      amount: 140,
+      paymentMethod: 'convenio',
+      billingType: 'convenio',
+      status: 'pending',
+      paymentDate: session.date,
+      serviceDate: session.date,
+      serviceType: 'fisioterapia',
+      insurance: {
+        provider: 'Outros',
+        status: 'pending_billing',
+        grossAmount: 140
+      }
+    });
+
+    const history = await reqHistory({ year: 2026 });
+    const jun = history.data.find(m => m.monthKey === '2026-06');
+    const prov = jun?.providers.find(p => p.provider === 'unimed-campinas');
+    const pat = prov?.patients.find(p => p.name === 'Paciente Provider Generico');
+    expect(pat).toBeTruthy();
+    const fisioterapia = pat.specialties.find(s => s.specialty === 'fisioterapia');
+    expect(fisioterapia).toBeTruthy();
+    expect(fisioterapia.sessions).toBe(1);
+    expect(fisioterapia.value).toBe(140);
+  });
 });

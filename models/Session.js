@@ -105,6 +105,28 @@ const sessionSchema = new mongoose.Schema({
         description: 'Valor pago parcialmente nesta sessão (se aplicável)'
     },
 
+    professionalPaymentStatus: {
+        type: String,
+        enum: ['payable', 'non_payable'],
+        default: 'payable',
+        description: 'Indica se a sessão deve gerar remuneração ao profissional (recebido pela clínica, mas não remunerado)'
+    },
+
+    professionalPaymentOverride: {
+        excluded: { type: Boolean, default: false },
+        reason: { type: String, default: null },
+        excludedAt: { type: Date, default: null },
+        excludedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        _id: false
+    },
+
+    professionalPaymentOverrideHistory: [{
+        status: { type: String, enum: ['payable', 'non_payable'], required: true },
+        reason: { type: String, required: true },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+    }],
+
     visualFlag: {
         type: String,
         enum: ['ok', 'pending', 'blocked'],

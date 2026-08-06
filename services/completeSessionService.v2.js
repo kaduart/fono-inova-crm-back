@@ -55,6 +55,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         balanceDescription,
         splitMethods = null,
         paymentMethod = null,
+        excludeFromProfessionalPayment = false,
+        exclusionReason = '',
         correlationId = `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     } = options;
 
@@ -366,6 +368,22 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             const doctorForCommission = await Doctor.findById(appointment.doctor?._id)
                 .select('specialty commissionRules commissionRuleVersion')
                 .lean();
+            const professionalPaymentStatus = excludeFromProfessionalPayment ? 'non_payable' : 'payable';
+            const professionalPaymentOverride = {
+                excluded: excludeFromProfessionalPayment,
+                reason: excludeFromProfessionalPayment ? (exclusionReason || null) : null,
+                excludedAt: excludeFromProfessionalPayment ? new Date() : null,
+                excludedBy: userId ? new mongoose.Types.ObjectId(userId) : null
+            };
+            const professionalPaymentOverrideHistoryEntry = {
+                status: professionalPaymentStatus,
+                reason: excludeFromProfessionalPayment
+                    ? (exclusionReason || 'Marcado como não remunerável no momento da completação')
+                    : 'Remunerável no momento da completação',
+                changedAt: new Date(),
+                changedBy: userId ? new mongoose.Types.ObjectId(userId) : null
+            };
+
             if (doctorForCommission) {
                 // injeta sessionValue correto caso o appointment tenha sido criado com R$0
                 const sessionDocForCommission = sessionValue > 0 && (sessionDoc.sessionValue || 0) !== sessionValue
@@ -383,6 +401,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     evolution: evolution || undefined,
                     correlationId,
                     commissionSnapshot,
+                    professionalPaymentStatus,
+                    professionalPaymentOverride,
                     ...(sessionValue > 0 ? { sessionValue } : {})
                 };
             } else {
@@ -392,6 +412,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                     notes: notes || undefined,
                     evolution: evolution || undefined,
                     correlationId,
+                    professionalPaymentStatus,
+                    professionalPaymentOverride,
                     ...(sessionValue > 0 ? { sessionValue } : {})
                 };
             }
@@ -410,7 +432,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             
             await Session.findByIdAndUpdate(
                 sessionId,
-                { $set: sessionUpdate },
+                {
+                    $set: sessionUpdate,
+                    $push: { professionalPaymentOverrideHistory: professionalPaymentOverrideHistoryEntry }
+                },
                 {
                     session: mongoSession,
                     __fromFinancialGuard: true,

@@ -25,6 +25,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import moment from 'moment-timezone';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import { recordAudit } from '../services/auditLogService.js';
 import { normalizeAdminEditPayload } from '../utils/adminEditPayloadNormalizer.js';
 import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
 import { getInsuranceFlowConfig } from '../config/insuranceFlowConfig.js';
@@ -380,6 +381,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     evolution: req.body.evolution,
                     sessionValue: req.body.sessionValue,
                     forceReconfirm: req.body.forceReconfirm,
+                    excludeFromProfessionalPayment: req.body.excludeFromProfessionalPayment,
+                    exclusionReason: req.body.exclusionReason,
                     correlationId
                 });
 
@@ -392,6 +395,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     evolution: req.body.evolution,
                     sessionValue: req.body.sessionValue,
                     userId: req.user?._id?.toString(),
+                    excludeFromProfessionalPayment: req.body.excludeFromProfessionalPayment,
+                    exclusionReason: req.body.exclusionReason,
                     correlationId
                 });
             }
@@ -406,6 +411,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 notes: req.body.notes,
                 evolution: req.body.evolution,
                 userId: req.user?._id?.toString(),
+                excludeFromProfessionalPayment: req.body.excludeFromProfessionalPayment,
+                exclusionReason: req.body.exclusionReason,
                 correlationId
             });
         }
@@ -488,6 +495,95 @@ router.patch('/:id/complete', auth, async (req, res) => {
 //
 // Fluxo oficial: docs/architecture/CANONICAL_FLOW.md
 // ======================================================================
+
+// ======================================================================
+// ALTERAR STATUS DE REMUNERAÇÃO DO PROFISSIONAL
+// ======================================================================
+
+router.patch('/:id/professional-payment-status', validateId, auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, reason } = req.body;
+    const userId = req.user?._id?.toString();
+
+    if (!['payable', 'non_payable'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Status inválido. Use "payable" ou "non_payable".'
+      });
+    }
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Motivo é obrigatório ao alterar o status de remuneração.'
+      });
+    }
+
+    const appointment = await Appointment.findById(id).select('session patient doctor').lean();
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+    }
+
+    if (!appointment.session) {
+      return res.status(400).json({ success: false, error: 'Agendamento não possui sessão vinculada' });
+    }
+
+    const sessionId = appointment.session.toString();
+    const beforeSession = await Session.findById(sessionId).lean();
+    if (!beforeSession) {
+      return res.status(404).json({ success: false, error: 'Sessão não encontrada' });
+    }
+
+    const update = {
+      professionalPaymentStatus: status,
+      professionalPaymentOverride: {
+        excluded: status === 'non_payable',
+        reason: status === 'non_payable' ? reason.trim() : null,
+        excludedAt: status === 'non_payable' ? new Date() : null,
+        excludedBy: status === 'non_payable' && userId ? new mongoose.Types.ObjectId(userId) : null
+      },
+      $push: {
+        professionalPaymentOverrideHistory: {
+          status,
+          reason: reason.trim(),
+          changedAt: new Date(),
+          changedBy: userId ? new mongoose.Types.ObjectId(userId) : null
+        }
+      }
+    };
+
+    const updatedSession = await Session.findByIdAndUpdate(
+      sessionId,
+      update,
+      { new: true }
+    ).lean();
+
+    await recordAudit({
+      user: userId ? { _id: userId } : null,
+      action: 'professional_payment_status_changed',
+      entityType: 'Session',
+      entityId: sessionId,
+      before: beforeSession,
+      after: updatedSession,
+      source: 'appointment.v2:professional-payment-status',
+      correlationId: req.headers['x-correlation-id'] || `pps_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    });
+
+    return res.json({
+      success: true,
+      data: updatedSession,
+      message: `Remuneração do profissional ${status === 'non_payable' ? 'desabilitada' : 'habilitada'} com sucesso.`
+    });
+  } catch (err) {
+    console.error(`[PATCH /api/v2/appointments/${req.params.id}/professional-payment-status] erro:`, err);
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      code: 'INTERNAL_SERVER_ERROR'
+    });
+  }
+});
 
 // ======================================================================
 // READ ENDPOINTS (migrados para appointmentReads.js)
