@@ -44,7 +44,8 @@ export async function replanInsurancePlanSessions({
   guideId,
   mongoSession,
   user,
-  reason = 'plan_frequency_changed'
+  reason = 'plan_frequency_changed',
+  allowPastGeneration = false
 }) {
   const guide = await InsuranceGuide.findById(guideId).session(mongoSession).lean();
   if (!guide) throw new Error('GUIDE_NOT_FOUND');
@@ -136,17 +137,20 @@ export async function replanInsurancePlanSessions({
     guideId: guide._id,
     sessionValue: plan.sessionValue || 0,
     mongoSession,
-    skipHolidays: true
+    skipHolidays: true,
+    allowPastGeneration
   });
 
   console.log('[replanInsurancePlanSessions] Regeneração concluída', {
-    appointmentsGenerated: regenResult.count
+    appointmentsGenerated: regenResult.count,
+    pastAppointments: regenResult.pastAppointments?.length || 0
   });
 
   return {
     appointmentsDeleted,
     appointmentsCanceled: appointmentsCanceled + appointmentsDeleted,
     appointmentsGenerated: regenResult.count,
-    appointments: regenResult.appointments
+    appointments: regenResult.appointments,
+    pastAppointments: regenResult.pastAppointments || []
   };
 }

@@ -4,6 +4,13 @@ const packageSchema = new mongoose.Schema({
   version: { type: Number, default: 0 },
   durationMonths: { type: Number, required: true, min: 1, max: 12 },
   sessionsPerWeek: { type: Number, required: true, min: 1, max: 5 },
+  frequencyInterval: {
+    type: String,
+    enum: ['weekly', 'biweekly'],
+    default: 'weekly',
+    required: true,
+    description: 'Intervalo entre ocorrências: weekly (toda semana) ou biweekly (quinzenal, a cada 2 semanas). sessionsPerWeek continua sendo quantas sessões por ocorrência.'
+  },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
   doctor: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor', required: true },
   paymentMethod: { type: String },

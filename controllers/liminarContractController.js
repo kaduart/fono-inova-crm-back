@@ -763,10 +763,9 @@ export async function getContractIntegrity(req, res) {
     ? Object.fromEntries(plan.therapies)
     : (plan.therapies || {});
 
-  // Todos appointments não-cancelados do contrato
+  // Todos appointments do contrato (incluindo cancelados para contagem)
   const appts = await Appointment.find({
     liminarContract: contract._id,
-    operationalStatus: { $ne: 'canceled' }
   }).select('date specialty operationalStatus sessionValue').sort({ date: 1 }).lean();
 
   if (appts.length === 0) {
@@ -785,7 +784,11 @@ export async function getContractIntegrity(req, res) {
   const bySpecialty = {};
   for (const a of appts) {
     const sp = a.specialty;
-    if (!bySpecialty[sp]) bySpecialty[sp] = { generated: 0, completed: 0, pending: 0 };
+    if (!bySpecialty[sp]) bySpecialty[sp] = { generated: 0, completed: 0, pending: 0, canceled: 0 };
+    if (a.operationalStatus === 'canceled' || a.operationalStatus === 'force_cancelled') {
+      bySpecialty[sp].canceled++;
+      continue;
+    }
     bySpecialty[sp].generated++;
     if (a.operationalStatus === 'completed') bySpecialty[sp].completed++;
     else bySpecialty[sp].pending++;
@@ -815,13 +818,14 @@ export async function getContractIntegrity(req, res) {
       walker.setDate(walker.getDate() + 1);
     }
 
-    const c = bySpecialty[specialty] || { generated: 0, completed: 0, pending: 0 };
+    const c = bySpecialty[specialty] || { generated: 0, completed: 0, pending: 0, canceled: 0 };
     const missing = Math.max(0, expected - c.generated);
     specialtyResults[specialty] = {
       slotsPerWeek: slots.length,
       sessionValue: config.sessionValue ?? 0,
+      totalSessions: config.totalSessions ?? null,
       expected, generated: c.generated,
-      completed: c.completed, pending: c.pending, missing,
+      completed: c.completed, pending: c.pending, canceled: c.canceled, missing,
     };
     totExp += expected; totGen += c.generated;
     totComp += c.completed; totPend += c.pending;

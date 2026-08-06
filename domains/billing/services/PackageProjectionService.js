@@ -195,7 +195,10 @@ export async function buildPackageView(packageId, options = {}) {
       status: normalizeStatus(pkg.status),
       specialty: pkg.specialty,
       sessionType: pkg.sessionType,
-      
+      sessionsPerWeek: pkg.sessionsPerWeek,
+      durationMonths: pkg.durationMonths,
+      frequencyInterval: pkg.frequencyInterval || 'weekly',
+
       ...sessionMetrics,
       sessionsDone: Math.max(pkg.sessionsDone || 0, sessionMetrics.sessionsUsed), // usa o counter do Package (atualizado na transação)
       sessionsRemaining: Math.max(0, (pkg.totalSessions || sessionMetrics.totalSessions) - Math.max(pkg.sessionsDone || 0, sessionMetrics.sessionsUsed) - sessionMetrics.sessionsCanceled),

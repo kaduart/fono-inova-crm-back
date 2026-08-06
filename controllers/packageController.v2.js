@@ -94,7 +94,12 @@ function validateNotHoliday(dateStr, timeStr) {
  * Se uma data for feriado, gera nova data na próxima semana
  * 🛡️ GARANTE: nunca gera datas duplicadas
  */
-function adjustScheduleSkipHolidays(schedule, sessionsPerWeek = 1) {
+// 🚨 FIX: o parâmetro era `sessionsPerWeek` (quantos slots diferentes por semana,
+// ex: Seg/Qua/Sex = 3), não o intervalo de recorrência de UM slot. Pular
+// `7 * sessionsPerWeek` dias ao esbarrar num feriado saltava semanas legítimas
+// (ex: pacote 3x/semana pulava 3 semanas em vez de 1). O passo correto pra manter
+// a mesma cadência (weekly=7 dias, biweekly=14) é `7 * intervalWeeks`.
+function adjustScheduleSkipHolidays(schedule, intervalWeeks = 1) {
   const adjusted = [];
   const skippedHolidays = [];
   const usedDates = new Set(); // Track datas já usadas
@@ -125,7 +130,7 @@ function adjustScheduleSkipHolidays(schedule, sessionsPerWeek = 1) {
       let newDateStr;
       
       do {
-        currentDate.setDate(currentDate.getDate() + (7 * sessionsPerWeek));
+        currentDate.setDate(currentDate.getDate() + (7 * intervalWeeks));
         newDateStr = currentDate.toISOString().split('T')[0];
         attempts++;
         
@@ -171,7 +176,7 @@ function createPackageData(data) {
     type, model,
     insuranceGuideId, insuranceProvider,
     liminarProcessNumber, liminarCourt, liminarExpirationDate, liminarMode,
-    notes, durationMonths, sessionsPerWeek, date
+    notes, durationMonths, sessionsPerWeek, date, frequencyInterval
   } = data;
 
   const baseData = {
@@ -187,6 +192,7 @@ function createPackageData(data) {
     // Campos obrigatórios do modelo Package
     durationMonths: durationMonths || Math.ceil(parseInt(totalSessions) / 4),
     sessionsPerWeek: sessionsPerWeek || 1,
+    frequencyInterval: frequencyInterval === 'biweekly' ? 'biweekly' : 'weekly',
     date: date ? new Date(date) : new Date()
   };
 
@@ -490,11 +496,16 @@ export const createPackageV2 = async (req, res) => {
     payments = [],
     notes,
     sessionsPerWeek,
+    frequencyInterval,
     durationMonths,
     idempotencyKey,
     appointmentId = null,   // 🔗 appointment avulso a reutilizar (opcional)
     preConsumedCount = 0    // 🔗 sessões já realizadas antes do pacote (retroativo)
   } = req.body;
+
+  // Intervalo real entre ocorrências de UM slot (não confundir com sessionsPerWeek,
+  // que é quantos slots diferentes existem por semana — ver fix no adjustScheduleSkipHolidays).
+  const intervalWeeks = frequencyInterval === 'biweekly' ? 2 : 1;
 
   // 🔄 RESOLVER patientId (pode vir como ID da PatientsView)
   patientId = await resolvePatientId(patientId);
@@ -798,8 +809,8 @@ export const createPackageV2 = async (req, res) => {
         }
       }
       
-      // 🔄 AJUSTAR FERIADOS (pula para próxima semana em vez de bloquear)
-      const adjustResult = adjustScheduleSkipHolidays(schedule, sessionsPerWeek || 1);
+      // 🔄 AJUSTAR FERIADOS (pula pra próxima ocorrência da mesma cadência em vez de bloquear)
+      const adjustResult = adjustScheduleSkipHolidays(schedule, intervalWeeks);
       const adjustedSchedule = adjustResult.adjusted;
       skippedHolidays = adjustResult.skippedHolidays;
       

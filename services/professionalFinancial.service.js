@@ -33,6 +33,7 @@ import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialVa
 import { classifyPendingSession } from '../utils/classifyPendingSession.js';
 import { logMetric } from '../utils/logMetric.js';
 import { calculateCommissionBatch, calculateSessionCommission } from './commissionRule.service.js';
+import { resolveInsuranceProvider, DEFAULT_PROVIDER } from './insuranceResolver.service.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -876,6 +877,7 @@ export async function getCommissionSessions({ doctorId, startDate, endDate }) {
     })
       .populate('patient', 'fullName')
       .populate('package', 'sessionType')
+      .populate('insuranceGuide', 'insurance')
       .sort({ date: 1, time: 1 })
       .lean()
   ]);
@@ -883,6 +885,18 @@ export async function getCommissionSessions({ doctorId, startDate, endDate }) {
   // 🎯 Mesma fonte de verdade da geração oficial (commissionService.js) e da
   // auditoria (getCommissionAudit) — nunca ler campo gravado na Session, que
   // pode estar ausente/desatualizado (drift confirmado 2026-07-08).
+  //
+  // Origem financeira: convênio resolvido via InsuranceResolverService (ADR-009 —
+  // nenhum endpoint novo pode reimplementar essa hierarquia, sob risco do mesmo
+  // payment aparecer com convênios diferentes em telas diferentes). Liminar não
+  // tem campo direto na Session; identificada via paymentMethod/paymentOrigin.
+  const resolveSessionOrigin = (session) => {
+    const provider = resolveInsuranceProvider({ session });
+    if (provider !== DEFAULT_PROVIDER) return 'convenio';
+    if (session.paymentMethod === 'liminar_credit' || session.paymentOrigin === 'liminar' || session.paymentOrigin === 'liminar_credit') return 'liminar';
+    return 'particular';
+  };
+
   const items = sessions.map((session) => ({
     sessionId: session._id,
     date: toDateString(session.date),
@@ -891,7 +905,8 @@ export async function getCommissionSessions({ doctorId, startDate, endDate }) {
     value: round(resolveSessionFinancialValue(session)),
     commissionValue: round(doctor ? calculateSessionCommission(doctor, session, session.date) : 0),
     isPackage: !!session.package,
-    packageSessionType: session.package?.sessionType || null
+    packageSessionType: session.package?.sessionType || null,
+    origin: resolveSessionOrigin(session)
   }));
 
   logMetric('ProfessionalFinancialService', 'getCommissionSessions', {

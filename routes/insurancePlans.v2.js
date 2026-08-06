@@ -17,6 +17,7 @@ import { replanInsurancePlanSessions } from '../services/schedule/replanInsuranc
 import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
+import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 
 const router = express.Router();
 
@@ -946,6 +947,9 @@ router.delete('/:id', auth, async (req, res) => {
  */
 router.post('/:id/generate-sessions', auth, async (req, res) => {
   const { id } = req.params;
+  // 🆕 Sinal explícito do usuário (ex: editou o início da guia pra uma data passada e
+  // confirmou o backfill retroativo) — default false preserva o comportamento padrão.
+  const allowPastGeneration = req.body?.allowPastGeneration === true;
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
   }
@@ -1037,7 +1041,8 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
         guideId: plan.guide,
         mongoSession: session,
         user: req.user,
-        reason: 'plan_slots_mismatch'
+        reason: 'plan_slots_mismatch',
+        allowPastGeneration
       });
       console.log('[InsurancePlansV2][generate-sessions] Replanejamento executado', {
         appointmentsCanceled: replanResult.appointmentsCanceled,
@@ -1052,7 +1057,8 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       guideId: guide._id,
       sessionValue: plan.sessionValue || 0,
       mongoSession: session,
-      skipHolidays: true
+      skipHolidays: true,
+      allowPastGeneration
     });
 
     // Após aplicar o plano na agenda (replan ou geração normal), a flag de
@@ -1065,13 +1071,43 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 
     await session.commitTransaction();
 
+    // 🆕 Sessões retroativas (allowPastGeneration=true) nascem pre_agendado dentro da
+    // transação acima — igual a qualquer outra. Completá-las é efeito colateral
+    // pós-commit: reusa completeSessionV2 (o mesmo caminho de "Fechar Atendimento" manual)
+    // pra consumir a guia, liquidar o payment e gerar commissionSnapshot corretamente, em
+    // vez de setar status='completed' na mão (ver aviso no sessionFactory sobre herdar
+    // 'completed' por acidente).
+    const pastAppointments = [
+      ...(replanResult?.pastAppointments || []),
+      ...(result?.pastAppointments || [])
+    ];
+    let pastCompleted = 0;
+    const pastCompletionErrors = [];
+    for (const appt of pastAppointments) {
+      try {
+        await completeSessionV2(appt._id, {
+          userId: req.user?._id,
+          notes: 'Sessão retroativa gerada automaticamente ao regenerar a guia de convênio com data de início no passado.'
+        });
+        pastCompleted++;
+      } catch (completeErr) {
+        console.error('[InsurancePlansV2][generate-sessions] Falha ao completar sessão retroativa', {
+          appointmentId: appt._id.toString(),
+          error: completeErr.message
+        });
+        pastCompletionErrors.push({ appointmentId: appt._id.toString(), error: completeErr.message });
+      }
+    }
+
     return res.json({
       success: true,
       data: {
         appointmentsGenerated: (replanResult?.appointmentsGenerated || 0) + (result?.count || 0),
         remaining,
         replanned: needsReplan,
-        appointmentsCanceled: replanResult?.appointmentsCanceled || 0
+        appointmentsCanceled: replanResult?.appointmentsCanceled || 0,
+        pastAppointmentsCompleted: pastCompleted,
+        pastAppointmentsFailed: pastCompletionErrors
       }
     });
   } catch (error) {

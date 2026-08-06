@@ -45,6 +45,13 @@ const packagesViewSchema = new mongoose.Schema({
   },
   specialty: String,
   sessionType: String,
+  sessionsPerWeek: Number,
+  durationMonths: Number,
+  frequencyInterval: {
+    type: String,
+    enum: ['weekly', 'biweekly'],
+    default: 'weekly'
+  },
 
   // 📊 Métricas de Sessões (ESSENCIAL)
   totalSessions: {

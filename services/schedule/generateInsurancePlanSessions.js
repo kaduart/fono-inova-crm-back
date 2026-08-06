@@ -146,13 +146,17 @@ function getWeekStart(date) {
  * @param {string} params.guideId       - ID da InsuranceGuide
  * @param {Object} params.mongoSession  - Sessão MongoDB (transação)
  * @param {boolean} params.skipHolidays - Pular feriados (default: true)
+ * @param {boolean} params.allowPastGeneration - Intenção explícita do usuário (ex: editou
+ *   plan.startDate pro passado) de gerar sessões retroativas em vez de partir de hoje.
+ *   Default false preserva o comportamento padrão (nunca cria scheduled no passado).
  */
 export async function generateInsurancePlanSessions({
   planId,
   guideId,
   sessionValue = 0,
   mongoSession,
-  skipHolidays = true
+  skipHolidays = true,
+  allowPastGeneration = false
 }) {
   // ── 1. Carrega plano e guia ────────────────────────────────────
   const plan = await InsurancePlan.findById(planId).session(mongoSession).lean();
@@ -190,8 +194,14 @@ export async function generateInsurancePlanSessions({
   planStartDate.setHours(0, 0, 0, 0);
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
-  // Ao regenerar um plano ativo com sessões passadas, parte de hoje para não criar appointments no passado
-  const startDate = planStartDate > todayDate ? planStartDate : todayDate;
+  // Ao regenerar um plano ativo com sessões passadas, parte de hoje para não criar appointments
+  // no passado — EXCETO quando allowPastGeneration=true, sinal explícito de que o usuário quer
+  // backfillar sessões retroativas (ex: editou plan.startDate pra uma segunda que já passou).
+  // Essas sessões retroativas nascem pre_agendado igual as demais (bulkWrite abaixo não muda) —
+  // quem marca como completed é o caller, depois do commit, via completeSessionV2 (ver rota).
+  const startDate = allowPastGeneration
+    ? planStartDate
+    : (planStartDate > todayDate ? planStartDate : todayDate);
 
   // +1 de buffer: quando startDate cai no meio da semana, slots anteriores
   // ao startDate são pulados na semana 0, consumindo uma semana sem gerar sessão
@@ -452,6 +462,20 @@ export async function generateInsurancePlanSessions({
     { session: mongoSession }
   );
 
+  // Appointments cuja data já passou, dentre os slots que ESTA chamada pediu pra
+  // garantir existirem (via `slots`, não uma busca ampla por todo o plano — evita
+  // varrer/completar acidentalmente algum appointment antigo alheio a esta geração).
+  // Só populam quando allowPastGeneration=true, já que startDate nunca fica no
+  // passado no caminho padrão. O caller (rota) é responsável por completá-los via
+  // completeSessionV2 depois do commit da transação.
+  const pastSlotKeys = new Set(
+    slots.filter(s => s.date < todayDate).map(s => `${s.dateStr}_${s.time}`)
+  );
+  const pastAppointments = createdAppointments.filter(a => {
+    const dateStr = new Date(a.date).toISOString().split('T')[0];
+    return pastSlotKeys.has(`${dateStr}_${a.time}`);
+  });
+
   console.log('[generateInsurancePlanSessions] ✅ Concluído', {
     planId: plan._id.toString(),
     guideId: guide._id.toString(),
@@ -460,11 +484,13 @@ export async function generateInsurancePlanSessions({
     appointmentsCreated: result.upsertedCount,
     paymentsCreated: paymentDocs.length,
     sessionsCreated: createdSessions.length,
-    sessionValue: effectiveSessionValue
+    sessionValue: effectiveSessionValue,
+    pastAppointments: pastAppointments.length
   });
 
   return {
     appointments: createdAppointments,
-    count: createdAppointments.length
+    count: createdAppointments.length,
+    pastAppointments
   };
 }
