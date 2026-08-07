@@ -11,6 +11,7 @@
  */
 
 import { getQueue } from '../queue/queueConfig.js';
+import { getMemorySnapshot, logMemoryLimits, RSS_LIMIT_INFO } from './memoryStats.js';
 import { createContextLogger } from '../../utils/logger.js';
 const logger = createContextLogger(null, 'runtime_monitor');
 
@@ -20,31 +21,12 @@ const logger = createContextLogger(null, 'runtime_monitor');
 
 const MEM_INTERVAL_MS = 10_000;   // a cada 10s
 const QUEUE_INTERVAL_MS = 15_000; // a cada 15s
-const RSS_THRESHOLD_WARN_MB = 1024; // 1GB
-const RSS_THRESHOLD_CRIT_MB = 2048; // 2GB
 
 // ============================================
 // HELPERS
 // ============================================
 
 const toMB = (v) => Math.round(v / 1024 / 1024);
-
-function getMemorySnapshot() {
-  const mem = process.memoryUsage();
-  const heapPercent = mem.heapUsed / mem.heapTotal;
-  const rssMB = toMB(mem.rss);
-
-  return {
-    heapUsedMB: toMB(mem.heapUsed),
-    heapTotalMB: toMB(mem.heapTotal),
-    heapPercent: parseFloat((heapPercent * 100).toFixed(1)),
-    rssMB,
-    externalMB: toMB(mem.external),
-    status:
-      rssMB >= RSS_THRESHOLD_CRIT_MB ? 'critical' :
-      rssMB >= RSS_THRESHOLD_WARN_MB ? 'warning' : 'healthy'
-  };
-}
 
 // ============================================
 // MONITOR DE MEMÓRIA
@@ -60,12 +42,16 @@ function startMemoryMonitor() {
     const icon = snap.status === 'critical' ? '🔴' :
                  snap.status === 'warning'  ? '🟡' : '🟢';
 
-    // Log enxuto — fácil de grep no Render/Logtail
-    console.log(`${icon} [MEMORY] rss=${snap.rssMB}MB heap=${snap.heapUsedMB}/${snap.heapTotalMB}MB (${snap.heapPercent}%)`);
+    // Log enxuto — fácil de grep no Render/Logtail.
+    // rss = vs cota do container (causa OOM kill); heap = vs heap_size_limit do V8.
+    console.log(
+      `${icon} [MEMORY] rss=${snap.rssMB}/${snap.rssLimitMB}MB (${snap.rssPercent}%) ` +
+      `heap=${snap.heapUsedMB}/${snap.heapLimitMB}MB (${snap.heapPercent}%)`
+    );
 
     // Se crítico, log estruturado para alerta
     if (snap.status === 'critical') {
-      logger.error('memory_critical', 'RSS acima de 2GB', snap);
+      logger.error('memory_critical', `RSS >= ${RSS_LIMIT_INFO.critMB}MB ou heap >= 90% do limite do V8`, snap);
     }
   }, MEM_INTERVAL_MS);
 }
@@ -122,8 +108,11 @@ export function healthEndpoint(req, res) {
     memory: {
       heapUsedMB: mem.heapUsedMB,
       heapTotalMB: mem.heapTotalMB,
+      heapLimitMB: mem.heapLimitMB,
       heapPercent: mem.heapPercent,
       rssMB: mem.rssMB,
+      rssLimitMB: mem.rssLimitMB,
+      rssPercent: mem.rssPercent,
       status: mem.status
     },
     queues: lastQueueStats || {},
@@ -136,8 +125,8 @@ export function healthEndpoint(req, res) {
 // ============================================
 
 export function healthFullEndpoint(req, res) {
-  const mem = process.memoryUsage();
-  const snap = lastMemory || getMemorySnapshot();
+  // snapshot fresco (não o do último tick) — este endpoint é de debug
+  const snap = getMemorySnapshot();
 
   res.json({
     status: snap.status === 'critical' ? 'degraded' : 'ok',
@@ -147,12 +136,15 @@ export function healthFullEndpoint(req, res) {
       pid: process.pid
     },
     memory: {
-      heapUsedMB: toMB(mem.heapUsed),
-      heapTotalMB: toMB(mem.heapTotal),
+      heapUsedMB: snap.heapUsedMB,
+      heapTotalMB: snap.heapTotalMB,
+      heapLimitMB: snap.heapLimitMB,
       heapPercent: snap.heapPercent,
-      rssMB: toMB(mem.rss),
-      externalMB: toMB(mem.external),
-      arrayBuffersMB: toMB(mem.arrayBuffers || 0),
+      rssMB: snap.rssMB,
+      rssLimitMB: snap.rssLimitMB,
+      rssPercent: snap.rssPercent,
+      externalMB: snap.externalMB,
+      arrayBuffersMB: toMB(process.memoryUsage().arrayBuffers || 0),
       status: snap.status
     },
     queues: lastQueueStats || {},
@@ -171,5 +163,6 @@ export function startRuntimeMonitor() {
     logger.error('queue_monitor_init_failed', err.message)
   );
 
+  logMemoryLimits('🔭 [RuntimeMonitor]');
   console.log('🔭 [RuntimeMonitor] Iniciado — logs a cada 10s (mem) / 15s (filas)');
 }

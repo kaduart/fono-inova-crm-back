@@ -18,6 +18,7 @@ import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import { EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { getMemorySnapshot } from '../infrastructure/observability/memoryStats.js';
 
 const redis = new Redis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
@@ -29,9 +30,9 @@ const MEMORY_THRESHOLD_PERCENT = 95;
 
 // ============ MONITORAMENTO DE MEMÓRIA ============
 function checkMemoryPressure() {
-    const usage = process.memoryUsage();
-    const heapPercent = Math.round((usage.heapUsed / usage.heapTotal) * 100);
-    
+    // heapPercent é medido contra heap_size_limit do V8, não heapTotal
+    const { heapPercent } = getMemorySnapshot();
+
     if (heapPercent > MEMORY_THRESHOLD_PERCENT) {
         console.error(`[MEMORY ALERT] Heap usage: ${heapPercent}% - Rejeitando job`);
         return { pressure: true, heapPercent };

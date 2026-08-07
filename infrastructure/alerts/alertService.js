@@ -97,15 +97,20 @@ export async function alertDeadLetter({ eventId, eventType, retryCount, error, a
 /**
  * Alerta específico: Memory Pressure
  */
-export async function alertMemoryPressure({ heapPercent, heapUsed, heapTotal }) {
+export async function alertMemoryPressure({ heapPercent, heapUsedMB, heapLimitMB, rssMB }) {
+    // heapPercent já vem em escala 0-100 (getMemorySnapshot), medido contra
+    // heap_size_limit do V8 — não multiplicar por 100.
+    const percent = Math.round(heapPercent);
+
     return sendAlert({
         level: 'critical',
         type: 'memory_pressure',
-        message: `🔴 Memory Pressure Crítica: ${Math.round(heapPercent * 100)}%`,
+        message: `🔴 Memory Pressure Crítica: ${percent}% do heap limit`,
         details: {
-            heapPercent: Math.round(heapPercent * 100),
-            heapUsedMB: Math.round(heapUsed / 1024 / 1024),
-            heapTotalMB: Math.round(heapTotal / 1024 / 1024),
+            heapPercent: percent,
+            heapUsedMB,
+            heapLimitMB,
+            rssMB,
             action: 'Worker será reiniciado pelo Render/PM2'
         }
     });

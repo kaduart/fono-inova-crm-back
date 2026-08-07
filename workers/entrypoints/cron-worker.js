@@ -16,6 +16,7 @@
 
 import dotenv from 'dotenv';
 import path from 'path';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { redisConnection } from '../../config/redisConnection.js';
@@ -35,20 +36,31 @@ if (!MONGO_URI) {
 // ⏱️ Event Loop Lag Monitor
 // ======================================================
 function startEventLoopMonitor() {
-  const INTERVAL_MS = 1000;
-  const THRESHOLD_MS = 100;
-  let last = Date.now();
+  const REPORT_INTERVAL_MS = 30_000;
+  const P99_THRESHOLD_MS = 200;
 
-  setInterval(() => {
-    const now = Date.now();
-    const lag = now - last - INTERVAL_MS;
-    last = now;
-    if (lag > THRESHOLD_MS) {
-      console.warn(`[cron-worker][event-loop] LAG DETECTED: ${lag}ms (threshold ${THRESHOLD_MS}ms)`);
+  // Histograma do libuv (nanossegundos) — imune a salto de relógio e a
+  // suspensão do processo, que geravam falsos "LAG DETECTED" com Date.now().
+  const histogram = monitorEventLoopDelay({ resolution: 20 });
+  histogram.enable();
+
+  const timer = setInterval(() => {
+    const p99 = histogram.percentile(99) / 1e6;
+    const max = histogram.max / 1e6;
+    const mean = histogram.mean / 1e6;
+    histogram.reset();
+
+    if (p99 > P99_THRESHOLD_MS) {
+      console.warn(
+        `[cron-worker][event-loop] LAG: p99=${p99.toFixed(0)}ms max=${max.toFixed(0)}ms mean=${mean.toFixed(0)}ms ` +
+        `(janela ${REPORT_INTERVAL_MS / 1000}s, threshold p99 ${P99_THRESHOLD_MS}ms)`
+      );
     }
-  }, INTERVAL_MS);
+  }, REPORT_INTERVAL_MS);
 
-  console.log('⏱️  [cron-worker] Event loop monitor iniciado');
+  timer.unref();
+
+  console.log(`⏱️  [cron-worker] Event loop monitor iniciado (p99 a cada ${REPORT_INTERVAL_MS / 1000}s)`);
 }
 
 // ======================================================

@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import EventStore from '../models/EventStore.js';
 import Appointment from '../models/Appointment.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
+import { getMemorySnapshot } from '../infrastructure/observability/memoryStats.js';
 import { whatsappState } from '../services/whatsappWebJsService.js';
 
 const router = express.Router();
@@ -58,9 +59,8 @@ router.get('/', async (req, res) => {
  */
 router.get('/monitor', async (req, res) => {
     try {
-        const memUsage = process.memoryUsage();
-        const heapPercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
-        
+        const mem = getMemorySnapshot();
+
         // Verifica workers
         const { redisConnection } = await import('../infrastructure/queue/queueConfig.js');
         const redis = redisConnection;
@@ -93,10 +93,13 @@ router.get('/monitor', async (req, res) => {
             status: 'ok',
             timestamp: new Date().toISOString(),
             memory: {
-                heapPercent,
-                heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
-                heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-                rss: Math.round(memUsage.rss / 1024 / 1024)
+                heapPercent: mem.heapPercent,   // vs heap_size_limit do V8
+                heapUsed: mem.heapUsedMB,
+                heapTotal: mem.heapTotalMB,
+                heapLimit: mem.heapLimitMB,
+                rss: mem.rssMB,
+                rssLimit: mem.rssLimitMB,
+                rssPercent: mem.rssPercent
             },
             database: mongoose.connection.readyState === 1,
             workers: {
@@ -246,15 +249,10 @@ router.get('/queues', async (req, res) => {
  */
 router.get('/full', async (req, res) => {
     try {
-        const memUsage = process.memoryUsage();
-        const heapPercentNum = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
-        const rssMB = Math.round(memUsage.rss / 1024 / 1024);
-        
-        // Determina status da memória baseado no RSS (uso real de RAM)
-        let memoryStatus = 'healthy';
-        if (rssMB >= 2048) memoryStatus = 'critical';
-        else if (rssMB >= 1024) memoryStatus = 'warning';
-        
+        // Status considera RSS (RAM real) E heap vs teto do V8 — ver memoryStats.js
+        const mem = getMemorySnapshot();
+        const memoryStatus = mem.status;
+
         // Busca estatísticas das filas
         const queueNames = [
             'complete-orchestrator',
@@ -296,11 +294,14 @@ router.get('/full', async (req, res) => {
                 pid: process.pid
             },
             memory: {
-                heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-                heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-                heapPercent: heapPercentNum,
-                rssMB,
-                externalMB: Math.round((memUsage.external || 0) / 1024 / 1024),
+                heapUsedMB: mem.heapUsedMB,
+                heapTotalMB: mem.heapTotalMB,
+                heapLimitMB: mem.heapLimitMB,
+                heapPercent: mem.heapPercent,
+                rssMB: mem.rssMB,
+                rssLimitMB: mem.rssLimitMB,
+                rssPercent: mem.rssPercent,
+                externalMB: mem.externalMB,
                 status: memoryStatus
             },
             queues,
@@ -338,14 +339,14 @@ async function runBasicChecks() {
     // 1. Database
     checks.database = mongoose.connection.readyState === 1;
 
-    // 2. Memória (baseado em RSS para refletir uso real de RAM)
-    const memUsage = process.memoryUsage();
-    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+    // 2. Memória (RSS = uso real de RAM; percent = heap vs teto do V8)
+    // percent/total agora refletem a cota do container — é ela que causa OOM kill
+    const mem = getMemorySnapshot();
     checks.memory = {
-        ok: rssMB < 2048,
-        percent: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100),
-        used: rssMB,
-        total: Math.round(memUsage.heapTotal / 1024 / 1024) * 2 + 512
+        ok: mem.status !== 'critical',
+        percent: mem.rssPercent,
+        used: mem.rssMB,
+        total: mem.rssLimitMB
     };
 
     // 3. Eventos travados
