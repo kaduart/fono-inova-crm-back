@@ -16,7 +16,8 @@ import {
   getEmailLogs,
   listCommunicationEmailLogs
 } from '../services/communication/CommunicationEmailService.js';
-import CommunicationEmailLog, { EmailLogType } from '../models/CommunicationEmailLog.js';
+import { sendCommunication } from '../services/communication/CommunicationService.js';
+import CommunicationEmailLog from '../models/CommunicationEmailLog.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { transition, CommunicationEvents } from '../services/communication/CommunicationStateMachine.js';
 import { getRulesForInsurance, updateRulesForInsurance } from '../services/communication/InsuranceRuleService.js';
@@ -129,93 +130,65 @@ router.post('/:id/package', auth, async (req, res) => {
 });
 
 // POST /api/v2/communications/:id/send
+//
+// Entrega a comunicação pelo canal configurado (email, external, portal...).
+// A escolha do canal vem de `deliveryMethod` no payload; se omitido, usa o valor
+// persistido na InsuranceCommunication (default: email).
+//
+// O orquestrador CommunicationService coordena o estado e delega a execução ao
+// DeliveryProvider apropriado. Para e-mail, o provider enfileira um job BullMQ;
+// para external, a entrega é síncrona e já marca a comunicação como sent.
 router.post('/:id/send', auth, async (req, res) => {
   const communicationId = req.params.id;
   logger.info('send_endpoint_entered', `Endpoint /send chamado para ${communicationId}`, { communicationId });
 
   try {
-    const { to, subject, message, template, sendType, reason } = req.body;
+    const {
+      to,
+      subject,
+      message,
+      template,
+      sendType,
+      reason,
+      deliveryMethod
+    } = req.body;
 
-    const communication = await getCommunicationRequest(communicationId);
-
-    // Comunicação já em sent/approved: isto é reenvio ou complemento, não o 1º envio —
-    // pular a máquina de estados por completo (sent/approved não têm transição SEND;
-    // ver CommunicationEmailService.sendCommunicationEmail pro mesmo guard no worker).
-    const alreadySent = ['sent', 'approved'].includes(communication.status);
-
-    if (!alreadySent) {
-      // Se ainda estiver em rascunho, marca como pronta antes de enviar
-      if (communication.status === 'draft') {
-        await transition(communicationId, CommunicationEvents.MARK_READY);
-      }
-
-      // Transiciona para SENDING antes de enfileirar
-      await transition(communicationId, CommunicationEvents.SEND);
-    }
-
-    let job;
-    try {
-      const queue = getQueue('communication-email');
-      logger.info('queue_add_started', `Enfileirando job de e-mail para ${communicationId}`, { communicationId });
-
-      // Gerado aqui (não deixado pro BullMQ decidir) pra poder repassar dentro do
-      // payload do próprio job — o worker usa isso como chave de idempotência entre
-      // retries do MESMO job (ver sendCommunicationEmail).
-      const emailJobId = `communication-email-${communicationId}-${Date.now()}`;
-
-      job = await queue.add(
-        'send-communication-email',
-        {
-          communicationId,
-          to,
-          subject,
-          message,
-          template,
-          sendType: sendType || (alreadySent ? EmailLogType.RESEND : undefined),
-          reason: reason || undefined,
-          ip: req.ip,
-          userId: req.user.id,
-          jobId: emailJobId
-        },
-        {
-          jobId: emailJobId,
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 3000 }
-        }
-      );
-
-      logger.info('queue_add_completed', `Job ${job.id} enfileirado para ${communicationId}`, { communicationId, jobId: job.id });
-    } catch (enqueueError) {
-      // O enfileiramento falhou DEPOIS que o status já virou SENDING — sem isso,
-      // a comunicação fica presa em "sending" pra sempre, sem job e sem log,
-      // porque nada mais nesse fluxo teria como reverter esse status (achado
-      // em produção em 2026-07-27: 3 comunicações órfãs em "sending" sem
-      // nenhum job correspondente no Redis, ver InsuranceCommunication/back's
-      // finance-integrity-audit da época).
-      logger.error('queue_add_failed', `Falha ao enfileirar job para ${communicationId}: ${enqueueError.message}`, {
-        communicationId,
-        error: enqueueError.message
-      });
-
-      // Só reverte status se este ciclo chegou a mudá-lo (ver guard acima) — reenvio/
-      // complemento nunca saem de sent/approved, e FAIL não é transição válida daí.
-      if (!alreadySent) {
-        await transition(communicationId, CommunicationEvents.FAIL, {
-          statusReason: `Falha ao enfileirar envio: ${enqueueError.message}`
-        });
-      }
-
-      throw enqueueError;
-    }
-
-    res.json({
-      success: true,
-      data: {
-        jobId: job.id,
-        status: 'queued',
-        message: 'Comunicação enfileirada para envio'
-      }
+    const result = await sendCommunication(communicationId, {
+      to,
+      subject,
+      message,
+      template,
+      sendType,
+      reason,
+      deliveryMethod,
+      userId: req.user.id,
+      ip: req.ip
     });
+
+    if (result.status === 'queued') {
+      res.json({
+        success: true,
+        data: {
+          jobId: result.jobId,
+          status: 'queued',
+          message: 'Comunicação enfileirada para envio'
+        }
+      });
+    } else if (result.status === 'sent') {
+      res.json({
+        success: true,
+        data: {
+          logId: result.log?._id,
+          status: 'sent',
+          message: 'Comunicação registrada como enviada'
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Resultado inesperado do provider de entrega'
+      });
+    }
   } catch (error) {
     console.error('[CommunicationRoutes] send:', error);
     res.status(500).json({ success: false, error: error.message });

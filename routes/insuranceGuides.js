@@ -98,16 +98,6 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // Verificar se número já existe
-    const existing = await InsuranceGuide.findOne({ number: number.toUpperCase().trim() });
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: `Guia ${number} já existe no sistema`,
-        code: 'DUPLICATE_GUIDE_NUMBER'
-      });
-    }
-
     // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
     let resolvedPatientId = patientId;
     const patientExists = await mongoose.connection.db.collection('patients').findOne(
@@ -122,6 +112,21 @@ router.post('/', auth, async (req, res) => {
       if (viewDoc?.patientId) {
         resolvedPatientId = viewDoc.patientId.toString();
       }
+    }
+
+    // Verificar se número já existe PARA ESTE PACIENTE.
+    // Unicidade é por paciente: pacientes diferentes (de convênios/locais diferentes)
+    // podem legitimamente ter o mesmo número de guia.
+    const existing = await InsuranceGuide.findOne({
+      patientId: resolvedPatientId,
+      number: number.toUpperCase().trim()
+    });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: `Este paciente já possui a guia ${number} cadastrada`,
+        code: 'DUPLICATE_GUIDE_NUMBER'
+      });
     }
 
     // Criar guia

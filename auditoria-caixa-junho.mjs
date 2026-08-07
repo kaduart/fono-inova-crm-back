@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 
-const MONGO_URI = 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI;
 
 async function connect() {
   await mongoose.connect(MONGO_URI);

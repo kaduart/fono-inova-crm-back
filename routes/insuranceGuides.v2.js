@@ -93,6 +93,29 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
+    // Resolve o patientId (aceita _id da patients_view) — a checagem de duplicidade
+    // e o documento salvo precisam usar o MESMO id, senão o índice único não confere.
+    const resolvedPatientId = (
+      await resolvePatientId(patientId, { correlationId, throwIfNotFound: false })
+    ) || patientId;
+
+    // Verifica duplicidade de número ESCOPADA POR PACIENTE.
+    // Números de guia só são únicos dentro do prontuário do paciente — pacientes
+    // diferentes (convênios/locais diferentes) podem ter o mesmo número, e isso é normal.
+    const duplicate = await InsuranceGuide.findOne({
+      patientId: resolvedPatientId.toString(),
+      number: number.toString().toUpperCase().trim()
+    }).select('_id number').lean();
+
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        errorCode: 'DUPLICATE_GUIDE_NUMBER',
+        message: `Este paciente já possui a guia ${number} cadastrada`,
+        correlationId
+      });
+    }
+
     // Busca billingMode do convênio (congela na guia para preservar histórico)
     const insuranceCode = insurance.toLowerCase().replace(' ', '-');
     const convenioDoc = await Convenio.findOne({ code: insuranceCode });
@@ -105,7 +128,7 @@ router.post('/', auth, async (req, res) => {
     // Cria a guia
     const guideData = {
       number,
-      patientId: patientId.toString(),
+      patientId: resolvedPatientId.toString(),
       specialty,
       insurance: insuranceCode,
       totalSessions: parseInt(totalSessions),
@@ -266,12 +289,12 @@ router.post('/', auth, async (req, res) => {
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro:', error);
     
-    // Duplicado (número único)
+    // Duplicado (índice único { patientId, number } — race condition)
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
         errorCode: 'DUPLICATE_GUIDE_NUMBER',
-        message: 'Número da guia já existe',
+        message: 'Este paciente já possui uma guia com esse número',
         correlationId
       });
     }

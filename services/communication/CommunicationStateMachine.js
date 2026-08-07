@@ -21,6 +21,9 @@ const TRANSITIONS = {
   },
   [CommunicationStatus.READY]: {
     [CommunicationEvents.SEND]: CommunicationStatus.SENDING,
+    // Canais de entrega síncronos (ex.: external) não passam por SENDING;
+    // a entrega é imediata e o orquestrador transiciona direto para sent.
+    [CommunicationEvents.MARK_SENT]: CommunicationStatus.SENT,
     [CommunicationEvents.DENY]: CommunicationStatus.DENIED
   },
   [CommunicationStatus.SENDING]: {

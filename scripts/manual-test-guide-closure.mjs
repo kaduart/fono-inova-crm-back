@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { assertNotProductionDb } from '../utils/assertNotProductionDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,6 +20,12 @@ async function main() {
     console.error('MONGODB_URI/MONGO_URI e JWT_SECRET são obrigatórios no .env');
     process.exit(1);
   }
+
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'scripts/manual-test-guide-closure.mjs'
+});
 
   await mongoose.connect(mongoUri);
   console.log('Conectado ao MongoDB');

@@ -16,7 +16,7 @@
 import mongoose from 'mongoose';
 
 const MONGO_URI = process.env.MONGO_URI ||
-  'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+  process.env.MONGO_URI;
 
 const args = process.argv.slice(2);
 const shouldFix = args.includes('--fix');

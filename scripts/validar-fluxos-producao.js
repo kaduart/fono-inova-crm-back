@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import mongoose from 'mongoose';
 import IORedis from 'ioredis';
+import { assertNotProductionDb } from '../utils/assertNotProductionDb.js';
 
 const BASE_URL = 'http://localhost:5000';
 const SERVICE_TOKEN = process.env.ADMIN_API_TOKEN || 'amanda_service_token_fono_inova_2025_secure_xyz789';
@@ -253,6 +254,12 @@ async function main() {
 
   try {
     log('START', 'Iniciando validação dos fluxos críticos', { baseUrl: BASE_URL, patientId: PATIENT_ID });
+
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'scripts/validar-fluxos-producao.js'
+});
 
     await mongoose.connect(process.env.MONGO_URI);
     log('MONGODB', 'Conectado');

@@ -40,9 +40,25 @@ function parseQuery(req) {
   return { startDate, endDate };
 }
 
+// Violação de regra de negócio não é erro de servidor — devolver 500 fazia o
+// frontend cair no genérico "Request failed with status code 500" e esconder a
+// mensagem real (ex: fechamento bloqueado por sessão órfã, que tem ação clara).
+const ERROR_STATUS_BY_CODE = {
+  FINANCIAL_ISSUES_DETECTED: 409,
+  SETTLEMENT_ALREADY_EXISTS: 409,
+  ADVANCE_NOT_FOUND: 404,
+  SETTLEMENT_NOT_FOUND: 404,
+  DOCTOR_NOT_FOUND: 404
+};
+
 function handleError(res, error) {
-  console.error('[ProfessionalFinancialRoutes]', error);
-  res.status(500).json({
+  const status = ERROR_STATUS_BY_CODE[error.code]
+    || (/já existe|not found|não encontrad/i.test(error.message || '') ? 409 : 500);
+
+  if (status >= 500) console.error('[ProfessionalFinancialRoutes]', error);
+  else console.warn('[ProfessionalFinancialRoutes] regra de negócio:', error.code || error.message);
+
+  res.status(status).json({
     success: false,
     errorCode: error.code || 'PROFESSIONAL_FINANCIAL_ERROR',
     message: error.message || 'Erro ao carregar resultado do profissional',

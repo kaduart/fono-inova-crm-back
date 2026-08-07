@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { assertNotProductionDb } from '../utils/assertNotProductionDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,10 +11,22 @@ dotenv.config({ path: join(__dirname, '../.env') });
 dotenv.config();
 
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-if (!mongoUri) {
-  console.error('MONGODB_URI/MONGO_URI não encontrado no .env');
-  process.exit(1);
-}
+
+// 🔒 ADR-016 — guard OBRIGATÓRIO antes de qualquer conexão.
+// Este script criou 28 pacientes "Paciente Teste Encerrar Guia" em produção
+// (limpeza em 2026-08-05 e de novo em 2026-08-07).
+assertNotProductionDb({ mongoUri, scriptName: 'preparar-guia-para-teste-ui.mjs', writes: true });
+
+const KEEP = process.argv.includes('--keep');
+const testRunId = randomUUID();
+
+// Rastreio determinístico do que foi criado, para limpar no finally.
+// Não uso marcador `_testData` no documento porque os schemas rodam em modo
+// strict — Mongoose descartaria o campo silenciosamente e a limpeza viraria no-op.
+const criados = { Patient: [], InsuranceGuide: [], Appointment: [], Session: [], Payment: [] };
+const rastrear = (modelo, doc) => { criados[modelo].push(doc._id); return doc; };
+
+console.log(`testRunId: ${testRunId}${KEEP ? ' (--keep: não vai limpar)' : ''}`);
 
 await mongoose.connect(mongoUri);
 await import('../models/index.js');
@@ -32,11 +46,16 @@ if (!admin || !doctor) {
   process.exit(1);
 }
 
+// ⚠️ A partir daqui tudo escreve. O bloco está em try/finally: qualquer exceção
+// no meio ainda dispara a limpeza, senão sobra meia trinca no banco.
+try {
+
 const patient = await Patient.create({
   fullName: 'Paciente Teste Encerrar Guia',
   phone: '61999999999',
   email: 'teste-encerrar-guia@example.com'
 });
+criados.Patient.push(patient._id);
 
 const now = new Date();
 const future10 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10, 9, 0, 0);
@@ -66,6 +85,7 @@ const guide = await InsuranceGuide.create({
   status: 'active',
   createdBy: admin._id
 });
+criados.InsuranceGuide.push(guide._id);
 
 const apptCompleted = await Appointment.create({
   date: pastCompleted,
@@ -79,6 +99,7 @@ const apptCompleted = await Appointment.create({
   billingType: 'convenio',
   paymentMethod: 'convenio'
 });
+criados.Appointment.push(apptCompleted._id);
 
 const apptScheduled = await Appointment.create({
   date: future10,
@@ -91,6 +112,7 @@ const apptScheduled = await Appointment.create({
   billingType: 'convenio',
   paymentMethod: 'convenio'
 });
+criados.Appointment.push(apptScheduled._id);
 
 const apptConfirmed = await Appointment.create({
   date: future15,
@@ -103,6 +125,7 @@ const apptConfirmed = await Appointment.create({
   billingType: 'convenio',
   paymentMethod: 'convenio'
 });
+criados.Appointment.push(apptConfirmed._id);
 
 // A listagem "A Faturar" busca Session (não Appointment). Precisamos criar as Sessions correspondentes.
 const sessionCompleted = await Session.create({
@@ -119,6 +142,7 @@ const sessionCompleted = await Session.create({
   sessionValue,
   guideConsumed: true
 });
+criados.Session.push(sessionCompleted._id);
 
 const sessionScheduled = await Session.create({
   date: future10,
@@ -133,6 +157,7 @@ const sessionScheduled = await Session.create({
   status: 'scheduled',
   sessionValue
 });
+criados.Session.push(sessionScheduled._id);
 
 const sessionConfirmed = await Session.create({
   date: future15,
@@ -147,6 +172,7 @@ const sessionConfirmed = await Session.create({
   status: 'scheduled',
   sessionValue
 });
+criados.Session.push(sessionConfirmed._id);
 
 // Cria o Payment que o ConvenioHandler teria gerado na completação.
 // Sem isso o faturamento guide-based não encontra o que faturar.
@@ -175,6 +201,7 @@ const payment = await Payment.create({
   kind: 'session_payment',
   source: 'manual_test_setup'
 });
+criados.Payment.push(payment._id);
 
 // Vincula o Payment no Appointment (igual ao que o handler faz).
 apptCompleted.payment = payment._id;
@@ -191,4 +218,24 @@ console.log('Confirmed Appointment/Session (será cancelado):', apptConfirmed._i
 // Aguarda sincronizações assíncronas (syncService) antes de desconectar.
 await new Promise(resolve => setTimeout(resolve, 1500));
 
-await mongoose.disconnect();
+} finally {
+  // Limpeza SEMPRE — inclusive quando o bloco acima estourou no meio.
+  // Ordem inversa da criação, para não deixar referência pendurada.
+  if (KEEP) {
+    console.log('\n--keep: dado de teste MANTIDO. Limpe manualmente quando terminar:');
+    console.log(`   ${JSON.stringify(criados, null, 2)}`);
+  } else {
+    const ordem = ['Payment', 'Session', 'Appointment', 'InsuranceGuide', 'Patient'];
+    for (const modelo of ordem) {
+      const ids = criados[modelo];
+      if (!ids.length) continue;
+      try {
+        const r = await mongoose.model(modelo).deleteMany({ _id: { $in: ids } });
+        console.log(`   limpeza ${modelo}: ${r.deletedCount}/${ids.length}`);
+      } catch (err) {
+        console.error(`   ⚠️  limpeza ${modelo} falhou: ${err.message} — ids: ${ids.join(', ')}`);
+      }
+    }
+  }
+  await mongoose.disconnect();
+}

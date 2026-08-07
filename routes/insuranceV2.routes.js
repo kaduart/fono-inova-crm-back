@@ -27,7 +27,15 @@ router.patch('/insurance/session/:sessionId/bill', auth, controller.billSession)
 router.patch('/insurance/session/:sessionId/receive', auth, controller.receiveSession);
 
 // GET /api/v2/insurance/guides/pending-billing
+// ⚠️ LEGADO, SEM CONSUMIDORES (2026-08-07). O frontend migrou inteiramente para
+// /insurance/guides/view. Mantida só por compatibilidade temporária — remover
+// junto com listGuidesPendingBilling quando não houver mais chamadas externas.
+// Não voltar a apontar tela nenhuma para cá: ela esconde guia já faturada.
 router.get('/insurance/guides/pending-billing', auth, controller.listPendingGuides);
+
+// GET /api/v2/insurance/guides/view
+// Fonte de leitura ÚNICA e oficial da aba Convênios. Somente leitura.
+router.get('/insurance/guides/view', auth, controller.getGuidesView);
 
 // GET /api/v2/insurance/history - Histórico mês a mês
 router.get('/insurance/history', auth, controller.getInsuranceHistory);

@@ -12,12 +12,19 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
+import { assertNotProductionDb } from '../utils/assertNotProductionDb.js';
 
 const PATIENT_NAME = 'Paciente E2E V2 1776088177';
 
 async function run() {
     const uri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/fono_inova_prod';
     console.log(`[CLEANUP] Conectando em: ${uri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`);
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'scripts/cleanup-e2e-patient.js'
+});
+
     await mongoose.connect(uri);
     console.log(`[CLEANUP] Buscando paciente: ${PATIENT_NAME}`);
 

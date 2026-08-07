@@ -12,13 +12,20 @@ import Patient from '../../../models/Patient.js';
 import { publishEvent } from '../../../infrastructure/events/eventPublisher.js';
 import { buildPatientView } from '../../../domains/clinical/services/patientProjectionService.js';
 import { redisConnection } from '../../../infrastructure/queue/queueConfig.js';
+import { assertNotProductionDb } from '../../../utils/assertNotProductionDb.js';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_development';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 
 describe('🔌 V2 Worker Integration', () => {
   let patientProjectionQueue;
   
   beforeAll(async () => {
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'tests/e2e/v2/worker-integration.v2.e2e.test.js'
+});
+
     await mongoose.connect(MONGO_URI);
     
     // Conecta na fila de projeção

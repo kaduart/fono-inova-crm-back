@@ -21,10 +21,13 @@ const insuranceGuideSchema = new mongoose.Schema({
   // IDENTIFICAÇÃO
   // ======================================================================
 
+  // ⚠️ Unicidade é POR PACIENTE, não global.
+  // Convênios diferentes (ou o mesmo convênio em locais diferentes) podem emitir
+  // o mesmo número de guia para pacientes distintos — isso é normal e não é duplicidade.
+  // Ver índice único composto `idx_unique_guide_number_per_patient` abaixo.
   number: {
     type: String,
     required: [true, 'Número da guia é obrigatório'],
-    unique: true,
     trim: true,
     uppercase: true,
     index: true
@@ -313,6 +316,15 @@ insuranceGuideSchema.virtual('remaining').get(function () {
 // ======================================================================
 // ÍNDICES COMPOSTOS
 // ======================================================================
+
+// Unicidade do número da guia — ESCOPADA POR PACIENTE.
+// Substitui o antigo índice global `number_1 UNIQUE` (migração 2026-08-07).
+// Motivo: números de guia só são únicos dentro do prontuário do paciente;
+// pacientes diferentes podem legitimamente ter o mesmo número.
+insuranceGuideSchema.index(
+  { patientId: 1, number: 1 },
+  { name: 'idx_unique_guide_number_per_patient', unique: true }
+);
 
 // Índice principal: busca de guia válida para agendamento
 insuranceGuideSchema.index(

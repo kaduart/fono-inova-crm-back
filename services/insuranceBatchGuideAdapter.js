@@ -220,13 +220,14 @@ async function findAlreadyHandledSessionIds(sessionIds) {
 }
 
 // Piso padrão da listagem de "A Faturar" quando nenhum período é passado
-// explicitamente. Decisão de produto 2026-07-20: pendências anteriores a essa
-// data são legado conhecido (Session.sessionValue nunca propagado da guia na
+// explicitamente. Decisão de produto 2026-08-07: o modelo por guia (Unimed Anápolis
+// e demais convênios) entrou em vigor a partir de Março/2026. Pendências anteriores
+// a essa data são legado conhecido (Session.sessionValue nunca propagado da guia na
 // criação, Unimed Anápolis ainda em billingMode per_month) — não aparecem mais
 // na tela padrão. O dado continua intacto no banco, só não entra nesta query;
 // quem passar month/startDate/endDate explicitamente ainda enxerga qualquer
 // período, incluindo antes do corte.
-const LEGACY_PENDING_CUTOFF = new Date('2026-05-01T00:00:00');
+const LEGACY_PENDING_CUTOFF = new Date('2026-03-01T00:00:00');
 
 /**
  * Filtro de data flexível: aceita início sem fim (período aberto), os dois, ou

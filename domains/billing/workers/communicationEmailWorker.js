@@ -1,9 +1,12 @@
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../../../infrastructure/queue/queueConfig.js';
-import { sendCommunicationEmail } from '../../../services/communication/CommunicationEmailService.js';
+import { EmailDeliveryProvider } from '../../../services/communication/delivery/EmailDeliveryProvider.js';
+import { handleDeliveryResult } from '../../../services/communication/CommunicationService.js';
 import { createContextLogger } from '../../../utils/logger.js';
 
 const logger = createContextLogger('communication_email_worker');
+
+const emailProvider = new EmailDeliveryProvider();
 
 export const communicationEmailWorker = new Worker(
   'communication-email',
@@ -21,9 +24,6 @@ export const communicationEmailWorker = new Worker(
     } = job.data;
 
     const startTime = Date.now();
-    // Tempo entre o job entrar na fila (job.timestamp, setado pelo BullMQ no enqueue)
-    // e o worker efetivamente começar a processar — separa "preso na fila" (worker
-    // ocupado/sem capacidade) de "processamento lento" (Cloudinary/SMTP).
     const queueDelayMs = startTime - job.timestamp;
     logger.info('communication_email_started', `Iniciando envio de comunicação ${communicationId}`, {
       jobId: job.id,
@@ -34,7 +34,7 @@ export const communicationEmailWorker = new Worker(
     });
 
     try {
-      const result = await sendCommunicationEmail({
+      const result = await emailProvider.executeDelivery({
         communicationId,
         to,
         subject,
@@ -44,18 +44,24 @@ export const communicationEmailWorker = new Worker(
         sendType,
         ip,
         reason,
-        // job.id é estável entre retries do MESMO job (BullMQ reaproveita o id que
-        // passamos no enqueue) — usado como chave de idempotência.
         jobId: job.id
       });
 
       const duration = Date.now() - startTime;
+
+      if (!result.success) {
+        await handleDeliveryResult(communicationId, result);
+        throw result.error;
+      }
+
+      await handleDeliveryResult(communicationId, result);
+
       logger.info('communication_email_completed', `Comunicação ${communicationId} enviada`, {
         jobId: job.id,
         communicationId,
-        logId: result.logId,
-        protocol: result.protocol,
-        attempt: result.attempt,
+        logId: result.log?._id,
+        protocol: result.log?.protocol,
+        attempt: result.log?.attempt,
         queueDelayMs,
         processingMs: duration,
         totalMs: queueDelayMs + duration
@@ -63,10 +69,10 @@ export const communicationEmailWorker = new Worker(
 
       return {
         success: true,
-        logId: result.logId,
-        protocol: result.protocol,
-        to: result.to,
-        attempt: result.attempt,
+        logId: result.log?._id,
+        protocol: result.log?.protocol,
+        to: result.log?.to,
+        attempt: result.log?.attempt,
         queueDelayMs,
         durationMs: duration
       };
@@ -80,7 +86,6 @@ export const communicationEmailWorker = new Worker(
         willRetry: job.attemptsMade < 4
       });
 
-      // Última tentativa: move para DLQ. O status já foi restaurado para READY por sendCommunicationEmail.
       if (job.attemptsMade >= 4) {
         await moveToDLQ(job, error);
       }
@@ -93,10 +98,6 @@ export const communicationEmailWorker = new Worker(
     concurrency: 2,
     limiter: { max: 20, duration: 60000 },
     stalledInterval: 30000,
-    // Era 30000 — achado 2026-08-04: processamento real (download Cloudinary + Resend)
-    // observado perto de ~20s, deixando pouca margem antes do BullMQ considerar o job
-    // "stalled" e reprocessá-lo (o que, sem a guarda de idempotência abaixo, causava
-    // reenvios reais duplicados). 90s dá folga sem mascarar um worker de fato travado.
     lockDuration: 90000
   }
 );

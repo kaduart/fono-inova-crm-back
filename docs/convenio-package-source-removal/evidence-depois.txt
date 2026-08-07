@@ -1,0 +1,16 @@
+
+🔍 Auditoria — ano 2026
+   Linhas analisadas: 97 | inconsistentes: 8
+
+  2026-02 — 1 linha(s):
+     unimed-anapolis | Kauana Queiroz Gomes Naves | psicologia | 4 sess = R$380 (unit R$95.00) | pending_batch
+  2026-05 — 4 linha(s):
+     unimed-anapolis | Benjamim Rocha Simão | fonoaudiologia | 8 sess = R$740 (unit R$92.50) | billed
+     unimed-anapolis | Isabela Ferreira De Mendonca | fonoaudiologia | 4 sess = R$380 (unit R$95.00) | billed
+     unimed-anapolis | Joaquim Rocha Simão | fonoaudiologia | 8 sess = R$700 (unit R$87.50) | billed
+     unimed-anapolis | Nicolas Lucca | terapia_ocupacional | 8 sess = R$760 (unit R$95.00) | billed
+  2026-06 — 2 linha(s):
+     unimed-anapolis | Joaquim Rocha Simão | fonoaudiologia | 8 sess = R$660 (unit R$82.50) | pending_batch
+     unimed-fesp | Daiane Felix Bezerra | fonoaudiologia | 3 sess = R$610 (unit R$203.33) | pending_batch
+  2026-07 — 1 linha(s):
+     unimed-anapolis | Benjamim Rocha Simão | fonoaudiologia | 7 sess = R$680 (unit R$97.14) | billed

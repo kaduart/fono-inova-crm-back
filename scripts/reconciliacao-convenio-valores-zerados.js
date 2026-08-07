@@ -59,12 +59,13 @@ async function main() {
     const logAuditoria = [];
 
     for (const session of sessions) {
-        // Pula sessões que já têm valor > 0 E já têm Payment com valor > 0
+        // Pula sessões que já têm valor > 0 E já têm Payment de convênio com valor > 0
         const existingPayment = await Payment.findOne({
             $or: [
                 { session: session._id },
                 { sessionId: session._id.toString() }
-            ]
+            ],
+            billingType: 'convenio'
         }).select('_id amount billingType insurance.provider').lean();
 
         if (session.sessionValue > 0 && existingPayment && existingPayment.amount > 0) {

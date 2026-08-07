@@ -2,7 +2,7 @@
  * 🔧 HEAL PACKAGE — Paciente Isaac (6917116c5d4d8bdb65edd506)
  * 
  * Uso:
- *   export MONGO_URI="mongodb+srv://kaduart:SENHA@cluster0.g2c3sdk.mongodb.net/fono_inova_prod"
+ *   export MONGO_URI=process.env.MONGO_URI
  *   cd /home/user/projetos/crm/back && node ../../scripts/heal-package-isaac.js --execute
  * 
  * Modo dry-run por padrão. Use --execute para salvar.

@@ -29,6 +29,7 @@ import Patient from '../models/Patient.js';
 import Package from '../models/Package.js';
 import ProfessionalAdvance from '../models/ProfessionalAdvance.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import ProfessionalSettlement from '../models/ProfessionalSettlement.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 import { classifyPendingSession } from '../utils/classifyPendingSession.js';
 import { logMetric } from '../utils/logMetric.js';
@@ -75,6 +76,60 @@ function toObjectId(value) {
 
 function round(value) {
   return Math.round((value || 0) * 100) / 100;
+}
+
+/**
+ * Anexa o fechamento mensal (ProfessionalSettlement) de cada profissional ao ranking.
+ *
+ * Fica FORA do cache do ranking de propósito: o card precisa mostrar "Caixa fechado"
+ * no mesmo instante em que o fechamento é confirmado, e o cache tem TTL de 5 min.
+ * Só se aplica quando o período consultado é exatamente um mês civil — fechamento é mensal.
+ */
+async function attachSettlementStatus(items, start, end) {
+  if (!items || items.length === 0) return items;
+
+  const startM = moment(start).tz(TIMEZONE);
+  const endM = moment(end).tz(TIMEZONE);
+  const isFullMonth =
+    startM.isSame(startM.clone().startOf('month'), 'day') &&
+    endM.isSame(startM.clone().endOf('month'), 'day');
+
+  if (!isFullMonth) {
+    return items.map(item => ({ ...item, settlement: null }));
+  }
+
+  const periodMonth = startM.month() + 1;
+  const periodYear = startM.year();
+
+  const settlements = await ProfessionalSettlement.find({
+    doctor: { $in: items.map(i => new mongoose.Types.ObjectId(i.doctorId)) },
+    periodMonth,
+    periodYear
+  })
+    .select('doctor status closedAt cancelledAt snapshot.commission snapshot.balance')
+    .lean();
+
+  const byDoctor = {};
+  for (const s of settlements) byDoctor[s.doctor.toString()] = s;
+
+  return items.map(item => {
+    const s = byDoctor[item.doctorId];
+    return {
+      ...item,
+      settlement: s
+        ? {
+            settlementId: s._id.toString(),
+            status: s.status,
+            periodMonth,
+            periodYear,
+            closedAt: s.closedAt || null,
+            cancelledAt: s.cancelledAt || null,
+            commission: s.snapshot?.commission ?? null,
+            balance: s.snapshot?.balance ?? null
+          }
+        : null
+    };
+  });
 }
 
 function extractDoctorId(item) {
@@ -571,7 +626,7 @@ export async function getProfessionalRanking({ startDate, endDate }) {
       doctorCount: result.length
     });
 
-    return result;
+    return attachSettlementStatus(result, start, end);
   }
 
   const doctorsCacheKey = 'doctors:active';
@@ -788,7 +843,7 @@ export async function getProfessionalRanking({ startDate, endDate }) {
   });
 
   cacheSet(cacheKey, result);
-  return result;
+  return attachSettlementStatus(result, start, end);
 }
 
 /**

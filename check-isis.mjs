@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-await mongoose.connect('mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0');
+await mongoose.connect(process.env.MONGO_URI);
 const db = mongoose.connection.db;
 
 const patient = await db.collection('patients').findOne({ fullName: { $regex: /Isis/i } });

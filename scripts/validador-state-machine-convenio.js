@@ -13,7 +13,7 @@ import fs from 'fs';
 import path from 'path';
 
 const MONGO_URI = process.env.MONGO_URI ||
-  'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+  process.env.MONGO_URI;
 
 function fmtId(id) {
   if (!id) return null;

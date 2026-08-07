@@ -19,7 +19,10 @@ export const EmailLogType = {
   // Sem nenhum fluxo que grave este valor ainda — reservado pro caso de alguém
   // reenviar alterando destinatário/anexos/assunto por completo (não é reenvio
   // nem complemento no sentido estrito). Adicionado a pedido, ver conversa 2026-08-04.
-  MANUAL: 'manual'
+  MANUAL: 'manual',
+  // Envio realizado fora da aplicação (portal do convênio, Outlook, etc.).
+  // Não envolve o provedor de e-mail nem a fila BullMQ.
+  EXTERNAL: 'external'
 };
 
 const communicationEmailLogSchema = new mongoose.Schema({
@@ -69,6 +72,16 @@ const communicationEmailLogSchema = new mongoose.Schema({
     type: String,
     enum: Object.values(EmailLogType),
     default: EmailLogType.FIRST_SEND
+  },
+  // Canal de entrega usado nesta tentativa. Permite distinguir envios por e-mail,
+  // portal do convênio ou outros meios externos sem inferir pelo tipo/provedor.
+  channel: {
+    type: String,
+    enum: ['email', 'external', 'portal'],
+    default: 'email',
+    index: true,
+    trim: true,
+    lowercase: true
   },
   ip: {
     type: String

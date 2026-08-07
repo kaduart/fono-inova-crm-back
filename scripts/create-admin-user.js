@@ -19,7 +19,7 @@ if (!MONGO_URI) { console.error('❌ MONGODB_URI não encontrado'); process.exit
 const ADMIN_DATA = {
     fullName: 'Ricardo Maia Santos',
     email: 'ricardo@clinicafonoinova.com.br',
-    password: '@Soundcar10',
+    password: process.env.ADMIN_PASSWORD,
     role: 'admin',
 };
 

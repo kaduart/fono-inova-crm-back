@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const uri = 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_development';
+const uri = process.env.MONGO_URI;
 
 async function check() {
   try {

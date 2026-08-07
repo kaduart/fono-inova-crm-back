@@ -9,7 +9,7 @@ import Package from '../models/Package.js';
 import LiminarContract from '../models/LiminarContract.js';
 import TherapeuticPlan from '../models/TherapeuticPlan.js';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 
 async function migrate() {
   await mongoose.connect(MONGO_URI);

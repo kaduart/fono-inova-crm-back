@@ -440,6 +440,81 @@ Fluxo B: Payment registrado manualmente → Appointment permanece confirmed
 
 ---
 
+## INVARIANTE 16 — `Payment.doctor` não é fonte de verdade para atribuição de profissional
+
+```
+Payment
+   |  vínculo financeiro (Payment.session / Payment.appointment)
+   v
+Session
+   |  profissional responsável pelo atendimento
+   v
+Session.doctor          ← fonte canônica
+```
+
+`Payment.doctor` é **snapshot histórico do contexto de criação do pagamento**, não o dono da produção.
+
+**Não pode ser usado para:**
+- filtrar pagamentos elegíveis de um profissional;
+- definir o profissional da receita;
+- identificar sessões órfãs;
+- calcular produção ou comissão.
+
+**Pode ser usado para:** auditoria, rastreio de origem do pagamento, diagnóstico de divergência.
+
+### Evidência (auditoria 2026-08-07)
+
+| Achado | Medição |
+|--------|---------|
+| Payments com `session` preenchida e `doctor` ausente | 440 |
+| Destes, já pagos | 268 — R$ 51.320,01 |
+| Alertas de "sessão órfã" que eram falso positivo | 133 de 162 (82%) |
+| Profissionais afetados | 15 |
+| Payments com `doctor` **divergente** de `Session.doctor` | 3 — R$ 360 |
+
+O reconciliador (`reconciliation.service.js`) montava `doctorPayments` filtrando por `payment.doctor === doctorId` **antes** de resolver o vínculo canônico via `linkPaymentToSession()`. Payment pago, com `session` correta, mas sem `doctor` era descartado — e a sessão virava "órfã", bloqueando o fechamento mensal sem motivo real.
+
+Mesma classe de problema já registrada em `FINANCIAL_SOURCE_OF_TRUTH.md:65`: campo auxiliar/legado usado como fonte de verdade no lugar do vínculo canônico.
+
+### Casos divergentes conhecidos — não resolvidos pela mudança
+
+**Casos A e B — criação em lote (R$ 160, convênio, status `billed`)**
+Dois Payments criados no **mesmo timestamp** (2026-04-19T20:33:21), com o **mesmo** `Payment.doctor`, apontando para sessões de **profissionais diferentes** (Lorrany e Bárbara). `Appointment.history` vazio nos dois — não há registro de troca de profissional na agenda. O paciente tem 4 sessões no mesmo dia (06/04) entre três profissionais.
+→ Classificação: **inconsistência histórica de origem do pagamento**, não reatribuição de agenda. Requer decisão operacional, pois o faturamento e a comissão já foram processados.
+
+**Caso C — legado cancelado (R$ 200)**
+Session `canceled`, **sem `appointmentId`**, com Payment `pending`.
+→ Classificação: **resíduo legado**. Não deve influenciar reconciliação de produção.
+
+Estes 3 casos **não são corrigidos** pela adoção de `Session.doctor`; permanecem como pendência operacional aberta, agora auditável via `Payment.doctor`.
+
+### Impacto esperado da correção
+
+- Pagamentos sem `doctor` deixam de ser invisíveis para o reconciliador;
+- Sessões com vínculo financeiro válido deixam de aparecer como órfãs (queda esperada de 82% dos alertas);
+- Profissional passa a ser resolvido pela relação operacional (`Session.doctor`);
+- Divergências históricas continuam auditáveis, porque `Payment.doctor` é preservado.
+
+**Script de auditoria:** `scripts/audit-reconciliation-payment-doctor-gap.js` (não altera nada; mede impacto e inclui trava de divergência `Payment.doctor × Session.doctor`).
+
+### Resultado medido da correção (2026-08-07)
+
+Snapshot antes/depois, 15 profissionais afetados, jan–ago/2026 (`scripts/snapshot-professional-reconciliation.js`):
+
+| Métrica | Antes | Depois | Critério |
+|---|---:|---:|---|
+| Produção | 221.178,00 | 221.178,00 | idêntica ✅ |
+| Comissão | 83.649,00 | 83.649,00 | idêntica ✅ |
+| Recebido | 27.030,50 | 72.580,51 | aumenta ✅ (+45.550,01) |
+| Sessões órfãs | 168 | 38 | reduz ✅ (−130, 77%) |
+| Profissionais com produção/comissão alterada | — | **0** | 0 ✅ |
+
+Instrumentação da atribuição no mesmo período: `resolvedBySessionDoctor: 358`, `fallbackPaymentDoctor: 18`, `missingSession: 5`, `doctorDivergence: 0`.
+
+`doctorDivergence: 0` é esperado e **não contradiz** os 3 casos divergentes acima: aqueles Payments têm status `billed`/`pending`, e o reconciliador só lê `status: 'paid'` — nunca chegam a ser atribuídos. O fallback por `Payment.doctor` ainda é usado 18 vezes (5 sem `session`), então **não pode ser removido ainda**.
+
+---
+
 ## Violações conhecidas (pendentes de correção)
 
 | Invariante | Violação | Arquivo | Status |
@@ -452,3 +527,5 @@ Fluxo B: Payment registrado manualmente → Appointment permanece confirmed
 | INV-13 | `cashflow.v2.js` lia `appt?.paymentForms` em vez de `Payment.splitMethods` | `cashflow.v2.js:380,516` | ✅ corrigido em 2026-07-01 |
 | INV-13 | `appointmentReads.js` não populava `splitMethods` no populate de payment | `appointmentReads.js:92,510,599` | ✅ corrigido em 2026-07-01 |
 | INV-13 | `Appointment.paymentForms` ainda existe no modelo como campo legado | `models/Appointment.js` | P2 — remover após auditoria |
+| INV-16 | ~~`getDoctorReconciliation()` filtra `doctorPayments` por `payment.doctor` antes de `linkPaymentToSession()`~~ | `reconciliation.service.js` | ✅ corrigido em 2026-08-07 — atribuição por `Session.doctor` + fallback instrumentado |
+| INV-16 | 3 Payments com `doctor` divergente de `Session.doctor` (R$ 360) — 2 de criação em lote, 1 legado cancelado | dados de produção | Pendência operacional — decisão humana |

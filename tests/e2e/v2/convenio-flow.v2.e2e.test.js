@@ -16,6 +16,7 @@ import { startRedis } from '../../../services/redisClient.js';
 import { v4 as uuidv4 } from 'uuid';
 import { completeSessionV2 } from '../../../services/completeSessionService.v2.js';
 import Session from '../../../models/Session.js';
+import { assertNotProductionDb } from '../../../utils/assertNotProductionDb.js';
 
 // Test data
 let createdPatientId;
@@ -26,11 +27,17 @@ let testDoctorId;
 
 const timestamp = Date.now();
 const testContext = `[conv_e2e_${timestamp}]`;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_development';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 
 describe('🧪 V2 E2E - Convênio Flow', () => {
   beforeAll(async () => {
     console.log(`${testContext} Conectando ao Atlas...`);
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'tests/e2e/v2/convenio-flow.v2.e2e.test.js'
+});
+
     await mongoose.connect(MONGO_URI);
     
     // Inicia Redis

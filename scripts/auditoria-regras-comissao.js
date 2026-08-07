@@ -18,7 +18,7 @@ import Session from '../models/Session.js';
 import { calculateSessionCommission, calculateCommissionBatch } from '../services/commissionRule.service.js';
 
 const MONGO_URI = process.env.MONGO_URI ||
-  'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+  process.env.MONGO_URI;
 
 const TIMEZONE = 'America/Sao_Paulo';
 

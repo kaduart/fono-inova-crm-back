@@ -1,0 +1,25 @@
+
+🔍 Auditoria — ano 2026
+   Linhas analisadas: 99 | inconsistentes: 15
+
+  2026-02 — 6 linha(s):
+     unimed-anapolis | Kauana Queiroz Gomes Naves | terapia_ocupacional | 13 sess = R$1180 (unit R$90.77) | pending_batch
+     unimed-anapolis | Kauana Queiroz Gomes Naves | psicologia | 7 sess = R$620 (unit R$88.57) | pending_batch
+     unimed-anapolis | Nicolas Lucca | terapia_ocupacional | 20 sess = R$1860 (unit R$93.00) | pending_batch
+     unimed-anapolis | Nicolas Lucca | fonoaudiologia | 17 sess = R$1580 (unit R$92.94) | pending_batch
+     unimed-campinas | Davi Felipe Araújo | psicologia | 13 sess = R$1400 (unit R$107.69) | pending_batch
+     unimed-campinas | Davi Felipe Araújo | fisioterapia | 13 sess = R$1540 (unit R$118.46) | pending_batch
+  2026-03 — 1 linha(s):
+     unimed-anapolis | Benjamim Rocha Simão | fonoaudiologia | 4 sess = R$340 (unit R$85.00) | billed
+  2026-04 — 1 linha(s):
+     unimed-anapolis | Nicolas Lucca | terapia_ocupacional | 4 sess = R$340 (unit R$85.00) | billed
+  2026-05 — 4 linha(s):
+     unimed-anapolis | Benjamim Rocha Simão | fonoaudiologia | 8 sess = R$740 (unit R$92.50) | billed
+     unimed-anapolis | Isabela Ferreira De Mendonca | fonoaudiologia | 4 sess = R$380 (unit R$95.00) | billed
+     unimed-anapolis | Joaquim Rocha Simão | fonoaudiologia | 8 sess = R$700 (unit R$87.50) | billed
+     unimed-anapolis | Nicolas Lucca | terapia_ocupacional | 8 sess = R$740 (unit R$92.50) | billed
+  2026-06 — 2 linha(s):
+     unimed-anapolis | Joaquim Rocha Simão | fonoaudiologia | 8 sess = R$660 (unit R$82.50) | pending_batch
+     unimed-fesp | Daiane Felix Bezerra | fonoaudiologia | 3 sess = R$610 (unit R$203.33) | pending_batch
+  2026-07 — 1 linha(s):
+     unimed-anapolis | Benjamim Rocha Simão | fonoaudiologia | 7 sess = R$680 (unit R$97.14) | billed

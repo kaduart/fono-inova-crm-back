@@ -87,6 +87,18 @@ const insuranceCommunicationSchema = new mongoose.Schema({
   invoiceDate: {
     type: Date,
     default: null
+  },
+  // ⚠️ NÃO existe `sentAt` aqui. A leitura de convênios usa `invoiceDate || updatedAt`
+  // como PROXY da data de envio — e `updatedAt` se move a qualquer edição do registro.
+  // Tarefa técnica aberta para adicionar o campo de verdade:
+  // docs/TAREFA_TECNICA_SENTAT_INSURANCE_COMMUNICATION.md
+  deliveryMethod: {
+    type: String,
+    enum: ['email', 'external', 'portal'],
+    default: 'email',
+    index: true,
+    trim: true,
+    lowercase: true
   }
 }, { timestamps: true });
 

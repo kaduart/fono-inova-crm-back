@@ -183,7 +183,7 @@ describe('Insurance History - Regression Suite', () => {
     expect(mar?.totalSessions).toBe(1);
   });
 
-  it('Competência da guia: sessões em março/abril pertencem à guia de fevereiro', async () => {
+  it('Competência pela data da sessão: sessões em março/abril aparecem nos meses do atendimento', async () => {
     const { patient, guide, sessions } = await createScenario({
       issuedAt: new Date('2026-02-10T00:00:00-03:00'),
       dates: [
@@ -194,20 +194,32 @@ describe('Insurance History - Regression Suite', () => {
     });
 
     const history = await reqHistory({ year: 2026 });
-    const feb = history.data.find(m => m.monthKey === '2026-02');
-    expect(feb?.totalSessions).toBe(2);
-    expect(feb?.totalValue).toBe(200);
 
+    // O mês de abertura da guia (fev) não acumula mais as sessões de mar/abr.
+    const feb = history.data.find(m => m.monthKey === '2026-02');
+    expect(feb?.totalSessions || 0).toBe(0);
+    expect(feb?.totalValue || 0).toBe(0);
+
+    // Cada sessão aparece no mês em que foi realizada.
     const mar = history.data.find(m => m.monthKey === '2026-03');
     const apr = history.data.find(m => m.monthKey === '2026-04');
-    expect((mar?.totalValue || 0) + (apr?.totalValue || 0)).toBe(0);
+    expect(mar?.totalSessions).toBe(1);
+    expect(mar?.totalValue).toBe(100);
+    expect(apr?.totalSessions).toBe(1);
+    expect(apr?.totalValue).toBe(100);
 
-    const detail = await reqPatientSessions({
+    // A partir de Março/2026 a Unimed Anápolis usa modelo por guia. O drawer
+    // traz a guia completa para contexto, então março inclui também a sessão
+    // de abril da mesma guia.
+    const detailMar = await reqPatientSessions({
       patientId: patient._id.toString(),
-      month: '2026-02',
+      month: '2026-03',
       specialty: 'fonoaudiologia'
     });
-    expect(detail.count).toBe(2);
+    expect(detailMar.count).toBe(2);
+    expect(detailMar.data.map(s => s.sessionId).sort()).toEqual(
+      sessions.map(s => s._id.toString()).sort()
+    );
   });
 
   it('Junho/2026 (modelo atual): guia criada em junho exibe todas as sessões ao filtrar junho', async () => {
@@ -519,6 +531,43 @@ describe('Insurance History - Regression Suite', () => {
     expect(guideGroup.summary.grossAmount).toBe(900);
   });
 
+  it('Guia per_guide criada antes de março/2026 usa modelo atual, não legado mensal', async () => {
+    // Cenário Kauana/Nicolas: guias per_guide criadas em fevereiro/2026 com
+    // sessões em fevereiro e março. O drawer deve agrupar por guia (modelo
+    // atual) e trazer todas as sessões da guia, não separar por competência
+    // mensal como se fosse per_month.
+    const { patient, guide, sessions } = await createScenario({
+      issuedAt: new Date('2026-02-20T00:00:00-03:00'),
+      billingMode: 'per_guide',
+      dates: [
+        new Date('2026-02-10T00:00:00-03:00'),
+        new Date('2026-02-17T00:00:00-03:00'),
+        new Date('2026-03-03T00:00:00-03:00'),
+        new Date('2026-03-10T00:00:00-03:00')
+      ],
+      patientName: 'Paciente Per Guide Pre Marco',
+      sessionValue: 100
+    });
+
+    const detail = await reqPatientSessions({
+      patientId: patient._id.toString(),
+      month: '2026-02',
+      specialty: 'fonoaudiologia',
+      provider: 'unimed-anapolis',
+      status: 'all'
+    });
+
+    expect(detail.success).toBe(true);
+    expect(detail.billingModel).toBe('CURRENT_GUIDE_BATCH');
+    expect(detail.count).toBe(4);
+
+    const guideGroup = detail.groups.find(g => g.guideNumber === guide.number);
+    expect(guideGroup).toBeTruthy();
+    expect(guideGroup.type).toBe('guide');
+    expect(guideGroup.summary.sessions).toBe(4);
+    expect(guideGroup.summary.grossAmount).toBe(400);
+  });
+
   it('Payment avulso com provider genérico usa InsuranceGuide para agrupar no histórico', async () => {
     // Cenário Davi Felipe: sessão criada a partir de uma InsuranceGuide real,
     // mas o Payment foi gerado com insurance.provider='Outros'. O histórico deve
@@ -574,5 +623,88 @@ describe('Insurance History - Regression Suite', () => {
     expect(fisioterapia).toBeTruthy();
     expect(fisioterapia.sessions).toBe(1);
     expect(fisioterapia.value).toBe(140);
+  });
+
+  it('Drawer escolhe Payment correto quando há múltiplos payments para mesma session', async () => {
+    // Cenário Davi Felipe real: duas InsuranceGuide e dois Payments para a mesma
+    // session (um canônico V2 e um backfill genérico com provider='Outros').
+    // O drawer deve usar o Payment canônico e manter a sessão no convênio real.
+    const { patient, doctor, guide } = await createScenario({
+      issuedAt: new Date('2026-06-01T00:00:00-03:00'),
+      dates: [new Date('2026-06-10T00:00:00-03:00')],
+      specialty: 'fisioterapia',
+      insurance: 'unimed-campinas',
+      patientName: 'Paciente Multi Payment'
+    });
+
+    const appt = await Appointment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      specialty: 'fisioterapia',
+      date: guide.createdAt,
+      time: '10:00',
+      duration: 40,
+      session: (await Session.findOne({ patient: patient._id }).lean())._id,
+      billingType: 'convenio',
+      insuranceProvider: 'unimed-campinas'
+    });
+
+    const session = await Session.findOne({ patient: patient._id }).lean();
+    await Session.updateOne({ _id: session._id }, { appointmentId: appt._id });
+
+    // Payment canônico V2
+    await Payment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      session: session._id,
+      appointment: appt._id,
+      amount: 140,
+      paymentMethod: 'convenio',
+      billingType: 'convenio',
+      status: 'pending',
+      paymentDate: session.date,
+      serviceDate: session.date,
+      serviceType: 'session',
+      insurance: {
+        provider: 'unimed-campinas',
+        status: 'pending_billing',
+        grossAmount: 140
+      }
+    });
+
+    // Payment genérico (backfill problemático) — status canceled para não violar
+    // o índice único; a lógica do drawer ainda deve ignorá-lo e usar o ativo.
+    await Payment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      session: session._id,
+      appointment: appt._id,
+      amount: 140,
+      paymentMethod: 'convenio',
+      billingType: 'convenio',
+      status: 'canceled',
+      paymentDate: session.date,
+      serviceDate: session.date,
+      serviceType: 'fisioterapia',
+      insurance: {
+        provider: 'Outros',
+        status: 'pending_billing',
+        grossAmount: 140
+      }
+    });
+
+    const detail = await reqPatientSessions({
+      patientId: patient._id.toString(),
+      month: '2026-06',
+      specialty: 'fisioterapia',
+      provider: 'unimed-campinas',
+      status: 'pending_batch'
+    });
+
+    expect(detail.success).toBe(true);
+    expect(detail.count).toBe(1);
+    expect(detail.data[0].specialty).toBe('fisioterapia');
+    expect(detail.data[0].provider).toBe('unimed-campinas');
+    expect(detail.data[0].billingStatus).toBe('pending_batch');
   });
 });

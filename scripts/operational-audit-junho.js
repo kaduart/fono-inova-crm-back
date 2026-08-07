@@ -329,7 +329,7 @@ async function main() {
     console.log('🔍 AUDITORIA OPERACIONAL — JUNHO 2026');
     console.log('Conectando ao MongoDB...');
 
-    const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+    const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
     await mongoose.connect(MONGO_URI);
     console.log('✅ Conectado');
 

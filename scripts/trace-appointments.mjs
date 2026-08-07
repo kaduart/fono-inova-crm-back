@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/fono_inova_prod?retryWrites=true&w=majority&appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 const APPOINTMENTS = [
   '6a47b7670b1d4720a17fcee8', // Alencar Rafael
   '6a4650b8f36c254eafc432e2', // João Marcos

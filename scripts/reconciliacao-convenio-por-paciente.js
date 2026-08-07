@@ -91,9 +91,10 @@ async function main() {
         const convenio = regra.convenio;
         const dataStr = moment(s.date).tz(TIMEZONE).format('YYYY-MM-DD');
 
-        // Verifica se já está OK
+        // Verifica se já está OK (apenas Payment de convênio vinculado à session)
         const existingPayment = await Payment.findOne({
-            $or: [{ session: s._id }, { sessionId: s._id.toString() }]
+            $or: [{ session: s._id }, { sessionId: s._id.toString() }],
+            billingType: 'convenio'
         }).select('_id amount billingType insurance.provider').lean();
 
         if (s.sessionValue === valor && existingPayment && existingPayment.amount === valor) {

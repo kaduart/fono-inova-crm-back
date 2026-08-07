@@ -418,12 +418,10 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
   ]);
 
   const doctorSessions = sessions.filter(s => extractDoctorId(s) === doctorId);
-  const doctorPayments = payments.filter(p => {
-    if (p.doctor?._id?.toString?.() === doctorId || p.doctor?.toString?.() === doctorId) return true;
-    return false;
-  });
 
-  // Mapear sessões do período por ID e por appointment
+  // Mapear sessões do período por ID e por appointment.
+  // Precisa vir ANTES da atribuição dos pagamentos: é este mapa que materializa o
+  // vínculo canônico Payment → Session (ADR-015).
   const sessionMapById = {};
   const sessionMapByAppointment = {};
   for (const session of doctorSessions) {
@@ -432,6 +430,48 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
       sessionMapByAppointment[session.appointmentId.toString()] = session;
     }
   }
+
+  // IMPORTANT:
+  // Payment.doctor is not authoritative.
+  // It is a historical snapshot and may be absent or stale.
+  // Professional ownership must be resolved through:
+  // Payment.session -> Session.doctor
+  //
+  // ADR-015 / FINANCIAL_DOMAIN_INVARIANTS INVARIANTE 16.
+  // `sessionMapById`/`sessionMapByAppointment` contêm SOMENTE sessões deste
+  // profissional — resolver o pagamento contra eles já é resolver por Session.doctor.
+  //
+  // O fallback por `Payment.doctor` é temporário e existe só para não regredir algum
+  // legado inesperado (pagamento sem vínculo canônico, ou vinculado a sessão fora do
+  // período). `attribution` instrumenta o uso: quando fallback/missingSession ficarem
+  // estáveis em zero, o fallback pode ser removido.
+  const attribution = {
+    resolvedBySessionDoctor: 0,
+    fallbackPaymentDoctor: 0,
+    missingSession: 0,
+    doctorDivergence: 0
+  };
+
+  const doctorPayments = payments.filter(p => {
+    const session = linkPaymentToSession(p, sessionMapById, sessionMapByAppointment);
+    const paymentDoctorId = extractDoctorId(p);
+
+    if (session) {
+      attribution.resolvedBySessionDoctor += 1;
+      // Payment.doctor aponta pra outro profissional que não o dono da sessão.
+      // Não altera a atribuição — a Session manda — mas fica registrado.
+      if (paymentDoctorId && paymentDoctorId !== doctorId) attribution.doctorDivergence += 1;
+      return true;
+    }
+
+    if (paymentDoctorId === doctorId) {
+      attribution.fallbackPaymentDoctor += 1;
+      if (!p.session) attribution.missingSession += 1;
+      return true;
+    }
+
+    return false;
+  });
 
   // Vincular pagamentos às sessões do profissional
   const paidSessionIds = new Set();
@@ -530,11 +570,26 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
     end
   );
   const commission = commissionResult.totalCommission;
-  const received = doctorPayments
-    .filter(p => linkPaymentToSession(p, sessionMapById, sessionMapByAppointment) || p.doctor?._id?.toString?.() === doctorId)
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  // `doctorPayments` já é o conjunto atribuído a este profissional (vínculo canônico
+  // ou fallback). O filtro extra que existia aqui era redundante — repetia as duas
+  // condições que a atribuição acima já aplicou.
+  const received = doctorPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  const orphanSessions = completedSessions.filter(s => !paidSessionIds.has(s._id.toString()) && classifyPendingSession(s) === 'realIssue').length;
+  // Lista detalhada, não só a contagem: "1 sessão órfã" sozinho parece erro de
+  // sistema; com data/paciente na tela o usuário identifica que é um atendimento
+  // que ficou sem fechar e resolve na origem.
+  const orphanSessionDocs = completedSessions.filter(
+    s => !paidSessionIds.has(s._id.toString()) && classifyPendingSession(s) === 'realIssue'
+  );
+  const orphanSessions = orphanSessionDocs.length;
+  const orphanSessionsList = orphanSessionDocs.map(s => ({
+    sessionId: s._id.toString(),
+    date: toDateString(s.date),
+    time: s.time || null,
+    patientName: s.patient?.fullName || s.patient?.name || 'Paciente não identificado',
+    specialty: s.sessionType || s.specialty || null,
+    value: round(resolveSessionFinancialValue(s))
+  }));
   const commissionMismatch = completedSessions.filter(s => isCommissionMismatch(s, doctor)).length;
 
   const receivables = { total: 0, particular: 0, insurance: 0, liminar: 0, packageConsumed: 0 };
@@ -566,6 +621,7 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
       balance: round(commission),
       difference: round(production - received),
       orphanSessions,
+      orphanSessionsList,
       commissionMismatch,
       receivables: {
         total: round(receivables.total),
@@ -581,7 +637,10 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
       executionTimeMs: Date.now() - startedAt,
       timezone: TIMEZONE,
       sessionsAnalyzed: sessions.length,
-      paymentsAnalyzed: payments.length
+      paymentsAnalyzed: payments.length,
+      // ADR-015: instrumentação da migração de atribuição de profissional.
+      // Esperado em regime estável: fallbackPaymentDoctor = 0, missingSession = 0.
+      attribution
     }
   };
 
@@ -593,7 +652,11 @@ export async function getDoctorReconciliation(doctorId, startDate, endDate) {
     cacheHit: false,
     sessionCount: sessions.length,
     paymentCount: payments.length,
-    patientCount: patients.length
+    patientCount: patients.length,
+    resolvedBySessionDoctor: attribution.resolvedBySessionDoctor,
+    fallbackPaymentDoctor: attribution.fallbackPaymentDoctor,
+    missingSession: attribution.missingSession,
+    doctorDivergence: attribution.doctorDivergence
   });
 
   return result;

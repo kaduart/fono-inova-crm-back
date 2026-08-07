@@ -16,8 +16,9 @@ import Appointment from '../../../models/Appointment.js';
 import Session from '../../../models/Session.js';
 import Payment from '../../../models/Payment.js';
 import { completeSessionV2 } from '../../../services/completeSessionService.v2.js';
+import { assertNotProductionDb } from '../../../utils/assertNotProductionDb.js';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_development';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URI;
 
 describe('🧪 V2 E2E - Package Flow', () => {
   let testPatient;
@@ -26,6 +27,12 @@ describe('🧪 V2 E2E - Package Flow', () => {
   let testAppointment;
 
   beforeAll(async () => {
+// 🔒 ADR-016 — script de teste/diagnóstico não escreve em produção
+assertNotProductionDb({
+  mongoUri: process.env.MONGO_URI || process.env.MONGODB_URI,
+  scriptName: 'tests/e2e/v2/package-flow.v2.e2e.test.js'
+});
+
     await mongoose.connect(MONGO_URI);
     console.log('✅ Conectado ao Atlas');
 

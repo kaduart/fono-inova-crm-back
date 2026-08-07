@@ -283,6 +283,28 @@ class BackfillEngine {
       if (session.paymentId) continue;
 
       const appointment = await this.db.collection('appointments').findOne({ session: session._id });
+
+      // 🛡️ Proteção contra duplicatas: o fluxo V2 cria Payment.session sem preencher
+      // session.paymentId. Verificar diretamente no collection payments antes de criar.
+      const existingPayment = await this.db.collection('payments').findOne({
+        session: session._id,
+        billingType: 'convenio',
+        status: { $nin: ['canceled', 'cancelled', 'refunded', 'converted_to_package', 'recognized', 'consumed'] }
+      });
+      if (existingPayment) {
+        if (EXECUTE) {
+          await this.db.collection('sessions').updateOne(
+            { _id: session._id },
+            { $set: { paymentId: existingPayment._id } }
+          );
+        }
+        this.addAction('link_existing_convenio_payment',
+          'Payment ativo já existia para a session; linkou session.paymentId em vez de criar duplicata',
+          { sessionId: fmtId(session._id), paymentId: fmtId(existingPayment._id) }
+        );
+        continue;
+      }
+
       const guideId = session.insuranceGuide || appointment?.insuranceGuideId;
 
       // Estratégia: se a sessão tem appointment e dados de convênio, criar payment pending_billing

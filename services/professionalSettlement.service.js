@@ -51,6 +51,9 @@ export async function previewSettlement({ doctorId, periodMonth, periodYear }) {
     hasFinancialIssues,
     financialIssues: hasFinancialIssues ? {
       orphanSessions: reconciliation.reconciliation.orphanSessions,
+      // Detalhe (data/paciente/valor) para a tela apontar exatamente o que ficou
+      // pendente — sem isso o usuário lê "1 sessão órfã" como falha do sistema.
+      orphanSessionsList: reconciliation.reconciliation.orphanSessionsList || [],
       orphanPayments: 0,
       hasCommissionData: reconciliation.reconciliation.commission > 0
     } : null,
@@ -101,7 +104,17 @@ export async function closeMonthlySettlement({ doctorId, periodMonth, periodYear
   }
 
   if (preview.hasFinancialIssues && !force) {
-    const error = new Error('Problemas financeiros detectados. Use force=true para fechar mesmo assim.');
+    const qtd = preview.financialIssues?.orphanSessions || 0;
+    const detalhe = (preview.financialIssues?.orphanSessionsList || [])
+      .slice(0, 3)
+      .map(s => `${s.date}${s.time ? ` ${s.time}` : ''} — ${s.patientName}`)
+      .join('; ');
+
+    const error = new Error(
+      `${qtd} atendimento(s) deste período ainda não foram fechados e por isso não entram na comissão` +
+      (detalhe ? `: ${detalhe}${qtd > 3 ? ` (e mais ${qtd - 3})` : ''}` : '') +
+      '. Feche esses atendimentos na agenda, ou confirme o fechamento assim mesmo.'
+    );
     error.code = 'FINANCIAL_ISSUES_DETECTED';
     error.issues = preview.financialIssues;
     throw error;

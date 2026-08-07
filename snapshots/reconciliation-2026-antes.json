@@ -1,0 +1,1227 @@
+{
+  "label": "antes",
+  "year": 2026,
+  "months": [
+    1,
+    8
+  ],
+  "capturedAt": "2026-08-07T18:38:56.761Z",
+  "doctors": {
+    "692deb9150e977cd925f9852": {
+      "name": "Victoria Amorim",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 680,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 680,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 340,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 1700,
+        "received": 0,
+        "commission": 0,
+        "orphanSessions": 0
+      }
+    },
+    "684072213830f473da1b0b0b": {
+      "name": "Lorrany Siqueira Marques",
+      "months": {
+        "1": {
+          "production": 10220,
+          "received": 4780,
+          "commission": 4030,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "696a43a623fb380b219537b3",
+            "695e67a2af47c99636590455"
+          ]
+        },
+        "2": {
+          "production": 13280,
+          "received": 4860,
+          "commission": 6045,
+          "orphanSessions": 7,
+          "orphanSessionIds": [
+            "69a0504ba264194f6c07e2c8",
+            "69989880397255b0643ca601",
+            "69984c117c92d32c1fd3d565",
+            "698f4f956f0636609c958df2",
+            "698f0cda39d78a9c5746e7bd",
+            "698f0c8739d78a9c5746e63f",
+            "697926065c9fa421c76aad5c"
+          ]
+        },
+        "3": {
+          "production": 11270,
+          "received": 3370,
+          "commission": 4745,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "69ca622f29c93a72f36f58be",
+            "69a597a2f3bc835afe5aca32"
+          ]
+        },
+        "4": {
+          "production": 17181,
+          "received": 2150.5,
+          "commission": 6890,
+          "orphanSessions": 11,
+          "orphanSessionIds": [
+            "69de50dd34e27ce1eac3526e",
+            "69df8fb7184611c8dae768a7",
+            "69dcda101a6d677724a21bec",
+            "69dcdee51a6d677724a21ffa",
+            "69dcd0181a6d677724a213e6",
+            "69dcda561a6d677724a21d11",
+            "69dce1521a6d677724a22239",
+            "69dd05d71a6d677724a23f99",
+            "69d3c426acfb0b374845aeb1",
+            "69cd1e32856a4f39ce2551e0",
+            "69cab6e40431c101538c7398"
+          ]
+        },
+        "5": {
+          "production": 19260,
+          "received": 480,
+          "commission": 7670,
+          "orphanSessions": 21,
+          "orphanSessionIds": [
+            "6a15cf0ea29814035f664b34",
+            "6a0b613a80cc438aa0b61f75",
+            "6a10abf95686e616627c045b",
+            "6a14495dcf4edfe3a3484438",
+            "6a1068e5aa87388cdac1e13f",
+            "6a0dddcc8f55e6d47c18d2af",
+            "6a0e09da8f55e6d47c18fe8f",
+            "6a05daa39164c9ce5509314b",
+            "6a032ac17e02f1ffeb120ec8",
+            "69fcf85afe73919f6037e766",
+            "6a0218d2c574de6da0babc08",
+            "6a01d49a056133c2e57a49a2",
+            "69fa510c93a05582cb462b42",
+            "69f22392a7b38d956960eb0b",
+            "69f8e401c83a33f73695b9d8",
+            "69f39e10a7b38d956961ca77",
+            "69f1fba500e59de10bf956e4",
+            "69f0c76500e59de10bf8e58e",
+            "69efaba380f633378a207f49",
+            "69ef921c80f633378a207727",
+            "69ea802e103e48f6af1e2ed6"
+          ]
+        },
+        "6": {
+          "production": 20740,
+          "received": 340,
+          "commission": 7995,
+          "orphanSessions": 19,
+          "orphanSessionIds": [
+            "6a39812367f9ab8811e9f0fb",
+            "6a3c39eb83d8422e7c6d40b8",
+            "6a35708293982fc8dae9521a",
+            "6a318cbba16c83a1feaeb8dd",
+            "6a2b0be5980977ac471e20b9",
+            "6a2addf69161ec6c38592bbc",
+            "6a2830904224ec82961631c2",
+            "6a2c5270b067493248441200",
+            "6a29c7d5f4f8cf51a178ab5e",
+            "6a2af180980977ac471df432",
+            "6a26a4cd733316c44c97372f",
+            "6a1d971e4bafb710ab15a432",
+            "6a202b1f4cda0014647d8e40",
+            "6a2088214a3c31df6602fbe8",
+            "6a1dc3e34bafb710ab161490",
+            "6a1d740c4bafb710ab155634",
+            "6a16f4cc1b0c652f3b61bdbd",
+            "6a1d9af84bafb710ab15adfd",
+            "6a1dc3914bafb710ab161340"
+          ]
+        },
+        "7": {
+          "production": 22050,
+          "received": 300,
+          "commission": 8320,
+          "orphanSessions": 20,
+          "orphanSessionIds": [
+            "6a689bb3848d16ca08e4a7ad",
+            "6a689bfc848d16ca08e4a812",
+            "6a6893d3848d16ca08e4a51c",
+            "6a674640c9149a8bc9a5a35d",
+            "6a622bffbc071666f6668385",
+            "6a5630ac590f8840a0724e63",
+            "6a60b2018d1c2f56989a7673",
+            "6a563243590f8840a0725110",
+            "6a60cbf18d1c2f56989a8316",
+            "6a5e0a5fce43485b2af50c46",
+            "6a57b6e2952f8191316a1512",
+            "6a56935a513d20312d32bdbc",
+            "6a563124590f8840a0724fc4",
+            "6a5682fe513d20312d32b57f",
+            "6a54c76ed19ff4fa6706fa88",
+            "6a4f847a9cf35f49d2973667",
+            "6a46be72f36c254eafc46dee",
+            "6a4d01ed1d80a1eb8a330fe8",
+            "6a4533b87514e6aee0e8332a",
+            "6a43d6d00671da5b4050682e"
+          ]
+        },
+        "8": {
+          "production": 4325,
+          "received": 730,
+          "commission": 1755,
+          "orphanSessions": 6,
+          "orphanSessionIds": [
+            "6a746bbaf69cb76a5e463765",
+            "6a74db53a00d062bdfa43b2b",
+            "6a6a3500c6f54102dae478cb",
+            "6a708593c38b6d4b19db6dd2",
+            "6a63512135bcb404ce9a9fa6",
+            "6a63516035bcb404ce9a9ffe"
+          ]
+        }
+      },
+      "total": {
+        "production": 118326,
+        "received": 17010.5,
+        "commission": 47450,
+        "orphanSessions": 88
+      }
+    },
+    "685c2affaec14c71635863b7": {
+      "name": "Tatiana Celuta Peres",
+      "months": {
+        "1": {
+          "production": 1500,
+          "received": 780,
+          "commission": 605,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 2690,
+          "received": 740,
+          "commission": 1160,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "699c5bedc0f8dbf36a8b24f5",
+            "699319f703d5cc171cf02b7d"
+          ]
+        },
+        "3": {
+          "production": 2430,
+          "received": 770,
+          "commission": 1125,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "69ca74ce29c93a72f36f6961",
+            "69aec9e44e6f07f5ef6abed3"
+          ]
+        },
+        "4": {
+          "production": 2310,
+          "received": 420,
+          "commission": 995,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 3520,
+          "received": 0,
+          "commission": 1465,
+          "orphanSessions": 4,
+          "orphanSessionIds": [
+            "6a0c9dd19589c165d5558206",
+            "6a14ab25df43507213eaa45f",
+            "69f89138c83a33f73695808b",
+            "69f0d6e700e59de10bf8f1f2"
+          ]
+        },
+        "6": {
+          "production": 4975,
+          "received": 440,
+          "commission": 2085,
+          "orphanSessions": 3,
+          "orphanSessionIds": [
+            "6a1889c4c1ed3cd03a3b6677",
+            "6a1f3380095e1630c2e379a8",
+            "6a1d7f5a4bafb710ab156ee3"
+          ]
+        },
+        "7": {
+          "production": 5400,
+          "received": 520,
+          "commission": 2140,
+          "orphanSessions": 5,
+          "orphanSessionIds": [
+            "6a5fd6dc1c00f77a0f306d55",
+            "6a5fd7141c00f77a0f306dbf",
+            "6a5a75d0ce43485b2af4df3d",
+            "6a5e88bece43485b2af54240",
+            "6a5e188fce43485b2af51272"
+          ]
+        },
+        "8": {
+          "production": 1545,
+          "received": 130,
+          "commission": 720,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 24370,
+        "received": 3800,
+        "commission": 10295,
+        "orphanSessions": 16
+      }
+    },
+    "68a8cf172132ca79b074d387": {
+      "name": "Suzane de Morais Soares",
+      "months": {
+        "1": {
+          "production": 480,
+          "received": 0,
+          "commission": 195,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 1080,
+          "received": 0,
+          "commission": 540,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "698f0c0b39d78a9c5746e470",
+            "698f0bc639d78a9c5746e385"
+          ]
+        },
+        "3": {
+          "production": 1120,
+          "received": 340,
+          "commission": 455,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 1410,
+          "received": 0,
+          "commission": 585,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "69df8fa6184611c8dae76869"
+          ]
+        },
+        "5": {
+          "production": 780,
+          "received": 0,
+          "commission": 325,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 1170,
+          "received": 80,
+          "commission": 505,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 1040,
+          "received": 0,
+          "commission": 445,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 400,
+          "received": 0,
+          "commission": 215,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 7480,
+        "received": 420,
+        "commission": 3265,
+        "orphanSessions": 3
+      }
+    },
+    "6a0cd1d0f5d1991be385b58b": {
+      "name": "Ana Paula",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 150,
+          "received": 0,
+          "commission": 65,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 1160,
+          "received": 0,
+          "commission": 455,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a3027a7c42c8901044fd33c",
+            "6a342d6f0e0535d53e7c821f"
+          ]
+        },
+        "7": {
+          "production": 1240,
+          "received": 0,
+          "commission": 520,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 2550,
+        "received": 0,
+        "commission": 1040,
+        "orphanSessions": 2
+      }
+    },
+    "698f09aa39d78a9c5746dc28": {
+      "name": "Thayna Miranda",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 580,
+          "received": 0,
+          "commission": 365,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "698f3d386f0636609c954e3c"
+          ]
+        },
+        "3": {
+          "production": 480,
+          "received": 0,
+          "commission": 230,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 160,
+          "received": 0,
+          "commission": 65,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 1850,
+          "received": 0,
+          "commission": 700,
+          "orphanSessions": 3,
+          "orphanSessionIds": [
+            "6a15ce07a29814035f664a7a",
+            "6a061e1400ff2e03fb404818",
+            "69f8a737c83a33f7369592df"
+          ]
+        },
+        "6": {
+          "production": 2660,
+          "received": 0,
+          "commission": 905,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 1850,
+          "received": 0,
+          "commission": 660,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 7580,
+        "received": 0,
+        "commission": 2925,
+        "orphanSessions": 4
+      }
+    },
+    "68bedf1104ec4875aaea8188": {
+      "name": "Mikaelly da Silva Sousa",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 2160,
+          "received": 250,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 4180,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 4700,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a17314ff4608237b3be2e01",
+            "6a0ef1d91d7c9ecfec0a8526"
+          ]
+        },
+        "6": {
+          "production": 6150,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 5,
+          "orphanSessionIds": [
+            "6a3aea1b9d70d6705ad60cba",
+            "6a303654c42c8901044fe882",
+            "6a231021a91b89a228a36754",
+            "6a1dc0954bafb710ab1608f2",
+            "6a20775b5606a993ba4f32bb"
+          ]
+        },
+        "7": {
+          "production": 5690,
+          "received": 250,
+          "commission": 0,
+          "orphanSessions": 6,
+          "orphanSessionIds": [
+            "6a5a926bce43485b2af4edcc",
+            "6a68a901e017749d20aa7e59",
+            "6a50ec568fabfdae6a781bfe",
+            "6a46b8fbf36c254eafc46651",
+            "6a4439cebdde02f8e91cc12b",
+            "6a4ba5b6822c47c625c2155b"
+          ]
+        },
+        "8": {
+          "production": 930,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "6a70836ac38b6d4b19db6bd8"
+          ]
+        }
+      },
+      "total": {
+        "production": 23810,
+        "received": 500,
+        "commission": 0,
+        "orphanSessions": 14
+      }
+    },
+    "690a3f957fe419286acb0b0b": {
+      "name": "Bárbara Martins Rodrigues",
+      "months": {
+        "1": {
+          "production": 1340,
+          "received": 200,
+          "commission": 495,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "69694fc823fb380b21932cf0",
+            "69600a2f122b0260d810156d"
+          ]
+        },
+        "2": {
+          "production": 560,
+          "received": 0,
+          "commission": 200,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 840,
+          "received": 0,
+          "commission": 300,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 970,
+          "received": 0,
+          "commission": 280,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "69dcf5e71a6d677724a23320"
+          ]
+        },
+        "5": {
+          "production": 1200,
+          "received": 0,
+          "commission": 445,
+          "orphanSessions": 3,
+          "orphanSessionIds": [
+            "6a1039c5aa87388cdac19db1",
+            "6a078d113799f3ee1603661d",
+            "69fc840cf6eb021127bc2ea1"
+          ]
+        },
+        "6": {
+          "production": 440,
+          "received": 0,
+          "commission": 165,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 0,
+          "received": 200,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 5350,
+        "received": 400,
+        "commission": 1885,
+        "orphanSessions": 6
+      }
+    },
+    "6981db7af55849815f98b00a": {
+      "name": "Mayra Magda Mendes Oliveira",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 1302,
+          "received": 980,
+          "commission": 455,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 1950,
+          "received": 1610,
+          "commission": 650,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 1400,
+          "received": 200,
+          "commission": 515,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "69dd1a781a6d677724a24b20"
+          ]
+        },
+        "5": {
+          "production": 900,
+          "received": 0,
+          "commission": 325,
+          "orphanSessions": 3,
+          "orphanSessionIds": [
+            "6a14a2955dc5d75961210696",
+            "6a04b886dc6207493643e05c",
+            "69f9e88ac83a33f73695eb5c"
+          ]
+        },
+        "6": {
+          "production": 970,
+          "received": 180,
+          "commission": 390,
+          "orphanSessions": 4,
+          "orphanSessionIds": [
+            "6a425e5cb5a8091225c09d25",
+            "6a2c70aceaef447c17cd1b85",
+            "6a1f16ce12d0f97a7a85a5d6",
+            "6a3003d7c42c8901044f8cec"
+          ]
+        },
+        "7": {
+          "production": 1180,
+          "received": 0,
+          "commission": 455,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a674edac9149a8bc9a5aadc",
+            "6a5e33d0ce43485b2af52036"
+          ]
+        },
+        "8": {
+          "production": 160,
+          "received": 0,
+          "commission": 65,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 7862,
+        "received": 2970,
+        "commission": 2855,
+        "orphanSessions": 10
+      }
+    },
+    "69a205d6aa8657cbfe34974b": {
+      "name": "Alexandre Vieira Antumnes De Oliveira",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 100,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 600,
+          "received": 0,
+          "commission": 260,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 1050,
+          "received": 0,
+          "commission": 425,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 2210,
+          "received": 220,
+          "commission": 895,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 3860,
+        "received": 220,
+        "commission": 1680,
+        "orphanSessions": 0
+      }
+    },
+    "69d56b29043b467f4c708b5b": {
+      "name": "Ana Flavia Espindola Volpp",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 1300,
+          "received": 0,
+          "commission": 1040,
+          "orphanSessions": 3,
+          "orphanSessionIds": [
+            "69fccffc7ba5c250a12c5ebe",
+            "6a033ca1c40e6618f0df97f9",
+            "69fdcb41ceabf1fecc442b93"
+          ]
+        },
+        "6": {
+          "production": 3630,
+          "received": 0,
+          "commission": 2504,
+          "orphanSessions": 8,
+          "orphanSessionIds": [
+            "6a1086fa9c9de8246b007bdb",
+            "6a0b42873799f3ee1603f611",
+            "6a1ed36f12d0f97a7a85324b",
+            "6a049453dc6207493643bd3f",
+            "6a0f2fe21b67c6b56fa36ab1",
+            "6a0c73c680cc438aa0b69f10",
+            "6a1ef03912d0f97a7a856db5",
+            "6a0cce7bf5d1991be385af76"
+          ]
+        },
+        "7": {
+          "production": 2850,
+          "received": 450,
+          "commission": 2280,
+          "orphanSessions": 5,
+          "orphanSessionIds": [
+            "6a47dcc0297dfad7bb4edcfc",
+            "6a32adeea75fceb53ac03481",
+            "6a3541da93982fc8dae9357b",
+            "6a29aeb5f4f8cf51a17891b1",
+            "6a3bc33786be5ba3b1a45d65"
+          ]
+        },
+        "8": {
+          "production": 1450,
+          "received": 500,
+          "commission": 1160,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a4e3115e34a08861ec404fa",
+            "6a68dca7cf10fb35a595f09c"
+          ]
+        }
+      },
+      "total": {
+        "production": 9230,
+        "received": 950,
+        "commission": 6984,
+        "orphanSessions": 18
+      }
+    },
+    "6840aa2f928a20e92ab13be8": {
+      "name": "Luis Henrique",
+      "months": {
+        "1": {
+          "production": 150,
+          "received": 150,
+          "commission": 425,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 320,
+          "received": 320,
+          "commission": 680,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "69a04f8ca264194f6c07df03",
+            "69984c857c92d32c1fd3d7b9"
+          ]
+        },
+        "3": {
+          "production": 850,
+          "received": 130,
+          "commission": 670,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 800,
+          "received": 160,
+          "commission": 490,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 1120,
+          "received": 0,
+          "commission": 675,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 1400,
+          "received": 0,
+          "commission": 740,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 1140,
+          "received": 0,
+          "commission": 500,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 360,
+          "received": 0,
+          "commission": 185,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 6140,
+        "received": 760,
+        "commission": 4365,
+        "orphanSessions": 2
+      }
+    },
+    "688c053930c7cc9720a2ee64": {
+      "name": "Ricardo Maia Santos",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a317edea16c83a1feaea20c",
+            "6a2802e6f4a67e4aaae824e0"
+          ]
+        },
+        "7": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 0,
+        "received": 0,
+        "commission": 0,
+        "orphanSessions": 2
+      }
+    },
+    "6a51414e8fabfdae6a78415b": {
+      "name": "Debora Kauane Menezes Barreira",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 1530,
+          "received": 0,
+          "commission": 430,
+          "orphanSessions": 2,
+          "orphanSessionIds": [
+            "6a58f3f6ce43485b2af49218",
+            "6a4e3a6ae34a08861ec408cf"
+          ]
+        },
+        "8": {
+          "production": 720,
+          "received": 0,
+          "commission": 215,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 2250,
+        "received": 0,
+        "commission": 645,
+        "orphanSessions": 2
+      }
+    },
+    "6a54ff9816c9749cae105c0f": {
+      "name": "Gabrielle Campos Ferreira",
+      "months": {
+        "1": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "2": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "3": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "4": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "5": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "6": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        },
+        "7": {
+          "production": 670,
+          "received": 0,
+          "commission": 260,
+          "orphanSessions": 1,
+          "orphanSessionIds": [
+            "6a6133748d1c2f56989a9fce"
+          ]
+        },
+        "8": {
+          "production": 0,
+          "received": 0,
+          "commission": 0,
+          "orphanSessions": 0,
+          "orphanSessionIds": []
+        }
+      },
+      "total": {
+        "production": 670,
+        "received": 0,
+        "commission": 260,
+        "orphanSessions": 1
+      }
+    }
+  },
+  "geral": {
+    "production": 221178,
+    "received": 27030.5,
+    "commission": 83649,
+    "orphanSessions": 168
+  }
+}
