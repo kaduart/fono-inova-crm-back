@@ -9,6 +9,7 @@
  */
 
 import Appointment from '../models/Appointment.js';
+import { pickAppointmentClientFields } from '../services/appointment/contracts/appointmentClientFields.js';
 
 /**
  * Versão async do mapper: auto-popula doctor/patient quando não vieram populados.
@@ -83,7 +84,11 @@ export function mapAppointmentDTO(appointment) {
           }
         : (appointment.patientInfo || null);
 
+    const clientFields = pickAppointmentClientFields(appointment, { includeDefaults: true });
+
     return {
+        // Campos simples do modal usam o mesmo contrato da escrita.
+        ...clientFields,
         // Identidade
         id: appointment._id?.toString?.() || appointment.id,
         _id: appointment._id?.toString?.() || appointment.id,
@@ -128,7 +133,6 @@ export function mapAppointmentDTO(appointment) {
         // Serviço
         specialty: appointment.specialty || appointment.sessionType || '',
         serviceType: appointment.serviceType || null,
-        sessionType: appointment.sessionType || null,
         sessionValue: (() => {
             // 🎯 Fonte de verdade: package populado > appointment hardcoded
             const pkg = appointment.package && typeof appointment.package === 'object' ? appointment.package : null;
@@ -160,9 +164,6 @@ export function mapAppointmentDTO(appointment) {
         paymentStatus: appointment.paymentStatus || 'pending',
         paymentMethod: appointment.paymentMethod || null,
         billingType: appointment.billingType || 'particular',
-        insuranceProvider: appointment.insuranceProvider || null,
-        insuranceValue: appointment.insuranceValue ?? 0,
-        authorizationCode: appointment.authorizationCode || null,
 
         // Relacionamentos
         package: appointment.package || null,
@@ -184,10 +185,7 @@ export function mapAppointmentDTO(appointment) {
         // Textos
         notes: appointment.notes || appointment.observations || '',
         observations: appointment.notes || appointment.observations || '',
-        responsible: appointment.responsible || '',
-
         // Metadados
-        metadata: appointment.metadata || null,
         visualFlag: appointment.visualFlag || null,
         createdAt: appointment.createdAt || null,
         updatedAt: appointment.updatedAt || null,

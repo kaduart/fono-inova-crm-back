@@ -421,14 +421,18 @@ const calcularCustosFixos = async (periodo) => {
 const calcularMetricasHistoricas = async () => {
   const dataCorte = moment().subtract(90, 'days').toDate();
 
-  // Taxa de confirmação (pending → confirmed/scheduled)
+  // Taxa de confirmação (aguardando confirmação → confirmed/scheduled).
+  // 'pre_agendado' é o estado de QUEM AINDA NÃO CONFIRMOU, então pertence ao
+  // bucket de aguardando — estava indevidamente contado como confirmado, o que
+  // inflava a taxa. 'pending' fica por compatibilidade com os registros criados
+  // antes do fix do appointmentHybridService; pode sair após a migração deles.
   const pendingTotal = await Appointment.countDocuments({
-    operationalStatus: 'pending',
+    operationalStatus: { $in: ['pending', 'pre_agendado'] },
     createdAt: { $gte: dataCorte }
   });
 
   const confirmedTotal = await Appointment.countDocuments({
-    operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] },
+    operationalStatus: { $in: ['confirmed', 'scheduled'] },
     createdAt: { $gte: dataCorte }
   });
 

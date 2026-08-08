@@ -22,6 +22,7 @@ import {
     composeGuideAggregates,
     composePendingCompetenceBreakdown,
     competenceDateFor,
+    resolvePaymentForSession,
     resolveSessionValue,
     SessionPhase,
     GuideBillingLabel
@@ -35,6 +36,35 @@ const PHASES = [
     SessionPhase.BILLED,
     SessionPhase.RECEIVED
 ];
+
+describe('🛡️ resolvePaymentForSession() — integridade antes da fase', () => {
+    it('Payment void não é oferecido para faturamento', () => {
+        const result = resolvePaymentForSession([{
+            _id: 'payment-void',
+            status: 'void',
+            amount: 80,
+            insurance: { status: 'pending', grossAmount: 80 }
+        }]);
+
+        assert.strictEqual(result.payment, null);
+        assert.strictEqual(result.activePayments, 0);
+        assert.strictEqual(result.integrityConflict, true);
+    });
+
+    it('aceita exatamente um Payment de convênio pendente de faturamento', () => {
+        const payment = {
+            _id: 'payment-active',
+            status: 'pending',
+            amount: 80,
+            insurance: { status: 'pending_billing', grossAmount: 80 }
+        };
+        const result = resolvePaymentForSession([payment]);
+
+        assert.strictEqual(result.payment, payment);
+        assert.strictEqual(result.activePayments, 1);
+        assert.strictEqual(result.integrityConflict, false);
+    });
+});
 
 describe('🏥 deriveSessionPhase() — a fase vive na sessão', () => {
     it('sessão completed sem nada => pendingBilling', () => {

@@ -18,6 +18,16 @@ export const CommunicationPurpose = {
 };
 
 const insuranceCommunicationSchema = new mongoose.Schema({
+  // Novo fluxo. Registros legados permanecem sem este campo.
+  billingSubmissionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BillingSubmission',
+    index: true,
+    default: null
+  },
+  billingAllocationIds: [{
+    type: mongoose.Schema.Types.ObjectId
+  }],
   patientId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Patient',
@@ -88,10 +98,11 @@ const insuranceCommunicationSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  // ⚠️ NÃO existe `sentAt` aqui. A leitura de convênios usa `invoiceDate || updatedAt`
-  // como PROXY da data de envio — e `updatedAt` se move a qualquer edição do registro.
-  // Tarefa técnica aberta para adicionar o campo de verdade:
-  // docs/TAREFA_TECNICA_SENTAT_INSURANCE_COMMUNICATION.md
+  sentAt: {
+    type: Date,
+    default: null,
+    index: true
+  },
   deliveryMethod: {
     type: String,
     enum: ['email', 'external', 'portal'],
@@ -105,6 +116,7 @@ const insuranceCommunicationSchema = new mongoose.Schema({
 insuranceCommunicationSchema.index({ insuranceProvider: 1, status: 1 });
 insuranceCommunicationSchema.index({ insuranceProvider: 1, purpose: 1, status: 1 });
 insuranceCommunicationSchema.index({ createdAt: -1 });
+insuranceCommunicationSchema.index({ billingSubmissionId: 1, createdAt: -1 });
 
 const InsuranceCommunication = mongoose.models.InsuranceCommunication || mongoose.model('InsuranceCommunication', insuranceCommunicationSchema);
 export default InsuranceCommunication;

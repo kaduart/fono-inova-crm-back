@@ -174,6 +174,8 @@ import insuranceGuidesV2Routes from './routes/insuranceGuides.v2.js';
 import insurancePlansV2Routes from './routes/insurancePlans.v2.js';
 import insuranceRoutes from './domains/billing/insuranceRoutes.js';  // 🏥 Convênios + Lotes + Admin
 import communicationRoutes from './routes/communication.routes.js';  // 🏥 Central de Comunicações
+import billingSubmissionRoutes from './routes/billingSubmission.routes.js';
+import insuranceBatchReceiptRoutes from './routes/insuranceBatchReceipt.routes.js';
 import patientDocumentsRoutes from './routes/patientDocuments.routes.js';  // 📎 Document Center de pacientes
 import billingDocumentsRoutes from './routes/billingDocuments.routes.js';  // 📄 Dossiê de faturamento
 import reminderRoutes from './routes/reminder.js';
@@ -577,6 +579,8 @@ app.use('/api/v2', insuranceV2Routes);
 app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
 app.use('/api/v2/insurance-plans', insurancePlansV2Routes);
 app.use('/api/v2/communications', communicationRoutes);  // 🏥 Central de Comunicações
+app.use('/api/v2/billing-submissions', billingSubmissionRoutes); // Novo fluxo de faturamento
+app.use('/api/v2/insurance-batches', insuranceBatchReceiptRoutes); // NF/lote: consulta e baixa integral ou por guia
 app.use('/api/v2/patient-documents', patientDocumentsRoutes);  // 📎 Document Center de pacientes
 app.use('/api/v2/billing-documents', billingDocumentsRoutes);  // 📄 Dossiê de faturamento
 app.use('/api/insurance', insuranceRoutes);  // 🏥 /api/insurance/admin/convenios, /api/insurance/batches, etc.
@@ -1012,4 +1016,3 @@ process.on('SIGINT', async () => {
   }
   process.exit(0);
 });
-

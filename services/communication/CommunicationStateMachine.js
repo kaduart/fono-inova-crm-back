@@ -60,6 +60,9 @@ export async function transition(communicationOrId, event, options = {}) {
 
   const nextStatus = allowed[event];
   const update = { status: nextStatus };
+  if (event === CommunicationEvents.MARK_SENT && !communication.sentAt) {
+    update.sentAt = new Date();
+  }
   if (options.statusReason !== undefined) update.statusReason = options.statusReason;
 
   return InsuranceCommunication.findByIdAndUpdate(

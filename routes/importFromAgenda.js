@@ -1406,7 +1406,7 @@ router.post("/agenda-externa/confirmar-agendamento", agendaAuth, async (req, res
 
 /**
  * ======================================================
- * GET /api/import-from-agenda/weekly-availability
+ * GET /api/agenda-externa/disponibilidade
  * 
  * Retorna grade de horários LIVRES da semana para todos os profissionais
  * de uma especialidade específica.

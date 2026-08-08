@@ -2,7 +2,8 @@
 
 **Aberta em:** 2026-08-07
 **Origem:** condição 2 da aprovação da Fase 3 da Read View de Convênios
-**Status:** ABERTA — não implementar junto da Fase 3 (Fase 3 é somente leitura)
+**Status:** PARCIALMENTE CONCLUÍDA em 2026-08-08 — novas escritas usam `sentAt`;
+backfill legado continua pendente
 
 ---
 
@@ -32,16 +33,15 @@ seja: o valor é plausível, muda sozinho, e não há como distinguir um do outr
 **Impacto medido em produção (2026-08-07):** 2 guias. Baixo hoje, silencioso quando crescer —
 o eixo de competência da fase `documentationSent` depende dessa data.
 
-## O que fazer
+## Estado da implementação
 
-1. Adicionar `sentAt: { type: Date, default: null }` a `InsuranceCommunication`.
-2. Gravar `sentAt = new Date()` no ponto em que a comunicação passa a `status: 'sent'`
-   (escrita — fora do escopo da Read View).
-3. Backfill dos registros existentes: `sentAt = invoiceDate || updatedAt`, marcando a
+1. ✅ `sentAt: { type: Date, default: null }` foi adicionado a `InsuranceCommunication`.
+2. ✅ `MARK_SENT` grava `sentAt = new Date()` na transição para `status: 'sent'`.
+3. ⏳ Backfill dos registros existentes: `sentAt = invoiceDate || updatedAt`, marcando a
    origem do dado para não confundir backfill com registro real.
-4. Na Read View, trocar o fallback por `comm.sentAt || comm.invoiceDate || comm.updatedAt`
+4. ✅ A Read View usa `comm.sentAt || comm.invoiceDate || comm.updatedAt`
    e manter `sentAtIsProxy` apenas para os registros anteriores ao backfill.
-5. Só então remover `documentationSentAtIsProxy` do payload.
+5. ⏳ Só depois do backfill remover `documentationSentAtIsProxy` do payload.
 
 ## Enquanto não for feito
 

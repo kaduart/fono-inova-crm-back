@@ -7,6 +7,8 @@ import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import crypto from 'crypto';
+import { buildAppointmentClientFieldsForModel } from './appointment/contracts/appointmentClientFields.js';
+import { resolveInitialAppointmentStatus } from './appointment/contracts/appointmentInitialStatus.js';
 
 /**
  * Appointment Hybrid Service
@@ -18,6 +20,21 @@ import crypto from 'crypto';
  *   * PACOTE: verifica crédito e estado de pagamento do pacote
  *   * CONVÊNIO: não cria (fatura depois)
  */
+
+/**
+ * Appointment.patientInfo.birthDate é String no schema (models/Appointment.js).
+ * Entregar um Date faz o Mongoose stringificar no formato local do processo
+ * ("Wed Jul 29 2026 21:00:00 GMT-0300"), o que além de ilegível desloca a data
+ * em um dia para qualquer nascimento gravado como meia-noite UTC. Normaliza para
+ * YYYY-MM-DD lendo os componentes em UTC.
+ */
+function normalizeBirthDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+    }
+    return String(value).slice(0, 10);
+}
 
 export class AppointmentHybridService {
     constructor() {
@@ -46,8 +63,13 @@ export class AppointmentHybridService {
             forcePayment = false, // Força criação de payment (ex: upgrade de pacote)
             notes = '',
             userId = null,
-            isJointSession = false
+            isJointSession = false,
+            operationalStatus = null
         } = data;
+
+        // Mesma fonte usada pelo command e pelo DTO. Campo ausente não sobrescreve
+        // default do schema; campo não contratado nunca chega ao Appointment.
+        const clientFields = buildAppointmentClientFieldsForModel(data, this.Appointment);
 
         // 0. Se tem pacote, busca informações dele
         let packageInfo = null;
@@ -73,9 +95,20 @@ export class AppointmentHybridService {
         const patientInfo = patientDoc ? {
             fullName: patientDoc.fullName || patientDoc.name || '',
             phone: patientDoc.phone || '',
-            birthDate: patientDoc.dateOfBirth || null,
+            // data.patientInfo chega com `birthDate`; o documento Patient usa
+            // `dateOfBirth`. Ler só um dos dois zerava a data quando o snapshot
+            // do paciente era passado pelo createAppointmentCommand.
+            birthDate: normalizeBirthDate(patientDoc.dateOfBirth || patientDoc.birthDate),
             email: patientDoc.email || null,
         } : (data.patientInfo || {});
+
+        // Status inicial: o hardcode 'pending' vinha da implementação original e
+        // nunca foi atualizado após a migração de 2026-05-07 ("todo Appointment
+        // nasce pre_agendado"). Ele sobrescrevia tanto o default do schema quanto
+        // o status enviado pelo cliente — era a causa dos cards nascerem "Pendente"
+        // em vez de "Pré-Agendado". Só estados de entrada legítimos são aceitos;
+        // qualquer outro valor cai no default do domínio.
+        const initialStatus = resolveInitialAppointmentStatus(operationalStatus);
 
         // 1. Cria APPOINTMENT
         const appointment = new this.Appointment({
@@ -91,7 +124,7 @@ export class AppointmentHybridService {
             insuranceGuide: insuranceGuideId,
             
             // Status
-            operationalStatus: 'pending',
+            operationalStatus: initialStatus,
             clinicalStatus: 'pending',
             paymentStatus: paymentStrategy.appointmentPaymentStatus,
             
@@ -104,11 +137,14 @@ export class AppointmentHybridService {
             notes,
             correlationId: crypto.randomUUID(),
             createdBy: userId || null,
+
+            // Dados simples do cliente, já limitados pelo contrato compartilhado.
+            ...clientFields,
             
             // Histórico
             history: [{
                 action: 'appointment_requested',
-                newStatus: 'pending',
+                newStatus: initialStatus,
                 changedBy: userId,
                 timestamp: new Date(),
                 context: `Criação HYBRID: ${serviceType} | ${paymentStrategy.reason}`

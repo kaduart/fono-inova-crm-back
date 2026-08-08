@@ -228,28 +228,71 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     // Sessão Conjunta: mesmo profissional pode ter dois pacientes no mesmo horário
     if (doctorOccupancy.occupied && !isJointSession) {
       const metadata = doctorOccupancy.metadata || {};
+      const conflictTime = normalizeTimeHHmm(metadata.time) || timeHHmm;
+      const occupiedBy = metadata.patient?.fullName;
+      const isPreAgendado = metadata.operationalStatus === "pre_agendado";
+
+      // O nome não pode depender do corpo da requisição: o PUT de edição manda só
+      // doctorId, e o fallback vazava para a tela como "O profissional atende...".
+      // Busca só neste caminho de erro, então não pesa no fluxo normal.
+      let profName = req.body.professionalName || req.body.doctorName;
+      if (!profName) {
+        const doctorDoc = await Doctor.findById(doctorObjectId).select("fullName").lean();
+        profName = doctorDoc?.fullName || "O profissional";
+      }
+
+      // "X já tem Y" confunde quem é profissional e quem é paciente.
+      // O verbo "atende" deixa os papéis explícitos.
+      const message = occupiedBy
+        ? `Horário ocupado: ${profName} atende ${occupiedBy} às ${conflictTime}${isPreAgendado ? " (pré-agendado)" : ""}.`
+        : `Horário ocupado: ${profName} já tem compromisso às ${conflictTime}.`;
+
       return res.status(409).json({
         error: "Conflito de agenda médica",
-        message: "O médico já possui um compromisso neste horário",
+        message,
         conflict: {
+          type: "doctor",
           appointmentId: metadata.appointmentId || metadata._id,
-          patientName: metadata.patient?.fullName || "Nome não disponível",
+          patientName: occupiedBy || "Nome não disponível",
+          doctorName: profName,
+          time: conflictTime,
+          operationalStatus: metadata.operationalStatus || null,
           existingAppointment: metadata,
         },
-        suggestion: "Por favor, escolha outro horário ou médico",
+        suggestion: "Escolha outro horário ou outro profissional.",
       });
     }
 
     if (patientConflict) {
+      const conflictTime = normalizeTimeHHmm(patientConflict.time) || timeHHmm;
+      const withDoctor = patientConflict.doctor?.fullName;
+
+      // Mesma razão do bloco acima: o PUT de edição só envia patientId.
+      let patientLabel = req.body.patientInfo?.fullName || req.body.patientName;
+      if (!patientLabel && patientObjectId) {
+        const patientDoc = await mongoose.model("Patient")
+          .findById(patientObjectId).select("fullName").lean();
+        patientLabel = patientDoc?.fullName;
+      }
+      patientLabel = patientLabel || "Este paciente";
+
+      // "agendado/agendada" exigiria saber o gênero; "já tem atendimento" é neutro.
+      const message = withDoctor
+        ? `${patientLabel} já tem atendimento às ${conflictTime} com ${withDoctor}.`
+        : `${patientLabel} já tem atendimento às ${conflictTime}.`;
+
       return res.status(409).json({
         error: "Conflito de agenda do paciente",
-        message: "O paciente já possui um compromisso neste horário",
+        message,
         conflict: {
+          type: "patient",
           appointmentId: patientConflict._id,
-          doctorName: patientConflict.doctor?.fullName || "Nome não disponível",
+          doctorName: withDoctor || "Nome não disponível",
+          patientName: patientLabel,
+          time: conflictTime,
           existingAppointment: patientConflict,
         },
-        suggestion: "Por favor, escolha outro horário ou paciente",
+        suggestion: "Escolha outro horário para este paciente.",
       });
     }
 

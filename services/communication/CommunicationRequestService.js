@@ -5,6 +5,7 @@ import CommunicationEmailLog from '../../models/CommunicationEmailLog.js';
 import Convenio from '../../models/Convenio.js';
 import { getRulesForInsuranceByConvenio } from './InsuranceRuleService.js';
 import { transition, CommunicationEvents } from './CommunicationStateMachine.js';
+import BillingSubmission from '../../models/BillingSubmission.js';
 
 export async function createCommunicationRequest({
   patientId,
@@ -16,9 +17,33 @@ export async function createCommunicationRequest({
   notes,
   invoiceNumber,
   invoiceDate,
+  billingSubmissionId,
+  billingAllocationIds,
   userId
 }) {
+  if (billingSubmissionId) {
+    const submission = await BillingSubmission.findById(billingSubmissionId)
+      .populate('insuranceProviderId', 'code')
+      .lean();
+    if (!submission) throw new Error('BILLING_SUBMISSION_NOT_FOUND');
+
+    const validAllocationIds = new Set(
+      (submission.billingAllocations || []).map(allocation => allocation._id.toString())
+    );
+    const requestedAllocationIds = (billingAllocationIds || []).map(String);
+    if (requestedAllocationIds.some(id => !validAllocationIds.has(id))) {
+      throw new Error('BILLING_SUBMISSION_ALLOCATION_NOT_FOUND');
+    }
+
+    patientId = submission.patientId;
+    insuranceProvider = submission.insuranceProviderId?.code;
+    purpose = 'billing';
+    guideId = undefined;
+  }
+
   const communication = await InsuranceCommunication.create({
+    billingSubmissionId: billingSubmissionId || null,
+    billingAllocationIds: billingAllocationIds || [],
     patientId,
     insuranceProvider,
     guideId,
@@ -39,6 +64,7 @@ export async function listCommunicationRequests({
   insuranceProvider,
   patientId,
   purpose,
+  billingSubmissionId,
   month,
   page = 1,
   limit = 50
@@ -48,6 +74,7 @@ export async function listCommunicationRequests({
   if (insuranceProvider) query.insuranceProvider = insuranceProvider.toLowerCase();
   if (patientId) query.patientId = patientId;
   if (purpose) query.purpose = purpose;
+  if (billingSubmissionId) query.billingSubmissionId = billingSubmissionId;
 
   if (month) {
     const [year, monthNum] = month.split('-').map(Number);

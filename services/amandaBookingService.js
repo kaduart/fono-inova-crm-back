@@ -583,8 +583,10 @@ export async function autoBookAppointment({
             source: "amandaAI", // 📈 ROI
         };
 
+        // V1 (/api/appointments) foi desmontada em server.js — esta chamada dava 404.
+        // O payload já é V2-shaped (patientId/doctorId/paymentAmount), então só a rota muda.
         const appointmentResponse = await api.post(
-            "/api/appointments",
+            "/api/v2/appointments",
             appointmentPayload
         );
 
@@ -825,11 +827,12 @@ export async function bookFixedSlot({
             preAgendamentoId,    // 📈 ROI
         };
 
-        console.log(`[bookFixedSlot] 📤 Enviando para /api/appointments:`, {
+        console.log(`[bookFixedSlot] 📤 Enviando para /api/v2/appointments:`, {
             patientId, doctorId, date, time, serviceType, sessionValue
         });
-        
-        const appointmentResponse = await api.post("/api/appointments", appointmentPayload);
+
+        // V1 (/api/appointments) foi desmontada em server.js — esta chamada dava 404.
+        const appointmentResponse = await api.post("/api/v2/appointments", appointmentPayload);
         
         console.log(`[bookFixedSlot] 📥 Resposta da API:`, {
             success: appointmentResponse.data?.success,
@@ -887,7 +890,9 @@ export async function bookFixedSlot({
                 : appointmentData.appointment;
             
             try {
-                const apptResponse = await api.get(`/api/appointments/${appointmentId}`);
+                // Reads V2 são montados por appointment.v2.js via appointmentReads.js;
+                // GET /:id mantém o contrato { success, data } usado aqui.
+                const apptResponse = await api.get(`/api/v2/appointments/${appointmentId}`);
                 if (apptResponse.data?.success) {
                     createdAppointment = apptResponse.data.data;
                 }

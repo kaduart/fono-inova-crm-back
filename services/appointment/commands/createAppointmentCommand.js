@@ -25,6 +25,7 @@ import Appointment from '../../../models/Appointment.js';
 import Leads from '../../../models/Leads.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { recordAudit } from '../../auditLogService.js';
+import { pickAppointmentClientFields } from '../contracts/appointmentClientFields.js';
 
 function isInsuranceAppointment(body) {
   return (
@@ -53,9 +54,11 @@ function buildError(message, status = 500, code = 'INTERNAL_ERROR') {
 export async function execute(payload, user, res = null) {
   // 🔹 Convênio: delega para BillingOrchestrator
   if (isInsuranceAppointment(payload)) {
+    const isAgendaService = user?.isService === true && user?.id === 'agenda-service';
     const billingResult = await billingOrchestrator.handleBilling({
       ...payload,
       createdBy: user?._id,
+      operationalStatus: isAgendaService ? 'pre_agendado' : payload.operationalStatus,
     });
 
     // Garante que o front sempre receba um appointment populado em data
@@ -110,6 +113,9 @@ async function createWithHybridService(payload, user) {
     preAgendamentoId,
     leadId: inputLeadId,
   } = payload;
+
+  // Identidade do service token da Agenda Externa (ver middleware/amandaAuth.js:22)
+  const isAgendaService = user?.isService === true && user?.id === 'agenda-service';
 
   const amount = parseFloat(payload.paymentAmount) || parseFloat(payload.sessionValue) || 0;
   const isPackageSession = serviceType === 'package_session';
@@ -210,6 +216,15 @@ async function createWithHybridService(payload, user) {
         userId: user?._id,
         createdBy: user?._id,
         isJointSession: payload.isJointSession || false,
+        // Contrato único dos campos simples do modal. Não usar `...payload`: campos
+        // financeiros/lifecycle precisam continuar passando por regras explícitas.
+        ...pickAppointmentClientFields(payload),
+        // Agenda Externa é canal de PRIMEIRO CONTATO: o domínio força pre_agendado e
+        // a promoção para scheduled só acontece via confirmPreAgendamentoCommand.
+        // O front do CRM (bookingService / packageService) legitimamente cria já
+        // 'scheduled' — sessão de pacote não é interesse, é agendamento fechado —
+        // então a restrição é por contexto do chamador, não pelo endpoint.
+        operationalStatus: isAgendaService ? 'pre_agendado' : payload.operationalStatus,
         patientInfo: effectivePatientSnapshot ? {
           fullName: effectivePatientSnapshot.fullName || effectivePatientSnapshot.name || '',
           phone: effectivePatientSnapshot.phone || '',

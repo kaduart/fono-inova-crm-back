@@ -11,6 +11,37 @@ import { validateDateTime, checkScheduleConflict } from '../../utils/billingHelp
 import { recordInsuranceBilled, recordInsuranceReceived } from '../financialLedgerService.js';
 import { getConvenioIssRate, calculateInsuranceIss } from '../../utils/insuranceIss.js';
 import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.js';
+import { buildAppointmentClientFieldsForModel } from '../appointment/contracts/appointmentClientFields.js';
+import { resolveInitialAppointmentStatus } from '../appointment/contracts/appointmentInitialStatus.js';
+
+export function buildInsuranceAppointmentDocument(appointmentData, guide, sessionId) {
+  const clientFields = buildAppointmentClientFieldsForModel(appointmentData, Appointment);
+  const initialStatus = resolveInitialAppointmentStatus(appointmentData.operationalStatus);
+
+  return {
+    // Campos simples compartilhados; os campos financeiros autoritativos abaixo
+    // prevalecem sobre qualquer valor vindo do cliente.
+    ...clientFields,
+    patient: appointmentData.patientId,
+    doctor: appointmentData.doctorId,
+    specialty: appointmentData.specialty,
+    date: appointmentData.date,
+    time: appointmentData.time,
+    duration: 40,
+    session: sessionId,
+    serviceType: 'session',
+    operationalStatus: initialStatus,
+    clinicalStatus: 'pending',
+    paymentStatus: 'pending',
+    visualFlag: 'pending',
+    billingType: 'convenio',
+    insuranceProvider: guide.insurance,
+    insuranceValue: 0,
+    authorizationCode: guide.number,
+    notes: appointmentData.notes,
+    createdBy: appointmentData.createdBy,
+  };
+}
 
 /**
  * 💼 Insurance Billing Service
@@ -70,7 +101,7 @@ class InsuranceBillingService {
       time,
       notes,
       insuranceGuideId,
-      createdBy
+      createdBy,
     } = appointmentData;
 
     // 2. Iniciar transação (se não recebida)
@@ -132,26 +163,9 @@ class InsuranceBillingService {
       await newSession.save({ session, validateBeforeSave: false });
 
       // 7. Criar Appointment
-      const newAppointment = new Appointment({
-        patient: patientId,
-        doctor: doctorId,
-        specialty,
-        date,
-        time,
-        duration: 40,
-        session: newSession._id,
-        serviceType: 'session',
-        operationalStatus: 'scheduled',
-        clinicalStatus: 'pending',
-        paymentStatus: 'pending',
-        visualFlag: 'pending',
-        billingType: 'convenio',
-        insuranceProvider: guide.insurance,
-        insuranceValue: 0,
-        authorizationCode: guide.number,
-        notes,
-        createdBy
-      });
+      const newAppointment = new Appointment(
+        buildInsuranceAppointmentDocument(appointmentData, guide, newSession._id)
+      );
 
       await newAppointment.save({ session, validateBeforeSave: false });
 

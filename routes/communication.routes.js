@@ -29,12 +29,13 @@ const logger = createContextLogger('communication_send_endpoint');
 // GET /api/v2/communications
 router.get('/', auth, async (req, res) => {
   try {
-    const { status, insurance, patientId, purpose, month, page, limit } = req.query;
+    const { status, insurance, patientId, purpose, billingSubmissionId, month, page, limit } = req.query;
     const result = await listCommunicationRequests({
       status,
       insuranceProvider: insurance,
       patientId,
       purpose,
+      billingSubmissionId,
       month,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50
@@ -68,7 +69,7 @@ router.get('/email-logs', auth, async (req, res) => {
 // POST /api/v2/communications
 router.post('/', auth, async (req, res) => {
   try {
-    const { patientId, insuranceProvider, guideId, purpose, specialty, requestedSessions, notes, invoiceNumber, invoiceDate } = req.body;
+    const { patientId, insuranceProvider, guideId, purpose, specialty, requestedSessions, notes, invoiceNumber, invoiceDate, billingSubmissionId, billingAllocationIds } = req.body;
     const request = await createCommunicationRequest({
       patientId,
       insuranceProvider,
@@ -79,6 +80,8 @@ router.post('/', auth, async (req, res) => {
       notes,
       invoiceNumber,
       invoiceDate,
+      billingSubmissionId,
+      billingAllocationIds,
       userId: req.user.id
     });
     res.status(201).json({ success: true, data: request });

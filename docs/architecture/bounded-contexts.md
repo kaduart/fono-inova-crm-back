@@ -73,14 +73,18 @@ deve emitir `payment.settled` e o TherapyPackage decidir se reconhece.
 
 | Item | Valor |
 |---|---|
-| Aggregates | `InsuranceBatch`, `InsuranceGuide` |
-| Source of truth | `insurance_batches`, `insurance_guides` collections |
+| Aggregates | `BillingSubmission` (operacional), `InsuranceBatch` (faturamento), `InsuranceGuide` (autorização) |
+| Source of truth | `billing_submissions`, `insurance_batches`, `insurance_guides` collections |
 | Projection crítica | `InsuranceBatchProjection` |
 | Eventos emitidos | `insurance.batch_paid`, `insurance.guide_denied` |
 | Não deve tocar | pacotes particulares, saldo de paciente particular |
 
 **Atenção crítica:** convênio aprovado parcialmente ≠ sessão paga ≠ saldo consumido.
 Nunca usar o mesmo handler de projection de TherapyPackage para convênio.
+
+`BillingSubmission` organiza a seleção e as alocações do fluxo novo. Ele não é
+fonte de valor, recebimento, glosa ou caixa. Esses estados continuam em
+`InsuranceBatch`, `Payment` e `FinancialLedger`.
 
 ---
 

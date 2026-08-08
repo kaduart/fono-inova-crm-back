@@ -92,6 +92,9 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     }
 
     // 4. Salva (com ou sem session)
+    // Flag transitória: impede o post-save safety net de publicar o mesmo evento
+    // fora da Outbox. Não pertence ao schema e nunca é persistida.
+    payment.__statusChangedEmitted = true;
     if (mongoSession) {
         await payment.save({ session: mongoSession });
     } else {

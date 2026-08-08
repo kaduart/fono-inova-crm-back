@@ -14,4 +14,8 @@ import "./ImageBank.js";
 import "./WhatsAppWebState.js";
 import "./FinancialLedger.js";
 import "./InsuranceGuide.js";
+import "./BillingSubmission.js";
+import "./InsuranceBatch.js";
+import "./InsuranceCommunication.js";
+import "./PatientDocument.js";
 import "./MetricLog.js";

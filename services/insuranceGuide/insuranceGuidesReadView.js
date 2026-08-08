@@ -34,6 +34,7 @@ import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
 import InsuranceCommunication from '../../models/InsuranceCommunication.js';
 import InsuranceBatch from '../../models/InsuranceBatch.js';
+import BillingSubmission from '../../models/BillingSubmission.js';
 import { createContextLogger } from '../../utils/logger.js';
 
 const logger = createContextLogger('InsuranceGuidesReadView');
@@ -73,7 +74,10 @@ export const GuideBillingLabel = {
   CLOSED: 'closed'
 };
 
-const CANCELED_PAYMENT_STATUSES = ['canceled', 'cancelled'];
+const ACTIVE_PAYMENT_STATUSES = new Set([
+  'pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'
+]);
+const INSURANCE_CYCLE_STATUSES = new Set(['pending_billing', 'billed', 'received']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Funções puras — testáveis sem banco
@@ -152,6 +156,35 @@ export function deriveBillingLabel(counters, { isClosed = false } = {}) {
     case SessionPhase.DOCUMENTATION_SENT: return GuideBillingLabel.DOCUMENTATION_SENT;
     default: return GuideBillingLabel.PENDING;
   }
+}
+
+/**
+ * Agrupa as sessões já classificadas pelas notas fiscais que as cobriram.
+ *
+ * A NF é do LOTE, e uma guia faturada mês a mês tem sessões em notas diferentes
+ * — por isso o resumo é uma lista, não um campo único. Sessões ainda sem lote
+ * ficam de fora: não há nota para elas.
+ */
+export function summarizeInvoices(classifiedSessions = []) {
+  const porLote = new Map();
+  for (const s of classifiedSessions) {
+    if (!s.batchId) continue;
+    if (!porLote.has(s.batchId)) {
+      porLote.set(s.batchId, {
+        batchId: s.batchId,
+        invoiceNumber: s.batchInvoiceNumber || null,
+        invoiceDate: s.batchInvoiceDate || null,
+        origin: s.batchOrigin || null,
+        batchStatus: s.batchStatus || null,
+        sessions: 0,
+        amount: 0
+      });
+    }
+    const nf = porLote.get(s.batchId);
+    nf.sessions += 1;
+    nf.amount = Math.round((nf.amount + (s.value || 0)) * 100) / 100;
+  }
+  return [...porLote.values()];
 }
 
 /**
@@ -292,19 +325,28 @@ function inRange(date, from, to) {
 }
 
 /**
- * Escolhe o Payment que representa a sessão. Ignora cancelados e valor <= 0,
- * e prefere o mais avançado no ciclo quando há mais de um (histórico de
- * remarcação/split pode deixar mais de um Payment na mesma sessão).
+ * Resolve o Payment canônico da sessão. Somente status ativos e estados de
+ * convênio pertencentes ao ciclo financeiro são elegíveis. `void`, cancelados,
+ * rejeitados e estados incompletos viram conflito explícito de leitura.
  */
-function pickPaymentForSession(payments) {
-  const live = (payments || []).filter(p =>
-    !CANCELED_PAYMENT_STATUSES.includes(p.status) && (p.amount || 0) > 0
+export function resolvePaymentForSession(payments) {
+  const eligible = (payments || []).filter(p =>
+    ACTIVE_PAYMENT_STATUSES.has(p.status)
+    && INSURANCE_CYCLE_STATUSES.has(p.insurance?.status)
+    && (p.amount || 0) > 0
   );
-  if (live.length === 0) return null;
+  if (eligible.length === 0) {
+    return { payment: null, activePayments: 0, integrityConflict: true };
+  }
   const rank = { received: 3, billed: 2, pending_billing: 1 };
-  return live.reduce((best, p) =>
+  const payment = eligible.reduce((best, p) =>
     (rank[p.insurance?.status] || 0) > (rank[best.insurance?.status] || 0) ? p : best
   );
+  return {
+    payment,
+    activePayments: eligible.length,
+    integrityConflict: eligible.length !== 1
+  };
 }
 
 /**
@@ -352,6 +394,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       orphanSessions: [],
       totals: composeGuideAggregates([]),
       competenceBreakdown: composePendingCompetenceBreakdown([]),
+      paymentIntegrityConflicts: [],
       pagination: { page: 1, limit, total: 0, pages: 0 }
     };
   }
@@ -359,20 +402,41 @@ export async function getInsuranceGuidesView(filters = {}) {
   const guideIds = guides.map(g => g._id);
 
   // 2. Composição: sessões, payments, comunicações e lotes das guias listadas.
-  const [sessions, communications] = await Promise.all([
+  const [sessions, legacyCommunications] = await Promise.all([
     Session.find({ insuranceGuide: { $in: guideIds } })
       .select('_id insuranceGuide date status sessionValue specialty doctor appointmentId billingBatchId')
       .populate('doctor', 'fullName')
       .populate('appointmentId', 'time')
       .sort({ date: 1 })
       .lean(),
-    InsuranceCommunication.find({ guideId: { $in: guideIds }, purpose: 'billing', status: 'sent' })
-      .select('guideId invoiceNumber invoiceDate updatedAt')
+    InsuranceCommunication.find({
+      purpose: 'billing',
+      status: 'sent',
+      guideId: { $in: guideIds }
+    })
+      .select('guideId billingSubmissionId invoiceNumber invoiceDate sentAt updatedAt')
       .sort({ updatedAt: -1 })
       .lean()
   ]);
 
   const sessionIds = sessions.map(s => s._id);
+  const documentedSubmissions = sessionIds.length
+    ? await BillingSubmission.find({ sessionIds: { $in: sessionIds } })
+      .select('_id sessionIds')
+      .lean()
+    : [];
+  const documentedSubmissionIds = documentedSubmissions.map(submission => submission._id);
+  const submissionCommunications = documentedSubmissionIds.length
+    ? await InsuranceCommunication.find({
+      purpose: 'billing',
+      status: 'sent',
+      billingSubmissionId: { $in: documentedSubmissionIds }
+    })
+      .select('guideId billingSubmissionId invoiceNumber invoiceDate sentAt updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean()
+    : [];
+  const communications = [...legacyCommunications, ...submissionCommunications];
 
   // Payment é buscado pelos DOIS vínculos: session e insuranceGuide. Em prod há
   // 68 payments 'billed' e 16 'received' com insuranceGuide null, e 52
@@ -389,7 +453,13 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   const batchIds = [...new Set(sessions.map(s => idOf(s.billingBatchId)).filter(Boolean))];
   const batches = batchIds.length
-    ? await InsuranceBatch.find({ _id: { $in: batchIds } }).select('_id status createdAt').lean()
+    // A NF vive no LOTE (`invoiceNumber`), não na guia. Sem trazer esses campos
+    // a tela mostra "Faturada" sem dizer por qual nota — e no legado não há
+    // InsuranceCommunication de onde inferir. `origin` distingue reconciliação
+    // de faturamento executado pelo sistema.
+    ? await InsuranceBatch.find({ _id: { $in: batchIds } })
+        .select('_id status createdAt invoiceNumber invoiceDate origin')
+        .lean()
     : [];
   const batchById = new Map(batches.map(b => [idOf(b._id), b]));
 
@@ -410,7 +480,8 @@ export async function getInsuranceGuidesView(filters = {}) {
     sessionsByGuide.get(gid).push(s);
   }
 
-  // ⚠️ InsuranceCommunication NÃO tem campo `sentAt` (só timestamps + invoiceDate).
+  // Registros novos têm sentAt explícito; invoiceDate/updatedAt permanecem somente
+  // como fallback compatível para comunicações anteriores ao campo.
   // `updatedAt` é o proxy usado hoje pelo insuranceBatchGuideAdapter e é o melhor
   // disponível — mas ele se move a qualquer edição do registro, então é uma
   // aproximação da data de envio, não a data de envio. Ver limitação no doc.
@@ -419,25 +490,71 @@ export async function getInsuranceGuidesView(filters = {}) {
     const gid = idOf(comm.guideId);
     if (!gid || documentationByGuide.has(gid)) continue;
     documentationByGuide.set(gid, {
-      sentAt: comm.invoiceDate || comm.updatedAt,
-      sentAtIsProxy: !comm.invoiceDate,
+      sentAt: comm.sentAt || comm.invoiceDate || comm.updatedAt,
+      sentAtIsProxy: !comm.sentAt,
       invoiceNumber: comm.invoiceNumber || null
     });
+  }
+
+  // Novo fluxo: comunicação pertence ao submission e sua seleção exata de
+  // sessões, não à primeira guia. A fase documental é aplicada somente às
+  // sessões daquele submission.
+  const submissionCommunicationById = new Map();
+  for (const comm of communications) {
+    const submissionId = idOf(comm.billingSubmissionId);
+    if (submissionId && !submissionCommunicationById.has(submissionId)) {
+      submissionCommunicationById.set(submissionId, comm);
+    }
+  }
+  const documentedSubmissionSessions = new Map();
+  if (submissionCommunicationById.size) {
+    for (const submission of documentedSubmissions) {
+      const comm = submissionCommunicationById.get(idOf(submission._id));
+      if (!comm) continue;
+      const documentation = {
+        sentAt: comm.sentAt || comm.invoiceDate || comm.updatedAt,
+        sentAtIsProxy: !comm.sentAt,
+        invoiceNumber: null
+      };
+      for (const sessionId of submission.sessionIds || []) {
+        if (!documentedSubmissionSessions.has(idOf(sessionId))) {
+          documentedSubmissionSessions.set(idOf(sessionId), documentation);
+        }
+      }
+    }
   }
 
   // 3. Classificação por sessão + agregação por guia
   const phaseFilterActive = phase && phase !== 'all';
   const enriched = [];
+  const paymentIntegrityConflicts = [];
 
   for (const guide of guides) {
     const gid = idOf(guide._id);
     const guideSessions = sessionsByGuide.get(gid) || [];
-    const documentation = documentationByGuide.get(gid) || null;
+    const guideDocumentation = documentationByGuide.get(gid) || null;
 
     const classified = guideSessions.map(session => {
-      const payment = pickPaymentForSession(paymentsBySession.get(idOf(session._id)));
-      const sessionPhase = deriveSessionPhase(session, payment, !!documentation);
+      const paymentResolution = resolvePaymentForSession(paymentsBySession.get(idOf(session._id)));
+      const payment = paymentResolution.payment;
+      const documentation = documentedSubmissionSessions.get(idOf(session._id)) || guideDocumentation;
+      const sessionPhase = paymentResolution.integrityConflict
+        ? null
+        : deriveSessionPhase(session, payment, !!documentation);
       const batch = batchById.get(idOf(session.billingBatchId)) || null;
+      if (session.status === 'completed' && paymentResolution.integrityConflict) {
+        paymentIntegrityConflicts.push({
+          sessionId: idOf(session._id),
+          guideId: gid,
+          patientId: idOf(guide.patientId),
+          activePayments: paymentResolution.activePayments,
+          paymentStatuses: (paymentsBySession.get(idOf(session._id)) || []).map(item => ({
+            paymentId: idOf(item._id),
+            status: item.status,
+            insuranceStatus: item.insurance?.status || null
+          }))
+        });
+      }
       return {
         sessionId: idOf(session._id),
         date: session.date,
@@ -449,8 +566,15 @@ export async function getInsuranceGuidesView(filters = {}) {
         value: sessionPhase ? resolveSessionValue(session, payment, guide) : 0,
         paymentId: idOf(payment?._id),
         paymentStatus: payment?.insurance?.status ?? null,
+        paymentIntegrityConflict: paymentResolution.integrityConflict,
+        activePaymentCount: paymentResolution.activePayments,
         batchId: idOf(session.billingBatchId),
         batchStatus: batch?.status || null,
+        // NF sob a qual ESTA sessão foi faturada. Uma guia pode ter sessões em
+        // notas diferentes (faturamento mês a mês), então a nota é por sessão.
+        batchInvoiceNumber: batch?.invoiceNumber || null,
+        batchInvoiceDate: batch?.invoiceDate || null,
+        batchOrigin: batch?.origin || null,
         competenceDate: competenceDateFor(sessionPhase, {
           session, payment, documentationSentAt: documentation?.sentAt
         })
@@ -503,9 +627,18 @@ export async function getInsuranceGuidesView(filters = {}) {
       billingState: deriveBillingLabel(phaseCounters, { isClosed }),
       hasMixedStates: hasMixedStates(phaseCounters),
 
-      documentationSentAt: documentation?.sentAt || null,
-      documentationSentAtIsProxy: documentation?.sentAtIsProxy ?? false,
-      invoiceNumber: documentation?.invoiceNumber || null,
+      documentationSentAt: guideDocumentation?.sentAt
+        || classified.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.competenceDate
+        || null,
+      documentationSentAtIsProxy: guideDocumentation?.sentAtIsProxy
+        ?? classified.some(item => documentedSubmissionSessions.get(item.sessionId)?.sentAtIsProxy)
+        ?? false,
+      invoiceNumber: guideDocumentation?.invoiceNumber || null,
+
+      // Notas fiscais que cobrem as sessões DESTA guia, com quantas sessões e
+      // quanto cada uma levou. Uma guia faturada mês a mês aparece em várias
+      // notas; sem isto a tela diz "Faturada" sem dizer por qual documento.
+      invoices: summarizeInvoices(scoped),
 
       sessionDetails: scoped
     });
@@ -570,6 +703,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     })),
     totals,
     competenceBreakdown,
+    paymentIntegrityConflicts,
     pagination: {
       page: limit > 0 ? page : 1,
       limit,
@@ -587,6 +721,7 @@ export default {
   composeGuideAggregates,
   composePendingCompetenceBreakdown,
   competenceDateFor,
+  resolvePaymentForSession,
   resolveSessionValue,
   SessionPhase,
   GuideBillingLabel

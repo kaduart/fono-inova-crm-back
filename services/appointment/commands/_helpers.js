@@ -6,6 +6,7 @@
  * - Não devem conter lógica de negócio específica de um command
  * - Apenas utilitários transversais: erros, permissões, sanitização
  */
+import { pickAppointmentClientFields } from '../contracts/appointmentClientFields.js';
 
 /**
  * Constrói um erro padronizado para os commands.
@@ -50,8 +51,13 @@ export function sanitizeAppointmentPayload(payload) {
     __v: _bodyV,
     isNewPatient: _isNewPatient,
     patientInfo: _patientInfo,
+    clientFields: _clientFields,
     ...safeBody
   } = payload || {};
+
+  // Campos simples novos chegam no envelope e são expandidos somente após passar
+  // pelo contrato. Isso atende updates sem abrir mass assignment.
+  Object.assign(safeBody, pickAppointmentClientFields(payload));
 
   if (safeBody.package && typeof safeBody.package === 'object') {
     safeBody.package = safeBody.package._id || safeBody.package.id || null;
