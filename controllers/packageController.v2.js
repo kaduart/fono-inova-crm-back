@@ -38,6 +38,7 @@ import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import moment from 'moment-timezone';
 
 const logger = createContextLogger('PackageV2');
+const roundCurrency = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
 // ============================================================
 // 🔧 HELPERS
@@ -259,7 +260,10 @@ function createPackageData(data) {
 
   // 2️⃣ & 3️⃣ PACKAGE (pré-pago ou per-session)
   const isPrepaid = model === 'prepaid';
-  const calculatedTotal = totalValue || (sessionValue * totalSessions);
+  const calculatedTotal = roundCurrency(totalValue || (sessionValue * totalSessions));
+  const calculatedPaid = isPrepaid
+    ? roundCurrency(data.payments?.reduce((sum, payment) => sum + Number(payment.amount || 0), 0))
+    : 0;
   
   return {
     ...baseData,
@@ -267,8 +271,8 @@ function createPackageData(data) {
     model: model || 'per_session',  // 🎯 CAMPO SEMÂNTICO CORRETO
     sessionValue,
     totalValue: calculatedTotal,
-    totalPaid: isPrepaid ? data.payments?.reduce((s, p) => s + (p.amount || 0), 0) : 0,
-    balance: isPrepaid ? calculatedTotal - (data.payments?.reduce((s, p) => s + (p.amount || 0), 0) || 0) : calculatedTotal,
+    totalPaid: calculatedPaid,
+    balance: isPrepaid ? roundCurrency(calculatedTotal - calculatedPaid) : calculatedTotal,
     financialStatus: isPrepaid ? 'paid' : 'unpaid',
     paymentType: isPrepaid ? 'full' : 'per-session',
     paymentMethod: isPrepaid ? (data.payments?.[0]?.method || 'pix') : 'pix'
@@ -283,6 +287,7 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     return [];
   }
 
+  const isPaidPackage = pkg.model === 'prepaid';
   const appointmentDocs = schedule.map((slot, index) => ({
     patient: pkg.patient,
     doctor: pkg.doctor,
@@ -296,6 +301,8 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     operationalStatus: 'scheduled',
     clinicalStatus: 'pending',
     paymentStatus: pkg.paymentType === 'per-session' ? 'unpaid' : 'package_paid',
+    isPaid: isPaidPackage,
+    visualFlag: isPaidPackage ? 'ok' : 'pending',
     paymentOrigin: pkg.paymentType === 'per-session' ? 'auto_per_session' : 'package_prepaid',
     paymentMethod: pkg.paymentMethod || 'pix',
     // ⚠️ LEGADO: pkg.type 'convenio'|'liminar' nunca ocorre em dados novos
@@ -482,6 +489,13 @@ export const createPackageV2 = async (req, res) => {
   let transactionStartTime = 0;
   let transactionDuration = 0;
   let operationsCount = 0;
+  const phaseTimings = {
+    validationMs: 0,
+    transactionMs: 0,
+    paymentsMs: 0,
+    projectionMs: 0,
+    outboxMs: 0
+  };
   const mongoSession = await mongoose.startSession();
   let transactionCommitted = false;
 
@@ -630,6 +644,8 @@ export const createPackageV2 = async (req, res) => {
 
   try {
     await mongoSession.startTransaction();
+    phaseTimings.validationMs = Date.now() - requestStartTime;
+    transactionStartTime = Date.now();
     
     // Variáveis mutáveis para uso dentro da transação
     let schedule = scheduleInput;
@@ -737,8 +753,6 @@ export const createPackageV2 = async (req, res) => {
     // ========================================
     // 3️⃣ CRIAR PACKAGE
     // ========================================
-    transactionStartTime = Date.now();
-    
     const packageData = createPackageData({ ...req.body, sessionsDone: parsedConsumed });
     packageData.createdBy = req.user?._id;
 
@@ -841,6 +855,21 @@ export const createPackageV2 = async (req, res) => {
         });
       }
 
+      if (reuseAppt) {
+        const samePatient = reuseAppt.patient?.toString() === patientId.toString();
+        const sameDoctor = reuseAppt.doctor?.toString() === doctorId.toString();
+        const sameSpecialty = reuseAppt.specialty === specialty;
+        if (!samePatient || !sameDoctor || !sameSpecialty) {
+          await mongoSession.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            errorCode: 'REUSE_APPOINTMENT_CONTEXT_MISMATCH',
+            message: 'O agendamento selecionado não corresponde ao paciente, profissional e especialidade do pacote',
+            data: { samePatient, sameDoctor, sameSpecialty }
+          });
+        }
+      }
+
       // Calcular slots que realmente precisam ser criados (remove o do appointment reutilizado)
       let slotsToCreate = schedule;
       if (reuseAppt) {
@@ -867,27 +896,26 @@ export const createPackageV2 = async (req, res) => {
         }
       }
 
-      // 🚨 VALIDAR CONFLITOS DE AGENDA
-      for (const slot of schedule) {
-        // FIX: usar buildDateTime para comparação correta Date vs Date
-        const slotDateTime = buildDateTime(slot.date, slot.time);
-
-        // 🔗 Pular slot que será reutilizado (usuário selecionou explicitamente)
-        if (reuseAppt && isSameSlot(slot, reuseAppt)) {
-          continue;
-        }
-
+      // 🚨 VALIDAR CONFLITOS DE AGENDA EM UMA ÚNICA QUERY.
+      // Antes havia um findOne sequencial por slot, multiplicando a latência de rede
+      // pela quantidade de sessões do pacote.
+      const slotsToValidate = schedule.filter(slot => !(reuseAppt && isSameSlot(slot, reuseAppt)));
+      if (slotsToValidate.length > 0) {
         const conflict = await Appointment.findOne({
           doctor: doctorId,
-          date: slotDateTime,          // FIX: Date object, não string
-          time: slot.time,
-          operationalStatus: { $nin: ['canceled', 'no_show'] }
+          operationalStatus: { $nin: ['canceled', 'no_show'] },
+          $or: slotsToValidate.map(slot => ({
+            date: buildDateTime(slot.date, slot.time),
+            time: slot.time
+          }))
         })
           .populate('patient', 'fullName phone')
           .populate('doctor', 'fullName')
           .session(mongoSession);
 
         if (conflict) {
+          const conflictingSlot = slotsToValidate.find(slot => isSameSlot(slot, conflict))
+            || slotsToValidate[0];
           await mongoSession.abortTransaction();
           const patientName = conflict.patient?.fullName || 'Paciente não identificado';
           const doctorName = conflict.doctor?.fullName || 'Profissional não identificado';
@@ -895,15 +923,15 @@ export const createPackageV2 = async (req, res) => {
           return res.status(409).json({
             success: false,
             errorCode: 'SCHEDULE_CONFLICT',
-            message: `Conflito de agenda: ${slot.date} às ${slot.time} já está ocupado por ${patientName} (${patientPhone}) com ${doctorName}`,
+            message: `Conflito de agenda: ${conflictingSlot.date} às ${conflictingSlot.time} já está ocupado por ${patientName} (${patientPhone}) com ${doctorName}`,
             data: {
               conflictingAppointment: conflict._id,
               patientName,
               patientPhone,
               doctorName,
               status: conflict.operationalStatus,
-              date: slot.date,
-              time: slot.time
+              date: conflictingSlot.date,
+              time: conflictingSlot.time
             }
           });
         }
@@ -911,6 +939,29 @@ export const createPackageV2 = async (req, res) => {
 
       // 🔗 REUTILIZAR appointment existente (só roda se appointmentId fornecido)
       if (reuseAppt) {
+        const previousPaymentId = reuseAppt.payment;
+        const oldPayment = previousPaymentId
+          ? await Payment.findById(previousPaymentId).session(mongoSession)
+          : null;
+        const existingPaymentPaid = oldPayment?.status === 'paid';
+        const existingPaidAmount = existingPaymentPaid ? Number(oldPayment.amount || 0) : 0;
+
+        const requestedPaymentTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+        if (existingPaidAmount + requestedPaymentTotal > pkg.totalValue + 0.009) {
+          await mongoSession.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            errorCode: 'PACKAGE_OVERPAYMENT',
+            message: 'O pagamento da sessão existente somado aos novos pagamentos ultrapassa o valor total do pacote',
+            data: {
+              existingPaidAmount,
+              requestedPaymentTotal,
+              totalValue: pkg.totalValue,
+              maximumNewPayment: Math.max(0, pkg.totalValue - existingPaidAmount)
+            }
+          });
+        }
+
         // Vincular ao pacote
         reuseAppt.package = pkg._id;
         reuseAppt.serviceType = 'package_session';
@@ -920,11 +971,16 @@ export const createPackageV2 = async (req, res) => {
         reuseAppt.billingType = pkg.type === 'convenio' ? 'convenio' :
                                 pkg.type === 'liminar' ? 'liminar' : 'particular';
         const isPrepaidPackage = pkg.paymentType !== 'per-session';
-        FinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, isPrepaidPackage ? 'package_paid' : 'unpaid', { reason: 'reuse_appointment_v2' });
-        FinanceWriteGuard.setAppointmentPaid(reuseAppt, isPrepaidPackage, { reason: 'reuse_appointment_v2' });
+        const reusedIsPaid = isPrepaidPackage || existingPaymentPaid;
+        const reusedPaymentStatus = existingPaymentPaid ? 'paid' : (isPrepaidPackage ? 'package_paid' : 'unpaid');
+        FinanceWriteGuard.setAppointmentPaymentStatus(reuseAppt, reusedPaymentStatus, { reason: 'reuse_appointment_v2' });
+        FinanceWriteGuard.setAppointmentPaid(reuseAppt, reusedIsPaid, { reason: 'reuse_appointment_v2' });
         reuseAppt.paymentOrigin = isPrepaidPackage ? 'package_prepaid' : 'auto_per_session';
+        reuseAppt.visualFlag = reusedIsPaid ? 'ok' : 'pending';
+        reuseAppt.paymentMethod = existingPaymentPaid
+          ? (oldPayment?.paymentMethod || pkg.paymentMethod || reuseAppt.paymentMethod)
+          : (pkg.paymentMethod || reuseAppt.paymentMethod);
         // 🔧 FIX: limpa referência ao payment avulso anterior — agora é do pacote
-        const previousPaymentId = reuseAppt.payment;
         reuseAppt.payment = null;
         await reuseAppt.save({ session: mongoSession });
 
@@ -944,14 +1000,13 @@ export const createPackageV2 = async (req, res) => {
               action: 'REQUIRES_MANUAL_REVIEW'
             });
           } else {
-            const oldPayment = await Payment.findById(previousPaymentId).session(mongoSession);
             if (!oldPayment) {
               logger.warn('[PackageV2] Payment antigo não encontrado no banco — possível lixo legacy', {
                 paymentId: previousPaymentId.toString(),
                 reuseApptId: reuseAppt._id.toString()
               });
-            } else if (oldPayment.status === 'cancelled') {
-              logger.info('[PackageV2] Payment antigo já está cancelled — pulando', {
+            } else if (oldPayment.status === 'canceled') {
+              logger.info('[PackageV2] Payment antigo já está canceled — pulando', {
                 paymentId: previousPaymentId.toString()
               });
             } else if (oldPayment.status === 'paid') {
@@ -973,6 +1028,13 @@ export const createPackageV2 = async (req, res) => {
                 packageId: pkg._id.toString(),
                 appointmentId: reuseAppt._id.toString()
               });
+
+              pkg.totalPaid = roundCurrency(Number(pkg.totalPaid || 0) + existingPaidAmount);
+              pkg.balance = roundCurrency(Math.max(0, Number(pkg.totalValue || 0) - pkg.totalPaid));
+              pkg.financialStatus = pkg.balance <= 0 ? 'paid' : 'partially_paid';
+              if (!pkg.payments.some(id => id.toString() === previousPaymentId.toString())) {
+                pkg.payments.push(previousPaymentId);
+              }
             } else {
               // 🔄 Payment pendente/outro status — converte para não duplicar débito
               await Payment.findByIdAndUpdate(
@@ -1037,7 +1099,10 @@ export const createPackageV2 = async (req, res) => {
             package: pkg._id,
             sessionValue: pkg.sessionValue,
             paymentStatus: reuseAppt.paymentStatus,
-            isPaid: isPrepaidPackage
+            isPaid: reusedIsPaid,
+            paymentOrigin: reuseAppt.paymentOrigin,
+            visualFlag: reuseAppt.visualFlag,
+            paymentMethod: reuseAppt.paymentMethod
           };
           await Session.findByIdAndUpdate(
             reuseAppt.session,
@@ -1200,26 +1265,9 @@ export const createPackageV2 = async (req, res) => {
     await mongoSession.commitTransaction();
     transactionCommitted = true;
     transactionDuration = Date.now() - transactionStartTime;
+    phaseTimings.transactionMs = transactionDuration;
 
-    // ========================================
-    // 🔄 REBUILD SÍNCRONO DA VIEW (para frontend imediato)
-    // ========================================
     let viewBuildResult = null;
-    try {
-      viewBuildResult = await buildPackageView(pkg._id.toString(), { correlationId });
-      logger.info('[PackageV2] View rebuilt synchronously', { 
-        correlationId, 
-        packageId: pkg._id,
-        viewBuilt: viewBuildResult.success 
-      });
-    } catch (viewError) {
-      logger.warn('[PackageV2] Failed to build view synchronously', { 
-        correlationId, 
-        packageId: pkg._id,
-        error: viewError.message 
-      });
-      // Não falha a criação se a view falhar - rota GET tem fallback
-    }
 
     // ========================================
     // 🏥 VINCULAR GUIA DE CONVÊNIO (se aplicável)
@@ -1254,12 +1302,13 @@ export const createPackageV2 = async (req, res) => {
     // 5️⃣ PAYMENTS (só pré-pago) - FORA DA TRANSACTION
     // ========================================
     let createdPayments = [];
+    const paymentsStartTime = Date.now();
     if (model === 'prepaid' && payments.length > 0) {
       try {
         createdPayments = await createPrepaidPayments(pkg, payments);
         // Atualizar package com referências
         await Package.findByIdAndUpdate(pkg._id, {
-          $set: { payments: createdPayments.map(p => p._id) }
+          $addToSet: { payments: { $each: createdPayments.map(p => p._id) } }
         });
 
         // 🔄 Atualiza PaymentsView (read-model) para cada pagamento criado
@@ -1301,6 +1350,26 @@ export const createPackageV2 = async (req, res) => {
         // O log acima já registra a necessidade de reconciliação manual.
       }
     }
+    phaseTimings.paymentsMs = Date.now() - paymentsStartTime;
+
+    // A view deve refletir também os Payments, inclusive um pagamento avulso
+    // pago que tenha sido incorporado ao pacote.
+    const projectionStartTime = Date.now();
+    try {
+      viewBuildResult = await buildPackageView(pkg._id.toString(), { correlationId });
+      logger.info('[PackageV2] View rebuilt synchronously', {
+        correlationId,
+        packageId: pkg._id,
+        viewBuilt: viewBuildResult.success
+      });
+    } catch (viewError) {
+      logger.warn('[PackageV2] Failed to build view synchronously', {
+        correlationId,
+        packageId: pkg._id,
+        error: viewError.message
+      });
+    }
+    phaseTimings.projectionMs = Date.now() - projectionStartTime;
 
     // 🔄 INVALIDA CACHE FINANCEIRO (venda/quitacao de pacote altera caixa)
     invalidateDashboardCache();
@@ -1308,6 +1377,7 @@ export const createPackageV2 = async (req, res) => {
     // ========================================
     // 6️⃣ EVENTOS (Outbox — publicado pelo dispatcher)
     // ========================================
+    const outboxStartTime = Date.now();
     try {
       await saveToOutbox({
         eventType: EventTypes.PACKAGE_CREATED,
@@ -1331,6 +1401,7 @@ export const createPackageV2 = async (req, res) => {
         error: eventError.message 
       });
     }
+    phaseTimings.outboxMs = Date.now() - outboxStartTime;
 
     // ========================================
     // 📊 MÉTRICAS DE PERFORMANCE (HeaderAdmin)
@@ -1356,6 +1427,7 @@ export const createPackageV2 = async (req, res) => {
       // ⏱️ Tempos
       totalDurationMs: totalDuration,
       transactionDurationMs: transactionDuration,
+      phaseTimings,
       // 📊 Operações
       operationsInTransaction: operationsCount,
       estimatedDbQueries: estimatedQueries,
@@ -1429,6 +1501,7 @@ export const createPackageV2 = async (req, res) => {
         performance: {
           totalDurationMs: totalDuration,
           transactionDurationMs: transactionDuration,
+          phaseTimings,
           operationsInTransaction: operationsCount,
           estimatedDbQueries: estimatedQueries,
           // Benchmark: < 200ms = excelente, < 500ms = bom, > 1000ms = lento

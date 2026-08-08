@@ -21,10 +21,11 @@ export async function ensureLeadForAppointment(
   patientId,
   appointmentData = {},
   source = 'agenda_direta',
-  mongoSession = null
+  mongoSession = null,
+  patientSnapshot = null
 ) {
   try {
-    const patient = await Patient.findById(patientId).lean();
+    const patient = patientSnapshot || await Patient.findById(patientId).lean();
     if (!patient) {
       console.log('[ensureLeadForAppointment] Paciente não encontrado:', patientId);
       return null;

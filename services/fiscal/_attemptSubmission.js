@@ -17,18 +17,20 @@ import { FiscalProviderName } from '../../constants/fiscalProviders.js';
 import { FiscalSubmissionOutcome } from '../../constants/fiscalEnums.js';
 import * as FiscalInvoiceService from '../../domain/fiscal/services/FiscalInvoiceService.js';
 import { fiscalInvoiceRepository } from '../../infrastructure/persistence/FiscalInvoiceRepository.js';
+import { ensureDpsIdentity } from './DpsIdentityService.js';
 
 /**
  * Resolve o Adapter concreto a partir do nome já decidido pelo FiscalProviderResolver. Único
  * ponto do CRM que conhece a existência dos 3 Adapters — nem o domínio, nem o Resolver.
- * `ambiente`/`httpsAgent` só fazem sentido pro Sefin Nacional (mTLS real); os outros ignoram.
+ * `ambiente`/`httpsAgent` são usados tanto pela Sefin quanto pela Nota Control (ambas exigem
+ * mTLS); `fiscalProfile` também fornece CNPJ e IM para o lote municipal.
  */
-function resolveAdapter(providerName, { ambiente, httpsAgent } = {}) {
+function resolveAdapter(providerName, { ambiente, httpsAgent, fiscalProfile, certManager } = {}) {
   switch (providerName) {
     case FiscalProviderName.SEFIN_NACIONAL:
       return new SefinNacionalAdapter({ ambiente, httpsAgent });
     case FiscalProviderName.ANAPOLIS_MUNICIPAL:
-      return new AnapolisMunicipalAdapter();
+      return new AnapolisMunicipalAdapter({ ambiente, httpsAgent, fiscalProfile, certManager });
     case FiscalProviderName.MOCK:
     default:
       return new MockAdapter();
@@ -54,14 +56,19 @@ export async function attemptSubmission(fiscalInvoice, submission, snapshot, { c
   // resolve pelo FiscalProviderResolver. `ambiente` vem do FiscalProfile (bug corrigido em
   // 2026-07-29 — antes o adapter sempre assumia Produção Restrita, ignorando esse campo).
   const providerName = resolveProviderName(fiscalProfile);
-  const adapter = overrideAdapter || resolveAdapter(providerName, { ambiente: fiscalProfile.ambiente, httpsAgent });
+  const certManager = realCertManager || new MockCertificateManager();
+  const adapter = overrideAdapter || resolveAdapter(providerName, { ambiente: fiscalProfile.ambiente, httpsAgent, fiscalProfile, certManager });
 
-  const xml = buildDpsXml(snapshot.json, fiscalInvoice, fiscalProfile);
+  // Garante identificação oficial antes de montar/assinar. Também recupera drafts antigos ou
+  // tentativas pendentes criadas antes da implementação da numeração da DPS.
+  const identifiedInvoice = await ensureDpsIdentity(fiscalInvoice, fiscalProfile);
+  const xml = buildDpsXml(snapshot.json, identifiedInvoice, fiscalProfile);
   // Sem certificado real vinculado ainda (perfil incompleto ou ambiente de teste): cai no Mock,
   // mesmo comportamento de antes — nunca bloqueia o fluxo por falta de certificado aqui, quem
   // decide se a emissão pode prosseguir sem certificado é o domínio (EmissionEligibilityValidator).
-  const certManager = realCertManager || new MockCertificateManager();
-  const signedXml = await certManager.sign(xml, certificate);
+  const signedXml = providerName === FiscalProviderName.ANAPOLIS_MUNICIPAL && realCertManager
+    ? await realCertManager.signElement(xml, { id: identifiedInvoice.dpsId, rootLocalName: 'DPS', notaControl: true })
+    : await certManager.sign(xml, certificate);
 
   let result;
   try {
@@ -89,6 +96,15 @@ export async function attemptSubmission(fiscalInvoice, submission, snapshot, { c
       { ...fields, providerSnapshot: providerName, dhEmi: new Date(), dhProc: new Date() },
       { correlationId }
     );
+    if (result.xml) {
+      await FiscalInvoiceService.attachAttachment(fiscalInvoice._id, {
+        type: 'xml_nfse',
+        storageRef: result.xml,
+        mimeType: 'application/xml',
+        size: Buffer.byteLength(result.xml, 'utf8'),
+        generatedAt: new Date()
+      });
+    }
     return { fiscalInvoice: updated, outcome: 'authorized' };
   }
 

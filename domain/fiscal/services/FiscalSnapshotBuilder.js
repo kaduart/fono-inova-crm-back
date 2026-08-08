@@ -36,6 +36,16 @@ export async function buildSnapshot(fiscalInvoice, fiscalSubmissionId, { session
   if (!patient) throw new Error('SNAPSHOT_BUILD_FAILED: paciente não encontrado');
   if (!fiscalProfile) throw new Error('SNAPSHOT_BUILD_FAILED: perfil fiscal não encontrado');
 
+  // Notas antigas/drafts criados por integrações que ainda não enviam fiscalTaker continuam
+  // usando o paciente. Novas emissões pela tela gravam o tomador explicitamente.
+  const taker = fiscalInvoice.fiscalTaker || {
+    name: patient.fullName,
+    cpf: patient.cpf,
+    cnpj: patient.cnpj,
+    address: patient.address
+  };
+  const takerAddress = taker.address;
+
   const dpsJson = {
     infDPS: {
       tpAmb: fiscalProfile.ambiente === 'producao' ? 1 : 2,
@@ -56,18 +66,18 @@ export async function buildSnapshot(fiscalInvoice, fiscalSubmissionId, { session
       },
       toma: {
         id: String(patient._id),
-        nome: patient.fullName,
-        cpf: patient.cpf || null,
-        cnpj: patient.cnpj || null,
+        nome: taker.name,
+        cpf: taker.cpf || null,
+        cnpj: taker.cnpj || null,
         // Fallback documentado: paciente sem município próprio assume o município da clínica
         // (cobre o caso comum — ver comentário em models/Patient.js).
-        end: patient.address ? {
-          xLgr: patient.address.street,
-          nro: patient.address.number,
-          xCpl: null,
-          xBairro: patient.address.district,
-          cMun: patient.address.municipioIBGE || fiscalProfile.municipioIBGE,
-          cep: patient.address.zipCode
+        end: takerAddress ? {
+          xLgr: takerAddress.street,
+          nro: takerAddress.number,
+          xCpl: takerAddress.complement || null,
+          xBairro: takerAddress.district,
+          cMun: takerAddress.municipioIBGE || fiscalProfile.municipioIBGE,
+          cep: takerAddress.zipCode
         } : null
       },
       serv: {

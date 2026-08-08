@@ -117,6 +117,7 @@ async function createWithHybridService(payload, user) {
 
   // 🔹 Cria paciente quando isNewPatient=true e patientInfo é fornecido
   let effectivePatientId = patientId;
+  let effectivePatientSnapshot = null;
   if (!effectivePatientId && payload.isNewPatient && payload.patientInfo) {
     const { fullName, phone, birthDate, email } = payload.patientInfo;
     if (fullName && birthDate) {
@@ -131,6 +132,7 @@ async function createWithHybridService(payload, user) {
       }
       if (existingPatient?._id) {
         effectivePatientId = existingPatient._id.toString();
+        effectivePatientSnapshot = existingPatient;
       } else {
         const newPatient = await Patient.create({
           fullName: fullName.trim(),
@@ -140,6 +142,7 @@ async function createWithHybridService(payload, user) {
           createdBy: user?._id
         });
         effectivePatientId = newPatient._id.toString();
+        effectivePatientSnapshot = newPatient.toObject();
       }
     }
   }
@@ -167,7 +170,9 @@ async function createWithHybridService(payload, user) {
         time: payload.time,
         specialty: payload.specialty,
       },
-      source || 'agenda_direta'
+      source || 'agenda_direta',
+      null,
+      effectivePatientSnapshot
     );
   }
 
@@ -175,7 +180,7 @@ async function createWithHybridService(payload, user) {
     leadSnapshot = await buildLeadSnapshot(effectiveLeadId);
   }
 
-  return await runTransactionWithRetry(async (mongoSession) => {
+  const transactionResult = await runTransactionWithRetry(async (mongoSession) => {
     // 1. Consumir crédito reutilizável atomicamente (se for pacote sem pagamento)
     let creditContext = null;
     let reusedPayment = false;
@@ -205,6 +210,12 @@ async function createWithHybridService(payload, user) {
         userId: user?._id,
         createdBy: user?._id,
         isJointSession: payload.isJointSession || false,
+        patientInfo: effectivePatientSnapshot ? {
+          fullName: effectivePatientSnapshot.fullName || effectivePatientSnapshot.name || '',
+          phone: effectivePatientSnapshot.phone || '',
+          birthDate: effectivePatientSnapshot.dateOfBirth || null,
+          email: effectivePatientSnapshot.email || null,
+        } : undefined,
       },
       mongoSession
     );
@@ -270,39 +281,46 @@ async function createWithHybridService(payload, user) {
       { session: mongoSession, new: false }
     );
 
-    // 7. Commit da transação
-    await mongoSession.commitTransaction();
+    return {
+      hybridResult,
+      reusedPayment,
+    };
+  });
 
-    // 8. Side effects pós-transação (não podem falhar a requisição)
-    try {
-      await emitSocket('appointmentCreated', {
-        _id: hybridResult.appointmentId,
-        patient: effectivePatientId,
-        doctor: doctorId,
-        date: payload.date,
-        time: payload.time,
-        specialty: payload.specialty,
-        source: isPackageSession ? 'crm_package_session' : 'crm_individual',
-      });
-    } catch (socketErr) {
-      console.error('[createAppointmentCommand] Erro ao emitir socket:', socketErr.message);
-    }
+  const { hybridResult, reusedPayment } = transactionResult;
+  const PaymentModel = (await import('../../../models/Payment.js')).default;
 
-    // 9. Retorna dados populados
-    const populatedAppointment = await Appointment.findById(hybridResult.appointmentId)
+  // As três consultas são independentes e acontecem somente após o commit
+  // gerenciado por runTransactionWithRetry.
+  const [populatedAppointment, populatedSession, populatedPayment] = await Promise.all([
+    Appointment.findById(hybridResult.appointmentId)
       .populate('patient doctor session payment package')
-      .lean();
+      .lean(),
+    hybridResult.sessionId
+      ? Session.findById(hybridResult.sessionId).lean()
+      : Promise.resolve(null),
+    hybridResult.paymentId
+      ? PaymentModel.findById(hybridResult.paymentId).lean()
+      : Promise.resolve(null),
+  ]);
 
-    const populatedSession = hybridResult.sessionId
-      ? await Session.findById(hybridResult.sessionId).lean()
-      : null;
+  if (!populatedAppointment) {
+    throw buildError('Agendamento criado, mas não encontrado após o commit', 500, 'CREATED_APPOINTMENT_NOT_FOUND');
+  }
 
-    const PaymentModel = (await import('../../../models/Payment.js')).default;
-    const populatedPayment = hybridResult.paymentId
-      ? await PaymentModel.findById(hybridResult.paymentId).lean()
-      : null;
-
-    await recordAudit({
+  // Socket e auditoria são independentes. A auditoria já é best-effort e o
+  // helper de socket nunca propaga erro; executá-los juntos reduz a latência.
+  await Promise.all([
+    emitSocket('appointmentCreated', {
+      _id: hybridResult.appointmentId,
+      patient: effectivePatientId,
+      doctor: doctorId,
+      date: payload.date,
+      time: payload.time,
+      specialty: payload.specialty,
+      source: isPackageSession ? 'crm_package_session' : 'crm_individual',
+    }),
+    recordAudit({
       user,
       action: 'appointment_created',
       entityType: 'Appointment',
@@ -311,21 +329,21 @@ async function createWithHybridService(payload, user) {
       after: populatedAppointment,
       source: 'appointment_command:createAppointmentCommand:hybrid',
       correlationId: populatedAppointment.correlationId,
-    });
+    }),
+  ]);
 
-    return {
-      appointment: populatedAppointment,
-      session: populatedSession,
-      payment: populatedPayment,
-      data: populatedAppointment,
-      message: isNoAmountPackageSession
-        ? reusedPayment
-          ? 'Sessão de pacote agendada reaproveitando pagamento anterior'
-          : 'Sessão de pacote agendada com sucesso'
-        : hybridResult.message || 'Agendamento criado',
-      reusedPayment,
-    };
-  });
+  return {
+    appointment: populatedAppointment,
+    session: populatedSession,
+    payment: populatedPayment,
+    data: populatedAppointment,
+    message: isNoAmountPackageSession
+      ? reusedPayment
+        ? 'Sessão de pacote agendada reaproveitando pagamento anterior'
+        : 'Sessão de pacote agendada com sucesso'
+      : hybridResult.message || 'Agendamento criado',
+    reusedPayment,
+  };
 }
 
 export default { execute };

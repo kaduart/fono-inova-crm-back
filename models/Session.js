@@ -339,6 +339,13 @@ const sessionSchema = new mongoose.Schema({
 sessionSchema.index({ patient: 1, sessionType: 1, paymentStatus: 1, status: 1 });
 sessionSchema.index({ patient: 1, paymentStatus: 1, status: 1 });
 
+// Projeção de pacotes: busca todas as sessões do pacote já ordenadas.
+// Sem este índice, cada rebuild de PackagesView varre a coleção de Session.
+sessionSchema.index(
+    { package: 1, date: 1, time: 1 },
+    { name: 'package_projection_sessions' }
+);
+
 // 💰 Índices para dashboards financeiros V2 (produção / caixa do profissional)
 sessionSchema.index({ doctor: 1, date: -1, status: 1 }, { name: 'financial_doctor_date_status' });
 sessionSchema.index({ date: -1, status: 1 }, { name: 'financial_date_status' });

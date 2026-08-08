@@ -14,9 +14,10 @@ import { resolveProviderName } from '../../fiscal-provider/FiscalProviderResolve
 import { ANAPOLIS_IBGE_CODE } from '../../fiscal-provider/MunicipioProviderRegistry.js';
 import { MockCertificateManager } from '../../fiscal-provider/CertificateManager.js';
 import { MockAdapter } from '../../adapters/fiscal/MockAdapter.js';
-import { AnapolisMunicipalAdapter } from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
+import { buildNotaControlBatchXml, buildNotaControlSoapRequest, parseNotaControlResponse } from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
 import { FiscalProviderName } from '../../constants/fiscalProviders.js';
 import { RegimeTributario } from '../../constants/fiscalEnums.js';
+import { FISCAL_SERVICE_CATALOG, findFiscalServiceBySpecialty } from '../../domain/fiscal/FiscalServiceCatalog.js';
 
 describe('DpsBuilder.buildDpsXml', () => {
   const snapshot = {
@@ -29,16 +30,30 @@ describe('DpsBuilder.buildDpsXml', () => {
       valores: { vServ: 180 }
     }
   };
-  const fiscalInvoice = { dpsId: 'DPS520110800012345678000199000010000000001' };
+  const fiscalInvoice = {
+    dpsId: 'DPS520110821234567800019900001000000000000001',
+    serie: 1,
+    nDPS: 1
+  };
   const fiscalProfile = { regimeTributario: RegimeTributario.SIMPLES_NACIONAL, municipioIBGE: ANAPOLIS_IBGE_CODE };
 
   it('produz XML bem formado com a raiz DPS/infDPS', () => {
     const xml = buildDpsXml(snapshot, fiscalInvoice, fiscalProfile);
     expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>');
-    expect(xml).toContain('<DPS versao="1.01">');
-    expect(xml).toContain(`<infDPS id="${fiscalInvoice.dpsId}">`);
+    expect(xml).toContain('<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">');
+    expect(xml).toContain(`<infDPS Id="${fiscalInvoice.dpsId}">`);
+    expect(xml).toMatch(/<dhEmi>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-03:00<\/dhEmi>/);
+    expect(xml).toContain('<serie>1</serie>');
+    expect(xml).toContain('<nDPS>1</nDPS>');
     expect(xml).toContain('<cTribNac>040803</cTribNac>');
+    expect(xml).toContain('<cTribMun>040803</cTribMun>');
+    expect(xml).toContain('<cNBS>123019900</cNBS>');
     expect(xml).toContain('<vServ>180</vServ>');
+    expect(xml).toContain('<tribFed></tribFed>');
+    expect(xml).toContain('<totTrib><indTotTrib>0</indTotTrib></totTrib>');
+    expect(xml).toContain('<IBSCBS><finNFSe>0</finNFSe><indFinal>1</indFinal><cIndOp>030101</cIndOp><indDest>0</indDest>');
+    expect(xml).toContain('<gIBSCBS><CST>200</CST><cClassTrib>200029</cClassTrib></gIBSCBS>');
+    expect(xml.indexOf('<IM>123456</IM>')).toBeLessThan(xml.indexOf('<xNome>Clínica Fono Inova</xNome>'));
   });
 
   it('escapa caracteres especiais do tomador (nunca gera XML quebrado)', () => {
@@ -57,6 +72,29 @@ describe('DpsBuilder.buildDpsXml', () => {
   it('mapeia Lucro Presumido para opSimpNac=1 (Não Optante)', () => {
     const xml = buildDpsXml(snapshot, fiscalInvoice, { ...fiscalProfile, regimeTributario: RegimeTributario.LUCRO_PRESUMIDO });
     expect(xml).toContain('<opSimpNac>1</opSimpNac>');
+  });
+
+  it('não presume enquadramento IBS/CBS para um serviço não configurado', () => {
+    const otherService = {
+      ...snapshot,
+      infDPS: { ...snapshot.infDPS, serv: { ...snapshot.infDPS.serv, cTribNac: '010101' } }
+    };
+    expect(() => buildDpsXml(otherService, fiscalInvoice, fiscalProfile))
+      .toThrow('FISCAL_IBSCBS_NAO_CONFIGURADO');
+  });
+});
+
+describe('FiscalServiceCatalog', () => {
+  it('lista todas as dez especialidades canônicas da clínica', () => {
+    expect(FISCAL_SERVICE_CATALOG).toHaveLength(10);
+    expect(FISCAL_SERVICE_CATALOG.map((item) => item.key)).toEqual(expect.arrayContaining([
+      'fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria',
+      'neuroped', 'musicoterapia', 'psicomotricidade', 'psicopedagogia', 'neuropsicologia'
+    ]));
+  });
+
+  it('normaliza o alias neuropediatria', () => {
+    expect(findFiscalServiceBySpecialty('neuropediatria')?.key).toBe('neuroped');
   });
 });
 
@@ -77,6 +115,18 @@ describe('DpsBuilder.extractFieldsFromNfseResponseXml', () => {
 });
 
 describe('FiscalProviderResolver.resolveProviderName', () => {
+  it('Anápolis em produção restrita antes da migração → Nota Control municipal', () => {
+    const provider = resolveProviderName(
+      {
+        municipioIBGE: ANAPOLIS_IBGE_CODE,
+        regimeTributario: RegimeTributario.SIMPLES_NACIONAL,
+        ambiente: 'producao_restrita'
+      },
+      { asOfDate: new Date('2026-08-08') }
+    );
+    expect(provider).toBe(FiscalProviderName.ANAPOLIS_MUNICIPAL);
+  });
+
   it('Anápolis + Lucro Presumido → webservice municipal, sempre', () => {
     const provider = resolveProviderName(
       { municipioIBGE: ANAPOLIS_IBGE_CODE, regimeTributario: RegimeTributario.LUCRO_PRESUMIDO },
@@ -146,11 +196,23 @@ describe('MockCertificateManager', () => {
   });
 });
 
-describe('AnapolisMunicipalAdapter (stub)', () => {
-  it('todos os métodos lançam erro explicando a lacuna, nunca simulam sucesso', async () => {
-    const adapter = new AnapolisMunicipalAdapter();
-    await expect(adapter.submitDps('<DPS/>')).rejects.toThrow('ANAPOLIS_ENDPOINT_DESCONHECIDO');
-    await expect(adapter.queryByChave('x')).rejects.toThrow('ANAPOLIS_ENDPOINT_DESCONHECIDO');
-    await expect(adapter.getDanfse('x')).rejects.toThrow('ANAPOLIS_ENDPOINT_DESCONHECIDO');
+describe('AnapolisMunicipalAdapter (Nota Control)', () => {
+  it('monta o envelope SOAP do lote síncrono com uma DPS', () => {
+    const batch = buildNotaControlBatchXml(
+      '<?xml version="1.0"?><DPS versao="1.01"><infDPS Id="DPS1"><nDPS>11</nDPS></infDPS></DPS>',
+      { cnpj: '12345678000199', inscricaoMunicipal: '142', numeroLote: 11 }
+    );
+    const soap = buildNotaControlSoapRequest(batch);
+    expect(soap).toContain('<nfse:RecepcionarLoteDpsSincrono>');
+    expect(soap).toContain('<nfseCabecMsg><cabecalho versao="1.01" xmlns="http://www.sped.fazenda.gov.br/nfse">');
+    expect(soap).toContain('<LoteDps Id="Lote11" versao="1.01">');
+    expect(soap).toContain('<QuantidadeDps>1</QuantidadeDps>');
+    expect(soap).toContain('<ListaDps><DPS versao="1.01">');
+    expect(soap).not.toContain('&lt;cabecalho');
+  });
+
+  it('interpreta rejeição retornada pela Nota Control', () => {
+    const response = '<RecepcionarLoteDpsSincronoResult>&lt;ListaMensagemRetorno&gt;&lt;MensagemRetorno&gt;&lt;Codigo&gt;E160&lt;/Codigo&gt;&lt;Mensagem&gt;XML inválido&lt;/Mensagem&gt;&lt;/MensagemRetorno&gt;&lt;/ListaMensagemRetorno&gt;</RecepcionarLoteDpsSincronoResult>';
+    expect(parseNotaControlResponse(response)).toMatchObject({ success: false, error: { code: 'E160', message: 'XML inválido' } });
   });
 });

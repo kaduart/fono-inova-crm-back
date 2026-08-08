@@ -116,6 +116,10 @@ export class MockCertificateManager extends CertificateManager {
   async sign(xml) {
     return `${xml}<!-- MOCK_SIGNATURE: não é uma assinatura digital válida, uso restrito a testes -->`;
   }
+
+  async signElement(xml) {
+    return `${xml}<!-- MOCK_SIGNATURE: não é uma assinatura digital válida, uso restrito a testes -->`;
+  }
 }
 
 /**
@@ -147,32 +151,47 @@ export class RealCertificateManager extends CertificateManager {
 
   /**
    * @param {string} xml - XML da DPS não assinado (DpsBuilder.buildDpsXml)
-   * @returns {Promise<string>} XML com <Signature> inserido dentro de infDPS
+   * @returns {Promise<string>} XML com <Signature> inserido como filho de DPS, após infDPS
    */
   async sign(xml) {
-    const { privateKeyPem, certificatePem } = this._extractKeyAndCert();
-
-    const idMatch = xml.match(/<infDPS id="([^"]+)"/);
+    const idMatch = xml.match(/<infDPS Id="([^"]+)"/);
     if (!idMatch) {
-      throw new Error('DPS_SEM_ID: XML da DPS não tem o atributo id em infDPS — não é possível assinar');
+      throw new Error('DPS_SEM_ID: XML da DPS não tem o atributo Id em infDPS — não é possível assinar');
     }
-    const dpsId = idMatch[1];
-    const referenceXpath = `//*[@id='${dpsId}']`;
+    return this.signElement(xml, { id: idMatch[1], rootLocalName: 'DPS' });
+  }
+
+  /** Assina um elemento identificado por @Id e insere Signature como filho da raiz indicada. */
+  async signElement(xml, { id, rootLocalName, notaControl = false }) {
+    const { privateKeyPem, certificatePem } = this._extractKeyAndCert();
+    const referenceXpath = `//*[@Id='${id}']`;
+    const rootXpath = `/*[local-name()='${rootLocalName}']`;
+    const canonicalization = notaControl
+      ? 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+      : 'http://www.w3.org/2001/10/xml-exc-c14n#';
+    const signatureAlgorithm = notaControl
+      ? 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+      : 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+    const digestAlgorithm = notaControl
+      ? 'http://www.w3.org/2000/09/xmldsig#sha1'
+      : 'http://www.w3.org/2001/04/xmlenc#sha256';
 
     const sig = new SignedXml({ privateKey: privateKeyPem, publicCert: certificatePem });
     sig.getKeyInfoContent = SignedXml.getKeyInfoContent; // inclui X509Certificate no <KeyInfo>
-    sig.canonicalizationAlgorithm = 'http://www.w3.org/2001/10/xml-exc-c14n#';
-    sig.signatureAlgorithm = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+    sig.canonicalizationAlgorithm = canonicalization;
+    sig.signatureAlgorithm = signatureAlgorithm;
     sig.addReference({
       xpath: referenceXpath,
-      digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
+      digestAlgorithm,
       transforms: [
         'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
-        'http://www.w3.org/2001/10/xml-exc-c14n#'
+        canonicalization
       ]
     });
 
-    sig.computeSignature(xml, { location: { reference: referenceXpath, action: 'append' } });
+    // DPS_v1.01.xsd: Signature é irmã de infDPS, não filha dele. A referência assinada continua
+    // sendo infDPS/@Id; somente o local físico do elemento XML-DSig muda para a raiz DPS.
+    sig.computeSignature(xml, { location: { reference: rootXpath, action: 'append' } });
 
     return sig.getSignedXml();
   }

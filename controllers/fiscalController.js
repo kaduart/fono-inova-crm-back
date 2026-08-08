@@ -11,18 +11,18 @@ import { fiscalInvoiceRepository } from '../infrastructure/persistence/FiscalInv
 import { fiscalProfileRepository } from '../infrastructure/persistence/FiscalProfileRepository.js';
 import { certificateRepository } from '../infrastructure/persistence/CertificateRepository.js';
 import { fiscalAttachmentRepository } from '../infrastructure/persistence/FiscalAttachmentRepository.js';
-import { fiscalSubmissionRepository } from '../infrastructure/persistence/FiscalSubmissionRepository.js';
-import { fiscalSnapshotRepository } from '../infrastructure/persistence/FiscalSnapshotRepository.js';
 import * as FiscalInvoiceService from '../domain/fiscal/services/FiscalInvoiceService.js';
-import { FiscalProviderName } from '../constants/fiscalProviders.js';
-import { FiscalOriginType } from '../constants/fiscalEnums.js';
+import { FiscalInvoiceStatus, FiscalOriginType } from '../constants/fiscalEnums.js';
 import Payment from '../models/Payment.js';
 import FiscalInvoice from '../models/FiscalInvoice.js';
-import { buildDpsXml } from '../fiscal-provider/DpsBuilder.js';
-import { MockAdapter } from '../adapters/fiscal/MockAdapter.js';
 import { encryptBuffer, encryptString } from '../utils/certificateCrypto.js';
 import { inspectPkcs12 } from '../fiscal-provider/CertificateManager.js';
 import { testFiscalConnection } from '../services/fiscal/TestFiscalConnectionService.js';
+import {
+  FISCAL_SERVICE_CATALOG,
+  findFiscalServiceByCode,
+  findFiscalServiceBySpecialty
+} from '../domain/fiscal/FiscalServiceCatalog.js';
 
 // ============================================================
 // CONFIGURAÇÃO FISCAL (Perfil + Certificado)
@@ -185,6 +185,86 @@ export async function testConnection(req, res) {
 // EMISSÃO E CONSULTA DE NFSe
 // ============================================================
 
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizeAndValidateTaker(input) {
+  if (!input || !['patient', 'responsible', 'company'].includes(input.type)) {
+    throw new Error('TOMADOR_TIPO_INVALIDO');
+  }
+
+  const cpf = onlyDigits(input.cpf);
+  const cnpj = onlyDigits(input.cnpj);
+  const address = input.address || {};
+  const requiredAddress = ['street', 'number', 'district', 'municipioIBGE', 'zipCode'];
+
+  if (!String(input.name || '').trim()) throw new Error('TOMADOR_NOME_OBRIGATORIO');
+  if (input.type === 'company' && cnpj.length !== 14) throw new Error('TOMADOR_CNPJ_INVALIDO');
+  if (input.type !== 'company' && cpf.length !== 11) throw new Error('TOMADOR_CPF_INVALIDO');
+  if (requiredAddress.some((field) => !String(address[field] || '').trim())) {
+    throw new Error('TOMADOR_ENDERECO_INCOMPLETO');
+  }
+  if (onlyDigits(address.zipCode).length !== 8) throw new Error('TOMADOR_CEP_INVALIDO');
+  if (onlyDigits(address.municipioIBGE).length !== 7) throw new Error('TOMADOR_MUNICIPIO_IBGE_INVALIDO');
+
+  return {
+    type: input.type,
+    name: String(input.name).trim(),
+    cpf: input.type === 'company' ? undefined : cpf,
+    cnpj: input.type === 'company' ? cnpj : undefined,
+    address: {
+      street: String(address.street).trim(),
+      number: String(address.number).trim(),
+      complement: String(address.complement || '').trim(),
+      district: String(address.district).trim(),
+      municipioIBGE: onlyDigits(address.municipioIBGE),
+      zipCode: onlyDigits(address.zipCode)
+    }
+  };
+}
+
+export async function getPaymentFiscalContext(req, res) {
+  try {
+    const payment = await Payment.findById(req.params.paymentId)
+      .populate('patient')
+      .populate('appointment', 'specialty')
+      .populate('package', 'sessionType specialty')
+      .populate('doctor', 'specialty');
+    if (!payment?.patient) {
+      return res.status(404).json({ success: false, error: 'PAYMENT_OR_PATIENT_NOT_FOUND', message: 'Pagamento ou paciente não encontrado' });
+    }
+    const patient = payment.patient;
+    const paymentSpecialty = payment.sessionType || payment.serviceType || payment.appointment?.specialty
+      || payment.package?.sessionType || payment.package?.specialty || payment.doctor?.specialty;
+    const suggestedService = findFiscalServiceBySpecialty(paymentSpecialty) || FISCAL_SERVICE_CATALOG[0];
+    res.json({
+      success: true,
+      data: {
+        services: FISCAL_SERVICE_CATALOG,
+        suggestedServiceKey: suggestedService.key,
+        patient: {
+          id: patient._id,
+          name: patient.fullName,
+          cpf: patient.cpf || '',
+          cnpj: patient.cnpj || '',
+          legalGuardian: patient.legalGuardian || '',
+          address: {
+            street: patient.address?.street || '',
+            number: patient.address?.number || '',
+            complement: '',
+            district: patient.address?.district || '',
+            municipioIBGE: patient.address?.municipioIBGE || '',
+            zipCode: patient.address?.zipCode || ''
+          }
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+  }
+}
+
 export async function emitFiscalInvoice(req, res) {
   try {
     const { fiscalProfileId, origin, patient, professional, serviceDescription, serviceCode, valorServico, valorLiquido, vISSQN, dCompet } = req.body;
@@ -233,11 +313,19 @@ export async function emitFromPayment(req, res) {
     if (!payment) {
       return res.status(404).json({ success: false, error: 'PAYMENT_NOT_FOUND', message: 'Pagamento não encontrado' });
     }
+    if (!payment.patient) {
+      return res.status(422).json({ success: false, error: 'PAYMENT_WITHOUT_PATIENT', message: 'O pagamento não possui paciente vinculado' });
+    }
     if (payment.status !== 'paid') {
       return res.status(422).json({ success: false, error: 'PAYMENT_NOT_PAID', message: 'Só é possível emitir NFSe para pagamentos com status Pago' });
     }
 
-    const fiscalProfile = await fiscalProfileRepository.findActiveByCnpj(req.body.cnpj || '12345678000199');
+    // A emissão vinda do caixa não precisa conhecer o CNPJ do prestador: ele pertence à
+    // configuração fiscal, não ao pagamento/tomador. Quando não vier um CNPJ explícito,
+    // usa o perfil ativo da clínica (hoje existe apenas um).
+    const fiscalProfile = req.body.cnpj
+      ? await fiscalProfileRepository.findActiveByCnpj(onlyDigits(req.body.cnpj))
+      : await fiscalProfileRepository.findFirstActive();
     if (!fiscalProfile) {
       return res.status(404).json({ success: false, error: 'FISCAL_PROFILE_NOT_FOUND', message: 'Perfil fiscal não configurado' });
     }
@@ -265,13 +353,47 @@ export async function emitFromPayment(req, res) {
     if (payment.appointment) { originType = 'appointment'; originId = payment.appointment._id.toString(); }
     else if (payment.package) { originType = 'package'; originId = payment.package._id.toString(); }
 
+    const fiscalTaker = normalizeAndValidateTaker(req.body.fiscalTaker);
+    const selectedService = findFiscalServiceByCode(req.body.serviceCode);
+    if (!selectedService) {
+      return res.status(422).json({
+        success: false,
+        error: 'FISCAL_SERVICE_NOT_CONFIGURED',
+        message: 'Selecione uma especialidade configurada no catálogo fiscal da clínica'
+      });
+    }
+    const beneficiarySuffix = fiscalTaker.type === 'patient'
+      ? ''
+      : ` — atendimento prestado ao paciente ${payment.patient.fullName}`;
+    const resolvedServiceDescription = `${req.body.serviceDescription || selectedService.description}${beneficiarySuffix}`;
+
+    // Recuperação transparente de emissão pendente. Se ela ainda não tinha identidade (bug
+    // antigo), atualiza os dados antes do retry. Uma DPS já identificada é apenas reenviada:
+    // seus dados fiscais nunca são sobrescritos depois de receber dpsId.
+    const existingInvoices = await fiscalInvoiceRepository.findByOrigin(originType, originId);
+    const recoverable = existingInvoices.find((invoice) => invoice.status === FiscalInvoiceStatus.PENDING_SUBMISSION);
+    if (recoverable) {
+      const invoiceToRetry = recoverable.dpsId
+        ? recoverable
+        : await fiscalInvoiceRepository.updateFields(recoverable._id, {
+          fiscalTaker,
+          serviceDescription: resolvedServiceDescription,
+          serviceCode: selectedService.serviceCode
+        });
+      const { fiscalInvoice, outcome } = await retryFiscalSubmissionService.retry(invoiceToRetry._id, {
+        correlationId: req.headers['x-correlation-id']
+      });
+      return res.status(200).json({ success: true, data: { fiscalInvoice, outcome, recovered: true } });
+    }
+
     const draft = {
       fiscalProfileId: fiscalProfile._id.toString(),
       origin: { type: originType, id: originId },
       patient: payment.patient._id.toString(),
+      fiscalTaker,
       professional: payment.doctor?._id?.toString(),
-      serviceDescription: req.body.serviceDescription || 'Prestação de serviços de Fonoaudiologia',
-      serviceCode: req.body.serviceCode || fiscalProfile.codigoServicoLC116 || '040803',
+      serviceDescription: resolvedServiceDescription,
+      serviceCode: selectedService.serviceCode,
       valorServico: req.body.valorServico ?? payment.amount,
       valorLiquido: req.body.valorLiquido ?? payment.amount,
       vISSQN: req.body.vISSQN ?? 0,
@@ -285,6 +407,18 @@ export async function emitFromPayment(req, res) {
     console.error('[FiscalController] emitFromPayment error:', error);
     if (error.message?.includes('FISCAL_INVOICE_NOT_ELIGIBLE')) {
       return res.status(422).json({ success: false, error: 'FISCAL_INVOICE_NOT_ELIGIBLE', message: error.message, reasons: error.reasons });
+    }
+    if (error.message?.startsWith('TOMADOR_')) {
+      const messages = {
+        TOMADOR_TIPO_INVALIDO: 'Selecione quem será o tomador da nota',
+        TOMADOR_NOME_OBRIGATORIO: 'Informe o nome ou razão social do tomador',
+        TOMADOR_CPF_INVALIDO: 'Informe um CPF com 11 dígitos para o tomador',
+        TOMADOR_CNPJ_INVALIDO: 'Informe um CNPJ com 14 dígitos para o tomador',
+        TOMADOR_ENDERECO_INCOMPLETO: 'Preencha o endereço completo do tomador',
+        TOMADOR_CEP_INVALIDO: 'Informe um CEP com 8 dígitos',
+        TOMADOR_MUNICIPIO_IBGE_INVALIDO: 'Informe o código IBGE do município com 7 dígitos'
+      };
+      return res.status(422).json({ success: false, error: error.message, message: messages[error.message] || error.message });
     }
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
   }
@@ -360,6 +494,13 @@ export async function downloadFiscalInvoiceXml(req, res) {
     if (!fiscalInvoice) {
       return res.status(404).json({ success: false, error: 'FISCAL_INVOICE_NOT_FOUND' });
     }
+    if (fiscalInvoice.status !== FiscalInvoiceStatus.AUTHORIZED) {
+      return res.status(409).json({
+        success: false,
+        error: 'NFSE_NOT_AUTHORIZED',
+        message: 'A NFS-e ainda não foi autorizada; o XML oficial não está disponível'
+      });
+    }
 
     const attachments = await fiscalAttachmentRepository.findByType(fiscalInvoice._id, 'xml_nfse');
     if (attachments.length > 0) {
@@ -367,21 +508,11 @@ export async function downloadFiscalInvoiceXml(req, res) {
       return res.set('Content-Type', 'application/xml').send(attachments[0].storageRef);
     }
 
-    // Fallback: gera XML on-the-fly a partir do último snapshot (útil para notas autorizadas
-    // antes de existir o attachment persistido, ou em desenvolvimento com MockAdapter).
-    const submissions = await fiscalSubmissionRepository.findByFiscalInvoice(fiscalInvoice._id);
-    if (!submissions.length) {
-      return res.status(404).json({ success: false, error: 'FISCAL_SUBMISSION_NOT_FOUND' });
-    }
-    const lastSubmission = submissions[submissions.length - 1];
-    const snapshot = await fiscalSnapshotRepository.findByFiscalSubmission(lastSubmission._id);
-    if (!snapshot) {
-      return res.status(404).json({ success: false, error: 'FISCAL_SNAPSHOT_NOT_FOUND' });
-    }
-
-    const fiscalProfile = await fiscalProfileRepository.findById(fiscalInvoice.fiscalProfileId);
-    const xml = buildDpsXml(snapshot.json, fiscalInvoice, fiscalProfile);
-    res.set('Content-Type', 'application/xml').send(xml);
+    return res.status(404).json({
+      success: false,
+      error: 'NFSE_XML_NOT_AVAILABLE',
+      message: 'O XML oficial da NFS-e autorizada não foi armazenado'
+    });
   } catch (error) {
     console.error('[FiscalController] downloadFiscalInvoiceXml error:', error);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
@@ -394,6 +525,13 @@ export async function downloadFiscalInvoicePdf(req, res) {
     if (!fiscalInvoice) {
       return res.status(404).json({ success: false, error: 'FISCAL_INVOICE_NOT_FOUND' });
     }
+    if (fiscalInvoice.status !== FiscalInvoiceStatus.AUTHORIZED) {
+      return res.status(409).json({
+        success: false,
+        error: 'NFSE_NOT_AUTHORIZED',
+        message: 'A NFS-e ainda não foi autorizada; o DANFSe não está disponível'
+      });
+    }
 
     const attachments = await fiscalAttachmentRepository.findByType(fiscalInvoice._id, 'danfse_pdf');
     if (attachments.length > 0) {
@@ -401,12 +539,11 @@ export async function downloadFiscalInvoicePdf(req, res) {
       return res.set('Content-Type', 'application/pdf').send(buffer);
     }
 
-    // Fallback: MockAdapter para DANFSe em desenvolvimento.
-    const providerName = FiscalProviderName.MOCK;
-    const adapter = new MockAdapter({ forceOutcome: 'success' });
-    const { pdfBase64 } = await adapter.getDanfse(fiscalInvoice.chaveAcesso || 'MOCK');
-    const buffer = Buffer.from(pdfBase64, 'base64');
-    res.set('Content-Type', 'application/pdf').send(buffer);
+    return res.status(404).json({
+      success: false,
+      error: 'DANFSE_NOT_AVAILABLE',
+      message: 'O DANFSe oficial ainda não foi obtido do provedor fiscal'
+    });
   } catch (error) {
     console.error('[FiscalController] downloadFiscalInvoicePdf error:', error);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });

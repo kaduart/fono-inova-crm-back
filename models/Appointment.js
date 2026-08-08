@@ -461,6 +461,12 @@ appointmentSchema.index({ doctor: 1, date: 1, operationalStatus: 1 });
 // 🔥 OTIMIZAÇÃO: Query por período só (quando não filtra por doctor/patient)
 appointmentSchema.index({ date: -1 });
 
+// Projeção de pacotes: contagem de sessões concluídas/canceladas por pacote.
+appointmentSchema.index(
+  { package: 1, operationalStatus: 1 },
+  { name: 'package_projection_status' }
+);
+
 // ─── VIRTUAL ────────────────────────────────────────────────
 appointmentSchema.virtual('rescheduleHistory', {
   ref: 'Appointment',

@@ -30,6 +30,23 @@ const fiscalInvoiceItemSchema = new mongoose.Schema({
   serviceDate: { type: Date }
 }, { _id: true });
 
+// Snapshot do tomador informado no momento da emissão. O tomador pode ser diferente do
+// paciente/beneficiário (ex.: pai ou mãe que contratou e pagou o atendimento de uma criança).
+const fiscalTakerSchema = new mongoose.Schema({
+  type: { type: String, enum: ['patient', 'responsible', 'company'], required: true },
+  name: { type: String, required: true, trim: true },
+  cpf: { type: String, trim: true },
+  cnpj: { type: String, trim: true },
+  address: {
+    street: { type: String, trim: true },
+    number: { type: String, trim: true },
+    complement: { type: String, trim: true },
+    district: { type: String, trim: true },
+    municipioIBGE: { type: String, trim: true },
+    zipCode: { type: String, trim: true }
+  }
+}, { _id: false });
+
 const fiscalInvoiceSchema = new mongoose.Schema({
   status: {
     type: String,
@@ -61,6 +78,7 @@ const fiscalInvoiceSchema = new mongoose.Schema({
   },
 
   dpsId: { type: String, maxlength: 45 },
+  nDPS: { type: Number, min: 1 },
   chaveAcesso: { type: String, maxlength: 53, unique: true, sparse: true },
   nNFSe: { type: Number },
   serie: { type: Number },
@@ -74,6 +92,7 @@ const fiscalInvoiceSchema = new mongoose.Schema({
 
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
   responsibleParty: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' },
+  fiscalTaker: { type: fiscalTakerSchema },
   professional: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
   packageRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Package' },
 

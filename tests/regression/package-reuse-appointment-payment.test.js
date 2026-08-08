@@ -225,6 +225,9 @@ describe('🚨 REGRESSÃO — Zion Bug (sessão avulsa → pacote)', () => {
         expect(updatedSession.package.toString()).toBe(packageId);
         expect(updatedSession.isPaid).toBe(true);
         expect(updatedSession.paymentStatus).toBe('package_paid');
+        expect(updatedSession.paymentOrigin).toBe('package_prepaid');
+        expect(updatedSession.visualFlag).toBe('ok');
+        expect(updatedSession.paymentMethod).toBe('pix');
 
         // ── 4. NÃO deve existir dívida fantasma no patientBalance ──
         const PatientBalance = (await import('../../models/PatientBalance.js')).default;
@@ -293,6 +296,70 @@ describe('🚨 REGRESSÃO — Zion Bug (sessão avulsa → pacote)', () => {
         expect(updatedSession.package.toString()).toBe(packageId);
         expect(updatedSession.isPaid).toBe(false);
         expect(updatedSession.paymentStatus).toBe('unpaid');
+        expect(updatedSession.paymentOrigin).toBe('auto_per_session');
+        expect(updatedSession.visualFlag).toBe('pending');
+        expect(updatedSession.paymentMethod).toBe('pix');
+    });
+
+    it('deve preservar sessão avulsa já paga e contabilizar o valor no pacote PER-SESSION', async () => {
+        const patient = await createPatient();
+        const doctor = await createDoctor();
+        const today = moment().add(2, 'days').format('YYYY-MM-DD');
+        const time = '10:40';
+
+        const { appointment, session, payment } = await createAvulsoAppointment(patient, doctor, today, time);
+        await Payment.findByIdAndUpdate(payment._id, { status: 'paid', paidAt: new Date() });
+        await Appointment.findByIdAndUpdate(appointment._id, {
+            paymentStatus: 'paid', isPaid: true, visualFlag: 'ok'
+        }, { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' });
+        await Session.findByIdAndUpdate(session._id, {
+            paymentStatus: 'paid', isPaid: true, visualFlag: 'ok'
+        }, { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' });
+
+        const payload = {
+            patientId: patient._id.toString(),
+            doctorId: doctor._id.toString(),
+            specialty: 'fonoaudiologia',
+            sessionType: 'fonoaudiologia',
+            sessionValue: 150,
+            totalSessions: 1,
+            totalValue: 150,
+            type: 'package',
+            model: 'per_session',
+            paymentMethod: 'pix',
+            durationMonths: 1,
+            sessionsPerWeek: 1,
+            appointmentId: appointment._id.toString(),
+            schedule: [{ date: today, time }]
+        };
+
+        const res = await request(app)
+            .post('/api/v2/packages')
+            .set('Authorization', `Bearer ${jwt.sign({ _id: new mongoose.Types.ObjectId().toString(), role: 'admin' }, 'zion-test-secret-123')}`)
+            .send(payload)
+            .expect(201);
+
+        const packageId = res.body.data.packageId;
+        const [pkg, reusedAppt, updatedSession, oldPayment] = await Promise.all([
+            Package.findById(packageId),
+            Appointment.findById(appointment._id),
+            Session.findById(session._id),
+            Payment.findById(payment._id),
+        ]);
+
+        expect(reusedAppt.isPaid).toBe(true);
+        expect(reusedAppt.paymentStatus).toBe('paid');
+        expect(reusedAppt.visualFlag).toBe('ok');
+        expect(updatedSession.isPaid).toBe(true);
+        expect(updatedSession.paymentStatus).toBe('paid');
+        expect(updatedSession.paymentOrigin).toBe('auto_per_session');
+        expect(updatedSession.visualFlag).toBe('ok');
+        expect(oldPayment.status).toBe('paid');
+        expect(oldPayment.package.toString()).toBe(packageId);
+        expect(pkg.payments.map(String)).toContain(payment._id.toString());
+        expect(pkg.totalPaid).toBe(150);
+        expect(pkg.balance).toBe(0);
+        expect(pkg.financialStatus).toBe('paid');
     });
 
     it('NÃO deve converter payment se ele estiver vinculado a outro appointment (blindagem multi-vínculo)', async () => {

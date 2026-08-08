@@ -12,6 +12,7 @@ import {
   listCertificates,
   emitFiscalInvoice,
   emitFromPayment,
+  getPaymentFiscalContext,
   listFiscalInvoices,
   getFiscalInvoice,
   retryFiscalInvoice,
@@ -46,6 +47,7 @@ router.post('/test-connection', auth, testConnection);
 // Emissão e consulta
 router.post('/nfse/emit', auth, emitFiscalInvoice);
 router.post('/nfse/emit-from-payment', auth, emitFromPayment);
+router.get('/nfse/payment/:paymentId/context', auth, getPaymentFiscalContext);
 router.get('/nfse', auth, listFiscalInvoices);
 router.get('/nfse/:id', auth, getFiscalInvoice);
 router.post('/nfse/:id/retry', auth, retryFiscalInvoice);

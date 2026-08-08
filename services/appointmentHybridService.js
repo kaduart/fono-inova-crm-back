@@ -66,7 +66,10 @@ export class AppointmentHybridService {
         });
 
         // Resolve patientInfo do documento do paciente
-        const patientDoc = await Patient.findById(patientId).select('fullName name phone dateOfBirth email').session(mongoSession).lean();
+        const patientDoc = data.patientInfo || await Patient.findById(patientId)
+            .select('fullName name phone dateOfBirth email')
+            .session(mongoSession)
+            .lean();
         const patientInfo = patientDoc ? {
             fullName: patientDoc.fullName || patientDoc.name || '',
             phone: patientDoc.phone || '',
