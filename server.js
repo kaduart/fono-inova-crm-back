@@ -86,7 +86,7 @@ import { startCron, startAllCrons } from './config/cronManager.js';
 
 import "./models/index.js";
 import jwt from "jsonwebtoken";
-import { auth } from "./middleware/auth.js";
+import { auth, authorize } from "./middleware/auth.js";
 // ======================================================
 // 📦 Rotas
 // ======================================================
@@ -405,13 +405,14 @@ app.use('/api/v2/health', healthV2Routes);
 // 🚀 NOVO: Health Check de Migração V1→V2 (monitora quando pode desativar V1)
 app.use('/api/health', healthMigrationRoutes);
 
-// 🔍 DEBUG: Verificar variáveis de ambiente críticas
-app.get('/debug/env', (req, res) => {
+// 🔍 Diagnóstico operacional restrito a administradores.
+// Nunca devolver valores de conexão/segredos: presença booleana é suficiente.
+app.get('/debug/env', auth, authorize(['admin']), (req, res) => {
     res.json({
         ENABLE_WORKERS: process.env.ENABLE_WORKERS,
         WORKER_GROUP: process.env.WORKER_GROUP,
         NODE_ENV: process.env.NODE_ENV,
-        REDIS_URL: process.env.REDIS_URL,
+        REDIS_CONFIGURED: Boolean(process.env.REDIS_URL),
         MONGO_URI: process.env.MONGO_URI ? '[REDACTED]' : null,
         workersAtivos: global.workersAtivos ?? false,
         lastWorkerError: global.lastWorkerError || null,
@@ -1011,5 +1012,4 @@ process.on('SIGINT', async () => {
   }
   process.exit(0);
 });
-
 
