@@ -8,7 +8,6 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
-import InsuranceGuideView from '../models/InsuranceGuideView.js';
 import Convenio from '../models/Convenio.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';

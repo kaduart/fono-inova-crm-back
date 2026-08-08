@@ -49,7 +49,6 @@ beforeAll(async () => {
   await import('../../models/FinancialLedger.js');
   await import('../../models/MedicalEvent.js');
   await import('../../models/FinancialEvent.js');
-  await import('../../models/InsuranceGuideView.js');
   await import('../../models/InsurancePlan.js');
 
   Patient = (await import('../../models/Patient.js')).default;
