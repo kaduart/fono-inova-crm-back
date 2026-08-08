@@ -20,6 +20,7 @@ import {
     deriveBillingLabel,
     hasMixedStates,
     composeGuideAggregates,
+    composePendingCompetenceBreakdown,
     competenceDateFor,
     resolveSessionValue,
     SessionPhase,
@@ -374,6 +375,49 @@ describe('📅 competenceDateFor() — cada fase tem seu eixo de data', () => {
         ].map(p => competenceDateFor(p, { session, payment, documentationSentAt }).toISOString());
 
         assert.strictEqual(new Set(datas).size, 4, 'as 4 fases devem cair em meses/datas distintos');
+    });
+});
+
+describe('📆 composePendingCompetenceBreakdown() — backlog por guia', () => {
+    const referenceDate = new Date('2026-08-07T12:00:00.000Z');
+
+    it('separa mês atual e anteriores usando Session.date', () => {
+        const result = composePendingCompetenceBreakdown([
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-08-02', value: 140 },
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-07-30', value: 120 },
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-05-10', value: 100 }
+        ], referenceDate);
+
+        assert.deepStrictEqual(result, {
+            referenceMonth: '2026-08',
+            current: { value: 140, sessions: 1 },
+            previous: { value: 220, sessions: 2, oldestCompetence: '2026-05' }
+        });
+    });
+
+    it('não mistura documentationSent, billed, received nem sessão futura', () => {
+        const result = composePendingCompetenceBreakdown([
+            { phase: SessionPhase.DOCUMENTATION_SENT, date: '2026-06-01', value: 100 },
+            { phase: SessionPhase.BILLED, date: '2026-05-01', value: 200 },
+            { phase: SessionPhase.RECEIVED, date: '2026-04-01', value: 300 },
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-09-01', value: 400 }
+        ], referenceDate);
+
+        assert.deepStrictEqual(result.previous, {
+            value: 0, sessions: 0, oldestCompetence: null
+        });
+        assert.deepStrictEqual(result.current, { value: 0, sessions: 0 });
+    });
+
+    it('arredonda valores financeiros sem perder a quantidade de sessões', () => {
+        const result = composePendingCompetenceBreakdown([
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-07-01', value: 10.005 },
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-07-02', value: 20.004 }
+        ], referenceDate);
+
+        assert.deepStrictEqual(result.previous, {
+            value: 30.01, sessions: 2, oldestCompetence: '2026-07'
+        });
     });
 });
 

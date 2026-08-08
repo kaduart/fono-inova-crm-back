@@ -1963,6 +1963,7 @@ export async function getGuidesView(req, res) {
       data: result.guides,
       orphanSessions: result.orphanSessions,
       totals: result.totals,
+      competenceBreakdown: result.competenceBreakdown,
       pagination: result.pagination
     });
   } catch (error) {

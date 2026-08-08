@@ -224,6 +224,53 @@ export function composeGuideAggregates(classifiedSessions) {
   };
 }
 
+/**
+ * Decompõe somente sessões `pendingBilling` entre a competência corrente e o
+ * backlog anterior. O eixo é sempre Session.date (materializado em `date` no
+ * detalhe classificado); nenhuma outra fase participa deste indicador.
+ *
+ * A função é usada tanto por guia quanto no agregado da resposta, garantindo
+ * que a UI não precise reconstruir competência nem recalcular valores.
+ */
+export function composePendingCompetenceBreakdown(classifiedSessions, referenceDate = new Date()) {
+  const reference = new Date(referenceDate);
+  // Preserva a semântica antiga: "mês atual" é o calendário local do
+  // servidor, não o mês UTC (importante na virada do mês em São Paulo).
+  const referenceMonth = `${reference.getFullYear()}-${String(reference.getMonth() + 1).padStart(2, '0')}`;
+  let currentValue = 0;
+  let currentSessions = 0;
+  let previousValue = 0;
+  let previousSessions = 0;
+  let oldestCompetence = null;
+
+  for (const session of classifiedSessions || []) {
+    if (session?.phase !== SessionPhase.PENDING_BILLING || !session.date) continue;
+    const date = new Date(session.date);
+    if (Number.isNaN(date.getTime())) continue;
+    const competence = date.toISOString().slice(0, 7);
+
+    if (competence === referenceMonth) {
+      currentValue += session.value || 0;
+      currentSessions += 1;
+    } else if (competence < referenceMonth) {
+      previousValue += session.value || 0;
+      previousSessions += 1;
+      if (!oldestCompetence || competence < oldestCompetence) oldestCompetence = competence;
+    }
+  }
+
+  const round = n => Math.round(n * 100) / 100;
+  return {
+    referenceMonth,
+    current: { value: round(currentValue), sessions: currentSessions },
+    previous: {
+      value: round(previousValue),
+      sessions: previousSessions,
+      oldestCompetence
+    }
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Leitura composta
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,6 +351,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       guides: [],
       orphanSessions: [],
       totals: composeGuideAggregates([]),
+      competenceBreakdown: composePendingCompetenceBreakdown([]),
       pagination: { page: 1, limit, total: 0, pages: 0 }
     };
   }
@@ -449,6 +497,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       // A verdade do ciclo financeiro vive aqui.
       sessions: aggregates.sessions,
       financialSummary: aggregates.financialSummary,
+      competenceBreakdown: composePendingCompetenceBreakdown(inPeriod),
 
       // Rótulo visual apenas — a verdade está em `sessions`/`financialSummary`.
       billingState: deriveBillingLabel(phaseCounters, { isClosed }),
@@ -490,6 +539,9 @@ export async function getInsuranceGuidesView(filters = {}) {
   const totals = composeGuideAggregates(
     bucketed.flatMap(g => g.sessionDetails)
   );
+  const competenceBreakdown = composePendingCompetenceBreakdown(
+    bucketed.flatMap(g => g.sessionDetails)
+  );
 
   const totalGuides = bucketed.length;
   const paged = limit > 0
@@ -517,6 +569,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       batchId: idOf(s.billingBatchId)
     })),
     totals,
+    competenceBreakdown,
     pagination: {
       page: limit > 0 ? page : 1,
       limit,
@@ -532,6 +585,7 @@ export default {
   deriveBillingLabel,
   hasMixedStates,
   composeGuideAggregates,
+  composePendingCompetenceBreakdown,
   competenceDateFor,
   resolveSessionValue,
   SessionPhase,
