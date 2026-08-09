@@ -69,6 +69,45 @@ const normalizePaymentMethod = (method) => {
     return methodMap[method] || 'cash';
 };
 
+const toCents = value => Math.round(Number(value) * 100);
+const fromCents = value => value / 100;
+const normalizeSplitMethod = method => normalizePaymentMethod(method) === 'cash' ? 'dinheiro' : normalizePaymentMethod(method);
+
+function allocateSplitMethods(payments, splitMethods, paidAt) {
+    if (!splitMethods?.length) return new Map();
+    const buckets = splitMethods.map(item => ({
+        method: normalizeSplitMethod(item.method),
+        remaining: toCents(item.amount)
+    }));
+    const allocations = new Map();
+
+    for (const payment of payments) {
+        let remaining = toCents(payment.amount);
+        const parts = [];
+        for (const bucket of buckets) {
+            if (remaining === 0) break;
+            if (bucket.remaining === 0) continue;
+            const allocated = Math.min(remaining, bucket.remaining);
+            parts.push({ method: bucket.method, amount: fromCents(allocated), date: paidAt });
+            bucket.remaining -= allocated;
+            remaining -= allocated;
+        }
+        if (remaining !== 0) {
+            const error = new Error('Split insuficiente para distribuir entre os Payments');
+            error.code = 'INVALID_SPLIT_ALLOCATION';
+            throw error;
+        }
+        allocations.set(payment._id.toString(), parts);
+    }
+
+    if (buckets.some(bucket => bucket.remaining !== 0)) {
+        const error = new Error('Split excede o total dos Payments');
+        error.code = 'INVALID_SPLIT_ALLOCATION';
+        throw error;
+    }
+    return allocations;
+}
+
 // Mapeia método do Payment (cash/credit_card/bank_transfer) de volta para o enum do Appointment
 const mapPaymentMethodToAppointment = (method) => {
     const map = {
@@ -1415,7 +1454,7 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 
 // ============================================
 // POST /api/v2/payments/bulk-settle
-// Fecha sessões pós-pagas: marca pendentes como pagas + cria 1 recibo consolidado no caixa
+// Fecha sessoes pos-pagas: originais viram caixa e um recibo agregado preserva auditoria
 // ============================================
 router.post('/bulk-settle', auth, async (req, res) => {
     const { paymentIds, paymentMethod, totalAmount, notes, splitMethods } = req.body;
@@ -1423,15 +1462,23 @@ router.post('/bulk-settle', auth, async (req, res) => {
     if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
         return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
     }
+    if (new Set(paymentIds.map(String)).size !== paymentIds.length) {
+        return res.status(400).json({ success: false, error: 'paymentIds duplicados não são permitidos', code: 'DUPLICATE_PAYMENT_IDS' });
+    }
+    if (paymentIds.some(id => !isValidObjectId(id))) {
+        return res.status(400).json({ success: false, error: 'paymentId inválido', code: 'INVALID_PAYMENT_ID' });
+    }
+    if (!splitMethods?.length && !VALID_PAYMENT_METHODS.includes(paymentMethod)) {
+        return res.status(400).json({ success: false, error: 'Método de pagamento inválido', code: 'INVALID_PAYMENT_METHOD' });
+    }
 
     // Validação básica de splitMethods
     if (splitMethods !== undefined) {
         if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
             return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
         }
-        const splitTotal = splitMethods.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        if (Math.abs(splitTotal - totalAmount) > 0.01) {
-            return res.status(400).json({ success: false, error: `Total do split (${splitTotal}) não corresponde ao total (${totalAmount})`, code: 'SPLIT_AMOUNT_MISMATCH' });
+        if (splitMethods.some(entry => !VALID_PAYMENT_METHODS.includes(entry.method) || !Number.isFinite(Number(entry.amount)) || Number(entry.amount) <= 0)) {
+            return res.status(400).json({ success: false, error: 'Split contém método ou valor inválido', code: 'INVALID_SPLIT' });
         }
     }
 
@@ -1450,10 +1497,24 @@ router.post('/bulk-settle', auth, async (req, res) => {
             await mongoSession.abortTransaction();
             return res.status(400).json({ success: false, error: 'Nenhum payment encontrado' });
         }
+        if (allRequestedPayments.length !== paymentIds.length) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, error: 'Conjunto de Payments incompleto', code: 'PAYMENT_SET_INCOMPLETE' });
+        }
 
         const now = new Date();
         const patientId = allRequestedPayments[0].patient?.toString() || allRequestedPayments[0].patientId;
         const clinicId = allRequestedPayments[0].clinicId || 'default';
+        const hasMixedPatients = allRequestedPayments.some(p => (p.patient?.toString() || p.patientId) !== patientId);
+        const hasMixedClinics = allRequestedPayments.some(p => (p.clinicId || 'default') !== clinicId);
+        if (hasMixedPatients || hasMixedClinics) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                error: 'Todos os Payments devem pertencer ao mesmo paciente e clínica',
+                code: hasMixedPatients ? 'MIXED_PATIENTS' : 'MIXED_CLINICS'
+            });
+        }
 
         // 🛡️ IDEMPOTÊNCIA: recusa fechamento já realizado para o mesmo conjunto de payments
         const sortedIds = allRequestedPayments.map(p => p._id.toString()).sort().join(',');
@@ -1481,6 +1542,22 @@ router.post('/bulk-settle', auth, async (req, res) => {
             await mongoSession.abortTransaction();
             return res.status(400).json({ success: false, error: 'Nenhum payment pendente encontrado' });
         }
+        if (payments.length !== allRequestedPayments.length) {
+            await mongoSession.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                error: 'Todos os Payments devem estar abertos para a mesma quitacao',
+                code: 'MIXED_SETTLEMENT_STATUSES'
+            });
+        }
+        if (payments.some(p => p.status === 'partial')) {
+            await mongoSession.abortTransaction();
+            return res.status(422).json({
+                success: false,
+                error: 'Quitação em lote de Payment partial exige saldo remanescente explícito',
+                code: 'PARTIAL_SETTLEMENT_REQUIRES_REMAINING_AMOUNT'
+            });
+        }
 
         // 🛡️ BACKEND é fonte de verdade do valor: soma dos payments efetivamente quitados.
         // O front pode enviar totalAmount como referência, mas nunca substitui o cálculo real.
@@ -1493,9 +1570,17 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         }
         const totalSettled = computedTotal;
+        if (splitMethods?.length) {
+            const splitTotalCents = splitMethods.reduce((sum, entry) => sum + toCents(entry.amount), 0);
+            if (splitTotalCents !== toCents(computedTotal)) {
+                await mongoSession.abortTransaction();
+                return res.status(400).json({ success: false, error: 'Total do split não corresponde ao total calculado', code: 'SPLIT_AMOUNT_MISMATCH' });
+            }
+        }
         const primaryMethod = splitMethods?.length
-            ? (splitMethods[0].method || paymentMethod || 'dinheiro')
-            : (paymentMethod || 'dinheiro');
+            ? normalizePaymentMethod(splitMethods[0].method)
+            : normalizePaymentMethod(paymentMethod);
+        const splitAllocations = allocateSplitMethods(payments, splitMethods, now);
 
         // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
         const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
@@ -1525,13 +1610,15 @@ router.post('/bulk-settle', auth, async (req, res) => {
         // paymentStatusService) são publicados depois, em paralelo, sem bloquear
         // sequencialmente.
         const oldStatusById = new Map(payments.map(p => [p._id.toString(), p.status]));
-        const bulkOps = payments.map(p => ({
-            updateOne: {
-                filter: { _id: p._id },
+        const bulkOps = payments.map(p => {
+            const allocation = splitAllocations.get(p._id.toString()) || [];
+            const method = allocation[0]?.method || primaryMethod;
+            return ({ updateOne: {
+                filter: { _id: p._id, status: 'pending' },
                 update: {
                     $set: {
                         status: 'paid',
-                        paymentMethod: primaryMethod,
+                        paymentMethod: method,
                         // 💰 Regime de caixa: a quitação SEMPRE reconhece o dinheiro no dia em
                         // que ela acontece — nunca preserva financialDate/paidAt antigos do
                         // payment (que só existiam enquanto ele era pending, sem sentido de
@@ -1540,34 +1627,48 @@ router.post('/bulk-settle', auth, async (req, res) => {
                         // aparecerem em dias que o dinheiro nunca entrou de fato.
                         paidAt: now,
                         financialDate: now,
-                        // 🧾 Propaga split para os payments individuais para exibição consistente
-                        ...(splitMethods?.length ? { splitMethods: splitMethods.map(s => ({ method: s.method, amount: Number(s.amount) || 0, date: now })) } : {})
-                    }
+                        // Cada Payment recebe apenas a sua parcela do split agregado.
+                        ...(splitMethods?.length ? { splitMethods: allocation } : {})
+                    },
+                    ...(!splitMethods?.length ? { $unset: { splitMethods: 1 } } : {})
                 }
-            }
-        }));
-        await Payment.bulkWrite(bulkOps, { session: mongoSession });
+            }});
+        });
+        const bulkResult = await Payment.bulkWrite(bulkOps, { session: mongoSession });
+        if (bulkResult.modifiedCount !== payments.length) {
+            const error = new Error('Payments alterados concorrentemente durante a quitação');
+            error.code = 'BULK_SETTLEMENT_CONFLICT';
+            throw error;
+        }
 
         // 2. Atualiza appointments vinculados
         const appointmentIds = payments.filter(p => p.appointment).map(p => p.appointment.toString());
         if (appointmentIds.length > 0) {
             const Appointment = mongoose.model('Appointment');
-            await Appointment.updateMany(
-                { _id: { $in: appointmentIds } },
-                { $set: { paymentStatus: 'paid', isPaid: true } },
-                { session: mongoSession }
-            );
+            await Appointment.bulkWrite(payments.filter(p => p.appointment).map(p => {
+                const allocation = splitAllocations.get(p._id.toString()) || [];
+                const method = allocation[0]?.method || primaryMethod;
+                const paymentForms = allocation.length
+                    ? allocation.map(part => ({ amount: part.amount, date: now, method: mapPaymentMethodToAppointment(part.method) }))
+                    : [{ amount: p.amount, date: now, method: mapPaymentMethodToAppointment(method) }];
+                return { updateOne: {
+                    filter: { _id: p.appointment },
+                    update: { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: mapPaymentMethodToAppointment(method), paymentForms } }
+                }};
+            }), { session: mongoSession });
         }
 
         // 2b. Atualiza sessions vinculadas (espelho do estado de pagamento)
         const sessionIds = payments.filter(p => p.session).map(p => p.session.toString());
         if (sessionIds.length > 0) {
             const Session = mongoose.model('Session');
-            await Session.updateMany(
-                { _id: { $in: sessionIds } },
-                { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: primaryMethod, paidAt: now } },
-                { session: mongoSession }
-            );
+            await Session.bulkWrite(payments.filter(p => p.session).map(p => {
+                const allocation = splitAllocations.get(p._id.toString()) || [];
+                return { updateOne: {
+                    filter: { _id: p.session },
+                    update: { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: allocation[0]?.method || primaryMethod, paidAt: now } }
+                }};
+            }), { session: mongoSession });
         }
 
         // 3. Atualiza packages afetados: recalcula totalPaid/balance a partir das sessions pagas
@@ -1615,7 +1716,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             }
         }
 
-        // 5. Cria 1 recibo consolidado que aparece no caixa do dia
+        // 5. Cria recibo consolidado auditavel, com contribuicao zero ao caixa
         // serviceDate = data mais recente das sessões sendo quitadas (regime de competência)
         const _settledDates = payments
             .map(p => p.serviceDate || p.paymentDate)
@@ -1645,26 +1746,13 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         if (splitMethods?.length) {
             receiptData.splitMethods = splitMethods.map(s => ({
-                method: s.method,
+                method: normalizeSplitMethod(s.method),
                 amount: Number(s.amount) || 0,
                 date: now
             }));
         }
 
         const receipt = await Payment.create([receiptData], { session: mongoSession });
-
-        // Sincroniza paymentForms nos appointments vinculados (espelho para UI/histórico)
-        if (appointmentIds.length > 0) {
-            const Appointment = mongoose.model('Appointment');
-            const paymentForms = splitMethods?.length
-                ? splitMethods.map(s => ({ amount: Number(s.amount) || 0, date: now, method: s.method }))
-                : [{ amount: totalSettled, date: now, method: _receiptPaymentMethod }];
-            await Appointment.updateMany(
-                { _id: { $in: appointmentIds } },
-                { $set: { paymentForms } },
-                { session: mongoSession }
-            );
-        }
 
         // 5b. Salva eventos no Outbox DENTRO da transação (garantia arquitetural).
         // O OutboxDispatcher publica nas filas após o commit. Isso evita eventos
@@ -1680,7 +1768,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
                 from: oldStatusById.get(p._id.toString()),
                 to: 'paid',
                 amount: p.amount,
-                paymentMethod: paymentMethod || p.paymentMethod,
+                paymentMethod: splitAllocations.get(p._id.toString())?.[0]?.method || primaryMethod,
                 financialDate: now,
                 paidAt: now,
                 kind: p.kind,
@@ -1705,6 +1793,19 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
+        const cacheResults = await Promise.allSettled([
+            import('./financialDashboard.v2.js').then(({ invalidateDashboardCache }) => invalidateDashboardCache()),
+            clearCashflowCache(undefined, { throwOnError: true })
+        ]);
+        cacheResults.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                logger.warn('[V2 bulk-settle] Falha ao invalidar cache após commit', {
+                    cache: index === 0 ? 'dashboard_ufs' : 'cashflow',
+                    error: result.reason?.message
+                });
+            }
+        });
+
         // 6. Rebuild das PackagesView em background (não bloqueia resposta)
         if (affectedPackageIds.length > 0) {
             Promise.allSettled(
@@ -1720,7 +1821,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         }
 
-        logger.info('[V2 bulk-settle] Fechamento realizado', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });
+        logger.info('[V2 bulk-settle] Fechamento realizado; recibo agregador nao contabilizavel', { count: payments.length, totalSettled, patientId, receiptId: receipt[0]._id });
 
         res.json({
             success: true,
@@ -1737,7 +1838,9 @@ router.post('/bulk-settle', auth, async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         logger.error('[V2 bulk-settle] Erro:', error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const isConflict = error.code === 'BULK_SETTLEMENT_CONFLICT'
+            || error?.errorLabels?.includes?.('TransientTransactionError');
+        res.status(isConflict ? 409 : 500).json({ success: false, error: error.message, code: error.code });
     } finally {
         mongoSession.endSession();
     }

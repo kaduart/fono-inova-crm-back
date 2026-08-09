@@ -79,8 +79,13 @@ Toda sessão completada tem um valor financeiro determinado pela seguinte hierar
 | `appointment_payment` | Pagamento vinculado a agendamento | ✅ Sim |
 | `revenue_recognition` | Reconhecimento de receita (liminar/pacote) | ✅ Sim |
 | `package_consumed` | Consumo de sessão de pacote | ❌ Nunca |
-| `monthly_settlement` | Fechamento mensal | ✅ Sim |
-| `debt_settlement` | Quitação de dívida | ✅ Sim |
+| `monthly_settlement` | Recibo agregador de fechamento mensal | Nao; os Payments em `settledPaymentIds` entram |
+| `debt_settlement` | Recibo agregador de quitacao de divida | Nao; os Payments em `settledPaymentIds` entram |
+
+`monthly_settlement` e `debt_settlement` preservam valor, metodo e vinculos para
+auditoria, mas sua contribuicao ao caixa e zero. Eles nao sao estorno, receita
+adicional ou uma segunda liquidacao. No `bulk-settle`, somente os Payments
+originais que transitam para `paid` representam o dinheiro recebido.
 
 ### Payment.status
 

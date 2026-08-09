@@ -13,19 +13,31 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import request from 'supertest';
 import express from 'express';
+import moment from 'moment-timezone';
 
 vi.mock('../../middleware/auth.js', () => ({
     __esModule: true,
     auth: (req, res, next) => {
         req.user = { _id: new mongoose.Types.ObjectId(), role: 'admin' };
         next();
+    },
+    authorize: () => (req, res, next) => next()
+}));
+
+vi.mock('../../config/redisConnection.js', () => ({
+    redisConnection: {},
+    safeRedis: {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue('OK'),
+        del: vi.fn().mockResolvedValue(0),
+        scan: vi.fn().mockResolvedValue(['0', []])
     }
 }));
 
 let mongoReplSet;
 let app;
 let server;
-let Patient, Payment;
+let Patient, Payment, calculateCash, calculateCashForDashboard, calculateCashByDay, invalidateUFSCache;
 
 beforeAll(async () => {
     mongoReplSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -40,26 +52,31 @@ beforeAll(async () => {
 
     const paymentRouter = (await import('../../routes/payment.v2.js')).default;
     app.use('/payments', paymentRouter);
+    app.use('/cashflow', (await import('../../routes/cashflow.v2.js')).default);
+    app.use('/financial/dashboard', (await import('../../routes/financialDashboard.v2.js')).default);
+
+    ({ calculateCash, calculateCashForDashboard, calculateCashByDay, invalidateUFSCache } = await import('../../services/unifiedFinancialService.v2.js'));
 
     server = app.listen(0);
 });
 
 afterAll(async () => {
-    await server.close();
+    if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect();
-    await mongoReplSet.stop();
+    if (mongoReplSet) await mongoReplSet.stop();
 });
 
 beforeEach(async () => {
     await Patient.deleteMany({});
     await Payment.deleteMany({});
+    invalidateUFSCache?.();
 });
 
 async function createPatient(name) {
     return Patient.create({ fullName: name, phone: '11999999999' });
 }
 
-async function createPendingPayment(patient, amount, method = 'pix') {
+async function createPendingPayment(patient, amount, method = 'pix', overrides = {}) {
     return Payment.create({
         patient: patient._id,
         patientId: patient._id.toString(),
@@ -70,13 +87,31 @@ async function createPendingPayment(patient, amount, method = 'pix') {
         billingType: 'particular',
         kind: 'session_payment',
         kindConfidence: 'high',
-        kindSource: 'manual'
+        kindSource: 'manual',
+        ...overrides
     });
+}
+
+async function assertCanonicalCash(expectedTotal, expectedIds) {
+    invalidateUFSCache();
+    const start = new Date(Date.now() - 86_400_000);
+    const end = new Date(Date.now() + 86_400_000);
+    const [cash, dashboardCash, daily] = await Promise.all([
+        calculateCash(start, end),
+        calculateCashForDashboard(start, end),
+        calculateCashByDay(start, end)
+    ]);
+    expect(cash.total).toBe(expectedTotal);
+    expect(dashboardCash.total).toBe(expectedTotal);
+    expect(Object.values(cash.byMethod).reduce((sum, value) => sum + value, 0)).toBe(expectedTotal);
+    expect(Object.values(dashboardCash.byMethod).reduce((sum, value) => sum + value, 0)).toBe(expectedTotal);
+    expect([...daily.values()].reduce((sum, day) => sum + day.caixa, 0)).toBe(expectedTotal);
+    expect(cash.payments.map(payment => payment._id.toString()).sort()).toEqual([...expectedIds].sort());
 }
 
 describe('POST /payments/bulk-settle', () => {
     it('deve quitar múltiplos payments pendentes e criar um recibo consolidado', async () => {
-        const patient = await createPatient('Bulk Settle Test');
+        const patient = await createPatient('Paciente Quitacao');
         const p1 = await createPendingPayment(patient, 100);
         const p2 = await createPendingPayment(patient, 150);
         const p3 = await createPendingPayment(patient, 250);
@@ -110,6 +145,19 @@ describe('POST /payments/bulk-settle', () => {
             [p1._id.toString(), p2._id.toString(), p3._id.toString()].sort()
         );
         expect(settlements[0].bulkSettlementKey).toBeTruthy();
+        await assertCanonicalCash(500, [p1._id.toString(), p2._id.toString(), p3._id.toString()]);
+
+        const now = moment.tz('America/Sao_Paulo');
+        const [cashflowResponse, dashboardResponse] = await Promise.all([
+            request(server).get('/cashflow').query({ date: now.format('YYYY-MM-DD') }),
+            request(server).get('/financial/dashboard').query({ month: now.month() + 1, year: now.year() })
+        ]);
+        expect(cashflowResponse.status).toBe(200);
+        expect(dashboardResponse.status).toBe(200);
+        expect(cashflowResponse.body.data.caixa.total).toBe(500);
+        expect(cashflowResponse.body.data.transacoes.reduce((sum, item) => sum + item.valor, 0)).toBe(500);
+        expect(dashboardResponse.body.resumo.caixa).toBe(500);
+        expect(Object.values(dashboardResponse.body.resumo.caixaDetalhe.byMethod).reduce((sum, value) => sum + value, 0)).toBe(500);
     });
 
     it('deve ser idempotente: segundo bulk-settle com mesmos IDs não cria recibo duplicado', async () => {
@@ -182,7 +230,8 @@ describe('POST /payments/bulk-settle', () => {
             _id: { $in: [p1._id, p2._id] },
             status: 'paid'
         }).lean();
-        expect(paidPayments.every(p => p.splitMethods?.length === 2)).toBe(true);
+        expect(paidPayments.every(p => (p.splitMethods || []).reduce((sum, part) => sum + part.amount, 0) === p.amount)).toBe(true);
+        await assertCanonicalCash(300, [p1._id.toString(), p2._id.toString()]);
     });
 
     it('deve rejeitar split quando a soma não bate com o total', async () => {
@@ -227,4 +276,78 @@ describe('POST /payments/bulk-settle', () => {
         expect(res.status).toBe(400);
         expect(res.body.success).toBe(false);
     });
-});
+
+    it('rejeita partial sem transformar o saldo aberto em recebimento integral', async () => {
+        const patient = await createPatient('Paciente Parcial');
+        const partial = await createPendingPayment(patient, 300, 'pix', { status: 'partial' });
+        const res = await request(server).post('/payments/bulk-settle').send({
+            paymentIds: [partial._id.toString()], paymentMethod: 'pix'
+        });
+        expect(res.status).toBe(422);
+        expect(res.body.code).toBe('PARTIAL_SETTLEMENT_REQUIRES_REMAINING_AMOUNT');
+        expect((await Payment.findById(partial._id)).status).toBe('partial');
+        expect(await Payment.countDocuments({ kind: 'monthly_settlement' })).toBe(0);
+    });
+
+    it('rejeita conjunto com status mistos sem escrita parcial', async () => {
+        const patient = await createPatient('Paciente Status Misto');
+        const pending = await createPendingPayment(patient, 100);
+        const paid = await createPendingPayment(patient, 200, 'pix', { status: 'paid', paidAt: new Date(), financialDate: new Date() });
+        const res = await request(server).post('/payments/bulk-settle').send({
+            paymentIds: [pending._id.toString(), paid._id.toString()], paymentMethod: 'pix'
+        });
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('MIXED_SETTLEMENT_STATUSES');
+        expect((await Payment.findById(pending._id)).status).toBe('pending');
+        expect(await Payment.countDocuments({ kind: 'monthly_settlement' })).toBe(0);
+    });
+
+    it('rejeita IDs duplicados, conjunto incompleto e pacientes ou clinicas diferentes sem escrita', async () => {
+        const patientA = await createPatient('Paciente A');
+        const patientB = await createPatient('Paciente B');
+        const p1 = await createPendingPayment(patientA, 100, 'pix', { clinicId: 'clinic-a' });
+        const p2 = await createPendingPayment(patientB, 200, 'pix', { clinicId: 'clinic-a' });
+        const p3 = await createPendingPayment(patientA, 200, 'pix', { clinicId: 'clinic-b' });
+
+        const cases = [
+            { ids: [p1._id.toString(), p1._id.toString()], code: 'DUPLICATE_PAYMENT_IDS' },
+            { ids: [p1._id.toString(), new mongoose.Types.ObjectId().toString()], code: 'PAYMENT_SET_INCOMPLETE' },
+            { ids: [p1._id.toString(), p2._id.toString()], code: 'MIXED_PATIENTS' },
+            { ids: [p1._id.toString(), p3._id.toString()], code: 'MIXED_CLINICS' }
+        ];
+        for (const testCase of cases) {
+            const res = await request(server).post('/payments/bulk-settle').send({ paymentIds: testCase.ids, paymentMethod: 'pix' });
+            expect(res.status).toBe(400);
+            expect(res.body.code).toBe(testCase.code);
+        }
+        expect(await Payment.countDocuments({ kind: 'monthly_settlement' })).toBe(0);
+        expect(await Payment.countDocuments({ status: 'paid' })).toBe(0);
+    });
+
+    it('duas chamadas concorrentes produzem um unico recibo e um unico efeito financeiro', async () => {
+        const patient = await createPatient('Paciente Concorrencia');
+        const p1 = await createPendingPayment(patient, 100);
+        const p2 = await createPendingPayment(patient, 200);
+        const body = { paymentIds: [p1._id.toString(), p2._id.toString()], paymentMethod: 'pix' };
+        const results = await Promise.all([
+            request(server).post('/payments/bulk-settle').send(body),
+            request(server).post('/payments/bulk-settle').send(body)
+        ]);
+        expect(results.map(result => result.status).sort()).toEqual([200, 409]);
+        expect(await Payment.countDocuments({ kind: 'monthly_settlement' })).toBe(1);
+        await assertCanonicalCash(300, [p1._id.toString(), p2._id.toString()]);
+    });
+
+    it('monthly_settlement e debt_settlement preservam auditoria com contribuicao zero', async () => {
+        const patient = await createPatient('Paciente Recibos');
+        const original = await createPendingPayment(patient, 300);
+        const res = await request(server).post('/payments/bulk-settle').send({ paymentIds: [original._id.toString()], paymentMethod: 'pix' });
+        expect(res.status).toBe(200);
+        await Payment.create({
+            patient: patient._id, patientId: patient._id.toString(), amount: 300,
+            paymentMethod: 'pix', status: 'paid', paymentDate: new Date(), financialDate: new Date(),
+            billingType: 'particular', kind: 'debt_settlement', settledPaymentIds: [original._id], paidAt: new Date()
+        });
+        await assertCanonicalCash(300, [original._id.toString()]);
+    });
+}, 60_000);

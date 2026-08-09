@@ -1046,9 +1046,20 @@ async function _buildMonthResponse({ month }) {
     };
 }
 
-export function clearCashflowCache(date) {
+export async function clearCashflowCache(date, { throwOnError = false } = {}) {
     if (!date) {
         _cashflowCache.clear();
+        try {
+            let cursor = '0';
+            do {
+                const [nextCursor, keys] = await safeRedis.scan(cursor, 'MATCH', `${REDIS_CACHE_PREFIX}*`, 'COUNT', 100);
+                cursor = nextCursor;
+                if (keys.length) await safeRedis.del(...keys);
+            } while (cursor !== '0');
+        } catch (error) {
+            console.warn('[cashflow.v2] Falha ao invalidar cache Redis completo:', error.message);
+            if (throwOnError) throw error;
+        }
         return;
     }
     const month = date.length >= 7 ? date.substring(0, 7) : date;
@@ -1066,26 +1077,20 @@ export function clearCashflowCache(date) {
         _redisKey(undefined, date, date),
         _redisKey(undefined, undefined, undefined, month)
     ];
-    for (const k of keysToDelete) {
-        safeRedis.del(k).catch(() => {});
-    }
-
-    // Redis: scan por qualquer chave de cashflow que contenha a data (ranges variados)
     try {
+        await Promise.all(keysToDelete.map(k => safeRedis.del(k)));
+
+        // Redis: scan por qualquer chave de cashflow que contenha a data (ranges variados)
         const pattern = `${REDIS_CACHE_PREFIX}*${date}*`;
         let cursor = '0';
-        const scanAndDelete = async () => {
-            do {
-                const [nextCursor, keys] = await safeRedis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-                cursor = nextCursor;
-                if (keys.length) {
-                    await safeRedis.del(...keys);
-                }
-            } while (cursor !== '0');
-        };
-        scanAndDelete().catch(() => {});
+        do {
+            const [nextCursor, keys] = await safeRedis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+            cursor = nextCursor;
+            if (keys.length) await safeRedis.del(...keys);
+        } while (cursor !== '0');
     } catch (e) {
-        // ignore
+        console.warn('[cashflow.v2] Falha ao invalidar cache Redis por data:', e.message);
+        if (throwOnError) throw e;
     }
 }
 

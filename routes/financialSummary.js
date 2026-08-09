@@ -16,7 +16,7 @@ import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { CASH_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
+import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
 
 const router = Router();
 
@@ -139,9 +139,9 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
         ]
     };
     // 🚫 exclui kinds que representam consumo/recibo agregado, não dinheiro novo
-    // recebido (ver constants/financial.js CASH_EXCLUDED_KINDS — bug de dupla
+    // recebido (ver constants/financial.js LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS — bug de dupla
     // contagem confirmado em produção 2026-07-07 com monthly_settlement).
-    const match = { ...patientMatch, kind: { $nin: CASH_EXCLUDED_KINDS } };
+    const match = { ...patientMatch, kind: { $nin: LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS } };
     if (packageId) {
         // Package pode ser null em appointments avulsos — filtramos pelo appointment
         // 🔧 TAMBÉM incluímos payments ligados diretamente ao package (ex: package_receipt com appointment:null)
@@ -212,7 +212,7 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
 
     // 🆕 SSOT: Breakdown por billingType para evitar inflar particular com liminar
     //
-    // 🚨 FIX LOCAL (2026-07-10): NÃO reusar `match.kind` (CASH_EXCLUDED_KINDS) aqui.
+    // 🚨 FIX LOCAL (2026-07-10): NÃO reusar `match.kind` (LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS) aqui.
     // Essa constante exclui `package_receipt` pensando no modelo LIMINAR, onde a venda
     // (package_receipt) e o reconhecimento de receita por sessão (revenue_recognition)
     // são dois eventos financeiros independentes — somar os dois duplicaria.
@@ -397,7 +397,7 @@ router.get('/patient/:patientId/paid-payments', asyncHandler(async (req, res) =>
     const paidPayments = await Payment.find({
         $or: [{ patient: patientOid }, { patient: patientId }, { patientId: patientId }],
         status: 'paid',
-        kind: { $nin: CASH_EXCLUDED_KINDS }
+        kind: { $nin: LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS }
     })
     .sort({ financialDate: -1, paidAt: -1 })
     .populate('appointment', 'date time sessionValue')

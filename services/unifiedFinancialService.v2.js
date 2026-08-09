@@ -18,6 +18,27 @@ import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
+import { CASH_NON_COUNTABLE_KINDS } from '../constants/financial.js';
+
+const CASH_BY_METHOD_STAGES = [
+    { $project: { methodParts: { $cond: [
+        { $gt: [{ $size: { $ifNull: ['$splitMethods', []] } }, 0] },
+        '$splitMethods',
+        [{ method: '$paymentMethod', amount: '$amount' }]
+    ] } } },
+    { $unwind: '$methodParts' },
+    { $group: {
+        _id: { $switch: {
+            branches: [
+                { case: { $regexMatch: { input: { $toLower: { $ifNull: ['$methodParts.method', ''] } }, regex: /^pix$/ } }, then: 'pix' },
+                { case: { $regexMatch: { input: { $toLower: { $ifNull: ['$methodParts.method', ''] } }, regex: /cartao|card|credito|debito|credit|debit/ } }, then: 'cartao' },
+                { case: { $regexMatch: { input: { $toLower: { $ifNull: ['$methodParts.method', ''] } }, regex: /dinheiro|cash/ } }, then: 'dinheiro' }
+            ],
+            default: 'outros'
+        } },
+        total: { $sum: '$methodParts.amount' }
+    } }
+];
 
 // Cache interno para funções dashboard-optimized — reduz recálculo quando múltiplos callers
 // pedem o mesmo período (ex: calculateRealTime pede month + today).
@@ -72,7 +93,7 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
-        kind: { $ne: 'package_consumed' },
+        kind: { $nin: CASH_NON_COUNTABLE_KINDS },
         // convenio entra no caixa apenas quando status='paid' (via processReturn do lote)
         // não excluir billingType: 'convenio' aqui — pagamentos pendentes/billed não passam pelo status: 'paid'
         $and: [
@@ -107,21 +128,7 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
             total: [
                 { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
             ],
-            byMethod: [
-                { $group: {
-                    _id: {
-                        $switch: {
-                            branches: [
-                                { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /^pix$/ } }, then: 'pix' },
-                                { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /cartao|card|crédito|debito|credit|debit/ } }, then: 'cartao' },
-                                { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /dinheiro|cash/ } }, then: 'dinheiro' }
-                            ],
-                            default: 'outros'
-                        }
-                    },
-                    total: { $sum: '$amount' }
-                }}
-            ],
+            byMethod: CASH_BY_METHOD_STAGES,
             byType: [
                 { $group: {
                     _id: {
@@ -283,7 +290,7 @@ export async function calculateCashForDashboard(start, end) {
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
-        kind: { $ne: 'package_consumed' },
+        kind: { $nin: CASH_NON_COUNTABLE_KINDS },
         $and: [
             {
                 $or: [
@@ -313,21 +320,7 @@ export async function calculateCashForDashboard(start, end) {
                 total: [
                     { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
                 ],
-                byMethod: [
-                    { $group: {
-                        _id: {
-                            $switch: {
-                                branches: [
-                                    { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /^pix$/ } }, then: 'pix' },
-                                    { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /cartao|card|crédito|debito|credit|debit/ } }, then: 'cartao' },
-                                    { case: { $regexMatch: { input: { $toLower: '$paymentMethod' }, regex: /dinheiro|cash/ } }, then: 'dinheiro' }
-                                ],
-                                default: 'outros'
-                            }
-                        },
-                        total: { $sum: '$amount' }
-                    }}
-                ],
+                byMethod: CASH_BY_METHOD_STAGES,
                 byType: [
                     { $group: {
                         _id: {
@@ -426,7 +419,7 @@ export async function calculateCashByDay(start, end) {
         { $match: {
             status: 'paid',
             amount: { $gt: 0 },
-            kind: { $ne: 'package_consumed' },
+            kind: { $nin: CASH_NON_COUNTABLE_KINDS },
             // convenio entra apenas quando status='paid' (via processReturn) — não excluir aqui
             $and: [
                 {
@@ -914,7 +907,7 @@ export async function calculateCashTotal(start, end) {
     const match = {
         status: 'paid',
         amount: { $gt: 0 },
-        kind: { $ne: 'package_consumed' },
+        kind: { $nin: CASH_NON_COUNTABLE_KINDS },
         $and: [
             {
                 $or: [

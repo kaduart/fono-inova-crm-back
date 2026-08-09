@@ -131,7 +131,9 @@ describe('calculateCash — regras de filtro', () => {
     await calculateCash(start, end);
     const match = getMatch();
 
-    expect(match.kind).toEqual({ $ne: 'package_consumed' });
+    expect(match.kind).toEqual({
+      $nin: ['package_consumed', 'monthly_settlement', 'debt_settlement']
+    });
   });
 
   it('4b. isFromPackage=true deve ser excluído (exceto kind=session_payment)', async () => {

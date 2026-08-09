@@ -360,8 +360,8 @@ if (!existing) await new Payment(...).save();
 | `appointment_payment` | ✅ Sim | Pagamento vinculado a agendamento |
 | `revenue_recognition` | ✅ Sim | Reconhecimento liminar/pacote |
 | `package_consumed` | ❌ Nunca | Consumo de sessão de pacote |
-| `monthly_settlement` | ✅ Sim | Fechamento mensal |
-| `debt_settlement` | ✅ Sim | Quitação de dívida |
+| `monthly_settlement` | Nao | Recibo agregador; originais em `settledPaymentIds` entram |
+| `debt_settlement` | Nao | Recibo agregador; originais em `settledPaymentIds` entram |
 
 ---
 

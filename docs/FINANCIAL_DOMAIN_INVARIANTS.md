@@ -515,6 +515,20 @@ Instrumentação da atribuição no mesmo período: `resolvedBySessionDoctor: 35
 
 ---
 
+## INVARIANTE 17 - Recibo agregado nao e nova entrada de caixa
+
+No `POST /api/v2/payments/bulk-settle`, os Payments originais quitados sao as
+contribuicoes canonicas. `monthly_settlement` e `debt_settlement` sao recibos
+auditaveis, mantem `amount`, metodo e `settledPaymentIds`, mas contribuem zero ao
+caixa. Um mesmo recebimento nunca pode ser somado pelo original e pelo recibo.
+
+O conjunto deve pertencer ao mesmo paciente e a mesma clinica. O split global
+deve fechar em centavos com o total calculado pelo backend e cada Payment deve
+receber somente sua propria alocacao. `partial` nao pode ser convertido pelo
+valor integral enquanto o modelo nao expuser inequivocamente o saldo restante.
+Retry e concorrencia devem produzir um unico commit financeiro. Todos os caches
+financeiros afetados sao invalidados somente depois desse commit.
+
 ## Violações conhecidas (pendentes de correção)
 
 | Invariante | Violação | Arquivo | Status |

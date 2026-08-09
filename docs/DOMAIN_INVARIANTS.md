@@ -417,6 +417,25 @@ Checklist pós-deploy: (1) conectar sessão (QR), (2) enviar mensagem pra númer
 
 ---
 
+### ADR-017: Payments originais sao o caixa no bulk-settle
+
+**Decisao:** `monthly_settlement` e `debt_settlement` sao recibos agregadores
+auditaveis e nao contabilizaveis. A entrada canonica e composta exclusivamente
+pelos Payments originais listados em `settledPaymentIds`, apos sua transicao
+transacional para `paid`. A constante `CASH_NON_COUNTABLE_KINDS` rege Caixa,
+Dashboard e agregacao diaria.
+
+**Alternativa rejeitada:** contabilizar somente o recibo e tornar os originais
+nao contabilizaveis. Essa alternativa esconderia a granularidade canonica por
+sessao, exigiria uma nova semantica de status/vinculo nos originais e ampliaria
+o impacto para consumidores historicos. Manter ambos contabilizaveis foi
+rejeitado porque duplica deterministicamente o dinheiro recebido.
+
+**Consequencias:** o endpoint rejeita IDs duplicados, ausentes, pacientes ou
+clinicas mistos antes de escrever; valida split contra o total calculado; rejeita
+`partial` sem saldo restante explicito; usa escrita condicional dentro de
+transacao para serializar concorrencia; e invalida caches somente apos commit.
+
 ## Changelog
 
 | Data | Mudança |

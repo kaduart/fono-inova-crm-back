@@ -20,7 +20,21 @@ export const PAYMENT_KIND = Object.freeze({
   DEBT_SETTLEMENT: 'debt_settlement',
 });
 
-// ─── Kinds que NUNCA devem somar como caixa/receita direta ───
+// Recibos agregadores preservam auditoria e vinculo, mas nao representam
+// uma nova entrada. Os Payments originais em settledPaymentIds sao o caixa.
+export const CASH_AGGREGATE_RECEIPT_KINDS = Object.freeze([
+  PAYMENT_KIND.MONTHLY_SETTLEMENT,
+  PAYMENT_KIND.DEBT_SETTLEMENT,
+]);
+
+// Predicado canonico dos fluxos de caixa V2. PACKAGE_RECEIPT nao entra aqui:
+// ele representa o recebimento real da venda pre-paga.
+export const CASH_NON_COUNTABLE_KINDS = Object.freeze([
+  PAYMENT_KIND.PACKAGE_CONSUMED,
+  ...CASH_AGGREGATE_RECEIPT_KINDS,
+]);
+
+// ─── Exclusoes de views legadas de paciente/reconciliacao ───
 // Motivo por kind:
 //   PACKAGE_CONSUMED  → consumo de crédito já pago na compra, não é dinheiro novo
 //   PACKAGE_RECEIPT   → a venda do pacote já é contada; sessões individuais não somam de novo
@@ -28,14 +42,16 @@ export const PAYMENT_KIND = Object.freeze({
 //     que ele lista em `settledPaymentIds` já são contados individualmente — somar os
 //     dois é dupla contagem (bug real encontrado em produção 2026-07-07, ver
 //     back/docs/finance-integrity-audit/).
-// Toda query que soma `Payment.amount WHERE status='paid'` DEVE excluir esses kinds.
+// NAO usar esta lista como predicado canonico de caixa: ela exclui package_receipt
+// por uma regra especifica das views/reconciliacao legadas. Caixa V2 usa somente
+// CASH_NON_COUNTABLE_KINDS.
 //
 // ⚠️ NÃO tocar nesta constante pra corrigir o caso "particularPaid zerado em pacote
 // prepaid" (2026-07-10) — ela é usada por paymentSync.service.js com uma semântica
 // própria (package_receipt nunca é reconciliado por edição de paymentForms, motivo
 // diferente do "caixa"). O fix desse caso fica local em financialSummary.js, escopado
 // por packageId — ver PARTICULAR_CASH_EXCLUDED_KINDS lá.
-export const CASH_EXCLUDED_KINDS = Object.freeze([
+export const LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS = Object.freeze([
   PAYMENT_KIND.PACKAGE_CONSUMED,
   PAYMENT_KIND.PACKAGE_RECEIPT,
   PAYMENT_KIND.MONTHLY_SETTLEMENT,
