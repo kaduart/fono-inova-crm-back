@@ -216,6 +216,11 @@ describe('Delivery Provider - Canal email', () => {
     expect(result.status).toBe('queued');
     expect(result.jobId).toBe('job-test-id');
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      'send-communication-email',
+      expect.objectContaining({ communicationId: communication._id.toString() }),
+      expect.any(Object)
+    );
 
     const updated = await InsuranceCommunication.findById(communication._id).lean();
     expect(updated.status).toBe('sending');
