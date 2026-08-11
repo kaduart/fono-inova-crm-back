@@ -110,6 +110,7 @@ export async function sendCommunication(communicationId, payload = {}) {
   const provider = resolveProvider(deliveryMethod);
   const isResend = isAlreadyDelivered(communication.status);
   const context = {
+    communicationId,
     communication,
     package: pkg,
     to: payload.to,
