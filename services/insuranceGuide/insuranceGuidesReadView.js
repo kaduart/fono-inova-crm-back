@@ -492,7 +492,8 @@ export async function getInsuranceGuidesView(filters = {}) {
     documentationByGuide.set(gid, {
       sentAt: comm.sentAt || comm.invoiceDate || comm.updatedAt,
       sentAtIsProxy: !comm.sentAt,
-      invoiceNumber: comm.invoiceNumber || null
+      invoiceNumber: comm.invoiceNumber || null,
+      communicationId: idOf(comm._id)
     });
   }
 
@@ -503,7 +504,10 @@ export async function getInsuranceGuidesView(filters = {}) {
   for (const comm of communications) {
     const submissionId = idOf(comm.billingSubmissionId);
     if (submissionId && !submissionCommunicationById.has(submissionId)) {
-      submissionCommunicationById.set(submissionId, comm);
+      submissionCommunicationById.set(submissionId, {
+        communicationId: idOf(comm._id),
+        ...comm
+      });
     }
   }
   const documentedSubmissionSessions = new Map();
@@ -514,7 +518,8 @@ export async function getInsuranceGuidesView(filters = {}) {
       const documentation = {
         sentAt: comm.sentAt || comm.invoiceDate || comm.updatedAt,
         sentAtIsProxy: !comm.sentAt,
-        invoiceNumber: null
+        invoiceNumber: null,
+        communicationId: comm.communicationId
       };
       for (const sessionId of submission.sessionIds || []) {
         if (!documentedSubmissionSessions.has(idOf(sessionId))) {
@@ -634,6 +639,10 @@ export async function getInsuranceGuidesView(filters = {}) {
         ?? classified.some(item => documentedSubmissionSessions.get(item.sessionId)?.sentAtIsProxy)
         ?? false,
       invoiceNumber: guideDocumentation?.invoiceNumber || null,
+      communicationId: guideDocumentation?.communicationId
+        || classified.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.communicationId
+        || classified.find(item => item.phase === SessionPhase.BILLED)?.communicationId
+        || null,
 
       // Notas fiscais que cobrem as sessões DESTA guia, com quantas sessões e
       // quanto cada uma levou. Uma guia faturada mês a mês aparece em várias

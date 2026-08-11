@@ -20,6 +20,7 @@ export class BaseEmailProvider {
    * @param {string} [message.customId]
    * @param {string} [message.idempotencyKey]
    * @param {string} [message.inReplyTo]
+   * @param {string|Array<string>} [message.cc]
    * @returns {Promise<{ success: boolean, messageId?: string, protocol?: string }>}
    */
   async sendEmail(message) {

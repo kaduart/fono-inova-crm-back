@@ -3,6 +3,7 @@ import InsuranceBatch from '../../models/InsuranceBatch.js';
 import {
   allocateNetAmounts,
   InsuranceBatchReceiptError,
+  updateInvoiceNumber,
   __testables
 } from '../../services/insuranceBatch/InsuranceBatchReceiptService.js';
 
@@ -48,5 +49,10 @@ describe('InsuranceBatchReceipt — baixa financeira por NF/guia', () => {
     expect(row.receivedAmount).toBe(98);
     expect(row.pendingAmount).toBe(0);
     expect(row.guides[0].status).toBe('received');
+  });
+
+  it('exige número da NF para atualização', async () => {
+    await expect(updateInvoiceNumber('64b000000000000000000003', { invoiceNumber: '   ' }))
+      .rejects.toThrow(InsuranceBatchReceiptError);
   });
 });

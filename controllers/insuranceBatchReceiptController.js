@@ -1,7 +1,8 @@
 import {
   InsuranceBatchReceiptError,
   listInvoiceReceivables,
-  receiveInsuranceBatch
+  receiveInsuranceBatch,
+  updateInvoiceNumber
 } from '../services/insuranceBatch/InsuranceBatchReceiptService.js';
 
 function sendError(res, error) {
@@ -24,6 +25,18 @@ export async function list(req, res) {
   }
 }
 
+export async function update(req, res) {
+  try {
+    const data = await updateInvoiceNumber(req.params.id, {
+      invoiceNumber: req.body.invoiceNumber,
+      userId: req.user.id
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+}
+
 export async function receive(req, res) {
   try {
     const data = await receiveInsuranceBatch(req.params.id, {
@@ -37,4 +50,4 @@ export async function receive(req, res) {
   }
 }
 
-export default { list, receive };
+export default { list, receive, update };

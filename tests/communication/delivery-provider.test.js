@@ -217,6 +217,15 @@ describe('Delivery Provider - Canal email', () => {
     expect(result.jobId).toBe('job-test-id');
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
 
+    // O payload do job precisa carregar o communicationId real. Enfileirar com
+    // undefined faz o worker cair em findById(undefined) -> "Comunicação não
+    // encontrada", retentar 5x e ir pra DLQ sem gravar log nenhum — a falha some
+    // da aba "Envios" (regressão 2026-08-10). Antes o teste só checava que a fila
+    // tinha sido chamada, e o bug passou batido.
+    const [, jobPayload, jobOpts] = mockQueueAdd.mock.calls[0];
+    expect(jobPayload.communicationId).toBe(communication._id.toString());
+    expect(jobOpts.jobId).toContain(communication._id.toString());
+
     const updated = await InsuranceCommunication.findById(communication._id).lean();
     expect(updated.status).toBe('sending');
   });

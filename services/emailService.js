@@ -65,7 +65,7 @@ export async function sendPasswordResetEmail({ email, resetToken, role }) {
 
 /**
  * Envia e-mail genérico com anexos via provider configurado (Resend/SMTP/Mailjet).
- * @param {{ to: string, subject: string, html: string, text?: string, attachments?: Array<{ url: string, name?: string, publicId?: string }>, customId?: string, fromEmail?: string, fromName?: string }} params
+ * @param {{ to: string, subject: string, html: string, text?: string, attachments?: Array<{ url: string, name?: string, publicId?: string }>, customId?: string, fromEmail?: string, fromName?: string, cc?: string | string[] }} params
  * @returns {Promise<{ success: boolean, messageId?: string, protocol?: string }>}
  */
 export async function sendEmailWithAttachments({
@@ -78,7 +78,8 @@ export async function sendEmailWithAttachments({
   idempotencyKey,
   inReplyTo,
   fromEmail,
-  fromName
+  fromName,
+  cc
 }) {
   const provider = getEmailProvider();
   const result = await provider.sendEmail({
@@ -91,7 +92,8 @@ export async function sendEmailWithAttachments({
     idempotencyKey,
     inReplyTo,
     fromEmail,
-    fromName
+    fromName,
+    cc
   });
   return { ...result, provider: getEmailProviderName() };
 }

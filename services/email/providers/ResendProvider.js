@@ -38,7 +38,8 @@ export class ResendProvider extends BaseEmailProvider {
     idempotencyKey,
     inReplyTo,
     fromEmail,
-    fromName
+    fromName,
+    cc
   }) {
     const defaultFromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
     const defaultFromName = process.env.EMAIL_FROM_NAME || 'Clínica Fono Inova';
@@ -74,9 +75,16 @@ export class ResendProvider extends BaseEmailProvider {
 
     const finalHeaders = Object.keys(headers).length > 0 ? headers : undefined;
 
+    const normalizeRecipients = (value) => {
+      if (!value) return undefined;
+      if (Array.isArray(value)) return value.filter(Boolean);
+      return [value];
+    };
+
     const payload = {
       from,
       to,
+      cc: normalizeRecipients(cc),
       subject,
       html,
       text: text || undefined,

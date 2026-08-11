@@ -29,13 +29,14 @@ const logger = createContextLogger('communication_send_endpoint');
 // GET /api/v2/communications
 router.get('/', auth, async (req, res) => {
   try {
-    const { status, insurance, patientId, purpose, billingSubmissionId, month, page, limit } = req.query;
+    const { status, insurance, patientId, purpose, billingSubmissionId, guideId, month, page, limit } = req.query;
     const result = await listCommunicationRequests({
       status,
       insuranceProvider: insurance,
       patientId,
       purpose,
       billingSubmissionId,
+      guideId,
       month,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50
@@ -51,11 +52,14 @@ router.get('/', auth, async (req, res) => {
 // Express casa "email-logs" como valor do param :id.
 router.get('/email-logs', auth, async (req, res) => {
   try {
-    const { purpose, insurance, patientId, page, limit } = req.query;
+    const { purpose, insurance, patientId, status, search, month, page, limit } = req.query;
     const result = await listCommunicationEmailLogs({
       purpose,
       insuranceProvider: insurance,
       patientId,
+      status,
+      search,
+      month,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 100
     });

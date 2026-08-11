@@ -33,6 +33,7 @@ import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { syncAppointmentPaymentStatus } from '../services/financialGuard/syncAppointmentPaymentStatus.js';
 import { clearCashflowCache } from './cashflow.v2.js';
+import { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
@@ -1425,11 +1426,17 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
-        // Invalida cache do cashflow para a data do pagamento reverso/debitado
+        // Invalida caches financeiros para a data do pagamento reverso/debitado.
+        // Importante: aguardar a limpeza antes de responder, senão o front pode refetchar
+        // enquanto o cache ainda contém o valor antigo — sintoma: item some de Recebimentos
+        // mas não aparece em Pendentes até recarregar a página.
         const debitCacheDate = payment.financialDate || payment.paymentDate || payment.createdAt;
         if (debitCacheDate) {
-            clearCashflowCache(moment.tz(debitCacheDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+            await clearCashflowCache(moment.tz(debitCacheDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
         }
+        // O calculateProduction do UnifiedFinancialService possui cache próprio; sem
+        // invalidação, a aba "Pendentes" continuaria mostrando a sessão como paga.
+        invalidateUFSCache();
 
         const updated = await Payment.findById(id).populate('patient doctor session');
         return res.json({

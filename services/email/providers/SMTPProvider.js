@@ -64,7 +64,7 @@ export class SMTPProvider extends BaseEmailProvider {
     return fromEmail;
   }
 
-  async sendViaMailjetREST({ to, subject, html, text, attachments = [], customId }) {
+  async sendViaMailjetREST({ to, subject, html, text, attachments = [], customId, cc }) {
     const key = process.env.SMTP_USER;
     const secret = process.env.SMTP_PASS;
     if (!key || !secret) throw new Error('Mailjet REST sem credenciais');
@@ -72,9 +72,12 @@ export class SMTPProvider extends BaseEmailProvider {
     const fromEmail = process.env.EMAIL_FROM || 'no-reply@clinicafonoinova.com.br';
     const fromName = process.env.EMAIL_FROM_NAME || 'Clinica Fono Inova';
 
+    const ccList = Array.isArray(cc) ? cc.filter(Boolean) : cc ? [cc] : [];
+
     const message = {
       From: { Email: fromEmail, Name: fromName },
       To: [{ Email: to }],
+      Cc: ccList.map(email => ({ Email: email })),
       Subject: subject,
       HTMLPart: html,
       TextPart: text,
@@ -114,7 +117,8 @@ export class SMTPProvider extends BaseEmailProvider {
     customId,
     inReplyTo,
     fromEmail,
-    fromName
+    fromName,
+    cc
   }) {
     const transporter = this.createTransporter();
 
@@ -142,6 +146,8 @@ export class SMTPProvider extends BaseEmailProvider {
       headers['References'] = inReplyTo;
     }
 
+    const ccList = Array.isArray(cc) ? cc.filter(Boolean) : cc ? [cc] : [];
+
     const mailOptions = {
       from: this.parseFrom(resolvedFromEmail, resolvedFromName),
       to,
@@ -151,6 +157,10 @@ export class SMTPProvider extends BaseEmailProvider {
       attachments: nodemailerAttachments,
       headers
     };
+
+    if (ccList.length > 0) {
+      mailOptions.cc = ccList.length === 1 ? ccList[0] : ccList;
+    }
 
     const sendStart = Date.now();
     try {
@@ -170,7 +180,7 @@ export class SMTPProvider extends BaseEmailProvider {
       }
 
       try {
-        await this.sendViaMailjetREST({ to, subject, html, text, attachments: downloadedAttachments, customId });
+        await this.sendViaMailjetREST({ to, subject, html, text, attachments: downloadedAttachments, customId, cc });
         return { success: true, protocol: `mailjet-rest-${Date.now()}` };
       } catch (restErr) {
         console.error('[SMTPProvider] Mailjet REST falhou:', restErr?.response?.data || restErr?.message || restErr);

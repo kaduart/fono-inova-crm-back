@@ -3,6 +3,8 @@ import moment from 'moment-timezone';
 import InsuranceBatch from '../../models/InsuranceBatch.js';
 import Payment from '../../models/Payment.js';
 import Convenio from '../../models/Convenio.js';
+import BillingSubmission from '../../models/BillingSubmission.js';
+import InsuranceCommunication from '../../models/InsuranceCommunication.js';
 import { transitionPaymentStatus } from '../paymentStatusService.js';
 import { recordInsuranceReceived } from '../financialLedgerService.js';
 
@@ -168,6 +170,81 @@ export async function listInvoiceReceivables({ status = 'pending', patientId, in
   return receivables;
 }
 
+export async function updateInvoiceNumber(batchId, { invoiceNumber, userId } = {}) {
+  const normalizedNumber = String(invoiceNumber || '').trim();
+  if (!normalizedNumber) {
+    throw new InsuranceBatchReceiptError('INSURANCE_BATCH_INVOICE_NUMBER_REQUIRED', 'Número da nota fiscal é obrigatório', 400);
+  }
+
+  const mongoSession = await mongoose.startSession();
+  let batch;
+  try {
+    await mongoSession.withTransaction(async () => {
+      batch = await InsuranceBatch.findById(objectId(batchId, 'batchId')).session(mongoSession);
+      if (!batch) {
+        throw new InsuranceBatchReceiptError('INSURANCE_BATCH_NOT_FOUND', 'NF/lote não encontrado', 404);
+      }
+      if (!batch.invoiceNumber && !['sent', 'processing', 'partial', 'received'].includes(batch.status)) {
+        throw new InsuranceBatchReceiptError(
+          'INSURANCE_BATCH_NOT_INVOICABLE',
+          'Só é possível editar o número de NF em lotes faturados',
+          409
+        );
+      }
+
+      const previousNumber = batch.invoiceNumber;
+      batch.invoiceNumber = normalizedNumber;
+      batch.updatedAt = new Date();
+      await batch.save({ session: mongoSession });
+
+      // Mantém a origem da NF consistente na BillingSubmission correspondente.
+      if (batch.billingSubmissionId && batch.billingAllocationId) {
+        await BillingSubmission.updateOne(
+          {
+            _id: batch.billingSubmissionId,
+            'billingAllocations._id': batch.billingAllocationId
+          },
+          {
+            $set: {
+              'billingAllocations.$.invoice.invoiceNumber': normalizedNumber,
+              updatedBy: objectId(userId, 'userId'),
+              updatedAt: new Date()
+            }
+          },
+          { session: mongoSession }
+        );
+      }
+
+      // Propaga a correção para a comunicação de faturamento vinculada.
+      if (batch.billingSubmissionId && batch.billingAllocationId) {
+        await InsuranceCommunication.updateOne(
+          {
+            billingSubmissionId: batch.billingSubmissionId,
+            billingAllocationIds: batch.billingAllocationId
+          },
+          {
+            $set: {
+              invoiceNumber: normalizedNumber,
+              updatedAt: new Date()
+            }
+          },
+          { session: mongoSession }
+        );
+      }
+
+      batch = batch.toObject ? batch.toObject() : batch;
+      batch.previousInvoiceNumber = previousNumber;
+    });
+    return {
+      batchId: batch._id.toString(),
+      invoiceNumber: batch.invoiceNumber,
+      previousInvoiceNumber: batch.previousInvoiceNumber || null
+    };
+  } finally {
+    await mongoSession.endSession();
+  }
+}
+
 export async function receiveInsuranceBatch(batchId, { receivedDate, userId, guideIds = [] } = {}) {
   if (!receivedDate || !/^\d{4}-\d{2}-\d{2}$/.test(receivedDate)) {
     throw new InsuranceBatchReceiptError('INSURANCE_BATCH_RECEIVED_DATE_REQUIRED', 'Data do recebimento obrigatória no formato YYYY-MM-DD');
@@ -322,4 +399,4 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
 
 export const __testables = { guideSummary, toReceivable };
 
-export default { listInvoiceReceivables, receiveInsuranceBatch };
+export default { listInvoiceReceivables, receiveInsuranceBatch, updateInvoiceNumber };

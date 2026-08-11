@@ -6,6 +6,7 @@ const router = express.Router();
 const canOperateBilling = authorize(['admin', 'secretary']);
 
 router.get('/receivables', auth, canOperateBilling, controller.list);
+router.patch('/:id/invoice-number', auth, canOperateBilling, controller.update);
 router.post('/:id/receive', auth, canOperateBilling, controller.receive);
 
 export default router;

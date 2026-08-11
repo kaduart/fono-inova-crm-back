@@ -65,6 +65,7 @@ export async function listCommunicationRequests({
   patientId,
   purpose,
   billingSubmissionId,
+  guideId,
   month,
   page = 1,
   limit = 50
@@ -75,6 +76,7 @@ export async function listCommunicationRequests({
   if (patientId) query.patientId = patientId;
   if (purpose) query.purpose = purpose;
   if (billingSubmissionId) query.billingSubmissionId = billingSubmissionId;
+  if (guideId) query.guideId = guideId;
 
   if (month) {
     const [year, monthNum] = month.split('-').map(Number);
