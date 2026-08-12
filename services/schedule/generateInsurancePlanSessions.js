@@ -379,7 +379,11 @@ export async function generateInsurancePlanSessions({
 
   let createdSessions = [];
   if (sessionDocs.length > 0) {
-    createdSessions = await Session.insertMany(sessionDocs, { session: mongoSession });
+    createdSessions = await Session.insertMany(sessionDocs, {
+      session: mongoSession,
+      __fromFinancialGuard: true,
+      __guardContext: 'FINANCIAL'
+    });
 
     // Vincula session ao appointment — índices alinhados com appointmentsNeedingSession
     const sessionLinkOps = createdSessions.map((s, i) => ({

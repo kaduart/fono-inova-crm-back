@@ -21,7 +21,7 @@ Somando: 30 payments de convênio têm `insurance.status` fora do vocabulário l
 
 | Onde | Campo | Valores encontrados em prod | Situação |
 |---|---|---|---|
-| `Session` | `paymentStatus` | `pending_receipt` (345), `pending` (192), `canceled` (47), `paid` (11), **`billed` (1)** | **Legado.** Nenhuma aba de convênio lê este campo. |
+| `Session` | `paymentStatus` | `pending_receipt` (345), `pending` (192), `canceled` (47), `paid` (11), **`billed` (1)** | **Legado.** Nenhuma aba de convênio lê este campo. (Fora do escopo desta auditoria, `routes/patient.js:333-337` lê `Session.paymentStatus` para montar o débito do paciente.) |
 | `Session` | `billingStatus` | não existe (campo ausente) | Nunca implementado |
 | `Package` | fonte de convênio | — | **Removido** de `getInsuranceHistory` (ADR-001 / `FINANCIAL_SOURCE_OF_TRUTH.md:62`); auditoria confirmou 171/171 sessões já cobertas por `InsuranceGuide` |
 | `InsuranceBatch.sessions[].status` | `pending\|sent\|processing\|paid\|rejected\|partial` | subdoc | Pipeline B (lote/TISS) morto — ver memória `project_convenio_pipeline_b_cleanup_2026-07-29` |

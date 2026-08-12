@@ -91,12 +91,16 @@ export default function financialSanitizer(schema, options = {}) {
   });
 
   // Pre-insertMany: intercepta Model.insertMany()
-  schema.pre('insertMany', function(next, docs) {
-    const opts = this.$locals || {};
-    if (
+  schema.pre('insertMany', function(next, docs, options) {
+    const opts = options || {};
+    const bypass =
       opts.__fromFinancialGuard === true &&
-      opts.__guardContext === 'FINANCIAL'
-    ) return next();
+      opts.__guardContext === 'FINANCIAL';
+    // As flags sao consumidas por este hook. Sempre passe um objeto options novo;
+    // reutilizar o mesmo objeto faz a segunda chamada perder o bypass silenciosamente.
+    delete opts.__fromFinancialGuard;
+    delete opts.__guardContext;
+    if (bypass) return next();
     if (Array.isArray(docs)) {
       for (const doc of docs) {
         sanitize(doc, 'insertMany');
@@ -107,26 +111,53 @@ export default function financialSanitizer(schema, options = {}) {
     next();
   });
 
-  // Pre-updateOne / pre-updateMany: intercepta updates que tentam setar V1
-  schema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function(next) {
-    const opts = this.getOptions ? this.getOptions() : this.options || {};
-    if (
-      opts.__fromFinancialGuard === true &&
-      opts.__guardContext === 'FINANCIAL'
-    ) return next();
-    const update = this.getUpdate();
-    if (update) {
-      const $set = update.$set || update;
-      const removed = {};
-      let modified = false;
+  function sanitizeUpdate(update) {
+    const removed = {};
+    let modified = false;
+    const targets = [];
 
+    if (Array.isArray(update)) {
+      for (const stage of update) {
+        if (stage && typeof stage === 'object') {
+          if (stage.$set) targets.push(stage.$set);
+          if (stage.$setOnInsert) targets.push(stage.$setOnInsert);
+        }
+      }
+    } else if (update && typeof update === 'object') {
+      if (update.$set) targets.push(update.$set);
+      if (update.$setOnInsert) targets.push(update.$setOnInsert);
+      if (!update.$set && !update.$setOnInsert) {
+        targets.push(update);
+      }
+    }
+
+    for (const target of targets) {
       for (const field of LEGACY_FIELDS) {
-        if ($set[field] !== undefined) {
-          removed[field] = $set[field];
-          delete $set[field];
+        if (target[field] !== undefined) {
+          removed[field] = target[field];
+          delete target[field];
           modified = true;
         }
       }
+    }
+
+    return { modified, removed };
+  }
+
+  // Pre-updateOne / pre-updateMany: intercepta updates que tentam setar V1
+  schema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], function(next) {
+    const opts = this.getOptions ? this.getOptions() : this.options || {};
+    const bypass =
+      opts.__fromFinancialGuard === true &&
+      opts.__guardContext === 'FINANCIAL';
+    // As flags sao consumidas por este hook. Sempre passe um objeto options novo;
+    // reutilizar o mesmo objeto faz a segunda chamada perder o bypass silenciosamente.
+    delete opts.__fromFinancialGuard;
+    delete opts.__guardContext;
+    if (bypass) return next();
+    const update = this.getUpdate();
+    if (update) {
+      const { modified, removed } = sanitizeUpdate(update);
 
       if (modified) {
         const meta = {

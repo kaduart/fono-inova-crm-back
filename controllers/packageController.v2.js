@@ -312,9 +312,11 @@ async function createAppointmentsBatch(pkg, schedule, mongoSession) {
     isFirstAppointment: index === 0
   }));
 
-  const apptModel = Appointment.$__collection ? Appointment : Appointment.db.model('Appointment');
-  apptModel.$locals = { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' };
-  return await Appointment.insertMany(appointmentDocs, { session: mongoSession });
+  return await Appointment.insertMany(appointmentDocs, {
+    session: mongoSession,
+    __fromFinancialGuard: true,
+    __guardContext: 'FINANCIAL'
+  });
 }
 
 /**
@@ -351,8 +353,11 @@ async function createSessionsBatch(pkg, appointments, mongoSession) {
     paymentMethod: pkg.model === 'liminar' ? 'liminar_credit' : pkg.paymentMethod
   }));
 
-  Session.$locals = { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' };
-  return await Session.insertMany(sessionDocs, { session: mongoSession });
+  return await Session.insertMany(sessionDocs, {
+    session: mongoSession,
+    __fromFinancialGuard: true,
+    __guardContext: 'FINANCIAL'
+  });
 }
 
 /**
