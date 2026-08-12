@@ -1,26 +1,18 @@
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { PINNED_CHROME_VERSION, chromeBinarySubpath } from './config/chromeVersion.js';
 
 if (process.env.PUPPETEER_SKIP_DOWNLOAD === 'true') {
   console.log('[installChrome] PUPPETEER_SKIP_DOWNLOAD=true — Chrome ignorado.');
   process.exit(0);
 }
 
-/**
- * Versão de Chrome validada em produção.
- *
- * NÃO voltar para `chrome@stable`: o canal stable recebe patch a cada poucos
- * dias e o worker rebuilda todo dia útil às 07:30 BRT (resume disparado por
- * crons/workerScheduler.cron.js), então o build baixava um Chrome diferente
- * sem ninguém pedir. Foi assim que 151.0.7922.77 virou 151.0.7922.138 e
- * quebrou o Client.initialize com "Navigating frame was detached" (12/08/2026).
- *
- * Para subir de versão: troque aqui, faça deploy e valide o QR antes de
- * considerar concluído. Para testar sem commit: CHROME_VERSION=<versao>.
- */
-const PINNED_CHROME_VERSION = '151.0.7922.77';
-const CHROME_VERSION = process.env.CHROME_VERSION || PINNED_CHROME_VERSION;
+// NÃO voltar para `chrome@stable`: o canal stable recebe patch a cada poucos
+// dias e o worker rebuilda todo dia útil às 07:30 BRT (resume disparado por
+// crons/workerScheduler.cron.js), então o build baixava um Chrome diferente sem
+// ninguém pedir. Ver config/chromeVersion.js para a versão e o histórico.
+const CHROME_VERSION = PINNED_CHROME_VERSION;
 
 const FORCE_UPDATE = process.env.FORCE_CHROME_UPDATE === 'true';
 
@@ -29,8 +21,8 @@ const FORCE_UPDATE = process.env.FORCE_CHROME_UPDATE === 'true';
 // por isso a checagem antiga em .cache/puppeteer nunca batia e rebaixava sempre.)
 const installRoot = path.join(process.cwd(), 'chrome');
 const candidates = [
-  path.join(installRoot, `linux-${CHROME_VERSION}`, 'chrome-linux64', 'chrome'),
-  path.join(process.cwd(), '.cache', 'puppeteer', 'chrome', `linux-${CHROME_VERSION}`, 'chrome-linux64', 'chrome'),
+  path.join(installRoot, chromeBinarySubpath(CHROME_VERSION)),
+  path.join(process.cwd(), '.cache', 'puppeteer', 'chrome', chromeBinarySubpath(CHROME_VERSION)),
 ];
 
 const existing = candidates.find((p) => fs.existsSync(p));

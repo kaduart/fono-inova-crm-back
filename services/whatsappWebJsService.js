@@ -23,6 +23,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { normalizeE164BR } from '../utils/phone.js';
+import { PINNED_CHROME_VERSION, chromeBinarySubpath } from '../config/chromeVersion.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
 // ─── Caminho de persistência da sessão (module-level para uso em clearSession/reconnect) ─
@@ -133,7 +134,24 @@ function resolveChromePath() {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  // 2. Cache do puppeteer no projeto (.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome)
+  // 2. Versão fixada (config/chromeVersion.js) — tem prioridade sobre qualquer
+  //    outra encontrada no disco. Sem isto, um Chrome antigo esquecido em
+  //    .cache/puppeteer/ ganha do que o build acabou de instalar em chrome/,
+  //    que foi exatamente a falha de 12/08/2026 (.cache tinha 128/146/148 e o
+  //    148 vencia o 151.0.7922.77 recém-instalado).
+  for (const base of ['chrome', path.join('.cache', 'puppeteer', 'chrome')]) {
+    const pinned = path.join(process.cwd(), base, chromeBinarySubpath());
+    if (fs.existsSync(pinned)) {
+      console.log(`[WhatsAppWeb] Chrome fixado ${PINNED_CHROME_VERSION}: ${pinned}`);
+      return pinned;
+    }
+  }
+  console.warn(
+    `[WhatsAppWeb] ⚠️ Chrome fixado ${PINNED_CHROME_VERSION} NÃO encontrado — ` +
+    'caindo para descoberta automática. Versão divergente pode falhar com "frame was detached".'
+  );
+
+  // 3. Cache do puppeteer no projeto (.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome)
   try {
     const cacheDir = path.join(process.cwd(), '.cache', 'puppeteer', 'chrome');
     if (fs.existsSync(cacheDir)) {
@@ -148,7 +166,7 @@ function resolveChromePath() {
     }
   } catch {}
 
-  // 3. Chrome instalado via @puppeteer/browsers (novo path do Render)
+  // 4. Chrome instalado via @puppeteer/browsers (novo path do Render)
   try {
     const browsersDir = path.join(process.cwd(), 'chrome');
     if (fs.existsSync(browsersDir)) {
@@ -163,7 +181,7 @@ function resolveChromePath() {
     }
   } catch {}
 
-  // 4. Caminhos do sistema
+  // 5. Caminhos do sistema
   const system = [
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome-stable',
