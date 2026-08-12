@@ -22,7 +22,7 @@ import { executeWithSession as cancelAppointmentWithSession } from './cancelAppo
  * @param {Object} params
  * @param {string} params.reason - Motivo do cancelamento
  * @param {boolean} [params.confirmedAbsence=false] - Falta confirmada
- * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration)
+ * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration|converted_to_package)
  * @param {Object} [user] - Usuário/system
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<{ canceled: number, errors: Array<{id, error}> }>}

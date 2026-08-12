@@ -379,9 +379,14 @@ const appointmentSchema = new mongoose.Schema({
   },
   // Distingue cancelamento pelo paciente/clínica de cancelamento automático do sistema
   // (ex: fechamento de ciclo de faturamento de guia). Sem default: não afeta dados antigos.
+  // 'converted_to_package' (reservado 2026-08-12): sessão futura NÃO realizada
+  // cujo crédito foi transferido para outro pacote (ex.: 4 fono viram 4 psico).
+  // Não é desistência nem falta — a cobertura já paga continua válida, só mudou
+  // de destino. Usado pelo fluxo POST /v2/packages/:id/transfer, que registra a
+  // referência da transferência e do pacote de destino. Nunca gera receita nova.
   cancelSource: {
     type: String,
-    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration']
+    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration', 'converted_to_package']
   },
 
   // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────

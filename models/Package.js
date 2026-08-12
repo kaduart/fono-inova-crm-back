@@ -32,7 +32,11 @@ const packageSchema = new mongoose.Schema({
    * 🚫 NÃO criar novos packages com type='convenio' ou 'liminar'
    * 🚫 NÃO usar Package como fonte de verdade para convênio/liminar
    *
-   * ✅ type válido para dados novos: 'package' apenas
+   * ✅ type válido para dados novos: 'therapy' — este é o valor GRAVADO.
+   *    O contrato público da API v2 usa type='package' e a tradução
+   *    package → therapy acontece na borda (createPackageV2 e
+   *    packageUpdatePolicy.normalizeApiDialect). Não confundir os dois:
+   *    gravar 'package' estoura ValidationError de enum.
    * ✅ model válido para dados novos: 'prepaid' | 'per_session'
    *
    * TODO: remover 'convenio' e 'liminar' do enum após backfill.
@@ -188,6 +192,13 @@ const packageSchema = new mongoose.Schema({
   lastPaymentAt: {
     type: Date,
     description: 'Data do último pagamento recebido'
+  },
+  notes: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: '',
+    description: 'Observação livre da secretaria/equipe. Único campo editável pelo PUT comum (ver packageUpdatePolicy.js)'
   },
   txid: { type: String, unique: true, sparse: true },
   metadata: {

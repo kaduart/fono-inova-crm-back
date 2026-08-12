@@ -346,9 +346,13 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     const updateData = req.body;
 
     // Validação: pacote existe (aceita tanto packageId real quanto _id da view)
+    // ⚠️ formatError(code, message, details) — nesta rota a ordem estava invertida,
+    // fazendo a resposta trazer {code:"Pacote não encontrado", message:404} e o
+    // frontend exibir "500"/"404" no lugar do texto. Corrigido no fluxo de pacote;
+    // as demais rotas v2 ainda precisam da padronização (com testes de contrato).
     const existing = await PackagesView.findOne({ $or: [{ packageId: id }, { _id: id }] });
     if (!existing) {
-      return res.status(404).json(formatError('Pacote não encontrado', 404, { correlationId }));
+      return res.status(404).json(formatError('PACKAGE_NOT_FOUND', 'Pacote não encontrado', { correlationId }));
     }
     const realPackageId = existing.packageId?.toString() || id;
 
@@ -367,6 +371,11 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       message: result.message,
       packageId: realPackageId,
       data: result.data,
+      // `changed:false` = nada foi gravado. O cliente precisa saber para não
+      // exibir "atualizado com sucesso" sobre uma alteração que não ocorreu.
+      changed: result.changed !== false,
+      changedFields: result.changedFields || [],
+      ignoredFields: result.ignoredFields || [],
       eventEmitted: result.eventEmitted,
       correlationId: result.correlationId,
     }, {
@@ -374,13 +383,17 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     }));
 
   } catch (error) {
-    logger.error('[PackageV2] Error updating package', { correlationId, error: error.message });
-
     const status = error.status || 500;
+
+    // 4xx é decisão de negócio esperada, não incidente: não polui o log de erro.
+    const logPayload = { correlationId, status, code: error.code, error: error.message };
+    if (status >= 500) logger.error('[PackageV2] Error updating package', logPayload);
+    else logger.info('[PackageV2] Update rejected by policy', logPayload);
+
     res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
       error.message || 'Erro ao atualizar pacote',
-      status,
-      { correlationId, code: error.code || 'INTERNAL_SERVER_ERROR' }
+      { correlationId, ...(error.fields ? { fields: error.fields } : {}) }
     ));
   }
 });

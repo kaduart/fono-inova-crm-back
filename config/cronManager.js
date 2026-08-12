@@ -58,6 +58,11 @@ export async function startAllCrons() {
     const { scheduleFinancialSnapshotAudit } = await import("../crons/financialSnapshotAudit.cron.js");
     startCron('financialSnapshotAudit', () => scheduleFinancialSnapshotAudit());
 
+    // Detecta (não conserta) PackagesView divergente do domínio — ponto cego que
+    // deixou cancelamentos sumirem da tela por meses. Ver incidente 2026-08-12.
+    const { initPackageViewDriftCron } = await import("../crons/packageViewDriftCheck.cron.js");
+    startCron('packageViewDrift', () => initPackageViewDriftCron());
+
     const { schedulePatientConsistency } = await import("../crons/patientConsistency.cron.js");
     startCron('patientConsistency', () => schedulePatientConsistency());
 
