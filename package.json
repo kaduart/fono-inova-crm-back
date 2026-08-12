@@ -114,7 +114,7 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "uuid": "^13.0.0",
-    "whatsapp-web.js": "https://github.com/wwebjs/whatsapp-web.js#main",
+    "whatsapp-web.js": "https://github.com/wwebjs/whatsapp-web.js/archive/942d236a11ad68807308b058303ba5256915979c.tar.gz",
     "winston": "^3.17.0",
     "wwebjs-mongo": "^1.1.0",
     "xml-crypto": "^6.1.2",
