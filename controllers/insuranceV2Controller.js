@@ -1945,27 +1945,34 @@ export async function getPatientInsuranceSessions(req, res) {
  */
 export async function getGuidesView(req, res) {
   try {
-    const { insurance, patientId, guideStatus, phase, from, to, page, limit } = req.query;
+    const { insurance, patientId, guideStatus, phase, phases, from, to, page, limit } = req.query;
 
     const result = await getInsuranceGuidesView({
       insurance,
       patientId,
       guideStatus,
       phase: phase || 'all',
+      phases,
       from,
       to,
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 0
     });
 
-    res.json({
+    const response = {
       success: true,
       data: result.guides,
       orphanSessions: result.orphanSessions,
       totals: result.totals,
       competenceBreakdown: result.competenceBreakdown,
       pagination: result.pagination
-    });
+    };
+
+    if (result.buckets) {
+      response.buckets = result.buckets;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('[InsuranceV2][getGuidesView] Erro:', error.message);
     res.status(500).json({ success: false, error: error.message });

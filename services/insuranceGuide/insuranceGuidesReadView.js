@@ -360,17 +360,22 @@ export function resolvePaymentForSession(payments) {
  * @param {string}  [filters.patientId]
  * @param {string}  [filters.guideStatus] - InsuranceGuide.status (ciclo de vida)
  * @param {string}  [filters.phase]       - 'pendingBilling'|'documentationSent'|'billed'|'received'|'all'
+ * @param {string}  [filters.phases]      - fases separadas por vírgula p/ retorno consolidado (ex: 'pendingBilling,documentationSent,billed,received')
  * @param {Date|string} [filters.from]    - competência inicial, aplicada no eixo da fase
  * @param {Date|string} [filters.to]      - competência final, aplicada no eixo da fase
  * @param {number}  [filters.page=1]
  * @param {number}  [filters.limit=0]     - 0 = sem paginação (default: acumulado)
- * @returns {Promise<{guides: Array, orphanSessions: Array, totals: Object, pagination: Object}>}
+ * @returns {Promise<{guides: Array, orphanSessions: Array, totals: Object, pagination: Object, buckets: Object|undefined}>}
  */
 export async function getInsuranceGuidesView(filters = {}) {
   const {
-    insurance, patientId, guideStatus, phase = 'all',
+    insurance, patientId, guideStatus, phase = 'all', phases,
     from, to, page = 1, limit = 0
   } = filters;
+
+  const phaseList = phases
+    ? String(phases).split(',').map(p => p.trim()).filter(Boolean)
+    : [];
 
   const periodFrom = from ? new Date(from) : null;
   const periodTo = to ? new Date(to) : null;
@@ -530,8 +535,8 @@ export async function getInsuranceGuidesView(filters = {}) {
   }
 
   // 3. Classificação por sessão + agregação por guia
-  const phaseFilterActive = phase && phase !== 'all';
-  const enriched = [];
+  const phaseFilterActive = phase && phase !== 'all' && phaseList.length === 0;
+  const guideBases = [];
   const paymentIntegrityConflicts = [];
 
   for (const guide of guides) {
@@ -591,10 +596,11 @@ export async function getInsuranceGuidesView(filters = {}) {
       ? classified.filter(s => !s.phase || inRange(s.competenceDate, periodFrom, periodTo))
       : classified;
 
-    const scoped = phaseFilterActive
-      ? inPeriod.filter(s => !s.phase || s.phase === phase)
-      : inPeriod;
+    guideBases.push({ guide, gid, classified, inPeriod });
+  }
 
+  function buildEnrichedGuide(guide, classified, inPeriod, scoped) {
+    const gid = idOf(guide._id);
     const aggregates = composeGuideAggregates(scoped);
     const isClosed = !!guide.closedAt;
     const phaseCounters = {
@@ -604,7 +610,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       [SessionPhase.RECEIVED]: aggregates.sessions.received
     };
 
-    enriched.push({
+    return {
       guideId: gid,
       number: guide.number,
       insurance: guide.insurance,
@@ -632,16 +638,16 @@ export async function getInsuranceGuidesView(filters = {}) {
       billingState: deriveBillingLabel(phaseCounters, { isClosed }),
       hasMixedStates: hasMixedStates(phaseCounters),
 
-      documentationSentAt: guideDocumentation?.sentAt
-        || classified.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.competenceDate
+      documentationSentAt: documentationByGuide.get(gid)?.sentAt
+        || scoped.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.competenceDate
         || null,
-      documentationSentAtIsProxy: guideDocumentation?.sentAtIsProxy
-        ?? classified.some(item => documentedSubmissionSessions.get(item.sessionId)?.sentAtIsProxy)
+      documentationSentAtIsProxy: documentationByGuide.get(gid)?.sentAtIsProxy
+        ?? scoped.some(item => documentedSubmissionSessions.get(item.sessionId)?.sentAtIsProxy)
         ?? false,
-      invoiceNumber: guideDocumentation?.invoiceNumber || null,
-      communicationId: guideDocumentation?.communicationId
-        || classified.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.communicationId
-        || classified.find(item => item.phase === SessionPhase.BILLED)?.communicationId
+      invoiceNumber: documentationByGuide.get(gid)?.invoiceNumber || null,
+      communicationId: documentationByGuide.get(gid)?.communicationId
+        || scoped.find(item => item.phase === SessionPhase.DOCUMENTATION_SENT)?.communicationId
+        || scoped.find(item => item.phase === SessionPhase.BILLED)?.communicationId
         || null,
 
       // Notas fiscais que cobrem as sessões DESTA guia, com quantas sessões e
@@ -650,7 +656,49 @@ export async function getInsuranceGuidesView(filters = {}) {
       invoices: summarizeInvoices(scoped),
 
       sessionDetails: scoped
-    });
+    };
+  }
+
+  const enriched = guideBases.map(({ guide, classified, inPeriod }) => {
+    const scoped = phaseFilterActive
+      ? inPeriod.filter(s => !s.phase || s.phase === phase)
+      : inPeriod;
+    return buildEnrichedGuide(guide, classified, inPeriod, scoped);
+  });
+
+  // 3.1 Buckets consolidados: várias fases em uma única execução.
+  // Cada bucket replica o comportamento de `phase=X`, inclusive filtros,
+  // agregações e paginação. `phase=X` continua funcionando isoladamente.
+  let buckets;
+  if (phaseList.length > 0) {
+    buckets = {};
+    for (const p of phaseList) {
+      const bucketGuides = guideBases
+        .map(({ guide, classified, inPeriod }) => {
+          const scoped = inPeriod.filter(s => !s.phase || s.phase === p);
+          return buildEnrichedGuide(guide, classified, inPeriod, scoped);
+        })
+        .filter(g => g.sessions[p] > 0);
+
+      const totals = composeGuideAggregates(bucketGuides.flatMap(g => g.sessionDetails));
+      const competenceBreakdown = composePendingCompetenceBreakdown(bucketGuides.flatMap(g => g.sessionDetails));
+      const totalGuides = bucketGuides.length;
+      const paged = limit > 0
+        ? bucketGuides.slice((page - 1) * limit, page * limit)
+        : bucketGuides;
+
+      buckets[p] = {
+        guides: paged,
+        totals,
+        competenceBreakdown,
+        pagination: {
+          page: limit > 0 ? page : 1,
+          limit,
+          total: totalGuides,
+          pages: limit > 0 ? Math.ceil(totalGuides / limit) : 1
+        }
+      };
+    }
   }
 
   // Semântica de BUCKET: com `phase` explícito a resposta é a aba daquela fase,
@@ -695,6 +743,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     sessoes: totals.sessions.total,
     orfas: orphanSessions.length,
     phase,
+    phases: phaseList,
     from: periodFrom,
     to: periodTo
   });
@@ -718,7 +767,8 @@ export async function getInsuranceGuidesView(filters = {}) {
       limit,
       total: totalGuides,
       pages: limit > 0 ? Math.ceil(totalGuides / limit) : 1
-    }
+    },
+    buckets
   };
 }
 
