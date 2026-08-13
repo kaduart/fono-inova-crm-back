@@ -417,7 +417,9 @@ export async function execute(input, user, correlationId = null) {
       type: 'therapy',
       model: 'prepaid',
       paymentType: 'full',
-      paymentMethod: 'transferencia_pacote',
+      // Sem paymentMethod de proposito: nao houve pagamento. Inventar um valor
+      // (a) mente sobre o financeiro e (b) vaza para appointments criados
+      // depois por outros fluxos via `pkg.paymentMethod`.
       sessionValue: targetSessionValue,
       totalSessions: sessionCount,
       totalValue: targetTotalValue,
@@ -484,7 +486,7 @@ export async function execute(input, user, correlationId = null) {
         isPaid: true,
         visualFlag: 'ok',
         paymentOrigin: 'package_prepaid',
-        paymentMethod: 'transferencia_pacote',
+        paymentMethod: null,   // enum aceita null — nenhum pagamento envolvido
         billingType: 'particular',
         sessionValue: targetSessionValue,
         isFirstAppointment: index === 0,
@@ -508,7 +510,6 @@ export async function execute(input, user, correlationId = null) {
         paymentStatus: 'package_paid',
         paymentOrigin: 'package_prepaid',
         visualFlag: 'ok',
-        paymentMethod: 'transferencia_pacote',
         transferId: transfer._id,
       }], { session: mongoSession });
 

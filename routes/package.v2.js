@@ -441,13 +441,14 @@ router.post('/:id/transfer', flexibleAuth, async (req, res) => {
       correlationId
     );
 
-    logger.info('[PackageV2] Transferência concluída', {
+    // ⚠️ createContextLogger é (event, message, meta). Chamar com 2 argumentos
+    // — como o resto deste arquivo faz — imprime "[object Object] {}" e some
+    // com o motivo do erro. Foi exatamente o que escondeu o ValidationError de
+    // paymentMethod no primeiro teste em produção.
+    logger.info('transfer_completed', `Transferência concluída: ${result.data?.sessionCount} sessão(ões), R$ ${result.data?.amount}, caixa 0`, {
       correlationId,
       sourcePackageId: realPackageId,
       targetPackageId: result.targetPackage?._id?.toString(),
-      sessionCount: result.data?.sessionCount,
-      amount: result.data?.amount,
-      cashEntry: 0,
       alreadyProcessed: Boolean(result.alreadyProcessed),
     });
 
@@ -461,8 +462,21 @@ router.post('/:id/transfer', flexibleAuth, async (req, res) => {
     }, { correlationId }));
   } catch (error) {
     const status = error.status || 500;
-    if (status >= 500) logger.error('[PackageV2] Erro na transferência', { correlationId, error: error.message, stack: error.stack });
-    else logger.info('[PackageV2] Transferência recusada', { correlationId, code: error.code, error: error.message });
+    if (status >= 500) {
+      logger.error('transfer_failed', error.message || 'erro desconhecido', {
+        correlationId,
+        code: error.code,
+        name: error.name,
+        // ValidationError do Mongoose traz o campo culpado em `errors`
+        fields: error.errors ? Object.keys(error.errors) : undefined,
+        validation: error.errors
+          ? Object.values(error.errors).map(e => `${e.path}: ${e.message}`)
+          : undefined,
+        stack: error.stack?.split('\n').slice(0, 4).join(' | '),
+      });
+    } else {
+      logger.info('transfer_rejected', error.message, { correlationId, code: error.code });
+    }
 
     res.status(status).json(formatError(
       error.code || 'INTERNAL_SERVER_ERROR',
