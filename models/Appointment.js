@@ -422,6 +422,22 @@ const appointmentSchema = new mongoose.Schema({
     default: null,
     description: 'Pacote de destino que recebeu a cobertura desta sessão'
   },
+  // Rastreabilidade bidirecional da conversão: a origem aponta para o novo
+  // agendamento criado e o novo agendamento aponta de volta para a origem.
+  // Vincular só ao pacote destino perderia o par sessão↔sessão.
+  targetAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    description: '[origem] Agendamento criado no pacote de destino'
+  },
+  sourceAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    index: true,
+    description: '[destino] Agendamento de origem que foi convertido'
+  },
 
   // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────
   // Preenchido SOMENTE quando forceCancel:true é usado na rota /cancel

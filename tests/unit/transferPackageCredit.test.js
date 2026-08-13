@@ -63,6 +63,10 @@ const store = {
   projectionsRebuilt: [],
   cancelCalls: [],
   packageWrites: [],
+  doctors: new Map(),
+  doctorBusySlots: [],
+  appointmentsCreated: 0,
+  failOnAppointmentNumber: 0,
   failNextTransfer: false,
 };
 
@@ -72,6 +76,8 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 function query(resolver) {
   const p = {
     session: () => p,
+    select: () => p,
+    sort: () => p,
     lean: async () => resolver(),
     then: (res, rej) => Promise.resolve(resolver()).then(res, rej),
   };
@@ -81,6 +87,8 @@ function query(resolver) {
 function matchesFilter(doc, filter) {
   return Object.entries(filter).every(([key, cond]) => {
     const value = doc[key];
+    // Date é objeto, mas é valor escalar — não operador de query.
+    if (cond instanceof Date) return String(value) === String(cond);
     if (cond && typeof cond === 'object' && !Array.isArray(cond)) {
       if ('$in' in cond) return cond.$in.map(String).includes(String(value));
       if ('$nin' in cond) return !cond.$nin.map(String).includes(String(value));
@@ -140,8 +148,28 @@ vi.mock('../../models/Appointment.js', () => ({
   default: {
     find: (filter) => query(() =>
       [...store.appointments.values()].filter(a => matchesFilter(a, filter)).map(clone)),
+    findOne: (filter) => query(() => {
+      const found = [...store.appointments.values()].find(a => matchesFilter(a, filter));
+      return found ? clone(found) : null;
+    }),
     countDocuments: (filter) => query(() =>
       [...store.appointments.values()].filter(a => matchesFilter(a, filter)).length),
+    create: async ([doc]) => {
+      if (store.failOnAppointmentNumber && store.appointmentsCreated + 1 === store.failOnAppointmentNumber) {
+        store.appointmentsCreated++;
+        throw new Error('falha simulada ao criar o agendamento destino');
+      }
+      store.appointmentsCreated++;
+      const created = { ...doc, _id: oid() };
+      store.appointments.set(created._id, created);
+      return [created];
+    },
+    updateOne: async (filter, update) => {
+      for (const appt of store.appointments.values()) {
+        if (matchesFilter(appt, filter)) { Object.assign(appt, update.$set || {}); break; }
+      }
+      return { modifiedCount: 1 };
+    },
     updateMany: async (filter, update) => {
       let n = 0;
       for (const appt of store.appointments.values()) {
@@ -157,6 +185,11 @@ vi.mock('../../models/Appointment.js', () => ({
 
 vi.mock('../../models/Session.js', () => ({
   default: {
+    create: async ([doc]) => {
+      const created = { ...doc, _id: oid() };
+      store.sessions.set(created._id, created);
+      return [created];
+    },
     updateMany: async (filter, update) => {
       let n = 0;
       for (const sess of store.sessions.values()) {
@@ -167,6 +200,21 @@ vi.mock('../../models/Session.js', () => ({
       }
       return { modifiedCount: n };
     },
+  },
+}));
+
+// Profissional de destino: por padrão atende psicologia.
+vi.mock('../../models/Doctor.js', () => ({
+  default: {
+    findById: (id) => query(() => store.doctors.get(String(id)) || null),
+  },
+}));
+
+// Ocupação de agenda do profissional — regra canônica, aqui controlável.
+vi.mock('../../middleware/conflictDetection.js', () => ({
+  checkSlotOverlap: async ({ date, time }) => {
+    const hit = store.doctorBusySlots.find(s => s.date === date && s.time === time);
+    return hit ? { _id: 'conflito-existente' } : null;
   },
 }));
 
@@ -267,6 +315,10 @@ function seed({ model = 'prepaid' } = {}) {
   store.projectionsRebuilt = [];
   store.cancelCalls = [];
   store.packageWrites = [];
+  store.doctorBusySlots = [];
+  store.appointmentsCreated = 0;
+  store.failOnAppointmentNumber = 0;
+  store.doctors = new Map([[String(PSICO_DOCTOR), { _id: PSICO_DOCTOR, fullName: "Psicóloga Teste", specialty: "psicologia" }]]);
   store.failNextTransfer = false;
 
   SOURCE_PKG = oid();
@@ -307,11 +359,31 @@ function seed({ model = 'prepaid' } = {}) {
   scheduledIds = [mk('scheduled', 'pending'), mk('scheduled', 'pending')];
 }
 
-const target = { specialty: 'psicologia', doctorId: PSICO_DOCTOR, sessionValue: 180 };
+/** Datas futuras — a agenda rejeita passado. */
+const futureDate = (daysAhead) => {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  return d.toISOString().slice(0, 10);
+};
+
+const makeSchedule = (ids = canceledIds) => ids.map((sourceAppointmentId, i) => ({
+  sourceAppointmentId,
+  date: futureDate(7 + i * 7),
+  time: ['09:00', '10:00', '11:00', '14:00'][i % 4],
+}));
+
+const makeTarget = (over = {}) => ({
+  specialty: 'psicologia',
+  doctorId: PSICO_DOCTOR,
+  sessionValue: 180,
+  schedule: makeSchedule(),
+  ...over,
+});
+
 const baseInput = (over = {}) => ({
   sourcePackageId: SOURCE_PKG,
   appointmentIds: canceledIds,
-  target,
+  target: makeTarget(),
   reason: 'Mudança terapêutica definida pela equipe',
   idempotencyKey: `key_${Math.random()}`,
   ...over,
@@ -328,7 +400,7 @@ describe('preview — estritamente somente leitura', () => {
       sessions: JSON.stringify([...store.sessions.values()]),
     };
 
-    await preview({ sourcePackageId: SOURCE_PKG, appointmentIds: canceledIds, target });
+    await preview({ sourcePackageId: SOURCE_PKG, appointmentIds: canceledIds, target: makeTarget() });
 
     expect(store.packages.size).toBe(before.packages);
     expect(JSON.stringify([...store.appointments.values()])).toBe(before.appointments);
@@ -339,7 +411,7 @@ describe('preview — estritamente somente leitura', () => {
   });
 
   it('mostra os números do caso real', async () => {
-    const p = await preview({ sourcePackageId: SOURCE_PKG, appointmentIds: canceledIds, target });
+    const p = await preview({ sourcePackageId: SOURCE_PKG, appointmentIds: canceledIds, target: makeTarget() });
     expect(p.sessionCount).toBe(4);
     expect(p.amount).toBe(720);
     expect(p.cashEntry).toBe(0);
@@ -451,9 +523,181 @@ describe('pacote de destino', () => {
     expect(targetPkg.paymentType).toBe('full');
   });
 
-  it('não reutiliza as sessões de fono como sessões de psicologia', () => {
-    const reused = [...store.sessions.values()].filter(s => String(s.package) === String(targetPkg._id));
-    expect(reused).toHaveLength(0);
+  it('não reutiliza as sessões de fono — o destino recebe sessões NOVAS', () => {
+    const targetSessions = [...store.sessions.values()]
+      .filter(s => String(s.package) === String(targetPkg._id));
+
+    expect(targetSessions).toHaveLength(4);
+    // Nenhuma delas é uma sessão que pertencia ao pacote de fono
+    const fonoSessionIds = [...store.sessions.values()]
+      .filter(s => String(s.package) === String(SOURCE_PKG))
+      .map(s => String(s._id));
+    for (const s of targetSessions) {
+      expect(fonoSessionIds).not.toContain(String(s._id));
+      expect(s.specialty).toBe('psicologia');
+    }
+    // E as sessões de fono continuam no pacote de fono
+    expect(fonoSessionIds).toHaveLength(8);
+  });
+});
+
+describe('agenda do pacote destino', () => {
+  let result;
+  beforeEach(async () => { result = await execute(baseInput(), { _id: oid() }); });
+
+  it('cria os 4 novos agendamentos de psicologia', () => {
+    expect(result.newAppointments).toHaveLength(4);
+    const created = [...store.appointments.values()]
+      .filter(a => String(a.package) === String(result.targetPackage._id));
+    expect(created).toHaveLength(4);
+  });
+
+  it('usa exatamente as datas e horários informados', () => {
+    const expected = makeSchedule();
+    const created = [...store.appointments.values()]
+      .filter(a => String(a.package) === String(result.targetPackage._id));
+    for (const row of expected) {
+      const match = created.find(a => a.time === row.time);
+      expect(match, `esperava agendamento às ${row.time}`).toBeTruthy();
+      expect(new Date(match.date).toISOString().slice(0, 10)).toBe(row.date);
+    }
+  });
+
+  it('nasce com especialidade e profissional corretos', () => {
+    const created = [...store.appointments.values()]
+      .filter(a => String(a.package) === String(result.targetPackage._id));
+    for (const a of created) {
+      expect(a.specialty).toBe('psicologia');
+      expect(String(a.doctor)).toBe(String(PSICO_DOCTOR));
+      expect(String(a.patient)).toBe(String(PATIENT));
+    }
+  });
+
+  it('nasce no mesmo estado de sessão de pacote pré-pago (coberta, sem cobrança)', () => {
+    const created = [...store.appointments.values()]
+      .filter(a => String(a.package) === String(result.targetPackage._id));
+    for (const a of created) {
+      expect(a.operationalStatus).toBe('scheduled');
+      expect(a.clinicalStatus).toBe('pending');
+      expect(a.paymentStatus).toBe('package_paid');
+      expect(a.paymentOrigin).toBe('package_prepaid');
+      expect(a.isPaid).toBe(true);
+      expect(a.serviceType).toBe('package_session');
+    }
+  });
+
+  it('vínculo bidirecional origem ↔ destino', () => {
+    for (const sourceId of canceledIds) {
+      const origin = store.appointments.get(sourceId);
+      expect(origin.targetAppointmentId).toBeTruthy();
+
+      const destination = store.appointments.get(String(origin.targetAppointmentId));
+      expect(destination).toBeTruthy();
+      expect(String(destination.sourceAppointmentId)).toBe(String(sourceId));
+      expect(String(destination.transferId)).toBe(String(store.transfers[0]._id));
+      expect(String(origin.transferredToPackage)).toBe(String(result.targetPackage._id));
+    }
+  });
+
+  it('cada novo agendamento tem Session própria vinculada', () => {
+    const created = [...store.appointments.values()]
+      .filter(a => String(a.package) === String(result.targetPackage._id));
+    for (const a of created) {
+      expect(a.session).toBeTruthy();
+      const sess = store.sessions.get(String(a.session));
+      expect(sess).toBeTruthy();
+      expect(String(sess.appointmentId)).toBe(String(a._id));
+      expect(String(sess.package)).toBe(String(result.targetPackage._id));
+    }
+  });
+});
+
+describe('agenda — rejeições', () => {
+  it('conflito de agenda do profissional → DOCTOR_SLOT_CONFLICT 409', async () => {
+    const sched = makeSchedule();
+    store.doctorBusySlots = [{ date: sched[2].date, time: sched[2].time }];
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 409, code: 'DOCTOR_SLOT_CONFLICT', position: 3 });
+    expect(store.transfers).toHaveLength(0);
+  });
+
+  it('conflito de agenda do paciente → PATIENT_SLOT_CONFLICT 409', async () => {
+    const sched = makeSchedule();
+    // Paciente já tem outro atendimento exatamente nesse horário
+    const clashId = oid();
+    store.appointments.set(clashId, {
+      _id: clashId,
+      patient: PATIENT,
+      date: new Date(`${sched[0].date}T${sched[0].time}:00`),
+      time: sched[0].time,
+      operationalStatus: 'scheduled',
+    });
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 409, code: 'PATIENT_SLOT_CONFLICT' });
+    expect(store.transfers).toHaveLength(0);
+  });
+
+  it('profissional não atende a especialidade → DOCTOR_SPECIALTY_MISMATCH 422', async () => {
+    store.doctors.set(String(PSICO_DOCTOR), {
+      _id: PSICO_DOCTOR, fullName: 'Fono Teste', specialty: 'fonoaudiologia',
+    });
+    await expect(execute(baseInput(), { _id: oid() }))
+      .rejects.toMatchObject({ status: 422, code: 'DOCTOR_SPECIALTY_MISMATCH' });
+  });
+
+  it('sem agenda informada → MISSING_SCHEDULE 400', async () => {
+    await expect(execute(baseInput({ target: makeTarget({ schedule: undefined }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 400, code: 'MISSING_SCHEDULE' });
+  });
+
+  it('quantidade de horários diferente das sessões → SCHEDULE_COUNT_MISMATCH 400', async () => {
+    await expect(execute(baseInput({ target: makeTarget({ schedule: makeSchedule().slice(0, 2) }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 400, code: 'SCHEDULE_COUNT_MISMATCH' });
+  });
+
+  it('sessão sem data → MISSING_SCHEDULE_DATE 400', async () => {
+    const sched = makeSchedule();
+    sched[1].date = '';
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 400, code: 'MISSING_SCHEDULE_DATE', position: 2 });
+  });
+
+  it('sessão sem horário → MISSING_SCHEDULE_TIME 400', async () => {
+    const sched = makeSchedule();
+    sched[0].time = '';
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 400, code: 'MISSING_SCHEDULE_TIME' });
+  });
+
+  it('data no passado → SCHEDULE_DATE_IN_PAST 422', async () => {
+    const sched = makeSchedule();
+    sched[0].date = '2020-01-15';
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 422, code: 'SCHEDULE_DATE_IN_PAST' });
+  });
+
+  it('duas sessões novas no mesmo horário → SCHEDULE_INTERNAL_CONFLICT 422', async () => {
+    const sched = makeSchedule();
+    sched[1].date = sched[0].date;
+    sched[1].time = sched[0].time;
+    await expect(execute(baseInput({ target: makeTarget({ schedule: sched }) }), { _id: oid() }))
+      .rejects.toMatchObject({ status: 422, code: 'SCHEDULE_INTERNAL_CONFLICT' });
+  });
+
+  it('rollback: falha ao criar o 4º agendamento desfaz tudo', async () => {
+    const before = {
+      packages: store.packages.size,
+      appointments: JSON.stringify([...store.appointments.values()]),
+      sessions: store.sessions.size,
+    };
+    store.failOnAppointmentNumber = 4;
+
+    await expect(execute(baseInput(), { _id: oid() })).rejects.toThrow(/falha simulada ao criar o agendamento/);
+
+    expect(store.packages.size).toBe(before.packages);
+    expect(JSON.stringify([...store.appointments.values()])).toBe(before.appointments);
+    expect(store.sessions.size).toBe(before.sessions);
+    expect(store.transfers).toHaveLength(0);
   });
 });
 

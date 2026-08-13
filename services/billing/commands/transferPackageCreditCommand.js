@@ -29,11 +29,13 @@ import mongoose from 'mongoose';
 import Package from '../../../models/Package.js';
 import Appointment from '../../../models/Appointment.js';
 import Session from '../../../models/Session.js';
+import Doctor from '../../../models/Doctor.js';
 import PackageCreditTransfer from '../../../models/PackageCreditTransfer.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { executeWithSession as cancelAppointmentWithSession } from '../../appointment/commands/cancelAppointmentCommand.js';
+import { checkSlotOverlap } from '../../../middleware/conflictDetection.js';
 
 function buildError(message, status = 400, code = 'TRANSFER_ERROR', extra = {}) {
   const err = new Error(message);
@@ -53,6 +55,143 @@ function paidSlots(pkg) {
   const unit = Number(pkg.sessionValue) || 0;
   if (unit <= 0) return 0;
   return Math.floor((Number(pkg.totalPaid) || 0) / unit + 1e-9);
+}
+
+const SESSION_DURATION_MIN = 40;
+
+function normalizeDateOnly(value) {
+  if (!value) return null;
+  const str = String(value);
+  const datePart = str.includes('T') ? str.split('T')[0] : str;
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
+}
+
+/** Data + hora locais como Date, sem deslocar por fuso. */
+function buildDateTime(dateStr, timeStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [hh, mm] = timeStr.split(':').map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0);
+}
+
+/**
+ * Valida a agenda das sessões DESTINO.
+ *
+ * Não presume que o profissional novo está livre no horário antigo — foi
+ * justamente isso que motivou a data/hora serem editáveis por sessão.
+ * Roda no preview e de novo dentro da transação: entre revisar e confirmar
+ * alguém pode ter ocupado o horário.
+ */
+async function validateSchedule({ schedule, appointmentIds, doctorId, specialty, patientId, mongoSession = null }) {
+  if (!Array.isArray(schedule) || schedule.length === 0) {
+    throw buildError('Informe data e horário de cada sessão do novo pacote', 400, 'MISSING_SCHEDULE');
+  }
+  if (schedule.length !== appointmentIds.length) {
+    throw buildError(
+      `São ${appointmentIds.length} sessão(ões) selecionada(s), mas ${schedule.length} agendamento(s) informado(s).`,
+      400, 'SCHEDULE_COUNT_MISMATCH'
+    );
+  }
+
+  const selected = new Set(appointmentIds.map(String));
+  const seenSources = new Set();
+  const seenSlots = new Set();
+  const normalized = [];
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  for (const [index, row] of schedule.entries()) {
+    const position = index + 1;
+    const sourceAppointmentId = String(row.sourceAppointmentId || '');
+
+    if (!selected.has(sourceAppointmentId)) {
+      throw buildError(
+        `A sessão ${position} do agendamento não corresponde a nenhuma sessão selecionada.`,
+        400, 'SCHEDULE_SOURCE_MISMATCH'
+      );
+    }
+    if (seenSources.has(sourceAppointmentId)) {
+      throw buildError(`A sessão de origem ${position} foi agendada duas vezes.`, 400, 'SCHEDULE_DUPLICATE_SOURCE');
+    }
+    seenSources.add(sourceAppointmentId);
+
+    const date = normalizeDateOnly(row.date);
+    const time = /^\d{2}:\d{2}$/.test(String(row.time || '')) ? String(row.time) : null;
+
+    if (!date) throw buildError(`Informe a data da sessão ${position}.`, 400, 'MISSING_SCHEDULE_DATE', { position });
+    if (!time) throw buildError(`Informe o horário da sessão ${position} (HH:MM).`, 400, 'MISSING_SCHEDULE_TIME', { position });
+    if (date < todayStr) {
+      throw buildError(
+        `A sessão ${position} está marcada para ${date}, que já passou.`,
+        422, 'SCHEDULE_DATE_IN_PAST', { position, date }
+      );
+    }
+
+    const slotKey = `${date}|${time}`;
+    if (seenSlots.has(slotKey)) {
+      throw buildError(
+        `Duas sessões novas foram marcadas para ${date} às ${time}.`,
+        422, 'SCHEDULE_INTERNAL_CONFLICT', { position, date, time }
+      );
+    }
+    seenSlots.add(slotKey);
+
+    normalized.push({ sourceAppointmentId, date, time });
+  }
+
+  // Conflito de agenda do PROFISSIONAL (regra canônica de ocupação)
+  for (const [index, row] of normalized.entries()) {
+    const overlap = await checkSlotOverlap({
+      doctorId,
+      date: row.date,
+      time: row.time,
+      duration: SESSION_DURATION_MIN,
+    });
+    if (overlap) {
+      throw buildError(
+        `O profissional já tem compromisso em ${row.date} às ${row.time}.`,
+        409, 'DOCTOR_SLOT_CONFLICT',
+        { position: index + 1, date: row.date, time: row.time, conflictId: overlap._id?.toString?.() || null }
+      );
+    }
+  }
+
+  // Conflito de agenda do PACIENTE — não pode estar em dois atendimentos ao mesmo tempo
+  for (const [index, row] of normalized.entries()) {
+    const q = Appointment.findOne({
+      patient: patientId,
+      date: buildDateTime(row.date, row.time),
+      time: row.time,
+      operationalStatus: { $nin: ['canceled', 'suspended'] },
+    });
+    if (mongoSession) q.session(mongoSession);
+    const clash = await q.lean();
+    if (clash) {
+      throw buildError(
+        `O paciente já tem atendimento em ${row.date} às ${row.time}.`,
+        409, 'PATIENT_SLOT_CONFLICT',
+        { position: index + 1, date: row.date, time: row.time, conflictId: clash._id?.toString?.() || null }
+      );
+    }
+  }
+
+  return normalized;
+}
+
+/** O profissional precisa atender a especialidade de destino. */
+async function assertDoctorHandlesSpecialty(doctorId, specialty) {
+  const doctor = await Doctor.findById(doctorId).lean();
+  if (!doctor) throw buildError('Profissional de destino não encontrado', 404, 'TARGET_DOCTOR_NOT_FOUND');
+
+  const declared = [doctor.specialty, ...(doctor.specialties || [])]
+    .filter(Boolean)
+    .map(s => String(s).toLowerCase());
+
+  if (declared.length > 0 && !declared.includes(String(specialty).toLowerCase())) {
+    throw buildError(
+      `${doctor.fullName || 'O profissional'} não atende ${specialty}.`,
+      422, 'DOCTOR_SPECIALTY_MISMATCH', { doctorId: String(doctorId), specialty }
+    );
+  }
+  return doctor;
 }
 
 /**
@@ -163,8 +302,19 @@ export async function execute(input, user, correlationId = null) {
   // ── Invariante 6: idempotência antes de qualquer escrita ────────────────
   const existing = await PackageCreditTransfer.findOne({ idempotencyKey }).lean();
   if (existing) {
+    // Devolve o MESMO resultado: transferência, pacote e agendamentos já
+    // criados. Não recria nada — repetir a chave nunca duplica agenda.
+    const [existingPackage, existingAppointments] = await Promise.all([
+      Package.findById(existing.targetPackageId).lean(),
+      Appointment.find({ package: existing.targetPackageId })
+        .select('_id date time sourceAppointmentId')
+        .lean(),
+    ]);
+
     return {
       data: existing,
+      targetPackage: existingPackage,
+      newAppointments: existingAppointments || [],
       alreadyProcessed: true,
       correlationId: cid,
       message: 'Transferência já processada anteriormente.',
@@ -205,6 +355,19 @@ export async function execute(input, user, correlationId = null) {
     const { toCancel, alreadyCanceled } = classifyAppointments(appointments, source._id, source.patient);
     const sessionCount = appointments.length;
     const amount = Number((sessionCount * unitValue).toFixed(2));
+
+    // Profissional precisa atender a especialidade antes de qualquer escrita
+    await assertDoctorHandlesSpecialty(target.doctorId, target.specialty);
+
+    // Normaliza/valida a agenda cedo: se um horário estiver ocupado, nada é criado
+    const normalizedSchedule = await validateSchedule({
+      schedule: target.schedule,
+      appointmentIds,
+      doctorId: target.doctorId,
+      specialty: target.specialty,
+      patientId: source.patient,
+      mongoSession,
+    });
 
     // ── Invariante 1 e 5: a cobertura paga precisa bancar tudo ────────────
     // realizadas + futuras que continuam + já transferidas + estas agora
@@ -288,6 +451,91 @@ export async function execute(input, user, correlationId = null) {
     }], { session: mongoSession });
 
     targetPackage.sourceTransferId = transfer._id;
+    await targetPackage.save({ session: mongoSession });
+
+    // ── Agenda do pacote destino ──────────────────────────────────────────
+    // Revalidado DENTRO da transação: entre revisar e confirmar alguém pode
+    // ter ocupado o horário.
+    const confirmedSchedule = await validateSchedule({
+      schedule: normalizedSchedule,
+      appointmentIds,
+      doctorId: target.doctorId,
+      specialty: target.specialty,
+      patientId: source.patient,
+      mongoSession,
+    });
+
+    const newAppointments = [];
+    for (const [index, row] of confirmedSchedule.entries()) {
+      // Estado idêntico ao de sessão de pacote pré-pago criada pelo fluxo
+      // normal: coberta, sem cobrança e sem Payment.
+      const [appt] = await Appointment.create([{
+        patient: source.patient,
+        doctor: new mongoose.Types.ObjectId(target.doctorId),
+        date: buildDateTime(row.date, row.time),
+        time: row.time,
+        duration: SESSION_DURATION_MIN,
+        specialty: target.specialty,
+        package: targetPackage._id,
+        serviceType: 'package_session',
+        operationalStatus: 'scheduled',
+        clinicalStatus: 'pending',
+        paymentStatus: 'package_paid',
+        isPaid: true,
+        visualFlag: 'ok',
+        paymentOrigin: 'package_prepaid',
+        paymentMethod: 'transferencia_pacote',
+        billingType: 'particular',
+        sessionValue: targetSessionValue,
+        isFirstAppointment: index === 0,
+        // Rastreabilidade bidirecional
+        transferId: transfer._id,
+        sourceAppointmentId: new mongoose.Types.ObjectId(row.sourceAppointmentId),
+      }], { session: mongoSession });
+
+      const [sess] = await Session.create([{
+        date: appt.date,
+        time: row.time,
+        patient: source.patient,
+        doctor: new mongoose.Types.ObjectId(target.doctorId),
+        package: targetPackage._id,
+        appointmentId: appt._id,
+        sessionValue: targetSessionValue,
+        sessionType: target.specialty,
+        specialty: target.specialty,
+        status: 'scheduled',
+        isPaid: true,
+        paymentStatus: 'package_paid',
+        paymentOrigin: 'package_prepaid',
+        visualFlag: 'ok',
+        paymentMethod: 'transferencia_pacote',
+        transferId: transfer._id,
+      }], { session: mongoSession });
+
+      await Appointment.updateOne(
+        { _id: appt._id },
+        { $set: { session: sess._id, packageId: targetPackage._id } },
+        { session: mongoSession }
+      );
+
+      // Origem aponta para o destino (o inverso é feito acima)
+      await Appointment.updateOne(
+        { _id: row.sourceAppointmentId },
+        { $set: { targetAppointmentId: appt._id } },
+        { session: mongoSession }
+      );
+
+      newAppointments.push({
+        _id: appt._id,
+        sessionId: sess._id,
+        sourceAppointmentId: row.sourceAppointmentId,
+        date: row.date,
+        time: row.time,
+      });
+    }
+
+    targetPackage.appointments = newAppointments.map(a => a._id);
+    targetPackage.sessions = newAppointments.map(a => a.sessionId);
     await targetPackage.save({ session: mongoSession });
 
     // ── Sessões ainda agendadas: cancelar pelo fluxo canônico ─────────────
@@ -380,6 +628,7 @@ export async function execute(input, user, correlationId = null) {
     return {
       transfer: transfer.toObject(),
       targetPackage: targetPackage.toObject(),
+      newAppointments,
       canceledNow: toCancel.length,
       restamped: alreadyCanceled.length,
     };
@@ -399,6 +648,7 @@ export async function execute(input, user, correlationId = null) {
   return {
     data: result.transfer,
     targetPackage: result.targetPackage,
+    newAppointments: result.newAppointments,
     canceledNow: result.canceledNow,
     restamped: result.restamped,
     correlationId: cid,
@@ -424,6 +674,36 @@ export async function preview(input) {
   const appointments = await Appointment.find({ _id: { $in: appointmentIds } }).lean();
   const { toCancel, alreadyCanceled } = classifyAppointments(appointments, source._id, source.patient);
 
+  // Mesmas validações da execução — o que a tela mostra é o que vai acontecer.
+  // Nenhuma delas escreve: só leitura e cálculo.
+  let scheduled = [];
+  if (target.doctorId && target.specialty) {
+    await assertDoctorHandlesSpecialty(target.doctorId, target.specialty);
+    if (target.schedule) {
+      const rows = await validateSchedule({
+        schedule: target.schedule,
+        appointmentIds,
+        doctorId: target.doctorId,
+        specialty: target.specialty,
+        patientId: source.patient,
+      });
+      const byId = new Map(appointments.map(a => [String(a._id), a]));
+      scheduled = rows.map(r => {
+        const origin = byId.get(r.sourceAppointmentId);
+        return {
+          sourceAppointmentId: r.sourceAppointmentId,
+          sourceDate: origin?.date || null,
+          sourceTime: origin?.time || null,
+          sourceStatus: origin?.operationalStatus || null,
+          date: r.date,
+          time: r.time,
+          specialty: target.specialty,
+          doctorId: String(target.doctorId),
+        };
+      });
+    }
+  }
+
   const unitValue = Number(source.sessionValue) || 0;
   const sessionCount = appointments.length;
   const amount = Number((sessionCount * unitValue).toFixed(2));
@@ -438,6 +718,10 @@ export async function preview(input) {
     sessionCount,
     unitValue,
     amount,
+    // Agenda que será criada no pacote destino
+    newAppointments: scheduled,
+    newAppointmentsCount: scheduled.length,
+    targetPackagesToCreate: 1,
     targetSessionValue,
     targetTotalValue,
     shortfall: Number(Math.max(0, targetTotalValue - amount).toFixed(2)),
