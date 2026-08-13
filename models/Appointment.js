@@ -389,6 +389,40 @@ const appointmentSchema = new mongoose.Schema({
     enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration', 'converted_to_package']
   },
 
+  /**
+   * Marca explícita de falta, independente de clinicalStatus.
+   *
+   * Introduzido pela transferência de cobertura: uma sessão convertida para
+   * outro pacote continua CANCELADA (operationalStatus permanece 'canceled'),
+   * mas não é falta do paciente — a clínica redirecionou o atendimento.
+   *
+   * `default: null` = "não informado", preservando todo o histórico anterior.
+   * ⚠️ Relatórios que hoje inferem falta por `clinicalStatus === 'missed'` só
+   * respeitarão este campo depois de migrados para lê-lo.
+   */
+  missed: {
+    type: Boolean,
+    default: null,
+    description: 'true = falta do paciente | false = ausência não imputável ao paciente | null = não informado'
+  },
+
+  // ─── TRANSFERÊNCIA DE COBERTURA ENTRE PACOTES ──────────────
+  // Preenchidos junto com cancelSource='converted_to_package'. A presença de
+  // transferId é o que impede transferir a mesma sessão duas vezes.
+  transferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PackageCreditTransfer',
+    default: null,
+    index: true,
+    description: 'Transferência que converteu esta sessão'
+  },
+  transferredToPackage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Package',
+    default: null,
+    description: 'Pacote de destino que recebeu a cobertura desta sessão'
+  },
+
   // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────
   // Preenchido SOMENTE quando forceCancel:true é usado na rota /cancel
   // Separa reversão administrativa de cancelamento operacional normal

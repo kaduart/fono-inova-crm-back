@@ -26,6 +26,7 @@ import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.j
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { createContextLogger } from '../utils/logger.js';
 import updatePackageCommand from '../services/billing/commands/updatePackageCommand.js';
+import transferPackageCreditCommand from '../services/billing/commands/transferPackageCreditCommand.js';
 import deletePackageCommand from '../services/billing/commands/deletePackageCommand.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import healthRoutes from './package.v2.health.js';
@@ -394,6 +395,79 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       error.code || 'INTERNAL_SERVER_ERROR',
       error.message || 'Erro ao atualizar pacote',
       { correlationId, ...(error.fields ? { fields: error.fields } : {}) }
+    ));
+  }
+});
+
+// ============================================
+// POST /api/v2/packages/:id/transfer[/preview]
+// Converte sessões não realizadas para outro pacote, levando a cobertura
+// já paga. NÃO cria Payment e NÃO gera entrada de caixa — o dinheiro entrou
+// no pacote de origem, na data original. Ver transferPackageCreditCommand.js.
+// ============================================
+
+router.post('/:id/transfer/preview', flexibleAuth, async (req, res) => {
+  const correlationId = `pkg_transfer_preview_${Date.now()}`;
+  try {
+    const view = await PackagesView.findOne({ $or: [{ packageId: req.params.id }, { _id: req.params.id }] }).lean();
+    const realPackageId = view?.packageId?.toString() || req.params.id;
+
+    const data = await transferPackageCreditCommand.preview({
+      ...req.body,
+      sourcePackageId: realPackageId,
+    });
+
+    res.json(formatSuccess(data, { correlationId }));
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) logger.error('[PackageV2] Erro no preview de transferência', { correlationId, error: error.message });
+    res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
+      error.message || 'Erro ao simular transferência',
+      { correlationId }
+    ));
+  }
+});
+
+router.post('/:id/transfer', flexibleAuth, async (req, res) => {
+  const correlationId = `pkg_transfer_${Date.now()}`;
+  try {
+    const view = await PackagesView.findOne({ $or: [{ packageId: req.params.id }, { _id: req.params.id }] }).lean();
+    const realPackageId = view?.packageId?.toString() || req.params.id;
+
+    const result = await transferPackageCreditCommand.execute(
+      { ...req.body, sourcePackageId: realPackageId },
+      req.user,
+      correlationId
+    );
+
+    logger.info('[PackageV2] Transferência concluída', {
+      correlationId,
+      sourcePackageId: realPackageId,
+      targetPackageId: result.targetPackage?._id?.toString(),
+      sessionCount: result.data?.sessionCount,
+      amount: result.data?.amount,
+      cashEntry: 0,
+      alreadyProcessed: Boolean(result.alreadyProcessed),
+    });
+
+    res.status(result.alreadyProcessed ? 200 : 201).json(formatSuccess({
+      transfer: result.data,
+      targetPackage: result.targetPackage || null,
+      canceledNow: result.canceledNow ?? 0,
+      restamped: result.restamped ?? 0,
+      alreadyProcessed: Boolean(result.alreadyProcessed),
+      message: result.message,
+    }, { correlationId }));
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) logger.error('[PackageV2] Erro na transferência', { correlationId, error: error.message, stack: error.stack });
+    else logger.info('[PackageV2] Transferência recusada', { correlationId, code: error.code, error: error.message });
+
+    res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
+      error.message || 'Erro ao transferir sessões',
+      { correlationId, ...(error.appointmentId ? { appointmentId: error.appointmentId } : {}) }
     ));
   }
 });

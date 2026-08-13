@@ -200,6 +200,28 @@ const packageSchema = new mongoose.Schema({
     default: '',
     description: 'Observação livre da secretaria/equipe. Único campo editável pelo PUT comum (ver packageUpdatePolicy.js)'
   },
+
+  /**
+   * 🔁 PACOTE FINANCIADO POR TRANSFERÊNCIA DE COBERTURA
+   *
+   * Preenchido quando o pacote nasce de sessões não realizadas de OUTRO pacote
+   * (ex.: 4 de fono viram 4 de psicologia). O valor aqui já foi recebido no
+   * pacote de origem, na data original — NUNCA gera Payment nem entrada de caixa.
+   *
+   * totalPaid inclui este valor: o pacote está coberto, mas o dinheiro entrou lá atrás.
+   */
+  fundedByTransfer: {
+    type: Number,
+    default: 0,
+    description: 'Cobertura recebida via PackageCreditTransfer. Não é entrada de caixa.'
+  },
+  sourceTransferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PackageCreditTransfer',
+    default: null,
+    index: true,
+    description: 'Transferência que financiou este pacote'
+  },
   txid: { type: String, unique: true, sparse: true },
   metadata: {
     requestId: { type: String, index: true },
