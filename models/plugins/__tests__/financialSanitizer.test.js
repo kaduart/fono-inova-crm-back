@@ -85,12 +85,13 @@ describe('financialSanitizer — save/create', () => {
     expect(doc.isPaid).toBe(false);
     expect(doc.paymentStatus).toBe('pending');
     expect(warnSpy).toHaveBeenCalled();
-    const logged = warnSpy.mock.calls.find(c => String(c[0]).includes('[FINANCIAL SANITIZER] REMOVED'));
+    const logged = warnSpy.mock.calls.find(c => String(c[0]).includes('[FINANCIAL SANITIZER] RESET_TO_DEFAULT'));
     expect(logged).toBeTruthy();
     const meta = JSON.parse(logged[1]);
     expect(meta.removedFields).toEqual({ isPaid: true, paymentStatus: 'package_paid' });
-    expect(meta.stack).toContain('models/plugins/financialSanitizer.js');
+    expect(meta.stack).not.toContain('models/plugins/financialSanitizer.js');
     expect(meta.stack).not.toContain('node_modules');
+    expect(meta.stack).toContain('    at ');
 
     warnSpy.mockRestore();
   });

@@ -2,7 +2,8 @@
  * 💰 Financial Sanitizer Plugin (Mongoose)
  *
  * Bloqueia writes V1 na origem (CREATE):
- * - Remove isPaid / paymentStatus de documentos novos
+ * - Reseta isPaid / paymentStatus para o default do schema quando escritos
+ *   explicitamente sem bypass; preserva o default quando o campo não foi tocado.
  * - Loga warning com stack trace
  * - Em modo STRICT: lança erro
  *
@@ -29,7 +30,11 @@ function shouldLog(stackKey) {
 function captureRelevantStack() {
   return new Error().stack
     .split('\n')
-    .filter(line => line.includes('    at ') && !line.includes('node_modules'))
+    .filter(line =>
+      line.includes('    at ') &&
+      !line.includes('node_modules') &&
+      !line.includes('models/plugins/financialSanitizer.js')
+    )
     .slice(0, 5)
     .join('\n');
 }
@@ -123,7 +128,7 @@ export default function financialSanitizer(schema, options = {}) {
 
         const stackKey = `${entityName}:save:${meta.stack}`;
         if (shouldLog(stackKey)) {
-          console.warn('⚠️  [FINANCIAL SANITIZER] REMOVED:', JSON.stringify(meta, null, 2));
+          console.warn('⚠️  [FINANCIAL SANITIZER] RESET_TO_DEFAULT:', JSON.stringify(meta, null, 2));
         }
       }
     }

@@ -88,17 +88,21 @@ A consolidação em um único mecanismo é **oportunidade futura**; não entra n
 
 ## 6. Stack trace
 
-O plugin loga a stack trace filtrada, removendo frames de `node_modules` e mantendo as 5 primeiras frames restantes.
+O plugin loga a stack trace filtrada, removendo frames de `node_modules`, frames do próprio plugin (`models/plugins/financialSanitizer.js`) e mantendo as 5 primeiras frames restantes. O objetivo é deixar apenas frames de código de domínio, para que o log sirva para encontrar call sites que ainda escrevem shadow state.
 
 ```js
 new Error().stack
   .split('\n')
-  .filter(line => line.includes('    at ') && !line.includes('node_modules'))
+  .filter(line =>
+    line.includes('    at ') &&
+    !line.includes('node_modules') &&
+    !line.includes('models/plugins/financialSanitizer.js')
+  )
   .slice(0, 5)
   .join('\n');
 ```
 
-Isso remove o ruído do `kareem` (Mongoose middleware engine), mas ainda pode não conter o call site exato quando o hook roda como callback de Promise. Serve como indicativo para cruzar com timestamps/endpoints.
+Isso remove o ruído do `kareem` (Mongoose middleware engine) e do próprio plugin, mas ainda pode não conter o call site exato quando o hook roda como callback de Promise. Serve como indicativo para cruzar com timestamps/endpoints.
 
 ---
 
@@ -118,7 +122,54 @@ Implementação atual: `models/plugins/__tests__/financialSanitizer.test.js`.
 
 ---
 
-## 8. Call sites conhecidos que escrevem explicitamente
+## 8. Read paths vivos que decidem quitação por pacote
+
+A decisão de negócio de derivar a quitação por pacote de `Payment` / `Package.balance` só pode ser implementada na ordem correta. Remover a escrita antes de migrar a leitura recria o bug inverso: sessões já pagas aparecendo como débito do paciente (cobrança duplicada).
+
+### Ordem obrigatória
+
+1. **Primeiro:** migrar os read paths que decidem se uma sessão paga por pacote aparece como débito do paciente.
+2. **Depois:** remover o espelho `paid` / `true` do `bulk-settle` em `routes/payment.v2.js:1663` e `:1676`.
+
+### Read paths principais (vivo na tela da secretaria)
+
+- `routes/appointmentReads.js:112` (`GET /patient/:id`) — alimenta calendário e tabela de agendamentos do paciente.
+- `routes/appointmentReads.js:180-183` — derivação do `paymentStatus` com fallback para o campo cru:
+  ```js
+  paymentStatus: appt.package
+    ? (appt.paymentStatus || 'package_paid')
+    : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending')
+  ```
+- `dtos/appointment.response.dto.ts:110-112` (front) — camada equivalente de fallback.
+
+### Read paths secundários (sem consumidor de produção no front)
+
+- `routes/patient.js:271` (`GET /:patientId/sessions/pending`)
+- `routes/patient.js:333-337` (query de débito do paciente)
+- `routes/patient.js:395` (`/balance/details`)
+
+Esses endpoints podem ser migrados, mas não mudam sozinhos o que a secretária vê.
+
+### Fallback de leitura
+
+`routes/appointmentReads.js:181` e o DTO do front usam fallback: quando o campo está ausente e o agendamento tem `package`, a tela mostra `package_paid`. Enquanto esse fallback existir, medições feitas apenas pelo banco distorcem o que a secretária vê. Qualquer reparo de dados deve levar esse fallback em conta, sob pena de criar débito indevido na tela para pacotes já quitos ou cobertos por crédito.
+
+## 9. Regra de reparo de dados
+
+Aplica-se a documentos criados após 29/04/2026 que nasceram sem `paymentStatus` por causa do bug do `delete` (comportamento corrigido pelo PR-0).
+
+| Situação | Regra | Valor alvo |
+|---|---|---|
+| Documento **sem `package`** e sem escrita explícita | Volta para o default do schema. | `paymentStatus: 'pending'`, `isPaid: false` |
+| Documento **com `package`** e sem escrita explícita | **Não entra na regra automática.** Vai para auditoria individual. | — |
+| Transferência de crédito de pacote (`transferPackageCreditCommand`) | Bypass autorizado. | `paymentStatus: 'package_paid'`, `isPaid: true` |
+| 5 sessões de pacote de 08/05 e 07/07 sem `paymentStatus` | Auditoria individual; provavelmente `package_paid`, desde que o pacote estivesse quitado, sem estorno posterior e não superseded. | `paymentStatus: 'package_paid'`, `isPaid: true` |
+
+### Motivo do ramo por `package`
+
+O fallback de `routes/appointmentReads.js:181` devolve `package_paid` quando o campo está ausente e o agendamento tem `package`. Se o reparo escrever `pending` nesses documentos, a tela passa a mostrar débito indevido para agendamentos de pacote. Em produção, 13 agendamentos com `package` e sem `paymentStatus` desde 29/04/2026 são exibidos hoje como `package_paid` pelo fallback; escrever `pending` neles criaria cobrança indevida na tela de agendamento do paciente (~R$ 1.360 exposto).
+
+## 10. Call sites conhecidos que escrevem explicitamente
 
 | Call site | Valor escrito | Bypass aplicado | Justificativa |
 |---|---|---|---|
@@ -131,8 +182,8 @@ Implementação atual: `models/plugins/__tests__/financialSanitizer.test.js`.
 
 ---
 
-## 9. Evolução
+## 11. Evolução
 
 - **Curto prazo:** manter este contrato e adicionar bypass apenas em call sites que escrevem estado financeiro não derivável de `Payment`.
-- **Médio prazo:** migrar todos os consumidores de leitura para consultar `Payment` / `Package.balance`, eliminando a necessidade de shadow state em `Session` / `Appointment`.
+- **Médio prazo:** migrar os read paths de quitação por pacote para derivar de `Payment` / `Package.balance`, eliminando a necessidade de espelhar `paid` em `Session` / `Appointment` nesse fluxo. Ver Seção 8 — Ordem obrigatória.
 - **Longo prazo:** consolidar os três mecanismos de bypass em um único modelo (preferencialmente options padronizado) e remover escritas pelo driver nativo.
