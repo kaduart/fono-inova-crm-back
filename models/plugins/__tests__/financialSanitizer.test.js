@@ -17,9 +17,6 @@ import financialSanitizer from '../financialSanitizer.js';
 let mongoServer;
 let TestModel;
 
-const PENDING_STATUSES = ['pending', 'unpaid', 'pending_balance'];
-const DEBIT_STATUSES = ['completed', 'missed'];
-
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
@@ -51,14 +48,6 @@ beforeEach(async () => {
 
 async function findByTag(tag) {
   return TestModel.collection.findOne({ tag });
-}
-
-async function findDebitByTag(tag) {
-  return TestModel.findOne({
-    tag,
-    paymentStatus: { $in: PENDING_STATUSES },
-    status: { $in: DEBIT_STATUSES }
-  }).lean();
 }
 
 describe('financialSanitizer — save/create', () => {
@@ -145,18 +134,14 @@ describe('financialSanitizer — create e insertMany produzem o mesmo resultado'
   });
 });
 
-describe('financialSanitizer — regressao do debito invisivel (missed -> pending)', () => {
-  it('sessao criada sem escrita financeira e depois marcada como missed aparece como debito', async () => {
-    const [doc] = await TestModel.create([{ tag: 'missed-debit', sessionValue: 150 }]);
+describe('financialSanitizer — preserva defaults do schema sem escrita financeira explicita', () => {
+  it('documento criado sem escrita financeira mantem pending/false mesmo apos mudanca de status', async () => {
+    const [doc] = await TestModel.create([{ tag: 'missed-default', sessionValue: 150 }]);
     doc.status = 'missed';
     await doc.save();
 
-    const reloaded = await findByTag('missed-debit');
+    const reloaded = await findByTag('missed-default');
     expect(reloaded.paymentStatus).toBe('pending');
     expect(reloaded.isPaid).toBe(false);
-
-    const debit = await findDebitByTag('missed-debit');
-    expect(debit).toBeTruthy();
-    expect(debit.sessionValue).toBe(150);
   });
 });

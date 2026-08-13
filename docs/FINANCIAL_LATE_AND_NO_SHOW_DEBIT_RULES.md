@@ -6,11 +6,9 @@
 
 ---
 
-## 1. Regra base
+## 1. Comportamento técnico atual da query de débito
 
-Toda sessão **realizada (`completed`)** ou **falta (`missed`)** com valor deve aparecer como débito até ser quitada.
-
-A query canônica de débito é:
+A query atual em `routes/patient.js:333-337` lista como débito toda sessão com:
 
 ```js
 Session.find({
@@ -20,13 +18,41 @@ Session.find({
 });
 ```
 
-Essa regra depende de `paymentStatus` estar presente com o valor `pending` (default do schema). O plugin `financialSanitizer` deve preservar esse default quando o call site não escreve explicitamente no campo.
+Isso faz com que, **hoje, tecnicamente**, sessões `missed` com `paymentStatus: 'pending'` apareçam na dívida do paciente. Esse comportamento é da query, não é regra de negócio aprovada.
+
+Essa query depende de `paymentStatus` estar presente com o valor `pending` (default do schema). O plugin `financialSanitizer` deve preservar esse default quando o call site não escreve explicitamente no campo, para que documentos novos não fiquem invisíveis na query.
 
 ---
 
-## 2. Exceções
+## 2. Regra de negócio aprovada sobre falta
 
-A clínica pode definir exceções formais para não cobrar uma falta:
+> **Decisão do Auditor de Negócio (2026-08-13):** `missed` descreve o atendimento, não define cobrança. **Falta não gera débito automático.**
+
+A cobrança depende da regra aplicada ao caso:
+
+| Situação | Deve gerar débito? | Justificativa |
+|---|---|---|
+| Falta/cancelamento fora do prazo em pacote | Não gera débito extra, mas pode consumir crédito | Política do pacote |
+| Cancelamento antecipado | Não | Há tempo de reagendar |
+| Avaliação inicial | Não | Sem penalidade automática |
+| Sessão avulsa marcada como `missed` | Não, por `missed` sozinho | Status não define cobrança |
+| Ausência do profissional | Jamais | Responsabilidade da clínica |
+
+A consulta de débitos deve evoluir para considerar evidência real de cobrança/consumo, e não apenas `Session.status`. Critérios esperados:
+
+- tipo de sessão (avaliação, pacote, avulsa);
+- prazo de cancelamento;
+- evidência de pagamento ou consumo de crédito;
+- ausência do profissional;
+- política do pacote.
+
+Até essa revisão entrar, o PR-0 deixa o estado intermediário técnico visível: faltas aparecem como débito na tela, mas **isso não é ordem de cobrança**.
+
+---
+
+## 3. Exceções formais
+
+A clínica pode definir exceções para não cobrar uma falta:
 
 | Situação | Como registrar | Efeito na query de débito |
 |---|---|---|
@@ -38,21 +64,24 @@ A clínica pode definir exceções formais para não cobrar uma falta:
 
 ---
 
-## 3. Impacto do PR-0
+## 4. Impacto do PR-0
 
 Entre 2026-04-29 e 2026-08-13, o plugin `financialSanitizer` estava apagando `paymentStatus` em documentos novos. Sessões `missed` criadas nesse período ficaram invisíveis na query de débito.
 
-O PR-0 restaura o comportamento correto: sessões `missed` voltam a nascer com `paymentStatus: 'pending'` e a aparecer como débito.
+O PR-0 restaura o **default técnico**: sessões `missed` voltam a nascer com `paymentStatus: 'pending'`. Por isso passam a aparecer na query atual.
+
+> **Importante:** o PR-0 não implementa a regra de cobrança. Ele corrige a perda do campo `paymentStatus`. A regra de negócio — falta não gera débito automático — será aplicada numa mudança posterior da consulta de débitos, não neste PR.
 
 ### Comunicação operacional
 
 - A secretaria deve ser avisada antes do deploy.
+- **Falta aparecendo como débito não é ordem de cobrança** até a query de débito ser ajustada.
 - Relatórios de inadimplência podem mostrar valores adicionais após o deploy e após o reparo de dados.
-- O volume identificado é pequeno (R$ 150,10 em 8 sessões desde 29/04), mas a regra vale para todo registro futuro.
+- O volume identificado é pequeno (R$ 150,10 em 8 sessões desde 29/04), mas o campo volta a ser preenchido para todo registro futuro.
 
 ---
 
-## 4. Riscos de dupla contagem
+## 5. Riscos de dupla contagem
 
 Dois endpoints podem retornar débitos do mesmo paciente:
 
@@ -63,7 +92,7 @@ Hoje, nenhum consumidor de produção no frontend soma os dois. Qualquer tela no
 
 ---
 
-## 5. Reparo de dados
+## 6. Reparo de dados
 
 Sessões sem `paymentStatus` criadas entre 2026-04-29 e o deploy do PR-0 devem ser reparadas em PR separado:
 

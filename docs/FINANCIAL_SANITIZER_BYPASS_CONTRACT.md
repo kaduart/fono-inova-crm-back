@@ -116,20 +116,27 @@ Testes obrigatórios para qualquer mudança neste plugin:
 - `create` com array compartilhando o mesmo objeto de options → todos preservados.
 - `save` com bypass via `this.$locals` → preservado.
 - `insertMany` e `create` com mesma entrada → resultado idêntico.
-- Sessão criada sem escrita financeira, depois `missed` → `paymentStatus: 'pending'` e aparece na query de débito.
+- Sessão criada sem escrita financeira, depois `missed` → `paymentStatus: 'pending'` e `isPaid: false` permanecem inalterados por `save` em documento existente.
 
 Implementação atual: `models/plugins/__tests__/financialSanitizer.test.js`.
 
 ---
 
-## 8. Read paths vivos que decidem quitação por pacote
+## 8. Unificação do fluxo financeiro antes de ajustar espelho/leitura
 
-A decisão de negócio de derivar a quitação por pacote de `Payment` / `Package.balance` só pode ser implementada na ordem correta. Remover a escrita antes de migrar a leitura recria o bug inverso: sessões já pagas aparecendo como débito do paciente (cobrança duplicada).
+A decisão de negócio (2026-08-13) determinou que `settle-payments` e `bulk-settle` não podem continuar com comportamentos diferentes apenas porque um passa por hook (`updateMany`) e o outro passa por `bulkWrite`. Ambos devem ser bloqueados até existir um **comando/serviço financeiro comum** que:
 
-### Ordem obrigatória
+1. Registre a operação canônica em `Payment` / `Package.balance`.
+2. Atualize `Session.paymentStatus` para `package_paid` (ou equivalente) **somente** quando houver vínculo inequívoco com essa operação.
+3. Seja usado por ambas as rotas, eliminando divergência por acidente de implementação.
 
-1. **Primeiro:** migrar os read paths que decidem se uma sessão paga por pacote aparece como débito do paciente.
-2. **Depois:** remover o espelho `paid` / `true` do `bulk-settle` em `routes/payment.v2.js:1663` e `:1676`.
+### Por que a ordem mudou
+
+A ordem anterior propunha "migrar leitura primeiro, depois remover espelho". Isso deixaria o buraco de `bulkWrite` ativo e consolidado enquanto a leitura mudava, mascarando o fato de que as duas rotas fazem coisas opostas sem decisão de negócio. A nova ordem exige primeiro unificar o comando financeiro, depois ajustar espelho e leitura **juntos**.
+
+### Consequência
+
+Nenhum bypass isolado será aplicado em `settle-payments` ou `bulk-settle` antes dessa unificação. O espelho `paid` / `true` que hoje passa por `bulkWrite` continua existindo, mas é tratado como débito técnico conhecido a ser resolvido pelo comando comum, não por bypass pontual.
 
 ### Read paths principais (vivo na tela da secretaria)
 
@@ -175,15 +182,15 @@ O fallback de `routes/appointmentReads.js:181` devolve `package_paid` quando o c
 |---|---|---|---|
 | `services/billing/commands/transferPackageCreditCommand.js` | `isPaid: true`, `paymentStatus: 'package_paid'` | Sim (options) | Sessão coberta por transferência de crédito de pacote. Não há `Payment` novo. |
 | `routes/payment.v2.js` (estorno / deleção de payment) | `isPaid: false`, `paymentStatus: 'unpaid'` | Sim (options) | Reversão financeira com consumidor de leitura identificado. |
-| `controllers/packageController.v2.js` settle-payments | `isPaid: true`, `paymentStatus: 'paid'` | **Não aplicar** | Valor espelhado derivável de `Payment` / `Package.balance`. Ler, não escrever. |
-| `routes/payment.v2.js` bulk-settle | `isPaid: true`, `paymentStatus: 'paid'` | Passa via `bulkWrite` (buraco) | Deve ser resolvido pela leitura; não escrever `paid` na Session. |
+| `controllers/packageController.v2.js` settle-payments | `isPaid: true`, `paymentStatus: 'paid'` | **Bloqueado** | Valor espelhado derivável de `Payment` / `Package.balance`. Bypass só depois de unificar o fluxo financeiro em comando comum. |
+| `routes/payment.v2.js` bulk-settle | `isPaid: true`, `paymentStatus: 'paid'` | **Bloqueado** (hoje passa via `bulkWrite`) | Mesma operação que `settle-payments`; deve usar o mesmo comando comum, não bypass isolado. |
 
-> **Decisão de negócio (2026-08-13):** a quitação de débito por pacote deve ser derivada de `Payment` / `Package.balance` nas telas, e não espelhada em `Session.paymentStatus`. Por isso `settle-payments` e `bulk-settle` não recebem bypass e um trabalho de read path será feito separadamente.
+> **Decisão de negócio (2026-08-13):** `settle-payments` e `bulk-settle` devem ter o mesmo comportamento financeiro, através de um comando/serviço único que registre a operação canônica em `Payment` / `Package.balance` e só então atualize `Session.paymentStatus`. Nenhuma das duas rotas recebe bypass isolado antes dessa unificação.
 
 ---
 
 ## 11. Evolução
 
 - **Curto prazo:** manter este contrato e adicionar bypass apenas em call sites que escrevem estado financeiro não derivável de `Payment`.
-- **Médio prazo:** migrar os read paths de quitação por pacote para derivar de `Payment` / `Package.balance`, eliminando a necessidade de espelhar `paid` em `Session` / `Appointment` nesse fluxo. Ver Seção 8 — Ordem obrigatória.
+- **Médio prazo:** criar um comando/serviço financeiro comum para quitação por pacote, usado por `settle-payments` e `bulk-settle`. Só depois desse comando pronto é que se ajusta o espelho em `Session` / `Appointment` e a leitura nas telas, **juntos**. Ver Seção 8.
 - **Longo prazo:** consolidar os três mecanismos de bypass em um único modelo (preferencialmente options padronizado) e remover escritas pelo driver nativo.
