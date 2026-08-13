@@ -209,6 +209,8 @@ export async function buildPackageView(packageId, options = {}) {
       balance: pkg.balance,
       financialStatus: pkg.financialStatus,
       payments: pkg.payments || [], // array de IDs — frontend usa length para checar se há pagamentos
+      fundedByTransfer: pkg.fundedByTransfer,
+      sourceTransferId: pkg.sourceTransferId,
       
       // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
       // Esses campos são de packages antigos. Liminar agora usa LiminarContract.

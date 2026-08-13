@@ -98,6 +98,10 @@ const packagesViewSchema = new mongoose.Schema({
   insuranceGrossAmount: Number,
   insuranceBillingStatus: String,
 
+  // Cobertura reaproveitada de outro pacote; não representa nova entrada em caixa.
+  fundedByTransfer: Number,
+  sourceTransferId: mongoose.Schema.Types.ObjectId,
+
   // 📅 Datas
   startDate: Date,
   endDate: Date,
