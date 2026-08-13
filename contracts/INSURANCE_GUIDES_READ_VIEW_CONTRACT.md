@@ -121,7 +121,7 @@ Quando `phases=pendingBilling,documentationSent,billed,received`, a resposta inc
 {
   "buckets": {
     "pendingBilling": {
-      "guides": [ /* ...guias com sessions.pendingBilling > 0... */ ],
+      "data": [ /* ...guias com sessions.pendingBilling > 0... */ ],
       "totals": { /* ... */ },
       "competenceBreakdown": { /* ... */ },
       "pagination": { /* ... */ }
