@@ -116,9 +116,18 @@ const insuranceBatchSchema = new mongoose.Schema({
   },
   
   // Status
+  //
+  // `superseded` e `voided` são estados TERMINAIS de invalidação e nunca devem
+  // aparecer em lista ativa, total, NF, recebimento ou edição. São distintos de
+  // propósito:
+  //   superseded — o lote tinha faturamento válido, mas foi substituído por lotes
+  //                normalizados (ex.: um lote legado que misturava 4 pacientes e
+  //                2 competências, desmembrado em NFs por paciente+competência).
+  //   voided     — o lote não tem sessão nem débito válido; foi invalidado.
+  // Confundir os dois apaga a diferença entre "migrado" e "lixo".
   status: {
     type: String,
-    enum: ['building', 'ready', 'sent', 'processing', 'partial', 'received', 'rejected', 'closed'],
+    enum: ['building', 'ready', 'sent', 'processing', 'partial', 'received', 'rejected', 'closed', 'superseded', 'voided'],
     default: 'building'
   },
   
@@ -154,6 +163,39 @@ const insuranceBatchSchema = new mongoose.Schema({
   },
   reconciledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   reconciledAt: { type: Date, default: null },
+
+  // ─── Rastreabilidade de substituição/invalidação ────────────────────────────
+  // Lotes legados de origem que este lote normalizado substitui. Preenchido nos
+  // lotes NOVOS criados pelo desmembramento por paciente+competência.
+  sourceLegacyBatchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceBatch' }],
+
+  // Caminho inverso: preenchido nos lotes ANTIGOS, apontando para os que os
+  // sucederam. Sem os dois lados, uma auditoria futura que caia num lote
+  // superseded não tem como chegar ao faturamento que passou a valer.
+  supersededByBatchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceBatch' }],
+  supersededAt: { type: Date, default: null },
+  supersededBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  supersededReason: { type: String, default: null },
+
+  voidedAt: { type: Date, default: null },
+  voidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  voidReason: { type: String, default: null },
+
+  // Status que o lote tinha antes de ser invalidado. É o que torna a reversão
+  // possível — sem ele não se sabe para onde voltar.
+  statusBeforeInvalidation: { type: String, default: null },
+
+  // Trilha de troca do número da NF. O número provisório
+  // (PACIENTE-MES_COMPETENCIA) é substituído pelo real depois, e a troca precisa
+  // ficar registrada: antes só existia `previousInvoiceNumber` no retorno da
+  // função, sem nada persistido.
+  invoiceNumberHistory: [{
+    previousInvoiceNumber: { type: String, default: null },
+    newInvoiceNumber: { type: String, required: true },
+    changedAt: { type: Date, required: true },
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reason: { type: String, default: null }
+  }],
 
   // Controle
   processedAt: Date,

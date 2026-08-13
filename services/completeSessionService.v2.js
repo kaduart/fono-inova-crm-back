@@ -25,6 +25,7 @@ import { resolveVisualFlag } from './completeSession/shared/resolveVisualFlag.js
 import { ConvenioHandler, LiminarHandler, ParticularHandler, buildCompleteContext } from './completeSession/index.js';
 import FinancialGuard from './financialGuard/index.js';
 import FinancialLedger from '../models/FinancialLedger.js';
+import { assertNotInFuture } from '../domain/appointment/assertNotInFuture.js';
 import { EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import {
@@ -56,6 +57,10 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         splitMethods = null,
         paymentMethod = null,
         excludeFromProfessionalPayment = false,
+        // Exceção administrativa: só vale com justificativa + usuário identificado.
+        // A ROTA deve checar permissão antes de repassar — ver assertNotInFuture.js.
+        allowFutureCompletion = false,
+        futureCompletionReason = '',
         exclusionReason = '',
         correlationId = `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     } = options;
@@ -137,6 +142,63 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
     if (!appointment) {
         throw new Error('Agendamento não encontrado');
+    }
+
+    // ============================================================
+    // ⛔ GUARD: atendimento futuro não pode ser concluído
+    //
+    // Incidente 2026-08-07 (guia 16173377): appointment de 18/09 concluído em
+    // 07/08 — 42 dias antes de existir. Consumiu autorização do convênio e
+    // lançou produção de um atendimento que não aconteceu.
+    //
+    // Comparação em horário da clínica (America/Sao_Paulo): `date` é gravado
+    // ora como 03:00Z, ora 12:00Z, e comparar UTC cru erraria os dois extremos
+    // do dia.
+    //
+    // A exceção administrativa NÃO é um boolean livre do frontend: exige
+    // justificativa auditável + usuário identificado, e a rota que expõe isso
+    // precisa checar permissão antes de repassar.
+    // ============================================================
+    if (appointment.serviceType !== 'return') {
+        const futureBypassAuthorized = Boolean(
+            allowFutureCompletion && String(futureCompletionReason || '').trim() && userId
+        );
+
+        if (allowFutureCompletion && !futureBypassAuthorized) {
+            await Appointment.updateOne({ _id: appointmentId }, { $set: { isProcessing: false } });
+            const err = new Error(
+                'Conclusão de atendimento futuro exige usuário identificado e justificativa.'
+            );
+            err.code = 'FUTURE_COMPLETION_NOT_AUTHORIZED';
+            err.status = 422;
+            throw err;
+        }
+
+        try {
+            assertNotInFuture(appointment, { allowFutureCompletion: futureBypassAuthorized });
+        } catch (guardErr) {
+            // Libera o lock antes de propagar — senão o appointment fica preso
+            // em isProcessing e ninguém consegue concluir depois, no dia certo.
+            await Appointment.updateOne({ _id: appointmentId }, { $set: { isProcessing: false } });
+            throw guardErr;
+        }
+
+        if (futureBypassAuthorized) {
+            await Appointment.updateOne(
+                { _id: appointmentId },
+                {
+                    $push: {
+                        history: {
+                            action: 'conclusao_futura_autorizada',
+                            timestamp: new Date(),
+                            changedBy: userId,
+                            context: 'excecao_administrativa',
+                            details: { reason: String(futureCompletionReason).trim(), correlationId }
+                        }
+                    }
+                }
+            );
+        }
     }
 
     // Retorno: completa sem nenhum processamento financeiro

@@ -37,8 +37,13 @@ export const auth = async (req, res, next) => {
             });
         }
 
+        // `_id` além de `id`: metade do código (recordAudit, commands de
+        // appointment, `canceledBy`, `updatedBy`) lê `user._id`. Sem ele, toda
+        // ação manual era gravada como SYSTEM e o audit log ficava sem autor —
+        // foi por isso que não se sabia quem concluiu o atendimento de 18/09.
         req.user = {
             id: decoded.id,
+            _id: decoded.id,
             role: decoded.role
         };
 

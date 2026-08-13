@@ -1945,13 +1945,14 @@ export async function getPatientInsuranceSessions(req, res) {
  */
 export async function getGuidesView(req, res) {
   try {
-    const { insurance, patientId, guideStatus, phase, from, to, page, limit } = req.query;
+    const { insurance, patientId, guideStatus, phase, phases, from, to, page, limit } = req.query;
 
     const result = await getInsuranceGuidesView({
       insurance,
       patientId,
       guideStatus,
       phase: phase || 'all',
+      phases,
       from,
       to,
       page: parseInt(page) || 1,
@@ -1964,6 +1965,8 @@ export async function getGuidesView(req, res) {
       orphanSessions: result.orphanSessions,
       totals: result.totals,
       competenceBreakdown: result.competenceBreakdown,
+      paymentIntegrityConflicts: result.paymentIntegrityConflicts,
+      ...(result.buckets ? { buckets: result.buckets } : {}),
       pagination: result.pagination
     });
   } catch (error) {

@@ -381,6 +381,10 @@ paymentSchema.index(
 );
 // Ramo 4/5: sem financialDate nem paymentDate → createdAt como último fallback
 paymentSchema.index({ status: 1, createdAt: -1 }, { name: 'cash_status_createdAt' });
+paymentSchema.index(
+    { insuranceGuide: 1, billingType: 1 },
+    { name: 'insurance_view_guide_billing', sparse: true }
+);
 paymentSchema.index({ _billingEventId: 1 }, { sparse: true, name: 'billing_event_lock' });
 
 // 🛡️ Auditoria de integridade: só lista órfãos não tratados

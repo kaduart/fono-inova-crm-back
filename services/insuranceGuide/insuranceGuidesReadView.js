@@ -368,9 +368,16 @@ export function resolvePaymentForSession(payments) {
  */
 export async function getInsuranceGuidesView(filters = {}) {
   const {
-    insurance, patientId, guideStatus, phase = 'all',
+    insurance, patientId, guideStatus, phase = 'all', phases = [],
     from, to, page = 1, limit = 0
   } = filters;
+
+  const requestedPhases = [...new Set(
+    (Array.isArray(phases) ? phases : String(phases || '').split(','))
+      .map(item => String(item).trim())
+      .filter(item => PHASE_ORDER.includes(item))
+  )];
+  const multiPhase = requestedPhases.length > 0;
 
   const periodFrom = from ? new Date(from) : null;
   const periodTo = to ? new Date(to) : null;
@@ -389,13 +396,24 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   if (guides.length === 0) {
     logger.info('getInsuranceGuidesView: nenhuma guia para o filtro', { insurance, patientId, guideStatus });
+    const emptyAggregates = composeGuideAggregates([]);
+    const emptyCompetence = composePendingCompetenceBreakdown([]);
+    const emptyPagination = { page: 1, limit, total: 0, pages: 0 };
     return {
       guides: [],
       orphanSessions: [],
-      totals: composeGuideAggregates([]),
-      competenceBreakdown: composePendingCompetenceBreakdown([]),
+      totals: emptyAggregates,
+      competenceBreakdown: emptyCompetence,
       paymentIntegrityConflicts: [],
-      pagination: { page: 1, limit, total: 0, pages: 0 }
+      pagination: emptyPagination,
+      ...(multiPhase ? {
+        buckets: Object.fromEntries(requestedPhases.map(item => [item, {
+          data: [],
+          totals: emptyAggregates,
+          competenceBreakdown: emptyCompetence,
+          pagination: emptyPagination
+        }]))
+      } : {})
     };
   }
 
@@ -530,7 +548,9 @@ export async function getInsuranceGuidesView(filters = {}) {
   }
 
   // 3. Classificação por sessão + agregação por guia
-  const phaseFilterActive = phase && phase !== 'all';
+  // Na leitura plural classificamos o universo uma única vez. Os buckets são
+  // derivados abaixo sem repetir as consultas Mongo para cada aba.
+  const phaseFilterActive = !multiPhase && phase && phase !== 'all';
   const enriched = [];
   const paymentIntegrityConflicts = [];
 
@@ -685,6 +705,55 @@ export async function getInsuranceGuidesView(filters = {}) {
     bucketed.flatMap(g => g.sessionDetails)
   );
 
+  const buildBucket = (sourceGuides, bucketPhase) => {
+    const guidesInBucket = sourceGuides.flatMap(guide => {
+      const sessionDetails = guide.sessionDetails.filter(item => item.phase === bucketPhase);
+      if (sessionDetails.length === 0) return [];
+
+      const aggregates = composeGuideAggregates(sessionDetails);
+      const phaseCounters = {
+        [SessionPhase.PENDING_BILLING]: aggregates.sessions.pendingBilling,
+        [SessionPhase.DOCUMENTATION_SENT]: aggregates.sessions.documentationSent,
+        [SessionPhase.BILLED]: aggregates.sessions.billed,
+        [SessionPhase.RECEIVED]: aggregates.sessions.received
+      };
+
+      return [{
+        ...guide,
+        sessions: aggregates.sessions,
+        financialSummary: aggregates.financialSummary,
+        competenceBreakdown: composePendingCompetenceBreakdown(sessionDetails),
+        billingState: deriveBillingLabel(phaseCounters, { isClosed: !!guide.closedAt }),
+        hasMixedStates: hasMixedStates(phaseCounters),
+        invoices: summarizeInvoices(sessionDetails),
+        sessionDetails
+      }];
+    });
+
+    const total = guidesInBucket.length;
+    const data = limit > 0
+      ? guidesInBucket.slice((page - 1) * limit, page * limit)
+      : guidesInBucket;
+
+    return {
+      data,
+      totals: composeGuideAggregates(guidesInBucket.flatMap(guide => guide.sessionDetails)),
+      competenceBreakdown: composePendingCompetenceBreakdown(
+        guidesInBucket.flatMap(guide => guide.sessionDetails)
+      ),
+      pagination: {
+        page: limit > 0 ? page : 1,
+        limit,
+        total,
+        pages: limit > 0 ? Math.ceil(total / limit) : 1
+      }
+    };
+  };
+
+  const buckets = multiPhase
+    ? Object.fromEntries(requestedPhases.map(item => [item, buildBucket(enriched, item)]))
+    : undefined;
+
   const totalGuides = bucketed.length;
   const paged = limit > 0
     ? bucketed.slice((page - 1) * limit, page * limit)
@@ -713,6 +782,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     totals,
     competenceBreakdown,
     paymentIntegrityConflicts,
+    ...(buckets ? { buckets } : {}),
     pagination: {
       page: limit > 0 ? page : 1,
       limit,

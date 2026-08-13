@@ -7,8 +7,14 @@ import BillingSubmission from '../../models/BillingSubmission.js';
 import InsuranceCommunication from '../../models/InsuranceCommunication.js';
 import { transitionPaymentStatus } from '../paymentStatusService.js';
 import { recordInsuranceReceived } from '../financialLedgerService.js';
+import { saveToOutbox } from '../../infrastructure/outbox/outboxPattern.js';
 
 const TERMINAL_PAYMENT_STATUSES = ['canceled', 'cancelled', 'void', 'refunded'];
+
+// Lotes invalidados. Não entram em lista ativa, total, NF, recebimento nem edição.
+// `superseded` foi substituído por lotes normalizados; `voided` não tinha débito
+// válido. Nos dois casos operar sobre eles duplicaria ou ressuscitaria faturamento.
+export const INVALIDATED_BATCH_STATUSES = ['superseded', 'voided'];
 
 export class InsuranceBatchReceiptError extends Error {
   constructor(code, message, status = 400, details = undefined) {
@@ -142,9 +148,11 @@ function toReceivable(batch, paymentById) {
 }
 
 export async function listInvoiceReceivables({ status = 'pending', patientId, insuranceProvider } = {}) {
+  // A whitelist de status já exclui `superseded`/`voided`, mas o $nin explícito
+  // mantém a exclusão verdadeira se alguém ampliar a whitelist depois.
   const query = {
     invoiceNumber: { $exists: true, $nin: [null, ''] },
-    status: { $in: ['sent', 'processing', 'partial', 'received'] }
+    status: { $in: ['sent', 'processing', 'partial', 'received'], $nin: INVALIDATED_BATCH_STATUSES }
   };
   if (patientId) query.patient = objectId(patientId, 'patientId');
   if (insuranceProvider) query.insuranceProvider = String(insuranceProvider).trim().toLowerCase();
@@ -170,7 +178,7 @@ export async function listInvoiceReceivables({ status = 'pending', patientId, in
   return receivables;
 }
 
-export async function updateInvoiceNumber(batchId, { invoiceNumber, userId } = {}) {
+export async function updateInvoiceNumber(batchId, { invoiceNumber, userId, reason = null } = {}) {
   const normalizedNumber = String(invoiceNumber || '').trim();
   if (!normalizedNumber) {
     throw new InsuranceBatchReceiptError('INSURANCE_BATCH_INVOICE_NUMBER_REQUIRED', 'Número da nota fiscal é obrigatório', 400);
@@ -184,6 +192,14 @@ export async function updateInvoiceNumber(batchId, { invoiceNumber, userId } = {
       if (!batch) {
         throw new InsuranceBatchReceiptError('INSURANCE_BATCH_NOT_FOUND', 'NF/lote não encontrado', 404);
       }
+      if (INVALIDATED_BATCH_STATUSES.includes(batch.status)) {
+        throw new InsuranceBatchReceiptError(
+          'INSURANCE_BATCH_INVALIDATED',
+          `NF/lote ${batch.status === 'superseded' ? 'substituído' : 'invalidado'} não aceita edição de número`,
+          409,
+          { status: batch.status, supersededByBatchIds: batch.supersededByBatchIds }
+        );
+      }
       if (!batch.invoiceNumber && !['sent', 'processing', 'partial', 'received'].includes(batch.status)) {
         throw new InsuranceBatchReceiptError(
           'INSURANCE_BATCH_NOT_INVOICABLE',
@@ -192,10 +208,56 @@ export async function updateInvoiceNumber(batchId, { invoiceNumber, userId } = {
         );
       }
 
+      // Duas NFs ativas com o mesmo número no mesmo convênio são a mesma nota
+      // lançada duas vezes — o saldo do convênio passaria a contar em dobro.
+      const colisao = await InsuranceBatch.findOne({
+        _id: { $ne: batch._id },
+        insuranceProvider: batch.insuranceProvider,
+        invoiceNumber: normalizedNumber,
+        status: { $nin: INVALIDATED_BATCH_STATUSES }
+      }).select('_id status').session(mongoSession).lean();
+      if (colisao) {
+        throw new InsuranceBatchReceiptError(
+          'INSURANCE_BATCH_INVOICE_NUMBER_DUPLICATE',
+          `Já existe uma NF ativa com o número ${normalizedNumber} neste convênio`,
+          409,
+          { conflictingBatchId: colisao._id.toString(), status: colisao.status }
+        );
+      }
+
       const previousNumber = batch.invoiceNumber;
+      const changedAt = new Date();
       batch.invoiceNumber = normalizedNumber;
-      batch.updatedAt = new Date();
+      batch.updatedAt = changedAt;
+      // A troca do provisório pelo número real precisa ficar registrada: antes
+      // `previousInvoiceNumber` só existia no retorno da função e se perdia.
+      batch.invoiceNumberHistory = [
+        ...(batch.invoiceNumberHistory || []),
+        {
+          previousInvoiceNumber: previousNumber || null,
+          newInvoiceNumber: normalizedNumber,
+          changedAt,
+          changedBy: userId ? objectId(userId, 'userId') : null,
+          reason
+        }
+      ];
       await batch.save({ session: mongoSession });
+
+      await saveToOutbox({
+        eventId: `insurance_batch_invoice_number_changed_${batch._id}_${changedAt.getTime()}`,
+        eventType: 'INSURANCE_BATCH_INVOICE_NUMBER_CHANGED',
+        aggregateType: 'insurance_batch',
+        aggregateId: batch._id,
+        correlationId: `insurance_batch_invoice_number_${batch._id}`,
+        payload: {
+          batchId: batch._id.toString(),
+          previousInvoiceNumber: previousNumber || null,
+          newInvoiceNumber: normalizedNumber,
+          changedAt,
+          changedBy: userId ? String(userId) : null,
+          reason
+        }
+      }, mongoSession);
 
       // Mantém a origem da NF consistente na BillingSubmission correspondente.
       if (batch.billingSubmissionId && batch.billingAllocationId) {
@@ -260,6 +322,17 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
     await mongoSession.withTransaction(async () => {
       const batch = await InsuranceBatch.findById(objectId(batchId, 'batchId')).session(mongoSession);
       if (!batch) throw new InsuranceBatchReceiptError('INSURANCE_BATCH_NOT_FOUND', 'NF/lote não encontrado', 404);
+      // Antes da idempotência: um lote substituído/invalidado não pode ser baixado
+      // nem em silêncio. As sessões dele migraram para outro lote, e receber aqui
+      // criaria recebimento sobre débito que já pertence a outra NF.
+      if (INVALIDATED_BATCH_STATUSES.includes(batch.status)) {
+        throw new InsuranceBatchReceiptError(
+          'INSURANCE_BATCH_INVALIDATED',
+          `NF/lote ${batch.status === 'superseded' ? 'substituído' : 'invalidado'} não pode ser baixado`,
+          409,
+          { status: batch.status, supersededByBatchIds: batch.supersededByBatchIds }
+        );
+      }
       if (batch.status === 'received') {
         result = { idempotent: true, batchId: batch._id.toString(), status: batch.status };
         return;

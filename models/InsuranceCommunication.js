@@ -117,6 +117,10 @@ insuranceCommunicationSchema.index({ insuranceProvider: 1, status: 1 });
 insuranceCommunicationSchema.index({ insuranceProvider: 1, purpose: 1, status: 1 });
 insuranceCommunicationSchema.index({ createdAt: -1 });
 insuranceCommunicationSchema.index({ billingSubmissionId: 1, createdAt: -1 });
+insuranceCommunicationSchema.index(
+  { guideId: 1, purpose: 1, status: 1, updatedAt: -1 },
+  { name: 'insurance_view_guide_communication', sparse: true }
+);
 
 const InsuranceCommunication = mongoose.models.InsuranceCommunication || mongoose.model('InsuranceCommunication', insuranceCommunicationSchema);
 export default InsuranceCommunication;

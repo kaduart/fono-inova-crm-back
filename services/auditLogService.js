@@ -226,9 +226,14 @@ export async function recordAudit({
     const diff = computeDiff(normalizedBefore, normalizedAfter);
     const severity = inferSeverity(diff, action);
 
-    const isSystemActor = !user || !user._id;
+    // Aceita `_id` OU `id`: o middleware `auth` monta req.user com `id`, e
+    // exigir só `_id` fazia toda ação humana ser gravada como SYSTEM — o audit
+    // log ficava sem autor exatamente nas edições/conclusões manuais, que são
+    // as que mais importam numa investigação (ver incidente da guia 16173377).
+    const actorId = user?._id || user?.id || null;
+    const isSystemActor = !actorId;
     const audit = new AuditLog({
-      userId: isSystemActor ? null : user._id,
+      userId: actorId,
       actorRole: isSystemActor ? 'SYSTEM' : (user.role || null),
       action,
       entityType,

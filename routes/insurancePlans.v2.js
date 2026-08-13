@@ -17,7 +17,6 @@ import { replanInsurancePlanSessions } from '../services/schedule/replanInsuranc
 import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
-import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 
 const router = express.Router();
 
@@ -54,6 +53,112 @@ async function getGuideRemainingCapacity(guideId, guideTotals, mongoSession) {
   if (mongoSession) query.session(mongoSession);
   const reservedCount = await query;
   return Math.max(0, (guideTotals.totalSessions || 0) - (guideTotals.usedSessions || 0) - reservedCount);
+}
+
+/**
+ * Impacto de uma correção cadastral de especialidade.
+ *
+ * Separa o que pode ser reconciliado automaticamente do que NÃO pode:
+ * atendimento concluído, payment faturado/recebido ou em lote, cancelado e
+ * falta. Corrigir esses na marra reescreveria histórico clínico e financeiro.
+ */
+async function avaliarImpactoCorrecaoEspecialidade(plan, novaEspecialidade, mongoSession) {
+  const appts = await Appointment.find({
+    $or: [{ insurancePlan: plan._id }, { _id: { $in: plan.generatedAppointments || [] } }]
+  }).session(mongoSession).lean();
+
+  const elegiveis = [];
+  const bloqueados = [];
+
+  for (const a of appts) {
+    if (a.specialty === novaEspecialidade) continue; // já correto
+
+    const ref = { appointmentId: a._id.toString(), date: a.date, time: a.time, status: a.operationalStatus };
+
+    if (a.operationalStatus === 'completed') {
+      bloqueados.push({ ...ref, motivo: 'atendimento concluído — exige reparo administrativo' });
+      continue;
+    }
+    if (['canceled', 'missed'].includes(a.operationalStatus)) {
+      bloqueados.push({ ...ref, motivo: 'cancelado/falta — histórico não é reescrito' });
+      continue;
+    }
+
+    const pays = await Payment.find({ appointment: a._id, status: { $ne: 'canceled' } })
+      .session(mongoSession).lean();
+    const travado = pays.find(p =>
+      p.insurance?.batchId || p.batchId ||
+      ['billed', 'received'].includes(p.insurance?.status) ||
+      ['paid', 'received'].includes(p.status)
+    );
+    if (travado) {
+      bloqueados.push({ ...ref, motivo: `pagamento já faturado/em lote (${travado.insurance?.status || travado.status})` });
+      continue;
+    }
+
+    elegiveis.push({ ...ref, paymentIds: pays.map(p => p._id.toString()) });
+  }
+
+  return {
+    de: plan.specialty,
+    para: novaEspecialidade,
+    plano: { _id: plan._id.toString(), seraAtualizado: true },
+    elegiveis,
+    bloqueados,
+    resumo: {
+      totalAppointments: appts.length,
+      elegiveis: elegiveis.length,
+      bloqueados: bloqueados.length,
+      jaCorretos: appts.filter(a => a.specialty === novaEspecialidade).length,
+    }
+  };
+}
+
+/**
+ * Aplica a correção na MESMA transação do PATCH: plano + appointments
+ * elegíveis + Sessions + Payments não faturados. Correção parcial silenciosa
+ * é o que produz plano, guia, Appointment, Session e Payment divergentes.
+ */
+async function aplicarCorrecaoEspecialidade({ plan, novaEspecialidade, impacto, session, user, reason }) {
+  const antes = plan.specialty;
+  const trilha = {
+    action: 'correcao_cadastral_especialidade',
+    timestamp: new Date(),
+    changedBy: user?._id || user?.id || null,
+    context: 'correcao_cadastral',
+    details: { de: antes, para: novaEspecialidade, motivo: reason },
+  };
+
+  plan.specialty = novaEspecialidade;
+
+  const ids = impacto.elegiveis.map(e => new mongoose.Types.ObjectId(e.appointmentId));
+  if (ids.length > 0) {
+    await Appointment.updateMany(
+      { _id: { $in: ids } },
+      { $set: { specialty: novaEspecialidade, sessionType: novaEspecialidade, updatedAt: new Date() },
+        $push: { history: trilha } },
+      { session }
+    );
+
+    await Session.updateMany(
+      { $or: [{ appointmentId: { $in: ids } }, { appointment: { $in: ids } }] },
+      { $set: { specialty: novaEspecialidade, sessionType: novaEspecialidade, updatedAt: new Date() } },
+      { session }
+    );
+
+    // Payment guarda specialty e é o que o faturamento lê
+    await Payment.updateMany(
+      { appointment: { $in: ids }, status: { $ne: 'canceled' } },
+      { $set: { specialty: novaEspecialidade, updatedAt: new Date() } },
+      { session }
+    );
+  }
+
+  console.log('[InsurancePlansV2][PATCH] Correção cadastral de especialidade aplicada', {
+    planId: plan._id.toString(), de: antes, para: novaEspecialidade,
+    appointmentsCorrigidos: ids.length, bloqueados: impacto.bloqueados.length,
+    userId: user?._id || user?.id || null, motivo: reason,
+  });
 }
 
 const VALID_SPECIALTIES = [
@@ -122,6 +227,46 @@ router.post('/', auth, async (req, res) => {
         errorCode: 'GUIDE_NOT_ELIGIBLE',
         message: blockingAlert?.message || 'Guia não elegível para agendamento',
         lifecycle
+      });
+    }
+
+    // ⛔ COERÊNCIA DE ESPECIALIDADE (incidente guia 16173377, 2026-08-13)
+    //
+    // O plano do Ícaro nasceu como `fonoaudiologia` contra uma guia de
+    // `terapia_ocupacional`, com uma profissional de TO. Ninguém validou nada.
+    // Resultado: 10 appointments gerados com a especialidade errada — se
+    // faturados, glosa certa, porque a Unimed autorizou TO.
+    //
+    // A guia é a autoridade: ela é o documento que o convênio aprovou.
+    const specialtyErrors = [];
+    if (guide.specialty && specialty !== guide.specialty) {
+      specialtyErrors.push(
+        `a guia #${guide.number} autoriza "${guide.specialty}", mas o plano foi enviado como "${specialty}"`
+      );
+    }
+
+    const planDoctor = await mongoose.model('Doctor').findById(doctorId).lean();
+    if (planDoctor) {
+      const declared = [planDoctor.specialty, ...(planDoctor.specialties || [])]
+        .filter(Boolean).map(s => String(s).toLowerCase());
+      if (declared.length > 0 && !declared.includes(String(specialty).toLowerCase())) {
+        specialtyErrors.push(
+          `${planDoctor.fullName || 'o profissional'} atende "${declared.join(', ')}", não "${specialty}"`
+        );
+      }
+    }
+
+    if (specialtyErrors.length > 0) {
+      await session.abortTransaction();
+      return res.status(422).json({
+        success: false,
+        errorCode: 'SPECIALTY_MISMATCH',
+        message: `Especialidade incoerente: ${specialtyErrors.join('; ')}.`,
+        details: {
+          guideSpecialty: guide.specialty,
+          planSpecialty: specialty,
+          doctorSpecialty: planDoctor?.specialty || null
+        }
       });
     }
 
@@ -438,7 +583,7 @@ router.patch('/:id', auth, async (req, res) => {
 
   try {
     const { id } = req.params;
-    const { doctorId, sessionValue, slots, notes, startDate } = req.body;
+    const { doctorId, sessionValue, slots, notes, startDate, specialty, specialtyCorrection } = req.body;
 
     const plan = await InsurancePlan.findById(id).session(session);
     if (!plan) {
@@ -451,7 +596,94 @@ router.patch('/:id', auth, async (req, res) => {
       return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo. Cancele e crie um novo.' });
     }
 
-    const beforeSnapshot = pickInsurancePlanFields(plan);
+    // Snapshot ANTES de qualquer mutação: a correção de especialidade abaixo
+    // altera `plan` em memória, e capturar depois faria o audit log registrar
+    // before === after — perdendo justamente a informação da correção.
+    const beforeSnapshotEarly = pickInsurancePlanFields(plan);
+
+    // ════════════════════════════════════════════════════════════════════
+    // COERÊNCIA DE ESPECIALIDADE — plano = guia = profissional
+    //
+    // Incidente guia 16173377: o plano nasceu `fonoaudiologia` contra guia de
+    // `terapia_ocupacional`, com profissional de TO. Ficou assim por 6 semanas
+    // e 5 edições porque o PATCH **nem aceitava** `specialty` — não havia como
+    // corrigir pela aplicação. Alguém "consertou" um appointment na mão, o que
+    // não propagou para nada e ainda concluiu a sessão sem querer.
+    // ════════════════════════════════════════════════════════════════════
+    const planGuide = await InsuranceGuide.findById(plan.guide).session(session).lean();
+    const targetDoctorId = doctorId || plan.doctor;
+    const targetDoctor = await mongoose.model('Doctor').findById(targetDoctorId).session(session).lean();
+    const targetSpecialty = specialty || plan.specialty;
+
+    const doctorSpecialties = targetDoctor
+      ? [targetDoctor.specialty, ...(targetDoctor.specialties || [])].filter(Boolean).map(s => String(s).toLowerCase())
+      : [];
+
+    const mismatches = [];
+    if (planGuide?.specialty && targetSpecialty !== planGuide.specialty) {
+      mismatches.push(`a guia #${planGuide.number} autoriza "${planGuide.specialty}", não "${targetSpecialty}"`);
+    }
+    if (doctorSpecialties.length > 0 && !doctorSpecialties.includes(String(targetSpecialty).toLowerCase())) {
+      mismatches.push(`${targetDoctor.fullName || 'o profissional'} atende "${doctorSpecialties.join(', ')}", não "${targetSpecialty}"`);
+    }
+
+    if (mismatches.length > 0) {
+      await session.abortTransaction();
+      // Trocar de terapia não é editar plano: o histórico do tratamento
+      // anterior precisa ser preservado e o novo tratamento tem outra guia.
+      const pareceMudancaDeTerapia = specialty && planGuide?.specialty && specialty !== planGuide.specialty;
+      return res.status(422).json({
+        success: false,
+        errorCode: 'SPECIALTY_MISMATCH',
+        message: `Especialidade incoerente: ${mismatches.join('; ')}.` +
+          (pareceMudancaDeTerapia
+            ? ' Se o paciente MUDOU de terapia, encerre este plano e crie um novo com a guia correspondente — não edite este.'
+            : ''),
+        details: {
+          planSpecialty: plan.specialty,
+          requestedSpecialty: targetSpecialty,
+          guideSpecialty: planGuide?.specialty || null,
+          doctorSpecialties,
+        }
+      });
+    }
+
+    // ── Correção cadastral: exige impacto revisado + confirmação explícita ──
+    const isSpecialtyCorrection = Boolean(specialty) && specialty !== plan.specialty;
+    if (isSpecialtyCorrection) {
+      const impacto = await avaliarImpactoCorrecaoEspecialidade(plan, specialty, session);
+
+      if (!specialtyCorrection?.confirm || !String(specialtyCorrection?.reason || '').trim()) {
+        await session.abortTransaction();
+        return res.status(409).json({
+          success: false,
+          errorCode: 'SPECIALTY_CORRECTION_REQUIRES_CONFIRMATION',
+          message: `Correção cadastral de "${plan.specialty}" para "${specialty}". ` +
+            `Revise o impacto e confirme com { specialtyCorrection: { confirm: true, reason: "..." } }.`,
+          impact: impacto,
+        });
+      }
+
+      if (impacto.bloqueados.length > 0 && !specialtyCorrection.acceptBlocked) {
+        await session.abortTransaction();
+        return res.status(409).json({
+          success: false,
+          errorCode: 'SPECIALTY_CORRECTION_HAS_BLOCKED_ITEMS',
+          message: `${impacto.bloqueados.length} item(ns) não podem ser corrigidos automaticamente ` +
+            `(concluídos, faturados ou em lote). Eles exigem reparo administrativo próprio. ` +
+            `Para corrigir apenas os elegíveis, reenvie com acceptBlocked: true — ciente de que ` +
+            `plano e histórico ficarão temporariamente divergentes.`,
+          impact: impacto,
+        });
+      }
+
+      await aplicarCorrecaoEspecialidade({
+        plan, novaEspecialidade: specialty, impacto, session,
+        user: req.user, reason: String(specialtyCorrection.reason).trim(),
+      });
+    }
+
+    const beforeSnapshot = beforeSnapshotEarly;
     const today = new Date().toISOString().split('T')[0];
 
     console.log('[InsurancePlansV2][PATCH] Iniciando edição do plano', {
@@ -1071,32 +1303,36 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 
     await session.commitTransaction();
 
-    // 🆕 Sessões retroativas (allowPastGeneration=true) nascem pre_agendado dentro da
-    // transação acima — igual a qualquer outra. Completá-las é efeito colateral
-    // pós-commit: reusa completeSessionV2 (o mesmo caminho de "Fechar Atendimento" manual)
-    // pra consumir a guia, liquidar o payment e gerar commissionSnapshot corretamente, em
-    // vez de setar status='completed' na mão (ver aviso no sessionFactory sobre herdar
-    // 'completed' por acidente).
+    // ⛔ NUNCA completar sessão retroativa automaticamente.
+    //
+    // Incidente 2026-08-12 (guia 16173377, paciente Ícaro): o "Gerar sessões"
+    // criou 5 appointments com datas de julho e este bloco os completou via
+    // completeSessionV2 — consumindo 5 sessões da guia, lançando R$ 400 de
+    // produção e gerando pagamento a faturar para atendimentos que NUNCA
+    // aconteceram. O papel assinado pela mãe registrava 3 sessões; o sistema
+    // dizia 8.
+    //
+    // A premissa era errada em dois níveis:
+    //   1. "gerada com data no passado" ≠ "aconteceu";
+    //   2. `allowPastGeneration` chegava por inferência do frontend (data
+    //      pré-preenchida no passado), não por decisão consciente de ninguém.
+    //
+    // Gerar/regenerar agenda é operação de AGENDA. Confirmar atendimento é ato
+    // clínico e financeiro, feito uma sessão por vez em "Fechar Atendimento",
+    // com responsável identificado. As retroativas nascem `pre_agendado` e
+    // ficam aguardando essa confirmação manual.
     const pastAppointments = [
       ...(replanResult?.pastAppointments || []),
       ...(result?.pastAppointments || [])
     ];
-    let pastCompleted = 0;
-    const pastCompletionErrors = [];
-    for (const appt of pastAppointments) {
-      try {
-        await completeSessionV2(appt._id, {
-          userId: req.user?._id,
-          notes: 'Sessão retroativa gerada automaticamente ao regenerar a guia de convênio com data de início no passado.'
-        });
-        pastCompleted++;
-      } catch (completeErr) {
-        console.error('[InsurancePlansV2][generate-sessions] Falha ao completar sessão retroativa', {
-          appointmentId: appt._id.toString(),
-          error: completeErr.message
-        });
-        pastCompletionErrors.push({ appointmentId: appt._id.toString(), error: completeErr.message });
-      }
+
+    if (pastAppointments.length > 0) {
+      console.warn('[InsurancePlansV2][generate-sessions] Sessões retroativas criadas aguardando confirmação manual', {
+        planId: plan._id.toString(),
+        guideId: guide._id.toString(),
+        count: pastAppointments.length,
+        appointmentIds: pastAppointments.map(a => a._id.toString())
+      });
     }
 
     return res.json({
@@ -1106,8 +1342,15 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
         remaining,
         replanned: needsReplan,
         appointmentsCanceled: replanResult?.appointmentsCanceled || 0,
-        pastAppointmentsCompleted: pastCompleted,
-        pastAppointmentsFailed: pastCompletionErrors
+        // Retroativas ficam PENDENTES: a tela deve avisar que precisam ser
+        // confirmadas uma a uma, se de fato tiverem acontecido.
+        pastAppointmentsPending: pastAppointments.map(a => ({
+          _id: a._id.toString(),
+          date: a.date,
+          time: a.time
+        })),
+        pastAppointmentsCompleted: 0,
+        requiresManualConfirmation: pastAppointments.length > 0
       }
     });
   } catch (error) {

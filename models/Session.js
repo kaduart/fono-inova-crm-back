@@ -364,6 +364,11 @@ sessionSchema.index(
 // 💰 Índices para dashboards financeiros V2 (produção / caixa do profissional)
 sessionSchema.index({ doctor: 1, date: -1, status: 1 }, { name: 'financial_doctor_date_status' });
 sessionSchema.index({ date: -1, status: 1 }, { name: 'financial_date_status' });
+sessionSchema.index({ insuranceGuide: 1, date: 1 }, { name: 'insurance_view_guide_date', sparse: true });
+sessionSchema.index(
+    { status: 1, insuranceGuide: 1, billingType: 1, paymentMethod: 1, date: 1 },
+    { name: 'insurance_view_orphan_sessions' }
+);
 
 // 🆕 V4: Índice para appointmentId (1 appointment = 1 session)
 // NOTA: Índice unique removido temporariamente devido a compatibilidade V1
