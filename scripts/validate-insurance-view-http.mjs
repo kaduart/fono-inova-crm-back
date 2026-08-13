@@ -197,6 +197,94 @@ const guiasNoBanco = await mongoose.connection.db.collection('insuranceguides').
 t('H16', 'toda guia do banco aparece na resposta sem filtros',
   guiasNoBanco === guides.length, `banco=${guiasNoBanco} · resposta=${guides.length}`);
 
+// ── 9. Buckets consolidados: paridade com as 4 chamadas individuais ────────
+const consolidated = await request(app)
+  .get('/api/v2/insurance/guides/view?phases=pendingBilling,documentationSent,billed,received')
+  .set(...AUTH);
+
+const bc = consolidated.body;
+const hasBuckets = bc?.buckets && typeof bc.buckets === 'object';
+const hasAllBuckets = hasBuckets && PH.every(p => p in bc.buckets);
+const bucketShapeOk = hasAllBuckets && PH.every(p =>
+  Array.isArray(bc.buckets[p].guides)
+  && bc.buckets[p].totals
+  && bc.buckets[p].competenceBreakdown
+  && bc.buckets[p].pagination
+);
+
+t('H25', 'phases devolve os 4 buckets com estrutura completa',
+  consolidated.status === 200 && hasAllBuckets && bucketShapeOk,
+  `status ${consolidated.status} · buckets=[${hasBuckets ? Object.keys(bc.buckets).join(',') : 'none'}]`);
+
+function deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+let parityOk = true;
+let parityDetail = '';
+if (hasAllBuckets) {
+  for (const p of PH) {
+    const individual = abas[p].guides;
+    const fromBuckets = bc.buckets[p].guides;
+    const sameLength = individual.length === fromBuckets.length;
+    const sameContent = sameLength && individual.every((g, i) => deepEqual(g, fromBuckets[i]));
+    if (!sameContent) {
+      parityOk = false;
+      parityDetail += `${p}: individual=${individual.length} bucket=${fromBuckets.length}; `;
+    }
+  }
+}
+t('H26', 'buckets phase=X tem paridade campo a campo com phase individual',
+  parityOk, parityDetail || '4 fases iguais');
+
+// ── 10. Checks de dataset minimo ───────────────────────────────────────────
+t('H27', 'dataset: pelo menos uma guia em 2+ fases',
+  guides.some(g => PH.filter(p => g.sessions[p] > 0).length > 1),
+  `encontradas=${guides.filter(g => PH.filter(p => g.sessions[p] > 0).length > 1).length}`);
+
+t('H28', 'dataset: pelo menos uma guia com invoices.length > 1',
+  guides.some(g => g.invoices.length > 1),
+  `encontradas=${guides.filter(g => g.invoices.length > 1).length}`);
+
+const orphanSessionsCount = body.orphanSessions.length;
+const orphanSessionShapeOk = orphanSessionsCount === 0 || body.orphanSessions.every(s =>
+  s && typeof s === 'object' && 'sessionId' in s && 'value' in s
+);
+t('H29', 'dataset: orphanSessions presente e com estrutura correta (vazio ou nao)',
+  Array.isArray(body.orphanSessions) && orphanSessionShapeOk,
+  `orphanSessions=${orphanSessionsCount}${orphanSessionsCount === 0 ? ' (dataset nao cobre esse caso)' : ''}`);
+
+t('H30', 'dataset: guia com sessions.outOfCycle > 0',
+  guides.some(g => g.sessions.outOfCycle > 0),
+  `encontradas=${guides.filter(g => g.sessions.outOfCycle > 0).length}`);
+
+t('H31', 'dataset: guia fechada (closedAt preenchido)',
+  guides.some(g => g.closedAt),
+  `encontradas=${guides.filter(g => g.closedAt).length}`);
+
+t('H32', 'dataset: sessao com paymentIntegrityConflict === true',
+  guides.some(g => (g.sessionDetails || []).some(s => s.paymentIntegrityConflict === true)),
+  `guias afetadas=${guides.filter(g => (g.sessionDetails || []).some(s => s.paymentIntegrityConflict === true)).length}`);
+
+t('H33', 'dataset: guia com billingState === no_sessions',
+  guides.some(g => g.billingState === 'no_sessions'),
+  `encontradas=${guides.filter(g => g.billingState === 'no_sessions').length}`);
+
+const legacyCommCount = await mongoose.connection.db.collection('insurancecommunications').countDocuments({
+  purpose: 'billing',
+  status: 'sent',
+  guideId: { $exists: true, $ne: null },
+  $or: [{ billingSubmissionId: { $exists: false } }, { billingSubmissionId: null }]
+});
+const submissionCommCount = await mongoose.connection.db.collection('insurancecommunications').countDocuments({
+  purpose: 'billing',
+  status: 'sent',
+  billingSubmissionId: { $exists: true, $ne: null }
+});
+t('H34', 'dataset: comunicacao legado (guideId) e submission (billingSubmissionId) presentes',
+  legacyCommCount > 0 && submissionCommCount > 0,
+  `legado=${legacyCommCount} · submission=${submissionCommCount}`);
+
 console.log('─'.repeat(72));
 const falhas = R.filter(r => !r.ok);
 console.log(falhas.length === 0
