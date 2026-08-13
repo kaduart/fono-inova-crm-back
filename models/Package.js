@@ -32,7 +32,11 @@ const packageSchema = new mongoose.Schema({
    * 🚫 NÃO criar novos packages com type='convenio' ou 'liminar'
    * 🚫 NÃO usar Package como fonte de verdade para convênio/liminar
    *
-   * ✅ type válido para dados novos: 'package' apenas
+   * ✅ type válido para dados novos: 'therapy' — este é o valor GRAVADO.
+   *    O contrato público da API v2 usa type='package' e a tradução
+   *    package → therapy acontece na borda (createPackageV2 e
+   *    packageUpdatePolicy.normalizeApiDialect). Não confundir os dois:
+   *    gravar 'package' estoura ValidationError de enum.
    * ✅ model válido para dados novos: 'prepaid' | 'per_session'
    *
    * TODO: remover 'convenio' e 'liminar' do enum após backfill.
@@ -188,6 +192,35 @@ const packageSchema = new mongoose.Schema({
   lastPaymentAt: {
     type: Date,
     description: 'Data do último pagamento recebido'
+  },
+  notes: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: '',
+    description: 'Observação livre da secretaria/equipe. Único campo editável pelo PUT comum (ver packageUpdatePolicy.js)'
+  },
+
+  /**
+   * 🔁 PACOTE FINANCIADO POR TRANSFERÊNCIA DE COBERTURA
+   *
+   * Preenchido quando o pacote nasce de sessões não realizadas de OUTRO pacote
+   * (ex.: 4 de fono viram 4 de psicologia). O valor aqui já foi recebido no
+   * pacote de origem, na data original — NUNCA gera Payment nem entrada de caixa.
+   *
+   * totalPaid inclui este valor: o pacote está coberto, mas o dinheiro entrou lá atrás.
+   */
+  fundedByTransfer: {
+    type: Number,
+    default: 0,
+    description: 'Cobertura recebida via PackageCreditTransfer. Não é entrada de caixa.'
+  },
+  sourceTransferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PackageCreditTransfer',
+    default: null,
+    index: true,
+    description: 'Transferência que financiou este pacote'
   },
   txid: { type: String, unique: true, sparse: true },
   metadata: {

@@ -216,6 +216,8 @@ export async function execute(id, payload, user) {
           appointmentId: pre._id.toString(),
           patientId: patientId?.toString?.() || patientId,
           doctorId: resolvedDoctorId,
+          // 🚨 FIX (2026-08-12): packageProjectionWorker exige packageId no payload.
+          packageId: pre.package?.toString?.() || pre.package || null,
           changes: ['operationalStatus', 'doctor', 'patient', 'date', 'time', 'session', 'payment'],
         },
         correlationId: `preagendamento_confirm_${pre._id}_${Date.now()}`,

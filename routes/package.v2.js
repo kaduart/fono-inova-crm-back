@@ -26,6 +26,7 @@ import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.j
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { createContextLogger } from '../utils/logger.js';
 import updatePackageCommand from '../services/billing/commands/updatePackageCommand.js';
+import transferPackageCreditCommand from '../services/billing/commands/transferPackageCreditCommand.js';
 import deletePackageCommand from '../services/billing/commands/deletePackageCommand.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import healthRoutes from './package.v2.health.js';
@@ -346,9 +347,13 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     const updateData = req.body;
 
     // Validação: pacote existe (aceita tanto packageId real quanto _id da view)
+    // ⚠️ formatError(code, message, details) — nesta rota a ordem estava invertida,
+    // fazendo a resposta trazer {code:"Pacote não encontrado", message:404} e o
+    // frontend exibir "500"/"404" no lugar do texto. Corrigido no fluxo de pacote;
+    // as demais rotas v2 ainda precisam da padronização (com testes de contrato).
     const existing = await PackagesView.findOne({ $or: [{ packageId: id }, { _id: id }] });
     if (!existing) {
-      return res.status(404).json(formatError('Pacote não encontrado', 404, { correlationId }));
+      return res.status(404).json(formatError('PACKAGE_NOT_FOUND', 'Pacote não encontrado', { correlationId }));
     }
     const realPackageId = existing.packageId?.toString() || id;
 
@@ -367,6 +372,11 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       message: result.message,
       packageId: realPackageId,
       data: result.data,
+      // `changed:false` = nada foi gravado. O cliente precisa saber para não
+      // exibir "atualizado com sucesso" sobre uma alteração que não ocorreu.
+      changed: result.changed !== false,
+      changedFields: result.changedFields || [],
+      ignoredFields: result.ignoredFields || [],
       eventEmitted: result.eventEmitted,
       correlationId: result.correlationId,
     }, {
@@ -374,13 +384,104 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     }));
 
   } catch (error) {
-    logger.error('[PackageV2] Error updating package', { correlationId, error: error.message });
-
     const status = error.status || 500;
+
+    // 4xx é decisão de negócio esperada, não incidente: não polui o log de erro.
+    const logPayload = { correlationId, status, code: error.code, error: error.message };
+    if (status >= 500) logger.error('[PackageV2] Error updating package', logPayload);
+    else logger.info('[PackageV2] Update rejected by policy', logPayload);
+
     res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
       error.message || 'Erro ao atualizar pacote',
-      status,
-      { correlationId, code: error.code || 'INTERNAL_SERVER_ERROR' }
+      { correlationId, ...(error.fields ? { fields: error.fields } : {}) }
+    ));
+  }
+});
+
+// ============================================
+// POST /api/v2/packages/:id/transfer[/preview]
+// Converte sessões não realizadas para outro pacote, levando a cobertura
+// já paga. NÃO cria Payment e NÃO gera entrada de caixa — o dinheiro entrou
+// no pacote de origem, na data original. Ver transferPackageCreditCommand.js.
+// ============================================
+
+router.post('/:id/transfer/preview', flexibleAuth, async (req, res) => {
+  const correlationId = `pkg_transfer_preview_${Date.now()}`;
+  try {
+    const view = await PackagesView.findOne({ $or: [{ packageId: req.params.id }, { _id: req.params.id }] }).lean();
+    const realPackageId = view?.packageId?.toString() || req.params.id;
+
+    const data = await transferPackageCreditCommand.preview({
+      ...req.body,
+      sourcePackageId: realPackageId,
+    });
+
+    res.json(formatSuccess(data, { correlationId }));
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) logger.error('[PackageV2] Erro no preview de transferência', { correlationId, error: error.message });
+    res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
+      error.message || 'Erro ao simular transferência',
+      { correlationId }
+    ));
+  }
+});
+
+router.post('/:id/transfer', flexibleAuth, async (req, res) => {
+  const correlationId = `pkg_transfer_${Date.now()}`;
+  try {
+    const view = await PackagesView.findOne({ $or: [{ packageId: req.params.id }, { _id: req.params.id }] }).lean();
+    const realPackageId = view?.packageId?.toString() || req.params.id;
+
+    const result = await transferPackageCreditCommand.execute(
+      { ...req.body, sourcePackageId: realPackageId },
+      req.user,
+      correlationId
+    );
+
+    // ⚠️ createContextLogger é (event, message, meta). Chamar com 2 argumentos
+    // — como o resto deste arquivo faz — imprime "[object Object] {}" e some
+    // com o motivo do erro. Foi exatamente o que escondeu o ValidationError de
+    // paymentMethod no primeiro teste em produção.
+    logger.info('transfer_completed', `Transferência concluída: ${result.data?.sessionCount} sessão(ões), R$ ${result.data?.amount}, caixa 0`, {
+      correlationId,
+      sourcePackageId: realPackageId,
+      targetPackageId: result.targetPackage?._id?.toString(),
+      alreadyProcessed: Boolean(result.alreadyProcessed),
+    });
+
+    res.status(result.alreadyProcessed ? 200 : 201).json(formatSuccess({
+      transfer: result.data,
+      targetPackage: result.targetPackage || null,
+      canceledNow: result.canceledNow ?? 0,
+      restamped: result.restamped ?? 0,
+      alreadyProcessed: Boolean(result.alreadyProcessed),
+      message: result.message,
+    }, { correlationId }));
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) {
+      logger.error('transfer_failed', error.message || 'erro desconhecido', {
+        correlationId,
+        code: error.code,
+        name: error.name,
+        // ValidationError do Mongoose traz o campo culpado em `errors`
+        fields: error.errors ? Object.keys(error.errors) : undefined,
+        validation: error.errors
+          ? Object.values(error.errors).map(e => `${e.path}: ${e.message}`)
+          : undefined,
+        stack: error.stack?.split('\n').slice(0, 4).join(' | '),
+      });
+    } else {
+      logger.info('transfer_rejected', error.message, { correlationId, code: error.code });
+    }
+
+    res.status(status).json(formatError(
+      error.code || 'INTERNAL_SERVER_ERROR',
+      error.message || 'Erro ao transferir sessões',
+      { correlationId, ...(error.appointmentId ? { appointmentId: error.appointmentId } : {}) }
     ));
   }
 });

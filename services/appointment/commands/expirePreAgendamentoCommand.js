@@ -130,6 +130,9 @@ export async function execute(id, options = {}) {
         appointmentId: updated._id.toString(),
         patientId: updated.patient?.toString?.() || updated.patient,
         doctorId: updated.doctor?.toString?.() || updated.doctor,
+        // 🚨 FIX (2026-08-12): packageProjectionWorker exige packageId no payload.
+        // Pré-agendamento expirado de sessão de pacote também move a métrica.
+        packageId: updated.package?.toString?.() || updated.package || null,
         previousStatus: beforeSnapshot.operationalStatus,
         newStatus: 'missed',
         reason: 'auto_expired',

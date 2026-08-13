@@ -6,8 +6,9 @@
  * o evento de domínio canônico PACKAGE_UPDATED via Outbox.
  *
  * Regras:
- * - Recebe apenas campos permitidos para edição administrativa/cadastral.
- * - Não altera campos imutáveis (_id, createdAt, patient, totalValue etc.).
+ * - Edição cadastral apenas. A política de campos vive em packageUpdatePolicy.js.
+ * - Tentativa de alterar campo protegido devolve 422 explicando o caminho certo,
+ *   nunca 200 com a mudança descartada em silêncio pelo strict do Mongoose.
  * - Emite PACKAGE_UPDATED apenas se houver mudança real no documento.
  * - O evento é salvo na mesma transação MongoDB da mutação.
  */
@@ -17,37 +18,14 @@ import Package from '../../../models/Package.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { classifyUpdates, buildBlockedMessage } from './packageUpdatePolicy.js';
 
-function buildError(message, status = 500, code = 'INTERNAL_ERROR') {
+function buildError(message, status = 500, code = 'INTERNAL_ERROR', extra = {}) {
   const err = new Error(message);
   err.status = status;
   err.code = code;
+  Object.assign(err, extra);
   return err;
-}
-
-/**
- * Remove campos que não devem ser alterados por update administrativo.
- */
-function sanitizeUpdates(updates) {
-  const {
-    _id,
-    id,
-    __v,
-    createdAt,
-    createdBy,
-    patient,
-    doctor,
-    totalValue,
-    payments,
-    sessions,
-    appointments,
-    metadata,
-    updatedAt,
-    updatedBy,
-    ...safe
-  } = updates || {};
-
-  return safe;
 }
 
 /**
@@ -70,14 +48,41 @@ export async function execute(packageId, updates, user, correlationId = null) {
     throw buildError('ID do pacote inválido', 400, 'INVALID_PACKAGE_ID');
   }
 
-  const safeUpdates = sanitizeUpdates(updates);
-  const changedFieldNames = Object.keys(safeUpdates);
+  const cid = correlationId || `pkg_update_${packageId}_${Date.now()}`;
 
-  if (changedFieldNames.length === 0) {
-    throw buildError('Nenhum campo válido para atualização', 400, 'NO_VALID_FIELDS');
+  // Política aplicada ANTES da transação: precisa do estado atual para
+  // distinguir "campo protegido reenviado igual" de "tentativa de alteração".
+  const currentPackage = await Package.findById(packageId).lean();
+  if (!currentPackage) {
+    throw buildError('Pacote não encontrado', 404, 'PACKAGE_NOT_FOUND');
   }
 
-  const cid = correlationId || `pkg_update_${packageId}_${Date.now()}`;
+  const { allowed, blocked, ignored } = classifyUpdates(updates, currentPackage);
+
+  if (blocked.length > 0) {
+    throw buildError(
+      buildBlockedMessage(blocked, currentPackage),
+      422,
+      'PACKAGE_FIELD_NOT_EDITABLE',
+      { fields: blocked }
+    );
+  }
+
+  const changedFieldNames = Object.keys(allowed);
+
+  // Sem mudança real não é erro: o cliente pode ter reenviado o mesmo estado.
+  if (changedFieldNames.length === 0) {
+    return {
+      data: currentPackage,
+      changed: false,
+      ignoredFields: ignored,
+      eventEmitted: false,
+      correlationId: cid,
+      message: 'Nenhuma alteração aplicada — os dados enviados já são os atuais.',
+    };
+  }
+
+  const safeUpdates = allowed;
 
   const result = await runTransactionWithRetry(async (mongoSession) => {
     const originalPackage = await Package.findById(packageId).session(mongoSession).lean();
@@ -92,15 +97,34 @@ export async function execute(packageId, updates, user, correlationId = null) {
       updatedAt: new Date(),
     };
 
-    const updatedPackage = await Package.findByIdAndUpdate(
-      packageId,
-      { $set: updateData },
-      {
-        new: true,
-        session: mongoSession,
-        runValidators: true,
+    let updatedPackage;
+    try {
+      updatedPackage = await Package.findByIdAndUpdate(
+        packageId,
+        { $set: updateData },
+        {
+          new: true,
+          session: mongoSession,
+          runValidators: true,
+        }
+      );
+    } catch (err) {
+      // ValidationError é erro do cliente (400), não falha do servidor (500).
+      // Antes desta conversão o modal recebia "Request failed with status code 500".
+      if (err?.name === 'ValidationError') {
+        const fields = Object.values(err.errors || {}).map((e) => ({
+          field: e.path,
+          reason: e.message,
+        }));
+        throw buildError(
+          fields[0]?.reason || 'Dados inválidos para atualização do pacote',
+          400,
+          'VALIDATION_ERROR',
+          { fields }
+        );
       }
-    );
+      throw err;
+    }
 
     if (!updatedPackage) {
       throw buildError('Pacote não encontrado após atualização', 404, 'PACKAGE_NOT_FOUND');
@@ -129,6 +153,9 @@ export async function execute(packageId, updates, user, correlationId = null) {
 
   return {
     data: result.package.toObject(),
+    changed: true,
+    changedFields: changedFieldNames,
+    ignoredFields: ignored,
     eventEmitted: result.eventEmitted,
     correlationId: cid,
     message: 'Pacote atualizado com sucesso',

@@ -20,7 +20,7 @@ import Package from '../../../models/Package.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { handlePackageSessionUpdate, syncEvent } from '../../syncService.js';
 import { emitSocket } from '../helpers/socketHelper.js';
-import { buildError } from './_helpers.js';
+import { buildError, toObjectIdString } from './_helpers.js';
 import { recordAudit } from '../../auditLogService.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { syncAffectedViews } from '../../projections/syncAffectedViews.js';
@@ -36,7 +36,7 @@ import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleSer
  * @param {Object} params
  * @param {string} params.reason - Motivo do cancelamento
  * @param {boolean} [params.confirmedAbsence=false] - Falta confirmada
- * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration)
+ * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration|converted_to_package)
  * @param {Object} [user] - Usuário que disparou
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<Appointment>} Appointment atualizado
@@ -202,6 +202,12 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         appointmentId: appointment._id.toString(),
         patientId: appointment.patient?._id?.toString(),
         doctorId: appointment.doctor?._id?.toString(),
+        // 🚨 FIX (2026-08-12): sem packageId o packageProjectionWorker descarta
+        // o evento em `ignored / no_package_id` e a PackagesView nunca é
+        // reconstruída — cancelamento sumia da tela do pacote (30 pacotes
+        // divergentes em produção). O evento ficava 'published', sem erro algum.
+        packageId: toObjectIdString(appointment.package),
+        sessionId: toObjectIdString(appointment.session),
         reason,
         confirmedAbsence,
         cancelledAt: new Date(),

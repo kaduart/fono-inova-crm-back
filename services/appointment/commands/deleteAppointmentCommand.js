@@ -17,7 +17,7 @@ import Payment from '../../../models/Payment.js';
 import Patient from '../../../models/Patient.js';
 import { updatePatientAppointments } from '../../../utils/appointmentUpdater.js';
 import { emitSocket } from '../helpers/socketHelper.js';
-import { buildError } from './_helpers.js';
+import { buildError, toObjectIdString } from './_helpers.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
@@ -92,6 +92,9 @@ export async function execute(id, user) {
         doctorId: appointment.doctor?._id?.toString() || appointment.doctor?.toString() || null,
         sessionId: session?._id?.toString() || null,
         paymentId: payment?._id?.toString() || null,
+        // 🚨 FIX (2026-08-12): packageProjectionWorker exige packageId no payload;
+        // sem ele o APPOINTMENT_DELETED é descartado e a view fica com a sessão.
+        packageId: toObjectIdString(appointment.package),
       },
       correlationId: `appt_del_${appointment._id}_${Date.now()}`
     }, mongoSession);

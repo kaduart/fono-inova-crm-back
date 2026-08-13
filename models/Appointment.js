@@ -379,9 +379,64 @@ const appointmentSchema = new mongoose.Schema({
   },
   // Distingue cancelamento pelo paciente/clínica de cancelamento automático do sistema
   // (ex: fechamento de ciclo de faturamento de guia). Sem default: não afeta dados antigos.
+  // 'converted_to_package' (reservado 2026-08-12): sessão futura NÃO realizada
+  // cujo crédito foi transferido para outro pacote (ex.: 4 fono viram 4 psico).
+  // Não é desistência nem falta — a cobertura já paga continua válida, só mudou
+  // de destino. Usado pelo fluxo POST /v2/packages/:id/transfer, que registra a
+  // referência da transferência e do pacote de destino. Nunca gera receita nova.
   cancelSource: {
     type: String,
-    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration']
+    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration', 'converted_to_package']
+  },
+
+  /**
+   * Marca explícita de falta, independente de clinicalStatus.
+   *
+   * Introduzido pela transferência de cobertura: uma sessão convertida para
+   * outro pacote continua CANCELADA (operationalStatus permanece 'canceled'),
+   * mas não é falta do paciente — a clínica redirecionou o atendimento.
+   *
+   * `default: null` = "não informado", preservando todo o histórico anterior.
+   * ⚠️ Relatórios que hoje inferem falta por `clinicalStatus === 'missed'` só
+   * respeitarão este campo depois de migrados para lê-lo.
+   */
+  missed: {
+    type: Boolean,
+    default: null,
+    description: 'true = falta do paciente | false = ausência não imputável ao paciente | null = não informado'
+  },
+
+  // ─── TRANSFERÊNCIA DE COBERTURA ENTRE PACOTES ──────────────
+  // Preenchidos junto com cancelSource='converted_to_package'. A presença de
+  // transferId é o que impede transferir a mesma sessão duas vezes.
+  transferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PackageCreditTransfer',
+    default: null,
+    index: true,
+    description: 'Transferência que converteu esta sessão'
+  },
+  transferredToPackage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Package',
+    default: null,
+    description: 'Pacote de destino que recebeu a cobertura desta sessão'
+  },
+  // Rastreabilidade bidirecional da conversão: a origem aponta para o novo
+  // agendamento criado e o novo agendamento aponta de volta para a origem.
+  // Vincular só ao pacote destino perderia o par sessão↔sessão.
+  targetAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    description: '[origem] Agendamento criado no pacote de destino'
+  },
+  sourceAppointmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appointment',
+    default: null,
+    index: true,
+    description: '[destino] Agendamento de origem que foi convertido'
   },
 
   // ─── AUDITORIA DE FORCE CANCEL ─────────────────────────────

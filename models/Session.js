@@ -155,6 +155,21 @@ const sessionSchema = new mongoose.Schema({
         type: Date,
         description: 'Data do cancelamento'
     },
+    // Transferência de cobertura entre pacotes (converted_to_package).
+    // Sem estes campos o strict do Mongoose descartaria o vínculo em silêncio.
+    transferId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'PackageCreditTransfer',
+        default: null,
+        index: true,
+        description: 'Transferência que converteu esta sessão para outro pacote'
+    },
+    transferredToPackage: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Package',
+        default: null,
+        description: 'Pacote de destino que recebeu a cobertura desta sessão'
+    },
     insuranceGuide: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'InsuranceGuide',
