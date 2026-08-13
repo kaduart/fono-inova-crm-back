@@ -2,7 +2,8 @@
  * 💰 Financial Sanitizer Plugin (Mongoose)
  *
  * Bloqueia writes V1 na origem (CREATE):
- * - Remove isPaid / paymentStatus de documentos novos
+ * - Reseta isPaid / paymentStatus para o default do schema quando escritos
+ *   explicitamente sem bypass; preserva o default quando o campo não foi tocado.
  * - Loga warning com stack trace
  * - Em modo STRICT: lança erro
  *
@@ -24,6 +25,18 @@ function shouldLog(stackKey) {
   if (last && now - last < LOG_TTL_MS) return false;
   _loggedHashes.set(stackKey, now);
   return true;
+}
+
+function captureRelevantStack() {
+  return new Error().stack
+    .split('\n')
+    .filter(line =>
+      line.includes('    at ') &&
+      !line.includes('node_modules') &&
+      !line.includes('models/plugins/financialSanitizer.js')
+    )
+    .slice(0, 5)
+    .join('\n');
 }
 
 export default function financialSanitizer(schema, options = {}) {
@@ -50,7 +63,7 @@ export default function financialSanitizer(schema, options = {}) {
         entity: entityName,
         removedFields: removed,
         mode: MODE,
-        stack: new Error().stack.split('\n').slice(3, 8).join('\n')
+        stack: captureRelevantStack()
       };
 
       if (MODE === 'strict') {
@@ -63,7 +76,7 @@ export default function financialSanitizer(schema, options = {}) {
 
       const stackKey = `${entityName}:${operation}:${meta.stack}`;
       if (shouldLog(stackKey)) {
-        console.warn('⚠️  [FINANCIAL SANITIZER] REMOVED:', JSON.stringify(meta, null, 2));
+        console.warn('⚠️  [FINANCIAL SANITIZER] RESET_TO_DEFAULT:', JSON.stringify(meta, null, 2));
       }
     }
 
@@ -71,22 +84,55 @@ export default function financialSanitizer(schema, options = {}) {
   }
 
   // Pre-save: intercepta doc.save(), Model.create(), new Model()
-  schema.pre('save', function(next) {
-    const opts = this.$locals || {};
+  schema.pre('save', function(next, options) {
+    const opts =
+      (options && options.__fromFinancialGuard === true && options.__guardContext === 'FINANCIAL')
+        ? options
+        : (this.$locals || {});
     if (
       opts.__fromFinancialGuard === true &&
       opts.__guardContext === 'FINANCIAL'
     ) return next();
+
     if (this.isNew) {
-      sanitize(this.toObject(), 'save');
-      // Re-aplicar no documento mongoose (toObject() retorna cópia)
+      const removed = {};
+      let modified = false;
+
       for (const field of LEGACY_FIELDS) {
-        if (this[field] !== undefined) {
-          this[field] = undefined;
-          this.markModified(field);
+        if (this.isDirectModified(field)) {
+          removed[field] = this[field];
+          modified = true;
+
+          const path = this.schema.path(field);
+          const defaultValue = path ? path.getDefault(this) : undefined;
+          this.set(field, defaultValue);
+        }
+      }
+
+      if (modified) {
+        const meta = {
+          operation: 'save',
+          entity: entityName,
+          removedFields: removed,
+          mode: MODE,
+          stack: captureRelevantStack()
+        };
+
+        if (MODE === 'strict') {
+          console.error('🚨 [FINANCIAL SANITIZER] BLOCKED CREATE:', JSON.stringify(meta, null, 2));
+          throw new Error(
+            `FINANCIAL_SANITIZER_BLOCKED: ${entityName} não pode receber ${Object.keys(removed).join(', ')} no CREATE. ` +
+            `Use o ledger (Payment) como fonte de verdade.`
+          );
+        }
+
+        const stackKey = `${entityName}:save:${meta.stack}`;
+        if (shouldLog(stackKey)) {
+          console.warn('⚠️  [FINANCIAL SANITIZER] RESET_TO_DEFAULT:', JSON.stringify(meta, null, 2));
         }
       }
     }
+
     next();
   });
 
@@ -134,7 +180,7 @@ export default function financialSanitizer(schema, options = {}) {
           entity: entityName,
           removedFields: removed,
           mode: MODE,
-          stack: new Error().stack.split('\n').slice(3, 8).join('\n')
+          stack: captureRelevantStack()
         };
 
         if (MODE === 'strict') {

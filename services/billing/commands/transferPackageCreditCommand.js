@@ -493,7 +493,7 @@ export async function execute(input, user, correlationId = null) {
         // Rastreabilidade bidirecional
         transferId: transfer._id,
         sourceAppointmentId: new mongoose.Types.ObjectId(row.sourceAppointmentId),
-      }], { session: mongoSession });
+      }], { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' });
 
       const [sess] = await Session.create([{
         date: appt.date,
@@ -511,7 +511,7 @@ export async function execute(input, user, correlationId = null) {
         paymentOrigin: 'package_prepaid',
         visualFlag: 'ok',
         transferId: transfer._id,
-      }], { session: mongoSession });
+      }], { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' });
 
       await Appointment.updateOne(
         { _id: appt._id },
