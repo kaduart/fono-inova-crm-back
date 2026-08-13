@@ -124,8 +124,10 @@ Implementação atual: `models/plugins/__tests__/financialSanitizer.test.js`.
 |---|---|---|---|
 | `services/billing/commands/transferPackageCreditCommand.js` | `isPaid: true`, `paymentStatus: 'package_paid'` | Sim (options) | Sessão coberta por transferência de crédito de pacote. Não há `Payment` novo. |
 | `routes/payment.v2.js` (estorno / deleção de payment) | `isPaid: false`, `paymentStatus: 'unpaid'` | Sim (options) | Reversão financeira com consumidor de leitura identificado. |
-| `controllers/packageController.v2.js` settle-payments | `isPaid: true`, `paymentStatus: 'paid'` | **Pendente** | Caso contraexemplo do contrato; requer decisão de negócio para espelhar ou derivar. |
-| `routes/payment.v2.js` bulk-settle | `isPaid: true`, `paymentStatus: 'paid'` | Passa via `bulkWrite` | Deve ser decidido junto com settle-payments. |
+| `controllers/packageController.v2.js` settle-payments | `isPaid: true`, `paymentStatus: 'paid'` | **Não aplicar** | Valor espelhado derivável de `Payment` / `Package.balance`. Ler, não escrever. |
+| `routes/payment.v2.js` bulk-settle | `isPaid: true`, `paymentStatus: 'paid'` | Passa via `bulkWrite` (buraco) | Deve ser resolvido pela leitura; não escrever `paid` na Session. |
+
+> **Decisão de negócio (2026-08-13):** a quitação de débito por pacote deve ser derivada de `Payment` / `Package.balance` nas telas, e não espelhada em `Session.paymentStatus`. Por isso `settle-payments` e `bulk-settle` não recebem bypass e um trabalho de read path será feito separadamente.
 
 ---
 
