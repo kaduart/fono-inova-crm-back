@@ -1945,14 +1945,30 @@ export async function getPatientInsuranceSessions(req, res) {
  */
 export async function getGuidesView(req, res) {
   try {
-    const { insurance, patientId, guideStatus, phase, phases, from, to, page, limit } = req.query;
+    const { insurance, patientId, guideId, guideStatus, phase, phases, detail, from, to, page, limit } = req.query;
+    const validPhases = new Set(['all', 'pendingBilling', 'documentationSent', 'billed', 'received']);
+    const validDetails = new Set(['full', 'summary', 'orphans']);
+    if (guideId && !/^[a-f\d]{24}$/i.test(String(guideId))) {
+      return res.status(400).json({ success: false, error: 'guideId inválido' });
+    }
+    if (phase && !validPhases.has(String(phase))) {
+      return res.status(400).json({ success: false, error: 'phase inválida' });
+    }
+    if (detail && !validDetails.has(String(detail))) {
+      return res.status(400).json({ success: false, error: 'detail inválido' });
+    }
+    if (phases && String(phases).split(',').some(item => !validPhases.has(item.trim()) || item.trim() === 'all')) {
+      return res.status(400).json({ success: false, error: 'phases inválidas' });
+    }
 
     const result = await getInsuranceGuidesView({
       insurance,
       patientId,
+      guideId,
       guideStatus,
       phase: phase || 'all',
       phases,
+      detail: detail || 'full',
       from,
       to,
       page: parseInt(page) || 1,
@@ -1963,8 +1979,11 @@ export async function getGuidesView(req, res) {
       success: true,
       data: result.guides,
       orphanSessions: result.orphanSessions,
+      orphanSessionsCount: result.orphanSessionsCount,
       totals: result.totals,
       competenceBreakdown: result.competenceBreakdown,
+      paymentIntegrityConflicts: result.paymentIntegrityConflicts,
+      paymentIntegrityConflictCount: result.paymentIntegrityConflictCount,
       pagination: result.pagination
     };
 

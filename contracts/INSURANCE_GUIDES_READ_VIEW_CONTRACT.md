@@ -19,9 +19,11 @@ Somente leitura. Nao altera dados, nao recalcula valores financeiros, nao muda s
 |-----------|------|--------|-----------|
 | `insurance` | string | - | Codigo do convenio |
 | `patientId` | string | - | ObjectId do paciente |
+| `guideId` | string | - | Restringe a leitura a uma guia; usado para carregar detalhes sob demanda |
 | `guideStatus` | string | - | `InsuranceGuide.status` (ciclo de vida da autorizacao) |
 | `phase` | string | `'all'` | Fase unica: `pendingBilling`, `documentationSent`, `billed`, `received` ou `all` |
 | `phases` | string | - | Fases separadas por virgula p/ retorno consolidado. Ex: `pendingBilling,documentationSent,billed,received` |
+| `detail` | string | `'full'` | `summary` omite detalhes pesados; `orphans` busca somente sessoes orfas; `full` preserva o contrato historico |
 | `from` | ISO date | - | Competencia inicial, aplicada no eixo da propria fase |
 | `to` | ISO date | - | Competencia final, aplicada no eixo da propria fase |
 | `page` | number | `1` | Paginacao (so ativa quando `limit > 0`) |
@@ -33,6 +35,8 @@ Somente leitura. Nao altera dados, nao recalcula valores financeiros, nao muda s
 - Quando `phases` e informado, `phase` e ignorado para o retorno padrao; a resposta passa a conter a chave `buckets`.
 - `phase=X` continua funcionando exatamente como antes da Fase 1. Nao ha janela de incompatibilidade com o front.
 - Paginacao e aplicada a cada bucket separadamente quando `phases` e usado.
+- `detail=summary` preserva guias, buckets, contagens, valores, competencia e datas agregadas, mas omite `sessionDetails` e `invoices`.
+- Detalhes operacionais devem ser buscados com `guideId=<id>&phase=<fase>&detail=full` antes de faturar ou receber.
 
 ## Unidade de verdade
 
@@ -57,12 +61,29 @@ A unidade do ciclo financeiro e a **SESSAO**, nao a guia. A guia e um container 
   "success": true,
   "data": [ /* ...guias... */ ],
   "orphanSessions": [ /* ...sessoes sem guia... */ ],
+  "orphanSessionsCount": 0,
   "totals": { /* ...agregado... */ },
   "competenceBreakdown": { /* ...competencia pendingBilling... */ },
   "pagination": { "page", "limit", "total", "pages" },
+  "paymentIntegrityConflictCount": 0,
   "buckets": { /* ...quando phases e informado... */ }
 }
 ```
+
+### Modo resumido (`detail=summary`)
+
+O envelope e os objetos de guia preservam o mesmo formato aditivo, com estas diferencas deliberadas:
+
+- `sessionDetails` e `invoices` nao sao montados nem enviados;
+- `firstSessionDate` e `lastSessionDate` sao enviados ja agregados;
+- `orphanSessions` e `paymentIntegrityConflicts` sao arrays vazios;
+- `orphanSessionsCount` e `paymentIntegrityConflictCount` preservam as contagens globais;
+- Doctor, Appointment, lotes e notas fiscais nao sao populados no carregamento inicial.
+
+O padrao continua sendo `detail=full`; clientes antigos nao mudam de comportamento.
+
+`detail=orphans` e a leitura lazy da area de sessoes orfas. Ela retorna as sessoes
+somente quando a area e aberta e nao consulta detalhes de guias.
 
 ### Objeto de guia (`data[n]`)
 

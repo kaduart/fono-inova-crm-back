@@ -314,6 +314,28 @@ function toObjectId(value) {
   return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null;
 }
 
+const ORPHAN_MATCH = {
+  status: 'completed',
+  $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
+  $and: [{ $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }]
+};
+
+async function loadOrphanSessions(match = ORPHAN_MATCH) {
+  const sessions = await Session.find(match)
+    .select('_id date time sessionValue specialty patient doctor billingBatchId insuranceProvider')
+    .populate('patient', 'fullName')
+    .populate('doctor', 'fullName')
+    .sort({ date: 1 })
+    .lean();
+  return sessions.map(session => ({
+    sessionId: idOf(session._id), date: session.date, time: session.time || null,
+    value: session.sessionValue || 0, sessionValue: session.sessionValue || 0,
+    specialty: session.specialty || null, patient: session.patient || null,
+    patientName: session.patient?.fullName || null, doctorName: session.doctor?.fullName || null,
+    insuranceProvider: session.insuranceProvider || null, batchId: idOf(session.billingBatchId)
+  }));
+}
+
 function inRange(date, from, to) {
   if (!from && !to) return true;
   if (!date) return false;
@@ -358,9 +380,11 @@ export function resolvePaymentForSession(payments) {
  * @param {Object} filters
  * @param {string}  [filters.insurance]   - código do convênio
  * @param {string}  [filters.patientId]
+ * @param {string}  [filters.guideId]    - restringe detalhes lazy a uma guia
  * @param {string}  [filters.guideStatus] - InsuranceGuide.status (ciclo de vida)
  * @param {string}  [filters.phase]       - 'pendingBilling'|'documentationSent'|'billed'|'received'|'all'
  * @param {string}  [filters.phases]      - fases separadas por vírgula p/ retorno consolidado (ex: 'pendingBilling,documentationSent,billed,received')
+ * @param {'full'|'summary'} [filters.detail='full'] - summary omite detalhes pesados
  * @param {Date|string} [filters.from]    - competência inicial, aplicada no eixo da fase
  * @param {Date|string} [filters.to]      - competência final, aplicada no eixo da fase
  * @param {number}  [filters.page=1]
@@ -369,9 +393,14 @@ export function resolvePaymentForSession(payments) {
  */
 export async function getInsuranceGuidesView(filters = {}) {
   const {
-    insurance, patientId, guideStatus, phase = 'all', phases,
+    insurance, patientId, guideId, guideStatus, phase = 'all', phases, detail = 'full',
     from, to, page = 1, limit = 0
   } = filters;
+  const summaryOnly = detail === 'summary';
+  if (detail === 'orphans') {
+    const orphanSessions = await loadOrphanSessions();
+    return { guides: [], orphanSessions, orphanSessionsCount: orphanSessions.length, paymentIntegrityConflicts: [], paymentIntegrityConflictCount: 0, totals: composeGuideAggregates([]), competenceBreakdown: composePendingCompetenceBreakdown([]), pagination: { page: 1, limit: 0, total: 0, pages: 0 } };
+  }
 
   const phaseList = phases
     ? String(phases).split(',').map(p => p.trim()).filter(Boolean)
@@ -381,6 +410,8 @@ export async function getInsuranceGuidesView(filters = {}) {
   const periodTo = to ? new Date(to) : null;
 
   const guideMatch = {};
+  const guideOid = toObjectId(guideId);
+  if (guideOid) guideMatch._id = guideOid;
   if (insurance) guideMatch.insurance = String(insurance).toLowerCase();
   if (guideStatus) guideMatch.status = guideStatus;
   const patientOid = toObjectId(patientId);
@@ -388,7 +419,7 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   // 1. Universo = as guias. Nunca derivado de sessão pendente.
   const guides = await InsuranceGuide.find(guideMatch)
-    .populate('patientId', 'fullName phone')
+    .populate('patientId', summaryOnly ? 'fullName' : 'fullName phone')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -410,8 +441,10 @@ export async function getInsuranceGuidesView(filters = {}) {
   const [sessions, legacyCommunications] = await Promise.all([
     Session.find({ insuranceGuide: { $in: guideIds } })
       .select('_id insuranceGuide date status sessionValue specialty doctor appointmentId billingBatchId')
-      .populate('doctor', 'fullName')
-      .populate('appointmentId', 'time')
+      .populate(summaryOnly ? [] : [
+        { path: 'doctor', select: 'fullName' },
+        { path: 'appointmentId', select: 'time' }
+      ])
       .sort({ date: 1 })
       .lean(),
     InsuranceCommunication.find({
@@ -457,7 +490,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     .lean();
 
   const batchIds = [...new Set(sessions.map(s => idOf(s.billingBatchId)).filter(Boolean))];
-  const batches = batchIds.length
+  const batches = !summaryOnly && batchIds.length
     // A NF vive no LOTE (`invoiceNumber`), não na guia. Sem trazer esses campos
     // a tela mostra "Faturada" sem dizer por qual nota — e no legado não há
     // InsuranceCommunication de onde inferir. `origin` distingue reconciliação
@@ -538,6 +571,7 @@ export async function getInsuranceGuidesView(filters = {}) {
   const phaseFilterActive = phase && phase !== 'all' && phaseList.length === 0;
   const guideBases = [];
   const paymentIntegrityConflicts = [];
+  let paymentIntegrityConflictCount = 0;
 
   for (const guide of guides) {
     const gid = idOf(guide._id);
@@ -553,17 +587,20 @@ export async function getInsuranceGuidesView(filters = {}) {
         : deriveSessionPhase(session, payment, !!documentation);
       const batch = batchById.get(idOf(session.billingBatchId)) || null;
       if (session.status === 'completed' && paymentResolution.integrityConflict) {
-        paymentIntegrityConflicts.push({
-          sessionId: idOf(session._id),
-          guideId: gid,
-          patientId: idOf(guide.patientId),
-          activePayments: paymentResolution.activePayments,
-          paymentStatuses: (paymentsBySession.get(idOf(session._id)) || []).map(item => ({
-            paymentId: idOf(item._id),
-            status: item.status,
-            insuranceStatus: item.insurance?.status || null
-          }))
-        });
+        paymentIntegrityConflictCount++;
+        if (!summaryOnly) {
+          paymentIntegrityConflicts.push({
+            sessionId: idOf(session._id),
+            guideId: gid,
+            patientId: idOf(guide.patientId),
+            activePayments: paymentResolution.activePayments,
+            paymentStatuses: (paymentsBySession.get(idOf(session._id)) || []).map(item => ({
+              paymentId: idOf(item._id),
+              status: item.status,
+              insuranceStatus: item.insurance?.status || null
+            }))
+          });
+        }
       }
       return {
         sessionId: idOf(session._id),
@@ -610,7 +647,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       [SessionPhase.RECEIVED]: aggregates.sessions.received
     };
 
-    return {
+    const result = {
       guideId: gid,
       number: guide.number,
       insurance: guide.insurance,
@@ -633,6 +670,8 @@ export async function getInsuranceGuidesView(filters = {}) {
       sessions: aggregates.sessions,
       financialSummary: aggregates.financialSummary,
       competenceBreakdown: composePendingCompetenceBreakdown(inPeriod),
+      firstSessionDate: scoped[0]?.date || null,
+      lastSessionDate: scoped[scoped.length - 1]?.date || null,
 
       // Rótulo visual apenas — a verdade está em `sessions`/`financialSummary`.
       billingState: deriveBillingLabel(phaseCounters, { isClosed }),
@@ -653,10 +692,13 @@ export async function getInsuranceGuidesView(filters = {}) {
       // Notas fiscais que cobrem as sessões DESTA guia, com quantas sessões e
       // quanto cada uma levou. Uma guia faturada mês a mês aparece em várias
       // notas; sem isto a tela diz "Faturada" sem dizer por qual documento.
-      invoices: summarizeInvoices(scoped),
-
-      sessionDetails: scoped
+      ...(!summaryOnly ? {
+        invoices: summarizeInvoices(scoped),
+        sessionDetails: scoped
+      } : {})
     };
+    Object.defineProperty(result, '_scoped', { value: scoped, enumerable: false });
+    return result;
   }
 
   const enriched = guideBases.map(({ guide, classified, inPeriod }) => {
@@ -680,8 +722,8 @@ export async function getInsuranceGuidesView(filters = {}) {
         })
         .filter(g => g.sessions[p] > 0);
 
-      const totals = composeGuideAggregates(bucketGuides.flatMap(g => g.sessionDetails));
-      const competenceBreakdown = composePendingCompetenceBreakdown(bucketGuides.flatMap(g => g.sessionDetails));
+      const totals = composeGuideAggregates(bucketGuides.flatMap(g => g._scoped));
+      const competenceBreakdown = composePendingCompetenceBreakdown(bucketGuides.flatMap(g => g._scoped));
       const totalGuides = bucketGuides.length;
       const paged = limit > 0
         ? bucketGuides.slice((page - 1) * limit, page * limit)
@@ -712,25 +754,22 @@ export async function getInsuranceGuidesView(filters = {}) {
     : enriched;
 
   // 4. Sessões de convênio sem guia vinculada (rastreabilidade perdida na Session).
-  const orphanSessions = await Session.find({
-    status: 'completed',
-    $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
-    $and: [{ $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }]
-  })
-    .select('_id date sessionValue specialty patient doctor billingBatchId')
-    .populate('patient', 'fullName')
-    .populate('doctor', 'fullName')
-    .sort({ date: 1 })
-    .lean();
+  const orphanMatch = ORPHAN_MATCH;
+  const orphanSessions = summaryOnly || guideOid ? [] : await loadOrphanSessions(orphanMatch);
+  const orphanSessionsCount = guideOid
+    ? 0
+    : summaryOnly
+    ? await Session.countDocuments(orphanMatch)
+    : orphanSessions.length;
 
   // 5. Totais da tela — somados no backend, nunca no front. Escopados ao mesmo
   // recorte devolvido (bucket da fase, se houver), para o card da aba mostrar a
   // parcela daquela fase e não o total da guia.
   const totals = composeGuideAggregates(
-    bucketed.flatMap(g => g.sessionDetails)
+    bucketed.flatMap(g => g._scoped)
   );
   const competenceBreakdown = composePendingCompetenceBreakdown(
-    bucketed.flatMap(g => g.sessionDetails)
+    bucketed.flatMap(g => g._scoped)
   );
 
   const totalGuides = bucketed.length;
@@ -741,7 +780,7 @@ export async function getInsuranceGuidesView(filters = {}) {
   logger.info('getInsuranceGuidesView done', {
     guides: totalGuides,
     sessoes: totals.sessions.total,
-    orfas: orphanSessions.length,
+    orfas: orphanSessionsCount,
     phase,
     phases: phaseList,
     from: periodFrom,
@@ -750,18 +789,12 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   return {
     guides: paged,
-    orphanSessions: orphanSessions.map(s => ({
-      sessionId: idOf(s._id),
-      date: s.date,
-      value: s.sessionValue || 0,
-      specialty: s.specialty || null,
-      patientName: s.patient?.fullName || null,
-      doctorName: s.doctor?.fullName || null,
-      batchId: idOf(s.billingBatchId)
-    })),
+    orphanSessions,
+    orphanSessionsCount,
     totals,
     competenceBreakdown,
     paymentIntegrityConflicts,
+    paymentIntegrityConflictCount,
     pagination: {
       page: limit > 0 ? page : 1,
       limit,
