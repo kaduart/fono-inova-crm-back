@@ -688,7 +688,7 @@ export async function getInsuranceGuidesView(filters = {}) {
         : bucketGuides;
 
       buckets[p] = {
-        guides: paged,
+        data: paged,
         totals,
         competenceBreakdown,
         pagination: {

@@ -206,7 +206,8 @@ const bc = consolidated.body;
 const hasBuckets = bc?.buckets && typeof bc.buckets === 'object';
 const hasAllBuckets = hasBuckets && PH.every(p => p in bc.buckets);
 const bucketShapeOk = hasAllBuckets && PH.every(p =>
-  Array.isArray(bc.buckets[p].guides)
+  Array.isArray(bc.buckets[p].data)
+  && bc.buckets[p].guides === undefined
   && bc.buckets[p].totals
   && bc.buckets[p].competenceBreakdown
   && bc.buckets[p].pagination
@@ -225,7 +226,7 @@ let parityDetail = '';
 if (hasAllBuckets) {
   for (const p of PH) {
     const individual = abas[p].guides;
-    const fromBuckets = bc.buckets[p].guides;
+    const fromBuckets = bc.buckets[p].data;
     const sameLength = individual.length === fromBuckets.length;
     const sameContent = sameLength && individual.every((g, i) => deepEqual(g, fromBuckets[i]));
     if (!sameContent) {
