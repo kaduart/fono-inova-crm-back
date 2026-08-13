@@ -1,16 +1,26 @@
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import BillingSubmission, { BillingSubmissionStatus } from '../../models/BillingSubmission.js';
 import InsuranceBatch from '../../models/InsuranceBatch.js';
-import InsuranceCommunication from '../../models/InsuranceCommunication.js';
+import InsuranceCommunication, { CommunicationStatus } from '../../models/InsuranceCommunication.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
 import PatientDocument from '../../models/PatientDocument.js';
 import Convenio from '../../models/Convenio.js';
 import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
-import { transitionPaymentStatus } from '../paymentStatusService.js';
-import { recordInsuranceBilled } from '../financialLedgerService.js';
-import { saveToOutbox } from '../../infrastructure/outbox/outboxPattern.js';
+import FinancialLedger from '../../models/FinancialLedger.js';
+import Outbox from '../../infrastructure/outbox/OutboxModel.js';
 import { EventTypes } from '../../infrastructure/events/eventPublisher.js';
+import {
+  assertFinancialContextAllowsPaymentWrite,
+  assertPaymentBillable,
+  buildBilledUpdate
+} from './paymentBillingInvariants.js';
+
+// Precisa ser idêntico ao de paymentStatusService: o eventId do Outbox é
+// derivado da data local e é a chave de idempotência da transição de status.
+// Divergir daqui produziria eventos duplicados no lugar de colisões detectadas.
+const TIMEZONE = 'America/Sao_Paulo';
 
 const ACTIVE_PAYMENT_STATUSES = ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'];
 
@@ -217,11 +227,24 @@ async function validateSessionScope({ patientId, provider, billingCompetence, se
     );
   }
 
+  // A projeção precisa cobrir TODOS os campos lidos por paymentBillingInvariants
+  // (asserções + reconstrução de patientId/appointmentId/kind). O faturamento
+  // escreve via bulkWrite a partir destes documentos, sem reler o Payment — o que
+  // não vier aqui simplesmente não existe para as invariantes, e uma projeção
+  // curta faria uma asserção disparar contra um campo ausente em vez de errado.
+  //
+  // Vale em dobro para os campos de default materializado (`insurance.*` e
+  // `splitMethods`): fora da projeção eles leriam `undefined` e o faturamento
+  // sobrescreveria com o default um valor que já existia no documento.
   const paymentQuery = Payment.find({
     session: { $in: ids },
     billingType: 'convenio',
     status: { $in: ACTIVE_PAYMENT_STATUSES }
-  }).select('_id session patient appointment amount status insurance').lean();
+  }).select([
+    '_id', 'session', 'sessions', 'patient', 'patientId', 'appointment', 'appointmentId',
+    'amount', 'status', 'insurance', 'billingType', 'kind', 'isFromPackage',
+    'financialDate', 'paidAt', 'paymentMethod', 'package', 'notes', 'splitMethods'
+  ].join(' ')).lean();
   if (mongoSession) paymentQuery.session(mongoSession);
   const payments = await paymentQuery;
   const paymentsBySession = new Map();
@@ -440,16 +463,118 @@ export async function updateBillingSubmission(id, { sessionIds, billingAllocatio
   }
 }
 
-export async function finalizeBillingSubmission(id, { userId } = {}) {
+/**
+ * Coletor de métricas da finalização.
+ *
+ * `withTransaction` REEXECUTA o callback em TransientTransactionError (conflito
+ * de escrita, eleição de primary). Por isso o coletor tem `resetAttempt()`: sem
+ * ele, um retry somaria etapas e queries da tentativa abortada e o log mentiria.
+ */
+function createFinalizeMetrics(submissionId) {
+  const startedAt = Date.now();
+  let attempt = 0;
+  let steps = [];
+  let queries = 0;
+  let payments = 0;
+
+  return {
+    resetAttempt() {
+      attempt += 1;
+      steps = [];
+      queries = 0;
+      payments = 0;
+    },
+    countQueries(n) { queries += n; },
+    setPayments(n) { payments = n; },
+    async step(name, fn) {
+      const t0 = Date.now();
+      try {
+        return await fn();
+      } finally {
+        steps.push({ step: name, ms: Date.now() - t0 });
+      }
+    },
+    report(outcome) {
+      const totalMs = Date.now() - startedAt;
+      const summary = {
+        submissionId: String(submissionId),
+        outcome,
+        totalMs,
+        attempts: attempt,
+        payments,
+        queries,
+        msPerPayment: payments ? Math.round((totalMs / payments) * 10) / 10 : null,
+        steps
+      };
+      console.log(`[BillingSubmissionFinalize] ${JSON.stringify(summary)}`);
+      return summary;
+    }
+  };
+}
+
+/**
+ * Finaliza um submission: cria os lotes, vincula as sessões, move os Payments
+ * para `billed`, lança no ledger e publica os eventos — tudo numa transação.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * POR QUE ESCRITAS EM LOTE
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A versão anterior percorria os Payments em série chamando
+ * `transitionPaymentStatus` + `recordInsuranceBilled`, o que dava 4 round-trips
+ * por sessão (findById + save + outbox + ledger). Na latência entre a aplicação
+ * e o Atlas isso é ~0,7s POR SESSÃO: 16 sessões levavam ~12s e estouravam o
+ * timeout do cliente. O cliente desistia, o servidor seguia e commitava, e a
+ * interface anunciava falha para um faturamento que tinha dado certo.
+ *
+ * Agora o número de round-trips é ~constante em relação à quantidade de sessões.
+ * O `findById` por Payment sumiu: `validateSessionScope` já carrega todos eles em
+ * `scope.paymentBySession`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * HOOKS DO MONGOOSE
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `bulkWrite` não dispara `pre('validate')`/`pre('save')`/`post('save')` de
+ * Payment. As invariantes desses hooks foram auditadas uma a uma e são aplicadas
+ * explicitamente por ./paymentBillingInvariants.js — leia o cabeçalho de lá antes
+ * de mexer aqui. Nenhum hook é ignorado em silêncio.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ROLLBACK E DESCONEXÃO DO CLIENTE
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Falha em qualquer escrita do núcleo (lote, sessão, payment, ledger, outbox)
+ * aborta a transação inteira. Já a desconexão do cliente NÃO é falha: um abort de
+ * socket não cancela o handler nem a transação, e tentar provocar rollback a
+ * partir disso criaria estado inconsistente em vez de evitá-lo. Quem reconcilia é
+ * o cliente, relendo o submission (ver confirmFinalizeOutcome no frontend).
+ *
+ * @param {string} id
+ * @param {Object} options
+ * @param {string} options.userId
+ * @param {{ reason: string }} [options.externalDelivery] quando o envio ao
+ *   convênio aconteceu fora do sistema, registra a comunicação na MESMA
+ *   transação — o registro do envio não pode sobreviver separado do faturamento.
+ */
+export async function finalizeBillingSubmission(id, { userId, externalDelivery } = {}) {
   const mongoSession = await mongoose.startSession();
+  const metrics = createFinalizeMetrics(id);
+  let committed = false;
   try {
     let finalizedId;
     let idempotent = false;
+
     await mongoSession.withTransaction(async () => {
-      const submission = await BillingSubmission.findById(objectId(id, 'submissionId')).session(mongoSession);
+      metrics.resetAttempt();
+
+      const submission = await metrics.step('load_submission', () =>
+        BillingSubmission.findById(objectId(id, 'submissionId')).session(mongoSession));
+      metrics.countQueries(1);
+
       if (!submission) {
         throw new BillingSubmissionError('BILLING_SUBMISSION_NOT_FOUND', 'Submission não encontrado', 404);
       }
+      // Idempotência lógica: um submission já finalizado devolve o estado atual
+      // sem reescrever nada. É isto que torna seguro o retry do cliente depois de
+      // um timeout, e o duplo clique.
       if (submission.status === BillingSubmissionStatus.FINALIZED) {
         finalizedId = submission._id;
         idempotent = true;
@@ -461,17 +586,42 @@ export async function finalizeBillingSubmission(id, { userId } = {}) {
 
       const allocations = submission.billingAllocations;
       assertAllocationCoverage(submission.sessionIds, allocations, { requireInvoices: true });
-      await validateInvoiceDocuments(submission, allocations, mongoSession);
-      const provider = await resolveProvider(submission.insuranceProviderId, mongoSession);
-      const scope = await validateSessionScope({
+
+      await metrics.step('validate', async () => {
+        await validateInvoiceDocuments(submission, allocations, mongoSession);
+      });
+      metrics.countQueries(1);
+
+      const provider = await metrics.step('resolve_provider', () =>
+        resolveProvider(submission.insuranceProviderId, mongoSession));
+      metrics.countQueries(1);
+
+      const scope = await metrics.step('validate_scope', () => validateSessionScope({
         patientId: submission.patientId,
         provider,
         billingCompetence: submission.billingCompetence,
         sessionIds: submission.sessionIds,
         mongoSession
-      });
+      }));
+      metrics.countQueries(3); // sessions + guides + payments
+      metrics.setPayments(scope.payments.length);
+
+      // S2 — blindagem de contexto financeiro. Global ao processo, checada uma
+      // vez por transação em vez de uma vez por Payment.
+      assertFinancialContextAllowsPaymentWrite();
 
       const now = new Date();
+      const eventDay = moment.tz(now, TIMEZONE).format('YYYY-MM-DD');
+      const actorId = objectId(userId, 'userId');
+
+      // ── Fase 1: montar tudo em memória, sem tocar no banco ──────────────────
+      const batchDocs = [];
+      const sessionOps = [];
+      const paymentOps = [];
+      const ledgerDocs = [];
+      const outboxDocs = [];
+      const invariantWarnings = [];
+
       for (const allocation of allocations) {
         const allocationSessionIds = allocation.sessionIds.map(value => value.toString());
         const allocationSessions = scope.sessions.filter(session => allocationSessionIds.includes(session._id.toString()));
@@ -487,7 +637,14 @@ export async function finalizeBillingSubmission(id, { userId } = {}) {
         const correlationId = `billing_submission_${submission._id}_${allocation._id}`;
         const batchNumber = `SUB-${submission._id}-${allocation._id}`;
 
-        const created = await InsuranceBatch.create([{
+        // _id gerado no cliente porque as ops de Session/Payment/ledger precisam
+        // referenciar o lote antes de qualquer ida ao banco. `batchNumber` e o
+        // índice único (billingSubmissionId, billingAllocationId) continuam sendo
+        // a defesa estrutural contra duplicata.
+        const batchId = new mongoose.Types.ObjectId();
+
+        batchDocs.push({
+          _id: batchId,
           billingSubmissionId: submission._id,
           billingAllocationId: allocation._id,
           batchNumber,
@@ -519,69 +676,237 @@ export async function finalizeBillingSubmission(id, { userId } = {}) {
           invoiceDate: allocation.invoice.invoiceDate,
           invoiceDocumentId: allocation.invoice.documentId,
           status: 'sent',
-          createdBy: objectId(userId, 'userId'),
-          sentBy: objectId(userId, 'userId'),
+          createdBy: actorId,
+          sentBy: actorId,
           correlationId
-        }], { session: mongoSession });
-        const batch = created[0];
+        });
 
-        const linkResult = await Session.updateMany(
-          {
-            _id: { $in: allocation.sessionIds },
-            $or: [{ billingBatchId: null }, { billingBatchId: { $exists: false } }]
-          },
-          { $set: { billingBatchId: batch._id } },
-          { session: mongoSession }
-        );
-        if (linkResult.modifiedCount !== allocation.sessionIds.length) {
-          throw new BillingSubmissionError(
-            'BILLING_SUBMISSION_SESSION_ALREADY_BILLED',
-            'Uma sessão foi vinculada a outro lote durante a finalização',
-            409
-          );
-        }
+        sessionOps.push({
+          updateMany: {
+            filter: {
+              _id: { $in: allocation.sessionIds },
+              $or: [{ billingBatchId: null }, { billingBatchId: { $exists: false } }]
+            },
+            update: { $set: { billingBatchId: batchId } }
+          }
+        });
 
         for (const session of allocationSessions) {
           const payment = scope.paymentBySession.get(session._id.toString());
-          const transition = await transitionPaymentStatus(payment._id, 'billed', {
-            session: mongoSession,
-            userId,
-            reason: 'billing_submission_finalized'
+
+          assertPaymentBillable(payment);
+          const { set, warnings } = buildBilledUpdate(payment, { now });
+          if (warnings.length) {
+            invariantWarnings.push({ paymentId: payment._id.toString(), warnings });
+          }
+
+          paymentOps.push({
+            updateOne: {
+              filter: { _id: payment._id, status: payment.status },
+              update: { $set: set }
+            }
           });
-          await recordInsuranceBilled(transition.payment, {
-            userId,
-            billedAt: now,
-            correlationId: `${correlationId}_${payment._id}`
-          }, mongoSession);
+
+          ledgerDocs.push({
+            type: 'insurance_billed',
+            direction: 'credit',
+            amount: payment.insurance?.grossAmount || payment.amount || 0,
+            billingType: 'convenio',
+            patient: payment.patient,
+            appointment: payment.appointment,
+            session: payment.session,
+            payment: payment._id,
+            correlationId: `${correlationId}_${payment._id}`,
+            description: `Convênio faturado - ${payment.insurance?.provider || 'Convênio'}`,
+            occurredAt: now,
+            createdBy: actorId,
+            metadata: {
+              source: 'insurance_billing',
+              provider: payment.insurance?.provider,
+              authorizationCode: payment.insurance?.authorizationCode
+            }
+          });
+
+          outboxDocs.push({
+            // Mesma chave determinística de paymentStatusService.
+            eventId: `${payment._id}_${payment.status}_billed_${eventDay}`,
+            correlationId: `payment_status_${payment._id}_${payment.status}_billed_${now.getTime()}`,
+            eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+            aggregateType: 'payment',
+            aggregateId: String(payment._id),
+            status: 'pending',
+            createdAt: now,
+            payload: {
+              paymentId: payment._id.toString(),
+              patientId: payment.patient?.toString?.(),
+              appointmentId: payment.appointment?.toString?.(),
+              sessionId: payment.session?.toString?.(),
+              packageId: payment.package?.toString?.(),
+              from: payment.status,
+              to: 'billed',
+              amount: payment.amount,
+              paymentMethod: payment.paymentMethod,
+              financialDate: payment.financialDate,
+              paidAt: payment.paidAt,
+              kind: payment.kind,
+              billingType: payment.billingType,
+              isFromPackage: payment.isFromPackage,
+              reason: 'billing_submission_finalized',
+              userId: userId?.toString?.()
+            }
+          });
         }
 
-        await saveToOutbox({
+        outboxDocs.push({
           eventId: `${correlationId}_sent`,
+          correlationId,
           eventType: EventTypes.INSURANCE_BATCH_SENT,
           aggregateType: 'insurance_batch',
-          aggregateId: batch._id,
-          correlationId,
+          aggregateId: String(batchId),
+          status: 'pending',
+          createdAt: now,
           payload: {
-            batchId: batch._id.toString(),
+            batchId: batchId.toString(),
             billingSubmissionId: submission._id.toString(),
             billingAllocationId: allocation._id.toString(),
             sentAt: now,
             sentBy: String(userId),
             totalItems: allocationSessions.length
           }
-        }, mongoSession);
+        });
+      }
+
+      // Truncado: num lote de 100 sessões legadas isso vira uma parede de log
+      // que esconde o resto. A contagem é o sinal; a amostra serve para achar o
+      // padrão e investigar pelo paymentId.
+      if (invariantWarnings.length) {
+        console.warn(
+          `[BillingSubmissionFinalize] ${invariantWarnings.length} payment(s) tiveram campos ausentes reconstruídos `
+          + `pelas invariantes. Amostra: ${JSON.stringify(invariantWarnings.slice(0, 3))}`
+        );
+      }
+
+      // ── Fase 2: escrever em lote ────────────────────────────────────────────
+      await metrics.step('insert_batches', () =>
+        InsuranceBatch.insertMany(batchDocs, { session: mongoSession, ordered: true }));
+      metrics.countQueries(1);
+
+      const sessionResult = await metrics.step('link_sessions', () =>
+        Session.bulkWrite(sessionOps, { session: mongoSession, ordered: true }));
+      metrics.countQueries(1);
+      if (sessionResult.modifiedCount !== submission.sessionIds.length) {
+        throw new BillingSubmissionError(
+          'BILLING_SUBMISSION_SESSION_ALREADY_BILLED',
+          'Uma sessão foi vinculada a outro lote durante a finalização',
+          409
+        );
+      }
+
+      const paymentResult = await metrics.step('bill_payments', () =>
+        Payment.bulkWrite(paymentOps, { session: mongoSession, ordered: true }));
+      metrics.countQueries(1);
+      // O filtro de cada updateOne prende o status de origem lido em
+      // validateSessionScope. Se alguém moveu o Payment no meio do caminho, o
+      // modifiedCount não fecha e a transação inteira volta atrás.
+      if (paymentResult.modifiedCount !== paymentOps.length) {
+        throw new BillingSubmissionError(
+          'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
+          'Um Payment mudou de status durante a finalização',
+          409,
+          { expected: paymentOps.length, modified: paymentResult.modifiedCount }
+        );
+      }
+
+      // Ledger: chave (correlationId, type) é derivada de submission+allocation+
+      // payment, então só repete se o MESMO submission for finalizado duas vezes
+      // — o que o early-return acima já impede. Duplicata aqui é bug: deixamos
+      // o índice único abortar a transação.
+      await metrics.step('insert_ledger', () =>
+        FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+      metrics.countQueries(1);
+
+      // Outbox: chave é (payment, transição, dia), que PODE repetir legitimamente
+      // — um payment rejeitado e refaturado no mesmo dia, em outro submission.
+      // saveToOutbox tolerava isso engolindo o 11000; dentro de uma transação o
+      // 11000 aborta tudo, então filtramos antes com uma única query.
+      const existingEventIds = await metrics.step('outbox_dedupe', async () => {
+        const found = await Outbox.find({ eventId: { $in: outboxDocs.map(doc => doc.eventId) } })
+          .select('eventId')
+          .session(mongoSession)
+          .lean();
+        return new Set(found.map(doc => doc.eventId));
+      });
+      metrics.countQueries(1);
+
+      const freshOutboxDocs = outboxDocs.filter(doc => !existingEventIds.has(doc.eventId));
+      if (existingEventIds.size) {
+        console.warn(`[BillingSubmissionFinalize] ${existingEventIds.size} evento(s) já existiam no Outbox e não foram reinseridos`);
+      }
+      if (freshOutboxDocs.length) {
+        await metrics.step('insert_outbox', () =>
+          Outbox.insertMany(freshOutboxDocs, { session: mongoSession, ordered: true }));
+        metrics.countQueries(1);
+      }
+
+      // Comunicação de envio externo: nasce junto do faturamento porque
+      // representa um envio que JÁ aconteceu fora do sistema. Se ficasse para
+      // depois do commit, um erro no meio deixaria faturamento sem registro de
+      // entrega. E-mail é o caso oposto — ver nota no fim da função.
+      if (externalDelivery?.reason) {
+        await metrics.step('record_external_communication', async () => {
+          const already = await InsuranceCommunication.findOne({
+            billingSubmissionId: submission._id,
+            deliveryMethod: 'external'
+          }).session(mongoSession).lean();
+          if (already) return;
+
+          await InsuranceCommunication.create([{
+            billingSubmissionId: submission._id,
+            billingAllocationIds: allocations.map(allocation => allocation._id),
+            patientId: submission.patientId,
+            insuranceProvider: provider.code,
+            purpose: 'billing',
+            status: CommunicationStatus.SENT,
+            statusReason: externalDelivery.reason,
+            notes: `Envio externo registrado na finalização da competência ${submission.billingCompetence}`,
+            deliveryMethod: 'external',
+            sentAt: now,
+            invoiceNumber: batchDocs[0]?.invoiceNumber || null,
+            invoiceDate: batchDocs[0]?.invoiceDate || null,
+            batchId: batchDocs[0]?._id || null,
+            createdBy: actorId
+          }], { session: mongoSession });
+        });
+        metrics.countQueries(2);
       }
 
       submission.status = BillingSubmissionStatus.FINALIZED;
       submission.finalizedAt = now;
-      submission.finalizedBy = objectId(userId, 'userId');
-      submission.updatedBy = objectId(userId, 'userId');
-      await submission.save({ session: mongoSession });
+      submission.finalizedBy = actorId;
+      submission.updatedBy = actorId;
+      await metrics.step('save_submission', () => submission.save({ session: mongoSession }));
+      metrics.countQueries(1);
       finalizedId = submission._id;
     });
 
-    const data = await getBillingSubmission(finalizedId);
-    return { ...data, idempotent };
+    committed = true;
+
+    // Fora da transação: projeção de leitura da resposta. Nada aqui altera
+    // estado, então uma falha daqui pra frente não desfaz o faturamento.
+    const data = await metrics.step('build_response', () => getBillingSubmission(finalizedId));
+    const instrumentation = metrics.report(idempotent ? 'idempotent' : 'finalized');
+    return { ...data, idempotent, instrumentation };
+  } catch (error) {
+    // Depois do commit o faturamento EXISTE, mesmo que a montagem da resposta
+    // tenha falhado. Registrar isso como 'failed' seria repetir no log o mesmo
+    // erro que este trabalho corrige na interface: anunciar falha para uma
+    // operação concluída. O outcome distingue os dois casos.
+    metrics.report(
+      committed
+        ? `committed_response_failed:${error?.code || error?.name || 'unknown'}`
+        : `rolled_back:${error?.code || error?.name || 'unknown'}`
+    );
+    throw error;
   } finally {
     await mongoSession.endSession();
   }

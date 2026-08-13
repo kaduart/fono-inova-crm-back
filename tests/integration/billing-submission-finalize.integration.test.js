@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
@@ -50,7 +50,7 @@ beforeEach(async () => {
   await Promise.all(Object.values(mongoose.connection.collections).map(collection => collection.deleteMany({})));
 });
 
-async function seedScope() {
+async function seedScope({ sessionCount = 2 } = {}) {
   const patientId = oid();
   const providerId = oid();
   const userId = oid();
@@ -62,10 +62,14 @@ async function seedScope() {
     sessionValue: 100
   });
 
-  const guides = [
-    { _id: oid(), number: 'GUIA-1', specialty: 'fonoaudiologia' },
-    { _id: oid(), number: 'GUIA-2', specialty: 'psicologia' }
-  ];
+  // Uma guia por sessão mantém o cenário original (2 guias distintas no mesmo
+  // lote) e escala para os testes de volume sem estourar limite de sessões/guia.
+  const specialties = ['fonoaudiologia', 'psicologia'];
+  const guides = Array.from({ length: sessionCount }, (_, index) => ({
+    _id: oid(),
+    number: `GUIA-${index + 1}`,
+    specialty: specialties[index % specialties.length]
+  }));
   await mongoose.connection.collection('insuranceguides').insertMany(guides.map(guide => ({
     ...guide,
     patientId,
@@ -78,6 +82,7 @@ async function seedScope() {
     expiresAt: new Date('2026-12-31T12:00:00Z')
   })));
 
+  const baseDate = Date.UTC(2026, 7, 10, 12, 0, 0);
   const sessions = guides.map((guide, index) => ({
     _id: oid(),
     patient: patientId,
@@ -86,7 +91,7 @@ async function seedScope() {
     insuranceGuide: guide._id,
     sessionType: guide.specialty,
     status: 'completed',
-    date: new Date(`2026-08-${String(10 + index).padStart(2, '0')}T12:00:00Z`),
+    date: new Date(baseDate + index * 86_400_000),
     billingBatchId: null
   }));
   await Session.collection.insertMany(sessions);
@@ -229,5 +234,383 @@ describe('finalizeBillingSubmission — transação financeira V1', () => {
 
     expect(firstGuide.sessionDetails[0].phase).toBe('documentationSent');
     expect(secondGuide.sessionDetails[0].phase).toBe('pendingBilling');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Finalização em lote — o loop sequencial por Payment (4 round-trips cada)
+// estourava o timeout do cliente. O cliente desistia, o backend commitava e a
+// interface anunciava falha para uma operação concluída.
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function createFinalizableSubmission(seeded, sessionIds = seeded.sessions.map(session => session._id)) {
+  const submission = await service.createBillingSubmission({
+    patientId: seeded.patientId,
+    insuranceProviderId: seeded.providerId,
+    billingCompetence: '2026-08',
+    sessionIds,
+    userId: seeded.userId
+  });
+  const allocation = submission.billingAllocations[0];
+  await service.updateBillingSubmission(submission._id, {
+    billingAllocations: [{
+      _id: allocation._id,
+      sessionIds,
+      invoice: {
+        invoiceNumber: '5001',
+        invoiceDate: '2026-08-20',
+        documentId: seeded.invoiceDocumentId
+      }
+    }],
+    expectedVersion: submission.__v,
+    userId: seeded.userId
+  });
+  return submission;
+}
+
+async function countAll() {
+  const [batches, billed, ledger, outbox, linked, communications] = await Promise.all([
+    InsuranceBatch.countDocuments(),
+    Payment.countDocuments({ status: 'billed', 'insurance.status': 'billed' }),
+    FinancialLedger.countDocuments({ type: 'insurance_billed' }),
+    Outbox.countDocuments(),
+    Session.countDocuments({ billingBatchId: { $ne: null } }),
+    InsuranceCommunication.countDocuments()
+  ]);
+  return { batches, billed, ledger, outbox, linked, communications };
+}
+
+describe('finalizeBillingSubmission — escritas em lote', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  describe('volume', () => {
+    // A meta de latência é de produção (Render↔Atlas). Aqui o Mongo é in-memory
+    // e o relógio não representa a rede, então o que se afirma é a propriedade
+    // que PRODUZ a latência: número de round-trips constante em relação ao
+    // número de sessões. O tempo vai junto só como evidência.
+    for (const sessionCount of [1, 16, 100]) {
+      it(`finaliza ${sessionCount} payment(s) com número constante de queries`, async () => {
+        const seeded = await seedScope({ sessionCount });
+        const submission = await createFinalizableSubmission(seeded);
+
+        const startedAt = Date.now();
+        const result = await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+        const elapsed = Date.now() - startedAt;
+
+        expect(result.submission.status).toBe('finalized');
+        expect(result.instrumentation.payments).toBe(sessionCount);
+        // 13 = load_submission + validate + provider + 3 (escopo) + batches +
+        // sessions + payments + ledger + dedupe + outbox + save_submission.
+        // O número é EXATO de propósito: é ele que garante que a latência parou
+        // de crescer com o volume. Se subir junto com sessionCount, alguma
+        // escrita voltou para dentro de um loop.
+        expect(result.instrumentation.queries).toBe(13);
+
+        const counts = await countAll();
+        expect(counts.billed).toBe(sessionCount);
+        expect(counts.ledger).toBe(sessionCount);
+        expect(counts.linked).toBe(sessionCount);
+        expect(counts.batches).toBe(1);
+        // 1 evento por payment + 1 do lote
+        expect(counts.outbox).toBe(sessionCount + 1);
+
+        console.log(`[perf] ${sessionCount} sessões: ${elapsed}ms, ${result.instrumentation.queries} queries`);
+      }, 60_000);
+    }
+  });
+
+  describe('rollback integral do núcleo financeiro', () => {
+    it('falha no meio das atualizações de Payment desfaz tudo', async () => {
+      const seeded = await seedScope({ sessionCount: 4 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      // Simula um Payment que mudou de status por fora entre a validação e a
+      // escrita: o filtro do updateOne não casa e o modifiedCount não fecha.
+      vi.spyOn(Payment, 'bulkWrite').mockResolvedValueOnce({ modifiedCount: 2 });
+
+      await expect(service.finalizeBillingSubmission(submission._id, { userId: seeded.userId }))
+        .rejects.toMatchObject({ code: 'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE' });
+
+      expect(await countAll()).toMatchObject({
+        batches: 0, billed: 0, ledger: 0, outbox: 0, linked: 0
+      });
+      const reloaded = await BillingSubmission.findById(submission._id).lean();
+      expect(reloaded.status).toBe('draft');
+    });
+
+    it('falha no ledger desfaz o faturamento inteiro', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      vi.spyOn(FinancialLedger, 'insertMany').mockRejectedValueOnce(new Error('ledger indisponível'));
+
+      await expect(service.finalizeBillingSubmission(submission._id, { userId: seeded.userId }))
+        .rejects.toThrowError(/ledger indisponível/);
+
+      expect(await countAll()).toMatchObject({
+        batches: 0, billed: 0, ledger: 0, outbox: 0, linked: 0
+      });
+      expect((await BillingSubmission.findById(submission._id).lean()).status).toBe('draft');
+    });
+
+    it('falha no Outbox desfaz o faturamento inteiro', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      vi.spyOn(Outbox, 'insertMany').mockRejectedValueOnce(new Error('outbox indisponível'));
+
+      await expect(service.finalizeBillingSubmission(submission._id, { userId: seeded.userId }))
+        .rejects.toThrowError(/outbox indisponível/);
+
+      expect(await countAll()).toMatchObject({
+        batches: 0, billed: 0, ledger: 0, outbox: 0, linked: 0
+      });
+      expect((await BillingSubmission.findById(submission._id).lean()).status).toBe('draft');
+    });
+  });
+
+  describe('idempotência', () => {
+    it('timeout do cliente depois do commit: o estado permanece íntegro e o retry é no-op', async () => {
+      const seeded = await seedScope({ sessionCount: 5 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      // O commit acontece independentemente de o cliente estar escutando —
+      // desconexão de socket não cancela o handler nem a transação.
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+      const afterCommit = await countAll();
+      expect(afterCommit).toMatchObject({ batches: 1, billed: 5, ledger: 5, linked: 5 });
+
+      // É exatamente isto que confirmFinalizeOutcome faz no frontend ao receber
+      // ECONNABORTED: relê o submission em vez de reportar erro.
+      const confirmation = await service.getBillingSubmission(submission._id);
+      expect(confirmation.submission.status).toBe('finalized');
+
+      const retry = await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+      expect(retry.idempotent).toBe(true);
+      expect(await countAll()).toEqual(afterCommit);
+    });
+
+    it('retry com a mesma chave não duplica nada', async () => {
+      const seeded = await seedScope({ sessionCount: 4 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+      const baseline = await countAll();
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const retry = await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+        expect(retry.idempotent).toBe(true);
+      }
+
+      expect(await countAll()).toEqual(baseline);
+    });
+
+    it('clique duplo: duas finalizações concorrentes produzem um único lote', async () => {
+      const seeded = await seedScope({ sessionCount: 4 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      const results = await Promise.allSettled([
+        service.finalizeBillingSubmission(submission._id, { userId: seeded.userId }),
+        service.finalizeBillingSubmission(submission._id, { userId: seeded.userId })
+      ]);
+
+      // Uma das duas pode perder por conflito de escrita; o que não pode é
+      // qualquer registro nascer duas vezes.
+      expect(results.some(result => result.status === 'fulfilled')).toBe(true);
+      expect(await countAll()).toMatchObject({
+        batches: 1, billed: 4, ledger: 4, linked: 4, outbox: 5
+      });
+    });
+  });
+
+  describe('separação entre faturamento e entrega', () => {
+    it('envio externo é registrado na mesma transação', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await service.finalizeBillingSubmission(submission._id, {
+        userId: seeded.userId,
+        externalDelivery: { reason: 'Protocolo 998877 entregue no portal do convênio' }
+      });
+
+      const communications = await InsuranceCommunication.find({ billingSubmissionId: submission._id }).lean();
+      expect(communications).toHaveLength(1);
+      expect(communications[0]).toMatchObject({
+        deliveryMethod: 'external',
+        status: 'sent',
+        purpose: 'billing',
+        statusReason: 'Protocolo 998877 entregue no portal do convênio'
+      });
+      expect(communications[0].sentAt).toBeInstanceOf(Date);
+    });
+
+    it('envio externo não duplica no retry', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+      const externalDelivery = { reason: 'Entregue presencialmente' };
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId, externalDelivery });
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId, externalDelivery });
+
+      expect(await InsuranceCommunication.countDocuments({ billingSubmissionId: submission._id })).toBe(1);
+    });
+
+    it('rollback do faturamento leva junto o registro de envio externo', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      vi.spyOn(Outbox, 'insertMany').mockRejectedValueOnce(new Error('outbox indisponível'));
+
+      await expect(service.finalizeBillingSubmission(submission._id, {
+        userId: seeded.userId,
+        externalDelivery: { reason: 'Entregue presencialmente' }
+      })).rejects.toThrowError(/outbox indisponível/);
+
+      expect(await InsuranceCommunication.countDocuments()).toBe(0);
+    });
+
+    it('sem envio externo, a finalização não cria comunicação — e-mail é enfileirado depois do commit', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      expect(await InsuranceCommunication.countDocuments()).toBe(0);
+      expect(await countAll()).toMatchObject({ batches: 1, billed: 3, ledger: 3 });
+    });
+
+    it('falha posterior no provedor de e-mail não desfaz o faturamento', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+      const afterBilling = await countAll();
+
+      // O envio vive fora da transação, num registro próprio, e pode falhar e
+      // ser retentado sem tocar no financeiro já commitado.
+      await InsuranceCommunication.create({
+        billingSubmissionId: submission._id,
+        patientId: seeded.patientId,
+        insuranceProvider: 'unimed-anapolis',
+        purpose: 'billing',
+        status: 'draft',
+        statusReason: 'SMTP recusou a conexão',
+        deliveryMethod: 'email',
+        createdBy: seeded.userId
+      });
+
+      const stillBilled = await countAll();
+      expect(stillBilled.batches).toBe(afterBilling.batches);
+      expect(stillBilled.billed).toBe(afterBilling.billed);
+      expect(stillBilled.ledger).toBe(afterBilling.ledger);
+      expect((await BillingSubmission.findById(submission._id).lean()).status).toBe('finalized');
+    });
+  });
+
+  describe('invariantes dos hooks e write guard', () => {
+    it('recusa e faz rollback quando um Payment do lote é consumo de pacote', async () => {
+      const seeded = await seedScope({ sessionCount: 3 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      // Bypass proposital dos hooks para simular dado corrompido em produção.
+      await Payment.collection.updateOne(
+        { _id: seeded.payments[1]._id },
+        { $set: { isFromPackage: true } }
+      );
+
+      await expect(service.finalizeBillingSubmission(submission._id, { userId: seeded.userId }))
+        .rejects.toMatchObject({ code: 'PAYMENT_IS_PACKAGE_CONSUMPTION' });
+
+      expect(await countAll()).toMatchObject({ batches: 0, billed: 0, ledger: 0, linked: 0 });
+    });
+
+    it('reconstrói patientId ausente, como fazia o pre(validate)', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await Payment.collection.updateOne(
+        { _id: seeded.payments[0]._id },
+        { $unset: { patientId: '' } }
+      );
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      const reloaded = await Payment.findById(seeded.payments[0]._id).lean();
+      expect(reloaded.patientId).toBe(seeded.patientId.toString());
+      expect(reloaded.status).toBe('billed');
+    });
+
+    it('infere kind ausente, como fazia o enforcement do pre(validate)', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await Payment.collection.updateOne(
+        { _id: seeded.payments[0]._id },
+        { $unset: { kind: '' } }
+      );
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      const reloaded = await Payment.findById(seeded.payments[0]._id).lean();
+      expect(reloaded.kind).toBe('session_payment');
+      expect(reloaded.kindSource).toBe('inferred_on_billing');
+    });
+
+    it('não grava billedAt de topo — campo inexistente no schema, descartado pelo strict mode', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      const raw = await Payment.collection.findOne({ _id: seeded.payments[0]._id });
+      expect(raw.billedAt).toBeUndefined();
+      expect(raw.insurance.billedAt).toBeInstanceOf(Date);
+      expect(raw.insurance.billedAtSource).toBe('paymentStatusService');
+    });
+
+    // Paridade com o .save(): os defaults do schema que o fluxo antigo gravava
+    // no documento continuam sendo gravados pelo bulkWrite.
+    it('materializa os defaults financeiros ausentes sem sobrescrever os preenchidos', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      // O seed já traz netAmount=100 e omite receivedAmount/issRate/issAmount.
+      // No segundo payment, splitMethods vem preenchido para provar que um array
+      // existente não é zerado.
+      await Payment.collection.updateOne(
+        { _id: seeded.payments[1]._id },
+        { $set: { splitMethods: [{ method: 'pix', amount: 100 }], 'insurance.issRate': 5 } }
+      );
+
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      const first = await Payment.collection.findOne({ _id: seeded.payments[0]._id });
+      expect(first.insurance.netAmount).toBe(100);   // preservado
+      expect(first.insurance.receivedAmount).toBe(0); // default materializado
+      expect(first.insurance.issRate).toBe(0);
+      expect(first.insurance.issAmount).toBe(0);
+      expect(first.splitMethods).toEqual([]);
+
+      const second = await Payment.collection.findOne({ _id: seeded.payments[1]._id });
+      expect(second.insurance.issRate).toBe(5);       // preservado
+      expect(second.insurance.receivedAmount).toBe(0);
+      expect(second.splitMethods).toEqual([{ method: 'pix', amount: 100 }]);
+    });
+
+    it('passa pelo AppointmentWriteGuard com contexto autorizado', async () => {
+      const seeded = await seedScope({ sessionCount: 4 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await service.finalizeBillingSubmission(submission._id, { userId: seeded.userId });
+
+      const guardViolations = warnSpy.mock.calls
+        .map(args => args.join(' '))
+        .filter(line => line.includes('AppointmentWriteGuard') && line.includes('"model": "Payment"'));
+      expect(guardViolations).toEqual([]);
+
+      const raw = await Payment.collection.findOne({ _id: seeded.payments[0]._id });
+      expect(raw._fromInsuranceOrchestrator).toBe(true);
+    });
   });
 });

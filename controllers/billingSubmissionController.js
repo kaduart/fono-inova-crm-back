@@ -41,7 +41,17 @@ export async function update(req, res) {
 
 export async function finalize(req, res) {
   try {
-    const data = await finalizeBillingSubmission(req.params.id, { userId: req.user.id });
+    // Envio externo é opcional e vem junto porque precisa nascer na mesma
+    // transação do faturamento (ver finalizeBillingSubmission). E-mail NÃO passa
+    // por aqui: é enfileirado depois do commit, pelo fluxo de comunicação.
+    const reason = typeof req.body?.externalDeliveryReason === 'string'
+      ? req.body.externalDeliveryReason.trim()
+      : '';
+
+    const data = await finalizeBillingSubmission(req.params.id, {
+      userId: req.user.id,
+      ...(reason ? { externalDelivery: { reason } } : {})
+    });
     res.json({ success: true, data });
   } catch (error) {
     sendError(res, error);
