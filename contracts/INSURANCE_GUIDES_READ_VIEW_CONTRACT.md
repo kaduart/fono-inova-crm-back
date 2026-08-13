@@ -152,6 +152,7 @@ I9. `billingState` nunca e `'mixed'`. Mistura e expressa por `hasMixedStates + c
 - `paymentIntegrityConflicts`: a informacao e coletada pelo servico, mas nao e devolvida no envelope da resposta (Opcao A). Ligacao do aviso na UI depende de PR separada.
 - `hasMixedStates`: logica conhecida com edge cases em guias `per_month`; sera tratada em PR propria.
 - Timezone de competencia: `composePendingCompetenceBreakdown` usa `new Date().getMonth()` no timezone do servidor. Sessoes apos 21h BRT no ultimo dia do mes podem mudar de bucket. Confirmado comportamento herdado; correcao e PR separada.
+- Payments de convenio sem `session`: a consulta atual busca payments por `session` OU `insuranceGuide`, mas so indexa/consumo por `session._id`. Payments com `insuranceGuide` valido e `session` ausente sao descartados. Isso pode esconder dinheiro real da tela se existirem em producao. Fase 2 bloqueada ate contagem confirmar se e codigo morto ou divida historica.
 
 ## Teste de caracterizacao
 
@@ -162,7 +163,7 @@ I9. `billingState` nunca e `'mixed'`. Mistura e expressa por `hasMixedStates + c
 - Checks de dataset minimo:
   - guia com sessoes em 2+ fases;
   - guia com `invoices.length > 1`;
-  - ao menos uma `orphanSession`;
+  - `orphanSessions` presente e com estrutura correta (vazio ou nao);
   - guia com `sessions.outOfCycle > 0`;
   - guia com `closedAt` preenchido;
   - sessao com `sessionDetails.paymentIntegrityConflict === true`;
@@ -179,4 +180,12 @@ A Fase 1a entrega o contrato aditivo no back. A melhoria de performance so e per
 - Contrato **aditivo**, nao substitutivo: `phase=X` permanece valido.
 - Back e front vivem em repositorios separados; a mudanca exige duas PRs.
 - A computacao do universo e feita uma unica vez; os buckets sao derivados do mesmo conjunto classificado.
+
+## Melhorias adjacentes identificadas (nao incluidas na Fase 1)
+
+- Endpoint/tela de auditoria para `payments` de convenio sem `session` (ou sem `insuranceGuide`), para evitar que dinheiro fique invisivel.
+- Indice composto `Payment { billingType: 1, insuranceGuide: 1, session: 1 }` para facilitar a contagem de orphans sem full collection scan.
+- Indice `Session { insuranceGuide: 1, status: 1 }` para acelerar a consulta principal se o volume crescer.
+- Cache Redis com invalidacao por eventos de escrita (faturar/receber/lote) para reduzir recalculo da aba Convênios.
+- Refatoracao de `/api/insurance/admin/convenios` para trocar N+1 de contadores por agregacao unica.
 - Nao ha materializacao em view de banco; o volume atual suporta composicao em memoria.
