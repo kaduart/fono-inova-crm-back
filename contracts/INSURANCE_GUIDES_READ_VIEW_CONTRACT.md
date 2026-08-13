@@ -133,6 +133,11 @@ Quando `phases=pendingBilling,documentationSent,billed,received`, a resposta inc
 }
 ```
 
+**Porque o campo se chama `data` e nao `guides`:**
+- O bucket e contrato publico consumido por `InsuranceTab.tsx`; o nome do campo nao e detalhe interno.
+- Cada bucket e espelho exato do corpo de uma chamada `?phase=X`, que usa `data`. Manter o mesmo nome evita divergencia de contrato entre back e front.
+- O teste de fumaca rejeita `buckets[p].guides` (deve ser `undefined`) para impedir que alguem devolva as duas chaves por "compatibilidade" e duplique o payload sem perceber.
+
 Cada bucket e equivalente a uma chamada separada `?phase=X` com os mesmos filtros de convenio/paciente/status e paginacao.
 
 ## Invariantes
