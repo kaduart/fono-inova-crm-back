@@ -19,6 +19,8 @@ let Outbox;
 let Session;
 let Payment;
 let service;
+let paymentStatusService;
+let financialLedgerService;
 
 const oid = () => new mongoose.Types.ObjectId();
 
@@ -33,6 +35,8 @@ beforeAll(async () => {
   Session = (await import('../../models/Session.js')).default;
   Payment = (await import('../../models/Payment.js')).default;
   service = await import('../../services/billingSubmission/BillingSubmissionService.js');
+  paymentStatusService = await import('../../services/paymentStatusService.js');
+  financialLedgerService = await import('../../services/financialLedgerService.js');
   await Promise.all([
     BillingSubmission.syncIndexes(),
     InsuranceBatch.syncIndexes(),
@@ -129,6 +133,80 @@ async function seedScope({ sessionCount = 2 } = {}) {
 
   return { patientId, providerId, userId, sessions, payments, invoiceDocumentId };
 }
+
+describe('paridade da transição individual e em lote', () => {
+  it('produz o mesmo estado financeiro observável em Payment, ledger e Outbox', async () => {
+    const seeded = await seedScope({ sessionCount: 2 });
+    const [individual, batch] = await Promise.all(
+      seeded.payments.map(payment => Payment.findById(payment._id).lean())
+    );
+    const now = new Date('2026-08-13T18:00:00.000Z');
+
+    await paymentStatusService.transitionPaymentStatus(individual._id, 'billed', {
+      reason: 'billing_submission_finalized',
+      userId: seeded.userId
+    });
+    await financialLedgerService.recordInsuranceBilled(individual, {
+      userId: seeded.userId,
+      correlationId: `parity_${individual._id}`,
+      billedAt: now
+    });
+
+    const batchLedger = {
+      type: 'insurance_billed', direction: 'credit', amount: batch.insurance.grossAmount,
+      billingType: 'convenio', patient: batch.patient, appointment: batch.appointment,
+      session: batch.session, payment: batch._id, correlationId: `parity_${batch._id}`,
+      description: `Convênio faturado - ${batch.insurance.provider}`,
+      occurredAt: now, createdBy: seeded.userId,
+      metadata: { source: 'insurance_billing', provider: batch.insurance.provider }
+    };
+    await paymentStatusService.transitionPaymentStatusBatch(
+      [{ payment: batch, ledger: batchLedger }],
+      'billed',
+      { now, reason: 'billing_submission_finalized', userId: seeded.userId }
+    );
+
+    const [individualDoc, batchDoc] = await Promise.all([
+      Payment.collection.findOne({ _id: individual._id }),
+      Payment.collection.findOne({ _id: batch._id })
+    ]);
+    const paymentShape = payment => ({
+      status: payment.status,
+      insuranceStatus: payment.insurance.status,
+      billedAtSource: payment.insurance.billedAtSource,
+      netAmount: payment.insurance.netAmount,
+      receivedAmount: payment.insurance.receivedAmount,
+      issRate: payment.insurance.issRate,
+      issAmount: payment.insurance.issAmount,
+      splitMethods: payment.splitMethods,
+      kind: payment.kind
+    });
+    expect(paymentShape(batchDoc)).toEqual(paymentShape(individualDoc));
+
+    const [individualLedger, batchLedgerDoc] = await Promise.all([
+      FinancialLedger.findOne({ payment: individual._id }).lean(),
+      FinancialLedger.findOne({ payment: batch._id }).lean()
+    ]);
+    const ledgerShape = ledger => ({
+      type: ledger.type, direction: ledger.direction, amount: ledger.amount,
+      billingType: ledger.billingType, source: ledger.metadata.source,
+      provider: ledger.metadata.provider
+    });
+    expect(ledgerShape(batchLedgerDoc)).toEqual(ledgerShape(individualLedger));
+
+    const [individualEvent, batchEvent] = await Promise.all([
+      Outbox.findOne({ aggregateId: String(individual._id) }).lean(),
+      Outbox.findOne({ aggregateId: String(batch._id) }).lean()
+    ]);
+    const eventShape = event => ({
+      eventType: event.eventType, aggregateType: event.aggregateType,
+      from: event.payload.from, to: event.payload.to, amount: event.payload.amount,
+      kind: event.payload.kind, billingType: event.payload.billingType,
+      reason: event.payload.reason
+    });
+    expect(eventShape(batchEvent)).toEqual(eventShape(individualEvent));
+  });
+});
 
 describe('finalizeBillingSubmission — transação financeira V1', () => {
   it('aceita backlog clínico anterior na competência atual de faturamento', async () => {

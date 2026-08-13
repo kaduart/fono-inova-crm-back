@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import moment from 'moment-timezone';
 import BillingSubmission, { BillingSubmissionStatus } from '../../models/BillingSubmission.js';
 import InsuranceBatch from '../../models/InsuranceBatch.js';
 import InsuranceCommunication, { CommunicationStatus } from '../../models/InsuranceCommunication.js';
@@ -8,19 +7,8 @@ import PatientDocument from '../../models/PatientDocument.js';
 import Convenio from '../../models/Convenio.js';
 import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
-import FinancialLedger from '../../models/FinancialLedger.js';
-import Outbox from '../../infrastructure/outbox/OutboxModel.js';
 import { EventTypes } from '../../infrastructure/events/eventPublisher.js';
-import {
-  assertFinancialContextAllowsPaymentWrite,
-  assertPaymentBillable,
-  buildBilledUpdate
-} from './paymentBillingInvariants.js';
-
-// Precisa ser idêntico ao de paymentStatusService: o eventId do Outbox é
-// derivado da data local e é a chave de idempotência da transição de status.
-// Divergir daqui produziria eventos duplicados no lugar de colisões detectadas.
-const TIMEZONE = 'America/Sao_Paulo';
+import { transitionPaymentStatusBatch } from '../paymentStatusService.js';
 
 const ACTIVE_PAYMENT_STATUSES = ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'];
 
@@ -606,19 +594,13 @@ export async function finalizeBillingSubmission(id, { userId, externalDelivery }
       metrics.countQueries(3); // sessions + guides + payments
       metrics.setPayments(scope.payments.length);
 
-      // S2 — blindagem de contexto financeiro. Global ao processo, checada uma
-      // vez por transação em vez de uma vez por Payment.
-      assertFinancialContextAllowsPaymentWrite();
-
       const now = new Date();
-      const eventDay = moment.tz(now, TIMEZONE).format('YYYY-MM-DD');
       const actorId = objectId(userId, 'userId');
 
       // ── Fase 1: montar tudo em memória, sem tocar no banco ──────────────────
       const batchDocs = [];
       const sessionOps = [];
-      const paymentOps = [];
-      const ledgerDocs = [];
+      const paymentTransitions = [];
       const outboxDocs = [];
       const invariantWarnings = [];
 
@@ -694,20 +676,7 @@ export async function finalizeBillingSubmission(id, { userId, externalDelivery }
         for (const session of allocationSessions) {
           const payment = scope.paymentBySession.get(session._id.toString());
 
-          assertPaymentBillable(payment);
-          const { set, warnings } = buildBilledUpdate(payment, { now });
-          if (warnings.length) {
-            invariantWarnings.push({ paymentId: payment._id.toString(), warnings });
-          }
-
-          paymentOps.push({
-            updateOne: {
-              filter: { _id: payment._id, status: payment.status },
-              update: { $set: set }
-            }
-          });
-
-          ledgerDocs.push({
+          const ledger = {
             type: 'insurance_billed',
             direction: 'credit',
             amount: payment.insurance?.grossAmount || payment.amount || 0,
@@ -725,36 +694,8 @@ export async function finalizeBillingSubmission(id, { userId, externalDelivery }
               provider: payment.insurance?.provider,
               authorizationCode: payment.insurance?.authorizationCode
             }
-          });
-
-          outboxDocs.push({
-            // Mesma chave determinística de paymentStatusService.
-            eventId: `${payment._id}_${payment.status}_billed_${eventDay}`,
-            correlationId: `payment_status_${payment._id}_${payment.status}_billed_${now.getTime()}`,
-            eventType: EventTypes.PAYMENT_STATUS_CHANGED,
-            aggregateType: 'payment',
-            aggregateId: String(payment._id),
-            status: 'pending',
-            createdAt: now,
-            payload: {
-              paymentId: payment._id.toString(),
-              patientId: payment.patient?.toString?.(),
-              appointmentId: payment.appointment?.toString?.(),
-              sessionId: payment.session?.toString?.(),
-              packageId: payment.package?.toString?.(),
-              from: payment.status,
-              to: 'billed',
-              amount: payment.amount,
-              paymentMethod: payment.paymentMethod,
-              financialDate: payment.financialDate,
-              paidAt: payment.paidAt,
-              kind: payment.kind,
-              billingType: payment.billingType,
-              isFromPackage: payment.isFromPackage,
-              reason: 'billing_submission_finalized',
-              userId: userId?.toString?.()
-            }
-          });
+          };
+          paymentTransitions.push({ payment, ledger });
         }
 
         outboxDocs.push({
@@ -802,51 +743,16 @@ export async function finalizeBillingSubmission(id, { userId, externalDelivery }
         );
       }
 
-      const paymentResult = await metrics.step('bill_payments', () =>
-        Payment.bulkWrite(paymentOps, { session: mongoSession, ordered: true }));
-      metrics.countQueries(1);
-      // O filtro de cada updateOne prende o status de origem lido em
-      // validateSessionScope. Se alguém moveu o Payment no meio do caminho, o
-      // modifiedCount não fecha e a transação inteira volta atrás.
-      if (paymentResult.modifiedCount !== paymentOps.length) {
-        throw new BillingSubmissionError(
-          'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
-          'Um Payment mudou de status durante a finalização',
-          409,
-          { expected: paymentOps.length, modified: paymentResult.modifiedCount }
-        );
-      }
-
-      // Ledger: chave (correlationId, type) é derivada de submission+allocation+
-      // payment, então só repete se o MESMO submission for finalizado duas vezes
-      // — o que o early-return acima já impede. Duplicata aqui é bug: deixamos
-      // o índice único abortar a transação.
-      await metrics.step('insert_ledger', () =>
-        FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
-      metrics.countQueries(1);
-
-      // Outbox: chave é (payment, transição, dia), que PODE repetir legitimamente
-      // — um payment rejeitado e refaturado no mesmo dia, em outro submission.
-      // saveToOutbox tolerava isso engolindo o 11000; dentro de uma transação o
-      // 11000 aborta tudo, então filtramos antes com uma única query.
-      const existingEventIds = await metrics.step('outbox_dedupe', async () => {
-        const found = await Outbox.find({ eventId: { $in: outboxDocs.map(doc => doc.eventId) } })
-          .select('eventId')
-          .session(mongoSession)
-          .lean();
-        return new Set(found.map(doc => doc.eventId));
+      const paymentBatchResult = await transitionPaymentStatusBatch(paymentTransitions, 'billed', {
+        session: mongoSession,
+        now,
+        reason: 'billing_submission_finalized',
+        userId,
+        additionalOutboxDocs: outboxDocs,
+        step: (name, operation) => metrics.step(name, operation)
       });
-      metrics.countQueries(1);
-
-      const freshOutboxDocs = outboxDocs.filter(doc => !existingEventIds.has(doc.eventId));
-      if (existingEventIds.size) {
-        console.warn(`[BillingSubmissionFinalize] ${existingEventIds.size} evento(s) já existiam no Outbox e não foram reinseridos`);
-      }
-      if (freshOutboxDocs.length) {
-        await metrics.step('insert_outbox', () =>
-          Outbox.insertMany(freshOutboxDocs, { session: mongoSession, ordered: true }));
-        metrics.countQueries(1);
-      }
+      metrics.countQueries(4);
+      invariantWarnings.push(...paymentBatchResult.warnings);
 
       // Comunicação de envio externo: nasce junto do faturamento porque
       // representa um envio que JÁ aconteceu fora do sistema. Se ficasse para

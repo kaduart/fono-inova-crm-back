@@ -1,5 +1,8 @@
 /**
  * 💰 Payment Status Service
+ * FLOW REFERENCE: back/docs/ARCHITECTURE_FLOW.md
+ * Domínio: Payment | Insurance
+ * Fluxo: Fluxo 3 — Convênio > faturamento em lote
  *
  * ÚNICA fonte de verdade para transições de status de Payment.
  *
@@ -15,12 +18,134 @@
  */
 
 import Payment from '../models/Payment.js';
+import FinancialLedger from '../models/FinancialLedger.js';
+import Outbox from '../infrastructure/outbox/OutboxModel.js';
 import { EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import {
+    assertFinancialContextAllowsPaymentWrite,
+    assertPaymentBillable,
+    buildBilledUpdate
+} from './billingSubmission/paymentBillingInvariants.js';
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 
 const TIMEZONE = 'America/Sao_Paulo';
+
+export class PaymentBatchTransitionError extends Error {
+    constructor(code, message, details = undefined) {
+        super(message);
+        this.name = 'PaymentBatchTransitionError';
+        this.code = code;
+        this.details = details;
+    }
+}
+
+/**
+ * Transição canônica e performática de Payments de convênio para `billed`.
+ * Centraliza status, campos derivados, ledger e Outbox sem N+1.
+ */
+export async function transitionPaymentStatusBatch(transitions, newStatus, options = {}) {
+    const {
+        session: mongoSession,
+        now = new Date(),
+        reason = 'batch_process',
+        userId,
+        additionalOutboxDocs = [],
+        step = (_name, operation) => operation()
+    } = options;
+
+    if (newStatus !== 'billed') {
+        throw new PaymentBatchTransitionError(
+            'PAYMENT_BATCH_STATUS_UNSUPPORTED',
+            `Transição em lote para '${newStatus}' não implementada`
+        );
+    }
+
+    assertFinancialContextAllowsPaymentWrite();
+    const eventDay = moment.tz(now, TIMEZONE).format('YYYY-MM-DD');
+    const paymentOps = [];
+    const ledgerDocs = [];
+    const outboxDocs = [...additionalOutboxDocs];
+    const warnings = [];
+
+    for (const transition of transitions) {
+        const { payment, ledger } = transition;
+        assertPaymentBillable(payment);
+        const built = buildBilledUpdate(payment, { now });
+        if (built.warnings.length) {
+            warnings.push({ paymentId: payment._id.toString(), warnings: built.warnings });
+        }
+
+        paymentOps.push({
+            updateOne: {
+                filter: { _id: payment._id, status: payment.status },
+                update: { $set: built.set }
+            }
+        });
+        ledgerDocs.push(ledger);
+        outboxDocs.push({
+            eventId: `${payment._id}_${payment.status}_${newStatus}_${eventDay}`,
+            correlationId: `payment_status_${payment._id}_${payment.status}_${newStatus}_${now.getTime()}`,
+            eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+            aggregateType: 'payment',
+            aggregateId: String(payment._id),
+            status: 'pending',
+            createdAt: now,
+            payload: {
+                paymentId: payment._id.toString(),
+                patientId: payment.patient?.toString?.(),
+                appointmentId: payment.appointment?.toString?.(),
+                sessionId: payment.session?.toString?.(),
+                packageId: payment.package?.toString?.(),
+                from: payment.status,
+                to: newStatus,
+                amount: payment.amount,
+                paymentMethod: payment.paymentMethod,
+                financialDate: payment.financialDate,
+                paidAt: payment.paidAt,
+                kind: built.set.kind || payment.kind,
+                billingType: payment.billingType,
+                isFromPackage: payment.isFromPackage,
+                reason,
+                userId: userId?.toString?.()
+            }
+        });
+    }
+
+    const paymentResult = await step('bill_payments', () =>
+        Payment.bulkWrite(paymentOps, { session: mongoSession, ordered: true }));
+    if (paymentResult.modifiedCount !== paymentOps.length) {
+        throw new PaymentBatchTransitionError(
+            'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
+            'Um Payment mudou de status durante a transição em lote',
+            { expected: paymentOps.length, modified: paymentResult.modifiedCount }
+        );
+    }
+
+    await step('insert_ledger', () =>
+        FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+
+    const existingEventIds = await step('outbox_dedupe', async () => {
+        const found = await Outbox.find({ eventId: { $in: outboxDocs.map(doc => doc.eventId) } })
+            .select('eventId')
+            .session(mongoSession)
+            .lean();
+        return new Set(found.map(doc => doc.eventId));
+    });
+    const freshOutboxDocs = outboxDocs.filter(doc => !existingEventIds.has(doc.eventId));
+    if (freshOutboxDocs.length) {
+        await step('insert_outbox', () =>
+            Outbox.insertMany(freshOutboxDocs, { session: mongoSession, ordered: true }));
+    }
+
+    return {
+        modifiedCount: paymentResult.modifiedCount,
+        warnings,
+        existingEventCount: existingEventIds.size,
+        insertedOutboxCount: freshOutboxDocs.length
+    };
+}
 
 /**
  * Transiciona o status de um payment e emite evento.
@@ -203,6 +328,7 @@ export async function transitionPaymentStatusWithTransaction(paymentId, newStatu
 
 export default {
     transitionPaymentStatus,
+    transitionPaymentStatusBatch,
     batchTransitionStatus,
     transitionPaymentStatusWithTransaction
 };
