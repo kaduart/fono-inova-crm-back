@@ -102,7 +102,7 @@ new Error().stack
   .join('\n');
 ```
 
-Isso remove o ruído do `kareem` (Mongoose middleware engine) e do próprio plugin, mas ainda pode não conter o call site exato quando o hook roda como callback de Promise. Serve como indicativo para cruzar com timestamps/endpoints.
+Isso remove o ruído do `kareem` (Mongoose middleware engine) e do próprio plugin. A chave de deduplicação (`stackKey`) usa `${entityName}:${operation}:${meta.stack}`; com o ruído removido, call sites diferentes deixam de ser colapsados em um único log, permitindo identificar origens distintas no pós-deploy. Quando o hook roda como callback de Promise, a stack pode conter apenas frames genéricas (ex: `at new Promise`), então o log serve como indicativo para cruzar com timestamps/endpoints.
 
 ---
 

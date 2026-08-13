@@ -76,7 +76,7 @@ export default function financialSanitizer(schema, options = {}) {
 
       const stackKey = `${entityName}:${operation}:${meta.stack}`;
       if (shouldLog(stackKey)) {
-        console.warn('⚠️  [FINANCIAL SANITIZER] REMOVED:', JSON.stringify(meta, null, 2));
+        console.warn('⚠️  [FINANCIAL SANITIZER] RESET_TO_DEFAULT:', JSON.stringify(meta, null, 2));
       }
     }
 
