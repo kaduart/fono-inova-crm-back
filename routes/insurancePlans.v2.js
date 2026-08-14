@@ -62,6 +62,47 @@ const VALID_SPECIALTIES = [
 ];
 
 /**
+ * Monta mensagem + objeto `conflict` enriquecidos com nome de quem já está agendado
+ * e número da guia de origem, a partir de um erro APPOINTMENT_SLOT_CONFLICT lançado
+ * por checkSlotConflicts (generateInsurancePlanSessions.js). Sem isso a mensagem só
+ * diz "tem um compromisso" e quem está criando/gerando o plano fica sem saber DE QUEM
+ * é o compromisso nem de qual guia — precisa abrir o banco pra descobrir.
+ * Busca best-effort: se a lookup falhar, cai no texto genérico sem quebrar a resposta.
+ */
+async function describeSlotConflict(error) {
+  const conflict = error.conflict || {};
+  let withWhom = conflict.type === 'doctor' ? conflict.patientName : conflict.doctorName;
+  let guideNumber = null;
+
+  if (conflict.existingAppointmentId) {
+    try {
+      const conflictingAppt = await Appointment.findById(conflict.existingAppointmentId)
+        .select('insuranceGuide patient doctor')
+        .populate('patient', 'fullName')
+        .populate('doctor', 'fullName')
+        .lean();
+      if (conflictingAppt?.insuranceGuide) {
+        const conflictingGuide = await InsuranceGuide.findById(conflictingAppt.insuranceGuide).select('number').lean();
+        guideNumber = conflictingGuide?.number || null;
+      }
+      if (!withWhom) {
+        withWhom = conflict.type === 'doctor'
+          ? conflictingAppt?.patient?.fullName
+          : conflictingAppt?.doctor?.fullName;
+      }
+    } catch (_) { /* best-effort — não bloqueia a resposta de erro */ }
+  }
+
+  const prefix = conflict.type === 'doctor'
+    ? `Conflito de agenda: o profissional já possui um compromisso${withWhom ? ` com ${withWhom}` : ''}`
+    : `Conflito de agenda: o paciente já possui um compromisso${withWhom ? ` com ${withWhom}` : ''}`;
+  const guideSuffix = guideNumber ? ` (guia ${guideNumber})` : '';
+  const message = `${prefix}${guideSuffix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informado'}. Escolha outro horário.`;
+
+  return { message, conflict: { ...conflict, guideNumber, withWhom } };
+}
+
+/**
  * POST /api/v2/insurance-plans
  * Cria plano de convênio e gera appointments + payments pendentes
  */
@@ -159,7 +200,12 @@ router.post('/', auth, async (req, res) => {
       await InsurancePlan.deleteOne({ _id: existingPlan._id }, { session });
     }
 
-    // Cria o novo plano
+    // Cria o novo plano — SÓ o registro. Gerar os appointments/sessions/payments é
+    // responsabilidade exclusiva de POST /:id/generate-sessions (botão "Gerar sessões"),
+    // que também é quem faz a checagem de conflito de agenda e o cancelamento de
+    // appointments órfãos de guia antiga. Antes este POST fazia os dois passos de uma
+    // vez (criar + gerar), o que tirava do usuário o controle de quando a agenda real
+    // é tocada — mesmo padrão já usado em Pacotes/Liminar (criar não agenda sozinho).
     const plan = await InsurancePlan.create([{
       patient: guide.patientId,
       guide: guideId,
@@ -176,15 +222,6 @@ router.post('/', auth, async (req, res) => {
     }], { session });
 
     const planDoc = plan[0];
-
-    // Gera appointments + sessions + payments (padrão liminar: semana a semana, pula feriados)
-    const result = await generateInsurancePlanSessions({
-      planId: planDoc._id,
-      guideId,
-      sessionValue: resolvedSessionValue,
-      mongoSession: session,
-      skipHolidays: true
-    });
 
     await session.commitTransaction();
 
@@ -211,7 +248,7 @@ router.post('/', auth, async (req, res) => {
       after: pickInsurancePlanFields(planDoc),
       source: 'api:insurance_plans:post',
       pickFn: (x) => x,
-      metadata: { guideId, generatedCount: result.count },
+      metadata: { guideId },
     });
 
     res.status(201).json({
@@ -226,14 +263,8 @@ router.post('/', auth, async (req, res) => {
           sessionsPerWeek,
           startDate,
           status: 'active',
-          generatedAppointmentsCount: result.count
-        },
-        appointments: result.appointments.map(a => ({
-          _id: a._id,
-          date: a.date,
-          time: a.time,
-          status: a.operationalStatus
-        }))
+          generatedAppointmentsCount: 0
+        }
       }
     });
 
@@ -279,11 +310,9 @@ router.post('/', auth, async (req, res) => {
       statusCode = 400;
       errorCode = 'GUIDE_EXHAUSTED';
     } else if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
-      const conflict = error.conflict || {};
-      const prefix = conflict.type === 'doctor'
-        ? 'Conflito de agenda: o profissional já possui um compromisso'
-        : 'Conflito de agenda: o paciente já possui um compromisso';
-      message = `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informado'}. Escolha outro horário.`;
+      const described = await describeSlotConflict(error);
+      message = described.message;
+      error.conflict = described.conflict;
       statusCode = 409;
       errorCode = 'APPOINTMENT_SLOT_CONFLICT';
     } else if (error.message?.includes('ValidationError')) {
@@ -296,7 +325,12 @@ router.post('/', auth, async (req, res) => {
       errorCode = 'CAST_ERROR';
     }
 
-    res.status(statusCode).json({ success: false, errorCode, message });
+    res.status(statusCode).json({
+      success: false,
+      errorCode,
+      message,
+      ...(errorCode === 'APPOINTMENT_SLOT_CONFLICT' ? { conflict: error.conflict } : {})
+    });
   } finally {
     session.endSession();
   }
@@ -834,14 +868,12 @@ router.patch('/:id', auth, async (req, res) => {
 
     // Erros vindos de generateInsurancePlanSessions ao regenerar por mudança de frequência
     if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
-      const conflict = error.conflict || {};
-      const prefix = conflict.type === 'doctor'
-        ? 'Conflito de agenda: o profissional já possui um compromisso'
-        : 'Conflito de agenda: o paciente já possui um compromisso';
+      const described = await describeSlotConflict(error);
       return res.status(409).json({
         success: false,
         errorCode: 'APPOINTMENT_SLOT_CONFLICT',
-        message: `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informado'}. Ajuste os horários do plano e tente novamente.`
+        message: described.message,
+        conflict: described.conflict
       });
     }
     if (error.message === 'GUIDE_EXHAUSTED') {
@@ -1052,6 +1084,51 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 
     const remaining = await getGuideRemainingCapacity(guide._id, guide, session);
 
+    // 🚨 FIX (2026-08-14): appointments órfãos de uma guia ANTIGA (nunca inativada)
+    // do mesmo paciente com o mesmo doutor travavam a geração com um falso "conflito
+    // de agenda" — não é dois compromissos reais concorrendo pelo horário, é a MESMA
+    // pessoa com o MESMO profissional, só que a guia anterior ficou órfã em vez de
+    // inativada. Restrito a mesmo paciente + mesmo doutor pra não tocar em planos de
+    // outra especialidade/doutor que o paciente ainda tenha ativos legitimamente.
+    // Usa `insuranceGuide` (o vínculo real com a guia), não `metadata.origin.source` —
+    // esse metadata pode ser reescrito por uma edição manual posterior (reagendar,
+    // confirmar pela agenda) sem tocar em insuranceGuide.
+    const staleAppointments = await Appointment.find({
+      patient: plan.patient,
+      doctor: plan.doctor,
+      insuranceGuide: { $exists: true, $nin: [null, guide._id] },
+      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
+      date: { $gte: today }
+    }).session(session).select('_id date time insuranceGuide');
+
+    // Info pro comercial/secretaria — cancelar sem avisar deixa quem está na tela sem
+    // entender por que um agendamento antigo sumiu (relato: "o comercial ficou perdido").
+    let staleAppointmentsCanceled = null;
+    if (staleAppointments.length > 0) {
+      const staleGuideIds = [...new Set(staleAppointments.map(a => a.insuranceGuide?.toString()).filter(Boolean))];
+      const staleGuides = staleGuideIds.length > 0
+        ? await InsuranceGuide.find({ _id: { $in: staleGuideIds } }).session(session).select('number').lean()
+        : [];
+      const staleGuideNumberById = new Map(staleGuides.map(g => [g._id.toString(), g.number]));
+
+      await bulkCancelAppointments(
+        staleAppointments.map(a => a._id),
+        { reason: 'Guia anterior órfã substituída por nova guia de convênio', cancelSource: 'guide_closure' },
+        req.user,
+        session
+      );
+
+      staleAppointmentsCanceled = {
+        count: staleAppointments.length,
+        fromGuideNumbers: [...new Set(staleGuideIds.map(id => staleGuideNumberById.get(id)).filter(Boolean))],
+        appointments: staleAppointments.map(a => ({
+          date: new Date(a.date).toISOString().split('T')[0],
+          time: a.time,
+          guideNumber: staleGuideNumberById.get(a.insuranceGuide?.toString()) || null
+        }))
+      };
+    }
+
     const result = await generateInsurancePlanSessions({
       planId: plan._id,
       guideId: guide._id,
@@ -1107,7 +1184,8 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
         replanned: needsReplan,
         appointmentsCanceled: replanResult?.appointmentsCanceled || 0,
         pastAppointmentsCompleted: pastCompleted,
-        pastAppointmentsFailed: pastCompletionErrors
+        pastAppointmentsFailed: pastCompletionErrors,
+        staleAppointmentsCanceled
       }
     });
   } catch (error) {
@@ -1115,14 +1193,12 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
 
     if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
-      const conflict = error.conflict || {};
-      const prefix = conflict.type === 'doctor'
-        ? 'Conflito de agenda: o profissional já possui um compromisso'
-        : 'Conflito de agenda: o paciente já possui um compromisso';
+      const described = await describeSlotConflict(error);
       return res.status(409).json({
         success: false,
         errorCode: 'APPOINTMENT_SLOT_CONFLICT',
-        message: `${prefix} em ${conflict.date || 'data informada'} às ${conflict.time || 'horário informada'}. Ajuste os horários do plano e tente novamente.`
+        message: described.message,
+        conflict: described.conflict
       });
     }
     if (error.message === 'GUIDE_EXHAUSTED') {
