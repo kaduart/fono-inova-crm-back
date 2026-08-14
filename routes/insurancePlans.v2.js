@@ -168,35 +168,69 @@ router.post('/', auth, async (req, res) => {
 
     const totalSessions = guide.totalSessions - guide.usedSessions;
 
-    // 🔄 Se já existe plano para esta guia (qualquer status), remove o antigo e cria novo
+    // 🚨 PATCH DE SEGURANÇA (2026-08-14, v2): se já existe plano para esta guia com
+    // QUALQUER Appointment/Session/Payment associado, este endpoint não substitui,
+    // não cancela e não deleta mais nada — só detecta e bloqueia. Detecção sempre
+    // ANTES de qualquer escrita.
+    //
+    // v1 deste patch checava só `Appointment.insurancePlan` — insuficiente: Session
+    // não tem `insurancePlan` no schema (só `insuranceGuide`), e Appointment/Payment
+    // legados podem estar vinculados só por `insuranceGuide`, sem o back-reference
+    // pro plano (ex: a sessão de avaliação criada direto na criação da guia, ou
+    // dado migrado antes do campo existir). v2 varre as três entidades pela UNIÃO
+    // de todo vínculo possível — nunca confia em um único campo de back-reference.
     const existingPlan = await InsurancePlan.findOne({ guide: guideId }).session(session);
     let replacedPlanSnapshot = null;
     if (existingPlan) {
-      replacedPlanSnapshot = pickInsurancePlanFields(existingPlan);
-      const today = new Date().toISOString().split('T')[0];
-      // Cancela appointments futuros do plano antigo
-      // 🚨 FIX (2026-07-20): 'scheduled' sozinho não pega appointments 'pre_agendado'
-      // (todo appointment nasce pre_agendado desde a migração 2026-05-07 — ver
-      // CLAUDE.md, invariante 6). Um plano/guia substituído deixava os appointments
-      // pre_agendado do plano antigo órfãos, ainda ocupando a agenda.
-      const oldAppointments = await Appointment.find({
-        _id: { $in: existingPlan.generatedAppointments },
-        operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
-        date: { $gte: today }
-      }).session(session).select('_id');
+      const linkedAppointments = await Appointment.find({
+        $or: [
+          { insurancePlan: existingPlan._id },
+          { _id: { $in: existingPlan.generatedAppointments || [] } },
+          { insuranceGuide: guide._id }
+        ]
+      }).select('_id').session(session).lean();
+      const linkedAppointmentIds = linkedAppointments.map(a => a._id);
 
-      await bulkCancelAppointments(
-        oldAppointments.map(a => a._id),
-        { reason: 'plan_reset' },
-        req.user,
-        session
-      );
-      // Remove payments pendentes do plano antigo
-      await Payment.deleteMany(
-        { insurancePlan: existingPlan._id, status: 'pending' },
-        { session }
-      );
-      // Remove o plano antigo (hard delete) para liberar a unique index
+      const linkedSessions = await Session.find({
+        $or: [
+          { insuranceGuide: guide._id },
+          ...(linkedAppointmentIds.length ? [{ appointmentId: { $in: linkedAppointmentIds } }] : [])
+        ]
+      }).select('_id').session(session).lean();
+      const linkedSessionIds = linkedSessions.map(s => s._id);
+
+      const linkedPaymentsCount = await Payment.countDocuments({
+        $or: [
+          { insurancePlan: existingPlan._id },
+          { insuranceGuide: guide._id },
+          ...(linkedAppointmentIds.length ? [{ appointment: { $in: linkedAppointmentIds } }] : []),
+          ...(linkedSessionIds.length ? [{ session: { $in: linkedSessionIds } }] : [])
+        ]
+      }).session(session);
+
+      const linkTypes = [];
+      if (linkedAppointmentIds.length > 0) linkTypes.push('appointment');
+      if (linkedSessionIds.length > 0) linkTypes.push('session');
+      if (linkedPaymentsCount > 0) linkTypes.push('payment');
+
+      if (linkTypes.length > 0) {
+        await session.abortTransaction();
+        return res.status(409).json({
+          success: false,
+          errorCode: 'PLAN_HAS_ASSOCIATED_RECORDS',
+          message: 'Já existe um plano para esta guia com agendamentos/sessões/pagamentos associados. Use "Gerar sessões" para reorganizar — criar um novo plano aqui não é permitido enquanto houver registros vinculados.',
+          existingPlanId: existingPlan._id,
+          linkedRecordTypes: linkTypes,
+          associatedAppointmentsCount: linkedAppointmentIds.length,
+          associatedSessionsCount: linkedSessionIds.length,
+          associatedPaymentsCount: linkedPaymentsCount
+        });
+      }
+
+      // Plano existe mas não tem NENHUM vínculo em nenhuma das três entidades —
+      // nada financeiro/clínico em jogo, seguro remover e recriar (libera o
+      // índice único de guide).
+      replacedPlanSnapshot = pickInsurancePlanFields(existingPlan);
       await InsurancePlan.deleteOne({ _id: existingPlan._id }, { session });
     }
 
@@ -1084,51 +1118,11 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 
     const remaining = await getGuideRemainingCapacity(guide._id, guide, session);
 
-    // 🚨 FIX (2026-08-14): appointments órfãos de uma guia ANTIGA (nunca inativada)
-    // do mesmo paciente com o mesmo doutor travavam a geração com um falso "conflito
-    // de agenda" — não é dois compromissos reais concorrendo pelo horário, é a MESMA
-    // pessoa com o MESMO profissional, só que a guia anterior ficou órfã em vez de
-    // inativada. Restrito a mesmo paciente + mesmo doutor pra não tocar em planos de
-    // outra especialidade/doutor que o paciente ainda tenha ativos legitimamente.
-    // Usa `insuranceGuide` (o vínculo real com a guia), não `metadata.origin.source` —
-    // esse metadata pode ser reescrito por uma edição manual posterior (reagendar,
-    // confirmar pela agenda) sem tocar em insuranceGuide.
-    const staleAppointments = await Appointment.find({
-      patient: plan.patient,
-      doctor: plan.doctor,
-      insuranceGuide: { $exists: true, $nin: [null, guide._id] },
-      operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
-      date: { $gte: today }
-    }).session(session).select('_id date time insuranceGuide');
-
-    // Info pro comercial/secretaria — cancelar sem avisar deixa quem está na tela sem
-    // entender por que um agendamento antigo sumiu (relato: "o comercial ficou perdido").
-    let staleAppointmentsCanceled = null;
-    if (staleAppointments.length > 0) {
-      const staleGuideIds = [...new Set(staleAppointments.map(a => a.insuranceGuide?.toString()).filter(Boolean))];
-      const staleGuides = staleGuideIds.length > 0
-        ? await InsuranceGuide.find({ _id: { $in: staleGuideIds } }).session(session).select('number').lean()
-        : [];
-      const staleGuideNumberById = new Map(staleGuides.map(g => [g._id.toString(), g.number]));
-
-      await bulkCancelAppointments(
-        staleAppointments.map(a => a._id),
-        { reason: 'Guia anterior órfã substituída por nova guia de convênio', cancelSource: 'guide_closure' },
-        req.user,
-        session
-      );
-
-      staleAppointmentsCanceled = {
-        count: staleAppointments.length,
-        fromGuideNumbers: [...new Set(staleGuideIds.map(id => staleGuideNumberById.get(id)).filter(Boolean))],
-        appointments: staleAppointments.map(a => ({
-          date: new Date(a.date).toISOString().split('T')[0],
-          time: a.time,
-          guideNumber: staleGuideNumberById.get(a.insuranceGuide?.toString()) || null
-        }))
-      };
-    }
-
+    // Auto-cancelamento de appointments de OUTRA guia foi removido (ver commit
+    // de segurança). Colisão de agenda entre guias diferentes é só detectada
+    // por checkSlotConflicts (dentro de generateInsurancePlanSessions, chamada
+    // logo abaixo) — nunca resolvida sozinha. Vira 409 no catch deste endpoint,
+    // com a transação inteira abortada.
     const result = await generateInsurancePlanSessions({
       planId: plan._id,
       guideId: guide._id,
@@ -1184,8 +1178,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
         replanned: needsReplan,
         appointmentsCanceled: replanResult?.appointmentsCanceled || 0,
         pastAppointmentsCompleted: pastCompleted,
-        pastAppointmentsFailed: pastCompletionErrors,
-        staleAppointmentsCanceled
+        pastAppointmentsFailed: pastCompletionErrors
       }
     });
   } catch (error) {

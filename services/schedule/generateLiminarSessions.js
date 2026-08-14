@@ -148,7 +148,14 @@ export async function generateLiminarSessions({
   }
 
   // ── 5. Gera slots ────────────────────────────────────────────
-  const slots = [];
+  // 🚨 FIX (2026-08-14): estava `const` — reatribuído em `slots = kept` na seção 6
+  // (trava de saldo/quantidade), o que lançava "Assignment to constant variable"
+  // toda vez que havia pelo menos 1 slot candidato, em append e reset. Sem
+  // try/catch em volta do await no controller, a exceção virava uma promise
+  // rejeitada sem resposta HTTP — "Gerar sessões" (append, único modo usado pela
+  // UI) travava a requisição indefinidamente. Bug pré-existente desde 05/08
+  // (commit b3fb9387), não introduzido por este patch.
+  let slots = [];
 
   if (mode === 'append') {
     const anchorDate = new Date(plan.startDate);

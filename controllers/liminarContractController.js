@@ -365,8 +365,20 @@ export async function generateSessions(req, res) {
     specialties,
   } = req.body;
 
-  if (mode === 'reset' && (!startDate || !endDate)) {
-    return res.status(400).json({ error: 'startDate e endDate são obrigatórios no modo reset' });
+  // 🚨 PATCH DE SEGURANÇA (2026-08-14): `mode:'reset'` cancela TODAS as sessões
+  // futuras scheduled/pre_agendado do contrato inteiro (bulkCancelAppointments
+  // chamado sem mongoSession — não existe transação abrangendo cancelamento +
+  // regeneração) sem checar se algum Payment vinculado já avançou no ciclo
+  // financeiro. Nenhum consumidor real usa este modo hoje — `ContractCard.tsx`
+  // manda `mode:'append'` hardcoded — então bloquear aqui não quebra a UI atual.
+  // `generateLiminarSessions.js` continua com o código do modo reset intacto
+  // (não removido), só inacessível por este endpoint até ganhar a mesma
+  // auditoria/transação que o convênio recebeu.
+  if (mode === 'reset') {
+    return res.status(409).json({
+      error: 'A regeneração completa da agenda está temporariamente indisponível.',
+      errorCode: 'LIMINAR_RESET_DISABLED'
+    });
   }
 
   if (mode === 'append' && (!weeks || weeks < 1 || weeks > 12)) {
