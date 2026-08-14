@@ -21,6 +21,7 @@ let Payment;
 let service;
 let paymentStatusService;
 let financialLedgerService;
+let billingSubmissionController;
 
 const oid = () => new mongoose.Types.ObjectId();
 
@@ -37,6 +38,7 @@ beforeAll(async () => {
   service = await import('../../services/billingSubmission/BillingSubmissionService.js');
   paymentStatusService = await import('../../services/paymentStatusService.js');
   financialLedgerService = await import('../../services/financialLedgerService.js');
+  billingSubmissionController = await import('../../controllers/billingSubmissionController.js');
   await Promise.all([
     BillingSubmission.syncIndexes(),
     InsuranceBatch.syncIndexes(),
@@ -414,6 +416,41 @@ describe('finalizeBillingSubmission — escritas em lote', () => {
       });
       const reloaded = await BillingSubmission.findById(submission._id).lean();
       expect(reloaded.status).toBe('draft');
+    });
+
+    // O conflito de escrita concorrente vem de dentro do serviço canônico
+    // (paymentStatusService.js) como PaymentBatchTransitionError — uma classe que
+    // não é BillingSubmissionError e não carrega status HTTP, de propósito: o
+    // serviço canônico não deve saber o que é um status code. Sem a tradução na
+    // camada de billing, o controller caía no branch genérico do sendError() e
+    // devolvia 500 para um conflito que sempre foi 409 na versão sequencial
+    // (antes da extração para transitionPaymentStatusBatch).
+    it('conflito concorrente preserva 409 no contrato HTTP, não regride para 500', async () => {
+      const seeded = await seedScope({ sessionCount: 2 });
+      const submission = await createFinalizableSubmission(seeded);
+
+      vi.spyOn(Payment, 'bulkWrite').mockResolvedValueOnce({ modifiedCount: 1 });
+
+      const req = { params: { id: submission._id.toString() }, user: { id: seeded.userId.toString() } };
+      const jsonMock = vi.fn();
+      const statusMock = vi.fn(() => ({ json: jsonMock }));
+      const res = { status: statusMock };
+
+      await billingSubmissionController.finalize(req, res);
+
+      expect(statusMock).toHaveBeenCalledWith(409);
+      expect(jsonMock).toHaveBeenCalledWith({
+        success: false,
+        code: 'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
+        message: 'Um Payment mudou de status durante a transição em lote',
+        details: { expected: 2, modified: 1 }
+      });
+
+      // A tradução HTTP não deve enfraquecer o rollback: nada persistido.
+      expect(await countAll()).toMatchObject({
+        batches: 0, billed: 0, ledger: 0, outbox: 0, linked: 0
+      });
+      expect((await BillingSubmission.findById(submission._id).lean()).status).toBe('draft');
     });
 
     it('falha no ledger desfaz o faturamento inteiro', async () => {

@@ -113,8 +113,16 @@ export async function transitionPaymentStatusBatch(transitions, newStatus, optio
         });
     }
 
+    // Contagem real de round-trips ao Mongo — reportada ao chamador em vez de um
+    // número fixo, porque insert_outbox é CONDICIONAL (só roda se sobrar algum
+    // evento novo depois do dedupe). Um retry onde todo evento já existe faz 3
+    // queries, não 4; um chamador que assumisse 4 sempre estaria mentindo na
+    // própria instrumentação.
+    let queriesExecuted = 0;
+
     const paymentResult = await step('bill_payments', () =>
         Payment.bulkWrite(paymentOps, { session: mongoSession, ordered: true }));
+    queriesExecuted += 1;
     if (paymentResult.modifiedCount !== paymentOps.length) {
         throw new PaymentBatchTransitionError(
             'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
@@ -125,6 +133,7 @@ export async function transitionPaymentStatusBatch(transitions, newStatus, optio
 
     await step('insert_ledger', () =>
         FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+    queriesExecuted += 1;
 
     const existingEventIds = await step('outbox_dedupe', async () => {
         const found = await Outbox.find({ eventId: { $in: outboxDocs.map(doc => doc.eventId) } })
@@ -133,17 +142,20 @@ export async function transitionPaymentStatusBatch(transitions, newStatus, optio
             .lean();
         return new Set(found.map(doc => doc.eventId));
     });
+    queriesExecuted += 1;
     const freshOutboxDocs = outboxDocs.filter(doc => !existingEventIds.has(doc.eventId));
     if (freshOutboxDocs.length) {
         await step('insert_outbox', () =>
             Outbox.insertMany(freshOutboxDocs, { session: mongoSession, ordered: true }));
+        queriesExecuted += 1;
     }
 
     return {
         modifiedCount: paymentResult.modifiedCount,
         warnings,
         existingEventCount: existingEventIds.size,
-        insertedOutboxCount: freshOutboxDocs.length
+        insertedOutboxCount: freshOutboxDocs.length,
+        queriesExecuted
     };
 }
 

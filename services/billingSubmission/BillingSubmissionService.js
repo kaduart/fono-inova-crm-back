@@ -8,7 +8,7 @@ import Convenio from '../../models/Convenio.js';
 import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
 import { EventTypes } from '../../infrastructure/events/eventPublisher.js';
-import { transitionPaymentStatusBatch } from '../paymentStatusService.js';
+import { transitionPaymentStatusBatch, PaymentBatchTransitionError } from '../paymentStatusService.js';
 
 const ACTIVE_PAYMENT_STATUSES = ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'];
 
@@ -743,15 +743,35 @@ export async function finalizeBillingSubmission(id, { userId, externalDelivery }
         );
       }
 
-      const paymentBatchResult = await transitionPaymentStatusBatch(paymentTransitions, 'billed', {
-        session: mongoSession,
-        now,
-        reason: 'billing_submission_finalized',
-        userId,
-        additionalOutboxDocs: outboxDocs,
-        step: (name, operation) => metrics.step(name, operation)
-      });
-      metrics.countQueries(4);
+      let paymentBatchResult;
+      try {
+        paymentBatchResult = await transitionPaymentStatusBatch(paymentTransitions, 'billed', {
+          session: mongoSession,
+          now,
+          reason: 'billing_submission_finalized',
+          userId,
+          additionalOutboxDocs: outboxDocs,
+          step: (name, operation) => metrics.step(name, operation)
+        });
+      } catch (error) {
+        // Tradução HTTP fica aqui, na camada de billing — não em paymentStatusService.js.
+        // O serviço canônico não deve saber o que é um status code; PaymentBatchTransitionError
+        // só carrega .code/.details. Antes desta tradução, qualquer erro do serviço
+        // canônico caía no branch genérico 500 do controller (não é BillingSubmissionError),
+        // mesmo quando é um conflito de escrita concorrente — 409, não falha de servidor.
+        const httpStatusByCode = {
+          BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE: 409
+        };
+        const status = error instanceof PaymentBatchTransitionError ? httpStatusByCode[error.code] : undefined;
+        if (status) {
+          throw new BillingSubmissionError(error.code, error.message, status, error.details);
+        }
+        throw error;
+      }
+      // Contagem real reportada pelo serviço canônico — insert_outbox dentro dele é
+      // condicional (só roda se sobrar evento novo após o dedupe), então um número
+      // fixo aqui mentiria em cenários onde nem tudo é query nova.
+      metrics.countQueries(paymentBatchResult.queriesExecuted);
       invariantWarnings.push(...paymentBatchResult.warnings);
 
       // Comunicação de envio externo: nasce junto do faturamento porque
