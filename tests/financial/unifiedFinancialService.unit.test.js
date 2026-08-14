@@ -37,7 +37,7 @@ vi.mock('../../models/Package.js', () => ({
   default: { find: vi.fn().mockResolvedValue([]) }
 }));
 
-import { calculateCash, calculateProduction, invalidateUFSCache } from '../../services/unifiedFinancialService.v2.js';
+import { calculateCash, calculateProduction, invalidateUFSCache, invalidateUFSCacheForDates } from '../../services/unifiedFinancialService.v2.js';
 
 // ─── Período de teste fixo ────────────────────────────────────────────────────
 const start = moment.tz('2026-05-01', TZ).startOf('day').toDate();
@@ -295,5 +295,68 @@ describe('anti-double-counting — CRÍTICO', () => {
     // Session.aggregate e Session.find não devem ter sido chamados pelo calculateCash
     expect(mockSessionAggregate).not.toHaveBeenCalled();
     expect(mockSessionFind).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// invalidateUFSCacheForDates — invalidação escopada (regressão bulk-settle)
+// =============================================================================
+describe('invalidateUFSCacheForDates — invalidação escopada por data', () => {
+  const dayA = {
+    start: moment.tz('2026-05-10', TZ).startOf('day').toDate(),
+    end: moment.tz('2026-05-10', TZ).endOf('day').toDate(),
+  };
+  const dayB = {
+    start: moment.tz('2026-05-20', TZ).startOf('day').toDate(),
+    end: moment.tz('2026-05-20', TZ).endOf('day').toDate(),
+  };
+
+  beforeEach(() => {
+    mockPaymentAggregate.mockImplementation(() => [{
+      total: [{ total: 0, count: 0 }],
+      byMethod: [],
+      byType: []
+    }]);
+    mockPaymentFind.mockReturnValue({
+      populate: vi.fn().mockReturnThis(),
+      lean:     vi.fn().mockResolvedValue([]),
+    });
+  });
+
+  it('cache hit: segunda chamada com a mesma janela não bate no Mongo', async () => {
+    await calculateCash(dayA.start, dayA.end);
+    await calculateCash(dayA.start, dayA.end);
+
+    expect(mockPaymentAggregate).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalida só a data afetada — janela de outra data permanece em cache', async () => {
+    await calculateCash(dayA.start, dayA.end); // popula cache do dia A
+    await calculateCash(dayB.start, dayB.end); // popula cache do dia B
+    expect(mockPaymentAggregate).toHaveBeenCalledTimes(2);
+
+    const { cleared } = invalidateUFSCacheForDates(['2026-05-10']);
+    expect(cleared).toBe(1); // só a entrada do dia A
+
+    await calculateCash(dayA.start, dayA.end); // cache miss → recalcula
+    expect(mockPaymentAggregate).toHaveBeenCalledTimes(3);
+
+    await calculateCash(dayB.start, dayB.end); // ainda em cache → NÃO recalcula
+    expect(mockPaymentAggregate).toHaveBeenCalledTimes(3);
+  });
+
+  it('data sem entrada correspondente no cache não remove nada', async () => {
+    await calculateCash(dayA.start, dayA.end);
+
+    const { cleared } = invalidateUFSCacheForDates(['2099-01-01']);
+    expect(cleared).toBe(0);
+
+    await calculateCash(dayA.start, dayA.end); // continua em cache
+    expect(mockPaymentAggregate).toHaveBeenCalledTimes(1);
+  });
+
+  it('lista vazia ou undefined é no-op', () => {
+    expect(invalidateUFSCacheForDates([]).cleared).toBe(0);
+    expect(invalidateUFSCacheForDates(undefined).cleared).toBe(0);
   });
 });

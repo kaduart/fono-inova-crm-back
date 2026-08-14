@@ -13,6 +13,7 @@
  */
 
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
@@ -77,6 +78,47 @@ export function invalidateUFSCache() {
     const size = _ufsCache.size;
     _ufsCache.clear();
     console.log(`[unifiedFinancialService] Cache invalidado (${size} entradas limpas)`);
+}
+
+/**
+ * Invalida apenas as entradas cujo período [start,end] intersecta algum dos
+ * dias afetados (America/Sao_Paulo) — usado por mutações que já sabem
+ * exatamente quais dias mudaram (ex: bulk-settle), para não derrubar o
+ * cache de dias/meses não afetados como invalidateUFSCache() faz.
+ *
+ * Chave interna tem o formato `${fnName}_${startISO}_${endISO}[_suffix]`
+ * (ver _ufsCacheKey) — ISO 8601 não usa `_`, então split('_') isola os dois
+ * primeiros timestamps de forma determinística.
+ *
+ * @param {string[]} dates - datas 'YYYY-MM-DD' (America/Sao_Paulo)
+ * @returns {{ cleared: number }}
+ */
+export function invalidateUFSCacheForDates(dates) {
+    const uniqueDates = [...new Set((dates || []).filter(Boolean))];
+    if (uniqueDates.length === 0) return { cleared: 0 };
+
+    const dayRanges = uniqueDates.map(d => ({
+        start: moment.tz(d, 'America/Sao_Paulo').startOf('day'),
+        end: moment.tz(d, 'America/Sao_Paulo').endOf('day')
+    }));
+
+    let cleared = 0;
+    for (const key of _ufsCache.keys()) {
+        const [, startIso, endIso] = key.split('_');
+        const keyStart = moment.utc(startIso);
+        const keyEnd = moment.utc(endIso);
+        // Chave em formato inesperado não deveria acontecer (só calculateCash/
+        // calculateProduction escrevem neste Map) — se acontecer, remove por
+        // segurança: prioriza consistência financeira sobre taxa de acerto do cache.
+        const overlaps = !keyStart.isValid() || !keyEnd.isValid()
+            || dayRanges.some(r => keyStart.isSameOrBefore(r.end) && keyEnd.isSameOrAfter(r.start));
+        if (overlaps) {
+            _ufsCache.delete(key);
+            cleared++;
+        }
+    }
+    console.log(`[unifiedFinancialService] Cache invalidado por data (${cleared} entradas removidas, dates=${uniqueDates.join(',')})`);
+    return { cleared };
 }
 
 // ============================================================

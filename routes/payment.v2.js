@@ -32,8 +32,8 @@ import { syncAffectedViews } from '../services/projections/syncAffectedViews.js'
 import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { syncAppointmentPaymentStatus } from '../services/financialGuard/syncAppointmentPaymentStatus.js';
-import { clearCashflowCache } from './cashflow.v2.js';
-import { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
+import { clearCashflowCache, clearCashflowCacheForDates } from './cashflow.v2.js';
+import { invalidateUFSCache, invalidateUFSCacheForDates } from '../services/unifiedFinancialService.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
@@ -1800,17 +1800,38 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         await mongoSession.commitTransaction();
 
+        // 🎯 Escopo da invalidação: só os dias realmente afetados, nunca "hoje" sozinho
+        // nem "limpa tudo". Cada payment liquidado contribui com sua data de
+        // competência (serviceDate), sua data de pagamento original (paymentDate) e o
+        // financialDate que já tinha antes de virar 'paid' (payments provisionados no
+        // agendamento já nascem com uma data futura/passada); "now" cobre o novo
+        // financialDate que o bulkWrite acima gravou para todos. Uma sessão antiga
+        // quitada hoje precisa sumir de Pendentes/Produção no dia em que ela
+        // ocorreu, não só refletir no caixa de hoje — daí não dar pra invalidar só
+        // a data corrente. Ver back/docs/DOMAIN_INVARIANTS.md (campos de data).
+        const affectedDates = [...new Set([
+            moment.tz(now, 'America/Sao_Paulo').format('YYYY-MM-DD'),
+            ...payments.flatMap(p => [p.serviceDate, p.paymentDate, p.financialDate]
+                .filter(Boolean)
+                .map(d => moment.tz(d, 'America/Sao_Paulo').format('YYYY-MM-DD')))
+        ])];
+
         const cacheResults = await Promise.allSettled([
-            import('./financialDashboard.v2.js').then(({ invalidateDashboardCache }) => invalidateDashboardCache()),
-            clearCashflowCache(undefined, { throwOnError: true })
+            import('./financialDashboard.v2.js').then(({ invalidateDashboardCache }) => invalidateDashboardCache({ dates: affectedDates })),
+            clearCashflowCacheForDates(affectedDates, { throwOnError: true })
         ]);
         cacheResults.forEach((result, index) => {
             if (result.status === 'rejected') {
                 logger.warn('[V2 bulk-settle] Falha ao invalidar cache após commit', {
                     cache: index === 0 ? 'dashboard_ufs' : 'cashflow',
+                    affectedDates,
                     error: result.reason?.message
                 });
             }
+        });
+        logger.info('[V2 bulk-settle] Cache invalidado de forma escopada', {
+            affectedDates,
+            settledCount: payments.length
         });
 
         // 6. Rebuild das PackagesView em background (não bloqueia resposta)

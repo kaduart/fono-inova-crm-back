@@ -1094,4 +1094,22 @@ export async function clearCashflowCache(date, { throwOnError = false } = {}) {
     }
 }
 
+/**
+ * Invalida o cache de cashflow para várias datas de uma vez, reaproveitando
+ * a invalidação por data já existente em clearCashflowCache (dia + range +
+ * mês + SCAN Redis por data, local por data/mês). Usado por mutações que
+ * afetam mais de uma data ao mesmo tempo (ex: bulk-settle liquidando sessões
+ * de dias diferentes) — evita ter que escolher entre invalidar só "hoje"
+ * (incorreto quando há competência/serviceDate anterior) ou limpar o cache
+ * inteiro (derruba dias não afetados, forçando rebuild caro sem necessidade).
+ *
+ * @param {string[]} dates - datas 'YYYY-MM-DD'
+ * @returns {Promise<string[]>} datas únicas efetivamente processadas
+ */
+export async function clearCashflowCacheForDates(dates, { throwOnError = false } = {}) {
+    const uniqueDates = [...new Set((dates || []).filter(Boolean))];
+    await Promise.all(uniqueDates.map(d => clearCashflowCache(d, { throwOnError })));
+    return uniqueDates;
+}
+
 export default router;

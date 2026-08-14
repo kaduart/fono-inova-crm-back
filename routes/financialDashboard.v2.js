@@ -27,7 +27,7 @@ import { calculatePendentesEngine, getPatientPendingPayments } from '../services
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
 import Package from '../models/Package.js';
-import unifiedFinancialService, { invalidateUFSCache } from '../services/unifiedFinancialService.v2.js';
+import unifiedFinancialService, { invalidateUFSCache, invalidateUFSCacheForDates } from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
 import { logMetric } from '../utils/logMetric.js';
 import { classifyConvenioPayments } from '../scripts/audits/lib/classifica-payments-convenio.js';
@@ -57,16 +57,29 @@ function setDashCached(key, data) {
 }
 
 /**
- * Invalida todo o cache do dashboard financeiro.
+ * Invalida o cache do dashboard financeiro.
  * Deve ser chamado após qualquer mutação que altere caixa ou produção
  * (completeSession, createPayment, refund, etc).
+ *
+ * `_dashCache`/`_dashPending` são sempre limpos por completo (Map local, no
+ * máximo 50 entradas, custo desprezível). O cache UFS compartilhado
+ * (calculateCash/calculateProduction) é mais caro de reconstruir — quando o
+ * chamador sabe quais dias foram afetados (`dates`), só essas entradas são
+ * invalidadas; sem `dates`, cai no comportamento anterior (limpa tudo), para
+ * não quebrar os callers que ainda não sabem escopar.
+ *
+ * @param {{ dates?: string[] }} [opts] - dias afetados 'YYYY-MM-DD' (America/Sao_Paulo)
  */
-export function invalidateDashboardCache() {
+export function invalidateDashboardCache({ dates } = {}) {
     const size = _dashCache.size;
     _dashCache.clear();
     _dashPending.clear();
-    invalidateUFSCache();
-    console.log(`[DashboardV3] Cache invalidado (${size} entradas limpas)`);
+    if (dates?.length) {
+        invalidateUFSCacheForDates(dates);
+    } else {
+        invalidateUFSCache();
+    }
+    console.log(`[DashboardV3] Cache invalidado (${size} entradas limpas)${dates?.length ? ` [UFS escopado: ${dates.join(',')}]` : ''}`);
 }
 
 const paymentBaseFilter = {

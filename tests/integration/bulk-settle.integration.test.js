@@ -350,4 +350,80 @@ describe('POST /payments/bulk-settle', () => {
         });
         await assertCanonicalCash(300, [original._id.toString()]);
     });
+
+    describe('invalidação de cache escopada por data (regressão bulk-settle)', () => {
+        async function primeCashflowCache(dateStr) {
+            const first = await request(server).get('/cashflow').query({ date: dateStr });
+            expect(first.status).toBe(200);
+            const second = await request(server).get('/cashflow').query({ date: dateStr });
+            expect(second.status).toBe(200);
+            expect(second.headers['x-cache-hit']).toBe('true'); // confirma que ficou em cache
+        }
+
+        it('invalida cashflow apenas nas datas afetadas (serviceDate antigo + hoje), preserva as demais', async () => {
+            const today = moment.tz('America/Sao_Paulo');
+            const oldDateStr = today.clone().subtract(10, 'days').format('YYYY-MM-DD');
+            const unrelatedDateStr = today.clone().subtract(20, 'days').format('YYYY-MM-DD');
+            const todayStr = today.format('YYYY-MM-DD');
+            const oldDate = today.clone().subtract(10, 'days').startOf('day').add(12, 'hours').toDate();
+
+            const patient = await createPatient('Paciente Sessao Antiga');
+            const payment = await createPendingPayment(patient, 400, 'pix', {
+                serviceDate: oldDate,
+                paymentDate: oldDate
+            });
+
+            // Pré-aquece os 3 caches: data antiga afetada, data "hoje" (novo financialDate) e uma data não relacionada
+            await primeCashflowCache(oldDateStr);
+            await primeCashflowCache(todayStr);
+            await primeCashflowCache(unrelatedDateStr);
+
+            const res = await request(server)
+                .post('/payments/bulk-settle')
+                .send({ paymentIds: [payment._id.toString()], paymentMethod: 'pix' });
+            expect(res.status).toBe(200);
+
+            // Datas afetadas (serviceDate original + novo financialDate=hoje): cache MISS
+            const afterOld = await request(server).get('/cashflow').query({ date: oldDateStr });
+            expect(afterOld.headers['x-cache-hit']).not.toBe('true');
+
+            const afterToday = await request(server).get('/cashflow').query({ date: todayStr });
+            expect(afterToday.headers['x-cache-hit']).not.toBe('true');
+
+            // Data não relacionada: continua em cache (não foi tocada)
+            const afterUnrelated = await request(server).get('/cashflow').query({ date: unrelatedDateStr });
+            expect(afterUnrelated.headers['x-cache-hit']).toBe('true');
+        });
+
+        it('não invalida nada quando a transação aborta antes do commit (idempotência)', async () => {
+            const today = moment.tz('America/Sao_Paulo');
+            const oldDateStr = today.clone().subtract(5, 'days').format('YYYY-MM-DD');
+            const oldDate = today.clone().subtract(5, 'days').startOf('day').add(12, 'hours').toDate();
+
+            const patient = await createPatient('Paciente Idempotencia Cache');
+            const payment = await createPendingPayment(patient, 250, 'pix', {
+                serviceDate: oldDate,
+                paymentDate: oldDate
+            });
+
+            const first = await request(server)
+                .post('/payments/bulk-settle')
+                .send({ paymentIds: [payment._id.toString()], paymentMethod: 'pix' });
+            expect(first.status).toBe(200);
+
+            // Re-aquece o cache já com o payment quitado
+            await primeCashflowCache(oldDateStr);
+
+            // Segunda chamada com os mesmos IDs: bloqueada por idempotência ANTES do commit
+            const second = await request(server)
+                .post('/payments/bulk-settle')
+                .send({ paymentIds: [payment._id.toString()], paymentMethod: 'pix' });
+            expect(second.status).toBe(409);
+            expect(second.body.code).toBe('BULK_SETTLEMENT_ALREADY_EXISTS');
+
+            // Cache permanece intacto: a chamada abortada não invalidou nada
+            const after = await request(server).get('/cashflow').query({ date: oldDateStr });
+            expect(after.headers['x-cache-hit']).toBe('true');
+        });
+    });
 }, 60_000);
