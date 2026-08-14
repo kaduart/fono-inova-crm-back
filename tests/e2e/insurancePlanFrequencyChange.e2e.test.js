@@ -253,15 +253,18 @@ describe('🚨 POST /api/v2/insurance-plans/:id/generate-sessions — replaneja 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.replanned).toBe(true);
-    expect(res.body.data.appointmentsCanceled).toBe(6);
     expect(res.body.data.appointmentsGenerated).toBeGreaterThan(0);
 
-    // Os 6 appointments antigos (só segunda) devem ter sido cancelados
-    const oldStillActive = await Appointment.find({
-      _id: { $in: beforeAppointments.map(a => a._id) },
-      operationalStatus: { $ne: 'canceled' }
+    // 🚨 ATUALIZADO (2026-08-14, replan in-place): o comportamento antigo era
+    // apagar os 6 e criar 6 novos. Agora o replan REAPROVEITA Appointment/
+    // Session/Payment existentes — reposiciona pra nova data em vez de cancelar
+    // e recriar. Os IDs originais devem sobreviver (repositionados), não somem.
+    const oldIdsStillExisting = await Appointment.find({
+      _id: { $in: beforeAppointments.map(a => a._id) }
     }).lean();
-    expect(oldStillActive.length).toBe(0);
+    expect(oldIdsStillExisting.length).toBe(6); // nenhum ID original foi deletado
+    const oldStillActiveCount = oldIdsStillExisting.filter(a => a.operationalStatus !== 'canceled').length;
+    expect(oldStillActiveCount).toBeGreaterThan(0); // pelo menos parte foi reaproveitada, não cancelada
 
     // O novo conjunto ativo deve incluir os dois dias da semana e nunca passar de 6
     const activeAfter = await Appointment.find({

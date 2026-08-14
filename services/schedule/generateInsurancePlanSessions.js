@@ -51,7 +51,7 @@ function buildDayRange(dateStr) {
  * Verifica conflitos de horário para os slots gerados.
  * Lança erro se houver sobreposição com agendamentos existentes do médico ou do paciente.
  */
-async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession, excludePlanId }) {
+export async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession, excludePlanId }) {
   if (!slots.length) return;
 
   const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
