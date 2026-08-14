@@ -917,6 +917,21 @@ router.patch('/:id', auth, async (req, res) => {
         message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
       });
     }
+    if (error.code === 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED') {
+      return res.status(409).json({
+        success: false,
+        errorCode: error.code,
+        message: error.message,
+        blockedBy: error.blockedBy
+      });
+    }
+    if (error.code === 'CONVENIO_REPLAN_CANCEL_FAILED') {
+      return res.status(500).json({
+        success: false,
+        errorCode: error.code,
+        message: error.message
+      });
+    }
     if (error.code === 'GUIDE_NOT_ELIGIBLE') {
       return res.status(400).json({
         success: false,
@@ -1100,21 +1115,26 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       needsReplan
     });
 
-    let replanResult = null;
-    if (needsReplan) {
-      replanResult = await replanInsurancePlanSessions({
-        planId: plan._id,
-        guideId: plan.guide,
-        mongoSession: session,
-        user: req.user,
-        reason: 'plan_slots_mismatch',
-        allowPastGeneration
-      });
-      console.log('[InsurancePlansV2][generate-sessions] Replanejamento executado', {
-        appointmentsCanceled: replanResult.appointmentsCanceled,
-        appointmentsGenerated: replanResult.appointmentsGenerated
-      });
-    }
+    // 🚨 FIX (2026-08-14): antes só rodava o replan quando `needsReplan` (heurística
+    // de assinatura dayOfWeek-time + contagem) dava true — e essa heurística nunca
+    // detecta o caso real que motivou esta correção (guia 16173376/Ícaro: mesmos
+    // slots, mesma contagem, `startDate` retroativa nunca preenchida). O replan
+    // in-place agora é sempre chamado — é idempotente e seguro por design (série
+    // esperada já bate com o que existe → zero escrita), então não depende mais de
+    // adivinhar antes se há divergência. `needsReplan` continua calculado só pra
+    // reportar no campo `replanned` da resposta.
+    const replanResult = await replanInsurancePlanSessions({
+      planId: plan._id,
+      guideId: plan.guide,
+      mongoSession: session,
+      user: req.user,
+      reason: 'plan_slots_mismatch',
+      allowPastGeneration
+    });
+    console.log('[InsurancePlansV2][generate-sessions] Replanejamento executado', {
+      appointmentsCanceled: replanResult.appointmentsCanceled,
+      appointmentsGenerated: replanResult.appointmentsGenerated
+    });
 
     const remaining = await getGuideRemainingCapacity(guide._id, guide, session);
 
@@ -1199,6 +1219,21 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
         success: false,
         errorCode: 'GUIDE_EXHAUSTED',
         message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
+      });
+    }
+    if (error.code === 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED') {
+      return res.status(409).json({
+        success: false,
+        errorCode: error.code,
+        message: error.message,
+        blockedBy: error.blockedBy
+      });
+    }
+    if (error.code === 'CONVENIO_REPLAN_CANCEL_FAILED') {
+      return res.status(500).json({
+        success: false,
+        errorCode: error.code,
+        message: error.message
       });
     }
     if (error.code === 'GUIDE_NOT_ELIGIBLE') {

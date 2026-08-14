@@ -177,7 +177,13 @@ export async function execute(id, payload, user) {
       if (isReactivating) {
         const pkg = appointment.package;
         const isPrepaid = pkg && pkg.paymentType !== 'per-session' && pkg.model !== 'per_session';
-        if (isPrepaid) {
+        const isConvenio = appointment.billingType === 'convenio' || appointment.payment?.billingType === 'convenio';
+        if (isConvenio) {
+          // Convênio nunca tem 'unpaid'/'paid' como shadow — o paciente não paga
+          // no dia, o convênio fatura em lote depois. Mesmo valor usado na
+          // criação normal da sessão (ver ConvenioHandler / REGRAS_NEGOCIO_CONSOLIDADO.md).
+          updateData.paymentStatus = 'pending_receipt';
+        } else if (isPrepaid) {
           updateData.paymentStatus = 'package_paid';
         } else {
           // per-session/avulso: não assume 'unpaid' cegamente — verifica se a

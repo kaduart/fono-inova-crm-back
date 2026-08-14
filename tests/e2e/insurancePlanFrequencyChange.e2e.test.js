@@ -253,15 +253,21 @@ describe('🚨 POST /api/v2/insurance-plans/:id/generate-sessions — replaneja 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.replanned).toBe(true);
-    expect(res.body.data.appointmentsCanceled).toBe(6);
     expect(res.body.data.appointmentsGenerated).toBeGreaterThan(0);
 
-    // Os 6 appointments antigos (só segunda) devem ter sido cancelados
-    const oldStillActive = await Appointment.find({
-      _id: { $in: beforeAppointments.map(a => a._id) },
-      operationalStatus: { $ne: 'canceled' }
-    }).lean();
-    expect(oldStillActive.length).toBe(0);
+    // 🚨 Contrato mudou (2026-08-14): o replan agora é IN-PLACE — reaproveita os
+    // appointments antigos (reposicionando pra série nova) em vez de apagar e
+    // recriar. Os 6 IDs originais continuam existindo (nenhum hard-delete);
+    // cada um está OU ainda ativo (reaproveitado/reposicionado) OU cancelado
+    // como excedente — nunca sumiu.
+    const oldAfter = await Appointment.find({ _id: { $in: beforeAppointments.map(a => a._id) } }).lean();
+    expect(oldAfter.length).toBe(6); // nenhum foi hard-deletado
+    const oldStillActive = oldAfter.filter(a => a.operationalStatus !== 'canceled');
+    const oldCanceled = oldAfter.filter(a => a.operationalStatus === 'canceled');
+    expect(oldStillActive.length + oldCanceled.length).toBe(6);
+    // appointmentsCanceled reportado pela rota bate exatamente com quantos dos
+    // 6 originais viraram excedente (o resto foi reaproveitado, não recriado)
+    expect(res.body.data.appointmentsCanceled).toBe(oldCanceled.length);
 
     // O novo conjunto ativo deve incluir os dois dias da semana e nunca passar de 6
     const activeAfter = await Appointment.find({
@@ -271,6 +277,10 @@ describe('🚨 POST /api/v2/insurance-plans/:id/generate-sessions — replaneja 
 
     expect(activeAfter.length).toBeGreaterThan(0);
     expect(activeAfter.length).toBeLessThanOrEqual(6);
+    // Todo appointment ativo reaproveitado dos originais precisa aparecer no
+    // conjunto ativo final (nenhum reaproveitamento "se perde" fora da guia)
+    const activeIds = new Set(activeAfter.map(a => a._id.toString()));
+    for (const a of oldStillActive) expect(activeIds.has(a._id.toString())).toBe(true);
 
     const daysOfWeek = new Set(activeAfter.map(a => new Date(a.date).getDay()));
     expect(daysOfWeek.has(3)).toBe(true);
