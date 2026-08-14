@@ -177,18 +177,7 @@ export async function execute(id, payload, user) {
       if (isReactivating) {
         const pkg = appointment.package;
         const isPrepaid = pkg && pkg.paymentType !== 'per-session' && pkg.model !== 'per_session';
-        // 🚨 FIX (2026-08-14): faltava um branch pra convênio — caía no `else`
-        // de particular avulso e ganhava paymentStatus='unpaid', valor que nem
-        // existe na tabela de status documentada (REGRAS_NEGOCIO_CONSOLIDADO.md:
-        // pending|paid|partial|canceled|advanced|package_paid|pending_receipt).
-        // Convênio nunca é "pago pelo paciente" nesse sentido — o shadow correto
-        // é sempre pending_receipt, o mesmo valor usado na criação normal da
-        // sessão (buildInsuranceSession). Reativação não pode inventar um status
-        // que o resto do sistema não reconhece.
-        const isConvenio = appointment.billingType === 'convenio' || appointment.payment?.billingType === 'convenio';
-        if (isConvenio) {
-          updateData.paymentStatus = 'pending_receipt';
-        } else if (isPrepaid) {
+        if (isPrepaid) {
           updateData.paymentStatus = 'package_paid';
         } else {
           // per-session/avulso: não assume 'unpaid' cegamente — verifica se a
