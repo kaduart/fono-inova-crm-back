@@ -15,9 +15,7 @@ import Payment from '../models/Payment.js';
 import Package from '../models/Package.js';
 import InsurancePlan from '../models/InsurancePlan.js';
 import Doctor from '../models/Doctor.js';
-import { deleteAppointmentsWithChildren } from '../domain/appointment/deleteAppointmentsWithChildren.js';
-import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
-import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
+import { cancelInsuranceGuideCascade } from '../domain/guide/cancelInsuranceGuideCascade.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideService.js';
@@ -655,30 +653,23 @@ router.put('/:id', auth, async (req, res) => {
  * DELETE /api/v2/insurance-guides/:id
  * Cancela guia (soft delete)
  */
+/**
+ * 🚨 FIX (2026-08-14, guia 16173377/Ícaro): antes só setava guide.status =
+ * 'cancelled' e salvava — nenhum appointment/Session/Payment era tocado,
+ * nem passado nem futuro. Agora usa a mesma cascata transacional do
+ * /inactivate (cancelInsuranceGuideCascade) — consistente, sem duplicar lógica.
+ */
 router.delete('/:id', auth, async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+  }
+
   try {
-    const { id } = req.params;
+    const result = await cancelInsuranceGuideCascade(id, { user: req.user });
 
-    const guide = await InsuranceGuide.findById(id);
-    if (!guide) {
-      return res.status(404).json({
-        success: false,
-        errorCode: 'NOT_FOUND',
-        message: 'Guia não encontrada'
-      });
-    }
-
-    if (guide.status === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'ALREADY_CANCELLED',
-        message: 'Esta guia já está cancelada'
-      });
-    }
-
-    guide.status = 'cancelled';
-    await guide.save();
-
+    const guide = await InsuranceGuide.findById(id).lean();
     const conv = guide.insurance
       ? await Convenio.findOne({ code: guide.insurance }).select('guidePolicy defaultSessions').lean()
       : null;
@@ -687,11 +678,20 @@ router.delete('/:id', auth, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Guia cancelada com sucesso',
-      data: response
+      data: { ...response, ...result }
     });
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao cancelar guia:', error);
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, errorCode: error.code, message: error.message });
+    }
+    if (error.code === 'ALREADY_CANCELLED') {
+      return res.status(400).json({ success: false, errorCode: error.code, message: 'Esta guia já está cancelada' });
+    }
+    if (error.code === 'GUIDE_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT') {
+      return res.status(409).json({ success: false, errorCode: error.code, message: error.message, blockedBy: error.blockedBy });
+    }
     return res.status(500).json({
       success: false,
       errorCode: 'INTERNAL_ERROR',
@@ -881,119 +881,41 @@ router.patch('/:id/appointments/doctor', auth, async (req, res) => {
 
 /**
  * POST /api/v2/insurance-guides/:id/inactivate
- * Inativa guia de convênio: cancela pendências, mantém histórico.
- * Mesmo padrão do pacote (POST /v2/packages/:id/inactivate).
+ * Inativa guia de convênio: cancela TODOS os appointments não concluídos
+ * vinculados (passado ou futuro — ver comentário em cancelInsuranceGuideCascade.js),
+ * suas Sessions/Payments pendentes, plano e pacotes vinculados. Tudo numa
+ * única transação — a guia só vira 'cancelled' se a cascata inteira concluir.
+ *
+ * 🚨 FIX (2026-08-14, guia 16173377/Ícaro): o fluxo anterior só tratava
+ * appointments com `date >= hoje`, via hard-delete sem transação. Um `missed`
+ * do passado nunca era cancelado, ficava ocupando o horário no calendário
+ * pra sempre — bloqueando outras guias que tentassem usar o mesmo slot depois.
  */
 router.post('/:id/inactivate', auth, async (req, res) => {
-  const correlationId = `ig_inactivate_${Date.now()}`;
   const { id } = req.params;
 
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+  }
+
   try {
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
-    }
+    const result = await cancelInsuranceGuideCascade(id, { user: req.user });
 
-    const guideObjId = new mongoose.Types.ObjectId(id);
+    console.log('[InsuranceGuidesV2] Guia inativada', { guideId: id, ...result });
 
-    const guide = await InsuranceGuide.findById(guideObjId).lean();
-    if (!guide) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada' });
-    }
-    if (guide.status === 'cancelled') {
-      return res.status(400).json({ success: false, errorCode: 'ALREADY_CANCELLED', message: 'Guia já está inativa' });
-    }
-
-    const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
-    const today = new Date().toISOString().split('T')[0];
-
-    // ── 1. Packages vinculados à guia ──
-    const linkedPackages = await Package.find({ insuranceGuide: guideObjId }).select('_id').lean();
-    const packageIds = linkedPackages.map(p => p._id);
-
-    // Monta query de $or para guia direta + packages vinculados
-    const guideOrPackageQuery = [
-      { insuranceGuide: guideObjId },
-      ...(packageIds.length > 0 ? [{ package: { $in: packageIds } }] : [])
-    ];
-
-    // ── 2. Deleta appointments futuros + sessions/payments vinculados ──
-    const appointmentsDeletedResult = await deleteAppointmentsWithChildren({
-      $or: guideOrPackageQuery,
-      operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] },
-      date: { $gte: today }
-    });
-
-    // ── 3. Cancela sessions pendentes diretamente ──
-    const sessionsResult = await cancelPendingSessions({
-      $or: guideOrPackageQuery,
-      status: { $in: pendingStatuses }
-    });
-
-    // ── 4. Cancela payments pendentes ──
-    const paymentsResult = await cancelPendingPayments({
-      $or: guideOrPackageQuery,
-      status: { $in: ['pending', 'scheduled', 'unpaid'] }
-    });
-
-    // ── 5. Cancela InsurancePlan e DELETA seus appointments/sessions/payments futuros ──
-    let planCanceled = false;
-    let planAppointmentsDeleted = 0;
-    const linkedPlan = await InsurancePlan.findOne({ guide: guideObjId }).lean();
-    if (linkedPlan) {
-      const planDeleteResult = await deleteAppointmentsWithChildren({
-        insurancePlan: linkedPlan._id, date: { $gte: today }, operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
-      });
-
-      await cancelPendingPayments({
-        insurancePlan: linkedPlan._id, status: { $in: ['pending', 'scheduled', 'unpaid'] }
-      });
-      await InsurancePlan.findByIdAndUpdate(linkedPlan._id, { status: 'cancelled', updatedAt: new Date() });
-      planCanceled = true;
-      planAppointmentsDeleted = planDeleteResult.deletedCount;
-    }
-
-    // ── 6. Marca Package vinculado como canceled (para aparecer na aba Inativas) ──
-    let packageCanceled = false;
-    if (linkedPackages.length > 0) {
-      await Package.updateMany(
-        { _id: { $in: packageIds } },
-        { status: 'canceled', updatedAt: new Date() }
-      );
-      packageCanceled = true;
-    }
-
-    // ── 7. Inativa a guia ──
-    await InsuranceGuide.findByIdAndUpdate(
-      guideObjId,
-      { status: 'cancelled', updatedAt: new Date() }
-    );
-
-    console.log('[InsuranceGuidesV2] Guia inativada', {
-      correlationId,
-      guideId: id,
-      sessionsCanceled: sessionsResult.modifiedCount,
-      appointmentsDeleted: appointmentsDeletedResult.deletedCount,
-      paymentsCanceled: paymentsResult.modifiedCount,
-      planCanceled,
-      planAppointmentsDeleted,
-      packageCanceled
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        guideId: id,
-        sessionsCanceled: sessionsResult.modifiedCount,
-        appointmentsDeleted: appointmentsDeletedResult.deletedCount,
-        paymentsCanceled: paymentsResult.modifiedCount,
-        planCanceled,
-        planAppointmentsDeleted,
-        packageCanceled
-      }
-    });
+    return res.json({ success: true, data: { guideId: id, ...result } });
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao inativar guia:', error);
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, errorCode: error.code, message: error.message });
+    }
+    if (error.code === 'ALREADY_CANCELLED') {
+      return res.status(400).json({ success: false, errorCode: error.code, message: error.message });
+    }
+    if (error.code === 'GUIDE_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT') {
+      return res.status(409).json({ success: false, errorCode: error.code, message: error.message, blockedBy: error.blockedBy });
+    }
     return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
