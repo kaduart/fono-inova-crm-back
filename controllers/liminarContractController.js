@@ -365,15 +365,8 @@ export async function generateSessions(req, res) {
     specialties,
   } = req.body;
 
-  // 🚨 PATCH DE SEGURANÇA (2026-08-14): `mode:'reset'` cancela TODAS as sessões
-  // futuras scheduled/pre_agendado do contrato inteiro (bulkCancelAppointments
-  // chamado sem mongoSession — não existe transação abrangendo cancelamento +
-  // regeneração) sem checar se algum Payment vinculado já avançou no ciclo
-  // financeiro. Nenhum consumidor real usa este modo hoje — `ContractCard.tsx`
-  // manda `mode:'append'` hardcoded — então bloquear aqui não quebra a UI atual.
-  // `generateLiminarSessions.js` continua com o código do modo reset intacto
-  // (não removido), só inacessível por este endpoint até ganhar a mesma
-  // auditoria/transação que o convênio recebeu.
+  // Proteção para clientes antigos e chamadas diretas. O serviço é append-only
+  // e não contém mais qualquer caminho destrutivo de reset.
   if (mode === 'reset') {
     return res.status(409).json({
       error: 'A regeneração completa da agenda está temporariamente indisponível.',
@@ -385,15 +378,28 @@ export async function generateSessions(req, res) {
     return res.status(400).json({ error: 'weeks deve estar entre 1 e 12 no modo append' });
   }
 
-  const result = await generateLiminarSessions({
-    planId,
-    mode,
-    weeks,
-    startDate,
-    endDate,
-    skipHolidays,
-    specialties: Array.isArray(specialties) && specialties.length ? specialties : undefined,
-  });
+  let result;
+  try {
+    result = await generateLiminarSessions({
+      planId,
+      mode,
+      weeks,
+      startDate,
+      endDate,
+      skipHolidays,
+      specialties: Array.isArray(specialties) && specialties.length ? specialties : undefined,
+    });
+  } catch (error) {
+    if (error.statusCode === 409) {
+      return res.status(409).json({
+        error: error.message,
+        errorCode: error.code,
+        conflictSlots: error.conflictSlots || [],
+      });
+    }
+    logger.error('Falha ao gerar sessões liminar', { planId, error: error.message });
+    return res.status(500).json({ error: 'Falha ao gerar sessões liminar', errorCode: 'LIMINAR_GENERATION_FAILED' });
+  }
 
   logger.info('Sessões geradas', { planId, mode, ...result });
 
@@ -876,53 +882,73 @@ export async function inactivateContract(req, res) {
   }
 
   const contractObjId = new mongoose.Types.ObjectId(id);
-  const contract = await LiminarContract.findById(contractObjId).lean();
-  if (!contract) {
-    return res.status(404).json({ error: 'Contrato não encontrado' });
+  const mongoSession = await mongoose.startSession();
+  let outcome;
+  try {
+    await mongoSession.withTransaction(async () => {
+      const contract = await LiminarContract.findById(contractObjId).session(mongoSession).lean();
+      if (!contract) {
+        const error = new Error('Contrato não encontrado');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (contract.status === 'canceled') {
+        outcome = {
+          contractId: id, sessionsCanceled: 0, appointmentsCanceled: 0,
+          paymentsCanceled: 0, idempotent: true,
+        };
+        return;
+      }
+
+      const cancelableStatuses = ['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed'];
+      const appointments = await Appointment.find({
+        liminarContract: contractObjId,
+        operationalStatus: { $in: cancelableStatuses },
+      }).select('_id').session(mongoSession).lean();
+      const appointmentIds = appointments.map(item => item._id);
+
+      const sessionsResult = appointmentIds.length
+        ? await cancelPendingSessions({
+            appointmentId: { $in: appointmentIds }, status: { $ne: 'completed' },
+          }, mongoSession)
+        : { modifiedCount: 0 };
+      const appointmentsResult = appointmentIds.length
+        ? await cancelAppointments({
+            _id: { $in: appointmentIds }, operationalStatus: { $in: cancelableStatuses },
+          }, mongoSession)
+        : { modifiedCount: 0 };
+      const paymentsResult = await cancelPendingPayments({
+        liminarContract: contractObjId, status: { $in: ['pending', 'scheduled'] },
+      }, mongoSession);
+
+      await LiminarContract.updateOne(
+        { _id: contractObjId, status: { $ne: 'canceled' } },
+        { $set: { status: 'canceled', updatedAt: new Date() } },
+        { session: mongoSession, runValidators: true },
+      );
+      outcome = {
+        contractId: id,
+        sessionsCanceled: sessionsResult.modifiedCount,
+        appointmentsCanceled: appointmentsResult.modifiedCount,
+        paymentsCanceled: paymentsResult.modifiedCount,
+        idempotent: false,
+      };
+    });
+  } catch (error) {
+    if (error.statusCode === 404) return res.status(404).json({ error: error.message });
+    logger.error('Falha ao inativar contrato liminar', { contractId: id, error: error.message });
+    return res.status(500).json({ error: 'Falha ao inativar contrato liminar' });
+  } finally {
+    await mongoSession.endSession();
   }
-  if (contract.status === 'canceled') {
-    return res.status(400).json({ error: 'Contrato já está inativo' });
-  }
-
-  const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
-
-  // Session não tem campo liminarContract direto — encontra via Appointment.liminarContract
-  const pendingAppointments = await Appointment.find({
-    liminarContract: contractObjId,
-    operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
-  }).select('_id').lean();
-  const appointmentIds = pendingAppointments.map(a => a._id);
-
-  const [sessionsResult, appointmentsResult, paymentsResult] = await Promise.all([
-    appointmentIds.length > 0
-      ? cancelPendingSessions({ appointmentId: { $in: appointmentIds }, status: { $in: pendingStatuses } })
-      : Promise.resolve({ modifiedCount: 0 }),
-    appointmentIds.length > 0
-      ? cancelAppointments({
-          _id: { $in: appointmentIds },
-          operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
-        })
-      : Promise.resolve({ modifiedCount: 0 }),
-    cancelPendingPayments({ liminarContract: contractObjId, status: { $in: ['pending', 'scheduled'] } })
-  ]);
-
-  await LiminarContract.findByIdAndUpdate(
-    contractObjId,
-    { status: 'canceled', updatedAt: new Date() },
-    { runValidators: true }
-  );
 
   logger.info('Contrato liminar inativado', {
     contractId: id,
-    sessionsCanceled: sessionsResult.modifiedCount,
-    appointmentsCanceled: appointmentsResult.modifiedCount,
-    paymentsCanceled: paymentsResult.modifiedCount
+    sessionsCanceled: outcome.sessionsCanceled,
+    appointmentsCanceled: outcome.appointmentsCanceled,
+    paymentsCanceled: outcome.paymentsCanceled,
+    idempotent: outcome.idempotent,
   });
 
-  return res.json({
-    contractId: id,
-    sessionsCanceled: sessionsResult.modifiedCount,
-    appointmentsCanceled: appointmentsResult.modifiedCount,
-    paymentsCanceled: paymentsResult.modifiedCount
-  });
+  return res.json(outcome);
 }

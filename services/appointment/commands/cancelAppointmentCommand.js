@@ -29,6 +29,7 @@ import { restorePackageOnCancel } from '../../../domain/package/restorePackageOn
 import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleService.js';
 import { isPaymentFinanciallyReversible } from '../../../domain/payment/isPaymentFinanciallyReversible.js';
 import { isInsuranceAppointment } from '../../../utils/appointmentMapper.js';
+import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -128,6 +129,20 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
       err.blockedBy = advancedPayments.map(p => ({ id: p._id, status: p.status, insuranceStatus: p.insurance?.status }));
       throw err;
     }
+  }
+
+  if (appointment.liminarContract && appointment.operationalStatus === 'completed') {
+    await LiminarGuard.handle({
+      context: 'CANCEL_APPOINTMENT',
+      session,
+      payload: {
+        liminarContractId: appointment.liminarContract,
+        sessionValue: appointment.sessionValue,
+        appointmentStatus: appointment.operationalStatus,
+        confirmedAbsence,
+        appointmentId: appointment._id,
+      },
+    });
   }
 
   for (const pay of activePayments) {

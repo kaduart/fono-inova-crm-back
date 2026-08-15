@@ -14,6 +14,9 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import express from 'express';
 import request from 'supertest';
+import { completeSessionV2 } from '../../services/completeSessionService.v2.js';
+import cancelAppointmentCommand from '../../services/appointment/commands/cancelAppointmentCommand.js';
+import { readFile } from 'node:fs/promises';
 
 // ─── MOCKS ───────────────────────────────────────────────────────────────────
 vi.mock('../../config/socket.js', () => ({
@@ -127,6 +130,13 @@ async function seedContractAndPlan() {
 }
 
 describe('🔒 POST /:id/plans/:planId/generate-sessions — mode:reset desabilitado, mode:append intacto', () => {
+  it('o serviço não contém mais execução destrutiva de reset', async () => {
+    const source = await readFile(new URL('../../services/schedule/generateLiminarSessions.js', import.meta.url), 'utf8');
+    expect(source).not.toContain('bulkCancelAppointments');
+    expect(source).not.toContain('Appointment.deleteMany');
+    expect(source).not.toContain('ordered: false');
+  });
+
   it('mode:reset retorna 409 LIMINAR_RESET_DISABLED e não muda nada', async () => {
     const { contract, plan } = await seedContractAndPlan();
     const contractBefore = await LiminarContract.findById(contract._id).lean();
@@ -173,6 +183,62 @@ describe('🔒 POST /:id/plans/:planId/generate-sessions — mode:reset desabili
 
     const appointmentsCount = await Appointment.countDocuments({ liminarContract: contract._id });
     expect(appointmentsCount).toBe(res.body.created);
+    const appointments = await Appointment.find({ liminarContract: contract._id }).lean();
+    expect(appointments.every(item => item.operationalStatus === 'pre_agendado' && item.session)).toBe(true);
+    expect(await Session.countDocuments({ appointmentId: { $in: appointments.map(item => item._id) } })).toBe(appointments.length);
+
+    const repeated = await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 2 });
+    expect(repeated.status).toBe(201);
+    expect(repeated.body.created).toBe(0);
+    expect(await Appointment.countDocuments({ liminarContract: contract._id })).toBe(appointments.length);
+  }, 30_000);
+
+  it('falha ao inserir Session provoca rollback de todos os Appointments', async () => {
+    const { contract, plan } = await seedContractAndPlan();
+    const failure = vi.spyOn(Session, 'insertMany').mockRejectedValueOnce(new Error('falha injetada'));
+    const res = await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 2 });
+    failure.mockRestore();
+    expect(res.status).toBe(500);
+    expect(await Appointment.countDocuments({ liminarContract: contract._id })).toBe(0);
+    expect(await Session.countDocuments({})).toBe(0);
+  }, 30_000);
+
+  it('conflito externo de médico bloqueia o lote inteiro com 409 e zero escrita', async () => {
+    const { patient, doctor, contract, plan } = await seedContractAndPlan();
+    const date = nextWeekday(1);
+    await Appointment.create({
+      patient: new mongoose.Types.ObjectId(), doctor: doctor._id, date, time: '09:00', duration: 40,
+      specialty: 'fonoaudiologia', operationalStatus: 'scheduled', clinicalStatus: 'pending',
+      serviceType: 'individual_session', sessionValue: 100,
+    });
+    const res = await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 2 });
+    expect(res.status).toBe(409);
+    expect(res.body.errorCode).toBe('LIMINAR_SCHEDULE_CONFLICT');
+    expect(await Appointment.countDocuments({ liminarContract: contract._id })).toBe(0);
+    expect(patient).toBeTruthy();
+  }, 30_000);
+
+  it('colisão interna entre especialidades bloqueia o lote inteiro', async () => {
+    const { contract, plan, doctor } = await seedContractAndPlan();
+    await TherapeuticPlan.updateOne({ _id: plan._id }, {
+      $set: {
+        'therapies.psicologia': {
+          doctor: doctor._id, slots: [{ dayOfWeek: 1, time: '09:00' }],
+          sessionValue: 100, sessionDurationMinutes: 40,
+        },
+      },
+    });
+    const res = await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 1 });
+    expect(res.status).toBe(409);
+    expect(await Appointment.countDocuments({ liminarContract: contract._id })).toBe(0);
   }, 30_000);
 
   it('mode ausente (default) continua se comportando como append', async () => {
@@ -184,5 +250,64 @@ describe('🔒 POST /:id/plans/:planId/generate-sessions — mode:reset desabili
 
     expect(res.status).toBe(201);
     expect(res.body.created).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('conclui uma sessão real gerada como pre_agendado e consome crédito uma única vez', async () => {
+    const { contract, plan } = await seedContractAndPlan();
+    await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 1 });
+    const generated = await Appointment.findOne({ liminarContract: contract._id });
+    expect(generated.operationalStatus).toBe('pre_agendado');
+
+    const first = await completeSessionV2(generated._id.toString(), {});
+    const second = await completeSessionV2(generated._id.toString(), {});
+    expect(first.success).toBe(true);
+    expect(second.idempotent).toBe(true);
+    expect((await Appointment.findById(generated._id)).operationalStatus).toBe('completed');
+    expect((await Session.findById(generated.session)).status).toBe('completed');
+    const after = await LiminarContract.findById(contract._id).lean();
+    expect(after.usedCredit).toBe(100);
+    expect(after.creditBalance).toBe(3900);
+    expect(after.creditHistory.filter(item => item.type === 'debit')).toHaveLength(1);
+    expect(await Payment.countDocuments({ appointment: generated._id })).toBe(0);
+  }, 30_000);
+
+  it('contrato inativo ou sem crédito bloqueia conclusão com zero mutação', async () => {
+    const { contract, plan } = await seedContractAndPlan();
+    await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 1 });
+    const generated = await Appointment.findOne({ liminarContract: contract._id });
+    await LiminarContract.updateOne({ _id: contract._id }, { $set: { status: 'canceled' } });
+    await expect(completeSessionV2(generated._id.toString(), {})).rejects.toThrow();
+    expect((await Appointment.findById(generated._id)).operationalStatus).toBe('pre_agendado');
+    expect((await LiminarContract.findById(contract._id)).usedCredit).toBe(0);
+
+    await LiminarContract.updateOne({ _id: contract._id }, {
+      $set: { status: 'active', creditBalance: 50 },
+    });
+    await expect(completeSessionV2(generated._id.toString(), {})).rejects.toThrow();
+    expect((await Appointment.findById(generated._id)).operationalStatus).toBe('pre_agendado');
+    expect((await LiminarContract.findById(contract._id)).usedCredit).toBe(0);
+  }, 30_000);
+
+  it('duas tentativas concorrentes de cancelar completed restauram crédito no máximo uma vez', async () => {
+    const { contract, plan } = await seedContractAndPlan();
+    await request(app)
+      .post(`/api/v2/liminar-contracts/${contract._id}/plans/${plan._id}/generate-sessions`)
+      .send({ mode: 'append', weeks: 1 });
+    const generated = await Appointment.findOne({ liminarContract: contract._id });
+    await completeSessionV2(generated._id.toString(), {});
+
+    await Promise.allSettled([
+      cancelAppointmentCommand.execute(generated._id, { reason: 'cancelamento concorrente A' }, null),
+      cancelAppointmentCommand.execute(generated._id, { reason: 'cancelamento concorrente B' }, null),
+    ]);
+    const after = await LiminarContract.findById(contract._id).lean();
+    expect(after.creditBalance).toBe(4000);
+    expect(after.usedCredit).toBe(0);
+    expect(after.creditHistory.filter(item =>
+      item.type === 'reversal' && String(item.appointmentId) === String(generated._id))).toHaveLength(1);
   }, 30_000);
 });

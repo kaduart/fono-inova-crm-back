@@ -147,8 +147,21 @@ async function handleCancel({ payload, session }) {
     return { handled: false, reason: 'NO_CONTRACT_OR_VALUE' };
   }
 
-  const result = await LiminarContract.findByIdAndUpdate(
-    liminarContractId,
+  const reversalKey = appointmentId || null;
+  const result = await LiminarContract.findOneAndUpdate(
+    {
+      _id: liminarContractId,
+      usedCredit: { $gte: sessionValue },
+      creditHistory: {
+        $not: {
+          $elemMatch: {
+            type: 'reversal',
+            reason: 'appointment_canceled',
+            appointmentId: reversalKey,
+          },
+        },
+      },
+    },
     {
       $inc: {
         creditBalance: +sessionValue,
@@ -159,7 +172,7 @@ async function handleCancel({ payload, session }) {
           amount:        sessionValue,
           type:          'reversal',
           reason:        'appointment_canceled',
-          appointmentId: appointmentId || null,
+          appointmentId: reversalKey,
           createdAt:     new Date()
         }
       },
@@ -169,7 +182,22 @@ async function handleCancel({ payload, session }) {
   );
 
   if (!result) {
-    throw new Error('LIMINAR_CONTRACT_NOT_FOUND on reversal');
+    const current = await LiminarContract.findById(liminarContractId).session(session).lean();
+    if (!current) throw new Error('LIMINAR_CONTRACT_NOT_FOUND on reversal');
+    const alreadyReversed = current.creditHistory?.some(item =>
+      item.type === 'reversal'
+      && item.reason === 'appointment_canceled'
+      && String(item.appointmentId || '') === String(reversalKey || ''));
+    if (alreadyReversed) {
+      return {
+        handled: true,
+        idempotent: true,
+        liminarContractId,
+        amountRefunded: 0,
+        creditBalance: current.creditBalance,
+      };
+    }
+    throw new Error('LIMINAR_REVERSAL_CREDIT_INCONSISTENT');
   }
 
   // Reativa se estava exhausted e agora tem crédito

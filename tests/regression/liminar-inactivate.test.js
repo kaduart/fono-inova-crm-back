@@ -12,7 +12,7 @@
  * totalCredit/usedCredit/creditBalance.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import express from 'express';
@@ -101,6 +101,11 @@ describe('PR3 — POST /v2/liminar-contracts/:id/inactivate', () => {
       status: 'pending', kind: 'appointment_payment', amount: 160,
       paymentDate: new Date('2026-09-20'), paymentMethod: 'liminar_credit',
     });
+    const paidReceipt = await Payment.create({
+      patient: patient._id, liminarContract: contract._id, status: 'paid', amount: 5000,
+      paymentDate: new Date(), paidAt: new Date(), paymentMethod: 'pix',
+      kind: 'liminar_contract_receipt',
+    });
 
     const res = await request(app).post(`/api/v2/liminar-contracts/${contract._id}/inactivate`).send();
     expect(res.status).toBe(200);
@@ -122,6 +127,7 @@ describe('PR3 — POST /v2/liminar-contracts/:id/inactivate', () => {
 
     const paymentAfter = await Payment.findById(pendingPayment._id).lean();
     expect(paymentAfter.status).toBe('canceled');
+    expect((await Payment.findById(paidReceipt._id)).status).toBe('paid');
   });
 
   it('cenário 2: contrato sem sessões pendentes -> só muda status', async () => {
@@ -139,13 +145,65 @@ describe('PR3 — POST /v2/liminar-contracts/:id/inactivate', () => {
     expect(contractAfter.status).toBe('canceled');
   });
 
-  it('cenário 3: contrato já cancelado -> retorna erro', async () => {
+  it('cenário 3: contrato já cancelado -> sucesso idempotente sem alteração', async () => {
     const patient = await createPatient();
     const doctor = await createDoctor();
     const contract = await createContract(patient, doctor, { status: 'canceled' });
 
     const res = await request(app).post(`/api/v2/liminar-contracts/${contract._id}/inactivate`).send();
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(res.body.appointmentsCanceled).toBe(0);
+  });
+
+  it.each(['pre_agendado', 'confirmed', 'pending', 'missed'])(
+    'cancela Appointment e Session no estado %s',
+    async operationalStatus => {
+      const patient = await createPatient();
+      const doctor = await createDoctor();
+      const contract = await createContract(patient, doctor);
+      const appointment = await Appointment.create({
+        patient: patient._id, doctor: doctor._id, date: new Date('2026-10-20'), time: '11:00',
+        duration: 40, specialty: 'fonoaudiologia', serviceType: 'liminar_session',
+        operationalStatus, clinicalStatus: operationalStatus === 'missed' ? 'missed' : 'pending',
+        billingType: 'liminar', paymentMethod: 'liminar_credit', sessionValue: 100,
+        liminarContract: contract._id,
+      });
+      const session = await Session.create({
+        patient: patient._id, doctor: doctor._id, appointmentId: appointment._id,
+        status: operationalStatus === 'scheduled' ? 'scheduled' : 'pending', sessionType: 'fonoaudiologia', date: new Date('2026-10-20'),
+        time: '11:00', sessionValue: 100,
+      });
+
+      const res = await request(app).post(`/api/v2/liminar-contracts/${contract._id}/inactivate`).send();
+      expect(res.status).toBe(200);
+      expect((await Appointment.findById(appointment._id)).operationalStatus).toBe('canceled');
+      expect((await Session.findById(session._id)).status).toBe('canceled');
+    },
+  );
+
+  it('preserva Payment pago do contrato e rollbacka tudo em falha intermediária', async () => {
+    const patient = await createPatient();
+    const doctor = await createDoctor();
+    const contract = await createContract(patient, doctor);
+    const appointment = await Appointment.create({
+      patient: patient._id, doctor: doctor._id, date: new Date('2026-10-21'), time: '11:00',
+      duration: 40, specialty: 'fonoaudiologia', serviceType: 'liminar_session',
+      operationalStatus: 'scheduled', clinicalStatus: 'pending', billingType: 'liminar',
+      sessionValue: 100, liminarContract: contract._id,
+    });
+    const paid = await Payment.create({
+      patient: patient._id, liminarContract: contract._id, status: 'paid', amount: 5000,
+      paymentDate: new Date(), paidAt: new Date(), paymentMethod: 'pix', kind: 'liminar_contract_receipt',
+    });
+    const failure = vi.spyOn(Payment, 'updateMany').mockRejectedValueOnce(new Error('falha injetada'));
+    const failed = await request(app).post(`/api/v2/liminar-contracts/${contract._id}/inactivate`).send();
+    expect(failed.status).toBe(500);
+    failure.mockRestore();
+
+    expect((await Appointment.findById(appointment._id)).operationalStatus).toBe('scheduled');
+    expect((await LiminarContract.findById(contract._id)).status).toBe('active');
+    expect((await Payment.findById(paid._id)).status).toBe('paid');
   });
 
   it('cenário 4: sessão completed é preservada, só a pendente é cancelada', async () => {

@@ -1,11 +1,4 @@
-// services/schedule/generateLiminarSessions.js
-// Gera appointments a partir de TherapeuticPlan com slots { dayOfWeek, time }.
-// Idempotente via bulkWrite upsert — chamar N vezes não duplica.
-//
-// Modos:
-//   append  → gera semanas completas a partir da semana seguinte à última sessão
-//   reset   → cancela futuras scheduled e recria do zero (nova versão de plano)
-
+import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import Session from '../../models/Session.js';
 import TherapeuticPlan from '../../models/TherapeuticPlan.js';
@@ -13,493 +6,221 @@ import LiminarContract from '../../models/LiminarContract.js';
 import { buildDateTime, buildDayRange } from '../../utils/datetime.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildLiminarSession } from '../../domain/session/sessionFactory.js';
-import { executeWithSession as bulkCancelAppointments } from '../appointment/commands/bulkCancelAppointmentsCommand.js';
+
+const BLOCKING_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed', 'completed'];
+const CANCELED_STATUSES = ['canceled', 'cancelled', 'force_cancelled'];
 
 function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
 }
 
-/** Retorna o domingo da semana da data fornecida (00:00:00) */
 function getWeekStart(date) {
-  const d = new Date(date);
-  const day = d.getDay(); // 0=domingo
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const result = new Date(date);
+  result.setDate(result.getDate() - result.getDay());
+  result.setHours(0, 0, 0, 0);
+  return result;
 }
 
-/**
- * Gera appointments para um plano terapêutico.
- *
- * @param {string}  planId        - ID do TherapeuticPlan ativo
- * @param {string}  mode          - 'append' | 'reset'
- * @param {number}  weeks         - Quantas semanas gerar (usado no modo append)
- * @param {string}  startDate     - Início da janela (modo reset)
- * @param {string}  endDate       - Fim da janela   (modo reset)
- * @param {boolean} skipHolidays  - Pular feriados nacionais (default: true)
- */
-export async function generateLiminarSessions({
-  planId,
-  mode = 'append',
-  weeks = 4,
-  startDate,
-  endDate,
-  skipHolidays = true,
-  specialties,       // optional string[] — quando presente, processa só essas especialidades
-}) {
-  // ── 1. Carrega plano e contrato ────────────────────────────────
-  const plan = await TherapeuticPlan.findById(planId).lean();
-  if (!plan)                    throw new Error('PLAN_NOT_FOUND');
-  if (plan.status !== 'active') throw new Error(`PLAN_NOT_ACTIVE: status=${plan.status}`);
-
-  const contract = await LiminarContract.findById(plan.liminarContract).lean();
-  if (!contract)                    throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
-  if (contract.status !== 'active') throw new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
-
-  // ── 1b. Controle de sessões autorizadas ───────────────────────
-  const existingSessionsCount = contract.totalSessions != null
-    ? await Appointment.countDocuments({
-        liminarContract: contract._id,
-        operationalStatus: { $ne: 'canceled' }
-      })
-    : 0;
-  const remainingSessions = contract.totalSessions != null
-    ? Math.max(0, contract.totalSessions - existingSessionsCount)
-    : null;
-
-  // ── 2. Normaliza therapies ─────────────────────────────────────
-  const therapies = plan.therapies instanceof Map
-    ? Object.fromEntries(plan.therapies)
-    : (plan.therapies || {});
-
-  const therapyEntries = Object.entries(therapies);
-  if (therapyEntries.length === 0) {
-    return {
-      created: 0, skipped: 0, total: 0, totalCost: 0,
-      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
-      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
-      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
-    };
-  }
-
-  // Filtra por especialidades selecionadas (se informado)
-  const activeEntries = specialties?.length
-    ? therapyEntries.filter(([sp]) => specialties.includes(sp))
-    : therapyEntries;
-
-  if (activeEntries.length === 0) {
-    return {
-      created: 0, skipped: 0, total: 0, totalCost: 0,
-      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
-      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
-      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
-    };
-  }
-
-  // ── 3. Resolve janela de geração ───────────────────────────────
-  let weekStart;
-  let globalEnd;
-
-  if (mode === 'reset') {
-    // Cancela APENAS sessões agendadas (não confirmed/completed)
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const appointmentsToCancel = await Appointment.find({
-      liminarContract: contract._id,
-      date: { $gte: today },
-      operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
-    }).select('_id').lean();
-
-    const cancelRes = await bulkCancelAppointments(
-      appointmentsToCancel.map(a => a._id),
-      { reason: 'reset de plano terapêutico liminar' },
-      null,
-      null // sem session externa; command gerencia própria transação
-    );
-    console.log('[generateLiminarSessions] 🔄 reset cancelou futuras scheduled', {
-      contractId: contract._id.toString(),
-      canceled: cancelRes.canceled
-    });
-
-    weekStart = getWeekStart(startDate);
-    globalEnd = new Date(endDate); globalEnd.setHours(23, 59, 59, 999);
-  }
-  // Para 'append' não existe mais um weekStart/globalEnd global: cada slot calcula
-  // sua própria janela na seção 5 ("garante as próximas N ocorrências REAIS desse
-  // slot", preenchendo qualquer buraco histórico no caminho em vez de só estender
-  // a partir do último appointment já existente de QUALQUER slot da especialidade —
-  // era essa âncora compartilhada que causava o salto de meses e, mesmo corrigida
-  // pra não ser "mascarada" por dia errado, ainda não reparava buracos antigos.
-
-  // ── 4. Feriados — lookup por ano, sob demanda ──────────────────
-  // Lazy em vez de pré-computar um range fixo: no modo append, o loop de
-  // compensação (seção 5) pode precisar avançar além do `globalEnd` original
-  // pra repor uma semana perdida por feriado/passado, e um Set fixo não
-  // cobriria essa data extra.
-  const holidaysByYear = new Map();
-  function isHoliday(dateStr) {
-    if (!skipHolidays) return false;
-    const year = Number(dateStr.slice(0, 4));
-    if (!holidaysByYear.has(year)) {
-      holidaysByYear.set(year, new Set(getHolidaysWithNames(year).map(h => h.date)));
-    }
-    return holidaysByYear.get(year).has(dateStr);
-  }
-
-  // ── 5. Gera slots ────────────────────────────────────────────
-  // 🚨 FIX (2026-08-14): estava `const` — reatribuído em `slots = kept` na seção 6
-  // (trava de saldo/quantidade), o que lançava "Assignment to constant variable"
-  // toda vez que havia pelo menos 1 slot candidato, em append e reset. Sem
-  // try/catch em volta do await no controller, a exceção virava uma promise
-  // rejeitada sem resposta HTTP — "Gerar sessões" (append, único modo usado pela
-  // UI) travava a requisição indefinidamente. Bug pré-existente desde 05/08
-  // (commit b3fb9387), não introduzido por este patch.
-  let slots = [];
-
-  if (mode === 'append') {
-    const anchorDate = new Date(plan.startDate);
-    anchorDate.setHours(0, 0, 0, 0);
-
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const minDate = anchorDate > today ? anchorDate : today;
-
-    // Por slot (não por especialidade inteira nem por uma âncora global):
-    // 1. Levanta as datas já existentes desse slot específico a partir de hoje.
-    // 2. Caminha semana a semana a partir da 1ª ocorrência válida (>= minDate).
-    // 3. Pula datas já existentes (cobertura atual) e feriados — SEM contar pra cota.
-    // 4. Cria as que estiverem faltando até fechar `weeks` sessões NOVAS.
-    //
-    // Isso resolve dois problemas de uma vez: "gerar N semanas" sempre cria N sessões
-    // reais (não N blocos de calendário que podem cair no passado/feriado), e qualquer
-    // buraco histórico entre hoje e uma sessão futura já existente é preenchido primeiro,
-    // em vez de só estender a partir do que já está mais adiante.
-    for (const [specialty, config] of activeEntries) {
-      for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
-        const existingDocs = await Appointment.find({
-          patient:           contract.patient,
-          liminarContract:   contract._id,
-          specialty,
-          time:              slot.time,
-          date:              { $gte: minDate },
-          operationalStatus: { $ne: 'canceled' }
-        }).select('date').lean();
-
-        const existingDates = new Set(
-          existingDocs
-            .filter(d => new Date(d.date).getDay() === slot.dayOfWeek)
-            .map(d => new Date(d.date).toISOString().split('T')[0])
-        );
-
-        let candidate = addDays(getWeekStart(minDate), slot.dayOfWeek);
-        while (candidate < minDate) candidate = addDays(candidate, 7);
-
-        let created = 0;
-        let guard = 0; // segurança: nunca itera indefinidamente (~5 anos de margem)
-        const maxGuard = 260;
-        while (created < weeks && guard < maxGuard) {
-          guard++;
-          const dateStr = candidate.toISOString().split('T')[0];
-
-          if (!isHoliday(dateStr) && !existingDates.has(dateStr)) {
-            slots.push({
-              specialty,
-              dateStr,
-              time:         slot.time,
-              date:         buildDateTime(dateStr, slot.time),
-              sessionValue: config.sessionValue,
-              duration:     config.sessionDurationMinutes || 40,
-              doctor:       config.doctor || contract.doctor
-            });
-            created++;
-          }
-          candidate = addDays(candidate, 7);
-        }
-      }
-    }
-  } else {
-    // reset: gera tudo dentro da janela fornecida
-    const walker = new Date(weekStart);
-    while (walker <= globalEnd) {
-      const dayOfWeek = walker.getDay();
-      const dateStr   = walker.toISOString().split('T')[0];
-
-      if (!isHoliday(dateStr)) {
-        for (const [specialty, config] of activeEntries) {
-          for (const slot of (Array.isArray(config.slots) ? config.slots : [])) {
-            if (slot.dayOfWeek === dayOfWeek) {
-              slots.push({
-                specialty,
-                dateStr,
-                time:         slot.time,
-                date:         buildDateTime(dateStr, slot.time),
-                sessionValue: config.sessionValue,
-                duration:     config.sessionDurationMinutes || 40,
-                doctor:       config.doctor || contract.doctor
-              });
-            }
-          }
-        }
-      }
-
-      walker.setDate(walker.getDate() + 1);
-    }
-  }
-
-  if (slots.length === 0) {
-    return {
-      created: 0, skipped: 0, total: 0, totalCost: 0,
-      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
-      saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
-      limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
-    };
-  }
-
-  // ── 6. Travas de saldo e de quantidade de sessões ─────────────
-  // Ordena por data e aplica os limites: saldo financeiro e totalSessions
-  // global do contrato.
-  slots.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
-
-  const kept = [];
-  const saldoBlocked = [];
-  const sessionBlocked = [];
-  let runningCost = 0;
-  let totalKept = existingSessionsCount; // usado para limite global
-
-  for (const slot of slots) {
-    const value = slot.sessionValue;
-
-    const wouldExceedCost = runningCost + value > contract.creditBalance;
-    const wouldExceedGlobalSessions = remainingSessions != null && totalKept >= contract.totalSessions;
-
-    if (wouldExceedCost || wouldExceedGlobalSessions) {
-      if (wouldExceedGlobalSessions && !wouldExceedCost) {
-        sessionBlocked.push(slot);
-      } else {
-        saldoBlocked.push(slot);
-      }
-      continue;
-    }
-
-    kept.push(slot);
-    runningCost += value;
-    totalKept++;
-  }
-
-  slots = kept;
-  const totalCost = slots.reduce((s, sl) => s + sl.sessionValue, 0);
-  console.log('[generateLiminarSessions] 📋 Especialidades ativas:', activeEntries.map(([sp]) => sp));
-
-  if (saldoBlocked.length > 0) {
-    console.warn('[generateLiminarSessions] ⛔ Saldo insuficiente — geração cortada além do crédito disponível', {
-      contractId:        contract._id,
-      creditBalance:     contract.creditBalance,
-      slotsSolicitados:  slots.length + saldoBlocked.length,
-      slotsGerados:      slots.length,
-      slotsBloqueados:   saldoBlocked.length,
-      primeiroBloqueado: `${saldoBlocked[0].dateStr} ${saldoBlocked[0].time} (${saldoBlocked[0].specialty})`
-    });
-  }
-
-  if (sessionBlocked.length > 0) {
-    console.warn('[generateLiminarSessions] ⛔ Limite global de sessões autorizadas atingido', {
-      contractId:        contract._id,
-      totalSessions:     contract.totalSessions,
-      existingSessions:  existingSessionsCount,
-      remainingSessions,
-      slotsBloqueados:   sessionBlocked.length,
-      primeiroBloqueado: `${sessionBlocked[0].dateStr} ${sessionBlocked[0].time} (${sessionBlocked[0].specialty})`
-    });
-  }
-
-  if (slots.length === 0) {
-    return {
-      created: 0, skipped: 0, total: 0, totalCost: 0,
-      saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
-      saldoInsuficiente: saldoBlocked.length > 0,
-      slotsBloqueadosPorSaldo: saldoBlocked.length,
-      limiteSessoesAtingido: sessionBlocked.length > 0,
-      slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
-    };
-  }
-
-  // ── 7. bulkWrite upsert ────────────────────────────────────────
-  const bulkOps = slots.map(slot => ({
-    updateOne: {
-      filter: {
-        patient:           contract.patient,
-        liminarContract:   contract._id,
-        specialty:         slot.specialty,
-        time:              slot.time,
-        date:              buildDayRange(slot.dateStr),
-        operationalStatus: { $ne: 'canceled' }
-      },
-      update: {
-        $setOnInsert: {
-          patient:           contract.patient,
-          doctor:            slot.doctor || contract.doctor,
-          date:              slot.date,
-          time:              slot.time,
-          duration:          slot.duration,
-          specialty:         slot.specialty,
-          sessionType:       slot.specialty,
-          serviceType:       'liminar_session',
-          billingType:       'liminar',
-          paymentOrigin:     'liminar_credit',
-          paymentMethod:     'liminar_credit',
-          paymentStatus:     'pending',
-          operationalStatus: 'pre_agendado',
-          clinicalStatus:    'pending',
-          sessionValue:      slot.sessionValue,
-          liminarContract:   contract._id,
-          therapeuticPlan:   plan._id,
-          planVersion:       plan.version,
-          createdAt:         new Date()
-        }
-      },
-      upsert: true
-    }
-  }));
-
-  let result;
-  let rawConflicts = [];
-  try {
-    result = await Appointment.bulkWrite(bulkOps, { ordered: false });
-  } catch (err) {
-    if (err.code === 11000 || err.name === 'MongoBulkWriteError') {
-      result = err.result;
-      rawConflicts = (err.writeErrors || []).map(we => slots[we.index]).filter(Boolean);
-      console.warn('[generateLiminarSessions] ⚠️ Slots já ocupados:', rawConflicts.length);
-    } else {
-      throw err;
-    }
-  }
-
-  // ── Enriquece conflitos: busca quem ocupa cada slot ────────────
-  let conflictSlots = [];
-  if (rawConflicts.length > 0) {
-    const Patient = (await import('../../models/Patient.js')).default;
-    const Doctor  = (await import('../../models/Doctor.js')).default;
-
-    const conflictDocs = await Promise.all(rawConflicts.map(async slot => {
-      const existing = await Appointment.findOne({
-        doctor: slot.doctor,
-        date:   slot.date,
-        time:   slot.time,
-        operationalStatus: { $ne: 'canceled' }
-      }).select('patient doctor patientName').lean();
-
-      let patientName = existing?.patientName || null;
-      let doctorName  = null;
-
-      if (existing?.patient) {
-        const pt = await Patient.findById(existing.patient).select('fullName').lean();
-        patientName = pt?.fullName ?? patientName;
-      }
-      if (slot.doctor) {
-        const doc = await Doctor.findById(slot.doctor).select('fullName').lean();
-        doctorName = doc?.fullName ?? null;
-      }
-
-      const dateLabel = new Date(slot.date).toLocaleDateString('pt-BR', {
-        weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo'
-      });
-
-      return {
-        date:        slot.date,
-        time:        slot.time,
-        specialty:   slot.specialty,
-        doctorId:    slot.doctor?.toString(),
-        doctorName,
-        patientName,
-        message:     `${dateLabel} às ${slot.time} — Dr(a). ${doctorName ?? 'desconhecido'} está indisponível${patientName ? ` (ocupado com ${patientName})` : ''}`
-      };
-    }));
-
-    conflictSlots = conflictDocs;
-    console.warn('[generateLiminarSessions] ⚠️ Conflitos detalhados:', conflictSlots.map(c => c.message));
-  }
-
-  // ── 7b. Sync sessionValue em appointments existentes com sv=0 ──
-  // Cobre casos criados por rota antiga sem sessionValue (independe da janela de datas)
-  for (const [specialty, config] of activeEntries) {
-    if (config.sessionValue > 0) {
-      const fixed = await Appointment.updateMany(
-        {
-          patient:         contract.patient,
-          liminarContract: contract._id,
-          specialty,
-          sessionValue:    { $in: [0, null] },
-          operationalStatus: { $nin: ['canceled', 'completed', 'force_cancelled'] }
-        },
-        { $set: { sessionValue: config.sessionValue, updatedAt: new Date() } }
-      );
-      if (fixed.modifiedCount > 0) {
-        console.log(`[generateLiminarSessions] 🔧 Fixed sessionValue=0 → ${config.sessionValue} para ${specialty}: ${fixed.modifiedCount} doc(s)`);
-      }
-    }
-  }
-
-  // ── 8. Cria Sessions para appointments recém-inseridos ─────────
-  const upsertedIds = Object.values((result?.upsertedIds) || {});
-  let createdSessionsCount = 0;
-
-  if (upsertedIds.length > 0) {
-    const newAppointments = await Appointment.find(
-      { _id: { $in: upsertedIds } }
-    ).lean();
-
-    let createdSessions = [];
-    try {
-      const sessionDocs = newAppointments.map(a => buildLiminarSession(a));
-      createdSessions = await Session.insertMany(sessionDocs);
-      createdSessionsCount = createdSessions.length;
-
-      const sessionLinkOps = createdSessions.map((s, i) => ({
-        updateOne: {
-          filter: { _id: newAppointments[i]._id },
-          update: { $set: { session: s._id } }
-        }
-      }));
-      await Appointment.bulkWrite(sessionLinkOps, { ordered: false });
-    } catch (sessionErr) {
-      // Rollback: remove appointments órfãos e sessions criadas parcialmente
-      console.error('[generateLiminarSessions] ❌ Erro ao criar sessions — revertendo appointments:', sessionErr.message);
-      await Appointment.deleteMany({ _id: { $in: upsertedIds } });
-      if (createdSessions.length > 0) {
-        await Session.deleteMany({ _id: { $in: createdSessions.map(s => s._id) } });
-      }
-      throw new Error(`Falha ao criar sessões para os agendamentos liminar. Os agendamentos foram revertidos. Tente novamente. Detalhe: ${sessionErr.message}`);
-    }
-  }
-
-  const actualStart = slots.reduce((min, s) => !min || s.dateStr < min ? s.dateStr : min, '');
-  const actualEnd    = slots.reduce((max, s) => s.dateStr > max ? s.dateStr : max, slots[0]?.dateStr ?? '');
-  console.log('[generateLiminarSessions] ✅ Concluído', {
-    contractId: contract._id.toString(),
-    planId:     plan._id.toString(),
-    version:    plan.version,
-    mode,
-    weeks,
-    window:     `${actualStart} → ${actualEnd}`,
-    created:         result.upsertedCount,
-    skipped:         result.matchedCount,
-    total:           slots.length,
-    sessionsCreated: createdSessionsCount
-  });
-
+function emptyResult(contract, extra = {}) {
   return {
-    created:       result.upsertedCount,
-    skipped:       result.matchedCount,
-    total:         slots.length,
-    conflicts:     conflictSlots.length,
-    conflictSlots,
-    totalCost,
-    saldo:         contract.creditBalance,
-    saldoAposTudo: contract.creditBalance - totalCost,
-    saldoInsuficiente:       saldoBlocked.length > 0,
-    slotsBloqueadosPorSaldo: saldoBlocked.length,
-    limiteSessoesAtingido:   sessionBlocked.length > 0,
-    slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
+    created: 0, skipped: 0, total: 0, conflicts: 0, conflictSlots: [], totalCost: 0,
+    saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
+    saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
+    limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
+    ...extra,
   };
+}
+
+function conflictError(message, conflictSlots = []) {
+  const error = new Error(message);
+  error.statusCode = 409;
+  error.code = 'LIMINAR_SCHEDULE_CONFLICT';
+  error.conflictSlots = conflictSlots;
+  return error;
+}
+
+/** Append-only. Decision reads and all writes run in one Mongo transaction. */
+export async function generateLiminarSessions({
+  planId, mode = 'append', weeks = 4, skipHolidays = true, specialties,
+}) {
+  if (mode !== 'append') {
+    const error = new Error('LIMINAR_RESET_DISABLED');
+    error.statusCode = 409;
+    error.code = 'LIMINAR_RESET_DISABLED';
+    throw error;
+  }
+
+  const mongoSession = await mongoose.startSession();
+  let response;
+  try {
+    await mongoSession.withTransaction(async () => {
+      const plan = await TherapeuticPlan.findById(planId).session(mongoSession).lean();
+      if (!plan) throw new Error('PLAN_NOT_FOUND');
+      if (plan.status !== 'active') throw new Error(`PLAN_NOT_ACTIVE: status=${plan.status}`);
+
+      const contract = await LiminarContract.findById(plan.liminarContract).session(mongoSession).lean();
+      if (!contract) throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
+      if (contract.status !== 'active') {
+        const error = new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
+        error.statusCode = 409;
+        error.code = 'LIMINAR_CONTRACT_NOT_ACTIVE';
+        throw error;
+      }
+
+      const therapies = plan.therapies instanceof Map
+        ? Object.fromEntries(plan.therapies) : (plan.therapies || {});
+      const entries = Object.entries(therapies);
+      const activeEntries = specialties?.length
+        ? entries.filter(([specialty]) => specialties.includes(specialty)) : entries;
+      if (activeEntries.length === 0) {
+        response = emptyResult(contract);
+        return;
+      }
+
+      const existingSessionsCount = contract.totalSessions != null
+        ? await Appointment.countDocuments({
+            liminarContract: contract._id,
+            operationalStatus: { $nin: CANCELED_STATUSES },
+          }).session(mongoSession)
+        : 0;
+
+      const holidaysByYear = new Map();
+      const isHoliday = dateStr => {
+        if (!skipHolidays) return false;
+        const year = Number(dateStr.slice(0, 4));
+        if (!holidaysByYear.has(year)) {
+          holidaysByYear.set(year, new Set(getHolidaysWithNames(year).map(item => item.date)));
+        }
+        return holidaysByYear.get(year).has(dateStr);
+      };
+
+      const anchor = new Date(plan.startDate);
+      anchor.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const minDate = anchor > today ? anchor : today;
+      const candidates = [];
+
+      for (const [specialty, config] of activeEntries) {
+        for (const configuredSlot of (Array.isArray(config.slots) ? config.slots : [])) {
+          const existing = await Appointment.find({
+            patient: contract.patient, liminarContract: contract._id, specialty,
+            time: configuredSlot.time, date: { $gte: minDate },
+            operationalStatus: { $nin: CANCELED_STATUSES },
+          }).select('date').session(mongoSession).lean();
+          const existingDates = new Set(existing
+            .filter(item => new Date(item.date).getDay() === configuredSlot.dayOfWeek)
+            .map(item => new Date(item.date).toISOString().split('T')[0]));
+
+          let candidate = addDays(getWeekStart(minDate), configuredSlot.dayOfWeek);
+          while (candidate < minDate) candidate = addDays(candidate, 7);
+          let occurrences = 0;
+          let guard = 0;
+          while (occurrences < weeks && guard++ < 260) {
+            const dateStr = candidate.toISOString().split('T')[0];
+            if (!isHoliday(dateStr)) {
+              occurrences++;
+              if (!existingDates.has(dateStr)) {
+                candidates.push({
+                  specialty, dateStr, time: configuredSlot.time,
+                  date: buildDateTime(dateStr, configuredSlot.time),
+                  sessionValue: Number(config.sessionValue || 0),
+                  duration: config.sessionDurationMinutes || 40,
+                  doctor: config.doctor || contract.doctor,
+                });
+              }
+            }
+            candidate = addDays(candidate, 7);
+          }
+        }
+      }
+
+      candidates.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.time.localeCompare(b.time));
+      const internalKeys = new Set();
+      for (const slot of candidates) {
+        const key = `${slot.dateStr}|${slot.time}`;
+        if (internalKeys.has(key)) {
+          throw conflictError('O lote contém horários conflitantes para o paciente.', [slot]);
+        }
+        internalKeys.add(key);
+      }
+
+      const externalConflicts = [];
+      for (const slot of candidates) {
+        const occupied = await Appointment.findOne({
+          date: buildDayRange(slot.dateStr), time: slot.time,
+          operationalStatus: { $in: BLOCKING_STATUSES },
+          $or: [{ doctor: slot.doctor }, { patient: contract.patient }],
+        }).select('_id patient doctor').session(mongoSession).lean();
+        if (occupied) externalConflicts.push({
+          date: slot.date, time: slot.time, specialty: slot.specialty,
+          doctorId: slot.doctor?.toString(), appointmentId: occupied._id.toString(),
+        });
+      }
+      if (externalConflicts.length) {
+        throw conflictError('Um ou mais horários do lote já estão ocupados.', externalConflicts);
+      }
+
+      const kept = [];
+      const saldoBlocked = [];
+      const sessionBlocked = [];
+      let runningCost = 0;
+      for (const slot of candidates) {
+        const exceedsCredit = runningCost + slot.sessionValue > contract.creditBalance;
+        const exceedsSessions = contract.totalSessions != null
+          && existingSessionsCount + kept.length >= contract.totalSessions;
+        if (exceedsCredit || exceedsSessions) {
+          (exceedsSessions && !exceedsCredit ? sessionBlocked : saldoBlocked).push(slot);
+        } else {
+          kept.push(slot);
+          runningCost += slot.sessionValue;
+        }
+      }
+
+      if (kept.length === 0) {
+        response = emptyResult(contract, {
+          saldoInsuficiente: saldoBlocked.length > 0,
+          slotsBloqueadosPorSaldo: saldoBlocked.length,
+          limiteSessoesAtingido: sessionBlocked.length > 0,
+          slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
+        });
+        return;
+      }
+
+      const appointments = await Appointment.insertMany(kept.map(slot => ({
+        patient: contract.patient, doctor: slot.doctor, date: slot.date, time: slot.time,
+        duration: slot.duration, specialty: slot.specialty, sessionType: slot.specialty,
+        serviceType: 'liminar_session', billingType: 'liminar',
+        paymentOrigin: 'liminar_credit', paymentMethod: 'liminar_credit', paymentStatus: 'pending',
+        operationalStatus: 'pre_agendado', clinicalStatus: 'pending', sessionValue: slot.sessionValue,
+        liminarContract: contract._id, therapeuticPlan: plan._id, planVersion: plan.version,
+      })), { session: mongoSession, ordered: true });
+
+      const sessions = await Session.insertMany(
+        appointments.map(appointment => buildLiminarSession(appointment)),
+        { session: mongoSession, ordered: true },
+      );
+      await Appointment.bulkWrite(sessions.map((createdSession, index) => ({
+        updateOne: {
+          filter: { _id: appointments[index]._id },
+          update: { $set: { session: createdSession._id } },
+        },
+      })), { session: mongoSession, ordered: true });
+
+      response = {
+        created: appointments.length, skipped: 0, total: kept.length,
+        conflicts: 0, conflictSlots: [], totalCost: runningCost,
+        saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance - runningCost,
+        saldoInsuficiente: saldoBlocked.length > 0,
+        slotsBloqueadosPorSaldo: saldoBlocked.length,
+        limiteSessoesAtingido: sessionBlocked.length > 0,
+        slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
+      };
+    });
+    return response;
+  } finally {
+    await mongoSession.endSession();
+  }
 }
