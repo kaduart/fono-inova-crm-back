@@ -51,7 +51,7 @@ function buildDayRange(dateStr) {
  * Verifica conflitos de horário para os slots gerados.
  * Lança erro se houver sobreposição com agendamentos existentes do médico ou do paciente.
  */
-export async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession, excludePlanId }) {
+export async function checkSlotConflicts({ slots, doctorId, patientId, duration = 40, mongoSession, excludePlanId, excludeAppointmentIds }) {
   if (!slots.length) return;
 
   const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
@@ -61,7 +61,22 @@ export async function checkSlotConflicts({ slots, doctorId, patientId, duration 
   // loop revisitar semanas que já têm appointment deste mesmo plano, e o agendamento
   // do próprio plano era acusado de "conflito" — mesmo sendo o slot que o bulkWrite
   // upsert logo abaixo apenas atualizaria (idempotente).
-  const planExclusion = excludePlanId ? { insurancePlan: { $ne: excludePlanId } } : {};
+  //
+  // 🚨 FIX (review 2026-08-14, bloqueador 1 do replan in-place): excluir o plano
+  // INTEIRO esconde colisão real dentro da própria guia — um `confirmed`/`missed`
+  // da mesma guia num horário que só PARCIALMENTE sobrepõe o alvo (ex: confirmed
+  // 10:20-11:00 vs alvo novo 10:00-10:40) nunca é pego, porque `occupiedKeys` no
+  // replan só compara data+hora EXATA, e essa checagem aqui excluía qualquer coisa
+  // do mesmo plano antes mesmo de olhar duration/overlap. `excludeAppointmentIds`
+  // exclui só os IDs que estão de fato sendo movidos nesta chamada — todo o resto
+  // do plano (inclusive confirmed/missed/repositionable intocado) continua sujeito
+  // à checagem de sobreposição normal. Quando informado, substitui completamente
+  // `excludePlanId` (usado só pelo generateInsurancePlanSessions.js original, que
+  // nunca move um registro pra cima de outro do mesmo plano).
+  const exclusion = excludeAppointmentIds && excludeAppointmentIds.length > 0
+    ? { _id: { $nin: excludeAppointmentIds } }
+    : (excludePlanId ? { insurancePlan: { $ne: excludePlanId } } : {});
+  const planExclusion = exclusion;
 
   for (const slot of slots) {
     const dateStr = slot.dateStr;

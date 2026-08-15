@@ -80,25 +80,33 @@ function addDays(date, days) {
   return d;
 }
 
-/** Espelha o walker de buildExpectedSeries (mesma regra de pular feriado) pra
- *  calcular, a partir de um `anchorMonday` (índice 0, já ocupado/completed), as
- *  próximas `count` datas semanais VÁLIDAS (não-feriado) — garante que a fixture
- *  do teste bate exatamente com o que o serviço real geraria, independente de em
- *  que dia do calendário a suíte rodar (evita flakiness por feriado nacional
- *  caindo em cima de uma das datas "já existentes" da fixture). */
-function computeNextValidWeeklyDates(anchorMonday, count) {
+/** Espelha o walker de buildExpectedSeries (mesma ordem semana→slots, mesma
+ *  regra de pular feriado e `occupiedKeys`) pra calcular a série exata que o
+ *  serviço real geraria — suporta múltiplos slots/semana (ex: quarta+sexta,
+ *  como o padrão real da guia 16173376), independente de em que dia do
+ *  calendário a suíte roda (evita flakiness por feriado nacional caindo em
+ *  cima de uma das datas "já existentes" da fixture). */
+function computeExpectedSeriesLike(startFloor, slots, count, occupiedKeys = new Set()) {
   const holidays = new Set();
-  for (const y of [anchorMonday.getFullYear(), anchorMonday.getFullYear() + 1, anchorMonday.getFullYear() + 2]) {
+  for (const y of [startFloor.getFullYear(), startFloor.getFullYear() + 1, startFloor.getFullYear() + 2]) {
     for (const h of getHolidaysWithNames(y)) holidays.add(h.date);
   }
-  const dates = [];
-  for (let w = 1; dates.length < count && w < 520; w++) {
-    const d = addDays(anchorMonday, w * 7);
-    const dStr = d.toISOString().split('T')[0];
-    if (holidays.has(dStr)) continue;
-    dates.push(d);
+  const weekStart = new Date(startFloor); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0, 0, 0, 0);
+  const series = [];
+  for (let w = 0; series.length < count && w < 520; w++) {
+    const weekSunday = addDays(weekStart, w * 7);
+    for (const slot of slots) {
+      if (series.length >= count) break;
+      const d = addDays(weekSunday, slot.dayOfWeek);
+      if (d < startFloor) continue;
+      const dStr = d.toISOString().split('T')[0];
+      if (holidays.has(dStr)) continue;
+      const key = `${dStr}T${slot.time}`;
+      if (occupiedKeys.has(key)) continue;
+      series.push({ date: d, time: slot.time });
+    }
   }
-  return dates;
+  return series;
 }
 
 async function seedPatientAndDoctor(suffix = '') {
@@ -328,6 +336,12 @@ describe('replanInsurancePlanSessions — in-place', () => {
     const trio = await seedAppointmentTrio({
       patient, doctor, guide, plan, date: nextWeekday(4), time: '16:00', operationalStatus: 'canceled'
     });
+    // Espelha o que cancelAppointmentCommand REALMENTE grava na Session ao
+    // cancelar (sessionDoc.paymentStatus = 'canceled') — a fixture por padrão
+    // não seta esse campo, e sem isso o teste não prova o cenário real do
+    // bloqueador 4 (Session ficando 'canceled' enquanto Appointment já virou
+    // 'pending_receipt').
+    await Session.updateOne({ _id: trio.session._id }, { $set: { paymentStatus: 'canceled' } });
 
     const result = await withTransaction(session => replanInsurancePlanSessions({
       planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }
@@ -339,6 +353,9 @@ describe('replanInsurancePlanSessions — in-place', () => {
     expect(apptAfter.operationalStatus).toBe('pre_agendado');
     expect(apptAfter.paymentStatus).toBe('pending_receipt'); // nunca 'unpaid'
     expect(apptAfter.time).toBe('11:00');
+
+    const sessionAfter = await Session.findById(trio.session._id).lean();
+    expect(sessionAfter.paymentStatus).toBe('pending_receipt'); // nunca fica 'canceled' órfão (bloqueador 4)
 
     const paymentAfter = await Payment.findById(trio.payment._id).lean();
     expect(paymentAfter.status).toBe('pending'); // restaurado, nunca 'paid' direto
@@ -607,63 +624,72 @@ describe('replanInsurancePlanSessions — in-place', () => {
     expect(generatedIds.sort()).toEqual(idsAfterFirst.sort());
   }, 30_000);
 
-  it('CASO REAL guia 16173376/Ícaro: 18 autorizadas, 1 completed, 9 futuras existentes, 8 retroativas faltantes — replan preenche exatamente o buraco sem perder nenhuma futura (bloqueador 1)', async () => {
+  it('CASO REAL guia 16173376/Ícaro: quarta+sexta, 18 autorizadas, 1 completed, retroativas faltantes + futuras existentes somando 17 — replan preenche exatamente o buraco sem perder nenhuma futura (bloqueador 1)', async () => {
     const { patient, doctor } = await seedPatientAndDoctor('icaro-real');
 
-    // Índice 0 = completed (bem no passado, "14/08"). As próximas 17 datas
-    // SEMANAIS VÁLIDAS (pulando feriado, mesma regra do serviço real) se dividem
-    // em: 8 retroativas faltantes (nunca criadas) + 9 futuras já existentes
-    // (criadas por uma chamada anterior de "gerar sessões" que partiu de hoje,
-    // sem backfill). Datas calculadas via computeNextValidWeeklyDates pra não
-    // depender de que dia real a suíte roda (evita colisão com feriado nacional).
-    const past = new Date(); past.setDate(past.getDate() - 9 * 7); past.setHours(0, 0, 0, 0);
-    const anchorMonday = nextWeekday(1, past); // índice 0 — "14/08"
-    const validSeries = computeNextValidWeeklyDates(anchorMonday, 17);
-    const retroactiveDates = validSeries.slice(0, 8);   // índices 1-8
-    const futureDates = validSeries.slice(8);            // índices 9-17
-    expect(futureDates.length).toBe(9);
+    // Padrão real da guia: 2 slots/semana (quarta 14:00 + sexta 15:00), não 1 —
+    // exercita a mesma iteração semana→slots que o serviço real percorre.
+    // Datas calculadas dinamicamente (não hardcoded 17/07-18/09) de propósito:
+    // hardcoded ficaria datado e arriscaria colidir com feriado dependendo de
+    // quando a suíte roda. O split retroativas/futuras é DINÂMICO (filtra por
+    // `< today` de verdade) em vez de um índice fixo — com 2 slots/semana o
+    // ponto exato onde "hoje" cai entre duas entradas consecutivas depende de
+    // em que dia da semana a suíte roda, então um corte fixo (ex: sempre 8/9)
+    // quebraria em ~2 de cada 7 execuções. A âncora fica ~4,5 semanas atrás pra
+    // as 17 entradas (~8,5 semanas de span com 2/semana) ficarem centradas em
+    // torno de hoje, garantindo pelo menos 1 de cada lado.
+    const slots = [{ dayOfWeek: 3, time: '14:00' }, { dayOfWeek: 5, time: '15:00' }];
+    const past = new Date(); past.setDate(past.getDate() - 30); past.setHours(0, 0, 0, 0);
+    const anchorDate = nextWeekday(3, past); // índice 0 — "14/08", quarta-feira
+    const occupiedKeys = new Set([`${anchorDate.toISOString().split('T')[0]}T14:00`]);
+    const validSeries = computeExpectedSeriesLike(anchorDate, slots, 17, occupiedKeys);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    for (const d of futureDates) expect(d.getTime()).toBeGreaterThanOrEqual(today.getTime());
+    const retroactiveEntries = validSeries.filter(e => e.date < today);
+    const futureEntries = validSeries.filter(e => e.date >= today);
+    expect(retroactiveEntries.length).toBeGreaterThan(0); // topologia real precisa das duas partes
+    expect(futureEntries.length).toBeGreaterThan(0);
+    expect(retroactiveEntries.length + futureEntries.length).toBe(17);
 
     const { guide, plan } = await seedGuideAndPlan({
       patient, doctor, totalSessions: 18, usedSessions: 1,
-      startDate: anchorMonday, slots: [{ dayOfWeek: 1, time: '09:00' }]
+      startDate: anchorDate, slots
     });
 
     const completedTrio = await seedAppointmentTrio({
-      patient, doctor, guide, plan, date: anchorMonday, time: '09:00', operationalStatus: 'completed'
+      patient, doctor, guide, plan, date: anchorDate, time: '14:00', operationalStatus: 'completed'
     });
 
     const futureTrios = [];
-    for (const d of futureDates) {
+    for (const e of futureEntries) {
       futureTrios.push(await seedAppointmentTrio({
-        patient, doctor, guide, plan, date: d, time: '09:00', operationalStatus: 'pre_agendado'
+        patient, doctor, guide, plan, date: e.date, time: e.time, operationalStatus: 'pre_agendado'
       }));
     }
-    expect(futureTrios.length).toBe(9);
+    expect(futureTrios.length).toBe(futureEntries.length);
 
     const result = await withTransaction(session => replanInsurancePlanSessions({
       planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }, allowPastGeneration: true
     }));
 
-    // Exatamente as 8 retroativas faltantes foram criadas — nenhuma a mais, nenhuma a menos
-    expect(result.appointmentsGenerated).toBe(8);
-    expect(result.pastAppointments.length).toBe(retroactiveDates.filter(d => d < today).length);
+    // Exatamente as retroativas faltantes foram criadas — nenhuma a mais, nenhuma a menos
+    expect(result.appointmentsGenerated).toBe(retroactiveEntries.length);
+    expect(result.pastAppointments.length).toBe(retroactiveEntries.length);
 
     const allAppts = await Appointment.find({ insurancePlan: plan._id }).sort({ date: 1 }).lean();
-    expect(allAppts.length).toBe(18); // 1 completed + 9 futuras + 8 retroativas — nunca 17
+    expect(allAppts.length).toBe(18); // 1 completed + futuras + retroativas — nunca 17
 
     // As 9 futuras PRESERVAM o _id original (nunca foram tocadas nem recriadas)
     const futureIdsBefore = futureTrios.map(t => t.appointment._id.toString()).sort();
     const futureIdsAfter = allAppts
-      .filter(a => futureDates.some(d => d.getTime() === new Date(a.date).getTime()))
+      .filter(a => futureEntries.some(e => e.date.getTime() === new Date(a.date).getTime() && e.time === a.time))
       .map(a => a._id.toString())
       .sort();
     expect(futureIdsAfter).toEqual(futureIdsBefore);
 
     // A completed continua intocada
     const completedAfter = await Appointment.findById(completedTrio.appointment._id).lean();
-    expect(completedAfter.date.getTime()).toBe(new Date(anchorMonday).getTime());
+    expect(completedAfter.date.getTime()).toBe(new Date(anchorDate).getTime());
+    expect(completedAfter.time).toBe('14:00');
     expect(completedAfter.operationalStatus).toBe('completed');
 
     // Nenhum Payment duplicado: 18 appointments, 18 payments
@@ -696,9 +722,126 @@ describe('replanInsurancePlanSessions — in-place', () => {
     expect(totalAfterSecond).toBe(18); // nenhuma futura foi cancelada como "sobra"
 
     const futureIdsAfterSecond = (await Appointment.find({ insurancePlan: plan._id }).lean())
-      .filter(a => futureDates.some(d => d.getTime() === new Date(a.date).getTime()))
+      .filter(a => futureEntries.some(e => e.date.getTime() === new Date(a.date).getTime() && e.time === a.time))
       .map(a => a._id.toString())
       .sort();
     expect(futureIdsAfterSecond).toEqual(futureIdsBefore); // mesmos IDs, ninguém cancelado
+  }, 30_000);
+
+  it('colisão INTERNA com confirmed da própria guia por sobreposição PARCIAL de horário bloqueia (bloqueador 1 do 2º review: excludePlanId escondia isso)', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('colisao-interna-parcial');
+    const startDate = nextWeekday(3);
+    const { guide, plan } = await seedGuideAndPlan({
+      patient, doctor, totalSessions: 2, usedSessions: 0,
+      startDate, slots: [{ dayOfWeek: 3, time: '10:00' }]
+    });
+
+    // confirmed da MESMA guia, 10:20-11:00 (duration 40) — sobrepõe parcialmente
+    // o alvo 10:00-10:40 do plano (10:20-10:40). Data/hora NÃO são idênticas,
+    // então occupiedKeys (que só compara data+hora exata) não pega isso — só
+    // checkSlotConflicts, agora que não exclui mais o plano inteiro.
+    await seedAppointmentTrio({
+      patient, doctor, guide, plan, date: startDate, time: '10:20', operationalStatus: 'confirmed'
+    });
+
+    await expect(withTransaction(session => replanInsurancePlanSessions({
+      planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }
+    }))).rejects.toMatchObject({ code: 'APPOINTMENT_SLOT_CONFLICT' });
+
+    // Zero mutação: nada foi criado por cima da confirmed
+    const totalAppointments = await Appointment.countDocuments({ insurancePlan: plan._id });
+    expect(totalAppointments).toBe(1); // só a confirmed original
+  }, 30_000);
+
+  it('Payment achável SOMENTE via appointment.payment (sem back-reference appointment/session) é considerado na reversibilidade (bloqueador 2 do 2º review)', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('payment-so-por-referencia');
+    const startDate = nextWeekday(2);
+    const { guide, plan } = await seedGuideAndPlan({
+      patient, doctor, totalSessions: 1, usedSessions: 0,
+      startDate, slots: [{ dayOfWeek: 2, time: '11:00' }]
+    });
+
+    const trio = await seedAppointmentTrio({
+      patient, doctor, guide, plan, date: nextWeekday(4), time: '16:00', operationalStatus: 'canceled'
+    });
+
+    // Substitui o Payment "oficial" por um SEM appointment/session preenchidos —
+    // só é achável via _id === appointment.payment (vínculo legado real).
+    const orphanPayment = await Payment.create({
+      patient: patient._id,
+      doctor: doctor._id,
+      specialty: 'terapia_ocupacional',
+      amount: 0,
+      paymentDate: nextWeekday(4),
+      paymentMethod: 'convenio',
+      billingType: 'convenio',
+      status: 'billed',
+      insurance: { provider: guide.insurance, status: 'billed', billedAt: new Date(), grossAmount: 80 },
+      insuranceGuide: guide._id,
+      insurancePlan: plan._id,
+      kind: 'session_payment'
+    });
+    await Appointment.updateOne({ _id: trio.appointment._id }, { $set: { payment: orphanPayment._id } });
+    await Payment.deleteOne({ _id: trio.payment._id }); // remove o payment "normal", só sobra o órfão
+
+    await expect(withTransaction(session => replanInsurancePlanSessions({
+      planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }
+    }))).rejects.toMatchObject({ code: 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED' });
+  }, 30_000);
+
+  it('Payment cancelado com paidAt preenchido (dinheiro já recebido antes do cancelamento) NÃO é reversível mesmo com status/insurance.status neutros (bloqueador 2 do 2º review)', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('payment-paidat');
+    const startDate = nextWeekday(2);
+    const { guide, plan } = await seedGuideAndPlan({
+      patient, doctor, totalSessions: 1, usedSessions: 0,
+      startDate, slots: [{ dayOfWeek: 2, time: '11:00' }]
+    });
+
+    const trio = await seedAppointmentTrio({
+      patient, doctor, guide, plan, date: nextWeekday(4), time: '16:00', operationalStatus: 'canceled',
+      paymentOverrides: { status: 'canceled', insurance: { provider: guide.insurance, status: 'pending' }, paidAt: new Date() }
+    });
+    expect(trio.payment.paidAt).toBeTruthy();
+
+    await expect(withTransaction(session => replanInsurancePlanSessions({
+      planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }
+    }))).rejects.toMatchObject({ code: 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED' });
+  }, 30_000);
+
+  it('erro real ao cancelar 1 item excedente aborta a transação inteira, zero mutação (bloqueador 5)', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('bulkcancel-falha');
+    const startDate = nextWeekday(4);
+    const { guide, plan } = await seedGuideAndPlan({
+      patient, doctor, totalSessions: 1, usedSessions: 0,
+      startDate, slots: [{ dayOfWeek: 4, time: '09:00' }]
+    });
+
+    // 2 pre_agendado pra 1 vaga só — 1 sobra e precisa ser cancelado como excedente
+    const trioA = await seedAppointmentTrio({
+      patient, doctor, guide, plan, date: startDate, time: '09:00', operationalStatus: 'pre_agendado'
+    });
+    await seedAppointmentTrio({
+      patient, doctor, guide, plan, date: nextWeekday(4, startDate), time: '09:00', operationalStatus: 'pre_agendado'
+    });
+
+    const bulkCancelModule = await import('../../services/appointment/commands/bulkCancelAppointmentsCommand.js');
+    const spy = vi.spyOn(bulkCancelModule, 'executeWithSession').mockResolvedValueOnce({
+      canceled: 0,
+      canceledIds: [],
+      errors: [{ id: 'algum-id', error: 'falha simulada' }]
+    });
+
+    await expect(withTransaction(session => replanInsurancePlanSessions({
+      planId: plan._id, guideId: guide._id, mongoSession: session, user: { _id: doctor._id }
+    }))).rejects.toMatchObject({ code: 'CONVENIO_REPLAN_CANCEL_FAILED' });
+
+    spy.mockRestore();
+
+    // Zero mutação: os 2 originais continuam exatamente como estavam (nenhum cancelado, nenhum criado)
+    const appointmentsAfter = await Appointment.find({ insurancePlan: plan._id }).lean();
+    expect(appointmentsAfter.length).toBe(2);
+    expect(appointmentsAfter.every(a => a.operationalStatus === 'pre_agendado')).toBe(true);
+    const trioAAfter = await Appointment.findById(trioA.appointment._id).lean();
+    expect(trioAAfter.time).toBe('09:00'); // não mexeu
   }, 30_000);
 });

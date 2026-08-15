@@ -83,6 +83,15 @@ export function isPaymentFinanciallyReversible(payment) {
   if (insuranceStatus === 'billed' || insuranceStatus === 'received') return false;
   if ((payment.insurance?.receivedAmount || 0) > 0) return false;
   if (payment.insurance?.billedAt || payment.insurance?.receivedAt) return false;
+  // 🚨 FIX (review 2026-08-14, bloqueador 2): um Payment pode ter sido marcado
+  // 'canceled' pelo fluxo de cancelamento (que nunca reverte campos de
+  // recebimento já gravados) mantendo evidência de que o dinheiro já entrou —
+  // paidAt/financialDate são preenchidos exatamente quando isso acontece (ver
+  // transitionPaymentStatus em services/paymentStatusService.js). Sem checar
+  // isso aqui, um Payment 'canceled'/insurance.status='pending' mas com
+  // paidAt preenchido passava como reversível.
+  if (payment.paidAt) return false;
+  if (payment.financialDate) return false;
   return true;
 }
 
@@ -204,10 +213,16 @@ export async function replanInsurancePlanSessions({
   // reversível se TODOS forem reversíveis — um único Payment com financeiro
   // avançado (faturado/recebido/parcial) já bloqueia a reutilização.
   const canceledWithPayment = await Promise.all(canceledPool.map(async appt => {
+    // 🚨 FIX (review 2026-08-14, bloqueador 2): une os TRÊS vínculos possíveis —
+    // appointment.payment pode apontar pra um Payment legado sem back-reference
+    // de appointment/session (vínculo histórico inconsistente, cenário real
+    // documentado no comentário de cancelAppointmentCommand.js). $or dedupica
+    // automaticamente por _id, então não duplica quando os vínculos coincidem.
     const payments = await Payment.find({
       $or: [
         { appointment: appt._id },
-        ...(appt.session ? [{ session: appt.session }] : [])
+        ...(appt.session ? [{ session: appt.session }] : []),
+        ...(appt.payment ? [{ _id: appt.payment }] : [])
       ]
     }).session(mongoSession).lean();
     const reversible = payments.every(isPaymentFinanciallyReversible);
@@ -302,13 +317,19 @@ export async function replanInsurancePlanSessions({
   // (ex: plano encolheu ou mudou de padrão) — cancela, nunca hard-delete.
   const leftoverRepositionable = repositionablePool.filter(a => !usedPoolIds.has(a._id.toString()));
 
-  // ── 7. Checa conflito com OUTRA guia/paciente ANTES de qualquer escrita ──
-  // Cobre toCreate + toReposition + toRestoreAndReposition — se qualquer alvo
-  // colidir com um registro bloqueante de outro dono, a função lança e nada é
-  // escrito (transação do caller aborta). Nunca cancela o registro externo.
-  // Colisão com um confirmed/missed/completed DA PRÓPRIA guia não é possível
-  // aqui: buildExpectedSeries já exclui essas datas via `occupiedKeys` (passo
-  // 4), então nenhum target chega a coincidir com um registro congelado.
+  // ── 7. Checa conflito com QUALQUER outro registro bloqueante ANTES de
+  // qualquer escrita — inclusive dentro da PRÓPRIA guia (confirmed/missed que
+  // só se sobrepõe PARCIALMENTE a um alvo, não coincide exatamente — esse caso
+  // `occupiedKeys` no passo 4 não pega, porque ali só compara data+hora exata).
+  // Exclui só os IDs que estão de fato sendo movidos nesta chamada (toReposition/
+  // toRestoreAndReposition) — nunca o plano inteiro (ver fix no bloqueador 1 do
+  // review 2026-08-14 em generateInsurancePlanSessions.js/checkSlotConflicts).
+  // Se qualquer alvo colidir, a função lança e nada é escrito (transação do
+  // caller aborta). Nunca cancela/move o registro que já estava lá.
+  const excludeAppointmentIds = [
+    ...toReposition.map(r => r.appt._id),
+    ...toRestoreAndReposition.map(r => r.appt._id)
+  ];
   const allTargetSlots = [
     ...toCreate.map(t => ({ dateStr: t.dateStr, time: t.time })),
     ...toReposition.map(r => ({ dateStr: r.target.dateStr, time: r.target.time })),
@@ -321,7 +342,7 @@ export async function replanInsurancePlanSessions({
       patientId: plan.patient,
       duration: plan.duration || 40,
       mongoSession,
-      excludePlanId: plan._id
+      excludeAppointmentIds
     });
   }
 
