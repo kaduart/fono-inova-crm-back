@@ -45,7 +45,7 @@ beforeEach(async () => {
   for (const collection of Object.values(mongoose.connection.collections)) await collection.deleteMany({});
 });
 
-async function seedPackage() {
+async function seedPackage({ paymentType = 'per-session' } = {}) {
   const patient = await Patient.create({ fullName: 'Paciente Package V2', phone: '62999111111', dateOfBirth: '2015-01-01' });
   const doctor = await Doctor.create({
     fullName: 'Dra. Package V2', specialty: 'fonoaudiologia', phoneNumber: '62999222222',
@@ -54,7 +54,8 @@ async function seedPackage() {
   const pkg = await Package.create({
     durationMonths: 1, sessionsPerWeek: 1, patient: patient._id, doctor: doctor._id,
     sessionType: 'fonoaudiologia', specialty: 'fonoaudiologia', sessionValue: 100,
-    totalSessions: 4, totalValue: 400, date: new Date('2026-08-20T03:00:00.000Z'), type: 'therapy', model: 'prepaid', status: 'active',
+    totalSessions: 4, totalValue: 400, date: new Date('2026-08-20T03:00:00.000Z'), type: 'therapy',
+    model: paymentType === 'per-session' ? 'per_session' : 'prepaid', paymentType, status: 'active',
   });
   const view = await PackagesView.create({
     packageId: pkg._id, patientId: patient._id, doctorId: doctor._id,
@@ -106,6 +107,31 @@ describe('Package V2 — guards operacionais', () => {
     expect((await Session.findById(completed.sessionId)).status).toBe('completed');
     expect((await Payment.findById(completed.paymentId)).status).toBe('paid');
   });
+
+  it.each(['full', 'prepaid', 'partial'])(
+    'bloqueia inativacao de paymentType=%s com 409 e zero mutacao',
+    async (paymentType) => {
+      const base = await seedPackage({ paymentType });
+      const target = await seedTrio(base);
+
+      const before = {
+        package: (await Package.findById(base.pkg._id)).toObject(),
+        appointment: (await Appointment.findById(target.appointmentId)).toObject(),
+        session: (await Session.findById(target.sessionId)).toObject(),
+        payment: (await Payment.findById(target.paymentId)).toObject(),
+      };
+
+      const response = await request(app)
+        .post(`/api/v2/packages/${base.view._id}/inactivate`)
+        .expect(409);
+
+      expect(response.body.error.code).toBe('PACKAGE_INACTIVATION_REQUIRES_PER_SESSION');
+      expect((await Package.findById(base.pkg._id)).toObject()).toEqual(before.package);
+      expect((await Appointment.findById(target.appointmentId)).toObject()).toEqual(before.appointment);
+      expect((await Session.findById(target.sessionId)).toObject()).toEqual(before.session);
+      expect((await Payment.findById(target.paymentId)).toObject()).toEqual(before.payment);
+    }
+  );
 
   it('bulk detecta conflito externo antes de qualquer escrita', async () => {
     const base = await seedPackage();

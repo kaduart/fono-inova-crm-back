@@ -511,6 +511,13 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       return res.status(400).json(formatError('Pacote já está inativo'));
     }
 
+    if (pkg.paymentType !== 'per-session') {
+      return res.status(409).json(formatError(
+        'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION',
+        'Somente pacotes com pagamento por sessao podem ser inativados por este fluxo.'
+      ));
+    }
+
     const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
 
     // 🛡️ PATCH OPERACIONAL (2026-08-15): a cascata inteira (Session + Appointment +
@@ -535,6 +542,13 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       }
 
       // Sessões em aberto (não completadas e não canceladas)
+      if (freshPkg.paymentType !== 'per-session') {
+        const err = new Error('Somente pacotes com pagamento por sessao podem ser inativados por este fluxo.');
+        err.status = 409;
+        err.code = 'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION';
+        throw err;
+      }
+
       const pendingSessions = await Session.find({
         package: pkgObjectId,
         status: { $in: pendingStatuses }
@@ -595,7 +609,7 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
   } catch (err) {
     logger.error('[PackageV2] Error inactivating package', { correlationId, error: err.message });
     const status = err.status || 500;
-    return res.status(status).json(formatError(err.message));
+    return res.status(status).json(formatError(err.code || 'PACKAGE_INACTIVATION_FAILED', err.message));
   }
 });
 
