@@ -8,10 +8,12 @@ import Appointment from '../../models/Appointment.js';
  * no schema e era descartado silenciosamente pelo strict mode do Mongoose).
  *
  * @param {Object} filter - filtro Mongo completo (inclui _id, condição de status atual, etc)
+ * @param {mongoose.ClientSession} [mongoSession] - sessão Mongo ativa, para rodar dentro de uma transação
  */
-export async function cancelAppointments(filter) {
+export async function cancelAppointments(filter, mongoSession = null) {
     return Appointment.updateMany(
         filter,
-        { operationalStatus: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
+        { operationalStatus: 'canceled', updatedAt: new Date(), _fromWriteGateway: true },
+        mongoSession ? { session: mongoSession } : undefined
     );
 }

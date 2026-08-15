@@ -27,6 +27,8 @@ import { syncAffectedViews } from '../../projections/syncAffectedViews.js';
 import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 import { restorePackageOnCancel } from '../../../domain/package/restorePackageOnCancel.js';
 import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleService.js';
+import { isPaymentFinanciallyReversible } from '../../../domain/payment/isPaymentFinanciallyReversible.js';
+import { isInsuranceAppointment } from '../../../utils/appointmentMapper.js';
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -71,6 +73,62 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
   const activePayments = appointment.session || appointment._id
     ? await Payment.find(activePaymentFilter).session(session).lean()
     : [];
+
+  // 🚨 GUARDAS DE CONVÊNIO (2026-08-15, auditoria do fluxo Convênio/card da guia):
+  // escopadas por billingType==='convenio' — não muda nada pra particular/pacote/
+  // liminar, que já têm o comportamento atual testado e intencional (ver
+  // tests/integration/appointment-cancel-restore-roundtrip.test.js, "assimetria
+  // documentada" — cancelar completed lá é permitido de propósito).
+  //
+  // Zero mutação em ambos os casos: os dois guards rodam ANTES de qualquer
+  // escrita (payment/session/appointment), então um bloqueio aqui não deixa
+  // rastro nenhum.
+  // 🚨 FIX (review 2026-08-15): billingType==='convenio' sozinho não pega
+  // convênio legado identificado só por insuranceGuide/paymentMethod/
+  // insuranceProvider (dado histórico sem billingType preenchido corretamente).
+  // isInsuranceAppointment (utils/appointmentMapper.js) é a mesma função que
+  // routes/appointment.v2.js usa pra decidir o roteamento em PATCH /:id/complete
+  // — reaproveitada aqui pra classificar de forma consistente com o resto do
+  // sistema, não uma heurística nova.
+  const isConvenio = isInsuranceAppointment(appointment);
+  if (isConvenio) {
+    // 1) completed é terminal pro convênio — já disparou consumo da guia
+    // (InsuranceGuide.usedSessions) e liquidação de Payment via completeSessionV2,
+    // sem contrapartida simétrica de reversão. Cancelar por aqui deixaria a guia
+    // com sessão consumida mas o Appointment/Session/Payment como cancelado —
+    // divergência permanente entre InsuranceGuide.usedSessions e a agenda real.
+    if (appointment.operationalStatus === 'completed') {
+      throw buildError(
+        'Sessão de convênio já concluída não pode ser cancelada. Consumo da guia e faturamento já foram processados.',
+        409,
+        'CONVENIO_CANNOT_CANCEL_COMPLETED'
+      );
+    }
+
+    // 2) Payment com financeiro avançado (faturado/pago/parcial/recebido) —
+    // cancelar aqui reverteria Appointment/Session sem tocar no Payment (o loop
+    // abaixo cancela IGUAL, mas o dinheiro já foi processado do lado do
+    // convênio) — mesmo critério do replan in-place e da cascata de guia.
+    // Busca dedicada por appointment/session (arquitetura V2 atual — vínculo
+    // sempre presente); `activePayments` cobre o mesmo critério mas é usado
+    // pelo loop de cancelamento abaixo, mantido separado de propósito.
+    const guardPayments = await Payment.find({
+      $or: [
+        { appointment: appointment._id },
+        ...(appointment.session ? [{ session: appointment.session }] : [])
+      ]
+    }).session(session).lean();
+    const advancedPayments = guardPayments.filter(p => !isPaymentFinanciallyReversible(p));
+    if (advancedPayments.length > 0) {
+      const err = buildError(
+        'Cancelamento bloqueado: Payment de convênio com financeiro avançado (faturado/pago/parcial/recebido). Resolva manualmente (conciliação financeira) antes de cancelar.',
+        409,
+        'CONVENIO_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT'
+      );
+      err.blockedBy = advancedPayments.map(p => ({ id: p._id, status: p.status, insuranceStatus: p.insurance?.status }));
+      throw err;
+    }
+  }
 
   for (const pay of activePayments) {
     // Cancela pagamentos avulsos e outros, exceto recibos de pacote já quitados

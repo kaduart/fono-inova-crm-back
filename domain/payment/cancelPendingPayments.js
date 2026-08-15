@@ -15,10 +15,12 @@ import Payment from '../../models/Payment.js';
  * de outro PR, não de uma extração pura.
  *
  * @param {Object} filter - filtro Mongo completo
+ * @param {mongoose.ClientSession} [mongoSession] - sessão Mongo ativa, para rodar dentro de uma transação
  */
-export async function cancelPendingPayments(filter) {
+export async function cancelPendingPayments(filter, mongoSession = null) {
     return Payment.updateMany(
         filter,
-        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
+        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true },
+        mongoSession ? { session: mongoSession } : undefined
     );
 }

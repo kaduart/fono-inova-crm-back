@@ -38,6 +38,14 @@ import { buildInsuranceSession } from '../../domain/session/sessionFactory.js';
 import { checkSlotConflicts } from './generateInsurancePlanSessions.js';
 import { executeWithSession as bulkCancelAppointments } from '../appointment/commands/bulkCancelAppointmentsCommand.js';
 import { executeWithSession as restoreCanceledAppointment } from '../appointment/commands/restoreCanceledAppointmentCommand.js';
+import { isPaymentFinanciallyReversible } from '../../domain/payment/isPaymentFinanciallyReversible.js';
+
+// Reexportado por compatibilidade — código/testes existentes importam esse
+// predicate a partir daqui. Fonte real: domain/payment/isPaymentFinanciallyReversible.js
+// (extraído pra lá em 2026-08-15 pra permitir reuso em cancelAppointmentCommand.js
+// sem criar import circular: replanInsurancePlanSessions.js → bulkCancelAppointmentsCommand.js
+// → cancelAppointmentCommand.js).
+export { isPaymentFinanciallyReversible };
 
 const REPOSITIONABLE_STATUSES = ['pre_agendado', 'scheduled'];
 const CANCELED_STATUSES = ['canceled', 'cancelled'];
@@ -62,37 +70,6 @@ function dateStrOf(date) {
 
 function slotKeyOf(dateStr, time) {
   return `${dateStr}T${time}`;
-}
-
-/**
- * Predicate canônico: um Payment só pode ser considerado "reversível" (seguro
- * pra restaurar um Appointment cancelado vinculado a ele) se não houver NENHUMA
- * evidência de avanço no ciclo financeiro do convênio. Testável isoladamente.
- *
- * Nota: o fluxo canônico de cancelamento (cancelAppointmentCommand) sempre marca
- * o Payment como status='canceled' — então o check de BLOCKED_STATUSES aqui só
- * pega o caso de dado legado/fora do fluxo canônico. Quem realmente detecta
- * avanço financeiro pós-cancelamento são os campos `insurance.*`, que o
- * cancelamento nunca limpa (preserva o histórico de faturamento/recebimento).
- */
-export function isPaymentFinanciallyReversible(payment) {
-  if (!payment) return true; // sem payment vinculado, nada a reverter
-  const BLOCKED_STATUSES = ['billed', 'paid', 'partial', 'refunded'];
-  if (BLOCKED_STATUSES.includes(payment.status)) return false;
-  const insuranceStatus = payment.insurance?.status;
-  if (insuranceStatus === 'billed' || insuranceStatus === 'received') return false;
-  if ((payment.insurance?.receivedAmount || 0) > 0) return false;
-  if (payment.insurance?.billedAt || payment.insurance?.receivedAt) return false;
-  // 🚨 FIX (review 2026-08-14, bloqueador 2): um Payment pode ter sido marcado
-  // 'canceled' pelo fluxo de cancelamento (que nunca reverte campos de
-  // recebimento já gravados) mantendo evidência de que o dinheiro já entrou —
-  // paidAt/financialDate são preenchidos exatamente quando isso acontece (ver
-  // transitionPaymentStatus em services/paymentStatusService.js). Sem checar
-  // isso aqui, um Payment 'canceled'/insurance.status='pending' mas com
-  // paidAt preenchido passava como reversível.
-  if (payment.paidAt) return false;
-  if (payment.financialDate) return false;
-  return true;
 }
 
 /** Série cronológica exata esperada: `count` datas NOVAS, a partir de

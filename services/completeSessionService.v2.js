@@ -311,6 +311,27 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         throw new Error(`SESSION_ALREADY_PAID: Esta sessão faz parte de um pacote ${typeLabel} e não pode gerar saldo devedor`);
     }
 
+    // 🛡️ GUARD (patch operacional Particular/Pacote): pacote já inativado não pode
+    // consumir mais sessões. Roda ANTES da FASE 2 — nenhuma escrita em Appointment/
+    // Session/Package/Payment acontece se o pacote estiver canceled (a única mutação
+    // até aqui é o lock isProcessing=true da FASE 1, revertido pelo finally do catch
+    // desta função em qualquer erro, incluindo este). Escopado a billingType==='particular'
+    // de propósito — não altera Convênio/Liminar.
+    if (billingType === 'particular' && packageId && ['canceled', 'cancelled'].includes(packageData?.status)) {
+        // Este guard roda antes do bloco transacional/catch da FASE 2. Portanto,
+        // precisa liberar explicitamente o lock adquirido na FASE 1; caso
+        // contrário, a sessão fica presa como isProcessing=true para sempre.
+        await Appointment.updateOne(
+            { _id: appointmentId },
+            { $set: { isProcessing: false }, $unset: { processingStartedAt: 1 } }
+        );
+        const err = new Error('Pacote inativo — não é possível concluir sessões deste pacote.');
+        err.status = 409;
+        err.statusCode = 409;
+        err.code = 'PACKAGE_INACTIVE';
+        throw err;
+    }
+
     // ============================================================
     // FASE 2: TRANSAÇÃO DE MUTAÇÃO
     // ============================================================

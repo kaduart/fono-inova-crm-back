@@ -35,7 +35,7 @@ import InsuranceGuide from '../../models/InsuranceGuide.js';
 import InsurancePlan from '../../models/InsurancePlan.js';
 import Package from '../../models/Package.js';
 import { executeWithSession as cancelAppointmentWithSession } from '../../services/appointment/commands/cancelAppointmentCommand.js';
-import { isPaymentFinanciallyReversible } from '../../services/schedule/replanInsurancePlanSessions.js';
+import { isPaymentFinanciallyReversible } from '../payment/isPaymentFinanciallyReversible.js';
 
 const NEVER_TOUCHED_STATUSES = ['completed'];
 const ALREADY_CANCELED_STATUSES = ['canceled', 'cancelled'];

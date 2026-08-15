@@ -115,6 +115,64 @@ export async function execute(appointmentId, options = {}) {
   // ============================================================
   let currentStatus = appointment.operationalStatus;
 
+  // 0. Pre-agendado → Scheduled
+  // 🚨 FIX (2026-08-15, achado real: "Concluir" pelo card da guia de
+  // convênio): appointments de convênio nascem `pre_agendado` (invariante #1,
+  // DOMAIN_INVARIANTS.md — gerados por generateInsurancePlanSessions.js/
+  // replanInsurancePlanSessions.js) e o fluxo antigo nunca cobria esse estado
+  // — QUALQUER sessão recém-gerada (o caso mais comum, não uma exceção) caía
+  // no guard final como 422 INVALID_STATE. Mesmo padrão compare-and-set do
+  // passo "Canceled → Scheduled" logo abaixo.
+  if (currentStatus === 'pre_agendado') {
+    const scheduled = await Appointment.findOneAndUpdate(
+      {
+        _id: appointmentId,
+        operationalStatus: 'pre_agendado',
+      },
+      {
+        $set: {
+          operationalStatus: 'scheduled',
+          clinicalStatus: 'pending',
+          updatedAt: new Date(),
+          _fromInsuranceOrchestrator: true,
+        },
+        $push: {
+          history: buildHistoryEntry({
+            action: 'insurance_flow_schedule',
+            from: 'pre_agendado',
+            to: 'scheduled',
+            actorId,
+          }),
+        },
+      },
+      { new: true }
+    );
+
+    if (!scheduled) {
+      // Pode ter sido completado ou alterado concorrentemente
+      const current = await Appointment.findById(appointmentId).lean();
+      if (current?.operationalStatus === 'completed') {
+        return {
+          success: true,
+          idempotent: true,
+          appointmentId: appointmentId.toString(),
+          correlationId,
+          transitions,
+          completeResult: null,
+        };
+      }
+      throw buildError(
+        'Não foi possível agendar o atendimento pré-agendado',
+        409,
+        'SCHEDULE_FAILED'
+      );
+    }
+
+    transitions.push({ entity: 'Appointment', from: 'pre_agendado', to: 'scheduled', timestamp: new Date() });
+    currentStatus = 'scheduled';
+    console.log(`[InsuranceFlowOrchestrator] 📅 Pré-agendado normalizado: ${appointmentId} → scheduled`);
+  }
+
   // 1. Canceled → Scheduled (recuperação)
   if (isCancelledStatus(currentStatus)) {
     const reactivated = await Appointment.findOneAndUpdate(

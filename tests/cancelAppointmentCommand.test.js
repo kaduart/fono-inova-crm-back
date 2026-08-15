@@ -76,6 +76,24 @@ function mockPaymentFind(payments) {
   });
 }
 
+// 🚨 FIX (2026-08-15): faltava mock de Payment.findById — desde a migração pra
+// PaymentLifecycleService.cancelPayment (PR C.1, "usa lifecycle centralizado"),
+// o cancelamento de Payment não passa mais por Payment.findByIdAndUpdate; ele
+// busca via Payment.findById (chamado 1x dentro de cancelPayment, 1x de novo
+// dentro de transitionPaymentStatus) e persiste via payment.save(). Sem esse
+// mock, `query.session(mongoSession)` estourava "Cannot read properties of
+// undefined" porque Payment.findById (vi.fn() sem retorno configurado)
+// devolvia undefined.
+function mockPaymentFindById(doc) {
+  const fullDoc = { canceledAt: null, canceledReason: null, save: vi.fn().mockResolvedValue(true), ...doc };
+  const queryLike = {
+    session: vi.fn().mockReturnThis(),
+    then: (resolve) => resolve(fullDoc),
+  };
+  Payment.findById.mockReturnValue(queryLike);
+  return fullDoc;
+}
+
 function makeAppointment(overrides = {}) {
   return {
     _id: 'appt-1',
@@ -158,13 +176,16 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     mockPaymentFind([
       { _id: 'pay-1', status: 'paid', kind: 'appointment_payment' }
     ]);
+    const paymentDoc = mockPaymentFindById({ _id: 'pay-1', status: 'paid' });
 
     await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
 
     expect(restorePackageOnCancel).not.toHaveBeenCalled();
     expect(Package.findByIdAndUpdate).not.toHaveBeenCalled();
-    // avulso: Payment não-package_receipt é cancelado normalmente
-    expect(Payment.findByIdAndUpdate).toHaveBeenCalled();
+    // avulso: Payment não-package_receipt é cancelado normalmente — via
+    // PaymentLifecycleService.cancelPayment (não mais Payment.findByIdAndUpdate)
+    expect(paymentDoc.status).toBe('canceled');
+    expect(paymentDoc.save).toHaveBeenCalled();
   });
 
   it('cancela TODOS os Payments ativos vinculados à mesma session, não apenas appointment.payment', async () => {
@@ -182,15 +203,15 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     mockPaymentFind([
       { _id: 'pay-ativo', status: 'pending', kind: 'session_payment' },
     ]);
+    const paymentDoc = mockPaymentFindById({ _id: 'pay-ativo', status: 'pending' });
 
     await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
 
-    const cancelledIds = Payment.findByIdAndUpdate.mock.calls
-      .filter(c => c[1].$set?.status === 'canceled')
-      .map(c => c[0]);
-
-    expect(cancelledIds).toContain('pay-ativo');
-    expect(cancelledIds).toHaveLength(1);
+    // pay-legado (apontado por appointment.payment) NUNCA aparece na query de
+    // Payments ativos (mockPaymentFind só retorna pay-ativo) — só pay-ativo é cancelado.
+    expect(paymentDoc._id).toBe('pay-ativo');
+    expect(paymentDoc.status).toBe('canceled');
+    expect(paymentDoc.save).toHaveBeenCalledTimes(2); // 1x em transitionPaymentStatus, 1x em cancelPayment (canceledAt/canceledReason)
   });
 
   it('idempotência: appointment já canceled retorna sem tocar em Session/Payment/Package', async () => {
@@ -201,5 +222,129 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
     expect(result.operationalStatus).toBe('canceled');
     expect(restorePackageOnCancel).not.toHaveBeenCalled();
     expect(Session.findById).not.toHaveBeenCalled();
+  });
+
+  // 🚨 Guardas de convênio (2026-08-15, auditoria do fluxo Convênio/card da guia)
+  describe('guardas de convênio', () => {
+    it('convênio completed: bloqueia com 409 CONVENIO_CANNOT_CANCEL_COMPLETED, zero mutação', async () => {
+      const appt = makeAppointment({
+        billingType: 'convenio',
+        operationalStatus: 'completed',
+        serviceType: 'session',
+        package: null,
+      });
+      mockAppointmentFindById(appt);
+      mockPaymentFind([]);
+
+      await expect(
+        executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession)
+      ).rejects.toMatchObject({ code: 'CONVENIO_CANNOT_CANCEL_COMPLETED', status: 409 });
+
+      expect(Session.findById).not.toHaveBeenCalled();
+      expect(Appointment.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(Payment.findById).not.toHaveBeenCalled();
+    });
+
+    it('convênio com Payment faturado: bloqueia com 409 CONVENIO_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT, zero mutação', async () => {
+      const appt = makeAppointment({
+        billingType: 'convenio',
+        operationalStatus: 'scheduled',
+        serviceType: 'session',
+        package: null,
+        payment: 'pay-1',
+      });
+      mockAppointmentFindById(appt);
+      mockPaymentFind([
+        { _id: 'pay-1', status: 'pending', insurance: { status: 'billed', billedAt: new Date() } },
+      ]);
+
+      await expect(
+        executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession)
+      ).rejects.toMatchObject({ code: 'CONVENIO_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT', status: 409 });
+
+      expect(Session.findById).not.toHaveBeenCalled();
+      expect(Appointment.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(Payment.findById).not.toHaveBeenCalled(); // nunca chegou a tentar cancelar o Payment
+    });
+
+    it('convênio pendente com Payment reversível: cancela normalmente (guarda não afeta o caminho feliz)', async () => {
+      const appt = makeAppointment({
+        billingType: 'convenio',
+        operationalStatus: 'scheduled',
+        serviceType: 'session',
+        package: null,
+        payment: 'pay-1',
+      });
+      mockAppointmentFindById(appt);
+      Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
+      mockPaymentFind([
+        { _id: 'pay-1', status: 'pending', insurance: { status: 'pending' } },
+      ]);
+      const paymentDoc = mockPaymentFindById({ _id: 'pay-1', status: 'pending' });
+
+      const result = await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
+
+      expect(result.operationalStatus).toBe('canceled');
+      expect(paymentDoc.status).toBe('canceled');
+    });
+
+    it('convênio LEGADO sem billingType (identificado só por insuranceGuide): guarda de completed ainda bloqueia — isInsuranceAppointment, não billingType===convenio', async () => {
+      // 🚨 FIX (review 2026-08-15, bloqueador 1): billingType==='convenio' sozinho
+      // não pegava convênio legado sem esse campo preenchido corretamente —
+      // isInsuranceAppointment (utils/appointmentMapper.js) também classifica
+      // por paymentMethod/insuranceProvider/insuranceGuide.
+      const appt = makeAppointment({
+        billingType: undefined,
+        paymentMethod: undefined,
+        insuranceProvider: undefined,
+        insuranceGuide: 'guide-legado-1',
+        operationalStatus: 'completed',
+        serviceType: 'session',
+        package: null,
+      });
+      mockAppointmentFindById(appt);
+      mockPaymentFind([]);
+
+      await expect(
+        executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession)
+      ).rejects.toMatchObject({ code: 'CONVENIO_CANNOT_CANCEL_COMPLETED', status: 409 });
+
+      expect(Appointment.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('convênio LEGADO identificado só por paymentMethod (sem billingType): guarda de Payment avançado também bloqueia', async () => {
+      const appt = makeAppointment({
+        billingType: undefined,
+        paymentMethod: 'convenio',
+        insuranceProvider: undefined,
+        insuranceGuide: undefined,
+        operationalStatus: 'scheduled',
+        serviceType: 'session',
+        package: null,
+        payment: 'pay-1',
+      });
+      mockAppointmentFindById(appt);
+      mockPaymentFind([
+        { _id: 'pay-1', status: 'pending', insurance: { status: 'received', receivedAmount: 80 } },
+      ]);
+
+      await expect(
+        executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession)
+      ).rejects.toMatchObject({ code: 'CONVENIO_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT', status: 409 });
+    });
+
+    it('particular/pacote completed: NÃO é bloqueado — comportamento intencional preservado (fora de escopo)', async () => {
+      const appt = makeAppointment({
+        billingType: 'particular',
+        operationalStatus: 'completed',
+        serviceType: 'package_session',
+      });
+      mockAppointmentFindById(appt);
+      Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
+
+      const result = await executeWithSession('appt-1', { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
+
+      expect(result.operationalStatus).toBe('canceled');
+    });
   });
 });

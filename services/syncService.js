@@ -346,10 +346,18 @@ export const handlePackageSessionUpdate = async (appointment, action, user, deta
     }
 };
 
+// 🚨 FIX (patch operacional Particular/Pacote): remainingSessions é um virtual do
+// Mongoose (totalSessions - sessionsDone, ver models/Package.js) — nunca deve ser
+// persistido. O $inc antigo aqui gravava um campo real por baixo do virtual (o
+// mesmo "ghost field" que domain/package/rebuildPackageFromSource.js já precisa
+// $unset como correção conhecida), fazendo o valor divergir da fórmula real
+// sempre que uma sessão de pacote era cancelada/trocada de pacote. `sessions`
+// (array de vínculo real) continua sendo mantido normalmente; a checagem de
+// capacidade abaixo lê o virtual sem escrever nele.
 async function adjustPackageSession(packageId, appointmentId, operation, session) {
     const update = operation === 'add'
-        ? { $inc: { remainingSessions: -1 }, $push: { sessions: appointmentId } }
-        : { $inc: { remainingSessions: 1 }, $pull: { sessions: appointmentId } };
+        ? { $push: { sessions: appointmentId } }
+        : { $pull: { sessions: appointmentId } };
 
     const result = await Package.findByIdAndUpdate(packageId, update, { session });
 

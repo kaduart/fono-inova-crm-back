@@ -1825,7 +1825,7 @@ export const settlePackagePayments = async (req, res) => {
     logger.info('[PackageV2] Débitos quitados', {
       packageId,
       settledCount: payments.length,
-      totalSettled
+      totalSettled: totalToSettle
     });
 
     res.json({
@@ -1833,7 +1833,7 @@ export const settlePackagePayments = async (req, res) => {
       message: `${payments.length} débito(s) quitado(s)`,
       data: {
         settledCount: payments.length,
-        totalSettled,
+        totalSettled: totalToSettle,
         newBalance: balance
       }
     });

@@ -86,6 +86,35 @@ export async function execute(id, payload, user) {
         );
       }
 
+      // 🛡️ GUARD (patch operacional Particular/Pacote): sessão de pacote já
+      // concluída não pode ter data/hora/profissional reescritos por aqui — o
+      // histórico (sessionsDone incrementado, Payment liquidado) já foi
+      // processado. Cancelamento/estorno de sessão completed continua exatamente
+      // como está, via cancelAppointmentCommand (rota e command separados, não
+      // passam por este update genérico). packageId já é imutável incondicionalmente
+      // (guard acima), então só falta cobrir date/time/doctor aqui.
+      if (appointment.serviceType === 'package_session' && appointment.operationalStatus === 'completed') {
+        const normalizeDateOnly = (value) => {
+          if (!value) return null;
+          const d = new Date(value);
+          return isNaN(d.getTime()) ? String(value) : d.toISOString().substring(0, 10);
+        };
+        const incomingDoctorIdForGuard = payload.doctorId ? toObjectIdString(payload.doctorId) : null;
+        const attemptsDateChange = safeBody.date !== undefined
+          && normalizeDateOnly(safeBody.date) !== normalizeDateOnly(appointment.date);
+        const attemptsTimeChange = safeBody.time !== undefined && safeBody.time !== appointment.time;
+        const attemptsDoctorChange = incomingDoctorIdForGuard !== null
+          && incomingDoctorIdForGuard !== toObjectIdString(appointment.doctor);
+
+        if (attemptsDateChange || attemptsTimeChange || attemptsDoctorChange) {
+          throw buildError(
+            'Sessão de pacote já concluída não pode ter data, horário ou profissional alterados — o histórico é imutável após a conclusão.',
+            409,
+            'PACKAGE_SESSION_COMPLETED_IMMUTABLE'
+          );
+        }
+      }
+
       const updateData = {
         ...safeBody,
         // Merge com o snapshot existente para não apagar campos não enviados nesta edição

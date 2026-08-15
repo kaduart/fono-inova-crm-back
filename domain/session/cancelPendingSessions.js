@@ -6,10 +6,12 @@ import Session from '../../models/Session.js';
  * Filtro é responsabilidade do chamador.
  *
  * @param {Object} filter - filtro Mongo completo
+ * @param {mongoose.ClientSession} [mongoSession] - sessão Mongo ativa, para rodar dentro de uma transação
  */
-export async function cancelPendingSessions(filter) {
+export async function cancelPendingSessions(filter, mongoSession = null) {
     return Session.updateMany(
         filter,
-        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true }
+        { status: 'canceled', updatedAt: new Date(), _fromWriteGateway: true },
+        mongoSession ? { session: mongoSession } : undefined
     );
 }
