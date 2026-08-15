@@ -13,6 +13,9 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
 import { startWorkersByGroup, stopAllWorkers } from '../index.js';
+import { startCron } from '../../config/cronManager.js';
+import { scheduleGmbCron } from '../../jobs/gmbScheduledTasks.js';
+import { scheduleGmbAutoRepublish } from '../../crons/gmbAutoRepublish.js';
 
 dotenv.config();
 
@@ -141,6 +144,16 @@ async function startCoreWorkers() {
         })
     );
     console.log(`[Workers Core] ${activeWorkers.length} workers ativos`);
+
+    // GMB: geração de posts (com imagem) + envio ao Make + republicação de posts
+    // expirados. Precisa rodar fora do processo web (crm-backend) — geração de
+    // imagem bloqueia o event loop que serve API/Socket.IO — por isso mora aqui,
+    // no processo parent do crm-worker (Start Command real, ver DOMAIN_INVARIANTS.md
+    // #24). NÃO mover para o child do WhatsApp (whatsapp-child.js): rodar geração
+    // de imagem no mesmo processo do Puppeteer arrisca competir por memória/CPU
+    // com a sessão WhatsApp real.
+    startCron('gmbCron', () => scheduleGmbCron());
+    startCron('gmbAutoRepublish', () => scheduleGmbAutoRepublish());
 }
 
 // ─── Gerenciador do child process ──────────────────────────────────────────

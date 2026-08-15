@@ -137,9 +137,7 @@ import financialReconciliationRoutes from './routes/internal/financial/reconcili
 import financialSSERoutes from './routes/financial/sse.routes.js';
 import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
-import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
 import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
-import { scheduleGmbAutoRepublish } from './crons/gmbAutoRepublish.js';  // 🔄 NOVO: Republicação automática de posts GMB
 import { initGmbRetryWorker } from './config/bullConfigGmbRetry.js';  // 🔄 Worker de retry para publicações GMB
 import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
@@ -246,15 +244,15 @@ console.log("🖥️ INSTANCE INFO:", {
 // scheduleMonthlyCommissions();
 // iniciarJobConfirmacao();
 // scheduleDailyAlerts();
-// 🚫 GMB crons desabilitados no web server para evitar bloqueio do event loop
-// (geração de imagens + posts pesam no mesmo processo da API/Socket.IO).
-// Rodar no crm-worker ou em serviço dedicado.
-// scheduleGmbCron();
-// scheduleLandingPageDailyPosts();
-// scheduleGmbAutoRepublish();
+// 🚫 GMB crons NÃO rodam aqui: geração de imagem bloquearia o event loop que
+// serve API/Socket.IO. Ficavam comentados apontando para "rodar no crm-worker",
+// mas nunca foram de fato ligados lá — cron ficou órfão de 20/07 até 14/08/2026
+// (ver Changelog do DOMAIN_INVARIANTS.md). Religado em
+// workers/entrypoints/whatsapp-only.js (Start Command real do crm-worker).
+// scheduleLandingPageDailyPosts(); — mesmo problema, ainda não religado.
 // scheduleDailyScoring()
 
-console.log('🚫 GMB/LandingPage crons desabilitados no web server — rodam no worker dedicado');
+console.log('🚫 GMB crons rodam no crm-worker (whatsapp-only.js) — não no web server. LandingPage ainda órfão.');
 
 
 
