@@ -57,6 +57,22 @@ router.post('/add-admin', auth, async (req, res) => {
   }
 });
 
+router.get('/secretaries', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).send({ error: 'Não autorizado a listar secretárias' });
+  }
+
+  try {
+    const secretaries = await Admin.find({ role: 'secretary' })
+      .select('_id fullName email role')
+      .sort({ fullName: 1 })
+      .lean();
+    return res.json({ success: true, data: secretaries });
+  } catch (error) {
+    return res.status(500).send({ error: error.message });
+  }
+});
+
 /* router.post('/add', auth, async (req, res) => {
 
   if (req.user.role !== 'admin') {

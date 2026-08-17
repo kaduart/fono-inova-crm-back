@@ -110,6 +110,7 @@ describe('PR2 — helpers de inativação (regressão)', () => {
       date: new Date(),
       totalValue: 800,
       totalSessions: 5,
+      paymentType: 'per-session',
     });
 
     // já realizada — não pode ser tocada

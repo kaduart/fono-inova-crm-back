@@ -154,6 +154,18 @@ async function startCoreWorkers() {
     // com a sessão WhatsApp real.
     startCron('gmbCron', () => scheduleGmbCron());
     startCron('gmbAutoRepublish', () => scheduleGmbAutoRepublish());
+
+    // Diagnóstico de boot: os secrets de geração de post (OpenAI/Cloudinary) e
+    // envio ao Make nunca precisaram existir neste processo antes — historicamente
+    // só rodavam no crm-backend. Loga logo no start (não espera o cron disparar)
+    // porque os checks internos falham OU pulam em silêncio sem isso.
+    const gmbEnvVars = ['MAKE_WEBHOOK_URL', 'OPENAI_API_KEY', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+    const gmbEnvMissing = gmbEnvVars.filter((key) => !process.env[key]);
+    if (gmbEnvMissing.length > 0) {
+        console.warn(`[GMB] ⚠️ Env var(es) ausente(s) NESTE processo (crm-worker): ${gmbEnvMissing.join(', ')} — copiar do serviço crm-backend no dashboard do Render, senão geração de post/imagem/envio ao Make falha ou fica muda`);
+    } else {
+        console.log('[GMB] ✅ Env vars necessárias presentes neste processo.');
+    }
 }
 
 // ─── Gerenciador do child process ──────────────────────────────────────────

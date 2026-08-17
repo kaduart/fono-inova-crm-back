@@ -133,6 +133,71 @@ describe('Package V2 — guards operacionais', () => {
     }
   );
 
+  it.each(['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed'])(
+    'inativa appointment e session com status %s',
+    async (status) => {
+      const base = await seedPackage();
+      const target = await seedTrio({ ...base, status });
+      await request(app).post(`/api/v2/packages/${base.pkg._id}/inactivate`).expect(200);
+      expect((await Appointment.findById(target.appointmentId)).operationalStatus).toBe('canceled');
+      expect((await Session.findById(target.sessionId)).status).toBe('canceled');
+      expect((await Payment.findById(target.paymentId)).status).toBe('canceled');
+    }
+  );
+
+  it('preserva payment pago de atendimento ainda não concluído e é idempotente', async () => {
+    const base = await seedPackage();
+    const target = await seedTrio(base);
+    await Payment.findByIdAndUpdate(target.paymentId, { status: 'paid' });
+    await request(app).post(`/api/v2/packages/${base.view._id}/inactivate`).expect(200);
+    expect((await Payment.findById(target.paymentId)).status).toBe('paid');
+    const second = await request(app).post(`/api/v2/packages/${base.pkg._id}/inactivate`).expect(200);
+    expect(second.body.data).toMatchObject({ sessionsCanceled: 0, appointmentsCanceled: 0, paymentsCanceled: 0 });
+  });
+
+  it('faz rollback integral quando a etapa final da inativação falha', async () => {
+    const base = await seedPackage();
+    const target = await seedTrio(base);
+    const spy = vi.spyOn(Package, 'findByIdAndUpdate').mockRejectedValueOnce(new Error('falha intermediária simulada'));
+    await request(app).post(`/api/v2/packages/${base.pkg._id}/inactivate`).expect(500);
+    spy.mockRestore();
+    expect((await Package.findById(base.pkg._id)).status).toBe('active');
+    expect((await Appointment.findById(target.appointmentId)).operationalStatus).toBe('scheduled');
+    expect((await Session.findById(target.sessionId)).status).toBe('scheduled');
+    expect((await Payment.findById(target.paymentId)).status).toBe('pending');
+  });
+
+  it('DELETE remove pacote vazio, suas duas formas de view e publica PACKAGE_DELETED', async () => {
+    const base = await seedPackage();
+    await request(app).delete(`/api/v2/packages/${base.view._id}`).expect(200);
+    expect(await Package.findById(base.pkg._id)).toBeNull();
+    expect(await PackagesView.countDocuments({ packageId: base.pkg._id })).toBe(0);
+    expect(await mongoose.connection.collection('outboxes').countDocuments({ eventType: 'PACKAGE_DELETED', aggregateId: base.pkg._id.toString() })).toBe(1);
+  });
+
+  it.each(['appointment', 'session', 'payment'])(
+    'DELETE bloqueia pacote que possui %s com zero mutação',
+    async (kind) => {
+      const base = await seedPackage();
+      const target = await seedTrio(base);
+      if (kind !== 'appointment') await Appointment.collection.deleteMany({ package: base.pkg._id });
+      if (kind !== 'session') await Session.collection.deleteMany({ package: base.pkg._id });
+      if (kind !== 'payment') await Payment.collection.deleteMany({ package: base.pkg._id });
+      const response = await request(app).delete(`/api/v2/packages/${base.pkg._id}`).expect(409);
+      expect(response.body.error.code).toBe('PACKAGE_DELETE_REQUIRES_EMPTY_PACKAGE');
+      expect(await Package.findById(base.pkg._id)).toBeTruthy();
+      expect(await mongoose.connection.collection('outboxes').countDocuments({ eventType: 'PACKAGE_DELETED', aggregateId: base.pkg._id.toString() })).toBe(0);
+      void target;
+    }
+  );
+
+  it.each([{ sessionsDone: 1 }, { totalPaid: 100 }])('DELETE bloqueia efeito agregado %s', async (change) => {
+    const base = await seedPackage();
+    await Package.findByIdAndUpdate(base.pkg._id, change);
+    const response = await request(app).delete(`/api/v2/packages/${base.pkg._id}`).expect(409);
+    expect(response.body.error.code).toBe('PACKAGE_DELETE_REQUIRES_EMPTY_PACKAGE');
+  });
+
   it('bulk detecta conflito externo antes de qualquer escrita', async () => {
     const base = await seedPackage();
     const target = await seedTrio(base);

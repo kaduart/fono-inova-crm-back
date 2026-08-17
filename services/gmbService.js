@@ -1465,47 +1465,40 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   if (!skipHF && process.env.HUGGINGFACE_API_KEY) {
     try {
       console.log('🔄 [1/3] HuggingFace FLUX.1-schnell...');
-      const hfResponse = await fetch(
-        'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: { width: 1024, height: 1024, num_inference_steps: 4, guidance_scale: 0 }
-          }),
-          signal: AbortSignal.timeout(90000),
+      // HF descontinuou o endpoint clássico (api-inference.huggingface.co) e depois
+      // também aposentou o model direto em hf-inference — hoje o roteamento pra
+      // providers (nscale/fal-ai/together/wavespeed) muda sem aviso. Usa o SDK
+      // oficial (@huggingface/inference) com provider:'auto' em vez de fetch cru
+      // pra não quebrar de novo a cada migração de rota deles.
+      const { InferenceClient } = await import('@huggingface/inference');
+      const client = new InferenceClient(process.env.HUGGINGFACE_API_KEY);
+      const blob = await client.textToImage({
+        model: 'black-forest-labs/FLUX.1-schnell',
+        inputs: prompt,
+        provider: 'auto',
+      });
+      const fotoBuf = Buffer.from(await blob.arrayBuffer());
+      console.log(`✅ HuggingFace FLUX.1-schnell → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+      const url = await uploadFotoLimpa(fotoBuf);
+      if (url) {
+        console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
+        try {
+          const publicId = url.split('/upload/').pop()?.split('.')[0] || url.split('/').pop().split('.')[0];
+          await saveImageToBank({
+            url,
+            publicId: `fono-inova/gmb/${publicId.split('/').pop()}`,
+            especialidade: especialidade.id,
+            tema: postContent.split('\n')[0].substring(0, 50) || 'general',
+            provider: 'hf-flux-schnell',
+            prompt,
+            gmbPostId: options.postId || null
+          });
+        } catch (e) {
+          console.warn('⚠️ [HF] Não foi possível salvar no ImageBank:', e.message);
         }
-      );
-      if (hfResponse.ok) {
-        const fotoBuf = Buffer.from(await hfResponse.arrayBuffer());
-        console.log(`✅ HuggingFace FLUX.1-schnell → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        const url = await uploadFotoLimpa(fotoBuf);
-        if (url) {
-          console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
-          try {
-            const publicId = url.split('/upload/').pop()?.split('.')[0] || url.split('/').pop().split('.')[0];
-            await saveImageToBank({
-              url,
-              publicId: `fono-inova/gmb/${publicId.split('/').pop()}`,
-              especialidade: especialidade.id,
-              tema: postContent.split('\n')[0].substring(0, 50) || 'general',
-              provider: 'hf-flux-schnell',
-              prompt,
-              gmbPostId: options.postId || null
-            });
-          } catch (e) {
-            console.warn('⚠️ [HF] Não foi possível salvar no ImageBank:', e.message);
-          }
-          return { url, provider: 'hf-flux-schnell' };
-        }
-        console.warn('⚠️ HF: Upload Cloudinary falhou, tentando próximo provider...');
-      } else {
-        console.warn('⚠️ HF retornou erro:', hfResponse.status);
+        return { url, provider: 'hf-flux-schnell' };
       }
+      console.warn('⚠️ HF: Upload Cloudinary falhou, tentando próximo provider...');
     } catch (e) {
       console.warn('⚠️ HF falhou:', e.message);
     }
@@ -1926,6 +1919,23 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
             const url = await uploadFoto(fotoBuf);
             if (url) {
               console.log(`✅ Freepik OK: ${url.substring(0, 60)}...`);
+
+              // Salva no ImageBank para reúso futuro (HF e fal.ai já fazem isso — faltava aqui)
+              try {
+                const publicId = url.split('/upload/').pop()?.split('.')[0] || url.split('/').pop().split('.')[0];
+                await saveImageToBank({
+                  url,
+                  publicId: `fono-inova/gmb/${publicId.split('/').pop()}`,
+                  especialidade: especialidade.id,
+                  tema: postContent.split('\n')[0].substring(0, 50) || 'general',
+                  provider: 'freepik-ai',
+                  prompt: freepikPrompt,
+                  gmbPostId: options.postId || null
+                });
+              } catch (e) {
+                console.warn('⚠️ [Freepik] Não foi possível salvar no ImageBank:', e.message);
+              }
+
               return { url, provider: 'freepik-ai' };
             }
             console.warn('⚠️ Freepik: Upload Cloudinary falhou, tentando próximo provider...');

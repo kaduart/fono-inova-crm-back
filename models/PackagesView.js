@@ -45,6 +45,10 @@ const packagesViewSchema = new mongoose.Schema({
   },
   specialty: String,
   sessionType: String,
+  paymentType: {
+    type: String,
+    enum: ['per-session', 'full', 'partial', 'prepaid']
+  },
   sessionsPerWeek: Number,
   durationMonths: Number,
   frequencyInterval: {

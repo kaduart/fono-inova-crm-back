@@ -24,7 +24,7 @@ import { EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { buildError } from '../../appointment/commands/_helpers.js';
 
 export async function execute(packageId, user, mongoSession = null) {
-  return await runTransactionWithRetry(async (session) => {
+  const operation = async (session) => {
     const pkgObjectId = new mongoose.Types.ObjectId(packageId);
 
     // Resolve o packageId real se o ID passado for de uma view
@@ -129,7 +129,9 @@ export async function execute(packageId, user, mongoSession = null) {
       },
       message: 'Pacote deletado com sucesso'
     };
-  }, mongoSession);
+  };
+
+  return mongoSession ? operation(mongoSession) : runTransactionWithRetry(operation);
 }
 
 export default { execute };

@@ -12,6 +12,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { authorize } from '../middleware/auth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PackagesView from '../models/PackagesView.js';
@@ -20,6 +21,7 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import PatientBalance from '../models/PatientBalance.js';
+import PackageCreditTransfer from '../models/PackageCreditTransfer.js';
 import { cancelAppointments } from '../domain/appointment/cancelAppointments.js';
 import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
 import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
@@ -498,18 +500,17 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const view = await PackagesView.findById(new mongoose.Types.ObjectId(id)).lean();
-    if (!view) return res.status(404).json(formatError('Pacote não encontrado'));
-
-    const realPackageId = view.packageId || id;
+    const requestedId = new mongoose.Types.ObjectId(id);
+    const view = await PackagesView.findById(requestedId).lean();
+    const realPackageId = view?.packageId || requestedId;
     const pkgObjectId = new mongoose.Types.ObjectId(realPackageId);
 
     const pkg = await Package.findById(pkgObjectId).lean();
     if (!pkg) return res.status(404).json(formatError('Pacote não encontrado'));
     const inactiveStatuses = ['canceled', 'cancelled']; // 'cancelled' mantido até a migration rodar em todo o histórico
-    if (inactiveStatuses.includes(pkg.status)) {
-      return res.status(400).json(formatError('Pacote já está inativo'));
-    }
+    if (inactiveStatuses.includes(pkg.status)) return res.json(formatSuccess({
+      packageId: realPackageId.toString(), sessionsCanceled: 0, appointmentsCanceled: 0, paymentsCanceled: 0
+    }));
 
     if (pkg.paymentType !== 'per-session') {
       return res.status(409).json(formatError(
@@ -518,7 +519,7 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       ));
     }
 
-    const pendingStatuses = ['scheduled', 'pending', 'unpaid', 'booked'];
+    const pendingStatuses = ['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed'];
 
     // 🛡️ PATCH OPERACIONAL (2026-08-15): a cascata inteira (Session + Appointment +
     // Payment + status do Package) agora roda dentro de UMA transação. Antes eram
@@ -534,12 +535,9 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
         err.status = 404;
         throw err;
       }
-      if (inactiveStatuses.includes(freshPkg.status)) {
-        const err = new Error('Pacote já está inativo');
-        err.status = 400;
-        err.code = 'PACKAGE_ALREADY_INACTIVE';
-        throw err;
-      }
+      if (inactiveStatuses.includes(freshPkg.status)) return {
+        sessionsCanceled: 0, appointmentsCanceled: 0, paymentsCanceled: 0, alreadyInactive: true
+      };
 
       // Sessões em aberto (não completadas e não canceladas)
       if (freshPkg.paymentType !== 'per-session') {
@@ -549,28 +547,29 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
         throw err;
       }
 
-      const pendingSessions = await Session.find({
+      const pendingAppointments = await Appointment.find({
         package: pkgObjectId,
-        status: { $in: pendingStatuses }
-      }).session(mongoSession).lean();
-      const pendingSessionIds = pendingSessions.map(s => s._id);
+        operationalStatus: { $in: pendingStatuses }
+      }).select('_id').session(mongoSession).lean();
+      const appointmentIds = pendingAppointments.map(item => item._id);
+      const linkedSessions = appointmentIds.length
+        ? await Session.find({ appointmentId: { $in: appointmentIds }, status: { $ne: 'completed' } })
+          .select('_id').session(mongoSession).lean()
+        : [];
+      const sessionIds = linkedSessions.map(item => item._id);
 
-      // Appointments vinculados a essas sessões
-      const appointmentIds = pendingSessions
-        .map(s => s.appointmentId)
-        .filter(Boolean);
-
-      const sessionsResult = await cancelPendingSessions({ _id: { $in: pendingSessionIds } }, mongoSession);
-      const appointmentsResult = appointmentIds.length > 0
-        ? await cancelAppointments({
-            _id: { $in: appointmentIds },
-            operationalStatus: { $nin: ['completed', 'canceled', 'cancelled'] }
-          }, mongoSession)
+      const sessionsResult = sessionIds.length
+        ? await cancelPendingSessions({ _id: { $in: sessionIds }, status: { $ne: 'completed' } }, mongoSession)
         : { modifiedCount: 0 };
-      const paymentsResult = await cancelPendingPayments(
-        { package: pkgObjectId, status: { $in: ['pending', 'scheduled'] } },
-        mongoSession
-      );
+      const appointmentsResult = appointmentIds.length
+        ? await cancelAppointments({ _id: { $in: appointmentIds }, operationalStatus: { $in: pendingStatuses } }, mongoSession)
+        : { modifiedCount: 0 };
+      const paymentLinks = [];
+      if (appointmentIds.length) paymentLinks.push({ appointment: { $in: appointmentIds } });
+      if (sessionIds.length) paymentLinks.push({ session: { $in: sessionIds } });
+      const paymentsResult = paymentLinks.length
+        ? await cancelPendingPayments({ $or: paymentLinks, status: { $in: ['pending', 'scheduled'] } }, mongoSession)
+        : { modifiedCount: 0 };
 
       // Só muda o status do Package DEPOIS da cascata, dentro da mesma transação.
       await Package.findByIdAndUpdate(
@@ -593,7 +592,7 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
 
     logger.info('[PackageV2] Package inactivated', {
       correlationId,
-      packageId: id,
+      packageId: realPackageId.toString(),
       sessionsCanceled,
       appointmentsCanceled,
       paymentsCanceled
@@ -822,181 +821,45 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
 // Cancela/deleta pacote (event-driven)
 // ============================================
 
-router.delete('/:id', flexibleAuth, async (req, res) => {
-  const startTime = Date.now();
+router.delete('/:id', flexibleAuth, authorize(['admin']), async (req, res) => {
   const correlationId = `pkg_delete_${Date.now()}`;
-  const { id } = req.params;
-  
   try {
-    logger.info('[PackageV2] Deleting package', { correlationId, packageId: id });
-
-    const viewId = new mongoose.Types.ObjectId(id);
-
-    // Busca a view para obter o packageId real do Package
-    const view = await PackagesView.findById(viewId).lean();
-    const realPackageId = view?.packageId || viewId; // fallback pro próprio id
-    const pkgObjectId = new mongoose.Types.ObjectId(realPackageId);
-
-    // 🛡️ Hardening: Executa em sequência para evitar write conflicts
-    // e adiciona retry logic para transações
-    let retries = 0;
-    const maxRetries = 3;
-    let lastError;
-
-    while (retries < maxRetries) {
-      const mongoSession = await mongoose.startSession();
-      try {
-        await mongoSession.startTransaction();
-
-        // Busca o pacote ANTES de deletar (para ajustar PatientBalance)
-        const pkgResult = await Package.findById(pkgObjectId).session(mongoSession);
-
-        if (!pkgResult) {
-          logger.warn('[PackageV2] Package not found for deletion', { correlationId, packageId: id });
-        }
-
-        if (pkgResult) {
-          // Coleta IDs de relacionados para ajuste do PatientBalance
-          const appointmentIds = (await Appointment.find({ package: pkgObjectId })
-            .select('_id')
-            .session(mongoSession)
-            .lean()).map(a => a._id.toString());
-          const sessionIds = (await Session.find({ package: pkgObjectId })
-            .select('_id')
-            .session(mongoSession)
-            .lean()).map(s => s._id.toString());
-
-          // 🏦 REVERTE transações do PatientBalance associadas ao pacote
-          const patientBalance = await PatientBalance.findOne({ patient: pkgResult.patient }).session(mongoSession);
-          if (patientBalance) {
-            const packageIdStr = pkgObjectId.toString();
-            let balanceChanged = false;
-
-            for (const tx of patientBalance.transactions) {
-              const txPackageId = tx.settledByPackageId?.toString?.();
-              const txAppointmentId = tx.appointmentId?.toString?.();
-              const txSessionId = tx.sessionId?.toString?.();
-
-              const belongsToPackage = txPackageId === packageIdStr;
-              const belongsToRelated = appointmentIds.includes(txAppointmentId) || sessionIds.includes(txSessionId);
-
-              if (!belongsToPackage && !belongsToRelated) continue;
-              if (tx.isDeleted) continue;
-
-              if (tx.type === 'credit') {
-                // Reverte crédito: aumenta o saldo devedor
-                patientBalance.currentBalance += tx.amount;
-                patientBalance.totalCredited = Math.max(0, (patientBalance.totalCredited || 0) - tx.amount);
-                tx.isDeleted = true;
-                tx.deletedAt = new Date();
-                tx.deleteReason = `Pacote ${packageIdStr} deletado`;
-                balanceChanged = true;
-              } else if (tx.type === 'debit' && tx.isPaid) {
-                // Reabre débito quitado pelo pacote
-                tx.isPaid = false;
-                tx.paidAmount = 0;
-                tx.settledByPackageId = null;
-                patientBalance.currentBalance += tx.amount;
-                balanceChanged = true;
-              } else if (tx.type === 'debit' && !tx.isPaid) {
-                // Débito não quitado associado ao pacote é removido (soft delete)
-                tx.isDeleted = true;
-                tx.deletedAt = new Date();
-                tx.deleteReason = `Pacote ${packageIdStr} deletado`;
-                patientBalance.currentBalance = Math.max(0, patientBalance.currentBalance - tx.amount);
-                patientBalance.totalDebited = Math.max(0, (patientBalance.totalDebited || 0) - tx.amount);
-                balanceChanged = true;
-              }
-            }
-
-            if (balanceChanged) {
-              patientBalance.lastTransactionAt = new Date();
-              await patientBalance.save({ session: mongoSession });
-              logger.info('[PackageV2] PatientBalance ajustado após deleção de pacote', {
-                correlationId,
-                packageId: id,
-                patientId: pkgResult.patient.toString(),
-                newBalance: patientBalance.currentBalance
-              });
-            }
-          }
-
-          // Deleta relacionados
-          await Appointment.deleteMany({ package: pkgObjectId }).session(mongoSession);
-          await Session.deleteMany({ package: pkgObjectId }).session(mongoSession);
-          await Payment.deleteMany({ package: pkgObjectId }).session(mongoSession);
-          await Package.deleteOne({ _id: pkgObjectId }).session(mongoSession);
-        }
-
-        // Remove a view pelo _id dela
-        await PackagesView.findByIdAndDelete(viewId).session(mongoSession);
-
-        await mongoSession.commitTransaction();
-
-        const duration = Date.now() - startTime;
-
-        logger.info('[PackageV2] Package deleted', {
-          correlationId,
-          packageId: id,
-          found: !!pkgResult,
-          retry: retries
-        });
-
-        return res.status(200).json(formatSuccess({
-          packageId: id,
-          deleted: !!pkgResult,
-          retry: retries
-        }, { duration: `${duration}ms`, correlationId }));
-
-      } catch (retryError) {
-        await mongoSession.abortTransaction();
-        lastError = retryError;
-        
-        // Se for write conflict, faz retry com backoff
-        if (retryError.message?.includes('Write conflict') || 
-            retryError.message?.includes('transaction')) {
-          retries++;
-          const delay = Math.pow(2, retries) * 100; // 200ms, 400ms, 800ms
-          logger.warn('[PackageV2] Write conflict, retrying...', { 
-            correlationId, 
-            retry: retries, 
-            delay,
-            error: retryError.message 
-          });
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        
-        // Outro erro, não faz retry
-        throw retryError;
-      } finally {
-        await mongoSession.endSession();
+    const requestedId = new mongoose.Types.ObjectId(req.params.id);
+    const result = await runTransactionWithRetry(async (mongoSession) => {
+      const view = await PackagesView.findById(requestedId).session(mongoSession).lean();
+      const realPackageId = new mongoose.Types.ObjectId(view?.packageId || requestedId);
+      const pkg = await Package.findById(realPackageId).session(mongoSession).lean();
+      if (!pkg) {
+        const error = new Error('Pacote não encontrado');
+        error.status = 404;
+        error.code = 'PACKAGE_NOT_FOUND';
+        throw error;
       }
-    }
 
-    // Se esgotou retries
-    throw lastError || new Error('Max retries exceeded');
-
-  } catch (error) {
-    logger.error('[PackageV2] Error deleting package', { 
-      correlationId, 
-      error: error.message,
-      code: error.code 
+      const [appointments, sessions, payments, transfer, balanceEffect] = await Promise.all([
+        Appointment.exists({ package: realPackageId }).session(mongoSession),
+        Session.exists({ $or: [{ package: realPackageId }, { transferredToPackage: realPackageId }] }).session(mongoSession),
+        Payment.exists({ package: realPackageId }).session(mongoSession),
+        PackageCreditTransfer.exists({ $or: [{ sourcePackageId: realPackageId }, { targetPackageId: realPackageId }] }).session(mongoSession),
+        PatientBalance.exists({ 'transactions.settledByPackageId': realPackageId }).session(mongoSession),
+      ]);
+      const embeddedHistory = (pkg.appointments?.length || 0) > 0 || (pkg.sessions?.length || 0) > 0 || (pkg.payments?.length || 0) > 0;
+      const hasEffects = appointments || sessions || payments || transfer || balanceEffect || embeddedHistory
+        || Number(pkg.sessionsDone || 0) > 0 || Number(pkg.totalPaid || 0) > 0;
+      if (hasEffects) {
+        const error = new Error('Somente pacotes completamente vazios podem ser excluídos. Inative o pacote para preservar o histórico.');
+        error.status = 409;
+        error.code = 'PACKAGE_DELETE_REQUIRES_EMPTY_PACKAGE';
+        throw error;
+      }
+      return deletePackageCommand.execute(realPackageId.toString(), req.user, mongoSession);
     });
-    
-    // Retorna erro específico para write conflict
-    if (error.message?.includes('Write conflict')) {
-      return res.status(409).json(formatError(
-        'WRITE_CONFLICT', 
-        'Conflito de escrita detectado. Por favor, tente novamente.', 
-        { correlationId, retryable: true }
-      ));
-    }
-    
-    res.status(500).json(formatError(
-      'INTERNAL_ERROR', 
-      'Erro ao deletar pacote', 
-      { correlationId, message: error.message }
+
+    return res.status(200).json(formatSuccess(result.data, { correlationId }));
+  } catch (error) {
+    logger.error('[PackageV2] Safe delete failed', { correlationId, error: error.message, code: error.code });
+    return res.status(error.status || 500).json(formatError(
+      error.code || 'PACKAGE_DELETE_FAILED', error.message || 'Erro ao deletar pacote', { correlationId }
     ));
   }
 });

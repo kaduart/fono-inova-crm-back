@@ -27,7 +27,7 @@ const ImageBankSchema = new mongoose.Schema({
     index: true,
     enum: [
       'fonoaudiologia',
-      'psicologia', 
+      'psicologia',
       'terapia_ocupacional',
       'fisioterapia',
       'psicomotricidade',
@@ -37,6 +37,15 @@ const ImageBankSchema = new mongoose.Schema({
       'psicopedagogia_clinica',
       'freio_lingual',
       'autismo',
+      'tdah',
+      'fono_adulto',
+      'fonoaudiologia_anapolis',
+      'psicologia_infantil_anapolis',
+      'terapia_ocupacional_anapolis',
+      'psicomotricidade_anapolis',
+      'teste_da_linguinha_anapolis',
+      'fisioterapia_infantil_anapolis',
+      'avaliacao_neuropsicologica_anapolis',
       'general'
     ]
   },

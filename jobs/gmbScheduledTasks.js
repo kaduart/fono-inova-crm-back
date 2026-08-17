@@ -159,7 +159,10 @@ export const scheduleGmbCron = () => {
     // Enviar posts agendados ao Make — a cada 30 min durante horário comercial
     cron.schedule('*/30 8-22 * * *', async () => {
         try {
-            if (!makeService.isMakeConfigured()) return;
+            if (!makeService.isMakeConfigured()) {
+                console.warn('⚠️ [GMB] MAKE_WEBHOOK_URL não configurado neste processo — pulando envio ao Make (posts continuam acumulando como "scheduled")');
+                return;
+            }
 
             // Limpa posts travados em publishing_retry — reseta apenas se ainda abaixo do limite
             // gmbPostId ausente = Google não confirmou; retryCount < 4 = evita loop infinito

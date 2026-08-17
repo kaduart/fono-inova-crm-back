@@ -195,6 +195,7 @@ export async function buildPackageView(packageId, options = {}) {
       status: normalizeStatus(pkg.status),
       specialty: pkg.specialty,
       sessionType: pkg.sessionType,
+      paymentType: pkg.paymentType,
       sessionsPerWeek: pkg.sessionsPerWeek,
       durationMonths: pkg.durationMonths,
       frequencyInterval: pkg.frequencyInterval || 'weekly',
