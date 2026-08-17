@@ -1372,6 +1372,14 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 // ─────────────────────────────────────────────
 import { findExistingImage, saveImageToBank } from './imageBankService.js';
 
+// Teto de reúso antes de forçar geração nova via IA. Estava em 50 e nunca era
+// atingido (usageCount médio real ficava em ~20 por especialidade, pool de
+// 10-30 imagens) — o banco passou mar-jul/2026 inteiro sem receber imagem
+// nova nenhuma, porque a busca (ordenada por menos usada primeiro) sempre
+// achava candidata abaixo do teto antes de cair no fallback de geração
+// (achado 2026-08-17, ver back/scripts/seedImageBank.mjs).
+const IMAGE_BANK_MAX_REUSE = 15;
+
 export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto', options = {}) {
   // Limpar conteúdo para evitar confusões da IA (ex: "freio lingual" -> planta!)
   const conteudoLimpo = (postContent || especialidade.foco)
@@ -1395,13 +1403,13 @@ export async function generateImageForEspecialidade(especialidade, postContent =
       const { findExistingImage: findImg } = await import('./imageBankService.js');
       const tema = postContent.split('\n')[0].substring(0, 50);
 
-      // Tenta primeiro por tema específico (limite alto de reúso)
-      let existingImages = await findImg(especialidade.id, tema, { limit: 10, maxUsage: 50 });
+      // Tenta primeiro por tema específico
+      let existingImages = await findImg(especialidade.id, tema, { limit: 10, maxUsage: IMAGE_BANK_MAX_REUSE });
 
       // Fallback: qualquer imagem da especialidade se não achou por tema
       if (!existingImages) {
         console.log('🔄 [ImageBank] Sem match de tema — buscando qualquer imagem da especialidade...');
-        existingImages = await findImg(especialidade.id, '', { limit: 10, maxUsage: 50 });
+        existingImages = await findImg(especialidade.id, '', { limit: 10, maxUsage: IMAGE_BANK_MAX_REUSE });
       }
 
       if (existingImages) {

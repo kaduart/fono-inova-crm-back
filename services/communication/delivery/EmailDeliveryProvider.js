@@ -15,8 +15,6 @@ import CommunicationPackage from '../../../models/CommunicationPackage.js';
 import Convenio from '../../../models/Convenio.js';
 import { sendEmailWithAttachments } from '../../emailService.js';
 import { getEmailProviderName } from '../../email/EmailProviderFactory.js';
-import { validatePackageDocuments } from '../CommunicationPackageService.js';
-import { getRequiredDocumentTypes } from '../InsuranceRuleService.js';
 import { SUBJECT_BY_PURPOSE } from './_deliveryUtils.js';
 
 const QUEUE_NAME = 'communication-email';
@@ -267,18 +265,10 @@ export class EmailDeliveryProvider {
       return await fail('Destinatário não informado e convênio não possui e-mail padrão');
     }
 
-    if (pkg.attachments.length === 0) {
-      return await fail('Pacote de envio não possui documentos');
-    }
-
-    const requiredDocumentTypes = getRequiredDocumentTypes(rules);
-    if (requiredDocumentTypes.length > 0) {
-      const validation = await validatePackageDocuments(communicationId, requiredDocumentTypes);
-      if (!validation.valid) {
-        return await fail(`Documentos obrigatórios pendentes: ${validation.missing.join(', ')}`);
-      }
-    }
-
+    // Documentos (obrigatórios ou não) são só um checklist informativo no front —
+    // o usuário pode querer mandar só o corpo do e-mail, sem nenhum anexo, então o
+    // envio não pode ser bloqueado aqui por pacote vazio ou por documento obrigatório
+    // faltando (pedido 2026-08-17: botão de envio sempre ativo/aceita).
     const attachments = pkg.attachments.map(a => ({
       documentId: a.documentId?.toString(),
       url: a.url,
