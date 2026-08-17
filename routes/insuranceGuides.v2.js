@@ -733,7 +733,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
       : { insuranceGuide: guideObjId };
 
     let appointments = await Appointment.find(query)
-      .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom cancelReason')
+      .select('date time status operationalStatus serviceType sessionType specialty notes doctor professionalName createdAt rescheduledFrom cancelReason')
       .populate('doctor', 'fullName')
       .sort({ date: -1 })
       .lean();
