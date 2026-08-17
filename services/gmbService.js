@@ -1004,7 +1004,7 @@ REGRAS INEGOCIÁVEIS:
 3. Mencionar idade ${idadeCrianca} anos no hook (obrigatório)
 4. Escrever como se estivesse respondendo uma busca do Google
 5. Usar frases que pais realmente digitam no Google
-``}`},
+`},
       {
         role: 'user',
         content: `Crie post estratégico para ${especialidade.nome}.
@@ -1019,7 +1019,7 @@ ${nichoInstrucoes}
 - Gatilho dominante: ${gatilhoPrincipal}
 - Ângulo emocional: ${anguloSelecionado}
 - Tom obrigatório: ${configAngulo.tom}
-- CTA obrigatória: "${ctaSelecionada}"
+- CTA obrigatória: "${ctaFinal}"
 
 🎯 SEO OBRIGATÓRIO:
 - Inclua a palavra-chave "${keywordSEO}" naturalmente no meio do texto (densidade 1-2%)
@@ -1092,7 +1092,7 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
     };
 
   } catch (error) {
-    console.error('❌ Erro OpenAI:', error.message);
+    console.error('❌ Erro OpenAI:', error.message, error.stack);
     return generateFallbackPost(especialidade);
   }
 }
