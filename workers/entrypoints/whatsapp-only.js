@@ -16,6 +16,7 @@ import { startWorkersByGroup, stopAllWorkers } from '../index.js';
 import { startCron } from '../../config/cronManager.js';
 import { scheduleGmbCron } from '../../jobs/gmbScheduledTasks.js';
 import { scheduleGmbAutoRepublish } from '../../crons/gmbAutoRepublish.js';
+import { startPostGenerationWorker } from '../postGenerationWorker.js';
 
 dotenv.config();
 
@@ -154,6 +155,11 @@ async function startCoreWorkers() {
     // com a sessão WhatsApp real.
     startCron('gmbCron', () => scheduleGmbCron());
     startCron('gmbAutoRepublish', () => scheduleGmbAutoRepublish());
+
+    // Fila "post-generation" (trigger manual de post via SocialMedia/GMB): nunca
+    // teve consumidor em lugar nenhum do repo — todo post manual ficava preso em
+    // status 'processing' pra sempre. Ver workers/postGenerationWorker.js.
+    activeWorkers.push(startPostGenerationWorker());
 
     // Diagnóstico de boot: os secrets de geração de post (OpenAI/Cloudinary) e
     // envio ao Make nunca precisaram existir neste processo antes — historicamente
