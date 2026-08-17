@@ -20,23 +20,50 @@ import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
  * Envios ao Make: logo após cada criação + checks periódicos
  */
 
+// BRT = UTC-3 fixo (Brasil não usa horário de verão desde 2019). O processo
+// roda em UTC (Render) — usar new Date().setHours() direto calculava o
+// horário em UTC, não em Brasília: um post "das 12h" virava 12h UTC (9h BRT,
+// já passado quando o cron roda às 11h30 BRT) e caía sempre pro dia seguinte,
+// nunca batendo com a janela de scheduledAt<=now do envio ao Make.
+const BRT_OFFSET_HOURS = 3;
+
+function scheduledAtBRT(horaBRT, minutoBRT) {
+    const now = new Date();
+    const scheduledAt = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+        horaBRT + BRT_OFFSET_HOURS, minutoBRT, 0, 0
+    ));
+    if (scheduledAt < now) {
+        scheduledAt.setUTCDate(scheduledAt.getUTCDate() + 1);
+    }
+    return scheduledAt;
+}
+
+function startOfTodayBRT() {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), BRT_OFFSET_HOURS, 0, 0, 0));
+}
+
+function getHourBRT(date) {
+    return (new Date(date).getUTCHours() - BRT_OFFSET_HOURS + 24) % 24;
+}
+
 // Helper: verifica se já existe post próximo deste horário
 async function jaExistePostHoje(horarioStr) {
     const [hora] = horarioStr.split(':').map(Number);
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const hoje = startOfTodayBRT();
     const amanha = new Date(hoje);
-    amanha.setDate(amanha.getDate() + 1);
-    
+    amanha.setUTCDate(amanha.getUTCDate() + 1);
+
     // Busca posts criados hoje com scheduledAt próximo deste horário (±1h)
     const posts = await GmbPost.find({
         createdAt: { $gte: hoje, $lt: amanha },
         status: { $in: ['ready', 'scheduled', 'published', 'processing'] }
     }).select('scheduledAt');
-    
+
     return posts.some(post => {
         if (!post.scheduledAt) return false;
-        const postHora = new Date(post.scheduledAt).getHours();
+        const postHora = getHourBRT(post.scheduledAt);
         return Math.abs(postHora - hora) <= 1; // Dentro de 1h
     });
 }
@@ -48,16 +75,10 @@ async function criarPostParaHorario(horario, funil) {
             console.log(`ℹ️ [GMB] Já existe post para ${horario}, pulando`);
             return null;
         }
-        
+
         const [hora, minuto] = horario.split(':').map(Number);
-        const scheduledAt = new Date();
-        scheduledAt.setHours(hora, minuto, 0, 0);
-        
-        // Se horário já passou, agenda para amanhã
-        if (scheduledAt < new Date()) {
-            scheduledAt.setDate(scheduledAt.getDate() + 1);
-        }
-        
+        const scheduledAt = scheduledAtBRT(hora, minuto);
+
         console.log(`🚀 [GMB] Criando post ${horario} (funil: ${funil})...`);
         
         const result = await gmbService.createDailyPost({ 
