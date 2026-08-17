@@ -418,6 +418,20 @@ export const ESPECIALIDADES = [
   }
 ];
 
+// Variantes *_anapolis (SEO local) → especialidade base equivalente.
+// Mesma cena clínica, só o texto/gancho muda pro público de Anápolis — usado
+// no fallback de emergência de imagem pra não deixar o post sem nenhuma imagem
+// só porque a variante local ainda não tem banco próprio (ver ImageBank).
+const EMERGENCY_FALLBACK_ALIAS = {
+  fonoaudiologia_anapolis: 'fonoaudiologia',
+  psicologia_infantil_anapolis: 'psicologia',
+  terapia_ocupacional_anapolis: 'terapia_ocupacional',
+  psicomotricidade_anapolis: 'psicomotricidade',
+  teste_da_linguinha_anapolis: 'freio_lingual',
+  fisioterapia_infantil_anapolis: 'fisioterapia',
+  avaliacao_neuropsicologica_anapolis: 'neuropsicologia',
+};
+
 /**
  * 🎯 HORÁRIOS ESTRATÉGICOS
  */
@@ -1962,7 +1976,21 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
   // Evita que o post fique bloqueado quando todos os providers de IA estão indisponíveis
   if (especialidade?.id) {
     try {
-      const emergencyImg = await findExistingImage(especialidade.id, '', { limit: 5, maxUsage: 999 });
+      let emergencyImg = await findExistingImage(especialidade.id, '', { limit: 5, maxUsage: 999 });
+
+      // Sem imagem pra essa especialidade exata? As variantes *_anapolis (SEO local)
+      // são a MESMA cena clínica da especialidade base, só o texto/gancho muda —
+      // usa a imagem da base em vez de deixar o post sem nenhuma
+      if (!emergencyImg) {
+        const baseEspecialidadeId = EMERGENCY_FALLBACK_ALIAS[especialidade.id];
+        if (baseEspecialidadeId) {
+          emergencyImg = await findExistingImage(baseEspecialidadeId, '', { limit: 5, maxUsage: 999 });
+          if (emergencyImg) {
+            console.warn(`⚠️ [GMB] "${especialidade.id}" sem imagem própria — usando imagem da especialidade base "${baseEspecialidadeId}"`);
+          }
+        }
+      }
+
       if (emergencyImg?.url) {
         console.warn(`⚠️ [GMB] Usando imagem de emergência do ImageBank (${especialidade.id}): ${emergencyImg.url.substring(0, 60)}...`);
         return { url: emergencyImg.url, provider: 'imagebank-emergency' };
