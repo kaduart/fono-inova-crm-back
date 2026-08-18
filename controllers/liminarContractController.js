@@ -374,8 +374,8 @@ export async function generateSessions(req, res) {
     });
   }
 
-  if (mode === 'append' && (!weeks || weeks < 1 || weeks > 12)) {
-    return res.status(400).json({ error: 'weeks deve estar entre 1 e 12 no modo append' });
+  if (mode === 'append' && (!weeks || weeks < 1 || weeks > 52)) {
+    return res.status(400).json({ error: 'weeks deve estar entre 1 e 52 no modo append' });
   }
 
   let result;
@@ -501,22 +501,59 @@ export async function updateTherapy(req, res) {
     // + mesmo time de um slot novo → o algoritmo acha que já existe sessão futura pro slot
     // novo e ancora a próxima geração na sessão mais distante da especialidade, pulando meses).
     const timeSyncMap = new Map(); // appointmentId (string) -> novo time
-    const toCancelIds = [];        // appointments cujo dia da semana saiu do plano
+    const toCancelIds = [];        // appointments cujo dia da semana saiu do plano (ou não tem mais slot correspondente nesse dia)
     if (slots !== undefined) {
-      const newDayToTime = new Map((slots || []).map(s => [s.dayOfWeek, s.time]));
+      // 🚨 FIX (2026-08-18): um dia da semana pode ter mais de um slot (ex: duas sessões
+      // na sexta). O Map<dayOfWeek, time> anterior tinha chave única e colapsava slots
+      // duplicados do mesmo dia — o último sobrescrevia o(s) anterior(es), sincronizando
+      // TODOS os appointments pendentes daquele dia pro mesmo horário e deixando o
+      // gap-check de generateLiminarSessions.js cego pro slot perdido (achou que não
+      // tinha nenhum appointment nesse horário e gerou duplicado por cima do outro slot).
+      // Agora é Map<dayOfWeek, time[]>, casando cada appointment pendente com o slot novo
+      // de horário mais próximo do que ele já tinha, sem repetir o mesmo slot em dois
+      // appointments diferentes.
+      const newTimesByDay = new Map();
+      for (const s of (slots || [])) {
+        if (!newTimesByDay.has(s.dayOfWeek)) newTimesByDay.set(s.dayOfWeek, []);
+        newTimesByDay.get(s.dayOfWeek).push(s.time);
+      }
 
+      const toMinutes = (time) => {
+        const [h, m] = time.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const affectedByDay = new Map();
       for (const a of affected) {
         const dow = new Date(a.date).getDay();
-        const newTime = newDayToTime.get(dow);
-        if (newTime) {
-          // 🚨 FIX (2026-07-16): sempre sincroniza, mesmo se newTime === Appointment.time — não
-          // depende de detectar mudança no Appointment. Espelha o mesmo bug/fix já identificado
-          // em routes/insurancePlans.v2.js: o Appointment pode já estar correto (de uma sync
-          // anterior a este fix) enquanto a Session correspondente ficou presa no horário antigo
-          // pra sempre, porque só o Appointment era comparado aqui e a Session nunca era tocada.
-          timeSyncMap.set(String(a._id), newTime);
-        } else {
-          toCancelIds.push(a._id);
+        if (!affectedByDay.has(dow)) affectedByDay.set(dow, []);
+        affectedByDay.get(dow).push(a);
+      }
+
+      for (const [dow, dayAppointments] of affectedByDay) {
+        const availableTimes = [...(newTimesByDay.get(dow) || [])];
+        // Ordem estável e previsível: appointment de horário mais cedo casa primeiro.
+        const sorted = [...dayAppointments].sort((a, b) => a.time.localeCompare(b.time));
+        for (const a of sorted) {
+          if (availableTimes.length === 0) {
+            toCancelIds.push(a._id);
+            continue;
+          }
+          const currentMinutes = toMinutes(a.time);
+          let closestIdx = 0;
+          let closestDiff = Infinity;
+          availableTimes.forEach((time, idx) => {
+            const diff = Math.abs(toMinutes(time) - currentMinutes);
+            if (diff < closestDiff) { closestDiff = diff; closestIdx = idx; }
+          });
+          const [claimedTime] = availableTimes.splice(closestIdx, 1);
+          // 🚨 FIX (2026-07-16): sempre sincroniza, mesmo se claimedTime === Appointment.time —
+          // não depende de detectar mudança no Appointment. Espelha o mesmo bug/fix já
+          // identificado em routes/insurancePlans.v2.js: o Appointment pode já estar correto
+          // (de uma sync anterior a este fix) enquanto a Session correspondente ficou presa
+          // no horário antigo pra sempre, porque só o Appointment era comparado aqui e a
+          // Session nunca era tocada.
+          timeSyncMap.set(String(a._id), claimedTime);
         }
       }
 
@@ -527,7 +564,7 @@ export async function updateTherapy(req, res) {
         });
       }
       if (toCancelIds.length > 0) {
-        logger.info('Cancelando appointments órfãos (dia da semana removido do plano)', {
+        logger.info('Cancelando appointments órfãos (dia da semana removido ou sem slot correspondente no plano)', {
           contractId, planId, specialty,
           appointmentIds: toCancelIds.map(String)
         });

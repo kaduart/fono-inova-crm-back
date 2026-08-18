@@ -1,13 +1,20 @@
 import mongoose from 'mongoose';
 
+// Lista canônica sincronizada com front/src/utils/types/types.ts (THERAPY_TYPES).
+// 'neuropediatria' fica mantido só por compatibilidade com planos antigos
+// gravados antes da unificação de chave para 'neuroped' (achado 2026-08-18) —
+// não usar em dado novo.
 const SPECIALTIES = [
   'fonoaudiologia',
   'terapia_ocupacional',
   'psicologia',
   'fisioterapia',
+  'pediatria',
+  'neuroped',
   'psicomotricidade',
   'musicoterapia',
   'psicopedagogia',
+  'neuropsicologia',
   'neuropediatria'
 ];
 

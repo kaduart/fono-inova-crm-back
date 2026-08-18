@@ -6,6 +6,8 @@ import LiminarContract from '../../models/LiminarContract.js';
 import { buildDateTime, buildDayRange } from '../../utils/datetime.js';
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildLiminarSession } from '../../domain/session/sessionFactory.js';
+import { executeWithSession as restoreCanceledAppointment } from '../appointment/commands/restoreCanceledAppointmentCommand.js';
+import { syncSessionFromAppointment } from '../appointmentSessionSyncService.js';
 
 const BLOCKING_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed', 'completed'];
 const CANCELED_STATUSES = ['canceled', 'cancelled', 'force_cancelled'];
@@ -25,7 +27,7 @@ function getWeekStart(date) {
 
 function emptyResult(contract, extra = {}) {
   return {
-    created: 0, skipped: 0, total: 0, conflicts: 0, conflictSlots: [], totalCost: 0,
+    created: 0, revived: 0, skipped: 0, total: 0, conflicts: 0, conflictSlots: [], totalCost: 0,
     saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance,
     saldoInsuficiente: false, slotsBloqueadosPorSaldo: 0,
     limiteSessoesAtingido: false, slotsBloqueadosPorLimiteSessoes: 0,
@@ -43,7 +45,7 @@ function conflictError(message, conflictSlots = []) {
 
 /** Append-only. Decision reads and all writes run in one Mongo transaction. */
 export async function generateLiminarSessions({
-  planId, mode = 'append', weeks = 4, skipHolidays = true, specialties,
+  planId, mode = 'append', weeks = 4, startDate, skipHolidays = true, specialties,
 }) {
   if (mode !== 'append') {
     const error = new Error('LIMINAR_RESET_DISABLED');
@@ -100,7 +102,20 @@ export async function generateLiminarSessions({
       anchor.setHours(0, 0, 0, 0);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const minDate = anchor > today ? anchor : today;
+      // startDate é opcional e nunca pode empurrar a geração pra trás de hoje —
+      // só serve pra adiar o início (ex: gerar já a partir do mês que vem).
+      // Sem ele, ou se vier inválido/no passado, o comportamento é idêntico ao
+      // de antes (âncora = maior entre o início do plano e hoje).
+      let requestedStart = null;
+      if (startDate) {
+        const parsed = new Date(startDate);
+        if (!Number.isNaN(parsed.getTime())) {
+          parsed.setHours(0, 0, 0, 0);
+          requestedStart = parsed;
+        }
+      }
+      const floor = requestedStart && requestedStart > today ? requestedStart : today;
+      const minDate = anchor > floor ? anchor : floor;
       const candidates = [];
 
       for (const [specialty, config] of activeEntries) {
@@ -113,6 +128,23 @@ export async function generateLiminarSessions({
           const existingDates = new Set(existing
             .filter(item => new Date(item.date).getDay() === configuredSlot.dayOfWeek)
             .map(item => new Date(item.date).toISOString().split('T')[0]));
+
+          // Pool de canceladas reaproveitáveis PARA ESTE SLOT EXATO (mesmo dia
+          // da semana + horário originais) — não pra especialidade inteira.
+          // 🚨 FIX (2026-08-18): a versão anterior compartilhava um único pool
+          // por especialidade entre todos os slots, então uma quarta-feira
+          // cancelada (dia removido do plano) podia ser "reaproveitada" pra
+          // preencher uma sexta-feira só porque a especialidade batia — trocando
+          // o dia/horário/identidade de uma sessão que nunca foi daquele slot.
+          // Mais antiga primeiro.
+          const cancelablePool = await Appointment.find({
+            patient: contract.patient, liminarContract: contract._id, specialty,
+            time: configuredSlot.time,
+            operationalStatus: { $in: CANCELED_STATUSES },
+          }).select('_id date').sort({ date: 1 }).session(mongoSession).lean();
+          const revivalQueue = cancelablePool
+            .filter(doc => new Date(doc.date).getDay() === configuredSlot.dayOfWeek)
+            .map(doc => doc._id);
 
           let candidate = addDays(getWeekStart(minDate), configuredSlot.dayOfWeek);
           while (candidate < minDate) candidate = addDays(candidate, 7);
@@ -129,6 +161,7 @@ export async function generateLiminarSessions({
                   sessionValue: Number(config.sessionValue || 0),
                   duration: config.sessionDurationMinutes || 40,
                   doctor: config.doctor || contract.doctor,
+                  reviveAppointmentId: revivalQueue.shift() || null,
                 });
               }
             }
@@ -189,28 +222,73 @@ export async function generateLiminarSessions({
         return;
       }
 
-      const appointments = await Appointment.insertMany(kept.map(slot => ({
-        patient: contract.patient, doctor: slot.doctor, date: slot.date, time: slot.time,
-        duration: slot.duration, specialty: slot.specialty, sessionType: slot.specialty,
-        serviceType: 'liminar_session', billingType: 'liminar',
-        paymentOrigin: 'liminar_credit', paymentMethod: 'liminar_credit', paymentStatus: 'pending',
-        operationalStatus: 'pre_agendado', clinicalStatus: 'pending', sessionValue: slot.sessionValue,
-        liminarContract: contract._id, therapeuticPlan: plan._id, planVersion: plan.version,
-      })), { session: mongoSession, ordered: true });
+      const freshSlots = kept.filter(slot => !slot.reviveAppointmentId);
+      const revivedSlots = kept.filter(slot => slot.reviveAppointmentId);
+      const writtenAppointments = [];
 
-      const sessions = await Session.insertMany(
-        appointments.map(appointment => buildLiminarSession(appointment)),
-        { session: mongoSession, ordered: true },
-      );
-      await Appointment.bulkWrite(sessions.map((createdSession, index) => ({
-        updateOne: {
-          filter: { _id: appointments[index]._id },
-          update: { $set: { session: createdSession._id } },
-        },
-      })), { session: mongoSession, ordered: true });
+      if (freshSlots.length > 0) {
+        const appointments = await Appointment.insertMany(freshSlots.map(slot => ({
+          patient: contract.patient, doctor: slot.doctor, date: slot.date, time: slot.time,
+          duration: slot.duration, specialty: slot.specialty, sessionType: slot.specialty,
+          serviceType: 'liminar_session', billingType: 'liminar',
+          paymentOrigin: 'liminar_credit', paymentMethod: 'liminar_credit', paymentStatus: 'pending',
+          operationalStatus: 'pre_agendado', clinicalStatus: 'pending', sessionValue: slot.sessionValue,
+          liminarContract: contract._id, therapeuticPlan: plan._id, planVersion: plan.version,
+        })), { session: mongoSession, ordered: true });
+
+        const sessions = await Session.insertMany(
+          appointments.map(appointment => buildLiminarSession(appointment)),
+          { session: mongoSession, ordered: true },
+        );
+        await Appointment.bulkWrite(sessions.map((createdSession, index) => ({
+          updateOne: {
+            filter: { _id: appointments[index]._id },
+            update: { $set: { session: createdSession._id } },
+          },
+        })), { session: mongoSession, ordered: true });
+
+        writtenAppointments.push(...appointments);
+      }
+
+      // Reaproveita appointments cancelados em vez de criar duplicados: restaura
+      // Session/Package/Payment ao estado pré-cancelamento (comando simétrico do
+      // cancelamento — Package/Payment são no-op aqui, liminar não usa nenhum
+      // dos dois) e então reagenda pra data/horário do novo slot.
+      for (const slot of revivedSlots) {
+        const canceledAppointment = await Appointment
+          .findById(slot.reviveAppointmentId)
+          .populate('session payment package')
+          .session(mongoSession);
+        if (!canceledAppointment) continue;
+
+        await restoreCanceledAppointment(
+          canceledAppointment,
+          { reason: 'Reaproveitada na geração de sessões de liminar' },
+          null,
+          mongoSession,
+        );
+
+        const revivedAppointment = await Appointment.findByIdAndUpdate(
+          canceledAppointment._id,
+          {
+            $set: {
+              date: slot.date, time: slot.time, duration: slot.duration, doctor: slot.doctor,
+              sessionValue: slot.sessionValue, planVersion: plan.version,
+              operationalStatus: 'pre_agendado', clinicalStatus: 'pending', paymentStatus: 'pending',
+              visualFlag: 'pending', confirmedAbsence: false,
+              cancelReason: null, cancelSource: null, canceledAt: null, canceledBy: null,
+              updatedAt: new Date(),
+            },
+          },
+          { new: true, session: mongoSession, runValidators: true },
+        );
+
+        await syncSessionFromAppointment(revivedAppointment, mongoSession);
+        writtenAppointments.push(revivedAppointment);
+      }
 
       response = {
-        created: appointments.length, skipped: 0, total: kept.length,
+        created: writtenAppointments.length, revived: revivedSlots.length, skipped: 0, total: kept.length,
         conflicts: 0, conflictSlots: [], totalCost: runningCost,
         saldo: contract.creditBalance, saldoAposTudo: contract.creditBalance - runningCost,
         saldoInsuficiente: saldoBlocked.length > 0,
