@@ -185,39 +185,33 @@ export const scheduleGmbCron = () => {
                 return;
             }
 
-            // Limpa posts travados em publishing_retry — reseta apenas se ainda abaixo do limite
-            // gmbPostId ausente = Google não confirmou; retryCount < 4 = evita loop infinito
-            const MAX_RETRIES = 4;
-            await GmbPost.updateMany(
+            // Publishing_retry sem confirmação do Make: NÃO reenviar automaticamente.
+            // O scenario do Make ("Integration Webhooks": Webhook → Create a Post) não
+            // tem um módulo de callback pra /webhook/make-callback — Make PUBLICA de
+            // verdade no Google a cada chamada, mas nunca avisa a gente do resultado.
+            // O reenvio cego por timeout criava até 4 posts REAIS duplicados no Google
+            // Business Profile por post nosso, sempre marcando "failed" no final mesmo
+            // já tendo publicado (achado em produção 2026-08-17). Até o Make ganhar o
+            // módulo de callback, timeout vira falha pra revisão HUMANA — checar no
+            // Google se já publicou antes de usar o botão Republicar.
+            const timedOut = await GmbPost.updateMany(
                 {
                     status: 'publishing_retry',
                     nextRetryAt: { $lte: new Date() },
                     publishedAt: { $exists: false },
                     gmbPostId: { $exists: false },
-                    retryCount: { $lt: MAX_RETRIES },
-                },
-                { $set: { status: 'scheduled', nextRetryAt: null }, $inc: { retryCount: 1 } }
-            );
-            // Posts que esgotaram retries → marca como falha permanente (para de enviar)
-            const exhausted = await GmbPost.updateMany(
-                {
-                    status: 'publishing_retry',
-                    nextRetryAt: { $lte: new Date() },
-                    publishedAt: { $exists: false },
-                    gmbPostId: { $exists: false },
-                    retryCount: { $gte: MAX_RETRIES },
                 },
                 {
                     $set: {
                         status: 'failed',
                         nextRetryAt: null,
-                        error: `Sem confirmação do Make após ${MAX_RETRIES} tentativas — possível duplicata no GMB`,
+                        error: 'Sem confirmação do Make dentro do prazo — o Make pode ter publicado mesmo assim (scenario ainda sem callback de confirmação). Verifique no Google Business Profile antes de republicar.',
                         lastErrorAt: new Date(),
                     },
                 }
             );
-            if (exhausted.modifiedCount > 0) {
-                console.log(`🚫 [GMB] ${exhausted.modifiedCount} post(s) marcados como failed (esgotou ${MAX_RETRIES} retries sem confirmação)`);
+            if (timedOut.modifiedCount > 0) {
+                console.warn(`⚠️ [GMB] ${timedOut.modifiedCount} post(s) sem confirmação do Make — marcados failed pra revisão manual (NÃO reenviados, evita duplicata real no Google)`);
             }
 
             // ── Recuperação de imagem: gera imagem para posts que ficaram sem ela ──
