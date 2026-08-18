@@ -2,7 +2,6 @@ import GmbPost from '../models/GmbPost.js';
 import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
-import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 
 // Listar posts com paginação
 export async function listPosts(req, res) {
@@ -101,49 +100,44 @@ export async function publishPost(req, res) {
     try {
       const result = await makeService.sendPostToMake(post);
 
-      post.status = 'published';
-      post.publishedAt = new Date();
+      // Make aceitou o webhook (200 OK) — isso NÃO confirma que o Google
+      // publicou de verdade (o scenario do Make ainda não chama de volta
+      // /webhook/make-callback). 'publishing_retry' + nextRetryAt: o cron
+      // confirma via callback se vier, ou marca failed pra revisão humana se
+      // o prazo passar — nunca reenvia sozinho (evita duplicata real no GMB).
+      post.status = 'publishing_retry';
+      post.nextRetryAt = new Date(Date.now() + 40 * 60 * 1000);
       post.publishedBy = 'api';
       await post.save();
 
-      res.json({ 
-        success: true, 
-        message: 'Post enviado ao Make para publicação!',
+      res.json({
+        success: true,
+        message: 'Post enviado ao Make — aguardando confirmação de publicação.',
         attempts: result.attempts || 1
       });
     } catch (makeError) {
-      // Se fila cheia, adiciona à fila de retry
+      // Fila do Make cheia (ou qualquer outra falha no envio): NÃO usar mais
+      // gmbPublishRetryQueue — esse worker nunca rodou em produção (import
+      // comentado em server.js), então posts ficavam presos em
+      // 'publishing_retry' pra sempre, sem nextRetryAt, fora do alcance do
+      // timeout do cron principal. Mesmo tratamento pros dois casos agora:
+      // marca 'publishing_retry' com prazo curto — o cron confirma ou falha
+      // pra revisão humana, sem depender de fila morta.
       const isQueueFull = makeError.message?.toLowerCase().includes('queue') && makeError.message?.toLowerCase().includes('full');
-      
-      if (isQueueFull) {
-        console.log(`🔄 [GMB] Fila cheia, adicionando à fila de retry: ${post._id}`);
-        
-        await gmbPublishRetryQueue.add('publish', {
-          postId: post._id.toString(),
-          channel: 'gmb'
-        }, {
-          delay: 60000,  // Tenta daqui 1 minuto
-          attempts: 5,
-          backoff: {
-            type: 'exponential',
-            delay: 60000
-          }
-        });
-        
-        // Atualiza status do post
-        post.status = 'publishing_retry';
-        await post.save();
-        
-        return res.status(202).json({ 
-          success: true, 
-          message: 'Post adicionado à fila de retry. Será publicado automaticamente quando o Make estiver disponível.',
-          queued: true,
-          retryAt: new Date(Date.now() + 60000)
-        });
-      }
-      
-      // Outro erro, propaga
-      throw makeError;
+
+      post.status = 'publishing_retry';
+      post.nextRetryAt = new Date(Date.now() + (isQueueFull ? 5 * 60 * 1000 : 40 * 60 * 1000));
+      post.error = makeError.message?.slice(0, 500);
+      post.lastErrorAt = new Date();
+      await post.save();
+
+      return res.status(202).json({
+        success: true,
+        message: isQueueFull
+          ? 'Fila do Make cheia — será verificado automaticamente em alguns minutos.'
+          : 'Falha no envio — será verificado automaticamente, ou marcado pra revisão se não confirmar.',
+        queued: true,
+      });
     }
   } catch (error) {
     const isQueueFull = error.message?.toLowerCase().includes('queue') && error.message?.toLowerCase().includes('full');
@@ -183,15 +177,19 @@ export async function republishPost(req, res) {
 
     const result = await makeService.sendPostToMake(post);
 
-    post.status = 'published';
-    post.publishedAt = new Date();
+    // Make aceitou o webhook (200 OK) — isso NÃO confirma que o Google
+    // publicou de verdade (o scenario do Make ainda não chama de volta
+    // /webhook/make-callback). Marcar 'published' aqui era otimista demais:
+    // a tela mostrava "Publicado" mesmo quando o Make podia falhar depois.
+    post.status = 'publishing_retry';
+    post.nextRetryAt = new Date(Date.now() + 40 * 60 * 1000);
     post.publishedBy = 'api';
     post.retryCount = (post.retryCount || 0) + 1;
     await post.save();
 
-    res.json({ 
-      success: true, 
-      message: 'Post reenviado ao Make para republicação!',
+    res.json({
+      success: true,
+      message: 'Post reenviado ao Make — aguardando confirmação de publicação.',
       attempts: result.attempts || 1
     });
   } catch (error) {
@@ -214,27 +212,36 @@ export async function retryPost(req, res) {
     const post = await GmbPost.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
 
-    // Adiciona à fila de retry
-    await gmbPublishRetryQueue.add('publish', {
-      postId: post._id.toString(),
-      channel: 'gmb'
-    }, {
-      delay: 0,  // Tenta imediatamente
-      attempts: 5,
-      backoff: {
-        type: 'exponential',
-        delay: 60000
-      }
-    });
-    
-    post.status = 'publishing_retry';
-    await post.save();
+    // Antes enfileirava em gmbPublishRetryQueue ("gmb-publish-retry") — esse
+    // worker nunca rodou em produção (initGmbRetryWorker importado mas
+    // chamada comentada em server.js), então todo post que passava por aqui
+    // ficava preso em 'publishing_retry' pra sempre. Envia direto, igual
+    // publishPost/republishPost, com o mesmo padrão seguro de confirmação.
+    if (!post.mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post não tem imagem. Gere uma imagem primeiro antes de tentar novamente.',
+      });
+    }
+    if (!makeService.isMakeConfigured()) {
+      return res.status(503).json({ success: false, error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env' });
+    }
 
-    res.json({ 
-      success: true, 
-      message: 'Post adicionado à fila de retry prioritária.',
-      queued: true
-    });
+    try {
+      await makeService.sendPostToMake(post);
+      post.status = 'publishing_retry';
+      post.nextRetryAt = new Date(Date.now() + 40 * 60 * 1000);
+      post.publishedBy = 'api';
+      await post.save();
+      res.json({ success: true, message: 'Post reenviado — aguardando confirmação de publicação.' });
+    } catch (makeError) {
+      post.status = 'publishing_retry';
+      post.nextRetryAt = new Date(Date.now() + 5 * 60 * 1000);
+      post.error = makeError.message?.slice(0, 500);
+      post.lastErrorAt = new Date();
+      await post.save();
+      res.status(202).json({ success: true, message: 'Falha no envio — será verificado automaticamente.', queued: true });
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
