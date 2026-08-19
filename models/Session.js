@@ -527,26 +527,23 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
             return;
         }
 
-        // Validar guia
-        if (guide.status !== 'active') {
-            console.warn(`⚠️ Guia ${guide.number} não está ativa (status: ${guide.status})`);
-            return;
-        }
-
-        if (guide.usedSessions >= guide.totalSessions) {
-            console.warn(`⚠️ Guia ${guide.number} já está esgotada`);
-            return;
-        }
-
-        // Consumir sessão
-        guide.usedSessions += 1;
-
-        // Se esgotou, marcar como exhausted
-        if (guide.usedSessions >= guide.totalSessions) {
-            guide.status = 'exhausted';
-        }
-
-        await guide.save();
+        // 🚨 FIX (2026-08-19): antes este bloco reimplementava manualmente as
+        // validações e o incremento (usedSessions += 1; guide.save()), sem gravar
+        // consumptionHistory — todo consumo feito por este caminho de fallback
+        // ficava indistinguível de um bug de dupla contagem, porque não deixava
+        // rastro nenhum (causa raiz documentada em
+        // back/docs/convenio-guide-consumption-audit/README.md, "causa raiz
+        // estrutural — não corrigida ainda"; caso real: guia #16215571,
+        // paciente Isabela Ferreira De Mendonca, 2 incrementos fantasma).
+        // Agora delega pro MESMO método usado pelo caminho oficial
+        // (ConvenioHandler.buildPayment -> guide.consumeSession), que já valida
+        // status/esgotamento/expiração e grava consumptionHistory de forma
+        // idempotente — os dois caminhos não podem mais divergir silenciosamente.
+        await guide.consumeSession(null, {
+            sessionId: doc._id,
+            professionalId: doc.doctor || null,
+            notes: 'Consumido via hook de fallback (fora de transação) — Session.js post(findOneAndUpdate)',
+        });
 
         // Marcar sessão como consumida (idempotência)
         await mongoose.model('Session').updateOne(
@@ -557,7 +554,11 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
         console.log(`✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions} sessões`);
 
     } catch (error) {
-        console.error(`❌ Erro ao consumir guia para sessão ${doc._id}:`, error);
+        // 🚨 Antes era silencioso (console.warn/engolido). Guias esgotadas/expiradas/
+        // inativas são esperadas às vezes (ex: corrida com o caminho oficial) e não
+        // devem quebrar o fluxo principal — mas precisam ficar visíveis nos logs
+        // pra auditoria futura não precisar reconstruir isso do zero de novo.
+        console.error(`❌ [SessionHook] Falha ao consumir guia ${doc.insuranceGuide} para sessão ${doc._id} (code: ${error.code || 'UNKNOWN'}): ${error.message}`);
         // NÃO lança erro para não quebrar o fluxo principal
     }
 });

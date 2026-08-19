@@ -542,7 +542,13 @@ insuranceGuideSchema.statics.getBalance = async function (patientId, specialty =
  * @param {ObjectId|string} [context.professionalId] - ID do Doctor que realizou
  * @param {string}          [context.notes]          - Nota livre
  */
-insuranceGuideSchema.methods.consumeSession = async function (mongoSession, context = {}) {
+// mongoSession é opcional (null/undefined) para permitir uso fora de uma
+// transação — caso do hook de fallback em models/Session.js, que roda
+// justamente quando NÃO há transação ativa. Achado 2026-08-19: antes desse
+// fix o fallback duplicava a lógica de consumo manualmente (sem consumptionHistory,
+// sem as validações de status/expiração/esgotamento daqui), produzindo incrementos
+// fantasma indistinguíveis de consumo real (ver back/docs/convenio-guide-consumption-audit/).
+insuranceGuideSchema.methods.consumeSession = async function (mongoSession = null, context = {}) {
   // Validações críticas
   if (this.status !== 'active') {
     const err = new Error(`Guia está ${this.status} e não pode ser utilizada`);
@@ -591,8 +597,9 @@ insuranceGuideSchema.methods.consumeSession = async function (mongoSession, cont
     }
   }
 
-  // Salva usando a transação passada
-  await this.save({ session: mongoSession });
+  // Salva usando a transação passada, se houver — fora de transação (fallback),
+  // salva direto.
+  await this.save(mongoSession ? { session: mongoSession } : undefined);
 
   return this;
 };
