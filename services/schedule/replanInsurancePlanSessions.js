@@ -89,9 +89,17 @@ function buildExpectedSeries({ plan, count, startFloor, holidays, occupiedKeys =
   const series = [];
   let created = 0;
   const maxWeeks = 520; // guarda de segurança (~10 anos) — precisa cobrir o skip de ocupadas
+  // 🚨 FIX (2026-08-20): plan.slots vem na ordem em que o usuário cadastrou os
+  // horários, não em ordem cronológica da semana (ex: Sexta antes de Quarta).
+  // O corte por `count` no meio de uma semana podia gerar o dia mais tarde e
+  // pular o mais cedo da mesma semana — mesma causa raiz de
+  // generateInsurancePlanSessions.js (ver comentário lá, achado real guia
+  // 16173376/Ícaro). Ordenar por dayOfWeek garante que o corte sempre cai no
+  // dia mais tarde, nunca deixa buraco num dia mais cedo.
+  const orderedSlots = [...plan.slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek);
   for (let w = 0; created < count && w < maxWeeks; w++) {
     const weekSunday = addDays(weekStart, w * 7);
-    for (const slot of plan.slots) {
+    for (const slot of orderedSlots) {
       if (created >= count) break;
       const d = addDays(weekSunday, slot.dayOfWeek);
       if (d < startFloor) continue;

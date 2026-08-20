@@ -240,10 +240,20 @@ export async function generateInsurancePlanSessions({
   const slots = [];
   let sessionsCreated = 0;
 
+  // 🚨 FIX (2026-08-20): plan.slots é gravado na ordem em que o usuário adicionou
+  // os horários (ex: [Sexta, Quarta]), não em ordem cronológica da semana. Como o
+  // loop corta assim que `remaining` esgota, processar fora de ordem podia gerar
+  // a Sexta de uma semana e PULAR a Quarta da mesma semana (que cronologicamente
+  // vem antes) — achado real: guia 16173376/Ícaro, gerou 21/08 (sex) sem gerar
+  // 19/08 (qua). Ordenar por dayOfWeek garante que o corte de saldo sempre cai no
+  // dia mais tarde da semana, nunca pula um dia mais cedo.
+  const orderedSlots = [...(Array.isArray(plan.slots) ? plan.slots : [])]
+    .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+
   for (let w = 0; w < weeksNeeded && sessionsCreated < remaining; w++) {
     const currentWeekSunday = addDays(weekStart, w * 7);
 
-    for (const slot of (Array.isArray(plan.slots) ? plan.slots : [])) {
+    for (const slot of orderedSlots) {
       if (sessionsCreated >= remaining) break;
 
       const sessionDate = addDays(currentWeekSunday, slot.dayOfWeek);

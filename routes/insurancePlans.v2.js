@@ -17,6 +17,7 @@ import { replanInsurancePlanSessions } from '../services/schedule/replanInsuranc
 import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from '../services/auditLogService.js';
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
+import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 
 const router = express.Router();
 
@@ -1234,6 +1235,64 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
   } finally {
     session.endSession();
     releaseGenerateSessionsLock(id);
+  }
+});
+
+/**
+ * POST /api/v2/insurance-plans/:id/confirm-past-sessions
+ *
+ * 🆕 (2026-08-20) Confirmação EM LOTE das sessões retroativas (data já passada,
+ * ainda pre_agendado/scheduled) — ação explícita e deliberada do usuário, feita
+ * sob demanda por este endpoint dedicado. Substitui o antigo comportamento de
+ * generate-sessions completar tudo sozinho e silenciosamente (ver comentário
+ * na rota /:id/generate-sessions) sem eliminar a conveniência de não precisar
+ * confirmar uma por uma: 1 clique aqui confirma todas de uma vez, mas exige
+ * o clique — nunca dispara sozinho.
+ */
+router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+  }
+
+  try {
+    const plan = await InsurancePlan.findById(id).lean();
+    if (!plan) {
+      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const pastAppointments = await Appointment.find({
+      insurancePlan: plan._id,
+      date: { $lt: today },
+      operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+    }).select('_id').lean();
+
+    let confirmed = 0;
+    const failed = [];
+    for (const appt of pastAppointments) {
+      try {
+        await completeSessionV2(appt._id, {
+          userId: req.user?._id,
+          notes: 'Sessão retroativa confirmada manualmente em lote (Confirmar retroativas).'
+        });
+        confirmed++;
+      } catch (completeErr) {
+        console.error('[InsurancePlansV2][confirm-past-sessions] Falha ao confirmar sessão retroativa', {
+          appointmentId: appt._id.toString(),
+          error: completeErr.message
+        });
+        failed.push({ appointmentId: appt._id.toString(), error: completeErr.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: { total: pastAppointments.length, confirmed, failed }
+    });
+  } catch (error) {
+    console.error('[InsurancePlansV2] Erro ao confirmar sessões retroativas em lote:', error);
+    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
   }
 });
 
