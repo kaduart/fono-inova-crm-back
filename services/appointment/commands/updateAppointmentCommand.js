@@ -359,6 +359,14 @@ export async function execute(id, payload, user) {
       throw buildError('O formato do ID fornecido é inválido', 400, 'INVALID_ID');
     }
 
+    if (error.code === 11000 && /unique_appointment_slot/.test(error.message || '')) {
+      throw buildError(
+        'Já existe um agendamento para este profissional nesta data e horário. Escolha outro horário ou cancele o agendamento existente antes de reverter este.',
+        409,
+        'APPOINTMENT_SLOT_TAKEN'
+      );
+    }
+
     throw error;
   }
 

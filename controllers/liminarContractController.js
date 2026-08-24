@@ -663,6 +663,24 @@ export async function updateTherapy(req, res) {
       }
     }
 
+    // 🚨 FIX (2026-08-21): mesmo bug do time-sync acima, mas pro doctor — o bloco de
+    // Appointment.bulkWrite (baseSet.doctor) só atualiza o Appointment; a Session vinculada
+    // ficava com o terapeuta antigo pra sempre. Por ADR-015 (DOMAIN_INVARIANTS.md),
+    // Session.doctor é a fonte canônica pra produção/comissão/fechamento — divergência aqui
+    // atribui a sessão ao profissional errado nesses relatórios, não é só exibição.
+    // status: { $ne: 'completed' } preserva o registro histórico de quem realmente atendeu
+    // uma sessão já concluída (não reescreve fato passado por causa de uma troca administrativa).
+    if (baseSet.doctor !== undefined && affected.length > 0) {
+      const sessionDoctorBulkOps = affected.map((a) => ({
+        updateOne: {
+          filter: { appointmentId: a._id, status: { $ne: 'completed' } },
+          update: { $set: { doctor: baseSet.doctor, updatedAt: new Date() } }
+        }
+      }));
+
+      await Session.bulkWrite(sessionDoctorBulkOps, { session });
+    }
+
     // 🧹 Cancela appointments cujo dia da semana saiu do plano (órfãos).
     // Sessão liminar não tem Payment no provisioning (nasce só no settlement/completed),
     // então não há reversão financeira a fazer aqui — só liberar o slot e tirar do "comprometido".

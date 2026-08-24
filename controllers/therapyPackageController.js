@@ -391,7 +391,7 @@ export const packageOperations = {
                         doctor: doctorId,
                         date: firstSlot.date,
                         time: firstSlot.time,
-                        status: { $ne: 'canceled' }
+                        operationalStatus: { $nin: ['canceled', 'missed', 'completed'] }
                     })
                         .populate('session')
                         .lean();
