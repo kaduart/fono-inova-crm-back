@@ -663,22 +663,24 @@ export async function updateTherapy(req, res) {
       }
     }
 
-    // 🚨 FIX (2026-08-21): mesmo bug do time-sync acima, mas pro doctor — o bloco de
-    // Appointment.bulkWrite (baseSet.doctor) só atualiza o Appointment; a Session vinculada
-    // ficava com o terapeuta antigo pra sempre. Por ADR-015 (DOMAIN_INVARIANTS.md),
+    // 🚨 FIX (2026-08-21): mesmo bug do time-sync acima, mas pro doctor/sessionValue — o
+    // bloco de Appointment.bulkWrite (baseSet) só atualiza o Appointment; a Session vinculada
+    // ficava com o terapeuta/valor antigo pra sempre. Por ADR-015 (DOMAIN_INVARIANTS.md),
     // Session.doctor é a fonte canônica pra produção/comissão/fechamento — divergência aqui
     // atribui a sessão ao profissional errado nesses relatórios, não é só exibição.
+    // Mesmo padrão já usado em routes/insurancePlans.v2.js (convênio) pro mesmo bug.
     // status: { $ne: 'completed' } preserva o registro histórico de quem realmente atendeu
     // uma sessão já concluída (não reescreve fato passado por causa de uma troca administrativa).
-    if (baseSet.doctor !== undefined && affected.length > 0) {
-      const sessionDoctorBulkOps = affected.map((a) => ({
-        updateOne: {
-          filter: { appointmentId: a._id, status: { $ne: 'completed' } },
-          update: { $set: { doctor: baseSet.doctor, updatedAt: new Date() } }
-        }
-      }));
+    if ((baseSet.doctor !== undefined || baseSet.sessionValue !== undefined) && affected.length > 0) {
+      const sessionSet = {};
+      if (baseSet.doctor !== undefined) sessionSet.doctor = baseSet.doctor;
+      if (baseSet.sessionValue !== undefined) sessionSet.sessionValue = baseSet.sessionValue;
 
-      await Session.bulkWrite(sessionDoctorBulkOps, { session });
+      await Session.updateMany(
+        { appointmentId: { $in: affected.map(a => a._id) }, status: { $ne: 'completed' } },
+        { $set: { ...sessionSet, updatedAt: new Date() } },
+        { session }
+      );
     }
 
     // 🧹 Cancela appointments cujo dia da semana saiu do plano (órfãos).
