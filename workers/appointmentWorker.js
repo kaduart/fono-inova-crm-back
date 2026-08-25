@@ -124,11 +124,33 @@ export function startAppointmentWorker() {
                 };
             }
 
-            // 6. CONFIRMA AGENDAMENTO
-            await confirmAppointment(appointment._id);
+            // 6. CONFIRMA AGENDAMENTO (compare-and-set — ver confirmAppointment)
+            const confirmResult = await confirmAppointment(appointment._id);
+
+            if (!confirmResult.confirmed) {
+                // 🛡️ TOCTOU FIX (2026-08-25): entre o guard do passo 3 e este ponto,
+                // rodam validações assíncronas (múltiplas queries) — uma janela real
+                // de tempo em que o usuário pode cancelar o agendamento. Sem o
+                // compare-and-set, a escrita incondicional de operationalStatus='scheduled'
+                // aqui reativava agendamentos já cancelados nesse meio-tempo (achado real
+                // em auditoria de 2026-08-25, 157 Appointments com o mesmo padrão de
+                // reativação silenciosa). Não republica eventos, não retenta, não altera
+                // Session/Payment — a mudança de estado concorrente já é a verdade.
+                console.warn(
+                    `[AppointmentWorker] ⏭️ Confirmação abortada (stale/no-op): ${appointment._id} ` +
+                    `não está mais em 'validating' (estado atual: ${confirmResult.currentStatus ?? 'não encontrado'})`
+                );
+                cacheEvent(eventId);
+                await markEventProcessed(eventId, 'appointmentWorker');
+                return {
+                    status: 'stale_no_op',
+                    appointmentId: appointment._id.toString(),
+                    currentStatus: confirmResult.currentStatus
+                };
+            }
 
             // 7. Publica eventos seguintes baseado no tipo
-            await publishNextEvents(appointment, payload, correlationId);
+            await publishNextEvents(confirmResult.appointment, payload, correlationId);
 
             cacheEvent(eventId);
             await markEventProcessed(eventId, 'appointmentWorker');
@@ -234,19 +256,52 @@ async function runValidations(appointment, payload) {
 }
 
 /**
- * Confirma agendamento
+ * Confirma agendamento — compare-and-set atômico.
+ *
+ * 🛡️ Antes disso era um write incondicional (sem checar operationalStatus atual),
+ * criando uma janela TOCTOU: entre o guard do worker (que só aceita 'pending'/
+ * 'processing_create') e este ponto, rodam validações assíncronas — se o usuário
+ * cancelasse o Appointment nessa janela, este write reativava por cima,
+ * silenciosamente, sem nenhuma ação humana correspondente. O filtro
+ * `operationalStatus: 'validating'` faz o Mongo só aplicar a transição se
+ * ninguém mudou o estado embaixo do worker; se mudou, o update não casa nenhum
+ * documento (0 matched) e a chamada retorna `confirmed: false` — quem chamou
+ * decide não reativar, não retentar, não tocar Session/Payment.
+ *
+ * `_fromWriteGateway: true` é a flag documentada do AppointmentWriteGuard
+ * (services/appointment/AppointmentWriteGuard.js) para "escrita legítima ainda
+ * não migrada para um command dedicado" — não é uma flag nova inventada aqui.
  */
-async function confirmAppointment(appointmentId) {
-    await Appointment.findByIdAndUpdate(appointmentId, {
-        operationalStatus: 'scheduled',
-        $push: {
-            history: {
-                action: 'appointment_confirmed',
-                newStatus: 'scheduled',
-                timestamp: new Date()
+export async function confirmAppointment(appointmentId) {
+    const updated = await Appointment.findOneAndUpdate(
+        { _id: appointmentId, operationalStatus: 'validating' },
+        {
+            $set: {
+                operationalStatus: 'scheduled',
+                _fromWriteGateway: true,
+            },
+            $push: {
+                history: {
+                    action: 'appointment_confirmed',
+                    newStatus: 'scheduled',
+                    timestamp: new Date()
+                }
             }
-        }
-    });
+        },
+        { new: true }
+    );
+
+    if (!updated) {
+        const current = await Appointment.findById(appointmentId).select('operationalStatus').lean();
+        console.warn(
+            `[AppointmentWorker] ⚠️ STALE_CONFIRM_ABORTED appointmentId=${appointmentId} ` +
+            `currentStatus=${current?.operationalStatus ?? 'NOT_FOUND'} — estado mudou durante a validação ` +
+            `(provável cancelamento concorrente pelo usuário). Confirmação abortada como no-op.`
+        );
+        return { confirmed: false, currentStatus: current?.operationalStatus ?? null };
+    }
+
+    return { confirmed: true, appointment: updated };
 }
 
 /**
