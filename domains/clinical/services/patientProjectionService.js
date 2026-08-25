@@ -91,6 +91,8 @@ export async function buildPatientView(patientId, options = {}) {
       totalRevenueAgg,
       totalPendingAgg,
       totalPendingParticularAgg,
+      totalPendingConvenioBillingAgg,
+      totalPendingConvenioBilledAgg,
       balance,
       packages,
       liminarContracts
@@ -150,6 +152,17 @@ export async function buildPatientView(patientId, options = {}) {
         },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
+      // 🩺 Composição do "saldo pendente" de convênio — evita card opaco: quanto
+      // ainda aguarda entrar em lote de faturamento (status:pending) vs quanto já
+      // foi faturado e só aguarda o recebimento do convênio (status:billed).
+      Payment.aggregate([
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'pending', billingType: { $in: ['convenio', 'insurance'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Payment.aggregate([
+        { $match: { $or: [{ patient: new mongoose.Types.ObjectId(patientId) }, { patientId: new mongoose.Types.ObjectId(patientId) }], status: 'billed', billingType: { $in: ['convenio', 'insurance'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
       PatientBalance.findOne({ patient: patientId }).lean(),
       Package.find({ patient: patientId })
         .select('_id sessionType specialty totalSessions sessionsDone sessionsRemaining status sessionValue')
@@ -174,6 +187,11 @@ export async function buildPatientView(patientId, options = {}) {
       totalRevenue: totalRevenueAgg[0]?.total || 0,
       totalPending: totalPendingAgg[0]?.total || 0,
       totalPendingParticular: totalPendingParticularAgg[0]?.total || 0,
+      // Composição do saldo pendente de convênio (subset de totalPending):
+      // aguardando faturamento (ainda não entrou em lote) vs já faturado
+      // (aguardando o convênio pagar). Ver card "Saldo pendente" no dashboard.
+      totalPendingConvenioAwaitingBilling: totalPendingConvenioBillingAgg[0]?.total || 0,
+      totalPendingConvenioBilled: totalPendingConvenioBilledAgg[0]?.total || 0,
       firstAppointmentDate: recentAppointments.length > 0 
         ? recentAppointments[recentAppointments.length - 1].date 
         : null,

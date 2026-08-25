@@ -181,9 +181,10 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
     skip = 0,
     doctorId = null,
     status = null,
-    sortBy = null
+    sortBy = null,
+    hasDebt = false // filtra pacientes com saldo devedor particular (stats.totalPendingParticular > 0)
   } = options;
-  
+
   let query = {};
   
   if (searchTerm && searchTerm.trim()) {
@@ -208,7 +209,8 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
   
   if (doctorId) query.doctorId = doctorId;
   if (status) query.status = status;
-  
+  if (hasDebt) query['stats.totalPendingParticular'] = { $gt: 0 };
+
   const sortCriteria = sortBy
     ? { [sortBy]: -1 }
     : { 'stats.lastAppointmentDate': -1, fullName: 1 };

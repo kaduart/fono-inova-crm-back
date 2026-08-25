@@ -61,6 +61,7 @@ router.get('/', flexibleAuth, async (req, res) => {
       doctorId = null,
       status = null,
       sortBy = null,
+      hasDebt = 'false', // 'true' => somente pacientes com saldo devedor particular
       includeStale = 'false' // se 'true', inclui views stale
     } = req.query;
 
@@ -70,6 +71,7 @@ router.get('/', flexibleAuth, async (req, res) => {
       skip: parseInt(skip),
       doctorId,
       status,
+      hasDebt: hasDebt === 'true',
       ...(sortBy ? { sortBy } : {})
     });
     
