@@ -167,6 +167,51 @@ describe('Package V2 — guards operacionais', () => {
     expect((await Payment.findById(target.paymentId)).status).toBe('pending');
   });
 
+  it('quita débito retroativo e vincula Payment, Appointment e Session ao pacote', async () => {
+    const base = await seedPackage();
+    const debt = await seedTrio({ ...base, status: 'completed', date: '2026-08-19', time: '16:40' });
+
+    await Promise.all([
+      Appointment.collection.updateOne({ _id: debt.appointmentId }, {
+        $unset: { package: 1 },
+        $set: { paymentStatus: 'pending', isPaid: false },
+      }),
+      Session.collection.updateOne({ _id: debt.sessionId }, {
+        $unset: { package: 1 },
+        $set: { paymentStatus: 'pending', isPaid: false },
+      }),
+      Payment.collection.updateOne({ _id: debt.paymentId }, {
+        $unset: { package: 1 },
+        $set: { status: 'pending' },
+      }),
+    ]);
+
+    const response = await request(app)
+      .post(`/api/v2/packages/${base.pkg._id}/settle-payments`)
+      .send({ paymentIds: [debt.paymentId.toString()], paymentMethod: 'pix' })
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({ settledCount: 1, totalSettled: 100, newBalance: 300 });
+
+    const [pkg, appointment, session, payment] = await Promise.all([
+      Package.findById(base.pkg._id),
+      Appointment.findById(debt.appointmentId),
+      Session.findById(debt.sessionId),
+      Payment.findById(debt.paymentId),
+    ]);
+
+    expect(payment.status).toBe('paid');
+    expect(payment.package.toString()).toBe(base.pkg._id.toString());
+    // Payment/Package são a fonte financeira; o sanitizer bloqueia o shadow state.
+    expect(appointment).toMatchObject({ paymentStatus: 'pending', isPaid: false });
+    expect(appointment.package.toString()).toBe(base.pkg._id.toString());
+    expect(session).toMatchObject({ paymentStatus: 'pending', isPaid: false });
+    expect(session.package.toString()).toBe(base.pkg._id.toString());
+    expect(pkg.sessions.map(String)).toContain(debt.sessionId.toString());
+    expect(pkg.appointments.map(String)).toContain(debt.appointmentId.toString());
+    expect(pkg).toMatchObject({ totalPaid: 100, balance: 300, financialStatus: 'partially_paid' });
+  });
+
   it('DELETE remove pacote vazio, suas duas formas de view e publica PACKAGE_DELETED', async () => {
     const base = await seedPackage();
     await request(app).delete(`/api/v2/packages/${base.view._id}`).expect(200);

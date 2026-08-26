@@ -1773,6 +1773,10 @@ export const settlePackagePayments = async (req, res) => {
     }
 
     // Atualiza appointments vinculados
+    // 🔗 FIX: além do status financeiro, vincula appointment.package — sem isso a sessão
+    // absorvida conta em Package.totalSessions/sessionsDone mas nenhuma query que resolva
+    // "sessões deste pacote" via Appointment.package a encontra (mesma classe de gap
+    // documentada em finance-integrity-audit/).
     const appointmentIds = payments
       .filter(p => p.appointment)
       .map(p => p.appointment.toString());
@@ -1780,18 +1784,19 @@ export const settlePackagePayments = async (req, res) => {
     if (appointmentIds.length > 0) {
       await Appointment.updateMany(
         { _id: { $in: appointmentIds } },
-        { $set: { paymentStatus: 'paid', isPaid: true } },
+        { $set: { paymentStatus: 'paid', isPaid: true, package: pkg._id } },
         { session: mongoSession }
       );
     }
 
     // Atualiza sessions vinculadas (SINCRONIZAÇÃO CRÍTICA — antes faltava)
+    // 🔗 FIX: idem — vincula session.package pelo mesmo motivo do appointment acima.
     const sessionIds = payments.filter(p => p.session).map(p => p.session.toString());
     if (sessionIds.length > 0) {
       const Session = mongoose.model('Session');
       await Session.updateMany(
         { _id: { $in: sessionIds } },
-        { $set: { isPaid: true, paymentStatus: 'paid' } },
+        { $set: { isPaid: true, paymentStatus: 'paid', package: pkg._id } },
         { session: mongoSession }
       );
     }
@@ -1802,11 +1807,18 @@ export const settlePackagePayments = async (req, res) => {
     let financialStatus = 'unpaid';
     if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
     else if (totalPaid > 0) financialStatus = 'partially_paid';
-    await Package.findByIdAndUpdate(
-      packageId,
-      { totalPaid, balance, financialStatus, updatedAt: new Date() },
-      { session: mongoSession }
-    );
+    const packageUpdate = {
+      $set: { totalPaid, balance, financialStatus, updatedAt: new Date() }
+    };
+    const packageLinks = {};
+    // 🔗 FIX: registra as sessões/agendamentos absorvidos em Package.sessions[]/appointments[] —
+    // sem isso, buildPackageView() e qualquer auditoria por Package.sessions nunca "veem"
+    // a sessão retroativa que acabou de ser quitada aqui.
+    if (sessionIds.length > 0) packageLinks.sessions = { $each: sessionIds };
+    if (appointmentIds.length > 0) packageLinks.appointments = { $each: appointmentIds };
+    if (Object.keys(packageLinks).length > 0) packageUpdate.$addToSet = packageLinks;
+
+    await Package.findByIdAndUpdate(packageId, packageUpdate, { session: mongoSession });
 
     await mongoSession.commitTransaction();
 
