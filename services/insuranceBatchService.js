@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { recordInsuranceBilled, recordInsuranceReceived } from './financialLedgerService.js';
 import { batchTransitionStatus, transitionPaymentStatus } from './paymentStatusService.js';
 import { getConvenioIssRate, calculateInsuranceIss } from '../utils/insuranceIss.js';
+import { isPackageConsumptionPayment, PackageConsumptionInBillingError } from '../utils/packageConsumptionPayment.js';
 
 // 🔄 Importação dinâmica do cache para evitar circular dependency
 let dashboardCache;
@@ -66,9 +67,22 @@ export async function createBatch({ insuranceProvider, startDate, endDate, userI
   const sessionIdList = sessions.map(s => s._id);
   const linkedPayments = await Payment.find(
     { session: { $in: sessionIdList }, billingType: 'convenio', status: { $ne: 'canceled' } },
-    { _id: 1, session: 1 }
+    { _id: 1, session: 1, isFromPackage: 1, kind: 1 }
   ).lean();
   const paymentBySession = new Map(linkedPayments.map(p => [p.session.toString(), p._id]));
+
+  // 🛡️ Consumo de pacote nunca é recebível de convênio. Lote é tudo-ou-nada:
+  // excluir a sessão corrompida em silêncio esconderia faturamento perdido do
+  // usuário (a sessão nunca mais entraria em nenhum lote automaticamente,
+  // sem nenhum sinal de que ficou de fora). Bloqueia a criação do lote
+  // INTEIRO com erro estruturado listando Payment+Session — a correção é dado
+  // (rodar o reparo de isFromPackage) ou decisão humana, nunca silêncio.
+  const corruptedPayments = linkedPayments.filter(isPackageConsumptionPayment);
+  if (corruptedPayments.length > 0) {
+    const err = new PackageConsumptionInBillingError(corruptedPayments, 'createBatch');
+    err.sessionIds = corruptedPayments.map(p => p.session.toString());
+    throw err;
+  }
 
   // 2. Criar o lote
   const batchNumber = `LOT-${insuranceProvider.toUpperCase()}-${Date.now()}`;
@@ -131,7 +145,23 @@ export async function sendBatch(batchId, userId) {
       message: `Lote já foi enviado anteriormente (status: ${batch.status})`
     };
   }
-  
+
+  // 🛡️ Defesa em profundidade: createBatch() já recusa a criação inteira se
+  // alguma sessão tiver Payment de consumo de pacote, mas um lote 'ready' pode
+  // ter sido criado antes desse fix. Recusar o lote INTEIRO em vez de enviar
+  // parcialmente — não é escolha do sistema decidir qual sessão fica de fora.
+  const linkedPaymentIdsForGuard = batch.sessions.map(s => s.payment).filter(Boolean);
+  if (linkedPaymentIdsForGuard.length > 0) {
+    const paymentsToCheck = await Payment.find(
+      { _id: { $in: linkedPaymentIdsForGuard } },
+      { _id: 1, isFromPackage: 1, kind: 1 }
+    ).lean();
+    const corrupted = paymentsToCheck.filter(isPackageConsumptionPayment);
+    if (corrupted.length > 0) {
+      throw new PackageConsumptionInBillingError(corrupted, `sendBatch:${batchId}`);
+    }
+  }
+
   // Atualizar status do lote
   batch.status = 'sent';
   batch.sentDate = new Date();

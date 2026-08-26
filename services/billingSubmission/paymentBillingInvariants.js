@@ -69,6 +69,7 @@
 
 import { FinancialContext } from '../../utils/financialContext.js';
 import { resolvePaymentKind } from '../../utils/resolvePaymentKind.js';
+import { isPackageConsumptionPayment } from '../../utils/packageConsumptionPayment.js';
 
 /** Status de origem aceitos para entrar em `billed` via faturamento. */
 export const BILLABLE_SOURCE_STATUSES = Object.freeze(['pending', 'pending_billing']);
@@ -157,8 +158,10 @@ export function assertPaymentBillable(payment) {
 
   // V5 / V6 / S3 — consumo de pacote não é recebível de convênio. Os hooks
   // "corrigiam" isso mudando status e zerando paidAt; aqui isso é sintoma de
-  // dado errado entrando no lote, então falha.
-  if (payment.isFromPackage || payment.kind === 'package_consumed') {
+  // dado errado entrando no lote, então falha. Checagem centralizada em
+  // utils/packageConsumptionPayment.js — reutilizada também por
+  // insuranceBatchService.js e paymentStatusService.js.
+  if (isPackageConsumptionPayment(payment)) {
     throw new PaymentInvariantError(
       'PAYMENT_IS_PACKAGE_CONSUMPTION',
       `Payment ${id} é consumo de pacote e não pode ser faturado como convênio`,

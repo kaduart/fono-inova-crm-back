@@ -410,6 +410,12 @@ paymentSchema.add({
   _fromCancelService: { type: Boolean, select: false },
   _fromWriteGateway: { type: Boolean, select: false },
   _fromInsuranceOrchestrator: { type: Boolean, select: false },
+  // Autoriza transitionPaymentStatus() (services/paymentStatusService.js) —
+  // a ÚNICA via canônica de mudar Payment.status (DOMAIN_INVARIANTS.md #9).
+  // Sem esta flag, TODA chamada legítima (13+ call sites em produção) gerava
+  // WARN de "write não autorizado" — achado em 2026-08-26 validando o
+  // recebimento real da NF #124.
+  _fromPaymentStatusService: { type: Boolean, select: false },
 });
 
 const Payment = mongoose.model('Payment', paymentSchema);

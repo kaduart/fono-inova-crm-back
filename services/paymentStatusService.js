@@ -27,6 +27,7 @@ import {
     assertPaymentBillable,
     buildBilledUpdate
 } from './billingSubmission/paymentBillingInvariants.js';
+import { isPackageConsumptionPayment, PackageConsumptionInBillingError } from '../utils/packageConsumptionPayment.js';
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 
@@ -201,6 +202,18 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         return { payment, event: null, changed: false };
     }
 
+    // 🛡️ GUARDA FINANCEIRA: consumo de pacote (isFromPackage=true ou
+    // kind='package_consumed') nunca pode virar recebível de convênio.
+    // Payment.pre('save') só bloqueia quando financialDate é setado (status
+    // 'paid'), não quando o status é 'billed' — deixando esse trecho aberto
+    // para o mesmo bug do backfill de abril/2026 se reproduzir hoje via
+    // qualquer chamador deste serviço. Checagem centralizada em
+    // utils/packageConsumptionPayment.js. Ver auditoria
+    // scripts/maintenance/audit-convenio-isfrompackage-2026-08-26.mjs.
+    if (newStatus === 'billed' && isPackageConsumptionPayment(payment)) {
+        throw new PackageConsumptionInBillingError([payment], 'transitionPaymentStatus:billed');
+    }
+
     // 3. Aplica a transição
     payment.status = newStatus;
 
@@ -232,6 +245,11 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     // Flag transitória: impede o post-save safety net de publicar o mesmo evento
     // fora da Outbox. Não pertence ao schema e nunca é persistida.
     payment.__statusChangedEmitted = true;
+    // 🛡️ Autoriza esta escrita perante o AppointmentWriteGuard — sem isso,
+    // TODA chamada a esta função (a única via canônica de mudar
+    // Payment.status) gerava WARN de "write não autorizado", já que .save()
+    // em documento existente delega pra collection.updateOne (interceptado).
+    payment._fromPaymentStatusService = true;
     if (mongoSession) {
         await payment.save({ session: mongoSession });
     } else {

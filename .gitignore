@@ -29,6 +29,11 @@ scripts/debug-*
 scripts/diagnose-*
 scripts/.last-test-debts-*.json
 
+# Snapshots e resultados de auditoria de scripts de manutenção — contêm dados
+# financeiros/de pacientes reais, nunca devem ir pro repositório.
+scripts/maintenance/snapshots/
+scripts/maintenance/*-results.json
+
 # Local certificates
 certs/
 

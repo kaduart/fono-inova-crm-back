@@ -800,6 +800,7 @@ appointmentSchema.add({
   _fromCancelService: { type: Boolean, select: false },
   _fromWriteGateway: { type: Boolean, select: false },
   _fromInsuranceOrchestrator: { type: Boolean, select: false },
+  _fromPaymentStatusService: { type: Boolean, select: false },
 });
 
 // 💰 Financial Sanitizer — bloqueia writes V1 na origem
