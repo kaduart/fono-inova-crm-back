@@ -212,6 +212,49 @@ describe('Package V2 — guards operacionais', () => {
     expect(pkg).toMatchObject({ totalPaid: 100, balance: 300, financialStatus: 'partially_paid' });
   });
 
+  it('cria 2 sessões futuras em pacote de 4 quando 2 sessões são retroativas', async () => {
+    const patient = await Patient.create({
+      fullName: 'Paciente Retroativo', phone: '62999444444', dateOfBirth: '2015-01-01',
+    });
+    const doctor = await Doctor.create({
+      fullName: 'Dra. Retroativa', specialty: 'fonoaudiologia', phoneNumber: '62999555555',
+      licenseNumber: `CRM-R-${Date.now()}`, email: `retro-${Date.now()}@teste.com`,
+    });
+
+    const response = await request(app)
+      .post('/api/v2/packages')
+      .send({
+        patientId: patient._id.toString(),
+        doctorId: doctor._id.toString(),
+        specialty: 'fonoaudiologia',
+        sessionType: 'fonoaudiologia',
+        totalSessions: 4,
+        preConsumedCount: 2,
+        sessionValue: 160,
+        totalValue: 640,
+        type: 'package',
+        model: 'prepaid',
+        date: '2026-08-19',
+        time: '16:40',
+        durationMonths: 1,
+        sessionsPerWeek: 1,
+        frequencyInterval: 'weekly',
+        schedule: [
+          { date: '2026-09-02', time: '16:40' },
+          { date: '2026-09-09', time: '16:40' },
+        ],
+        payments: [{ amount: 320, method: 'pix', date: '2026-08-26' }],
+      })
+      .expect(201);
+
+    expect(response.body.success).toBe(true);
+    const packageId = response.body.data.packageId;
+    const pkg = await Package.findById(packageId);
+    expect(pkg).toMatchObject({ totalSessions: 4, sessionsDone: 2, preConsumedCount: 2 });
+    expect(pkg.sessions).toHaveLength(2);
+    expect(pkg.appointments).toHaveLength(2);
+  });
+
   it('DELETE remove pacote vazio, suas duas formas de view e publica PACKAGE_DELETED', async () => {
     const base = await seedPackage();
     await request(app).delete(`/api/v2/packages/${base.view._id}`).expect(200);

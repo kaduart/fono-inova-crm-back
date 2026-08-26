@@ -1140,14 +1140,15 @@ export const createPackageV2 = async (req, res) => {
       pkg.sessions = sessions.map(s => s._id);
       pkg.appointments = appointments.map(a => a._id);
 
-      // 🔥 INVARIANTE: total de appointments deve bater com totalSessions
+      // Somente as sessões futuras são criadas aqui. As retroativas já existem e
+      // são vinculadas depois pelo settlement, sem recriar agenda histórica.
       const expectedAppointments = reuseAppt ? slotsToCreate.length + 1 : slotsToCreate.length;
-      if (appointments.length !== expectedAppointments || appointments.length !== parseInt(totalSessions)) {
+      if (appointments.length !== expectedAppointments) {
         await mongoSession.abortTransaction();
         return res.status(400).json({
           success: false,
           errorCode: 'SCHEDULE_COUNT_MISMATCH',
-          message: `Número de sessões na agenda (${appointments.length}) inconsistente. Esperado: ${expectedAppointments} (totalSessions: ${totalSessions})`
+          message: `Número de sessões futuras criadas (${appointments.length}) inconsistente. Esperado: ${expectedAppointments} (${parsedSessions} contratadas - ${parsedConsumed} retroativas)`
         });
       }
       

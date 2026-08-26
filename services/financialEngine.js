@@ -107,7 +107,7 @@ export async function calculateFinancialSnapshot({
       .populate('patient', 'fullName phone email')
       .populate('doctor', 'fullName specialty')
       .populate('appointment', 'date time operationalStatus sessionType')
-      .populate('session', 'date time status sessionType serviceType sessionValue');
+      .populate({ path: 'session', select: 'date time status sessionType serviceType sessionValue doctor', populate: { path: 'doctor', select: 'fullName specialty' } });
   }
 
   const rawPayments = await paymentsQuery.lean();
@@ -411,7 +411,12 @@ function normalizePaymentItem(p) {
       status: p.session.status,
       sessionType: p.session.sessionType,
       serviceType: p.session.serviceType,
-      sessionValue: p.session.sessionValue
+      sessionValue: p.session.sessionValue,
+      doctor: p.session.doctor ? {
+        _id: p.session.doctor._id?.toString(),
+        fullName: p.session.doctor.fullName,
+        specialty: p.session.doctor.specialty
+      } : null
     } : null,
     packageId: p.package?.toString?.() || p.package,
     createdAt: p.createdAt,
