@@ -83,11 +83,27 @@ const ledgerSchema = new mongoose.Schema({
         index: true
     },
 
+    // 🔗 Reversão explícita: quando type='reversal', aponta pro lançamento de
+    // crédito EXATO (FinancialLedger._id) que esta entrada está compensando.
+    // Sem isso não dá pra saber, olhando o ledger, qual crédito específico já
+    // foi revertido — obrigatório pra suportar múltiplos ciclos
+    // pagar→reverter→pagar de novo no mesmo Payment sem um ciclo antigo
+    // bloquear ou ser confundido com o novo. Índice único (ver abaixo) garante
+    // que um crédito não pode ser revertido duas vezes, mesmo sob concorrência.
+    // Sem `default`: fica ausente (undefined) em entradas que não são
+    // reversão. Necessário pro índice parcial abaixo — MongoDB não aceita
+    // `$ne: null` em partialFilterExpression, só `$exists`, e um `default:
+    // null` faria o campo existir (como null) em TODO documento.
+    reversalOfEntryId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FinancialLedger'
+    },
+
     // 🆔 Rastreabilidade
-    correlationId: { 
-        type: String, 
+    correlationId: {
+        type: String,
         required: true,
-        index: true 
+        index: true
     },
 
     // 📋 Descrição legível
@@ -140,6 +156,16 @@ const ledgerSchema = new mongoose.Schema({
 ledgerSchema.index(
     { correlationId: 1, type: 1 },
     { unique: true, partialFilterExpression: { correlationId: { $exists: true } } }
+);
+
+// 🔒 IDEMPOTÊNCIA DE REVERSÃO: um crédito específico só pode ser revertido UMA
+// vez, garantido pelo próprio banco (não por um exists()+insert em duas
+// etapas) — duas tentativas concorrentes de reverter o MESMO crédito colidem
+// aqui, atomicamente. Índice parcial: só se aplica a entradas que de fato
+// referenciam um crédito (reversões nunca revertem outra reversão).
+ledgerSchema.index(
+    { reversalOfEntryId: 1 },
+    { unique: true, partialFilterExpression: { reversalOfEntryId: { $exists: true } } }
 );
 
 // Busca por período (cashflow)

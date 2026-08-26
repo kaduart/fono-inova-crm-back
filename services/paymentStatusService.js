@@ -175,6 +175,69 @@ export async function transitionPaymentStatusBatch(transitions, newStatus, optio
  * @param {boolean} options.silent — Se true, NÃO emite evento (use com cuidado!)
  * @returns {Promise<{payment: Payment, event: Object|null, changed: boolean}>}
  */
+/**
+ * Encontra o crédito 'payment_received' ATIVO (ainda não revertido) mais
+ * recente de um Payment, e lança a reversão vinculada especificamente a ele
+ * (`reversalOfEntryId`). Suporta múltiplos ciclos pagar→reverter→pagar no
+ * mesmo Payment: cada reversão aponta pro crédito exato que compensa, então
+ * uma reversão antiga nunca é confundida com — nem bloqueia — um ciclo novo.
+ *
+ * Idempotente por construção do banco (índice único em reversalOfEntryId,
+ * ver models/FinancialLedger.js), não por leitura prévia: duas chamadas
+ * concorrentes tentando reverter o MESMO crédito colidem no insert, a
+ * perdedora recebe 11000 e trata como já revertido — sem duplicar débito.
+ */
+async function reverseActiveCreditIfAny(payment, { mongoSession, userId, reason, oldStatus, newStatus }) {
+    const creditsQuery = FinancialLedger.find({ payment: payment._id, type: 'payment_received' }).sort({ createdAt: 1 });
+    if (mongoSession) creditsQuery.session(mongoSession);
+    const credits = await creditsQuery.lean();
+    if (credits.length === 0) return null;
+
+    const reversalsQuery = FinancialLedger.find({ reversalOfEntryId: { $in: credits.map(c => c._id) } });
+    if (mongoSession) reversalsQuery.session(mongoSession);
+    const reversals = await reversalsQuery.lean();
+    const reversedCreditIds = new Set(reversals.map(r => r.reversalOfEntryId.toString()));
+
+    const unreversed = credits.filter(c => !reversedCreditIds.has(c._id.toString()));
+    if (unreversed.length === 0) return null;
+
+    // Mais recente primeiro — em uso normal só existe um crédito ativo por
+    // vez (o Payment só pode estar 'paid' uma vez até a próxima reversão),
+    // mas pega o mais novo defensivamente se houver mais de um.
+    const targetCredit = unreversed[unreversed.length - 1];
+
+    try {
+        const reversal = await FinancialLedger.debit({
+            type: 'reversal',
+            amount: targetCredit.amount,
+            billingType: targetCredit.billingType,
+            patient: payment.patient,
+            appointment: payment.appointment,
+            session: payment.session,
+            payment: payment._id,
+            reversalOfEntryId: targetCredit._id,
+            correlationId: `reversal:${targetCredit._id}`,
+            description: `Reversão automática: status mudou de '${oldStatus}' para '${newStatus}' (${reason})`,
+            occurredAt: new Date(),
+            createdBy: userId,
+            metadata: { source: 'transitionPaymentStatus', previousStatus: oldStatus, newStatus, reason }
+        }, mongoSession);
+        console.log(`[PaymentStatusService] 🔄 Reversão automática do ledger: Payment ${payment._id} (${oldStatus}→${newStatus}), R$${targetCredit.amount}, compensando crédito ${targetCredit._id}`);
+        return reversal;
+    } catch (err) {
+        if (err?.code === 11000) {
+            const existingQuery = FinancialLedger.findOne({ reversalOfEntryId: targetCredit._id, type: 'reversal' });
+            if (mongoSession) existingQuery.session(mongoSession);
+            const existing = await existingQuery.lean();
+            if (existing) {
+                console.warn(`[PaymentStatusService] Reversão concorrente detectada: crédito ${targetCredit._id} já revertido por ${existing._id} — não duplicando.`);
+                return existing;
+            }
+        }
+        throw err;
+    }
+}
+
 export async function transitionPaymentStatus(paymentId, newStatus, options = {}) {
     const {
         financialDate,
@@ -182,24 +245,25 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         paymentMethod,
         userId,
         reason = 'manual',
-        session: mongoSession,
+        session: externalSession,
         silent = false
     } = options;
 
-    // 1. Busca o payment (dentro da session se houver)
-    const query = Payment.findById(paymentId);
-    if (mongoSession) query.session(mongoSession);
-    const payment = await query;
+    // 1. Leitura inicial só pra decidir o caminho — early-return de "não
+    // mudou nada" e a guarda de consumo de pacote são baratos e não precisam
+    // de transação própria.
+    const initialQuery = Payment.findById(paymentId);
+    if (externalSession) initialQuery.session(externalSession);
+    const initialPayment = await initialQuery;
 
-    if (!payment) {
+    if (!initialPayment) {
         throw new Error(`[PaymentStatusService] Payment não encontrado: ${paymentId}`);
     }
 
-    const oldStatus = payment.status;
+    const oldStatus = initialPayment.status;
 
-    // 2. Se não mudou status, não faz nada (mas retorna o payment)
     if (oldStatus === newStatus) {
-        return { payment, event: null, changed: false };
+        return { payment: initialPayment, event: null, changed: false };
     }
 
     // 🛡️ GUARDA FINANCEIRA: consumo de pacote (isFromPackage=true ou
@@ -210,51 +274,115 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     // qualquer chamador deste serviço. Checagem centralizada em
     // utils/packageConsumptionPayment.js. Ver auditoria
     // scripts/maintenance/audit-convenio-isfrompackage-2026-08-26.mjs.
-    if (newStatus === 'billed' && isPackageConsumptionPayment(payment)) {
-        throw new PackageConsumptionInBillingError([payment], 'transitionPaymentStatus:billed');
+    if (newStatus === 'billed' && isPackageConsumptionPayment(initialPayment)) {
+        throw new PackageConsumptionInBillingError([initialPayment], 'transitionPaymentStatus:billed');
     }
 
-    // 3. Aplica a transição
-    payment.status = newStatus;
+    // 🛡️ ATOMICIDADE Payment+Ledger: saindo de 'paid', o Payment.save() e a
+    // eventual reversão do ledger precisam commitar ou abortar JUNTOS — senão
+    // uma falha na escrita do ledger (rede, validação, etc.) deixa o Payment
+    // já salvo como 'pending' com o crédito antigo intacto, exatamente o
+    // achado real de produção (2026-08-26) que originou este redesenho. Se o
+    // chamador já nos deu uma session (participa da transação dele), usamos
+    // a dele; senão abrimos uma própria só para este escopo.
+    const willAttemptReversal = oldStatus === 'paid' && newStatus !== 'paid';
+    let ownSession = null;
+    if (willAttemptReversal && !externalSession) {
+        ownSession = await mongoose.startSession();
+    }
 
-    // Campos derivados automáticos
-    if (newStatus === 'paid' && !payment.paidAt) {
-        payment.paidAt = paidAt || new Date();
-    }
-    if (newStatus === 'paid' && !payment.financialDate) {
-        payment.financialDate = financialDate || payment.paidAt || new Date();
-    }
-    if (newStatus === 'billed' && !payment.billedAt) {
-        payment.billedAt = new Date();
-    }
-    if (newStatus === 'billed') {
-        if (!payment.insurance) {
-            payment.insurance = {};
+    const runCore = async (mongoSession) => {
+        const query = Payment.findById(paymentId);
+        if (mongoSession) query.session(mongoSession);
+        const payment = await query;
+        if (!payment) {
+            throw new Error(`[PaymentStatusService] Payment não encontrado: ${paymentId}`);
         }
-        payment.insurance.status = 'billed';
-        if (!payment.insurance.billedAt) {
-            payment.insurance.billedAt = new Date();
-            payment.insurance.billedAtSource = 'paymentStatusService';
+        if (payment.status === newStatus) {
+            return { payment, event: null, changed: false };
         }
-    }
-    if (paymentMethod) {
-        payment.paymentMethod = paymentMethod;
-    }
+        if (newStatus === 'billed' && isPackageConsumptionPayment(payment)) {
+            throw new PackageConsumptionInBillingError([payment], 'transitionPaymentStatus:billed');
+        }
 
-    // 4. Salva (com ou sem session)
-    // Flag transitória: impede o post-save safety net de publicar o mesmo evento
-    // fora da Outbox. Não pertence ao schema e nunca é persistida.
-    payment.__statusChangedEmitted = true;
-    // 🛡️ Autoriza esta escrita perante o AppointmentWriteGuard — sem isso,
-    // TODA chamada a esta função (a única via canônica de mudar
-    // Payment.status) gerava WARN de "write não autorizado", já que .save()
-    // em documento existente delega pra collection.updateOne (interceptado).
-    payment._fromPaymentStatusService = true;
-    if (mongoSession) {
-        await payment.save({ session: mongoSession });
+        const localOldStatus = payment.status;
+
+        // 3. Aplica a transição
+        payment.status = newStatus;
+
+        // Campos derivados automáticos
+        if (newStatus === 'paid' && !payment.paidAt) {
+            payment.paidAt = paidAt || new Date();
+        }
+        if (newStatus === 'paid' && !payment.financialDate) {
+            payment.financialDate = financialDate || payment.paidAt || new Date();
+        }
+        if (newStatus === 'billed' && !payment.billedAt) {
+            payment.billedAt = new Date();
+        }
+        if (newStatus === 'billed') {
+            if (!payment.insurance) {
+                payment.insurance = {};
+            }
+            payment.insurance.status = 'billed';
+            if (!payment.insurance.billedAt) {
+                payment.insurance.billedAt = new Date();
+                payment.insurance.billedAtSource = 'paymentStatusService';
+            }
+        }
+        if (paymentMethod) {
+            payment.paymentMethod = paymentMethod;
+        }
+
+        // 4. Salva (com ou sem session)
+        // Flag transitória: impede o post-save safety net de publicar o mesmo evento
+        // fora da Outbox. Não pertence ao schema e nunca é persistida.
+        payment.__statusChangedEmitted = true;
+        // 🛡️ Autoriza esta escrita perante o AppointmentWriteGuard — sem isso,
+        // TODA chamada a esta função (a única via canônica de mudar
+        // Payment.status) gerava WARN de "write não autorizado", já que .save()
+        // em documento existente delega pra collection.updateOne (interceptado).
+        payment._fromPaymentStatusService = true;
+        if (mongoSession) {
+            await payment.save({ session: mongoSession });
+        } else {
+            await payment.save();
+        }
+
+        // 🛡️ REVERSÃO AUTOMÁTICA DE LEDGER: saindo de 'paid' pra qualquer outro
+        // status, o crédito payment_received original deixa de refletir a
+        // realidade — sem isso o FinancialLedger fica com um crédito fantasma
+        // pra sempre. Achado real em produção (2026-08-26): PATCH
+        // /api/v2/payments/:id genérico usa este serviço pra reverter status
+        // paid→pending sem passar pelo fluxo dedicado de estorno
+        // (routes/payment.v2.js /register-debit). FinancialLedger é imutável
+        // (docs/DELETE_CASCADE_CONTRACT.md) — a correção é lançar um débito de
+        // reversão vinculado ao crédito exato, nunca apagar/alterar o original.
+        if (localOldStatus === 'paid' && newStatus !== 'paid') {
+            await reverseActiveCreditIfAny(payment, { mongoSession, userId, reason, oldStatus: localOldStatus, newStatus });
+        }
+
+        return { payment, localOldStatus, changed: true };
+    };
+
+    let coreResult;
+    if (ownSession) {
+        try {
+            await ownSession.withTransaction(async () => {
+                coreResult = await runCore(ownSession);
+            });
+        } finally {
+            await ownSession.endSession();
+        }
     } else {
-        await payment.save();
+        coreResult = await runCore(externalSession);
     }
+
+    if (!coreResult.changed) {
+        return coreResult;
+    }
+    const { payment } = coreResult;
+    const mongoSession = externalSession || null;
 
     // 5. Salva evento no Outbox (dentro da transação quando houver session)
     let event = null;
