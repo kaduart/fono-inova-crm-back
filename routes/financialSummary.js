@@ -66,20 +66,31 @@ async function calculateRealPackageDebt(patientId, packageId = null) {
         apptsByPackage[pid].push(a._id.toString());
     }
 
-    // Busca todos os payments paid vinculados a esses appointments
+    // Busca payments 'paid' E 'canceled' vinculados a esses appointments — uma sessão
+    // com pagamento cancelado (baixa/estorno administrativo, ex: write-off de dívida
+    // indevida) já está resolvida e não deve voltar a contar como dívida em aberto.
+    // Bug real encontrado 2026-08-26: só reconhecer 'paid' fazia sessões com Payment
+    // cancelado serem recontadas como dívida "fantasma" (ex: Henre Gabriel Jacinto Da
+    // Silva, R$1440 de dívida inexistente — todas as sessões já tinham Payment
+    // cancelado, não pending).
     const allApptIds = allAppointments.map(a => a._id);
-    const paidAgg = await Payment.aggregate([
+    const resolvedAgg = await Payment.aggregate([
         {
             $match: {
                 patient: { $in: [patientOid, patientId] },
-                status: 'paid',
+                status: { $in: ['paid', 'canceled'] },
                 appointment: { $in: allApptIds }
             }
         },
-        { $group: { _id: '$appointment', total: { $sum: '$amount' } } }
+        { $group: { _id: '$appointment', total: { $sum: '$amount' }, status: { $first: '$status' } } }
     ]);
+    // Só o valor de payments 'paid' conta como dinheiro recebido (realPaid);
+    // 'canceled' entra em resolvedByAppt (abate da sessão) mas não em realPaid.
     const paidByAppt = Object.fromEntries(
-        paidAgg.map(p => [p._id.toString(), p.total])
+        resolvedAgg.filter(p => p.status === 'paid').map(p => [p._id.toString(), p.total])
+    );
+    const resolvedByAppt = Object.fromEntries(
+        resolvedAgg.map(p => [p._id.toString(), p.total])
     );
 
     let totalDebt = 0;
@@ -93,8 +104,9 @@ async function calculateRealPackageDebt(patientId, packageId = null) {
 
         const apptIds = apptsByPackage[pid] || [];
         const realPaid = apptIds.reduce((sum, aid) => sum + (paidByAppt[aid] || 0), 0);
+        const resolvedTotal = apptIds.reduce((sum, aid) => sum + (resolvedByAppt[aid] || 0), 0);
 
-        const debt = Math.max(0, completedValue - realPaid);
+        const debt = Math.max(0, completedValue - resolvedTotal);
         if (debt > 0.01) {
             totalDebt += debt;
             items.push({

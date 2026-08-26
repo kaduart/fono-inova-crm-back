@@ -6,7 +6,7 @@ import validateId from '../middleware/validateId.js';
 import { getAvailableTimeSlots } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
-import PatientBalance from '../models/PatientBalance.js';
+import PatientsView from '../models/PatientsView.js';
 import { mapAppointmentToEvent } from '../utils/appointmentMapper.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 
@@ -533,16 +533,23 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         console.log(`[Calendar] ${patientIds.length} pacientes únicos para verificar saldo`);
 
-        const patientBalances = await PatientBalance.find({
-            patient: { $in: patientIds },
-            currentBalance: { $gt: 0 }
-        }).select('patient currentBalance').lean();
+        // 🚨 FIX (2026-08-26): usava PatientBalance.currentBalance — contador legado,
+        // mutável, que fica dessincronizado da realidade (achado real: paciente com
+        // currentBalance=1280 mostrando "Débito R$1280" no calendário quando a dívida
+        // real, calculada a partir de Payment, era R$0 — sessões já tinham Payment
+        // cancelado/baixado, não pendente). Fonte de verdade é PatientsView.stats.
+        // totalPendingParticular (Payment-based, mesma usada no filtro "Saldo devedor"
+        // da lista de pacientes e no card de saldo do dashboard).
+        const patientBalances = await PatientsView.find({
+            patientId: { $in: patientIds },
+            'stats.totalPendingParticular': { $gt: 0 }
+        }).select('patientId stats.totalPendingParticular').lean();
 
         console.log(`[Calendar] ${patientBalances.length} pacientes com saldo devedor`);
 
         // Map de patientId -> saldo para lookup rápido
         const balanceMap = patientBalances.reduce((map, bal) => {
-            map[bal.patient.toString()] = bal.currentBalance;
+            map[bal.patientId.toString()] = bal.stats.totalPendingParticular;
             return map;
         }, {});
 
