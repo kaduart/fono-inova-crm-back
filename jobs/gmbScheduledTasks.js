@@ -248,6 +248,11 @@ export const scheduleGmbCron = () => {
             const posts = await GmbPost.findScheduledForPublish(2);
             if (posts.length === 0) return;
 
+            // MAX_RETRIES: reintroduzido depois de ficar undefined por engano no fix
+            // de duplicatas (93bb02ec) — o ReferenceError quebrava TODO envio desde
+            // então (caía direto no catch, retryCount subia, nunca chegava a enviar
+            // de verdade). Achado em produção 2026-08-27 via log do Render.
+            const MAX_RETRIES = 4;
             for (const post of posts) {
                 try {
                     if (!post.mediaUrl) {
