@@ -141,6 +141,105 @@ function toReceivable(batch, paymentById) {
   };
 }
 
+// Mais de um InsuranceBatch pode compartilhar a mesma NF física (ex: a mesma
+// guia foi enviada em remessas/submissões separadas, mas o número da nota é
+// um só). Mescla esses batches num único item de retorno, somando guias por
+// guideId, e mantém `batchIds` (no item e em cada guia) para as ações de baixa
+// continuarem sabendo exatamente quais InsuranceBatch precisam ser tocados —
+// a mesclagem é só de leitura, nenhum documento é alterado no banco.
+function mergeReceivablesByInvoice(receivables) {
+  const groups = new Map();
+  for (const r of receivables) {
+    const key = `${r.invoiceNumber}|${r.insuranceProvider}|${r.patient?._id || ''}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  return [...groups.values()].map(mergeReceivableGroup);
+}
+
+function mergeReceivableGroup(group) {
+  const batchIds = group.map(r => r.batchId);
+
+  const guideMap = new Map();
+  for (const r of group) {
+    for (const g of r.guides) {
+      const key = g.guideId || `${r.batchId}-${g.number}`;
+      let row = guideMap.get(key);
+      if (!row) {
+        row = {
+          guideId: g.guideId,
+          number: g.number,
+          specialty: g.specialty,
+          sessions: 0,
+          grossAmount: 0,
+          receivedSessions: 0,
+          receivedAmount: 0,
+          pendingSessions: 0,
+          pendingAmount: 0,
+          batchIds: []
+        };
+        guideMap.set(key, row);
+      }
+      row.sessions += g.sessions;
+      row.grossAmount = round(row.grossAmount + g.grossAmount);
+      row.receivedSessions += g.receivedSessions;
+      row.receivedAmount = round(row.receivedAmount + g.receivedAmount);
+      row.pendingSessions += g.pendingSessions;
+      row.pendingAmount = round(row.pendingAmount + g.pendingAmount);
+      row.batchIds.push(r.batchId);
+    }
+  }
+  const guides = [...guideMap.values()].map(row => ({
+    ...row,
+    status: row.receivedSessions === row.sessions
+      ? 'received'
+      : row.receivedSessions > 0
+        ? 'partial'
+        : 'pending'
+  }));
+
+  const sessions = group.reduce((sum, r) => sum + r.sessions, 0);
+  const receivedSessions = guides.reduce((sum, g) => sum + g.receivedSessions, 0);
+  const totalGross = round(group.reduce((sum, r) => sum + r.totalGross, 0));
+  const totalNet = round(group.reduce((sum, r) => sum + r.totalNet, 0));
+  const receivedAmount = round(group.reduce((sum, r) => sum + r.receivedAmount, 0));
+  const pendingAmount = round(Math.max(0, totalNet - receivedAmount));
+  const status = sessions > 0 && receivedSessions === sessions
+    ? 'received'
+    : receivedSessions > 0
+      ? 'partial'
+      : group[0].status;
+  const receivedAtCandidates = group.map(r => r.receivedAt).filter(Boolean).map(v => new Date(v));
+  const receivedAt = status === 'received' && receivedAtCandidates.length
+    ? new Date(Math.max(...receivedAtCandidates.map(v => v.getTime())))
+    : null;
+  const createdAt = group.reduce((min, r) => (r.createdAt < min ? r.createdAt : min), group[0].createdAt);
+
+  const first = group[0];
+  return {
+    batchId: first.batchId,
+    batchIds,
+    billingSubmissionId: first.billingSubmissionId,
+    invoiceNumber: first.invoiceNumber,
+    invoiceDate: first.invoiceDate,
+    invoiceDocumentId: first.invoiceDocumentId,
+    patient: first.patient,
+    insuranceProvider: first.insuranceProvider,
+    status,
+    origin: first.origin,
+    sessions,
+    guides,
+    totalGross,
+    issRate: first.issRate,
+    issAmount: round(group.reduce((sum, r) => sum + (r.issAmount || 0), 0)),
+    totalNet,
+    receivedAmount,
+    pendingAmount,
+    receivedAt,
+    createdAt
+  };
+}
+
 export async function listInvoiceReceivables({ status = 'pending', patientId, insuranceProvider } = {}) {
   const query = {
     invoiceNumber: { $exists: true, $nin: [null, ''] },
@@ -164,7 +263,7 @@ export async function listInvoiceReceivables({ status = 'pending', patientId, in
       .lean()
     : [];
   const paymentById = new Map(payments.map(payment => [payment._id.toString(), payment]));
-  const receivables = batches.map(batch => toReceivable(batch, paymentById));
+  const receivables = mergeReceivablesByInvoice(batches.map(batch => toReceivable(batch, paymentById)));
   if (status === 'pending') return receivables.filter(row => row.status !== 'received' && row.pendingAmount > 0);
   if (status === 'received') return receivables.filter(row => row.status === 'received');
   return receivables;
@@ -397,6 +496,6 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
   }
 }
 
-export const __testables = { guideSummary, toReceivable };
+export const __testables = { guideSummary, toReceivable, mergeReceivablesByInvoice };
 
 export default { listInvoiceReceivables, receiveInsuranceBatch, updateInvoiceNumber };
