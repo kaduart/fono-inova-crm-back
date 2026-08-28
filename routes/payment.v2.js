@@ -43,7 +43,7 @@ const router = express.Router();
 // ============================================
 // SCHEMA VALIDATION - Constantes
 // ============================================
-const VALID_PAYMENT_METHODS = ['dinheiro', 'pix', 'credit_card', 'debit_card', 'cartao', 'cartão', 'transferencia', 'transferência', 'cash', 'bank_transfer'];
+const VALID_PAYMENT_METHODS = ['dinheiro', 'pix', 'credit_card', 'debit_card', 'cartao', 'cartão', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferência', 'transferencia_bancaria', 'cash', 'bank_transfer'];
 const VALID_PAYMENT_TYPES = ['appointment_payment', 'multi_payment', 'balance_credit', 'standalone'];
 
 // ============================================
@@ -62,8 +62,11 @@ const normalizePaymentMethod = (method) => {
         'debit_card': 'debit_card',
         'cartao': 'credit_card',
         'cartão': 'credit_card',
+        'cartao_credito': 'credit_card',
+        'cartao_debito': 'debit_card',
         'transferencia': 'bank_transfer',
         'transferência': 'bank_transfer',
+        'transferencia_bancaria': 'bank_transfer',
         'cash': 'cash',
         'bank_transfer': 'bank_transfer'
     };
