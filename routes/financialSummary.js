@@ -125,14 +125,13 @@ async function calculateRealPackageDebt(patientId, packageId = null) {
 }
 
 /**
- * GET /api/v2/financial/patient/:patientId/summary
- *
- * Retorna resumo financeiro REAL do paciente baseado em Payment records.
+ * Calcula o resumo financeiro de um paciente (opcionalmente escopado a 1 pacote).
+ * Extraído do handler de GET /summary pra ser reutilizável pelo endpoint em lote
+ * (POST /summary/batch) sem duplicar nenhuma regra de cálculo — mesma função,
+ * mesmo resultado, só chamada N vezes em paralelo no backend em vez de N vezes
+ * via HTTP pelo frontend.
  */
-router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
-    const { patientId } = req.params;
-    const { packageId } = req.query; // opcional: filtrar por package específico
-
+async function buildPatientFinancialSummary(patientId, packageId) {
     const patientOid = mongoose.Types.ObjectId.isValid(patientId)
         ? new mongoose.Types.ObjectId(patientId)
         : patientId;
@@ -294,29 +293,84 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
         }
     }
 
-    res.json({
-        success: true,
-        data: {
-            patientId,
-            packageId: packageId || null,
-            // Totais globais (todos os billingTypes)
-            totalPaid,
-            paidCount,
-            totalPending,
-            pendingCount,
-            completedSessions,
-            // 🔴 OPERACIONAL: dívida real das sessões já feitas
-            // Soma dívida avulsa + dívida de pacotes per-session (sessões completadas - pagas)
-            sessionDebt: pendingAvulso + packageDebt,
-            // 🆕 Breakdown por billingType (SSOT)
-            particularPaid,
-            particularCount,
-            liminarPaid: liminarPaidAgg[0]?.total || 0,
-            liminarCount: liminarPaidAgg[0]?.count || 0,
-            convenioPaid: convenioPaidAgg[0]?.total || 0,
-            convenioCount: convenioPaidAgg[0]?.count || 0
-        }
-    });
+    return {
+        patientId,
+        packageId: packageId || null,
+        // Totais globais (todos os billingTypes)
+        totalPaid,
+        paidCount,
+        totalPending,
+        pendingCount,
+        completedSessions,
+        // 🔴 OPERACIONAL: dívida real das sessões já feitas
+        // Soma dívida avulsa + dívida de pacotes per-session (sessões completadas - pagas)
+        sessionDebt: pendingAvulso + packageDebt,
+        // 🆕 Breakdown por billingType (SSOT)
+        particularPaid,
+        particularCount,
+        liminarPaid: liminarPaidAgg[0]?.total || 0,
+        liminarCount: liminarPaidAgg[0]?.count || 0,
+        convenioPaid: convenioPaidAgg[0]?.total || 0,
+        convenioCount: convenioPaidAgg[0]?.count || 0
+    };
+}
+
+/**
+ * GET /api/v2/financial/patient/:patientId/summary
+ *
+ * Retorna resumo financeiro REAL do paciente baseado em Payment records.
+ */
+router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const { packageId } = req.query; // opcional: filtrar por package específico
+
+    const data = await buildPatientFinancialSummary(patientId, packageId);
+
+    res.json({ success: true, data });
+}));
+
+/**
+ * GET /api/v2/financial/patient/:patientId/summary/batch?packageIds=a,b,c
+ *
+ * Mesma coisa que /summary, mas para vários pacotes de uma vez — 1 round-trip
+ * HTTP em vez de N. Achado real (2026-09-01): tela de pacotes de um paciente com
+ * 11 pacotes inativos disparava 11 chamadas a /summary, cada uma com ~8-10
+ * aggregations no Mongo, serializadas pelo limite de conexões do navegador
+ * (até 2s pra carregar a aba). Roda exatamente a mesma função de cálculo do
+ * endpoint singular, só que em paralelo no backend (Promise.all) — nenhuma
+ * regra financeira nova, nenhum resultado diferente por pacote.
+ *
+ * Resposta: { success, data: { [packageId]: <mesmo shape de /summary> } }
+ * Um packageId que falhar no cálculo não derruba os demais — vem com `error`
+ * no lugar do resumo, pro frontend decidir como tratar (achado real: um
+ * pacote com dado inconsistente não deve travar o carregamento dos outros 10).
+ */
+router.get('/patient/:patientId/summary/batch', asyncHandler(async (req, res) => {
+    const { patientId } = req.params;
+    const { packageIds } = req.query;
+
+    if (!packageIds || typeof packageIds !== 'string') {
+        return res.status(400).json({ success: false, message: 'packageIds é obrigatório (lista separada por vírgula)' });
+    }
+
+    const ids = [...new Set(packageIds.split(',').map(id => id.trim()).filter(Boolean))];
+    if (ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'packageIds não pode ser vazio' });
+    }
+
+    const results = await Promise.all(
+        ids.map(async (packageId) => {
+            try {
+                const summary = await buildPatientFinancialSummary(patientId, packageId);
+                return [packageId, summary];
+            } catch (err) {
+                console.error(`[financialSummary] Erro no batch para package ${packageId}:`, err.message);
+                return [packageId, { error: err.message }];
+            }
+        })
+    );
+
+    res.json({ success: true, data: Object.fromEntries(results) });
 }));
 
 /**

@@ -58,57 +58,6 @@ class GuideService {
   }
 
   /**
-   * Consome uma sessão da guia (incrementa contador)
-   * ⚠️ Deve ser chamado dentro de uma transação MongoDB
-   *
-   * @param {ObjectId|string} guideId - ID da guia
-   * @param {ClientSession} mongoSession - Sessão MongoDB para transação
-   * @returns {Promise<Object>} { remaining, status, used, total }
-   * @throws {Error} Se guia não encontrada, esgotada ou inativa
-   *
-   * @example
-   * const session = await mongoose.startSession();
-   * session.startTransaction();
-   * try {
-   *   const result = await guideService.consumeGuideSession(guideId, session);
-   *   console.log(`Restam ${result.remaining} sessões`);
-   *   await session.commitTransaction();
-   * } finally {
-   *   session.endSession();
-   * }
-   */
-  async consumeGuideSession(guideId, mongoSession) {
-    if (!mongoSession) {
-      throw new Error('mongoSession é obrigatório para consumeGuideSession');
-    }
-
-    try {
-      // Buscar guia dentro da transação
-      const guide = await InsuranceGuide.findById(guideId).session(mongoSession);
-
-      if (!guide) {
-        const error = new Error('Guia não encontrada');
-        error.code = 'GUIDE_NOT_FOUND';
-        throw error;
-      }
-
-      // Validar e incrementar (método do model)
-      await guide.consumeSession(mongoSession);
-
-      // Retornar resumo estruturado
-      return {
-        remaining: guide.remaining,
-        status: guide.status,
-        used: guide.usedSessions,
-        total: guide.totalSessions
-      };
-
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
    * Libera uma sessão da guia (decrementa contador)
    * Usado quando um agendamento é cancelado
    * ⚠️ Deve ser chamado dentro de uma transação MongoDB

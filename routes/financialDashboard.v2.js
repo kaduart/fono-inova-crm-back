@@ -762,8 +762,19 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
 
     // ─── BASE DE CÁLCULO DA META: PRODUÇÃO (regime de competência) ───
     // Alinhado ao contrato back/contracts/FinancialSemantic.js — META.base = 'PRODUCTION'.
-    const realizadoMes = producaoRealizadaMes;
-    const pipeline = data.aReceberProducao || 0;
+    // 🚨 FIX (2026-09-01, decisão de negócio confirmada): Liminar sai da meta mensal.
+    // Motivo do usuário: crédito judicial é pago antecipado — o valor total entra de
+    // uma vez antes das sessões começarem (mesma lógica de pacote pré-pago), então não
+    // é "produção a perseguir" no mês, é crédito já reservado sendo consumido aos
+    // poucos. Contar Liminar na meta inflava o card principal com trabalho cujo
+    // dinheiro já estava garantido de antemão, mascarando o ritmo real de
+    // Caixa+Convênio (a régua que a clínica realmente usa pra saber se bateu o mês).
+    // Liminar continua aparecendo normalmente em Produção por Tipo e nos relatórios —
+    // só não conta mais pra "bater a meta".
+    const producaoLiminarMes = data.producaoDetalhe?.liminar || 0;
+    const realizadoMes = producaoRealizadaMes - producaoLiminarMes;
+    const liminarAReceberMes = data.visaoSemantica?.pipeline?.liminar || 0;
+    const pipeline = Math.max(0, (data.aReceberProducao || 0) - liminarAReceberMes);
 
     const _gapRestante = isMonthClosed ? 0 : Math.max(metaMensal - realizadoMes, 0);
     const metaDiariaNecessaria = daysRemaining > 0 ? _gapRestante / daysRemaining : 0;
@@ -846,7 +857,13 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             mediaDiariaAtual: parseFloat(mediaDiariaAtual.toFixed(2)),
             percentualEsperado: parseFloat(percentualEsperado.toFixed(1)),
             // 🎯 percentualRealizado = % de PRODUÇÃO contra meta
-            percentualRealizado: parseFloat(percentualRealizado.toFixed(1))
+            percentualRealizado: parseFloat(percentualRealizado.toFixed(1)),
+            // 🚨 FIX (2026-09-01): daysPassed já calculado certo acima (linha 746,
+            // considera mês fechado) mas nunca era devolvido aqui — o frontend lê
+            // `metas.ritmo.diasDecorridos` (FinancialDashboardTab.tsx) e sempre caía
+            // no fallback `?? 0`, mostrando "0 dias decorridos" pra qualquer mês,
+            // inclusive fechado.
+            diasDecorridos: daysPassed,
         },
         projecao: {
             final: parseFloat(projecaoFinal.toFixed(2)),
@@ -1538,10 +1555,28 @@ async function calculateRealTime(year, month) {
     // dinheiro recebido em caixa que NÃO corresponde à produção do mês
     // (mistura retroativos de competências passadas + antecipações de competências futuras)
     const recebimentosAntecipados = Math.max(0, cash.total - recebidoProducao);
+    // 🚨 FIX (2026-09-01): retroativos era "o que sobrar depois de antecipações"
+    // (min(vendasDePacote, resíduo) tomava o resíduo inteiro achando que era
+    // antecipação de pacote, e retroativos ficava sempre em 0 quando havia
+    // qualquer venda de pacote no mês — mesmo com retroativo real de convênio
+    // provado por serviceDate, ex: 10 sessões de convênio de jun/jul pagas em
+    // 27/08). Agora conta de verdade: soma pagamentos de convênio/liminar com
+    // financialDate neste período mas serviceDate de período anterior (prova
+    // de que é atraso de competência passada, não resíduo por exclusão).
+    // Antecipação de pacote é o que sobra depois de tirar o retroativo real —
+    // não o contrário.
+    const retroativoRealAgg = await Payment.aggregate([
+        { $match: {
+            status: 'paid',
+            billingType: { $in: ['convenio', 'liminar'] },
+            financialDate: { $gte: start, $lte: end },
+            serviceDate: { $lt: start }
+        }},
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const retroativos = Math.min(recebimentosAntecipados, retroativoRealAgg[0]?.total || 0);
     // Antecipações: venda de pacote para consumo em sessões futuras (competência ainda não ocorrida)
-    const antecipacoes = Math.min(packageSalesTotal, recebimentosAntecipados);
-    // Retroativos: resto do resíduo — majoritariamente convênio/liminar pago em atraso de meses anteriores
-    const retroativos = Math.max(0, recebimentosAntecipados - antecipacoes);
+    const antecipacoes = Math.max(0, Math.min(packageSalesTotal, recebimentosAntecipados - retroativos));
 
     // Caixa + Pipeline. Informativo/liquidez apenas — NUNCA usar como meta (ver FinancialSemantic.js CAIXA_PROJETADO).
     const caixaProjetado = cash.total + aReceberProducao;
@@ -1567,7 +1602,16 @@ async function calculateRealTime(year, month) {
     console.log(`[realTime] buildBlocks = ${Date.now() - _tBuildBlocks}ms`);
 
     // 🆕 Cálculo de dias decorridos para contexto da meta
-    const diasDecorridos = Math.max(1, now.date());
+    // 🚨 FIX (2026-09-01): usava now.date() (dia do mês REAL de hoje) sem checar
+    // se o mês consultado é o mês atual — pra um mês passado (fechado) isso
+    // devolvia um valor pequeno e sem relação com o período (ex: consultar
+    // agosto no dia 1º de setembro devolvia diasDecorridos=1, quando agosto
+    // inteiro — todos os ~31 dias — já decorreu). `isCurrentMonth` já existe
+    // acima especificamente pra essa distinção (usado até pra limitar `end`),
+    // só faltava aplicar aqui também.
+    const diasDecorridos = isCurrentMonth
+        ? Math.max(1, now.date())
+        : (start <= now.toDate() ? moment.tz([year, month - 1], TIMEZONE).daysInMonth() : 0);
     const diasUteis = META_CONFIG.diasUteis;
 
     console.log(`[realTime] TOTAL = ${Date.now() - _t0}ms`);
@@ -1661,7 +1705,15 @@ async function calculateRealTime(year, month) {
             contextoTemporal: {
                 diasDecorridos,
                 diasUteis,
-                percentualMes: Math.round((diasDecorridos / diasUteis) * 100),
+                // 🚨 FIX (2026-09-01): pra mês passado, diasDecorridos agora é dias
+                // corridos do mês inteiro (ex: 31 em agosto) enquanto diasUteis é uma
+                // config fixa de dias ÚTEIS (unidades diferentes) — dividir os dois
+                // gerava percentual >100% (31/26 = 119%). Período de mês fechado é,
+                // por definição, 100% decorrido; só o mês atual precisa da razão
+                // dia-a-dia contra a meta de dias úteis.
+                percentualMes: isCurrentMonth
+                    ? Math.round((diasDecorridos / diasUteis) * 100)
+                    : (start <= now.toDate() ? 100 : 0),
             }
         },
 

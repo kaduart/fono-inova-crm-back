@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
 import Expense from '../models/Expense.js';
 import Session from '../models/Session.js';
-import { expenseCache } from '../routes/expenses.v2.js';
+import { invalidateExpenseCache } from '../routes/expenses.v2.js';
 import { calculateCommissionBatch } from './commissionRule.service.js';
 
 // Cache: 60s por (doctorId, startDate, endDate) — evita N×2 queries em calculateProfissionais
@@ -218,7 +218,7 @@ export const generateMonthlyCommissions = async (month, year, options = {}) => {
     await session.commitTransaction();
 
     // Invalida cache de despesas para que a listagem reflita as novas comissões
-    expenseCache.flushAll();
+    await invalidateExpenseCache();
 
     console.log(`\n🎉 Comissões geradas: ${results.length}/${doctors.length} profissionais\n`);
 

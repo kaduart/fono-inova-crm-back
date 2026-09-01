@@ -1,24 +1,42 @@
 // routes/expenses.v2.js - API V2 para Despesas (Otimizada com cache)
 import express from 'express';
 import moment from 'moment-timezone';
-import NodeCache from 'node-cache';
 import { auth, authorize } from '../middleware/auth.js';
 import Expense from '../models/Expense.js';
 import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { safeRedis } from '../config/redisConnection.js';
 import mongoose from 'mongoose';
 
 const router = express.Router();
 
-// Cache para V2 (TTL: 2 minutos)
-const expenseCache = new NodeCache({ stdTTL: 120, checkperiod: 60 });
+// Cache V2 (TTL: 2 minutos) — Redis compartilhado, não em memória do processo.
+// Um NodeCache local funciona sozinho, mas a produção roda mais de uma
+// instância do backend: cada uma teria seu próprio cache isolado, e invalidar
+// numa instância (ex: worker de comissão) não afeta as outras — quem cair
+// numa instância diferente via load balancer via dado desatualizado por até
+// stdTTL, mesmo depois de outra máquina já ver o dado novo (achado 2026-09-01).
+// A "invalidação" usa um contador de versão em vez de flush por padrão de
+// chave, porque o wrapper safeRedis não expõe SCAN/KEYS.
+const CACHE_TTL_SECONDS = 120;
+const CACHE_VERSION_KEY = 'expenses_v2:cache_version';
+
+async function getCacheVersion() {
+    const raw = await safeRedis.get(CACHE_VERSION_KEY);
+    return raw ? Number(raw) || 0 : 0;
+}
+
+export async function invalidateExpenseCache() {
+    const current = await getCacheVersion();
+    await safeRedis.set(CACHE_VERSION_KEY, String(current + 1));
+}
 
 /**
  * Gera chave de cache baseada nos filtros
  */
-function generateCacheKey(filters) {
+function generateCacheKey(filters, version) {
     const { month, year, doctorId, category, status, page, limit } = filters;
-    return `expenses_v2_${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${page}_${limit}`;
+    return `expenses_v2:${version}:${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${page}_${limit}`;
 }
 
 /**
@@ -60,16 +78,17 @@ router.get('/', auth, async (req, res) => {
         if (subcategory) filters.subcategory = subcategory;
         if (status) filters.status = status;
 
-        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, page, limit });
-        
+        const cacheVersion = await getCacheVersion();
+        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, page, limit }, cacheVersion);
+
         // Verifica cache (se não forçar refresh)
         if (!nocache) {
-            const cached = expenseCache.get(cacheKey);
-            if (cached) {
+            const cachedRaw = await safeRedis.get(cacheKey);
+            if (cachedRaw) {
                 console.log('[ExpenseV2] Cache hit:', cacheKey);
                 return res.json({
                     success: true,
-                    ...cached,
+                    ...JSON.parse(cachedRaw),
                     cached: true
                 });
             }
@@ -119,7 +138,7 @@ router.get('/', auth, async (req, res) => {
         };
 
         // Salva no cache
-        expenseCache.set(cacheKey, result);
+        await safeRedis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));
 
         res.json({
             success: true,
@@ -228,7 +247,7 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
                 .populate('relatedDoctor', 'fullName specialty'),
             
             // Invalida cache (não bloqueia resposta)
-            Promise.resolve().then(() => expenseCache.flushAll()),
+            invalidateExpenseCache(),
             
             // Publica evento (background)
             publishEvent(EventTypes.EXPENSE_CREATED, {
@@ -297,7 +316,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
         }
 
         // Invalida cache
-        expenseCache.flushAll();
+        await invalidateExpenseCache();
 
         // Publica evento
         await publishEvent(EventTypes.EXPENSE_UPDATED, {
@@ -344,7 +363,7 @@ router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) 
         }
 
         // Invalida cache
-        expenseCache.flushAll();
+        await invalidateExpenseCache();
 
         // Publica evento
         await publishEvent(EventTypes.EXPENSE_CANCELED, {
@@ -365,8 +384,5 @@ router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) 
         });
     }
 });
-
-// Exporta cache para invalidação externa
-export { expenseCache };
 
 export default router;

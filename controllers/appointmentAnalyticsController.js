@@ -372,22 +372,22 @@ export const getAppointmentsByType = async (req, res) => {
 
         let patientHistoryMap = new Map();
         if (patientIds.length > 0) {
-            // Olhar só 46 dias antes do appointment mais antigo do período:
-            // - isFirstVisit: paciente novo no período não tem anterior
-            // - retorno 45+: gap mínimo é 45 dias
-            // - isFirstVisitInSpecialty: só importa agendamentos nos últimos 45 dias
-            const minAptDate = allAppointments.reduce((min, a) => {
-                const d = a.date ? new Date(a.date) : null;
-                return d && d < min ? d : min;
-            }, new Date());
-            const historyLookback = new Date(minAptDate);
-            historyLookback.setDate(historyLookback.getDate() - 46);
-
+            // 🚨 FIX (2026-09-01, caso Isaac Moreira Ribeiro): a janela de 46 dias
+            // (usada antes tanto pra "já veio alguma vez" quanto pro gap de retorno)
+            // corta história real de quem teve um hiato maior que 46 dias — Isaac fez
+            // um pacote de 9 sessões em junho (esgotado), sumiu 63 dias e voltou hoje;
+            // a busca não alcançava junho, achava "nenhum histórico" e classificava
+            // como 1ª vez em vez de retorno. "Já veio alguma vez" não pode ter prazo
+            // de validade — só o cálculo de "retornou depois de quantos dias" (feito
+            // em JS logo abaixo, em computeLifecycleFlags) tem um limiar (45 dias), e
+            // esse limiar não precisa ser imposto na query do Mongo. Busca agora o
+            // histórico INTEIRO dos pacientes envolvidos no período — sem corte de
+            // data — mas continua escopada só aos patientIds do período consultado,
+            // não à clínica inteira.
             const _tHistory = Date.now();
             const histories = await Appointment.find({
                 patient: { $in: patientIds.map(id => new mongoose.Types.ObjectId(id)) },
-                operationalStatus: { $nin: ['canceled', 'cancelled'] },
-                createdAt: { $gte: historyLookback }
+                operationalStatus: { $nin: ['canceled', 'cancelled'] }
             })
                 .select('patient date specialty createdAt operationalStatus')
                 .lean();

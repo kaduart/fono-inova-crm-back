@@ -851,7 +851,9 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                     total: production.total,
                     aReceber,
                     producaoLiquidada,
-                    convenioAReceber: production.convenio || 0,
+                    // 🚨 FIX (2026-09-01): mesmo bug do endpoint /cashflow/month — usava
+                    // produção total de convênio sem descontar o que já entrou em caixa.
+                    convenioAReceber: Math.max(0, (production.convenio || 0) - (cash.convenio || 0)),
                     quantidadeAtendimentos: production.count,
                     ticketMedio: ticketMedioProducao,
                     taxaEficiencia: parseFloat(taxaEficiencia),
@@ -1004,10 +1006,11 @@ async function _buildMonthResponse({ month }) {
     const start = monthStart.clone().utc().toDate();
     const end = moment.min(monthEnd, today).utc().toDate();
 
-    const [cashMap, productionResult, productionTotals] = await Promise.all([
+    const [cashMap, productionResult, productionTotals, cashTotals] = await Promise.all([
         unifiedFinancialService.calculateCashByDay(start, end),
         unifiedFinancialService.calculateProductionByDay(start, end),
-        unifiedFinancialService.calculateProduction(start, end)
+        unifiedFinancialService.calculateProduction(start, end),
+        unifiedFinancialService.calculateCash(start, end, { includeDetails: false })
     ]);
 
     const producaoMap = productionResult.map;
@@ -1035,7 +1038,13 @@ async function _buildMonthResponse({ month }) {
         resumo: {
             caixaBruto,
             producaoTotal: productionTotals.total || 0,
-            convenioAReceber: productionTotals.convenio || 0,
+            // 🚨 FIX (2026-09-01): usava productionTotals.convenio direto (produção
+            // TOTAL de convênio no mês) como se fosse "a receber" — sem descontar o
+            // que já tinha entrado em caixa. Mesmo cálculo já existe certo em
+            // financialDashboard.v2.js: convenioAReceber = produção − já recebido.
+            // Sem isso, os dois endpoints (/dashboard e /cashflow/month) mostravam
+            // dois valores diferentes pro mesmo "convênio a receber" do mesmo mês.
+            convenioAReceber: Math.max(0, (productionTotals.convenio || 0) - (cashTotals.convenio || 0)),
             porTipo: {
                 particular: productionTotals.particular || 0,
                 pacote: productionTotals.pacote || 0,

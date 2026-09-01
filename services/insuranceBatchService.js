@@ -460,11 +460,9 @@ export async function processReturn(batchId, returnData) {
     console.log(`[Pipeline] Dashboard cache invalidado: ${keysToDelete.length} keys para ${monthKey}`);
     
     // 🔄 INVALIDAR CACHE DE DESPESAS TAMBÉM (V2)
-    const { expenseCache } = await import('../routes/expenses.v2.js');
-    if (expenseCache) {
-      expenseCache.flushAll();
-      console.log('[Pipeline] Expense cache invalidado');
-    }
+    const { invalidateExpenseCache } = await import('../routes/expenses.v2.js');
+    await invalidateExpenseCache();
+    console.log('[Pipeline] Expense cache invalidado');
     
     // 🔔 NOTIFICAR CLIENTES VIA SSE (tempo real)
     const { notifyDashboardUpdate } = await import('../routes/financial/sse.routes.js');
