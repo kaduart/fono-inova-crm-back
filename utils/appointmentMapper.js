@@ -154,6 +154,8 @@ export const mapAppointmentToEvent = (appt) => {
         billingType: appt.billingType || 'particular',
         insuranceProvider: appt.insuranceProvider || '',
         insuranceValue: appt.insuranceValue || 0,
+        insuranceGuide: appt.insuranceGuide?._id?.toString() || appt.insuranceGuide?.toString() || null,
+        insuranceGuideNumber: appt.insuranceGuide?.number || null,
         authorizationCode: appt.authorizationCode || '',
         // 📦 PACOTE (se houver)
         package: appt.package || null,

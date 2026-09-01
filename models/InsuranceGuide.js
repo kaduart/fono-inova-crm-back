@@ -565,7 +565,14 @@ insuranceGuideSchema.methods.consumeSession = async function (mongoSession = nul
   }
 
   const now = new Date();
-  if (this.expiresAt < now) {
+  // 🚨 FIX (2026-09-01): vencimento avaliado na data do atendimento
+  // (context.asOfDate), não na hora real da chamada — sem isso, completar ou
+  // corrigir (mover guia) uma sessão retroativa no dia exato do vencimento (ou
+  // depois) rejeita uma guia que era plenamente válida quando o serviço foi
+  // prestado. `now` continua sendo usado abaixo só pra registrar quando o
+  // consumo em si foi de fato processado (consumedAt).
+  const expiryCheckDate = context.asOfDate ? new Date(context.asOfDate) : now;
+  if (this.expiresAt < expiryCheckDate) {
     const err = new Error('Guia expirada e não pode ser utilizada');
     err.code = 'GUIDE_EXPIRED';
     err.statusCode = 422;

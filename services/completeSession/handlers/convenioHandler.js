@@ -41,6 +41,17 @@ export const ConvenioHandler = {
     async buildPayment(appointmentUpdate, ctx) {
         const { appointment, sessionId, sessionValue, mongoSession, userId, appointmentId } = ctx;
         const now = new Date();
+        // 🚨 FIX (2026-09-01, caso Davi Felipe/guia 2028 vs 3030): elegibilidade de
+        // guia deve ser avaliada na DATA DO ATENDIMENTO, nunca na hora do clique em
+        // "concluir". Um complete retroativo (appointment de semanas atrás, reaberto
+        // e concluído hoje) usando `now` pode julgar expirada uma guia que estava
+        // perfeitamente válida no dia do atendimento — e cair no fallback findValid(),
+        // que despenca pra qualquer outra guia ativa da especialidade (ordenada por
+        // vencimento mais próximo), inclusive uma sem nenhuma relação com este
+        // atendimento (achado real: sessão de 03/08 consumiu por engano uma guia
+        // criada em 09/01 pra um ciclo futuro começando em 14/09, só porque a guia
+        // certa — emitida em 03/08 — vencia no dia exato do complete retroativo).
+        const guideEvalDate = appointment.date ? new Date(appointment.date) : now;
         const insuranceValue = appointment.insuranceValue || sessionValue || ctx.sessionDoc?.sessionValue || 0;
         if (insuranceValue <= 0) {
             throw new Error('INVALID_INSURANCE_VALUE: nenhuma fonte de valor encontrada (appointment.insuranceValue, sessionValue, session.sessionValue)');
@@ -64,7 +75,7 @@ export const ConvenioHandler = {
         if (appointment.insuranceGuide) {
             const candidate = await InsuranceGuide.findById(appointment.insuranceGuide).session(mongoSession);
             if (candidate) {
-                const lifecycle = await GuideLifecycleService.evaluate(candidate, now);
+                const lifecycle = await GuideLifecycleService.evaluate(candidate, guideEvalDate);
                 if (lifecycle.eligibility.canBill) {
                     guide = candidate;
                 }
@@ -75,7 +86,7 @@ export const ConvenioHandler = {
             guide = await InsuranceGuide.findValid(
                 appointment.patient?._id?.toString?.() || appointment.patient,
                 specialty,
-                now
+                guideEvalDate
             );
         }
 
@@ -95,16 +106,25 @@ export const ConvenioHandler = {
         // 2. Consumir sessão da guia (dentro da transação)
         // Idempotência anti-double-debit: verifica estado atual da session no banco
         // antes de debitar — protege contra retry e complete duplicado.
+        // 🚨 FIX (2026-09-01, caso Davi Felipe/guia 2028 vs 3030): a flag
+        // `guideConsumed` é do domínio "esta session já debitou ALGUMA guia",
+        // não "já debitou ESTA guia". Quando a guia de uma sessão muda entre
+        // duas completações (ex: guia antiga cancelada → resolvida outra guia
+        // hoje), o check antigo (só `guideConsumed === true`) pulava o débito
+        // pra sempre — mesmo numa guia nova que nunca tinha sido debitada,
+        // deixando usedSessions/consumptionHistory permanentemente errados.
         const currentSessionState = await Session.findById(sessionId)
             .select('guideConsumed insuranceGuide')
             .session(mongoSession)
             .lean();
-        const alreadyConsumed = currentSessionState?.guideConsumed === true;
+        const alreadyConsumed = currentSessionState?.guideConsumed === true
+            && String(currentSessionState.insuranceGuide) === String(guide._id);
 
         if (!alreadyConsumed) {
             await guide.consumeSession(mongoSession, {
                 sessionId:      sessionId,
                 professionalId: appointment.doctor?._id || appointment.doctor || null,
+                asOfDate:       guideEvalDate,
             });
             console.log(`[ConvenioHandler] 📋 Guia consumida: ${guide._id} (${guide.usedSessions}/${guide.totalSessions})`);
         } else {

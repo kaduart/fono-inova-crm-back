@@ -543,6 +543,11 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
             sessionId: doc._id,
             professionalId: doc.doctor || null,
             notes: 'Consumido via hook de fallback (fora de transação) — Session.js post(findOneAndUpdate)',
+            // 🚨 FIX (2026-09-01): mesma razão do caminho oficial (ConvenioHandler) —
+            // vencimento avaliado na data do atendimento, não na hora em que este
+            // hook disparou, senão uma sessão retroativa completada perto do
+            // vencimento da guia certa cai injustamente pra outra guia.
+            asOfDate: doc.date,
         });
 
         // Marcar sessão como consumida (idempotência)

@@ -54,7 +54,11 @@ async function validateMove({ appointment, fromGuide, targetGuide }) {
     errors.push('INSURANCE_MISMATCH');
   }
 
-  const lifecycle = await GuideLifecycleService.evaluate(targetGuide, new Date());
+  // Vencimento avaliado na data do atendimento, não na data da correção —
+  // mover um atendimento antigo pra guia certa não pode ser bloqueado só
+  // porque a guia certa venceu entre a data do serviço e a data do reparo.
+  const apptDate = new Date(appointment.date);
+  const lifecycle = await GuideLifecycleService.evaluate(targetGuide, apptDate);
   if (!lifecycle.eligibility.canBill) {
     errors.push('TARGET_GUIDE_NOT_BILLABLE');
   }
@@ -63,7 +67,6 @@ async function validateMove({ appointment, fromGuide, targetGuide }) {
     errors.push('TARGET_GUIDE_EXHAUSTED');
   }
 
-  const apptDate = new Date(appointment.date);
   if (targetGuide.issuedAt && apptDate < new Date(targetGuide.issuedAt)) {
     errors.push('APPOINTMENT_BEFORE_GUIDE_WINDOW');
   }
@@ -179,6 +182,7 @@ export async function moveAppointmentGuide({ appointmentId, targetGuideId, reaso
       sessionId: sessionDoc?._id,
       professionalId: appointment.doctor,
       notes: reason || 'Movido manualmente entre guias (correção administrativa)',
+      asOfDate: appointment.date,
     });
 
     // 3. Atualiza a trinca Appointment / Session / Payment
