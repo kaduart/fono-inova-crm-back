@@ -26,6 +26,7 @@ import financialExpenseSnapshotService from '../services/financialExpenseSnapsho
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
 import FinancialDailySnapshot from '../models/FinancialDailySnapshot.js';
+import { getInsuranceGuidesView } from '../services/insuranceGuide/insuranceGuidesReadView.js';
 import Package from '../models/Package.js';
 import unifiedFinancialService, { invalidateUFSCache, invalidateUFSCacheForDates } from '../services/unifiedFinancialService.v2.js';
 import { buildCaixaBlock, buildProducaoBlock } from '../contracts/FinancialReport.js';
@@ -1828,8 +1829,33 @@ export async function calculateAReceber(year, month) {
         }
     ]);
 
-    const total = agg[0]?.total || 0;
-    return { total: parseFloat(total.toFixed(2)), mesAtual: parseFloat(total.toFixed(2)), historico: 0 };
+    const mesAtual = agg[0]?.total || 0;
+
+    // 🚨 FIX (2026-09-02): `historico` era sempre 0, placeholder nunca implementado
+    // — achado ao investigar a guia 202602518072 (Daiane, R$430 de sessões de junho
+    // reativadas na aba Convênios) não aparecer em NENHUM card do Dashboard.
+    // Reusa getInsuranceGuidesView (mesma fonte da aba Convênios, já com exclusão de
+    // payments com conflito de integridade) em vez de uma agregação própria — uma
+    // primeira tentativa somando Payment.status pending/billed direto bateu R$25.280,
+    // bem acima do que a aba Convênios mostra, porque contava sessões com Payment
+    // duplicado/conflitante que a leitura oficial já sabe descartar (16 conflitos
+    // encontrados). `competenceBreakdown.current.value` bate exatamente com
+    // `mesAtual` (R$620 em ambos) — validação cruzada que confirma a fonte é
+    // consistente antes de confiar no `previous.value` como historico.
+    let historico = 0;
+    try {
+        const guidesView = await getInsuranceGuidesView({ phase: 'pendingBilling', detail: 'summary' });
+        historico = guidesView.competenceBreakdown?.previous?.value || 0;
+    } catch (err) {
+        console.error('[calculateAReceber] Erro ao buscar historico via getInsuranceGuidesView:', err.message);
+    }
+
+    const total = mesAtual + historico;
+    return {
+        total: parseFloat(total.toFixed(2)),
+        mesAtual: parseFloat(mesAtual.toFixed(2)),
+        historico: parseFloat(historico.toFixed(2))
+    };
 }
 
 async function calculateDespesas(year, month) {
@@ -2582,6 +2608,7 @@ async function fetchPendingPaymentsPreviousCompetence(start, startStr) {
         { $project: { appointmentArr: 0, patientArr: 0 } }
     ]).allowDiskUse(true);
 }
+
 
 // GET /v2/financial/dashboard/sanity-check
 // Retorna o resultado do sanity check financeiro para o mês solicitado
