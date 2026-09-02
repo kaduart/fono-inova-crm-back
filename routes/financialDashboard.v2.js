@@ -1534,7 +1534,28 @@ async function calculateRealTime(year, month) {
     const packageSalesTotal = packageSalesAgg[0]?.total || 0;
     const packageSalesCount = packageSalesAgg[0]?.count || 0;
 
-    const convenioAReceber  = Math.max(0, (production.convenio || 0) - (cash.convenio || 0));
+    // 🚨 FIX (2026-09-02): convenioAReceber era resíduo (produção convênio − caixa
+    // convênio do mês) em vez de uma consulta real. Achado ao investigar card
+    // "A Receber" (R$11.020) não bater com o modal de débitos (R$7.500): o
+    // resíduo mistura no mesmo número o que é de fato pendente com distorções de
+    // outras competências, e por baixo do capô também faltava considerar
+    // status='billed' (convênio já faturado ao plano, aguardando reembolso —
+    // ainda não é caixa, mas também não é "pending" simples). Contrato oficial
+    // (FinancialSemantic.js, PIPELINE) já definia "a receber" = status pending OU
+    // billed. Agosto/2026 tinha R$7.500 em status='pending' + R$5.000 em
+    // status='billed' pra sessões de convênio completadas no mês — nenhum dos
+    // dois cálculos antigos (resíduo nem o modal) capturava o 'billed'. Trocado
+    // por consulta direta somando os dois status, vinculados a Appointment
+    // completado dentro do período — mesma fonte usada no modal de débitos
+    // (`pendentes.convenio`, corrigido igual em `fetchPendingPaymentsByDateRange`).
+    const convenioPendenteRealAgg = await Payment.aggregate([
+        { $match: { status: { $in: ['pending', 'billed'] }, billingType: 'convenio' } },
+        { $lookup: { from: 'appointments', localField: 'appointment', foreignField: '_id', as: 'appt' } },
+        { $unwind: '$appt' },
+        { $match: { 'appt.date': { $gte: start, $lte: end }, 'appt.operationalStatus': 'completed' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const convenioAReceber  = convenioPendenteRealAgg[0]?.total || 0;
     const liminarAReceber   = Math.max(0, (production.liminar  || 0) - (cash.liminar  || 0));
     const particularPendente = production.particularPendente || 0;
     const pacotePendente     = production.pacotePendente     || 0;
@@ -1575,8 +1596,19 @@ async function calculateRealTime(year, month) {
         { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
     const retroativos = Math.min(recebimentosAntecipados, retroativoRealAgg[0]?.total || 0);
-    // Antecipações: venda de pacote para consumo em sessões futuras (competência ainda não ocorrida)
+    // 🚨 REVERTIDO (2026-09-02): tentei trocar por cash.receitaDiferida (valor
+    // "real" rastreado por sessão), mas essa métrica é calculada sobre TODO o
+    // histórico de consumo do pacote, não só o mês corrente — usá-la aqui
+    // quebrava a identidade Caixa = Recebido + Antecipação + Retroativo (ex.:
+    // recebido 2.700 + antecipação 840 = 3.540, mas Caixa real era só 2.730).
+    // Volta a ser derivada do resíduo, que GARANTE a identidade por construção.
+    // `cash.receitaDiferida` continua exposto separadamente (ver
+    // `passivoPacoteNaoConsumido` abaixo) como métrica de passivo, não misturada
+    // nessa conta mensal.
     const antecipacoes = Math.max(0, Math.min(packageSalesTotal, recebimentosAntecipados - retroativos));
+    // Passivo real de pacote não consumido (todo o histórico, não só o mês) —
+    // métrica informativa separada, não soma na reconciliação Caixa/Produção.
+    const passivoPacoteNaoConsumido = cash.receitaDiferida || 0;
 
     // Caixa + Pipeline. Informativo/liquidez apenas — NUNCA usar como meta (ver FinancialSemantic.js CAIXA_PROJETADO).
     const caixaProjetado = cash.total + aReceberProducao;
@@ -1654,6 +1686,10 @@ async function calculateRealTime(year, month) {
         recebimentosAntecipados,
         antecipacoes,
         retroativos,
+        // Passivo de pacote não consumido (histórico completo) — informativo,
+        // não faz parte da reconciliação mensal Caixa/Produção (ver comentário
+        // acima em `passivoPacoteNaoConsumido`).
+        passivoPacoteNaoConsumido,
         aReceberProducao,
         receitaReconhecida: production.total,  // INV-3: regime de competência = Session.completed
         novaReceitaMes,
@@ -2156,9 +2192,15 @@ async function fetchPendingPaymentsByDateRange(start, end) {
     return Payment.aggregate([
         // 🎯 Filtro inicial: só carrega pendentes que podem cair no período.
         // Evita puxar todos os pendentes históricos apenas porque têm appointment.
+        // 🚨 FIX (2026-09-02): faltava status='billed' (convênio faturado ao plano,
+        // aguardando reembolso — ainda NÃO é dinheiro recebido). Contrato oficial em
+        // FinancialSemantic.js (PIPELINE) já definia isso: "pendentes (status='pending'
+        // ou 'billed')". Sem 'billed', o modal de débitos e o card "A Receber" ficavam
+        // ambos SUBESTIMANDO o convênio pendente (achado real: agosto/2026 tinha
+        // R$5.000 em 42 sessões status='billed' que não apareciam em lugar nenhum).
         {
             $match: {
-                status: 'pending',
+                status: { $in: ['pending', 'billed'] },
                 $or: [
                     { paymentDate: { $gte: start, $lte: end } },
                     { serviceDate: { $gte: start, $lte: end } },
