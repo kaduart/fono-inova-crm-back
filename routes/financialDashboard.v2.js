@@ -2352,9 +2352,16 @@ export async function calculatePendentes(year, month) {
             continue;
         }
 
+        const _itemDataRef = dataRef || moment(p.createdAt).format('YYYY-MM-DD');
         const item = {
             sessionId: p._id,
-            data: dataRef || moment(p.createdAt).format('YYYY-MM-DD'),
+            data: _itemDataRef,
+            // 🚨 FIX (2026-09-02): frontend fazia `new Date('YYYY-MM-DD').toLocaleDateString()`
+            // pra exibir — string sem hora é parseada como meia-noite UTC pelo JS, e
+            // convertida pro fuso do navegador (UTC-3) volta pro dia anterior. Backend
+            // já formata pronto pra exibição — front não deve fazer parsing/regra de
+            // data nenhuma, só exibir a string.
+            dataExibicao: _itemDataRef.split('-').reverse().join('/'),
             hora: p.appointment?.time || '',
             paciente: p.patient?.fullName || 'Paciente',
             valor: parseFloat((valor || 0).toFixed(2)),
@@ -2428,6 +2435,11 @@ export async function calculatePendentes(year, month) {
                 paymentDate: p.paymentDate,
                 serviceDate: p.serviceDate,
                 data: p.appointment?.date || p.paymentDate,
+                // 🚨 FIX (2026-09-02): mesmo bug do item de convênio/particular abaixo —
+                // front não deve fazer new Date(...).toLocaleDateString(), backend já
+                // formata (moment usa process.env.TZ='America/Sao_Paulo', setado em
+                // server.js, então já é o dia correto no fuso da clínica).
+                dataExibicao: moment(p.appointment?.date || p.paymentDate).format('DD/MM/YYYY'),
                 hora: p.appointment?.time || '',
                 specialty: (() => { const s = p.doctor?.specialty || p.serviceType || p.sessionType; return (s && !billingTypeValues.has(String(s).toLowerCase())) ? s : 'N/A'; })(),
                 doctor: p.doctor || null,
@@ -2739,15 +2751,21 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
             !p.appointment || p.appointment.clinicalStatus === 'completed'
         );
 
-        const debitos = realDebtPayments.map(p => ({
-            _id: p._id,
-            date: p.appointment?.date || (p.serviceDate ? p.serviceDate.toISOString().split('T')[0] : (p.paymentDate ? p.paymentDate.toISOString().split('T')[0] : null)),
-            time: p.appointment?.time || null,
-            paymentStatus: p.status,
-            paciente: p.patient?.fullName || 'Paciente',
-            valor: p.amount,
-            tipo: p.paymentMethod || p.billingType || 'N/A'
-        }));
+        const debitos = realDebtPayments.map(p => {
+            const _date = p.appointment?.date || p.serviceDate || p.paymentDate || null;
+            return {
+                _id: p._id,
+                date: _date,
+                // 🚨 FIX (2026-09-02): mesmo bug de fuso do modal de débitos (v2) —
+                // front não deve parsear/formatar data, backend já manda pronto.
+                dataExibicao: _date ? moment(_date).format('DD/MM/YYYY') : null,
+                time: p.appointment?.time || null,
+                paymentStatus: p.status,
+                paciente: p.patient?.fullName || 'Paciente',
+                valor: p.amount,
+                tipo: p.paymentMethod || p.billingType || 'N/A'
+            };
+        });
 
         const total = debitos.reduce((s, d) => s + (d.valor || 0), 0);
 
