@@ -2249,6 +2249,20 @@ async function fetchPendingPaymentsByDateRange(start, end) {
             }
         },
         { $addFields: { doctor: { $arrayElemAt: ['$doctorArr', 0] } } },
+        // 🆕 (2026-09-02) número da guia — pedido do usuário no modal de débitos
+        // (precisa saber especialidade/médico/guia pra decidir o que cobrar/conferir).
+        {
+            $lookup: {
+                from: 'insuranceguides',
+                localField: 'insuranceGuide',
+                foreignField: '_id',
+                as: 'insuranceGuideArr',
+                pipeline: [
+                    { $project: { number: 1 } }
+                ]
+            }
+        },
+        { $addFields: { insuranceGuideDoc: { $arrayElemAt: ['$insuranceGuideArr', 0] } } },
         // Filtro final por competência: qualquer uma das datas cai no range
         {
             $match: {
@@ -2260,7 +2274,7 @@ async function fetchPendingPaymentsByDateRange(start, end) {
             }
         },
         // Remove arrays auxiliares do lookup
-        { $project: { appointmentArr: 0, patientArr: 0, doctorArr: 0 } }
+        { $project: { appointmentArr: 0, patientArr: 0, doctorArr: 0, insuranceGuideArr: 0 } }
     ]).allowDiskUse(true);
 }
 
@@ -2344,7 +2358,13 @@ export async function calculatePendentes(year, month) {
             hora: p.appointment?.time || '',
             paciente: p.patient?.fullName || 'Paciente',
             valor: parseFloat((valor || 0).toFixed(2)),
-            status: p.status
+            status: p.status,
+            // 🆕 (2026-09-02) especialidade/médico/nº da guia — pedido no modal de
+            // débitos pra dar contexto de conferência (quem atendeu, o quê, sob qual
+            // guia) e permitir filtrar a lista por especialidade.
+            specialty: p.doctor?.specialty || p.appointment?.specialty || 'N/A',
+            doctorName: p.doctor?.fullName || null,
+            guideNumber: p.insuranceGuideDoc?.number || null
         };
 
         if (isConvenio) {
