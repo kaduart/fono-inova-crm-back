@@ -393,7 +393,7 @@ export function resolvePaymentForSession(payments) {
  */
 export async function getInsuranceGuidesView(filters = {}) {
   const {
-    insurance, patientId, guideId, guideStatus, phase = 'all', phases, detail = 'full',
+    insurance, patientId, guideId, guideIds: guideIdsFilter, guideStatus, phase = 'all', phases, detail = 'full',
     from, to, page = 1, limit = 0
   } = filters;
   const summaryOnly = detail === 'summary';
@@ -410,8 +410,21 @@ export async function getInsuranceGuidesView(filters = {}) {
   const periodTo = to ? new Date(to) : null;
 
   const guideMatch = {};
+  // 🚀 PERF (2026-09-02): drawer de paciente fazia 1 request por guia (N+1) —
+  // clicar num paciente com 3-4 guias disparava 3-4 chamadas paralelas, cada
+  // uma com 4+ round-trips ao banco, somando ~3s. `guideIds` permite buscar
+  // várias guias na mesma chamada ($in) sem mudar o comportamento de `guideId`
+  // (single) já existente.
+  const guideIdsList = Array.isArray(guideIdsFilter)
+    ? guideIdsFilter
+    : (typeof guideIdsFilter === 'string' ? guideIdsFilter.split(',').map(s => s.trim()).filter(Boolean) : []);
+  const guideOidsList = guideIdsList.map(toObjectId).filter(Boolean);
   const guideOid = toObjectId(guideId);
-  if (guideOid) guideMatch._id = guideOid;
+  if (guideOidsList.length > 0) {
+    guideMatch._id = { $in: guideOidsList };
+  } else if (guideOid) {
+    guideMatch._id = guideOid;
+  }
   if (insurance) guideMatch.insurance = String(insurance).toLowerCase();
   if (guideStatus) guideMatch.status = guideStatus;
   const patientOid = toObjectId(patientId);

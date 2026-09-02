@@ -1945,11 +1945,14 @@ export async function getPatientInsuranceSessions(req, res) {
  */
 export async function getGuidesView(req, res) {
   try {
-    const { insurance, patientId, guideId, guideStatus, phase, phases, detail, from, to, page, limit } = req.query;
+    const { insurance, patientId, guideId, guideIds, guideStatus, phase, phases, detail, from, to, page, limit } = req.query;
     const validPhases = new Set(['all', 'pendingBilling', 'documentationSent', 'billed', 'received']);
     const validDetails = new Set(['full', 'summary', 'orphans']);
     if (guideId && !/^[a-f\d]{24}$/i.test(String(guideId))) {
       return res.status(400).json({ success: false, error: 'guideId inválido' });
+    }
+    if (guideIds && String(guideIds).split(',').some(id => !/^[a-f\d]{24}$/i.test(id.trim()))) {
+      return res.status(400).json({ success: false, error: 'guideIds inválido' });
     }
     if (phase && !validPhases.has(String(phase))) {
       return res.status(400).json({ success: false, error: 'phase inválida' });
@@ -1965,6 +1968,7 @@ export async function getGuidesView(req, res) {
       insurance,
       patientId,
       guideId,
+      guideIds,
       guideStatus,
       phase: phase || 'all',
       phases,
