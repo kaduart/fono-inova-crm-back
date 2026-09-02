@@ -161,6 +161,134 @@ export async function transitionPaymentStatusBatch(transitions, newStatus, optio
 }
 
 /**
+ * Transição canônica e performática de Payments de convênio para `paid` /
+ * `insurance.status='received'` — o lado de RECEBIMENTO de NF, irmã de
+ * `transitionPaymentStatusBatch` (que cobre o lado de FATURAMENTO, `→ billed`).
+ * Centraliza status, campos derivados, ledger e Outbox sem N+1.
+ *
+ * O `$set` de cada Payment e o doc de Ledger correspondente são montados pelo
+ * CHAMADOR (services/insuranceBatch/InsuranceBatchReceiptService.js), usando
+ * services/insuranceBatch/paymentReceiptInvariants.js#buildReceivedUpdate —
+ * mesma separação de responsabilidade de transitionPaymentStatusBatch: este
+ * arquivo não sabe calcular rateio de ISS nem valor líquido, só sabe escrever
+ * em lote com segurança.
+ *
+ * @param {Array<{payment: Object, set: Object, ledger: Object}>} transitions
+ *   payment = documento lean já carregado pelo chamador (reaproveitado, sem
+ *   re-fetch); set = resultado de buildReceivedUpdate; ledger = doc completo
+ *   pronto para FinancialLedger.insertMany (mesmo shape de FinancialLedger.credit()).
+ * @param {Object} options
+ * @param {Object} options.session   mongoose session da transação (obrigatória
+ *                                    na prática — o chamador sempre roda dentro
+ *                                    de mongoSession.withTransaction)
+ * @param {Date}   [options.now]     momento real do processamento (não a data
+ *                                    histórica do recebimento) — usado só para
+ *                                    o dia do eventId e correlationId do evento
+ * @param {string} [options.reason]
+ * @param {string} [options.userId]
+ * @param {Function} [options.step] instrumentação opcional (nome, operação) => resultado
+ * @returns {Promise<{modifiedCount:number, existingEventCount:number, insertedOutboxCount:number, queriesExecuted:number}>}
+ */
+export async function transitionPaymentStatusBatchToReceived(transitions, options = {}) {
+    const {
+        session: mongoSession,
+        now = new Date(),
+        reason = 'insurance_batch_invoice_received',
+        userId,
+        step = (_name, operation) => operation()
+    } = options;
+
+    assertFinancialContextAllowsPaymentWrite();
+    const eventDay = moment.tz(now, TIMEZONE).format('YYYY-MM-DD');
+    const paymentOps = [];
+    const ledgerDocs = [];
+    const outboxDocs = [];
+
+    for (const { payment, set, ledger } of transitions) {
+        // Filtro otimista pelos DOIS campos relevantes, com o valor OBSERVADO
+        // (não um valor fixo assumido): payment.status varia entre payments —
+        // 'billed' no fluxo normal, mas pode ser outro valor em lotes
+        // reconciliados manualmente onde só insurance.status foi promovido a
+        // 'billed'. Travar num valor fixo rejeitaria esse caso legítimo.
+        paymentOps.push({
+            updateOne: {
+                filter: { _id: payment._id, status: payment.status, 'insurance.status': payment.insurance?.status },
+                update: { $set: set }
+            }
+        });
+        ledgerDocs.push(ledger);
+        outboxDocs.push({
+            eventId: `${payment._id}_${payment.status}_paid_${eventDay}`,
+            correlationId: `payment_status_${payment._id}_${payment.status}_paid_${now.getTime()}`,
+            eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+            aggregateType: 'payment',
+            aggregateId: String(payment._id),
+            status: 'pending',
+            createdAt: now,
+            payload: {
+                paymentId: payment._id.toString(),
+                patientId: payment.patient?.toString?.(),
+                appointmentId: payment.appointment?.toString?.(),
+                sessionId: payment.session?.toString?.(),
+                packageId: payment.package?.toString?.(),
+                from: payment.status,
+                to: 'paid',
+                amount: payment.amount,
+                paymentMethod: set.paymentMethod || payment.paymentMethod,
+                financialDate: set.financialDate ?? payment.financialDate,
+                paidAt: set.paidAt ?? payment.paidAt,
+                kind: set.kind || payment.kind,
+                billingType: payment.billingType,
+                isFromPackage: payment.isFromPackage,
+                reason,
+                userId: userId?.toString?.()
+            }
+        });
+    }
+
+    // Mesma lógica de contagem real de transitionPaymentStatusBatch: insert_outbox
+    // é condicional (só roda se sobrar evento novo após o dedupe).
+    let queriesExecuted = 0;
+
+    const paymentResult = await step('receive_payments', () =>
+        Payment.bulkWrite(paymentOps, { session: mongoSession, ordered: true }));
+    queriesExecuted += 1;
+    if (paymentResult.modifiedCount !== paymentOps.length) {
+        throw new PaymentBatchTransitionError(
+            'INSURANCE_BATCH_RECEIVE_PAYMENT_CONCURRENT_CHANGE',
+            'Um Payment mudou de status durante o recebimento em lote',
+            { expected: paymentOps.length, modified: paymentResult.modifiedCount }
+        );
+    }
+
+    await step('insert_ledger', () =>
+        FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+    queriesExecuted += 1;
+
+    const existingEventIds = await step('outbox_dedupe', async () => {
+        const found = await Outbox.find({ eventId: { $in: outboxDocs.map(doc => doc.eventId) } })
+            .select('eventId')
+            .session(mongoSession)
+            .lean();
+        return new Set(found.map(doc => doc.eventId));
+    });
+    queriesExecuted += 1;
+    const freshOutboxDocs = outboxDocs.filter(doc => !existingEventIds.has(doc.eventId));
+    if (freshOutboxDocs.length) {
+        await step('insert_outbox', () =>
+            Outbox.insertMany(freshOutboxDocs, { session: mongoSession, ordered: true }));
+        queriesExecuted += 1;
+    }
+
+    return {
+        modifiedCount: paymentResult.modifiedCount,
+        existingEventCount: existingEventIds.size,
+        insertedOutboxCount: freshOutboxDocs.length,
+        queriesExecuted
+    };
+}
+
+/**
  * Transiciona o status de um payment e emite evento.
  *
  * @param {string} paymentId — ObjectId do payment

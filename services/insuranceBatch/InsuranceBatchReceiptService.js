@@ -5,8 +5,8 @@ import Payment from '../../models/Payment.js';
 import Convenio from '../../models/Convenio.js';
 import BillingSubmission from '../../models/BillingSubmission.js';
 import InsuranceCommunication from '../../models/InsuranceCommunication.js';
-import { transitionPaymentStatus } from '../paymentStatusService.js';
-import { recordInsuranceReceived } from '../financialLedgerService.js';
+import { transitionPaymentStatusBatchToReceived, PaymentBatchTransitionError } from '../paymentStatusService.js';
+import { assertPaymentReceivable, buildReceivedUpdate } from './paymentReceiptInvariants.js';
 
 const TERMINAL_PAYMENT_STATUSES = ['canceled', 'cancelled', 'void', 'refunded'];
 
@@ -374,11 +374,14 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
       if (paymentIds.length !== batch.sessions.length) {
         throw new InsuranceBatchReceiptError('INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT', 'Cada sessão da NF precisa possuir um Payment vinculado', 409);
       }
+      // .lean(): estes documentos nunca são mutados/salvos individualmente —
+      // são reaproveitados diretamente para montar o bulkWrite mais abaixo, sem
+      // re-fetch. Hidratar Documentos Mongoose completos aqui seria custo puro.
       const payments = await Payment.find({
         _id: { $in: paymentIds.map(id => objectId(id, 'paymentId')) },
         billingType: 'convenio',
         status: { $nin: TERMINAL_PAYMENT_STATUSES }
-      }).session(mongoSession);
+      }).session(mongoSession).lean();
       if (payments.length !== paymentIds.length) {
         throw new InsuranceBatchReceiptError('INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT', 'Um ou mais Payments da NF estão ausentes ou inativos', 409);
       }
@@ -423,33 +426,104 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
       const netAmounts = allocateNetAmounts(paymentIds.map(id => grossByPayment.get(id)), totalNet);
       const netByPayment = new Map(paymentIds.map((id, index) => [id, netAmounts[index]]));
 
+      // ── Escrita em lote ──────────────────────────────────────────────────
+      // Substitui o antigo `for...of` sequencial (transitionPaymentStatus +
+      // 2º .save() + recordInsuranceReceived por Payment — 6 round-trips Mongo
+      // cada, 1 por vez) por 1 Payment.bulkWrite + 1 FinancialLedger.insertMany
+      // + Outbox dedupe+insertMany, todos dentro da mesma transação. Ver
+      // paymentReceiptInvariants.js para a tabela de paridade com os hooks de
+      // Payment.js que o bulkWrite não dispara.
+      //
+      // `now` sobe pra antes do loop (era declarado só depois, pro
+      // batch.processedAt) porque tanto buildReceivedUpdate quanto
+      // transitionPaymentStatusBatchToReceived precisam do mesmo "momento real
+      // do processamento" — não muda semântica, só a granularidade de
+      // milissegundos de um campo de bookkeeping interno (processedAt/updatedAt),
+      // nunca a data histórica de recebimento (receivedAt, vinda do usuário).
+      const now = new Date();
+      const receivedAtDate = receivedAt.toDate();
+      const receiptTransitions = [];
+      const receiptWarnings = [];
+      for (const payment of targetPayments) {
+        assertPaymentReceivable(payment);
+      }
       for (const payment of targetPayments) {
         const grossAmount = round(grossByPayment.get(payment._id.toString()));
         const netAmount = netByPayment.get(payment._id.toString());
-        const transition = await transitionPaymentStatus(payment._id, 'paid', {
-          session: mongoSession,
-          userId,
-          paidAt: receivedAt.toDate(),
-          financialDate: receivedAt.toDate(),
-          paymentMethod: 'convenio',
-          reason: 'insurance_batch_invoice_received'
+        const { set, warnings } = buildReceivedUpdate(payment, {
+          now,
+          receivedAt: receivedAtDate,
+          grossAmount,
+          netAmount,
+          issRate
         });
-        transition.payment.insurance.status = 'received';
-        transition.payment.insurance.grossAmount = grossAmount;
-        transition.payment.insurance.issRate = Number(issRate || 0);
-        transition.payment.insurance.issAmount = round(grossAmount - netAmount);
-        transition.payment.insurance.receivedAmount = netAmount;
-        transition.payment.insurance.receivedAt = receivedAt.toDate();
-        await transition.payment.save({ session: mongoSession });
-        await recordInsuranceReceived(transition.payment, {
-          userId,
-          receivedAt: receivedAt.toDate(),
-          receivedAmount: netAmount,
-          correlationId: `insurance_batch_received_${batch._id}_${payment._id}`
-        }, mongoSession);
+        if (warnings.length) receiptWarnings.push({ paymentId: payment._id.toString(), warnings });
+        receiptTransitions.push({
+          payment,
+          set,
+          ledger: {
+            type: 'insurance_received',
+            direction: 'credit',
+            amount: netAmount,
+            billingType: 'convenio',
+            patient: payment.patient,
+            appointment: payment.appointment,
+            session: payment.session,
+            payment: payment._id,
+            correlationId: `insurance_batch_received_${batch._id}_${payment._id}`,
+            description: `Convênio recebido - ${payment.insurance?.provider || 'Convênio'}`,
+            occurredAt: receivedAtDate,
+            createdBy: userId,
+            metadata: {
+              source: 'insurance_return',
+              provider: payment.insurance?.provider,
+              grossAmount,
+              receivedAmount: netAmount,
+              glosaAmount: 0
+            }
+          }
+        });
+      }
+      // Truncado por amostra: numa NF de 30 sessões um warning por payment vira
+      // parede de log (mesmo racional de BillingSubmissionService.js).
+      if (receiptWarnings.length) {
+        console.warn(
+          `[InsuranceBatchReceipt] ${receiptWarnings.length} payment(s) tiveram campos ausentes reconstruídos `
+          + `pelas invariantes. Amostra: ${JSON.stringify(receiptWarnings.slice(0, 3))}`
+        );
       }
 
-      const now = new Date();
+      let batchResult;
+      try {
+        batchResult = await transitionPaymentStatusBatchToReceived(receiptTransitions, {
+          session: mongoSession,
+          now,
+          userId,
+          reason: 'insurance_batch_invoice_received'
+        });
+      } catch (error) {
+        if (error instanceof PaymentBatchTransitionError) {
+          throw new InsuranceBatchReceiptError(
+            'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
+            `Recebimento abortado: ${error.message}`,
+            409,
+            error.details
+          );
+        }
+        throw error;
+      }
+      if (batchResult.modifiedCount !== targetPayments.length) {
+        // Defensivo: transitionPaymentStatusBatchToReceived já teria lançado
+        // PaymentBatchTransitionError nesse caso — chegar aqui indicaria um
+        // bug na própria função, não um estado de dado esperável.
+        throw new InsuranceBatchReceiptError(
+          'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
+          'Quantidade de Payments recebidos divergiu do esperado',
+          409,
+          { expected: targetPayments.length, modified: batchResult.modifiedCount }
+        );
+      }
+
       const receivedPaymentIds = new Set([
         ...payments.filter(payment => payment.insurance?.status === 'received').map(payment => payment._id.toString()),
         ...targetPayments.map(payment => payment._id.toString())
