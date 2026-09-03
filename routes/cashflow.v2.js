@@ -1006,11 +1006,14 @@ async function _buildMonthResponse({ month }) {
     const start = monthStart.clone().utc().toDate();
     const end = moment.min(monthEnd, today).utc().toDate();
 
-    const [cashMap, productionResult, productionTotals, cashTotals] = await Promise.all([
+    const [cashMap, productionResult, productionTotals, cashTotals, metaRealizada] = await Promise.all([
         unifiedFinancialService.calculateCashByDay(start, end),
         unifiedFinancialService.calculateProductionByDay(start, end),
         unifiedFinancialService.calculateProduction(start, end),
-        unifiedFinancialService.calculateCash(start, end, { includeDetails: false })
+        unifiedFinancialService.calculateCash(start, end, { includeDetails: false }),
+        // Meta Realizada: back/docs/FINANCIAL_SOURCE_OF_TRUTH.md — mesma função
+        // oficial usada em financialDashboard.v2.js, nunca duas implementações.
+        unifiedFinancialService.calculateMetaRealizada(start, end)
     ]);
 
     const producaoMap = productionResult.map;
@@ -1050,6 +1053,12 @@ async function _buildMonthResponse({ month }) {
                 pacote: productionTotals.pacote || 0,
                 convenio: productionTotals.convenio || 0,
                 liminar: productionTotals.liminar || 0
+            },
+            // Meta Realizada: back/docs/FINANCIAL_SOURCE_OF_TRUTH.md
+            metaRealizada: {
+                total: metaRealizada.total,
+                porTipo: metaRealizada.porTipo,
+                excluido: metaRealizada.excluded
             }
         }
     };

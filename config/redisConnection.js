@@ -128,13 +128,28 @@ export const safeRedis = {
       return null;
     }
   },
-  async del(key) {
+  async del(...keys) {
     if (!redisConnection) return null;
     try {
-      return await redisConnection.del(key);
+      return await redisConnection.del(...keys);
     } catch (err) {
       console.error('Redis del error:', err.message);
       return null;
+    }
+  },
+  // 🚨 FIX (2026-09-03): faltava — routes/cashflow.v2.js chama safeRedis.scan()
+  // pra invalidação em massa (clearCashflowCache sem data) desde que essa
+  // função foi escrita, mas o método nunca existiu aqui. TypeError era
+  // engolido pelo try/catch do chamador (só um console.warn), então a
+  // invalidação Redis "completa" nunca funcionou de verdade — sempre caía no
+  // catch sem apagar nenhuma chave.
+  async scan(...args) {
+    if (!redisConnection) return ['0', []];
+    try {
+      return await redisConnection.scan(...args);
+    } catch (err) {
+      console.error('Redis scan error:', err.message);
+      return ['0', []];
     }
   }
 };

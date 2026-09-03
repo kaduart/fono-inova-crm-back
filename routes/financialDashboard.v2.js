@@ -497,7 +497,7 @@ router.get('/', auth, async (req, res) => {
                 metas: {
                     ...metas,
                     // Sobrescreve com valores calculados pelas camadas semânticas
-                    tipoPrincipal: metas.configuracao?.tipoMeta || 'producao',
+                    tipoPrincipal: metas.configuracao?.tipoMeta || 'caixa',
                     producao: {
                         meta: metas.configuracao?.metaMensal || 0,
                         atingido: metas.camadas?.producao?.atingido || data.producao || 0,
@@ -761,19 +761,16 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
     const caixaProjetadoMes = data.visaoSemantica?.projecao?.total
       || (caixaRealizadoMes + (data.aReceberProducao || 0));
 
-    // ─── BASE DE CÁLCULO DA META: PRODUÇÃO (regime de competência) ───
-    // Alinhado ao contrato back/contracts/FinancialSemantic.js — META.base = 'PRODUCTION'.
-    // 🚨 FIX (2026-09-01, decisão de negócio confirmada): Liminar sai da meta mensal.
-    // Motivo do usuário: crédito judicial é pago antecipado — o valor total entra de
-    // uma vez antes das sessões começarem (mesma lógica de pacote pré-pago), então não
-    // é "produção a perseguir" no mês, é crédito já reservado sendo consumido aos
-    // poucos. Contar Liminar na meta inflava o card principal com trabalho cujo
-    // dinheiro já estava garantido de antemão, mascarando o ritmo real de
-    // Caixa+Convênio (a régua que a clínica realmente usa pra saber se bateu o mês).
-    // Liminar continua aparecendo normalmente em Produção por Tipo e nos relatórios —
-    // só não conta mais pra "bater a meta".
-    const producaoLiminarMes = data.producaoDetalhe?.liminar || 0;
-    const realizadoMes = producaoRealizadaMes - producaoLiminarMes;
+    // Meta Realizada = Caixa menos convênio retroativo menos Liminar.
+    // Definição completa, proibições e testes: back/docs/FINANCIAL_SOURCE_OF_TRUTH.md
+    // → "Meta Realizada". Contrato: back/contracts/FinancialSemantic.js (SEMANTIC.META).
+    const metaStart = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
+    const metaIsCurrentMonth = year === now.year() && month === now.month() + 1;
+    const metaEnd = metaIsCurrentMonth
+        ? now.clone().endOf('day').utc().toDate()
+        : moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
+    const metaRealizada = await unifiedFinancialService.calculateMetaRealizada(metaStart, metaEnd);
+    const realizadoMes = metaRealizada.total;
     const liminarAReceberMes = data.visaoSemantica?.pipeline?.liminar || 0;
     const pipeline = Math.max(0, (data.aReceberProducao || 0) - liminarAReceberMes);
 
@@ -841,7 +838,11 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             metaMensal,
             diasUteis,
             metaDiariaNecessaria: parseFloat(metaDiariaNecessaria.toFixed(2)),
-            tipoMeta: 'producao',
+            // 'caixa': meta base mudou de produção para CASH_MINUS_RETROATIVO
+            // em 2026-09-03 (ver FinancialSemantic.js META). Campo não tem
+            // consumidor no frontend hoje, mas o valor precisa continuar
+            // verdadeiro caso alguém passe a usá-lo.
+            tipoMeta: 'caixa',
         },
         realizado: {
             mes: parseFloat(realizadoMes.toFixed(2)),
@@ -879,28 +880,36 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
         },
         statusMeta,
         alertas,
+        // porTipo vem de metaRealizada.porTipo — soma exatamente realizadoMes
+        // por construção (ver back/docs/FINANCIAL_SOURCE_OF_TRUTH.md).
         porTipo: {
             particular: {
                 meta: parseFloat((goal.breakdown.particular || 0).toFixed(2)),
-                realizado: parseFloat((data.producaoDetalhe.particular || 0).toFixed(2)),
-                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.particular || 0) / data.producao * 100).toFixed(1)) : 0
+                realizado: metaRealizada.porTipo.particular,
+                percentualDoTotal: realizadoMes > 0 ? parseFloat((metaRealizada.porTipo.particular / realizadoMes * 100).toFixed(1)) : 0
             },
             pacote: {
                 meta: parseFloat((goal.breakdown.pacote || 0).toFixed(2)),
-                realizado: parseFloat((data.producaoDetalhe.pacote || 0).toFixed(2)),
-                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.pacote || 0) / data.producao * 100).toFixed(1)) : 0
+                realizado: metaRealizada.porTipo.pacote,
+                percentualDoTotal: realizadoMes > 0 ? parseFloat((metaRealizada.porTipo.pacote / realizadoMes * 100).toFixed(1)) : 0
             },
             convenio: {
                 meta: parseFloat((goal.breakdown.convenio || 0).toFixed(2)),
-                realizado: parseFloat((data.producaoDetalhe.convenio || 0).toFixed(2)),
-                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.convenio || 0) / data.producao * 100).toFixed(1)) : 0
+                realizado: metaRealizada.porTipo.convenio,
+                percentualDoTotal: realizadoMes > 0 ? parseFloat((metaRealizada.porTipo.convenio / realizadoMes * 100).toFixed(1)) : 0
             },
             liminar: {
                 meta: parseFloat((goal.breakdown.liminar || 0).toFixed(2)),
-                realizado: parseFloat((data.producaoDetalhe.liminar || 0).toFixed(2)),
-                percentualDoTotal: data.producao > 0 ? parseFloat(((data.producaoDetalhe.liminar || 0) / data.producao * 100).toFixed(1)) : 0
+                // Sempre 0 — Liminar nunca compõe a Meta Realizada (ver nota em
+                // calculateMetaRealizada). O valor de fato recebido em Liminar
+                // continua visível em Produção por Tipo / relatórios, só não aqui.
+                realizado: 0,
+                percentualDoTotal: 0
             }
         },
+        // Quanto ficou de fora da Meta Realizada e por quê — transparência sobre
+        // o que o card "Caixa Real" mostra que este não conta.
+        excluidoDaMeta: metaRealizada.excluded,
         // 🆕 CAMADAS SEMÂNTICAS para preenchimento do data.metas
         camadas: {
             producao: {

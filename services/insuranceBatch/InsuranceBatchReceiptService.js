@@ -7,6 +7,8 @@ import BillingSubmission from '../../models/BillingSubmission.js';
 import InsuranceCommunication from '../../models/InsuranceCommunication.js';
 import { transitionPaymentStatusBatchToReceived, PaymentBatchTransitionError } from '../paymentStatusService.js';
 import { assertPaymentReceivable, buildReceivedUpdate } from './paymentReceiptInvariants.js';
+import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
+import { clearCashflowCache } from '../../routes/cashflow.v2.js';
 
 const TERMINAL_PAYMENT_STATUSES = ['canceled', 'cancelled', 'void', 'refunded'];
 
@@ -564,6 +566,15 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
         receivedAt: batch.receivedAt
       };
     });
+    // 🚨 FIX (2026-09-03): recebimento em lote de convênio (Payment.bulkWrite
+    // dentro de transitionPaymentStatusBatchToReceived) não invalidava cache
+    // nenhum — nem o _dashCache/_ufsCache do dashboard, nem o _cashflowCache/
+    // Redis do cashflow. Full-clear (não escopado por data) porque as sessões
+    // de uma NF costumam ter serviceDate espalhado por meses diferentes do
+    // mês de recebimento.
+    invalidateDashboardCache();
+    clearCashflowCache().catch(err =>
+      console.warn('[InsuranceBatchReceipt] Falha ao invalidar cache de cashflow:', err.message));
     return result;
   } finally {
     await mongoSession.endSession();

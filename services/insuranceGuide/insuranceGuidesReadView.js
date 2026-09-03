@@ -601,19 +601,33 @@ export async function getInsuranceGuidesView(filters = {}) {
       const batch = batchById.get(idOf(session.billingBatchId)) || null;
       if (session.status === 'completed' && paymentResolution.integrityConflict) {
         paymentIntegrityConflictCount++;
-        if (!summaryOnly) {
-          paymentIntegrityConflicts.push({
-            sessionId: idOf(session._id),
-            guideId: gid,
-            patientId: idOf(guide.patientId),
-            activePayments: paymentResolution.activePayments,
-            paymentStatuses: (paymentsBySession.get(idOf(session._id)) || []).map(item => ({
-              paymentId: idOf(item._id),
-              status: item.status,
-              insuranceStatus: item.insurance?.status || null
-            }))
-          });
-        }
+        // Sempre populado (não só em detail:'full'): é um array de exceções
+        // de integridade, por natureza pequeno (nunca cresce com o volume
+        // normal de guias/sessões), então não pesa a resposta summary — e sem
+        // ele o aviso na tela ("N sessões não foram listadas...") não tinha
+        // como ser expandido pra mostrar quem/quando/motivo.
+        const sessionPayments = paymentsBySession.get(idOf(session._id)) || [];
+        const reason = sessionPayments.length === 0
+          ? 'Nenhum Payment de convênio vinculado à sessão'
+          : paymentResolution.activePayments === 0
+            ? 'Payment(s) de convênio existente(s), mas nenhum com status ativo (cancelado/anulado)'
+            : 'Mais de um Payment de convênio ativo para a mesma sessão (duplicidade)';
+        paymentIntegrityConflicts.push({
+          sessionId: idOf(session._id),
+          sessionDate: session.date,
+          guideId: gid,
+          guideNumber: guide.number || null,
+          guideInsurance: guide.insurance || null,
+          patientId: idOf(guide.patientId),
+          patientName: guide.patientId?.fullName || null,
+          activePayments: paymentResolution.activePayments,
+          reason,
+          paymentStatuses: sessionPayments.map(item => ({
+            paymentId: idOf(item._id),
+            status: item.status,
+            insuranceStatus: item.insurance?.status || null
+          }))
+        });
       }
       return {
         sessionId: idOf(session._id),

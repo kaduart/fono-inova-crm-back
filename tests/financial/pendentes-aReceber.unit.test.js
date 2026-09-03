@@ -61,6 +61,14 @@ vi.mock('../../contracts/FinancialReport.js', () => ({ buildCaixaBlock: vi.fn(),
 vi.mock('../../utils/logMetric.js', () => ({ logMetric: vi.fn() }));
 vi.mock('../../scripts/audits/lib/classifica-payments-convenio.js', () => ({ classifyConvenioPayments: vi.fn() }));
 vi.mock('../../utils/billingHelpers.js', () => ({ isConvenioSession: vi.fn() }));
+// calculateAReceber passou a chamar getInsuranceGuidesView() pra preencher
+// `historico` (fix 2026-09-02) — sem mock, a chamada real tenta abrir modelos
+// Mongoose sem conexão de banco e trava até o timeout do teste. Retorna
+// competenceBreakdown vazio: historico=0, preservando o valor original
+// esperado por este teste (que não exercita esse caminho).
+vi.mock('../../services/insuranceGuide/insuranceGuidesReadView.js', () => ({
+  getInsuranceGuidesView: vi.fn().mockResolvedValue({ competenceBreakdown: { previous: { value: 0 } } }),
+}));
 
 import { calculatePendentes, calculateAReceber } from '../../routes/financialDashboard.v2.js';
 

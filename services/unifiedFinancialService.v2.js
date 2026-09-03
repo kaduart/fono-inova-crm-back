@@ -17,6 +17,7 @@ import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
+import Appointment from '../models/Appointment.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
 import { CASH_NON_COUNTABLE_KINDS } from '../constants/financial.js';
@@ -977,6 +978,163 @@ export async function calculateCashTotal(start, end) {
     return { total: agg[0]?.total || 0 };
 }
 
+/**
+ * META REALIZADA = Caixa do período MENOS convênio retroativo (por Payment/
+ * serviceDate, nunca por lote/NF) MENOS Liminar. Nunca por resíduo. Definição
+ * completa, proibições e testes: back/docs/FINANCIAL_SOURCE_OF_TRUTH.md →
+ * "Meta Realizada". Contrato: contracts/FinancialSemantic.js (SEMANTIC.META).
+ */
+export async function calculateMetaRealizada(start, end) {
+    const startedAt = Date.now();
+    // Sem cache próprio — ~30ms em regime quente dispensa (ver "custo real" em
+    // calculateMetaRealizada.test.js); evita ter que provar invalidação em
+    // todo write path de Payment (motivo completo no doc canônico acima).
+    //
+    // Match idêntico ao de calculateCash — garante que "Meta Realizada" nunca
+    // diverge de "Caixa Real" por usar um universo de Payments diferente.
+    const match = {
+        status: 'paid',
+        amount: { $gt: 0 },
+        kind: { $nin: CASH_NON_COUNTABLE_KINDS },
+        $and: [
+            {
+                $or: [
+                    { isFromPackage: { $ne: true } },
+                    { kind: 'session_payment' }
+                ]
+            },
+            {
+                $or: [
+                    { financialDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+                    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+                    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
+                ]
+            }
+        ]
+    };
+
+    const payments = await Payment.find(match)
+        .select('amount billingType paymentMethod kind package serviceType serviceDate appointment session')
+        .lean();
+
+    const round = n => Math.round((n + Number.EPSILON) * 100) / 100;
+
+    // Fonte canônica de competência clínica (DOMAIN_INVARIANTS.md): quando o
+    // Payment de convênio não tem serviceDate, NÃO assumimos "mês atual" por
+    // ausência de dado — resolvemos via appointment.date (primário) e
+    // session.date (fallback), a mesma cadeia usada no resto do sistema para
+    // competência. Só os payments de convênio SEM serviceDate entram nessa
+    // segunda consulta (tipicamente um subconjunto pequeno do total do mês).
+    const convenioMissingServiceDate = payments.filter(p => {
+        const billingType = (p.billingType || '').toLowerCase();
+        const paymentMethod = (p.paymentMethod || '').toLowerCase();
+        const isLiminar = billingType === 'liminar' || paymentMethod === 'liminar_credit';
+        const isConvenio = !isLiminar && (billingType === 'convenio' || paymentMethod === 'convenio');
+        return isConvenio && !p.serviceDate && (p.appointment || p.session);
+    });
+
+    const competenciaById = new Map();
+    if (convenioMissingServiceDate.length > 0) {
+        const apptIds = convenioMissingServiceDate.filter(p => p.appointment).map(p => p.appointment);
+        const sessIds = convenioMissingServiceDate.filter(p => p.session).map(p => p.session);
+        const [appts, sessions] = await Promise.all([
+            apptIds.length > 0 ? Appointment.find({ _id: { $in: apptIds } }).select('date').lean() : [],
+            sessIds.length > 0 ? Session.find({ _id: { $in: sessIds } }).select('date').lean() : []
+        ]);
+        const apptDateById = new Map(appts.map(a => [a._id.toString(), a.date]));
+        const sessDateById = new Map(sessions.map(s => [s._id.toString(), s.date]));
+        for (const p of convenioMissingServiceDate) {
+            const resolved = (p.appointment && apptDateById.get(p.appointment.toString()))
+                || (p.session && sessDateById.get(p.session.toString()))
+                || null;
+            if (resolved) competenciaById.set(p._id.toString(), resolved);
+        }
+    }
+
+    let total = 0;
+    let includedCount = 0;
+    let excludedRetroativoConvenio = 0;
+    let excludedLiminar = 0;
+    let excludedSemCompetencia = 0;
+    const porTipo = { particular: 0, pacote: 0, convenio: 0 };
+
+    for (const p of payments) {
+        const amount = p.amount || 0;
+        const billingType = (p.billingType || '').toLowerCase();
+        const paymentMethod = (p.paymentMethod || '').toLowerCase();
+        const isLiminar = billingType === 'liminar' || paymentMethod === 'liminar_credit';
+        const isConvenio = !isLiminar && (billingType === 'convenio' || paymentMethod === 'convenio');
+
+        // Liminar: excluído sempre, independente de competência.
+        if (isLiminar) {
+            excludedLiminar += amount;
+            continue;
+        }
+
+        if (isConvenio) {
+            // Competência: serviceDate é a fonte direta; na ausência, resolve
+            // via appointment.date → session.date (consulta acima). Só quando
+            // NENHUMA das três existir é que não há evidência de competência.
+            const competencia = p.serviceDate || competenciaById.get(p._id.toString()) || null;
+
+            if (competencia) {
+                if (competencia < start) {
+                    excludedRetroativoConvenio += amount;
+                    continue;
+                }
+                // competência dentro do mês: segue para inclusão abaixo.
+            } else {
+                // Sem serviceDate, sem appointment/session resolvíveis: não há
+                // como provar que é do mês atual. Exclui explicitamente em vez
+                // de assumir "atual" por padrão — não compõe a meta nem o
+                // retroativo, fica isolado para investigação.
+                excludedSemCompetencia += amount;
+                continue;
+            }
+        }
+
+        total += amount;
+        includedCount++;
+        const isPacote = !isConvenio && (
+            !!p.package ||
+            (p.serviceType || '').toLowerCase() === 'package_session' ||
+            p.kind === 'package_receipt'
+        );
+        if (isConvenio) porTipo.convenio += amount;
+        else if (isPacote) porTipo.pacote += amount;
+        else porTipo.particular += amount;
+    }
+
+    const result = {
+        total: round(total),
+        porTipo: {
+            particular: round(porTipo.particular),
+            pacote: round(porTipo.pacote),
+            convenio: round(porTipo.convenio),
+            // Sempre 0 por definição — liminar nunca compõe a meta. Explícito
+            // aqui (em vez de omitido) pra deixar visível que foi uma decisão,
+            // não um esquecimento.
+            liminar: 0
+        },
+        excluded: {
+            retroativoConvenio: round(excludedRetroativoConvenio),
+            liminar: round(excludedLiminar),
+            semCompetencia: round(excludedSemCompetencia)
+        },
+        // examined = Payments que bateram no $match (status paid + período),
+        // ANTES de qualquer exclusão. included = os que efetivamente somam ao
+        // total. Antes disso `count` era um número só (= examined) — um
+        // resultado com 10 excluídos ainda mostrava count=29, dando a entender
+        // que os 29 tinham entrado na meta.
+        count: { examined: payments.length, included: includedCount }
+    };
+
+    console.log(`[calculateMetaRealizada] ${Date.now() - startedAt}ms total=${result.total} examined=${result.count.examined} included=${result.count.included} (excluídos: retroativo=${result.excluded.retroativoConvenio}, liminar=${result.excluded.liminar}, semCompetencia=${result.excluded.semCompetencia})`);
+    return result;
+}
+
 export default {
     calculateCash,
     calculateCashForDashboard,
@@ -986,5 +1144,6 @@ export default {
     calculateProductionByDay,
     calculateCashByCompetencia,
     calculateCashTotal,
+    calculateMetaRealizada,
     invalidateUFSCache
 };

@@ -14,6 +14,7 @@
 |---|---|---|---|
 | **Produção** | `unifiedFinancialService.v2.js` | Backend | `/api/v2/financial/dashboard` |
 | **Caixa / Recebido** | `unifiedFinancialService.v2.js` | Backend | `/api/v2/cashflow` |
+| **Meta Realizada** | `unifiedFinancialService.v2.js` → `calculateMetaRealizada()` | Backend | `/api/v2/financial/dashboard` (`metas.realizado.mes`) e `/api/v2/cashflow` (`metaRealizada.total`) |
 | **A Receber** | `ReconciliationService` | Backend | `/api/internal/financial/reconciliation/issues` |
 | **Comissão por sessão** | `commissionRule.service.js` | Backend | Motor oficial de cálculo por sessão |
 | **Comissão Mensal** | `commissionService.js` | Backend | Gera `Expense` de comissão mensal |
@@ -126,6 +127,129 @@ await Payment.findByIdAndUpdate(paymentId, { status: 'paid' });
 // ✅ SEMPRE faça isso
 await transitionPaymentStatus(paymentId, 'paid', { reason: 'manual' });
 ```
+
+---
+
+## Meta Realizada — decisão de negócio (2026-09-03)
+
+> Contrato executável: `back/contracts/FinancialSemantic.js` → `SEMANTIC.META`,
+> `SEMANTIC.CASH`, `SEMANTIC.PRODUCTION`, `SEMANTIC.CONVENIO_RETROATIVO`
+> (`META.base: 'CASH_MINUS_RETROATIVO'`, era `'PRODUCTION'` antes desta data —
+> mudança deliberada de negócio, não desvio acidental).
+> Implementação: `unifiedFinancialService.v2.js` → `calculateMetaRealizada(start, end)`.
+> Esta seção é a fonte canônica desta regra — qualquer dúvida sobre o que cada
+> métrica significa deve ser resolvida aqui, não em histórico de conversa ou commit.
+
+### Definições
+
+- **Caixa Real** — soma dos `Payment` efetivamente pagos (`status='paid'`) no
+  período, pela data financeira canônica (`financialDate`, fallback `paidAt`).
+  Inclui recebimentos retroativos porque o dinheiro entrou naquele mês.
+- **Meta Realizada** — Caixa Real menos recebimentos de convênio referentes a
+  competências anteriores (Convênio Retroativo) menos Liminar.
+- **Produção** — valor dos atendimentos efetivamente realizados, baseado em
+  `Session.completed` e no valor clínico canônico (`resolveSessionFinancialValue`).
+  Não representa necessariamente dinheiro recebido. Independente de Meta
+  Realizada — as duas convivem no dashboard, mas uma não deriva da outra.
+- **Convênio Retroativo** — pagamento recebido no mês atual referente a sessão
+  realizada em mês anterior. Entra no Caixa Real (o dinheiro entrou naquele
+  mês); não entra na Meta Realizada.
+
+### Regras
+
+- Venda de pacote entra integralmente na Meta Realizada quando o pagamento ocorre.
+- Sessões anteriores quitadas na criação do pacote entram normalmente, desde
+  que o pagamento tenha ocorrido no mês.
+- Consumo posterior do saldo de pacote representa Produção, mas não gera novo
+  Caixa nem nova Meta Realizada.
+- Convênio realizado e recebido no mesmo mês entra na Meta Realizada.
+- Convênio realizado no mês, mas ainda não recebido, não entra na Meta Realizada.
+- Recebimento de convênio de competência anterior (Convênio Retroativo) não
+  entra na Meta Realizada.
+- Liminar não entra na Meta Realizada, mesmo quando houver sessão realizada no período.
+- Convênio sem competência determinável (sem `serviceDate`, sem
+  `Appointment`/`Session` resolvíveis) não pode ser classificado silenciosamente
+  como competência atual — fica isolado em `excluded.semCompetencia`.
+- `porTipo` (particular/pacote/convênio/liminar) usa a mesma base canônica da
+  Meta Realizada; a soma de `porTipo` é sempre igual ao total, por construção.
+
+### Fontes da verdade
+
+- **Caixa**: `Payment.status='paid'`, usando `financialDate`/`paidAt` conforme
+  a política canônica (`financialDate` primário, `paidAt` fallback).
+- **Produção**: `Session.completed`, usando o valor clínico efetivo
+  (`resolveSessionFinancialValue`).
+- **Competência do convênio**: `Payment.serviceDate`, com fallback canônico
+  `Appointment.date` → `Session.date` quando `serviceDate` está ausente.
+- **Cálculo da Meta Realizada**: exclusivamente no backend, na função canônica
+  `unifiedFinancialService.v2.js#calculateMetaRealizada()`. Consumida por
+  `routes/financialDashboard.v2.js` (`metas.realizado.mes`, `metas.porTipo.*`)
+  e `routes/cashflow.v2.js` (`metaRealizada.total`, `.porTipo`, `.excluido`).
+  Sem cache próprio — calcula fresco a cada chamada (query mede ~25-40ms em
+  regime quente; ver testes, describe "custo real").
+- **Frontend**: apenas apresenta o valor retornado pelo backend, sem
+  recalcular ou reinterpretar a regra (cards "Meta Realizada" em
+  `UnifiedCashflowTab.tsx` e `FinancialDashboardTab.tsx`).
+
+### Alterações proibidas
+
+- ❌ Voltar a usar Produção como valor realizado da meta.
+- ❌ Somar convênio pendente à Meta Realizada.
+- ❌ Calcular a meta por resíduos, como `caixa − produção`.
+- ❌ Inferir antecipação de pacote por diferença entre agregados.
+- ❌ Contar novamente o consumo de um pacote já pago.
+- ❌ Implementar versões concorrentes da fórmula em rotas ou componentes.
+- ❌ Recalcular a meta no frontend.
+- ❌ Tratar convênio sem competência conhecida como competência atual.
+- ❌ Alterar a regra sem atualizar contrato, documentação e testes.
+- ❌ Excluir convênio retroativo por lote/NF inteira — sempre por Payment individual.
+- ❌ Manter cache próprio para `calculateMetaRealizada` sem invalidá-lo em todo
+  caminho de escrita de Payment — a query já é barata o suficiente pra não
+  precisar de cache; se isso mudar, a invalidação tem que passar pelo mecanismo
+  canônico existente (`invalidateDashboardCache()`, que cascata para
+  `invalidateUFSCache()`/`invalidateUFSCacheForDates()`; `clearCashflowCache()`/
+  `clearCashflowCacheForDates()`, que também limpa Redis).
+- ❌ `models/Payment.js` (model de domínio) importar `unifiedFinancialService.v2.js`
+  (serviço de dashboard) ou qualquer serviço de camada superior — causa um
+  ciclo `Payment → UnifiedFinancialService → Payment` (incidente já corrigido:
+  uma versão anterior desta função invalidava cache via hooks Mongoose em
+  `models/Payment.js`, que precisavam desse import; a correção definitiva foi
+  remover cache e hooks — a função recalcula fresca a cada chamada).
+
+### Matriz de eventos
+
+| Evento | Caixa Real | Meta Realizada | Produção |
+|---|---:|---:|---:|
+| Pagamento particular do mês | Sim | Sim | Quando a sessão ocorrer |
+| Venda de pacote paga | Sim | Sim | Não na venda |
+| Consumo posterior do pacote | Não novamente | Não novamente | Sim |
+| Convênio realizado e recebido no mês | Sim | Sim | Sim |
+| Convênio do mês ainda pendente | Não | Não | Sim |
+| Convênio antigo recebido agora | Sim | Não | Já pertence ao mês da sessão |
+| Sessão de Liminar | Não novamente | Não | Sim |
+
+### Testes que protegem esta decisão
+
+`back/services/__tests__/calculateMetaRealizada.test.js` (fixtures fictícias,
+sem dados reais de paciente):
+
+- venda de pacote + sessões anteriores quitadas na criação do pacote (mesmo cenário)
+- consumo de pacote não gera Meta Realizada duplicada
+- convênio retroativo (competência anterior) excluído
+- NF com competências mistas (sessão antiga + atual na mesma guia) — exclui só a antiga
+- convênio realizado e recebido no mesmo mês — incluído
+- convênio do mês ainda pendente — não aparece nem incluído nem excluído
+- convênio sem competência determinável (sem `serviceDate`/`Appointment`/`Session`) — excluído explicitamente, nunca tratado como atual
+- Liminar excluído mesmo com sessão paga no período
+- `porTipo` soma exatamente o total
+- limites do mês no fuso `America/Sao_Paulo` (início e fim)
+- ausência de N+1 no fallback de competência
+- todo write path (save/findOneAndUpdate/updateMany/deleteOne/deleteMany/bulkWrite/insertMany) refletindo sem cache
+
+`back/tests/integration/insuranceBatchReceive.cacheInvalidation.integration.test.js`
+— fluxo real de recebimento em lote de convênio (`receiveInsuranceBatch` →
+`Payment.bulkWrite`) refletindo na Meta Realizada e invalidando o cache Redis
+do endpoint de cashflow (`clearCashflowCache`).
 
 ---
 

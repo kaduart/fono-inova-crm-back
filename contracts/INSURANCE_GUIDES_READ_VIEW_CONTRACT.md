@@ -76,7 +76,12 @@ O envelope e os objetos de guia preservam o mesmo formato aditivo, com estas dif
 
 - `sessionDetails` e `invoices` nao sao montados nem enviados;
 - `firstSessionDate` e `lastSessionDate` sao enviados ja agregados;
-- `orphanSessions` e `paymentIntegrityConflicts` sao arrays vazios;
+- `orphanSessions` e um array vazio (leitura lazy, ver `detail=orphans` abaixo);
+- `paymentIntegrityConflicts` (2026-09-03) e devolvido preenchido mesmo em `summary` —
+  ao contrario de `orphanSessions`, e uma lista de excecoes de integridade,
+  por natureza pequena (nao cresce com o volume normal de guias/sessoes), entao
+  nao pesa a resposta summary. Sem isso o aviso da UI nao tinha como listar
+  quem/quando/motivo sem uma segunda chamada `detail=full`;
 - `orphanSessionsCount` e `paymentIntegrityConflictCount` preservam as contagens globais;
 - Doctor, Appointment, lotes e notas fiscais nao sao populados no carregamento inicial.
 
@@ -175,7 +180,6 @@ I9. `billingState` nunca e `'mixed'`. Mistura e expressa por `hasMixedStates + c
 
 ## Bugs e limitacoes conhecidas (fora do escopo da Fase 1)
 
-- `paymentIntegrityConflicts`: a informacao e coletada pelo servico, mas nao e devolvida no envelope da resposta (Opcao A). Ligacao do aviso na UI depende de PR separada.
 - `hasMixedStates`: logica conhecida com edge cases em guias `per_month`; sera tratada em PR propria.
 - Timezone de competencia: `composePendingCompetenceBreakdown` usa `new Date().getMonth()` no timezone do servidor. Sessoes apos 21h BRT no ultimo dia do mes podem mudar de bucket. Confirmado comportamento herdado; correcao e PR separada.
 - Payments de convenio sem `session`: a consulta atual busca payments por `session` OU `insuranceGuide`, mas so indexa/consumo por `session._id`. Payments com `insuranceGuide` valido e `session` ausente sao descartados. Isso pode esconder dinheiro real da tela se existirem em producao. Fase 2 bloqueada ate contagem confirmar se e codigo morto ou divida historica.
