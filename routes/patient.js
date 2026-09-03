@@ -9,6 +9,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import PatientsView from '../models/PatientsView.js';
+import { isLikelySameName } from '../utils/patientDuplicateCheck.js';
 
 const router = express.Router();
 
@@ -41,17 +42,19 @@ router.post('/add', flexibleAuth, async (req, res) => {
       });
     }
 
-    // Duplicata por nome + telefone
+    // Duplicata por nome (tolerante a erro de digitação) + telefone
+    // Comparar por igualdade EXATA de string deixava passar duplicidades como
+    // "Isaac Moreira Ribeiro" vs "Issac Moreira Ribeiro" mesmo com telefone
+    // idêntico — ~1 ano de histórico ficou dividido em dois cadastros até ser
+    // pego manualmente. Ver utils/patientDuplicateCheck.js.
     if (phone) {
       const normalizedPhone = phone.replace(/\D/g, '');
-      const namePhoneDup = await Patient.findOne({
-        fullName: { $regex: new RegExp(`^${fullName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-        phone: normalizedPhone
-      });
+      const samePhonePatients = await Patient.find({ phone: normalizedPhone }).select('fullName').lean();
+      const namePhoneDup = samePhonePatients.find(p => isLikelySameName(p.fullName, fullName));
       if (namePhoneDup) {
         return res.status(409).json({
           success: false,
-          message: `Já existe um paciente com o nome "${namePhoneDup.fullName}" e telefone ${normalizedPhone} cadastrado.`,
+          message: `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`,
           existingId: namePhoneDup._id
         });
       }

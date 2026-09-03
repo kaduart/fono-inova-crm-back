@@ -30,6 +30,13 @@ const packagesViewSchema = new mongoose.Schema({
     index: true
   },
 
+  // 🆕 (2026-09-03) Ver nota em models/Package.js — identificador amigável
+  // sequencial por paciente+especialidade (ADR-014: espelhar manualmente).
+  sequenceNumber: {
+    type: Number,
+    default: null
+  },
+
   // 📦 Dados do Pacote
   type: {
     type: String,

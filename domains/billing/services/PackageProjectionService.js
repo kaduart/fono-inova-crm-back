@@ -190,7 +190,8 @@ export async function buildPackageView(packageId, options = {}) {
       packageId: pkg._id,
       patientId: pkg.patient?._id,
       doctorId: pkg.doctor?._id,
-      
+      sequenceNumber: pkg.sequenceNumber ?? null,
+
       type: normalizeType(pkg),
       status: normalizeStatus(pkg.status),
       specialty: pkg.specialty,

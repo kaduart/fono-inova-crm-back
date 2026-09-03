@@ -512,14 +512,29 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       packageId: realPackageId.toString(), sessionsCanceled: 0, appointmentsCanceled: 0, paymentsCanceled: 0
     }));
 
-    if (pkg.paymentType !== 'per-session') {
-      return res.status(409).json(formatError(
-        'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION',
-        'Somente pacotes com pagamento por sessao podem ser inativados por este fluxo.'
-      ));
-    }
-
     const pendingStatuses = ['pre_agendado', 'scheduled', 'confirmed', 'pending', 'missed'];
+
+    // 🔧 FIX (2026-09-03): a restrição original bloqueava QUALQUER pacote não
+    // per-session, mesmo um pré-pago 100% quitado e sem nenhuma sessão pendente
+    // (ex: 9/9 sessões completadas) — não havia nada a cancelar, mas o usuário
+    // não conseguia inativar. O risco real que a restrição queria evitar é
+    // cascatear cancelamento de sessões PENDENTES de um pacote pré-pago (dinheiro
+    // já recebido cobrindo sessões futuras, sem lógica de estorno implementada
+    // aqui). Então o bloqueio agora só se aplica quando existem pendências de
+    // fato — um pacote pré-pago já totalmente consumido pode ser inativado
+    // normalmente (a cascata abaixo simplesmente não encontra nada a cancelar).
+    if (pkg.paymentType !== 'per-session') {
+      const hasPendingAppointments = await Appointment.exists({
+        package: pkgObjectId,
+        operationalStatus: { $in: pendingStatuses }
+      });
+      if (hasPendingAppointments) {
+        return res.status(409).json(formatError(
+          'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION',
+          'Pacotes pré-pagos com sessões pendentes não podem ser inativados por este fluxo — cancele ou transfira as sessões restantes primeiro.'
+        ));
+      }
+    }
 
     // 🛡️ PATCH OPERACIONAL (2026-08-15): a cascata inteira (Session + Appointment +
     // Payment + status do Package) agora roda dentro de UMA transação. Antes eram
@@ -540,18 +555,20 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
       };
 
       // Sessões em aberto (não completadas e não canceladas)
-      if (freshPkg.paymentType !== 'per-session') {
-        const err = new Error('Somente pacotes com pagamento por sessao podem ser inativados por este fluxo.');
-        err.status = 409;
-        err.code = 'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION';
-        throw err;
-      }
-
       const pendingAppointments = await Appointment.find({
         package: pkgObjectId,
         operationalStatus: { $in: pendingStatuses }
       }).select('_id').session(mongoSession).lean();
       const appointmentIds = pendingAppointments.map(item => item._id);
+
+      // Reconfere dentro da transação (mesmo motivo do check fora: cobrir corrida
+      // concorrente). Só bloqueia pacote pré-pago se sobrou pendência de fato.
+      if (freshPkg.paymentType !== 'per-session' && appointmentIds.length > 0) {
+        const err = new Error('Pacotes pré-pagos com sessões pendentes não podem ser inativados por este fluxo — cancele ou transfira as sessões restantes primeiro.');
+        err.status = 409;
+        err.code = 'PACKAGE_INACTIVATION_REQUIRES_PER_SESSION';
+        throw err;
+      }
       const linkedSessions = appointmentIds.length
         ? await Session.find({ appointmentId: { $in: appointmentIds }, status: { $ne: 'completed' } })
           .select('_id').session(mongoSession).lean()

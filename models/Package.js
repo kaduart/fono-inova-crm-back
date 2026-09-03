@@ -56,6 +56,15 @@ const packageSchema = new mongoose.Schema({
       message: 'Valor da sessão deve ser maior que zero para pacotes particulares'
     }
   },
+  // 🆕 (2026-09-03) Identificador amigável do pacote — sequencial por
+  // paciente+especialidade (sessionType), ex: 3º pacote de fono do paciente
+  // = 3. Resolve confusão de identificar pacotes só pelo ObjectId truncado
+  // (achado real: "Pacote 46672b" na tela, sem nenhuma forma de referenciar
+  // verbalmente/rastrear qual pacote é qual sem abrir o Mongo). Calculado na
+  // criação (createPackageV2); pacotes antigos recebem valor via backfill
+  // (scripts/migrations/backfill-package-sequence-number.js). Nulo = pacote
+  // legado ainda não migrado — frontend trata como ausente, não como zero.
+  sequenceNumber: { type: Number, default: null },
   totalSessions: { type: Number, default: 1, min: 1 },
   sessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Session' }],
   appointments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],

@@ -753,7 +753,20 @@ export const createPackageV2 = async (req, res) => {
     // ========================================
     // 3️⃣ CRIAR PACKAGE
     // ========================================
+    // 🆕 (2026-09-03) sequenceNumber: identificador amigável, sequencial por
+    // paciente+especialidade (ver nota em models/Package.js). Contado dentro
+    // da transação (mongoSession) pra não colidir com outro pacote sendo
+    // criado pro mesmo paciente/especialidade em paralelo. Conta TODOS os
+    // pacotes anteriores (qualquer status) — cancelado ainda ocupou um número,
+    // igual conversa humana ("esse é o 3º pacote de fono dele").
+    const previousPackagesCount = await Package.countDocuments({
+      patient: patientId,
+      sessionType: sessionType || specialty
+    }).session(mongoSession);
+    const sequenceNumber = previousPackagesCount + 1;
+
     const packageData = createPackageData({ ...req.body, sessionsDone: parsedConsumed });
+    packageData.sequenceNumber = sequenceNumber;
     packageData.createdBy = req.user?._id;
 
     const [pkg] = await Package.create([packageData], { session: mongoSession });
@@ -899,23 +912,47 @@ export const createPackageV2 = async (req, res) => {
       // 🚨 VALIDAR CONFLITOS DE AGENDA EM UMA ÚNICA QUERY.
       // Antes havia um findOne sequencial por slot, multiplicando a latência de rede
       // pela quantidade de sessões do pacote.
+      //
+      // 🚨 FIX (2026-09-02): a query original comparava `date` por igualdade EXATA
+      // de timestamp (`date: buildDateTime(slot.date, slot.time)`). Achado real
+      // (Álvaro Araújo Zaneli): Appointment.date é gravado no banco com duas
+      // convenções diferentes ao longo do histórico — meio-dia UTC
+      // (`T12:00:00.000Z`, hora real só no campo `time`) e hora real embutida via
+      // buildDateTime (`T19:00:00.000Z` p/ 16:00 BRT). Um pacote novo criado
+      // enquanto a última sessão do pacote antigo ainda estava aberta na MESMA
+      // data/hora não disparou conflito porque os dois appointments usavam
+      // convenções diferentes de `date` — timestamps diferentes, mesmo slot real.
+      // Corrigido buscando por uma janela ampla (dia inteiro em BRT, cobre as duas
+      // convenções) e filtrando com `isSameSlot` — que já compara por string de
+      // data + hora, não por igualdade exata de Date — em vez de confiar na query
+      // do Mongo pra decidir igualdade de timestamp.
       const slotsToValidate = schedule.filter(slot => !(reuseAppt && isSameSlot(slot, reuseAppt)));
       if (slotsToValidate.length > 0) {
-        const conflict = await Appointment.findOne({
+        const slotDates = slotsToValidate.map(s => s.date).slice().sort();
+        const rangeStart = moment.tz(slotDates[0], 'America/Sao_Paulo').startOf('day').toDate();
+        const rangeEnd = moment.tz(slotDates[slotDates.length - 1], 'America/Sao_Paulo').endOf('day').toDate();
+
+        const candidates = await Appointment.find({
           doctor: doctorId,
           operationalStatus: { $nin: ['canceled', 'no_show'] },
-          $or: slotsToValidate.map(slot => ({
-            date: buildDateTime(slot.date, slot.time),
-            time: slot.time
-          }))
+          date: { $gte: rangeStart, $lte: rangeEnd }
         })
           .populate('patient', 'fullName phone')
           .populate('doctor', 'fullName')
           .session(mongoSession);
 
+        let conflict = null;
+        let conflictingSlot = null;
+        for (const slot of slotsToValidate) {
+          const match = candidates.find(appt => isSameSlot(slot, appt));
+          if (match) {
+            conflict = match;
+            conflictingSlot = slot;
+            break;
+          }
+        }
+
         if (conflict) {
-          const conflictingSlot = slotsToValidate.find(slot => isSameSlot(slot, conflict))
-            || slotsToValidate[0];
           await mongoSession.abortTransaction();
           const patientName = conflict.patient?.fullName || 'Paciente não identificado';
           const doctorName = conflict.doctor?.fullName || 'Profissional não identificado';
@@ -1597,6 +1634,7 @@ export const listPackagesV2 = async (req, res) => {
       count: packages.length,
       data: packages.map(pkg => ({
         _id: pkg._id,
+        sequenceNumber: pkg.sequenceNumber ?? null,
         type: pkg.type,
         specialty: pkg.specialty,
         totalSessions: pkg.totalSessions,

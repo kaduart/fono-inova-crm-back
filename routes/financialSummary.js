@@ -202,13 +202,24 @@ async function buildPatientFinancialSummary(patientId, packageId) {
                 package: { $exists: true, $ne: null }
             }).distinct('_id');
 
+        // 🔧 FIX (2026-09-03): só conta como dívida real se a sessão vinculada já foi
+        // completada — um agendamento futuro/em andamento ainda não é dívida, é "a
+        // receber" (mesmo princípio já aplicado em GET /pending-payments, linha ~394).
+        // Achado real: paciente com uma única avaliação ainda não finalizada aparecia
+        // com "Saldo em aberto" ao tentar completar a PRÓPRIA sessão (Payment pending
+        // criado junto com o agendamento, appointment.clinicalStatus ainda 'pending').
+        const incompleteAppointmentIds = await Appointment.find({
+            patient: patientId,
+            clinicalStatus: { $ne: 'completed' }
+        }).distinct('_id');
+
         const pendingAvulsoAgg = await Payment.aggregate([
             {
                 $match: {
                     ...match,
                     status: 'pending',
                     billingType: { $nin: ['convenio', 'liminar'] },
-                    appointment: { $nin: appointmentsWithPackage }
+                    appointment: { $nin: [...appointmentsWithPackage, ...incompleteAppointmentIds] }
                 }
             },
             { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
