@@ -162,6 +162,67 @@ describe('createDepositAndBalancePayments', () => {
         const balanceCredits = await FinancialLedger.find({ payment: balance._id, type: 'payment_received' }).lean();
         expect(balanceCredits).toHaveLength(0);
     });
+
+    it('migra recebimento parcial legado de R$50 para deposit e cria saldo R$450 sem duplicar o ledger', async () => {
+        const { patientId, doctorId, appointmentId, sessionId } = ids();
+        const paidAt = new Date('2026-09-04T13:18:25-03:00');
+
+        const legacyPayment = await Payment.create({
+            patient: patientId,
+            doctor: doctorId,
+            appointment: appointmentId,
+            session: sessionId,
+            amount: 50,
+            paymentDate: paidAt,
+            paidAt,
+            financialDate: paidAt,
+            paymentMethod: 'pix',
+            status: 'paid',
+            serviceType: 'consultation',
+            billingType: 'particular',
+            kind: 'session_payment',
+            paymentRole: PAYMENT_ROLE.STANDARD,
+        });
+        await FinancialLedger.create({
+            type: 'payment_received',
+            direction: 'credit',
+            amount: 50,
+            patient: patientId,
+            appointment: appointmentId,
+            session: sessionId,
+            payment: legacyPayment._id,
+            correlationId: `legacy_${legacyPayment._id}`,
+            occurredAt: paidAt,
+        });
+
+        const result = await withTransaction((session) => createDepositAndBalancePayments({
+            patientId,
+            doctorId,
+            appointmentId,
+            sessionId,
+            billingType: 'particular',
+            sessionValue: 500,
+            depositAmount: 50,
+            depositPaymentMethod: 'pix',
+            balancePaymentMethod: 'pix',
+            correlationId: `legacy_conversion_${appointmentId}`,
+        }, session));
+
+        expect(result.depositPayment._id.toString()).toBe(legacyPayment._id.toString());
+        expect(result.depositPayment.paymentRole).toBe(PAYMENT_ROLE.DEPOSIT);
+        expect(result.depositPayment.amount).toBe(50);
+        expect(result.depositPayment.status).toBe('paid');
+        expect(result.balancePayment.paymentRole).toBe(PAYMENT_ROLE.BALANCE);
+        expect(result.balancePayment.amount).toBe(450);
+        expect(result.balancePayment.status).toBe('pending');
+
+        const allPayments = await Payment.find({ appointment: appointmentId }).sort({ amount: 1 });
+        expect(allPayments).toHaveLength(2);
+        expect(allPayments.map((payment) => payment.amount)).toEqual([50, 450]);
+        const credits = await FinancialLedger.find({ appointment: appointmentId, type: 'payment_received' });
+        expect(credits).toHaveLength(1);
+        expect(credits[0].amount).toBe(50);
+    });
 });
 
 describe('Caixa Real reflete o sinal na data do sinal (sem esperar a conclusão da sessão)', () => {

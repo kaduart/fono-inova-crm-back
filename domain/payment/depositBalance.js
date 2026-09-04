@@ -234,19 +234,33 @@ export async function createDepositAndBalancePayments(params, mongoSession) {
     try {
         if (balancePayment?.paymentRole === PAYMENT_ROLE.STANDARD) {
             if (balancePayment.status === 'paid') {
-                const error = new Error('O pagamento desta consulta já foi integralmente recebido. Não é possível registrar um sinal adicional.');
-                error.code = 'PAYMENT_ALREADY_SETTLED';
-                error.status = 409;
-                throw error;
+                // Compatibilidade com recebimento parcial legado: o fluxo antigo
+                // reduzia o Payment para o valor efetivamente recebido, mas não
+                // possuía paymentRole. Se esse valor é exatamente o sinal agora
+                // confirmado, preserve o dinheiro/ledger e promova o documento
+                // existente a deposit; um novo balance será criado abaixo.
+                if (deposit > 0 && Number(balancePayment.amount) === deposit && total > deposit) {
+                    balancePayment.paymentRole = PAYMENT_ROLE.DEPOSIT;
+                    balancePayment.description = 'Sinal recebido no pré-agendamento';
+                    balancePayment.notes = 'Sinal (entrada) — migrado de recebimento parcial legado';
+                    await balancePayment.save({ session: mongoSession });
+                    depositPayment = balancePayment;
+                    balancePayment = null;
+                } else {
+                    const error = new Error('O pagamento desta consulta já foi integralmente recebido. Não é possível registrar um sinal adicional.');
+                    error.code = 'PAYMENT_ALREADY_SETTLED';
+                    error.status = 409;
+                    throw error;
+                }
+            } else {
+                balancePayment.paymentRole = PAYMENT_ROLE.BALANCE;
+                balancePayment.amount = remaining;
+                balancePayment.description = 'Saldo da consulta (após sinal)';
+                balancePayment.notes = `Saldo restante após sinal de R$${deposit.toFixed(2)}`;
+                balancePayment.paymentMethod = balancePaymentMethod || balancePayment.paymentMethod || 'pix';
+                balancePayment.status = remaining > 0 ? 'pending' : 'paid';
+                await balancePayment.save({ session: mongoSession });
             }
-
-            balancePayment.paymentRole = PAYMENT_ROLE.BALANCE;
-            balancePayment.amount = remaining;
-            balancePayment.description = 'Saldo da consulta (após sinal)';
-            balancePayment.notes = `Saldo restante após sinal de R$${deposit.toFixed(2)}`;
-            balancePayment.paymentMethod = balancePaymentMethod || balancePayment.paymentMethod || 'pix';
-            balancePayment.status = remaining > 0 ? 'pending' : 'paid';
-            await balancePayment.save({ session: mongoSession });
         }
 
         if (existingDeposit && balancePayment) {

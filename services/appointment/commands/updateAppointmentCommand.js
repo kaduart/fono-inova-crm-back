@@ -228,6 +228,27 @@ export async function execute(id, payload, user) {
           'FORBIDDEN_MANUAL_CANCEL'
         );
       }
+      // 🚨 FIX (2026-09-04): faltava o inverso do guard de FORBIDDEN_MANUAL_COMPLETE
+      // acima — bloqueava ENTRAR em 'completed' fora do completeSessionV2, mas não
+      // SAIR de 'completed' por aqui. Achado real: Isis Caldas Rebelatto, pacote TO-3
+      // (sessionsDone incrementado 2x pra 1 sessão real) — 17:49 completou via
+      // completeSessionV2 (sessionsDone 2→3, dentro do limite), 18:32 um PUT genérico
+      // reverteu operationalStatus completed→scheduled por este endpoint (sem tocar
+      // sessionsDone, diferente do cancelAppointmentCommand que desconta via
+      // restorePackageOnCancel), e 18:33 completou de novo (agora legitimamente
+      // 'scheduled'→'completed', sessionsDone 3→4) — 3 sessões reais, contador em 4.
+      // Reabrir uma sessão completada tem que ser uma operação própria e simétrica
+      // (desfazer sessionsDone/Payment), não um efeito colateral silencioso do PUT
+      // genérico de edição.
+      if (appointment.operationalStatus === 'completed'
+        && incomingOperationalStatus !== undefined
+        && incomingOperationalStatus !== 'completed') {
+        throw buildError(
+          'Transição inválida: não é possível reverter operationalStatus de um agendamento já completado por aqui — use cancelAppointment (estorno) se o objetivo é desfazer a sessão.',
+          409,
+          'FORBIDDEN_MANUAL_UNCOMPLETE'
+        );
+      }
 
       // 🛡️ GUARDA DE DOMÍNIO: clinicalStatus=completed exige operationalStatus=completed
       const incomingClinicalStatus = updateData.clinicalStatus;
@@ -348,7 +369,12 @@ export async function execute(id, payload, user) {
           const incomingTotal = updateData.amount ?? updateData.paymentAmount ?? updateData.sessionValue;
           const effectiveTotal = incomingTotal ?? updatedAppointment.sessionValue ?? updatedAppointment.paymentAmount;
 
-          if (updatedAppointment.payment.paymentRole === 'balance' && updatedAppointment.billingType === 'particular') {
+          if (requestedDeposit > 0) {
+            // O comando de sinal acima já criou/ajustou deposit + balance com os
+            // valores corretos. Não execute novamente nenhuma regra de amount
+            // neste update genérico: ele poderia transformar o total da consulta
+            // em valor recebido ou recalcular o mesmo fluxo duas vezes.
+          } else if (updatedAppointment.payment.paymentRole === 'balance' && updatedAppointment.billingType === 'particular') {
             const deposit = await findDepositPayment(
               { appointmentId: updatedAppointment._id, billingType: updatedAppointment.billingType },
               mongoSession
@@ -360,6 +386,10 @@ export async function execute(id, payload, user) {
             }
 
             paymentSet.amount = Math.max(Number(effectiveTotal || 0) - depositPaid, 0);
+          } else if (updatedAppointment.payment.status === 'paid') {
+            // Valor já recebido é fato financeiro imutável. Uma edição do valor
+            // total da consulta nunca pode inflar retroativamente Payment.amount
+            // (ex.: recebeu R$50 e editou sessionValue=R$500).
           } else if (incomingTotal !== undefined) {
             paymentSet.amount = incomingTotal;
           } else if (updatedAppointment.paymentAmount !== undefined) {

@@ -291,6 +291,77 @@ describe('Matriz financeira completa: Caixa Real, Meta Realizada, Produção, A 
 });
 
 describe('updateAppointmentCommand — edição de valor total só toca o saldo', () => {
+    it('editar consulta de R$500 adicionando sinal de R$50 não repassa o total ao Payment do sinal', async () => {
+        const doctor = await createDoctor();
+        const patient = await createPatient();
+        const created = await appointmentHybridService.create({
+            patientId: patient._id,
+            doctorId: doctor._id,
+            date: '2026-09-10',
+            time: '09:00',
+            specialty: 'neuroped',
+            serviceType: 'consultation',
+            billingType: 'particular',
+            paymentMethod: 'pix',
+            amount: 500,
+            operationalStatus: 'pre_agendado',
+            userId: FAKE_USER._id,
+        });
+
+        await updateAppointmentCommand.execute(created.appointmentId, {
+            sessionValue: 500,
+            depositAmount: 50,
+            depositPaymentMethod: 'pix',
+            depositPaidAt: new Date('2026-09-04T13:18:25-03:00'),
+        }, FAKE_USER);
+
+        const payments = await Payment.find({ appointment: created.appointmentId });
+        const deposit = payments.find(payment => payment.paymentRole === 'deposit');
+        const balance = payments.find(payment => payment.paymentRole === 'balance');
+        const appointment = await Appointment.findById(created.appointmentId);
+
+        expect(payments).toHaveLength(2);
+        expect(deposit.amount).toBe(50);
+        expect(deposit.status).toBe('paid');
+        expect(balance.amount).toBe(450);
+        expect(balance.status).toBe('pending');
+        expect(appointment.payment.toString()).toBe(balance._id.toString());
+    });
+
+    it('edição genérica nunca infla Payment já pago de R$50 para o total de R$500', async () => {
+        const doctor = await createDoctor();
+        const patient = await createPatient();
+        const created = await appointmentHybridService.create({
+            patientId: patient._id,
+            doctorId: doctor._id,
+            date: '2026-09-10',
+            time: '09:00',
+            specialty: 'neuroped',
+            serviceType: 'consultation',
+            billingType: 'particular',
+            paymentMethod: 'pix',
+            amount: 500,
+            operationalStatus: 'pre_agendado',
+            userId: FAKE_USER._id,
+        });
+
+        await Payment.findByIdAndUpdate(created.paymentId, {
+            $set: {
+                amount: 50,
+                status: 'paid',
+                paidAt: new Date('2026-09-04T13:18:25-03:00'),
+                financialDate: new Date('2026-09-04T13:18:25-03:00'),
+                paymentRole: 'standard',
+            },
+        });
+
+        await updateAppointmentCommand.execute(created.appointmentId, { sessionValue: 500 }, FAKE_USER);
+
+        const paymentAfter = await Payment.findById(created.paymentId);
+        expect(paymentAfter.amount).toBe(50);
+        expect(paymentAfter.status).toBe('paid');
+    });
+
     it('sinal pago permanece R$50; total 500→600 muda só o saldo pra R$550; Appointment.payment aponta pro saldo', async () => {
         const doctor = await createDoctor();
         const patient = await createPatient();

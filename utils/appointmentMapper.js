@@ -167,7 +167,17 @@ export const mapAppointmentToEvent = (appt, extra = {}) => {
         insuranceGuideNumber: appt.insuranceGuide?.number || null,
         authorizationCode: appt.authorizationCode || '',
         // 📦 PACOTE (se houver)
-        package: appt.package || null,
+        // 🚨 FIX (2026-09-04): Package.remainingSessions é virtual (totalSessions -
+        // sessionsDone) — não sobrevive a .populate(...).lean() em appointmentReads.js,
+        // então nunca chegava no front apesar de estar no `.select()`. Calculado aqui
+        // (mesma fórmula do virtual, só que como valor real) pra o front só LER se o
+        // pacote está esgotado, sem precisar reimplementar a regra (RN fica no back).
+        package: appt.package
+            ? {
+                ...appt.package,
+                remainingSessions: Math.max(0, (appt.package.totalSessions || 0) - (appt.package.sessionsDone || 0)),
+              }
+            : null,
         // ⚖️ CONTRATO LIMINAR (se houver) — necessário para o guard financeiro do front validar saldo
         liminarContract: appt.liminarContract || null,
         patient: {

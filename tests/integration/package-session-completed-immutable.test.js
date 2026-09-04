@@ -75,6 +75,41 @@ describe('updateAppointmentCommand — histórico de pacote concluído', () => {
     expect(unchanged.operationalStatus).toBe('completed');
   });
 
+  // 🚨 Regressão (2026-09-04): caso real Isis Caldas Rebelatto, pacote TO-3 —
+  // reverter operationalStatus de 'completed' por este update genérico (sem
+  // passar por cancelAppointmentCommand) deixava sessionsDone do pacote sem
+  // desconto; completar de novo em seguida incrementava um segundo crédito
+  // pra uma única sessão real (3 sessões reais viraram sessionsDone=4).
+  it('rejeita reverter operationalStatus de completed pra outro status via update genérico', async () => {
+    const patient = await Patient.create({ fullName: 'Paciente Reversão', phone: '62999990010', dateOfBirth: '2015-01-01' });
+    const doctor = await Doctor.create({
+      fullName: 'Dra. Reversão', specialty: 'fonoaudiologia', phoneNumber: '62999990011',
+      licenseNumber: 'CRM-REV-1', email: 'reversao@teste.com',
+    });
+    const appointmentId = new mongoose.Types.ObjectId();
+    await Appointment.collection.insertOne({
+      _id: appointmentId,
+      patient: patient._id,
+      doctor: doctor._id,
+      date: new Date('2026-08-20T03:00:00.000Z'),
+      time: '10:00',
+      duration: 40,
+      specialty: 'fonoaudiologia',
+      serviceType: 'package_session',
+      billingType: 'particular',
+      operationalStatus: 'completed',
+      clinicalStatus: 'completed',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(execute(appointmentId, { operationalStatus: 'scheduled' }, { _id: new mongoose.Types.ObjectId(), role: 'admin' }))
+      .rejects.toMatchObject({ status: 409, code: 'FORBIDDEN_MANUAL_UNCOMPLETE' });
+
+    const unchanged = await Appointment.findById(appointmentId).lean();
+    expect(unchanged.operationalStatus).toBe('completed');
+  });
+
   it('não conclui sessão vinculada a pacote inativo e libera o lock operacional', async () => {
     const patient = await Patient.create({ fullName: 'Paciente Inativo', phone: '62999990002', dateOfBirth: '2015-01-01' });
     const doctor = await Doctor.create({
