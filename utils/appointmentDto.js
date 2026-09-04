@@ -9,7 +9,22 @@
  */
 
 import Appointment from '../models/Appointment.js';
+import Payment from '../models/Payment.js';
 import { pickAppointmentClientFields } from '../services/appointment/contracts/appointmentClientFields.js';
+
+async function resolveFinancialAmounts(appointmentId) {
+    const paidPayments = await Payment.find({
+        appointment: appointmentId,
+        status: 'paid',
+    }).select('amount paymentRole').lean();
+
+    return paidPayments.reduce((result, payment) => {
+        const amount = Number(payment.amount || 0);
+        result.paidTotal += amount;
+        if (payment.paymentRole === 'deposit') result.depositAmount += amount;
+        return result;
+    }, { depositAmount: 0, paidTotal: 0 });
+}
 
 /**
  * Versão async do mapper: auto-popula doctor/patient quando não vieram populados.
@@ -27,7 +42,9 @@ export async function resolveAndMapAppointmentDTO(doc) {
             .populate('session', 'isPaid paymentStatus partialAmount status')
             .populate('payment', 'status amount paymentMethod')
             .lean();
-        return mapAppointmentDTO(appointment);
+        if (!appointment) return null;
+        const financialAmounts = await resolveFinancialAmounts(appointment._id);
+        return mapAppointmentDTO(appointment, financialAmounts);
     }
     // Se é um doc Mongoose, popula apenas os campos que faltam
     const needsDoctorPopulate = doc.doctor && typeof doc.doctor === 'object' && !doc.doctor.fullName && !doc.doctor.name;
@@ -38,7 +55,8 @@ export async function resolveAndMapAppointmentDTO(doc) {
         if (needsPatientPopulate) paths.push({ path: 'patient', select: 'fullName phone dateOfBirth email' });
         try { await doc.populate(paths); } catch (_) {}
     }
-    return mapAppointmentDTO(doc);
+    const financialAmounts = await resolveFinancialAmounts(doc._id);
+    return mapAppointmentDTO(doc, financialAmounts);
 }
 
 export function mapAppointmentDTO(appointment, extra = {}) {

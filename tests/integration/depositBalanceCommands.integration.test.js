@@ -653,7 +653,7 @@ describe('registro de sinal durante a edicao', () => {
         const patient = await createPatient();
         const { appointmentId } = await createAppointmentWithDeposit({ doctor, patient, depositAmount: 0 });
 
-        await updateAppointmentCommand.execute(appointmentId, {
+        const updateResult = await updateAppointmentCommand.execute(appointmentId, {
             depositAmount: 50,
             depositPaymentMethod: 'pix',
         }, FAKE_USER);
@@ -672,6 +672,10 @@ describe('registro de sinal durante a edicao', () => {
         expect(appointment.paymentStatus).toBe('partial');
         expect(credits).toHaveLength(1);
         expect(credits[0].amount).toBe(50);
+        expect(updateResult.data.depositAmount).toBe(50);
+        expect(updateResult.data.remainingAmount).toBe(450);
+        expect(updateResult.data.payment.amount).toBe(450);
+        expect(updateResult.data.payment.status).toBe('pending');
     });
 
     it('retry nao duplica Payments nem o credito do sinal', async () => {

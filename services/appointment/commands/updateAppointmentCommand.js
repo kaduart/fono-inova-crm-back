@@ -534,7 +534,10 @@ export async function execute(id, payload, user) {
   }
 
   return {
-    data: await resolveAndMapAppointmentDTO(saved),
+    // Reconsulta após todos os efeitos para devolver Payment/Session atuais e os
+    // valores canônicos de sinal + saldo. O documento salvo ainda carrega os
+    // populates anteriores à sincronização.
+    data: await resolveAndMapAppointmentDTO(saved._id),
     message: 'Agendamento atualizado com sucesso',
   };
 }
