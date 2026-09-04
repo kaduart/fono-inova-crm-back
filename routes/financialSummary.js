@@ -414,12 +414,23 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         ]
     })
     .sort({ createdAt: -1 })
-    .populate('appointment', 'date time specialty sessionValue package clinicalStatus')
+    .populate('appointment', 'date time specialty sessionValue package operationalStatus')
     .lean();
 
-    // Filtra: mantém apenas payments sem agendamento (débito manual) ou com sessão completada
+    // Filtra: mantém apenas payments sem agendamento (débito manual) ou com sessão completada.
+    // 🚨 FIX (2026-09-04): usava appointment.clinicalStatus, mas a fonte da
+    // verdade pra "a sessão aconteceu" é operationalStatus (documentado em
+    // models/Appointment.js: "NUNCA use clinicalStatus para decidir se uma
+    // sessão foi realizada. Sempre verifique operationalStatus === 'completed'").
+    // clinicalStatus rastreia documentação/prontuário, que pode ficar em aberto
+    // muito depois da sessão já ter acontecido e sido paga/pendente de
+    // pagamento — achado real: Mikhael Venâncio da cunha tinha uma sessão com
+    // operationalStatus='completed' e clinicalStatus='pending', então a dívida
+    // real de R$180 sumia desta lista mas continuava aparecendo no resumo
+    // legado do cabeçalho do paciente (PatientBalanceHeader), gerando
+    // divergência entre as duas telas do mesmo paciente.
     const realDebtPayments = pendingPayments.filter(p =>
-        !p.appointment || p.appointment.clinicalStatus === 'completed'
+        !p.appointment || p.appointment.operationalStatus === 'completed'
     );
 
     const items = realDebtPayments.map(p => {

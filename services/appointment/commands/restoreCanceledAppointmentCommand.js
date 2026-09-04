@@ -135,32 +135,47 @@ export async function executeWithSession(appointment, { reason } = {}, user, ses
     );
   }
 
-  // 3. Restaura o Payment vinculado (nunca mexe em package_receipt — mesma
-  // exceção do cancelamento; o recibo de compra do pacote nunca foi cancelado).
-  if (appointment.payment) {
-    const paymentId = appointment.payment._id || appointment.payment;
-    const pay = await Payment.findById(paymentId).session(session);
+  // 3. Restaura TODOS os Payments vinculados (nunca mexe em package_receipt —
+  // mesma exceção do cancelamento; o recibo de compra do pacote nunca foi
+  // cancelado). Antes desta correção (2026-09-04, feature sinal+saldo), só o
+  // Payment referenciado por `appointment.payment` (singular) era restaurado —
+  // uma consulta com sinal+saldo cancelada e reativada perdia um dos dois
+  // Payments em 'canceled' pra sempre. cancelAppointmentCommand.js cancela
+  // TODOS os Payments não-pacote do appointment (via Payment.find plural);
+  // este restore precisa ser o inverso simétrico exato.
+  const appointmentIdStr = appointment._id.toString();
+  const sessionIdForPayments = appointment.session?._id || appointment.session;
+  const linkedPayments = await Payment.find({
+    $or: [
+      { appointment: appointment._id },
+      { appointmentId: appointmentIdStr },
+      ...(sessionIdForPayments ? [{ session: sessionIdForPayments }] : []),
+    ],
+    status: 'canceled',
+    kind: { $ne: 'package_receipt' },
+  }).session(session);
 
-    if (pay && pay.status === 'canceled' && pay.kind !== 'package_receipt') {
-      // Volta pra 'pending', não 'paid' — não há como saber com certeza que o
-      // dinheiro já está com a clínica de novo; provisioning correto é pending,
-      // igual a um agendamento novo. Evita inflar receita silenciosamente.
-      await Payment.findByIdAndUpdate(
-        paymentId,
-        {
-          $set: {
-            status: 'pending',
-            canceledAt: null,
-            canceledReason: null,
-            updatedAt: new Date(),
-          },
+  for (const pay of linkedPayments) {
+    // Volta pra 'pending', não 'paid' — não há como saber com certeza que o
+    // dinheiro já está com a clínica de novo; provisioning correto é pending,
+    // igual a um agendamento novo. Evita inflar receita silenciosamente.
+    // Aplica-se igualmente ao sinal (paymentRole='deposit') e ao saldo — a
+    // mesma cautela de negócio já usada para o caso de 1 Payment só.
+    await Payment.findByIdAndUpdate(
+      pay._id,
+      {
+        $set: {
+          status: 'pending',
+          canceledAt: null,
+          canceledReason: null,
+          updatedAt: new Date(),
         },
-        { session }
-      );
-    }
+      },
+      { session }
+    );
   }
 
-  return { sessionRestored, wasCompleted, wasPaid };
+  return { sessionRestored, wasCompleted, wasPaid, paymentsRestored: linkedPayments.length };
 }
 
 export default { executeWithSession };

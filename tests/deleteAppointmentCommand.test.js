@@ -13,6 +13,7 @@ import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { transitionPaymentStatus } from '../services/paymentStatusService.js';
 import { execute } from '../services/appointment/commands/deleteAppointmentCommand.js';
 
 vi.mock('../models/Appointment.js', () => ({
@@ -22,7 +23,7 @@ vi.mock('../models/Session.js', () => ({
   default: { findByIdAndUpdate: vi.fn() },
 }));
 vi.mock('../models/Payment.js', () => ({
-  default: { findById: vi.fn(), findByIdAndDelete: vi.fn() },
+  default: { findById: vi.fn(), findByIdAndDelete: vi.fn(), find: vi.fn(), deleteMany: vi.fn() },
 }));
 vi.mock('../models/Patient.js', () => ({
   default: { findByIdAndUpdate: vi.fn() },
@@ -41,6 +42,9 @@ vi.mock('../services/auditLogService.js', () => ({
 }));
 vi.mock('../utils/transactionRetry.js', () => ({
   runTransactionWithRetry: vi.fn(async (operation) => operation({})),
+}));
+vi.mock('../services/paymentStatusService.js', () => ({
+  transitionPaymentStatus: vi.fn().mockResolvedValue({ payment: {}, changed: true }),
 }));
 
 function makeAppointment(overrides = {}) {
@@ -74,6 +78,8 @@ describe('deleteAppointmentCommand.execute', () => {
     Session.findByIdAndUpdate.mockResolvedValue(true);
     Payment.findById.mockResolvedValue(null);
     Payment.findByIdAndDelete.mockResolvedValue(true);
+    Payment.find.mockReturnValue({ session: vi.fn().mockResolvedValue([]) });
+    Payment.deleteMany.mockResolvedValue({ deletedCount: 0 });
     Patient.findByIdAndUpdate.mockResolvedValue(true);
   });
 
@@ -89,7 +95,7 @@ describe('deleteAppointmentCommand.execute', () => {
       .toThrow(/LOT-TEST-001/);
 
     expect(Appointment.findByIdAndDelete).not.toHaveBeenCalled();
-    expect(Payment.findByIdAndDelete).not.toHaveBeenCalled();
+    expect(Payment.deleteMany).not.toHaveBeenCalled();
   });
 
   it('deve bloquear deleção quando Payment está em lote ativo', async () => {
@@ -111,12 +117,56 @@ describe('deleteAppointmentCommand.execute', () => {
     Appointment.findById.mockReturnValue({
       populate: vi.fn().mockResolvedValue(appt),
     });
+    Payment.find.mockReturnValue({ session: vi.fn().mockResolvedValue([appt.payment]) });
     mockInsuranceBatchFindOne(null);
 
     await execute('appt-1', { _id: 'user-1' });
 
     expect(Appointment.findByIdAndDelete).toHaveBeenCalled();
-    expect(Payment.findByIdAndDelete).toHaveBeenCalled();
+    // 🎯 sinal+saldo (2026-09-04): deleção agora busca TODOS os Payments do
+    // appointment (Payment.find) e apaga em lote (deleteMany) — não mais
+    // findByIdAndDelete singular — pra não deixar um 2º Payment (deposit ou
+    // balance) órfão no banco.
+    expect(Payment.deleteMany).toHaveBeenCalledWith(
+      { _id: { $in: [appt.payment._id] } },
+      expect.anything()
+    );
+  });
+
+  it('sinal pago (status=paid) NUNCA é hard-deleted — vira canceled via transitionPaymentStatus, saldo pendente é deletado normalmente', async () => {
+    const appt = makeAppointment({
+      // appointment.payment aponta pro saldo — o sinal é achado só via Payment.find
+      payment: { _id: 'balance-1', kind: 'session_payment' },
+    });
+    Appointment.findById.mockReturnValue({
+      populate: vi.fn().mockResolvedValue(appt),
+    });
+    Payment.find.mockReturnValue({
+      session: vi.fn().mockResolvedValue([
+        { _id: 'deposit-1', kind: 'session_payment', paymentRole: 'deposit', status: 'paid' },
+        { _id: 'balance-1', kind: 'session_payment', paymentRole: 'balance', status: 'pending' },
+      ]),
+    });
+    mockInsuranceBatchFindOne(null);
+
+    await execute('appt-1', { _id: 'user-1' });
+
+    // Sinal pago: NUNCA em deleteMany, sempre via transitionPaymentStatus -> canceled
+    expect(Payment.deleteMany).toHaveBeenCalledWith(
+      { _id: { $in: ['balance-1'] } },
+      expect.anything()
+    );
+    expect(Payment.deleteMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ _id: { $in: expect.arrayContaining(['deposit-1']) } }),
+      expect.anything()
+    );
+    expect(transitionPaymentStatus).toHaveBeenCalledWith(
+      'deposit-1',
+      'canceled',
+      expect.objectContaining({ reason: 'appointment_deleted' })
+    );
+    expect(transitionPaymentStatus).not.toHaveBeenCalledWith('balance-1', 'canceled', expect.anything());
+    expect(Appointment.findByIdAndDelete).toHaveBeenCalled();
   });
 
   it('deve permitir deleção quando batch está em estado building (não protegido)', async () => {
@@ -124,6 +174,7 @@ describe('deleteAppointmentCommand.execute', () => {
     Appointment.findById.mockReturnValue({
       populate: vi.fn().mockResolvedValue(appt),
     });
+    Payment.find.mockReturnValue({ session: vi.fn().mockResolvedValue([appt.payment]) });
     mockInsuranceBatchFindOne(null);
 
     await execute('appt-1', { _id: 'user-1' });

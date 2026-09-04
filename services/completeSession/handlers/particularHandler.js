@@ -18,6 +18,7 @@ import Session from '../../../models/Session.js';
 import FinanceWriteGuard from '../../financialGuard/FinanceWriteGuard.js';
 import { normalizePaymentMethod } from '../../../utils/paymentResolver.js';
 import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
+import { findDepositPayment, assertNotDepositPayment } from '../../../domain/payment/depositBalance.js';
 
 export const ParticularHandler = {
     /**
@@ -69,9 +70,27 @@ export const ParticularHandler = {
      * Fase 2 — cria/atualiza Payment e ajusta Package.
      */
     async buildPayment(appointmentUpdate, ctx) {
-        const { appointment, appointmentId, sessionId, sessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods, paymentMethod: explicitPaymentMethod } = ctx;
+        const { appointment, appointmentId, sessionId, sessionValue: fullSessionValue, packageId, packageData, mongoSession, userId, isBalanceOrigin, sessionDoc, splitMethods, paymentMethod: explicitPaymentMethod } = ctx;
 
-        // Valida que a soma dos splits bate com o valor da sessão
+        // 🎯 SINAL + SALDO (2026-09-04): se existe um Payment paymentRole='deposit'
+        // pago para este appointment, o valor a cobrar/registrar AQUI é só o SALDO
+        // (fullSessionValue - sinal já recebido) — nunca o valor cheio de novo, senão
+        // o sinal seria contado duas vezes no Caixa Real. Sem pacote (deposit não se
+        // aplica a sessão de pacote — ver domain/payment/depositBalance.js).
+        let depositAlreadyPaid = 0;
+        if (!packageId && appointment?.billingType !== 'convenio') {
+            const deposit = await findDepositPayment(
+                { appointmentId, billingType: appointment?.billingType || 'particular' },
+                mongoSession
+            );
+            if (deposit && deposit.status === 'paid') {
+                depositAlreadyPaid = deposit.amount || 0;
+            }
+        }
+        const sessionValue = Math.max(Number(fullSessionValue || 0) - depositAlreadyPaid, 0);
+
+        // Valida que a soma dos splits bate com o valor ainda em aberto (saldo, não
+        // o valor cheio quando há sinal já recebido)
         if (splitMethods?.length >= 2) {
             const splitSum = splitMethods.reduce((s, m) => s + Number(m.amount || 0), 0);
             if (Math.abs(splitSum - sessionValue) > 0.01) {
@@ -188,6 +207,12 @@ export const ParticularHandler = {
             let paymentDoc;
             if (appointment.payment) {
                 const existingPaymentId = appointment.payment._id || appointment.payment;
+                // 🛡️ SINAL: appointment.payment sempre aponta pro saldo/standard (nunca pro
+                // sinal — garantido na criação, ver domain/payment/depositBalance.js). Airbag
+                // defensivo contra qualquer inconsistência de dados que faria este branch
+                // sobrescrever o sinal já pago.
+                const existingRoleCheck = await Payment.findById(existingPaymentId).select('paymentRole').session(mongoSession).lean();
+                assertNotDepositPayment(existingRoleCheck);
                 paymentDoc = await Payment.findByIdAndUpdate(
                     existingPaymentId,
                     {
@@ -225,6 +250,7 @@ export const ParticularHandler = {
                     createdBy:     userId,
                     kind:          'session_payment',
                     billingType:   'particular',
+                    paymentRole:   'standard',
                     ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession }))[0];
                 appointmentUpdate.$set.payment = paymentDoc._id;
@@ -242,6 +268,8 @@ export const ParticularHandler = {
             if (appointment.payment) {
                 const existingPaymentId = appointment.payment._id || appointment.payment;
                 const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+                // 🛡️ SINAL: ver comentário equivalente no sub-caso FIADO acima.
+                assertNotDepositPayment(existingPayment);
 
                 if (existingPayment?.status === 'paid') {
                     // ⛔⛔⛔ NUNCA ALTERAR financialDate / paidAt / paymentDate AQUI ⛔⛔⛔
@@ -328,7 +356,12 @@ export const ParticularHandler = {
                         }
                     ],
                     status: 'paid',
-                    billingType: { $in: ['particular', null, undefined] }
+                    billingType: { $in: ['particular', null, undefined] },
+                    // 🛡️ SINAL: este lookup heurístico não passa por appointment.payment —
+                    // sem esta exclusão explícita, um sinal pago (mesmo appointment,
+                    // billingType='particular', status='paid') seria adotado como "o"
+                    // payment da sessão e teria seu amount sobrescrito abaixo.
+                    paymentRole: { $ne: 'deposit' }
                 }).sort({ createdAt: -1 }).session(mongoSession).lean();
 
                 if (preRegistered) {
@@ -378,6 +411,7 @@ export const ParticularHandler = {
                         createdBy:     userId,
                         kind:          'session_payment',
                         billingType:   'particular',
+                        paymentRole:   'standard',
                         splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
                         ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }], { session: mongoSession });
@@ -420,6 +454,8 @@ export const ParticularHandler = {
         if (appointment.payment) {
             const existingPaymentId = appointment.payment._id || appointment.payment;
             const existingPayment = await Payment.findById(existingPaymentId).session(mongoSession).lean();
+            // 🛡️ SINAL: ver comentário equivalente no sub-caso FIADO acima.
+            assertNotDepositPayment(existingPayment);
 
             const alreadyPaid = existingPayment?.status === 'paid';
             const preservePaymentDate  = alreadyPaid ? (existingPayment?.paymentDate  || existingPayment?.financialDate || now) : paymentDate;
@@ -461,6 +497,8 @@ export const ParticularHandler = {
             const linkedPayment = await Payment.findOne({
                 status:      'paid',
                 billingType: { $in: ['particular', null, undefined] },
+                // 🛡️ SINAL: ver comentário equivalente no lookup heurístico per-session acima.
+                paymentRole: { $ne: 'deposit' },
                 $or: [
                     { appointment: appointmentId },
                     ...(sessionId ? [{ session: sessionId }] : [])
@@ -518,6 +556,7 @@ export const ParticularHandler = {
                     createdBy:     userId,
                     kind:          'session_payment',
                     billingType:   'particular',
+                    paymentRole:   'standard',
                     splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
                     ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession });

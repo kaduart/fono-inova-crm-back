@@ -63,6 +63,7 @@ Se alterar Payment, verificar:
 - `ReconciliationService` — auditoria e divergências
 - `Package.financialStatus` — pre-save recalcula automaticamente se payment de pacote
 - Nunca alterar `Payment.status` diretamente — sempre via `transitionPaymentStatus()`
+- `paymentRole` (`standard`/`deposit`/`balance`) — todo código que busca "o Payment do appointment" pra liquidar/editar/cancelar precisa saber que pode existir um sinal (`deposit`) além do saldo; `Appointment.payment` nunca aponta pro sinal, mas lookups heurísticos por `appointment`/`session` sem filtrar `paymentRole` podem encontrá-lo por engano — ver `domain/payment/depositBalance.js`
 
 ### Session
 Se alterar Session, verificar:
@@ -105,6 +106,15 @@ Se alterar Patient, verificar:
 11. Idempotência obrigatória: verificar existência antes de criar Payment (`findOne({ appointmentId, kind })`)
 12. Não usar entidades DEPRECATED: `FinancialProjection`, `TotalsSnapshot`, `FinancialDailySnapshot`
 13. KPIs financeiros computados APENAS no backend — nunca recomputar no frontend
+13a. Consulta particular com sinal+saldo (2026-09-04) usa 2 Payments distintos
+    (`paymentRole`: `deposit` + `balance`), nunca 1 Payment com `paidAmount`/
+    `remainingAmount` — Caixa Real soma `Payment.amount` direto, um único
+    Payment com valor parcial ficaria invisível até quitar 100%. `kind`
+    permanece `'session_payment'` nos dois — `paymentRole` é eixo ortogonal.
+    `Appointment.payment` sempre aponta pro saldo (`balance`/`standard`),
+    nunca pro sinal (`deposit`). Ver
+    `back/docs/FINANCIAL_SOURCE_OF_TRUTH.md#sinal--saldo-paymentpaymentrole--decisão-de-negócio-2026-09-04`
+    e `back/domain/payment/depositBalance.js`.
 
 ### Package (Pacote)
 14. `remainingSessions` é virtual — nunca usar `$inc`; alterar `sessionsDone`

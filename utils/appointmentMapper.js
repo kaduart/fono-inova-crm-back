@@ -114,8 +114,17 @@ export const isInsuranceAppointment = (appt) => {
 
 /**
  * 🔹 Mapeia um agendamento REAL para o formato do Frontend/FullCalendar
+ *
+ * @param {Object} appt - documento Appointment (lean), populado com `payment`
+ *   (que, sob sinal+saldo, é sempre o Payment de SALDO — nunca o sinal, ver
+ *   domain/payment/depositBalance.js).
+ * @param {Object} [extra]
+ * @param {number} [extra.depositAmount] - valor do sinal já pago pra este
+ *   appointment (0/undefined quando não há sinal). Calculado pelo CHAMADOR
+ *   via lookup em lote (nunca aqui — este mapper não faz I/O), pra não virar
+ *   N+1 numa lista de agendamentos.
  */
-export const mapAppointmentToEvent = (appt) => {
+export const mapAppointmentToEvent = (appt, extra = {}) => {
     // appt.date pode ser Date object (Mongoose) ou ISO string — extraímos só YYYY-MM-DD
     const dateStr = appt.date ? new Date(appt.date).toISOString().substring(0, 10) : '';
     const startMoment = moment.tz(`${dateStr} ${appt.time}`, "YYYY-MM-DD HH:mm", "America/Sao_Paulo");
@@ -172,9 +181,20 @@ export const mapAppointmentToEvent = (appt) => {
             ...(typeof appt.doctor === 'object' ? appt.doctor : {}),
             fullName: professionalName
         },
-        // 💰 Valor da sessão
+        // 💰 Valor da sessão — SEMPRE o valor clínico total, nunca desconta o
+        // sinal (Produção/valor da consulta é R$500 mesmo com R$50 de sinal já
+        // pago). paymentAmount continua o valor cheio por compatibilidade com
+        // quem já lê esse campo — quem precisa do valor a cobrar HOJE (saldo)
+        // deve usar `remainingAmount` abaixo, nunca subtrair sessionValue no
+        // frontend (ver back/docs/FINANCIAL_SOURCE_OF_TRUTH.md#payment-role).
         sessionValue: appt.sessionValue || appt.payment?.amount || 0,
         paymentAmount: appt.sessionValue || appt.payment?.amount || 0,
+        // 🎯 SINAL + SALDO (2026-09-04): calculado no backend, o front só exibe.
+        // depositAmount=0 preserva 100% o comportamento legado (sem sinal).
+        depositAmount: extra.depositAmount || 0,
+        remainingAmount: extra.depositAmount > 0
+            ? Math.max((appt.sessionValue || appt.payment?.amount || 0) - (extra.paidTotal ?? extra.depositAmount), 0)
+            : null,
         // 🔗 IDs de referência
         session: appt.session?._id?.toString() || appt.session?.toString() || null,
         payment: appt.payment?._id?.toString() || appt.payment?.toString() || null,
@@ -186,4 +206,3 @@ export const mapAppointmentToEvent = (appt) => {
         paymentMethod: appt.paymentMethod || appt.payment?.paymentMethod || null,
     };
 };
-

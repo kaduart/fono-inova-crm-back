@@ -150,3 +150,42 @@ describe('AppointmentMapper - Unit Tests', () => {
     });
 
 });
+
+describe('AppointmentMapper - deposit and balance read contract', () => {
+    it('maps the received deposit and backend-calculated remaining amount', () => {
+        const event = mapAppointmentToEvent({
+            _id: '507f1f77bcf86cd799439011',
+            date: '2026-02-16',
+            time: '14:00',
+            sessionValue: 500,
+        }, { depositAmount: 50 });
+
+        expect(event.sessionValue).toBe(500);
+        expect(event.depositAmount).toBe(50);
+        expect(event.remainingAmount).toBe(450);
+    });
+
+    it('keeps the legacy read contract when there is no deposit', () => {
+        const event = mapAppointmentToEvent({
+            _id: '507f1f77bcf86cd799439011',
+            date: '2026-02-16',
+            time: '14:00',
+            sessionValue: 500,
+        });
+
+        expect(event.sessionValue).toBe(500);
+        expect(event.depositAmount).toBe(0);
+        expect(event.remainingAmount).toBeNull();
+    });
+
+    it('maps zero remaining after deposit and balance are paid', () => {
+        const event = mapAppointmentToEvent({
+            _id: '507f1f77bcf86cd799439011',
+            date: '2026-02-16',
+            time: '14:00',
+            sessionValue: 500,
+        }, { depositAmount: 50, paidTotal: 500 });
+
+        expect(event.remainingAmount).toBe(0);
+    });
+});

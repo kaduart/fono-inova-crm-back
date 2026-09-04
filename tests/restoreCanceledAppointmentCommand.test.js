@@ -22,7 +22,7 @@ vi.mock('../models/Session.js', () => ({
   default: { findById: vi.fn() },
 }));
 vi.mock('../models/Payment.js', () => ({
-  default: { findById: vi.fn(), findByIdAndUpdate: vi.fn() },
+  default: { findById: vi.fn(), findByIdAndUpdate: vi.fn(), find: vi.fn() },
 }));
 vi.mock('../models/Package.js', () => ({
   default: { findByIdAndUpdate: vi.fn() },
@@ -71,6 +71,11 @@ describe('restoreCanceledAppointmentCommand.executeWithSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Package.findByIdAndUpdate.mockResolvedValue(true);
+    // 🎯 sinal+saldo (2026-09-04): restauração agora busca TODOS os Payments
+    // cancelados vinculados ao appointment/session via Payment.find (não mais
+    // só o singular appointment.payment via findById) — default vazio, cada
+    // teste que precisa de um Payment restaurado sobrescreve isso.
+    Payment.find.mockReturnValue({ session: vi.fn().mockResolvedValue([]) });
   });
 
   it('sessão nunca completed (só agendada e cancelada): sessionsDone não é restaurado', async () => {
@@ -107,8 +112,8 @@ describe('restoreCanceledAppointmentCommand.executeWithSession', () => {
       originalPaymentMethod: 'pix',
     });
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(sessionDoc) });
-    Payment.findById.mockReturnValue({
-      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'canceled', kind: 'appointment_payment' }),
+    Payment.find.mockReturnValue({
+      session: vi.fn().mockResolvedValue([{ _id: 'pay-1', status: 'canceled', kind: 'appointment_payment' }]),
     });
 
     const appt = makeAppointment({ payment: { _id: 'pay-1' }, paymentOrigin: 'auto_per_session', sessionValue: 100 });
@@ -141,8 +146,8 @@ describe('restoreCanceledAppointmentCommand.executeWithSession', () => {
       originalPaymentMethod: 'pix',
     });
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(sessionDoc) });
-    Payment.findById.mockReturnValue({
-      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'canceled', kind: 'session_payment' }),
+    Payment.find.mockReturnValue({
+      session: vi.fn().mockResolvedValue([{ _id: 'pay-1', status: 'canceled', kind: 'session_payment' }]),
     });
 
     const appt = makeAppointment({
@@ -159,9 +164,11 @@ describe('restoreCanceledAppointmentCommand.executeWithSession', () => {
 
   it('Payment kind=package_receipt: nunca é restaurado (nunca foi cancelado por essa sessão)', async () => {
     Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(makeSessionDoc()) });
-    Payment.findById.mockReturnValue({
-      session: vi.fn().mockResolvedValue({ _id: 'pay-1', status: 'canceled', kind: 'package_receipt' }),
-    });
+    // kind='package_receipt' é excluído na própria query (Payment.find com
+    // kind:{$ne:'package_receipt'}) — simula o resultado que o Mongo real
+    // devolveria: vazio (default do beforeEach já cobre isso, explícito aqui
+    // por clareza do cenário).
+    Payment.find.mockReturnValue({ session: vi.fn().mockResolvedValue([]) });
 
     await executeWithSession(makeAppointment({ payment: { _id: 'pay-1' } }), { reason: 'teste' }, { _id: 'user-1' }, fakeMongoSession);
 

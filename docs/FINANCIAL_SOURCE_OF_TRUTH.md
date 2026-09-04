@@ -253,6 +253,103 @@ do endpoint de cashflow (`clearCashflowCache`).
 
 ---
 
+## Sinal + saldo (Payment.paymentRole) — decisão de negócio (2026-09-04)
+
+> Contexto: pré-agendamento particular (ex: neuropediatria) que cobra um sinal
+> na hora de marcar (ex: R$50 de uma consulta de R$500) e o restante (R$450)
+> no dia. Implementação: `domain/payment/depositBalance.js`.
+
+### Por que 2 Payments, não 1 com `paidAmount`/`remainingAmount`
+
+Caixa Real e Meta Realizada (`calculateCashForDashboard` e afins, acima) somam
+`Payment.amount` diretamente via `Payment.aggregate({status:'paid'})` —
+**nunca leem o FinancialLedger**. Um único Payment com um campo `paidAmount`
+interno ficaria invisível pro Caixa enquanto seu `status` não fosse `'paid'`
+— o sinal recebido de verdade não apareceria no caixa do dia em que entrou.
+Por isso o desenho é dois documentos `Payment` distintos, cada um virando
+`'paid'` na sua própria data real; a soma automática do Caixa já funciona sem
+tocar na fórmula canônica (mudar essa fórmula é proibido — ver seção acima).
+
+### `Payment.paymentRole`
+
+Eixo ortogonal a `Payment.kind` — `kind` descreve a **natureza** do Payment
+(sessão avulsa / pacote / quitação), `paymentRole` descreve o **papel** dele
+dentro de uma mesma obrigação financeira parcelada. Os dois nunca se
+confundem: um Payment de saldo particular continua `kind='session_payment'`
+igual a qualquer outro, só que com `paymentRole='balance'`.
+
+| `paymentRole` | Significado | Quando existe |
+|---|---|---|
+| `standard` | Comportamento legado — 1 Payment cobre a consulta inteira | Toda consulta particular sem sinal (default) |
+| `deposit` | Sinal recebido no pré-agendamento | Só quando a consulta foi parcelada em sinal+saldo |
+| `balance` | Saldo restante (total − sinal) | Idem — sempre em par com um `deposit` |
+
+`Appointment.payment` **sempre** aponta pro Payment que representa a
+obrigação principal — `balance` quando há sinal, `standard` quando não há.
+**Nunca** aponta pro `deposit`. Todo código que precisa "achar o payment do
+appointment pra liquidar/editar/cancelar" pode continuar usando essa
+referência; quem precisa achar especificamente o sinal usa
+`findDepositPayment()` (por `paymentRole='deposit'`), nunca a referência
+singular.
+
+### Matriz de eventos (consulta R$500, sinal R$50)
+
+| Momento | Caixa Real / Meta Realizada | Produção | A Receber |
+|---|---:|---:|---:|
+| Sinal pago no pré-agendamento | +R$50 | R$0 | R$450 |
+| Sessão concluída (saldo ainda não pago) | continua R$50 | +R$500 (ao concluir) | R$450 |
+| Saldo pago | +R$450 (total R$500) | continua R$500 (sem nova produção) | R$0 |
+
+Regras:
+- O sinal entra no Caixa/Meta na **data real em que foi recebido** — nunca é
+  reclassificado retroativamente quando o saldo é pago depois.
+- A consulta produz R$500 **uma única vez**, no `completed` da sessão —
+  nunca no recebimento do sinal nem do saldo.
+- `particularHandler.js` (settlement no `complete`) sempre cobra só o
+  **saldo restante** (`sessionValue − sinal já pago`), nunca o valor cheio de
+  novo — senão o sinal seria contado duas vezes no Caixa.
+- Editar o valor total da consulta (`updateAppointmentCommand.js`) só pode
+  alterar o saldo; o sinal já pago é imutável por esse caminho. Novo total
+  menor que o sinal já pago é rejeitado (`DepositExceedsTotalError`,
+  domain/payment/depositBalance.js).
+- `completeSessionV2` (`completeSessionService.v2.js`) com `addToBalance:true`
+  (fiado): quando existe um sinal ativo, `sessionValue` usado pra Produção e
+  `Session.sessionValue` continua sendo o TOTAL real da consulta — nunca
+  `balanceAmount` (que é só o que falta cobrar). Achado real (2026-09-04): a
+  semântica legada do fiado avulso usa `balanceAmount` como se fosse o valor
+  clínico inteiro da sessão; com sinal, isso perderia o sinal da Produção e
+  faria o particularHandler descontar o sinal duas vezes (450-50=400 em vez
+  de 450). `Appointment.balanceAmount` (campo de "saldo devedor" exibido)
+  também desconta o sinal já pago, pelo mesmo motivo.
+- Payment financeiramente realizado (`status='paid'`) NUNCA é hard-deleted —
+  nem ao excluir o Appointment inteiro (`deleteAppointmentCommand.js`) nem via
+  admin (`DELETE /api/v2/payments/:id`). Vira `'canceled'` via
+  `transitionPaymentStatus()` (dispara a reversão do ledger automaticamente),
+  preservando o documento e o histórico. Só Payment sem dinheiro real por trás
+  (nunca chegou a `'paid'`) é removido fisicamente.
+
+### Índice único
+
+`unique_active_payment_per_appt_billingtype_role`
+(`{appointment, billingType, paymentRole}`, parcial pra status ativos) —
+substituiu `unique_active_payment_per_appt_billingtype` (`{appointment,
+billingType}`). Continua garantindo "nunca duplica" — só que agora por papel:
+no máximo 1 `deposit` e 1 `balance`/`standard` ativos por consulta, nunca 2 do
+mesmo papel. Ver `scripts/migrations/2026-09-04-payment-role-deposit-balance.js`
+para o backfill (`paymentRole='standard'` em todo Payment legado) e troca de
+índice em produção.
+
+> ⚠️ Achado durante essa migração: o índice antigo combinava `sparse:true` com
+> `partialFilterExpression` e usava `$ne`/`$nin` dentro do filtro parcial —
+> ambos rejeitados pelo MongoDB (erro 67, CannotCreateIndex). Ou seja, é bem
+> provável que esse índice nunca tenha sido de fato criado em produção, só
+> declarado no schema — mesma classe de risco já documentada em
+> `scripts/migrations/2026-08-26-financial-ledger-reversal-index.js`. O índice
+> novo usa `$type`/`$in` (mesmo padrão do índice irmão
+> `unique_active_convenio_payment_per_session`), sem `sparse`.
+
+---
+
 ## Como adicionar uma nova métrica financeira
 
 1. Pergunte: **esta métrica já existe em algum dos serviços oficiais?**

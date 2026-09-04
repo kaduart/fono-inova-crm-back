@@ -143,10 +143,20 @@ export async function buildPatientView(patientId, options = {}) {
           }
         },
         {
+          // 🚨 FIX (2026-09-04): usava appointmentDoc.clinicalStatus — campo
+          // errado pra decidir se a sessão aconteceu (ver models/Appointment.js:
+          // "NUNCA use clinicalStatus... SEMPRE operationalStatus === 'completed'").
+          // Mesmo bug de /debitos e /pending-payments (financialDashboard.v2.js,
+          // financialSummary.js) — achado real: Mikhael Venâncio da cunha tinha
+          // operationalStatus='completed' e clinicalStatus='pending' na mesma
+          // sessão, então balance.current desta view (fonte usada pelo card
+          // "Saldo" da lista de pacientes) mostrava R$0 pra uma dívida real de
+          // R$180, enquanto outras telas do mesmo paciente mostravam o valor
+          // certo — divergência visível reportada pelo usuário.
           $match: {
             $or: [
-              { appointmentDoc: { $size: 0 } },                 // débito manual sem agendamento
-              { 'appointmentDoc.clinicalStatus': 'completed' }  // sessão já realizada
+              { appointmentDoc: { $size: 0 } },                    // débito manual sem agendamento
+              { 'appointmentDoc.operationalStatus': 'completed' }  // sessão já realizada
             ]
           }
         },

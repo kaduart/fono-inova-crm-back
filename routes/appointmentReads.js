@@ -7,6 +7,7 @@ import { getAvailableTimeSlots } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import PatientsView from '../models/PatientsView.js';
+import Payment from '../models/Payment.js';
 import { mapAppointmentToEvent } from '../utils/appointmentMapper.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
 
@@ -557,11 +558,29 @@ router.get('/', flexibleAuth, async (req, res) => {
             return map;
         }, {});
 
+        // 🎯 SINAL + SALDO (2026-09-04): 1 query em lote (não N+1) somando os
+        // Payments pagos de cada appointment e identificando separadamente o
+        // sinal. Assim o front recebe o saldo canônico sem calculá-lo sozinho.
+        const apptIdsForDeposit = appointments.map(a => a._id);
+        const paidPayments = apptIdsForDeposit.length
+            ? await Payment.find({
+                appointment: { $in: apptIdsForDeposit },
+                status: 'paid',
+            }).select('appointment amount paymentRole').lean()
+            : [];
+        const financialsByAppointment = paidPayments.reduce((map, p) => {
+            const id = p.appointment.toString();
+            map[id] ||= { depositAmount: 0, paidTotal: 0 };
+            map[id].paidTotal += Number(p.amount || 0);
+            if (p.paymentRole === 'deposit') map[id].depositAmount += Number(p.amount || 0);
+            return map;
+        }, {});
+
         // 🔹 Mapear agendamentos REAIS incluindo saldo
         // NOTA: Removido filtro que excluía appointments sem patient populado
         // O patient pode ser um ObjectId (não populado) se houver erro no populate
         const calendarEvents = appointments.map(appt => {
-            const event = mapAppointmentToEvent(appt);
+            const event = mapAppointmentToEvent(appt, financialsByAppointment[appt._id.toString()] || {});
             const patientId = appt.patient?._id?.toString();
             if (patientId && balanceMap[patientId]) {
                 event.patientBalance = balanceMap[patientId];
@@ -625,7 +644,20 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
         }
 
-        res.json({ success: true, data: mapAppointmentDTO(appointment) });
+        // 🎯 SINAL + SALDO: mesmo enriquecimento do GET / (lista) — sem isso,
+        // um refresh via getById (polling do front) sobrescreveria
+        // depositAmount/remainingAmount com undefined.
+        const paidPayments = await Payment.find({
+            appointment: appointment._id,
+            status: 'paid',
+        }).select('amount paymentRole').lean();
+        const financialAmounts = paidPayments.reduce((result, payment) => {
+            result.paidTotal += Number(payment.amount || 0);
+            if (payment.paymentRole === 'deposit') result.depositAmount += Number(payment.amount || 0);
+            return result;
+        }, { depositAmount: 0, paidTotal: 0 });
+
+        res.json({ success: true, data: mapAppointmentDTO(appointment, financialAmounts) });
     } catch (error) {
         console.error('[APPOINTMENT] Erro ao buscar:', error);
         res.status(500).json({ success: false, error: error.message });

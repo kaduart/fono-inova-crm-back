@@ -36,6 +36,7 @@ import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import { createCommissionSnapshot } from './commissionRule.service.js';
 import Doctor from '../models/Doctor.js';
 import { recordAudit } from './auditLogService.js';
+import { findDepositPayment } from '../domain/payment/depositBalance.js';
 
 /**
  * Completa uma sessão - Mutação primária de estado
@@ -271,7 +272,25 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         appointment.paymentOrigin === 'add_to_balance' ||
         (appointment.balanceAmount > 0 && !appointment.sessionValue);
 
-    let sessionValue = (isBalanceOrigin && balanceAmount > 0)
+    // 🎯 SINAL + SALDO (2026-09-04): o desvio abaixo (`sessionValue = balanceAmount`)
+    // é a semântica LEGADA do fiado avulso — "o valor da sessão inteira é o que
+    // está indo pro saldo devedor" — correta quando não há sinal (secretária
+    // declara o valor todo como dívida). Quebra quando existe um sinal já pago:
+    // `balanceAmount` aqui é só o RESTANTE (ex: R$450 de uma consulta de R$500,
+    // R$50 já recebidos como sinal), não o valor clínico da sessão inteira.
+    // Usar `balanceAmount` como `sessionValue` faria Produção reconhecer só
+    // R$450 (perdendo o sinal) e o particularHandler descontaria o sinal de
+    // novo em cima de um valor que já não era o total (dupla dedução: 450-50=400).
+    // Com sinal ativo, sessionValue precisa continuar sendo o TOTAL real da
+    // consulta — quem desconta o sinal do que falta cobrar é o particularHandler
+    // (ver services/completeSession/handlers/particularHandler.js), não aqui.
+    const activeDepositPayment = (billingType === 'particular' && !packageId)
+        ? await findDepositPayment({ appointmentId, billingType: 'particular' })
+        : null;
+    const hasActiveDeposit = !!activeDepositPayment;
+    const depositAlreadyPaidForBalance = (activeDepositPayment?.status === 'paid') ? (activeDepositPayment.amount || 0) : 0;
+
+    let sessionValue = (isBalanceOrigin && balanceAmount > 0 && !hasActiveDeposit)
         ? balanceAmount
         : (options.sessionValue || appointment.sessionValue || packageData?.sessionValue || 0);
     
@@ -637,7 +656,13 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             }
             // convenio e liminar: paciente nunca deve balance (paga pelo plano/crédito)
             const patientOwesBalance = !['convenio', 'liminar'].includes(billingType);
-            appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid) ? 0 : (sessionValue || 0);
+            // 🎯 SINAL + SALDO: balanceAmount é "quanto falta cobrar AGORA", não o
+            // valor clínico da sessão — com sinal já pago, desconta ele daqui
+            // também (mesmo cálculo do particularHandler pro Payment), senão o
+            // "saldo devedor" exibido ficaria inflado pelo valor já recebido.
+            appointmentUpdate.$set.balanceAmount = (!patientOwesBalance || sessionUpdate.isPaid)
+                ? 0
+                : Math.max((sessionValue || 0) - depositAlreadyPaidForBalance, 0);
             // propaga sessionValue corrigido quando appointment foi criado com R$0
             if (sessionValue > 0 && (appointment.sessionValue || 0) !== sessionValue) {
                 appointmentUpdate.$set.sessionValue = sessionValue;

@@ -37,6 +37,17 @@ const paymentSchema = new mongoose.Schema({
         enum: ['package_receipt', 'revenue_recognition', 'session_payment', 'appointment_payment', 'package_consumed', 'monthly_settlement', 'debt_settlement', 'package_payment', 'manual_adjustment', 'unknown_or_orphan', 'liminar_contract_receipt', null],
         default: null
     },
+    // 🎯 PAPEL dentro de uma consulta particular parcelada em sinal + saldo (ver
+    // back/domain/payment/depositBalance.js). Eixo ortogonal a `kind` (que descreve
+    // a NATUREZA do Payment — sessão avulsa/pacote/quitação — não seu PAPEL dentro
+    // de uma mesma obrigação parcelada). `kind` continua 'session_payment' nos três
+    // valores. 'standard' = comportamento legado (1 Payment cobre a consulta inteira,
+    // sem sinal). Ver back/docs/FINANCIAL_SOURCE_OF_TRUTH.md#payment-role.
+    paymentRole: {
+        type: String,
+        enum: ['standard', 'deposit', 'balance'],
+        default: 'standard'
+    },
     kindConfidence: {
         type: String,
         enum: ['high', 'medium', 'low', null],
@@ -344,19 +355,44 @@ paymentSchema.index({ status: 1, serviceDate: -1 }, { name: 'pendentes_status_se
 // Ramo 2/3: financialDate=null → paymentDate como data primária (legado)
 paymentSchema.index({ status: 1, paymentDate: -1 }, { name: 'cash_status_paymentDate' });
 
-// 🛡️ AIRBAG: 1 Payment ativo por (appointment + billingType)
+// 🛡️ AIRBAG: 1 Payment ATIVO por (appointment + billingType + paymentRole)
 // Impede double-counting estrutural independente da lógica de aplicação.
 // partial: só aplica quando appointment existe e status != cancelled/canceled.
+//
+// 🎯 Estendido em 2026-09-04 (feature sinal+saldo) de {appointment,billingType}
+// para incluir `paymentRole`: antes só existia 1 Payment ativo por consulta
+// particular; agora podem existir 2 — um 'deposit' (sinal, pago no
+// pré-agendamento) e um 'balance'/'standard' (saldo, liquidado no atendimento)
+// — mas nunca 2 do MESMO papel. A garantia "nunca duplica" não foi removida,
+// só teve seu escopo redesenhado. Ver back/scripts/migrations/2026-09-04-payment-role-deposit-balance.js
+// para o backfill+troca de índice em produção, e back/domain/payment/depositBalance.js
+// para quem cria/busca por papel.
+// ⚠️ DOIS problemas confirmados em 2026-09-04 rodando esta migração contra um
+// mongod real (não só lidos na documentação — reproduzidos com erro código 67
+// CannotCreateIndex):
+//   1. `sparse` + `partialFilterExpression` juntos são REJEITADOS pelo MongoDB
+//      ("cannot mix partialFilterExpression and sparse options").
+//   2. `$ne`/`$nin` NÃO são operadores suportados em partialFilterExpression
+//      ("Expression not supported in partial index: $not"). Só $eq, $exists,
+//      $gt/$gte/$lt/$lte, $type e $and (topo) são suportados.
+// O índice ANTERIOR (`unique_active_payment_per_appt_billingtype`, removido
+// nesta mudança) tinha AMBOS os problemas — ou seja, é muito provável que
+// nunca tenha sido de fato criado em produção, só declarado no schema (mesma
+// classe de risco documentada em
+// scripts/migrations/2026-08-26-financial-ledger-reversal-index.js: "índice
+// declarado no schema local, mas ainda não existe em produção"). Corrigido
+// aqui com o mesmo padrão já usado (e funcional) no índice irmão
+// `unique_active_convenio_payment_per_session` logo abaixo: `$type` em vez de
+// `$exists+$ne`, e `$in` (allowlist positiva) em vez de `$nin`.
 paymentSchema.index(
-    { appointment: 1, billingType: 1 },
+    { appointment: 1, billingType: 1, paymentRole: 1 },
     {
         unique: true,
-        sparse: true,
         partialFilterExpression: {
-            appointment: { $exists: true, $ne: null },
-            status: { $nin: ['cancelled', 'canceled'] }
+            appointment: { $type: 'objectId' },
+            status: { $in: ['pending', 'pending_billing', 'billed', 'partial', 'paid', 'refunded', 'converted_to_package', 'recognized', 'consumed'] }
         },
-        name: 'unique_active_payment_per_appt_billingtype'
+        name: 'unique_active_payment_per_appt_billingtype_role'
     }
 );
 

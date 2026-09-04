@@ -9,6 +9,7 @@ import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import crypto from 'crypto';
 import { buildAppointmentClientFieldsForModel } from './appointment/contracts/appointmentClientFields.js';
 import { resolveInitialAppointmentStatus } from './appointment/contracts/appointmentInitialStatus.js';
+import { createDepositAndBalancePayments, DepositExceedsTotalError } from '../domain/payment/depositBalance.js';
 
 /**
  * Appointment Hybrid Service
@@ -64,7 +65,13 @@ export class AppointmentHybridService {
             notes = '',
             userId = null,
             isJointSession = false,
-            operationalStatus = null
+            operationalStatus = null,
+            // 🎯 Sinal + saldo (2026-09-04): valor recebido no ato do pré-agendamento,
+            // menor que o valor total da consulta. Só se aplica a particular sem
+            // pacote — ver domain/payment/depositBalance.js.
+            depositAmount = 0,
+            depositPaymentMethod = null,
+            depositPaidAt = null,
         } = data;
 
         // Mesma fonte usada pelo command e pelo DTO. Campo ausente não sobrescreve
@@ -179,7 +186,38 @@ export class AppointmentHybridService {
 
         // 3. Cria PAYMENT (se necessário)
         let payment = null;
-        if (paymentStrategy.shouldCreatePayment) {
+        let depositPayment = null;
+        const wantsDeposit = !packageId && billingType === 'particular' && Number(depositAmount) > 0;
+
+        if (wantsDeposit) {
+            if (Number(depositAmount) > Number(amount)) {
+                throw new DepositExceedsTotalError(amount, depositAmount);
+            }
+
+            const created = await createDepositAndBalancePayments({
+                patientId,
+                doctorId,
+                appointmentId: appointment._id,
+                sessionId: session._id,
+                billingType,
+                sessionValue: amount,
+                depositAmount,
+                depositPaymentMethod: depositPaymentMethod || paymentMethod,
+                depositPaidAt,
+                balancePaymentMethod: paymentMethod,
+                correlationId: appointment.correlationId,
+                userId,
+            }, mongoSession);
+
+            depositPayment = created.depositPayment;
+            payment = created.balancePayment;
+
+            // appointment.payment SEMPRE aponta pro saldo — é a obrigação principal.
+            // O sinal é encontrado por paymentRole='deposit', nunca por essa referência.
+            appointment.payment = payment._id;
+            appointment.paymentStatus = payment.status === 'paid' ? 'paid' : 'partial';
+            await appointment.save({ session: mongoSession });
+        } else if (paymentStrategy.shouldCreatePayment) {
             payment = new this.Payment({
                 patient: patientId,
                 doctor: doctorId,
@@ -192,6 +230,7 @@ export class AppointmentHybridService {
                 status: paymentStrategy.paymentStatus,
                 serviceType,
                 billingType,
+                paymentRole: 'standard',
                 correlationId: appointment.correlationId,
                 notes: paymentStrategy.paymentNotes
             });
@@ -215,8 +254,10 @@ export class AppointmentHybridService {
                 packageId: packageId?.toString(),
                 billingType,
                 amount,
-                paymentStrategy: paymentStrategy.type,
-                hasPayment: !!payment
+                paymentStrategy: wantsDeposit ? 'deposit_balance' : paymentStrategy.type,
+                hasPayment: !!payment,
+                depositPaymentId: depositPayment?._id?.toString() || null,
+                depositAmount: depositPayment ? depositPayment.amount : null,
             },
             aggregateType: 'appointment',
             aggregateId: appointment._id.toString()
@@ -226,7 +267,8 @@ export class AppointmentHybridService {
             appointmentId: appointment._id,
             sessionId: session._id,
             paymentId: payment?._id || null,
-            strategy: paymentStrategy.type,
+            depositPaymentId: depositPayment?._id || null,
+            strategy: wantsDeposit ? 'deposit_balance' : paymentStrategy.type,
             reason: paymentStrategy.reason
         });
 
@@ -234,12 +276,15 @@ export class AppointmentHybridService {
             appointmentId: appointment._id.toString(),
             sessionId: session._id.toString(),
             paymentId: payment?._id?.toString() || null,
+            depositPaymentId: depositPayment?._id?.toString() || null,
             correlationId: appointment.correlationId,
             status: 'pending',
             billingType,
-            paymentStrategy: paymentStrategy.type,
+            paymentStrategy: wantsDeposit ? 'deposit_balance' : paymentStrategy.type,
             hasPayment: !!payment,
-            message: paymentStrategy.message
+            message: wantsDeposit
+                ? `Sinal de R$${Number(depositAmount).toFixed(2)} registrado. Saldo de R$${(Number(amount) - Number(depositAmount)).toFixed(2)} pendente.`
+                : paymentStrategy.message
         };
     }
 

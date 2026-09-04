@@ -2777,14 +2777,20 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
 
         const payments = await Payment.find(query)
             .populate('patient', 'fullName')
-            .populate('appointment', 'date time clinicalStatus')
+            .populate('appointment', 'date time operationalStatus')
             .sort({ paymentDate: -1 })
             .lean();
 
         // ✅ CORREÇÃO: débito real só quando o agendamento foi completado
         // ou quando não há agendamento (débito manual). Agendamentos futuros são "a receber".
+        // 🚨 FIX (2026-09-04): usava appointment.clinicalStatus — campo errado
+        // pra decidir se a sessão aconteceu (ver models/Appointment.js: "NUNCA use
+        // clinicalStatus... SEMPRE operationalStatus === 'completed'"). Mesmo bug
+        // do endpoint /patient/:id/pending-payments (financialSummary.js) — achado
+        // real: Mikhael Venâncio da cunha, sessão com operationalStatus='completed'
+        // e clinicalStatus ainda 'pending', dívida sumia deste modal.
         const realDebtPayments = payments.filter(p =>
-            !p.appointment || p.appointment.clinicalStatus === 'completed'
+            !p.appointment || p.appointment.operationalStatus === 'completed'
         );
 
         const debitos = realDebtPayments.map(p => {

@@ -106,3 +106,37 @@ describe('contrato único de campos simples do Appointment', () => {
     });
   });
 });
+
+describe('deposit and balance read contract', () => {
+  it('exposes the received deposit and canonical balance without changing sessionValue', () => {
+    const dto = mapAppointmentDTO(
+      { sessionValue: 500, billingType: 'particular' },
+      { depositAmount: 50 }
+    );
+
+    expect(dto).toMatchObject({
+      sessionValue: 500,
+      depositAmount: 50,
+      remainingAmount: 450,
+    });
+  });
+
+  it('keeps the legacy read contract when there is no deposit', () => {
+    const dto = mapAppointmentDTO({ sessionValue: 500, billingType: 'particular' });
+
+    expect(dto).toMatchObject({
+      sessionValue: 500,
+      depositAmount: 0,
+      remainingAmount: null,
+    });
+  });
+
+  it('returns zero remaining after the balance is also paid', () => {
+    const dto = mapAppointmentDTO(
+      { sessionValue: 500, billingType: 'particular' },
+      { depositAmount: 50, paidTotal: 500 }
+    );
+
+    expect(dto.remainingAmount).toBe(0);
+  });
+});

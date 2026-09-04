@@ -24,6 +24,7 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
 import { recordPaymentReceived } from '../services/financialLedgerService.js';
+import { recomputeAppointmentPaymentState } from '../domain/payment/depositBalance.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
@@ -1901,18 +1902,35 @@ router.delete('/:paymentId', auth, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Pagamento não encontrado', code: 'PAYMENT_NOT_FOUND' });
         }
 
+        // 🛡️ Payment financeiramente realizado (status='paid' — dinheiro já
+        // entrou, ex: sinal de pré-agendamento) NUNCA é hard-deleted: apagaria
+        // o histórico e deixaria FinancialLedger.payment apontando pra um
+        // documento inexistente (ledger é imutável por design, nunca fica
+        // órfão). Segue o mesmo invariante de cancelAppointmentCommand.js:
+        // paid → 'canceled' via transitionPaymentStatus(), que já lança a
+        // reversão do crédito no ledger. Só Payment sem dinheiro real por trás
+        // (nunca chegou a 'paid') é seguro remover fisicamente por esta rota.
+        if (payment.status === 'paid') {
+            await mongoSession.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                error: 'Payment já foi pago — não pode ser excluído fisicamente (apagaria o histórico e deixaria o FinancialLedger órfão). Use o fluxo de cancelamento/estorno.',
+                code: 'PAID_PAYMENT_DELETE_BLOCKED'
+            });
+        }
+
         const cascade = { appointment: null, session: null };
 
-        // 1. Limpa vínculo no appointment
+        // 1. Limpa vínculo no appointment — recalculando o estado a partir dos
+        // Payments que RESTAM, não zerando cegamente. Sob sinal+saldo (2026-09-04)
+        // uma consulta pode ter 2 Payments ativos (deposit + balance); deletar um
+        // não pode apagar o estado financeiro representado pelo outro.
         if (payment.appointment) {
             const appt = await Appointment.findById(payment.appointment).session(mongoSession).lean();
             if (appt && appt.payment?.toString() === paymentId) {
-                await Appointment.findByIdAndUpdate(
-                    payment.appointment,
-                    { $set: { payment: null, paymentStatus: 'pending', isPaid: false } },
-                    { session: mongoSession }
-                );
+                const { primary } = await recomputeAppointmentPaymentState(payment.appointment, paymentId, mongoSession);
                 cascade.appointment = payment.appointment.toString();
+                cascade.remainingPaymentId = primary ? primary._id.toString() : null;
             }
         }
 
@@ -1927,7 +1945,7 @@ router.delete('/:paymentId', auth, async (req, res) => {
             cascade.session = payment.session.toString();
         }
 
-        // 3. Remove o payment
+        // 3. Remove o payment (chegou até aqui só se status != 'paid' — guard acima)
         await Payment.deleteOne({ _id: paymentId }, { session: mongoSession });
 
         await mongoSession.commitTransaction();

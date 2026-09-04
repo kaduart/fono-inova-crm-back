@@ -36,6 +36,7 @@ import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.
 import { recordAudit } from '../../auditLogService.js';
 import { saveToOutbox } from '../../../infrastructure/outbox/outboxPattern.js';
 import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
+import { createDepositAndBalancePayments, findDepositPayment, assertNewTotalCoversPaidDeposit, assertNotDepositPayment } from '../../../domain/payment/depositBalance.js';
 
 export async function execute(id, payload, user) {
   if (!id) {
@@ -62,6 +63,12 @@ export async function execute(id, payload, user) {
       const protectedPayload = applyFinancialProtection(appointment, payload);
 
       const safeBody = sanitizeAppointmentPayload(protectedPayload);
+      const requestedDeposit = Number(payload.depositAmount || 0);
+      const requestedDepositMethod = payload.depositPaymentMethod;
+      const requestedDepositPaidAt = payload.depositPaidAt;
+      delete safeBody.depositAmount;
+      delete safeBody.depositPaymentMethod;
+      delete safeBody.depositPaidAt;
       const currentDate = new Date();
 
       // patientInfo é descartado pela sanitização (correto — não deve ir direto no $set do Appointment)
@@ -124,6 +131,41 @@ export async function execute(id, payload, user) {
         updatedBy: user?._id,
         updatedAt: currentDate,
       };
+
+      if (requestedDeposit > 0) {
+        const effectiveBillingType = updateData.billingType ?? appointment.billingType;
+        const effectiveTotal = Number(updateData.sessionValue ?? updateData.paymentAmount ?? appointment.sessionValue ?? appointment.paymentAmount ?? 0);
+
+        if (effectiveBillingType !== 'particular' || appointment.package) {
+          throw buildError('Sinal recebido só pode ser registrado em consulta particular avulsa.', 409, 'DEPOSIT_NOT_ALLOWED');
+        }
+        if (CANCELED_STATUSES.includes(appointment.operationalStatus) || appointment.operationalStatus === 'completed') {
+          throw buildError('Não é possível registrar sinal em um atendimento cancelado ou concluído.', 409, 'DEPOSIT_NOT_ALLOWED_FOR_STATUS');
+        }
+        if (!requestedDepositMethod) {
+          throw buildError('A forma de pagamento do sinal recebido é obrigatória.', 400, 'DEPOSIT_PAYMENT_METHOD_REQUIRED');
+        }
+        assertNewTotalCoversPaidDeposit(effectiveTotal, requestedDeposit);
+
+        const depositResult = await createDepositAndBalancePayments({
+          patientId: toObjectIdString(appointment.patient),
+          doctorId: toObjectIdString(updateData.doctor),
+          appointmentId: appointment._id,
+          sessionId: toObjectIdString(appointment.session),
+          billingType: 'particular',
+          sessionValue: effectiveTotal,
+          depositAmount: requestedDeposit,
+          depositPaymentMethod: requestedDepositMethod,
+          depositPaidAt: requestedDepositPaidAt,
+          balancePaymentMethod: updateData.paymentMethod ?? appointment.paymentMethod,
+          correlationId: appointment.correlationId || `appointment_${appointment._id}`,
+          userId: user?._id,
+        }, mongoSession);
+
+        updateData.payment = depositResult.balancePayment._id;
+        updateData.paymentStatus = depositResult.balancePayment.status === 'paid' ? 'paid' : 'partial';
+        updateData.isPaid = depositResult.balancePayment.status === 'paid';
+      }
 
       // 🛡️ POLÍTICA DE ESPECIALIDADE: valida a combinação EFETIVA (médico e
       // especialidade resultantes deste update, trocados ou mantidos) antes
@@ -276,6 +318,12 @@ export async function execute(id, payload, user) {
       if (!updatedAppointment.package && updatedAppointment.payment) {
         const isConvenioPayment = updatedAppointment.payment?.billingType === 'convenio';
 
+        // 🛡️ SINAL: updatedAppointment.payment é sempre o saldo/standard (nunca o
+        // sinal — garantido na criação, ver domain/payment/depositBalance.js).
+        // Airbag defensivo: nunca deixa este bloco escrever num Payment de papel
+        // 'deposit' por alguma inconsistência de dados.
+        assertNotDepositPayment(updatedAppointment.payment);
+
         const paymentSet = {
           doctor: updateData.doctor || updatedAppointment.doctor,
           serviceDate: updateData.date ?? updatedAppointment.date,
@@ -286,13 +334,37 @@ export async function execute(id, payload, user) {
         // Campos financeiros: nunca sobrescrever payment de convênio com fallback 'particular'
         if (!isConvenioPayment) {
           Object.assign(paymentSet, {
-            amount: updateData.amount ?? updateData.paymentAmount ?? updatedAppointment.paymentAmount,
             paymentMethod: updateData.paymentMethod ?? updatedAppointment.paymentMethod,
             billingType: updateData.billingType ?? updatedAppointment.billingType ?? 'particular',
             insuranceProvider: updateData.insuranceProvider ?? updatedAppointment.insuranceProvider,
             insuranceValue: updateData.insuranceValue ?? updatedAppointment.insuranceValue,
             authorizationCode: updateData.authorizationCode ?? updatedAppointment.authorizationCode,
           });
+
+          // 🎯 SINAL + SALDO: se esta consulta tem um sinal pago, editar o valor
+          // total NUNCA pode sobrescrever o saldo com o total cheio de novo — só
+          // o que falta (total - sinal). E o novo total nunca pode ficar menor
+          // que o sinal já recebido (erro de domínio, rejeita a edição).
+          const incomingTotal = updateData.amount ?? updateData.paymentAmount ?? updateData.sessionValue;
+          const effectiveTotal = incomingTotal ?? updatedAppointment.sessionValue ?? updatedAppointment.paymentAmount;
+
+          if (updatedAppointment.payment.paymentRole === 'balance' && updatedAppointment.billingType === 'particular') {
+            const deposit = await findDepositPayment(
+              { appointmentId: updatedAppointment._id, billingType: updatedAppointment.billingType },
+              mongoSession
+            );
+            const depositPaid = deposit?.status === 'paid' ? (deposit.amount || 0) : 0;
+
+            if (incomingTotal !== undefined) {
+              assertNewTotalCoversPaidDeposit(effectiveTotal, depositPaid);
+            }
+
+            paymentSet.amount = Math.max(Number(effectiveTotal || 0) - depositPaid, 0);
+          } else if (incomingTotal !== undefined) {
+            paymentSet.amount = incomingTotal;
+          } else if (updatedAppointment.paymentAmount !== undefined) {
+            paymentSet.amount = updatedAppointment.paymentAmount;
+          }
         }
 
         await Payment.findByIdAndUpdate(

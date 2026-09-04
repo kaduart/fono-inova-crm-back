@@ -41,7 +41,7 @@ export async function resolveAndMapAppointmentDTO(doc) {
     return mapAppointmentDTO(doc);
 }
 
-export function mapAppointmentDTO(appointment) {
+export function mapAppointmentDTO(appointment, extra = {}) {
     if (!appointment) return null;
 
     const patientPopulated = appointment.patient && typeof appointment.patient === 'object'
@@ -145,6 +145,13 @@ export function mapAppointmentDTO(appointment) {
             }
             return appointment.sessionValue ?? 0;
         })(),
+        // Sinal + saldo: valores financeiros derivados no backend. O valor da
+        // consulta continua sendo sessionValue; remainingAmount representa
+        // apenas o que deve ser cobrado agora.
+        depositAmount: extra.depositAmount || 0,
+        remainingAmount: extra.depositAmount > 0
+            ? Math.max((appointment.sessionValue ?? appointment.payment?.amount ?? 0) - (extra.paidTotal ?? extra.depositAmount), 0)
+            : null,
         serviceTypeLabel: (() => {
             const map = {
                 evaluation: 'Avaliação',

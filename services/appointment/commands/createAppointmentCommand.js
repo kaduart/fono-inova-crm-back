@@ -215,6 +215,12 @@ async function createWithHybridService(payload, user) {
         notes: payload.notes,
         userId: user?._id,
         createdBy: user?._id,
+        // 🎯 Sinal + saldo — só tem efeito para particular sem pacote (ver
+        // appointmentHybridService.create). depositAmount=0/ausente preserva
+        // 100% o comportamento legado (1 Payment cobrindo a consulta inteira).
+        depositAmount: payload.depositAmount || 0,
+        depositPaymentMethod: payload.depositPaymentMethod || null,
+        depositPaidAt: payload.depositPaidAt || null,
         isJointSession: payload.isJointSession || false,
         // Contrato único dos campos simples do modal. Não usar `...payload`: campos
         // financeiros/lifecycle precisam continuar passando por regras explícitas.
