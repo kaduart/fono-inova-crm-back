@@ -444,9 +444,10 @@ export async function execute(id, payload, user) {
 
   const { saved, previousData } = result;
 
-  // Side effects pós-transação (não podem falhar a requisição)
-  try {
-    await emitSocket('appointmentUpdated', {
+  // Efeitos independentes pós-commit rodam em paralelo. A sequência interna
+  // orquestrador → pacote é preservada porque ambos podem tocar a Session.
+  const postCommitTasks = [
+    emitSocket('appointmentUpdated', {
       _id: saved._id,
       patient: saved.patient,
       doctor: saved.doctor,
@@ -455,34 +456,34 @@ export async function execute(id, payload, user) {
       specialty: saved.specialty,
       operationalStatus: saved.operationalStatus,
       source: 'crm_update',
-    });
-  } catch (socketErr) {
-    console.error('[updateAppointmentCommand] Erro ao emitir socket:', socketErr.message);
-  }
-
-  // Consistência final — await garantido, erro não falha a resposta
-  try {
-    await syncEvent(saved, 'appointment');
-
-    await appointmentStateOrchestrator({
-      appointment: saved.toObject(),
-      updates: {},
-      correlationId: `appt_put_${saved._id}_${Date.now()}`,
-    });
-
-    // 🔄 Atualiza PaymentsView para todos os payments vinculados ao appointment
-    try {
-      await handlePaymentEvent({
+    }),
+    syncEvent(saved, 'appointment'),
+    handlePaymentEvent({
         type: 'APPOINTMENT_UPDATED',
         payload: { appointmentId: saved._id.toString() },
         timestamp: new Date().toISOString()
-      });
-    } catch (viewErr) {
+    }).catch((viewErr) => {
       console.error('[updateAppointmentCommand] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
-    }
+    }),
+    recordAudit({
+      user,
+      action: 'appointment_updated',
+      entityType: 'Appointment',
+      entityId: saved._id,
+      before: previousData,
+      after: saved,
+      source: 'appointment_command:updateAppointmentCommand',
+      correlationId: saved.correlationId,
+    }),
+    (async () => {
+      await appointmentStateOrchestrator({
+        appointment: saved.toObject(),
+        updates: {},
+        correlationId: `appt_put_${saved._id}_${Date.now()}`,
+      });
 
+      // Mantém a ordem após o orquestrador, pois os dois fluxos alteram Session.
     if (saved.serviceType === 'package_session') {
-      // handlePackageSessionUpdate atualiza Session.date/time
       const action = determineActionType(payload, previousData);
       await handlePackageSessionUpdate(
         saved,
@@ -492,20 +493,15 @@ export async function execute(id, payload, user) {
       );
       // A PackagesView será atualizada pelo package-projection worker via evento APPOINTMENT_UPDATED.
     }
-  } catch (err) {
-    console.error('[updateAppointmentCommand] Erro na sincronização pós-atualização:', err);
-  }
+    })(),
+  ];
 
-  await recordAudit({
-    user,
-    action: 'appointment_updated',
-    entityType: 'Appointment',
-    entityId: saved._id,
-    before: previousData,
-    after: saved,
-    source: 'appointment_command:updateAppointmentCommand',
-    correlationId: saved.correlationId,
-  });
+  const postCommitResults = await Promise.allSettled(postCommitTasks);
+  for (const taskResult of postCommitResults) {
+    if (taskResult.status === 'rejected') {
+      console.error('[updateAppointmentCommand] Erro na sincronização pós-atualização:', taskResult.reason);
+    }
+  }
 
   return {
     data: await resolveAndMapAppointmentDTO(saved),

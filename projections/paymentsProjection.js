@@ -110,10 +110,11 @@ async function syncPaymentsByAppointment(appointmentId) {
         ]
     }).select('_id').lean();
 
-    const results = [];
-    for (const p of payments) {
-        results.push(await upsertPaymentProjection(p._id));
-    }
+    // Cada Payment possui sua própria chave de projeção. Sinal e saldo podem
+    // ser reconstruídos em paralelo sem disputa entre os documentos.
+    const results = await Promise.all(
+        payments.map((payment) => upsertPaymentProjection(payment._id))
+    );
 
     return {
         processed: true,

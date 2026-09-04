@@ -316,62 +316,29 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
     return executeWithSession(id, { reason, confirmedAbsence }, user, session);
   });
 
-  // Sincronizações pós-transação — await garantido, erro não falha a resposta
-  try {
-    await syncEvent(result, 'appointment');
-
-    // 🔄 Atualiza PaymentsView para todos os payments vinculados ao appointment cancelado
-    try {
-      await handlePaymentEvent({
-        type: 'APPOINTMENT_CANCELLED',
-        payload: { appointmentId: result._id.toString() },
-        timestamp: new Date().toISOString()
-      });
-    } catch (viewErr) {
+  // Projeções, auditoria e socket são independentes após o commit. Mantemos
+  // todas aguardadas, mas em paralelo para não somar suas latências.
+  const postCommitTasks = [
+    syncEvent(result, 'appointment'),
+    handlePaymentEvent({
+      type: 'APPOINTMENT_CANCELLED',
+      payload: { appointmentId: result._id.toString() },
+      timestamp: new Date().toISOString()
+    }).catch((viewErr) => {
       console.error('[cancelAppointmentCommand] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
-    }
-
-    if (result.serviceType === 'package_session' && result.session) {
-      await handlePackageSessionUpdate(
-        result,
-        'cancel',
-        user,
-        { changes: { reason, confirmedAbsence } }
-      );
-
-      // 🛡️ Rede de segurança síncrona: reconstrói a PackagesView já aqui,
-      // sem depender do worker que consome o evento APPOINTMENT_CANCELLED
-      // da Outbox (que pode estar desligado — ver ENABLE_WORKERS).
-      const packageId = (result.package?._id || result.package)?.toString?.();
-      if (packageId) {
-        await syncAffectedViews({
-          event: 'appointment.cancelled',
-          packageId,
-          correlationId: result.correlationId,
-        });
-      }
-    } else if (result.session) {
-      const sess = await Session.findById(result.session);
-      if (sess) await syncEvent(sess, 'session');
-    }
-  } catch (error) {
-    console.error('[cancelAppointmentCommand] Erro na sincronização pós-cancelamento:', error.message);
-  }
-
-  await recordAudit({
-    user,
-    action: 'appointment_canceled',
-    entityType: 'Appointment',
-    entityId: result._id,
-    before: beforeSnapshot,
-    after: result,
-    source: 'appointment_command:cancelAppointmentCommand',
-    correlationId: result.correlationId,
-    metadata: { reason, confirmedAbsence },
-  });
-
-  try {
-    await emitSocket('appointmentCanceled', {
+    }),
+    recordAudit({
+      user,
+      action: 'appointment_canceled',
+      entityType: 'Appointment',
+      entityId: result._id,
+      before: beforeSnapshot,
+      after: result,
+      source: 'appointment_command:cancelAppointmentCommand',
+      correlationId: result.correlationId,
+      metadata: { reason, confirmedAbsence },
+    }),
+    emitSocket('appointmentCanceled', {
       _id: result._id,
       appointmentId: result._id,
       patient: result.patient,
@@ -380,9 +347,42 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
       time: result.time,
       operationalStatus: result.operationalStatus,
       source: 'crm_cancel',
-    });
-  } catch (socketErr) {
-    console.error('[cancelAppointmentCommand] Erro ao emitir socket:', socketErr.message);
+    }),
+  ];
+
+  if (result.serviceType === 'package_session' && result.session) {
+    // Esta ordem é necessária apenas dentro do fluxo de pacote.
+    postCommitTasks.push((async () => {
+      await handlePackageSessionUpdate(
+        result,
+        'cancel',
+        user,
+        { changes: { reason, confirmedAbsence } }
+      );
+
+      const packageId = (result.package?._id || result.package)?.toString?.();
+      if (packageId) {
+        await syncAffectedViews({
+          event: 'appointment.cancelled',
+          packageId,
+          correlationId: result.correlationId,
+        });
+      }
+    })());
+  } else if (result.session) {
+    postCommitTasks.push((async () => {
+      const sess = await Session.findById(result.session);
+      if (sess) await syncEvent(sess, 'session');
+    })());
+  }
+
+  const postCommitResults = await Promise.allSettled(postCommitTasks);
+  for (const taskResult of postCommitResults) {
+    if (taskResult.status === 'rejected') {
+      // O dado canônico já foi confirmado; a falha permanece visível para
+      // reconciliação sem transformar um cancelamento concluído em erro HTTP.
+      console.error('[cancelAppointmentCommand] Erro na sincronização pós-cancelamento:', taskResult.reason?.message || taskResult.reason);
+    }
   }
 
   return {
