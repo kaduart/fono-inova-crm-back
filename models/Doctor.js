@@ -49,6 +49,11 @@ const doctorSchema = new mongoose.Schema({
   },
 
   commissionRules: {
+    neuropsychCommissionType: {
+      type: String,
+      enum: ['fixed', 'percentage'],
+      default: 'fixed'
+    },
     standardSession: {
       type: Number,
       default: 60,

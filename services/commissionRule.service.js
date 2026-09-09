@@ -17,6 +17,15 @@ import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialVa
 const NEUROPED_PERCENTAGE = 0.80;
 const NEUROPSYCH_THRESHOLD = 10;
 
+function commissionSessionType(session) {
+  const neuropsychTypes = ['neuropsicologia', 'neuropsych_evaluation', 'neuropsychological'];
+  const packageType = (session.package?.sessionType || '').toLowerCase();
+  const type = (session.sessionType || packageType).toLowerCase();
+  return neuropsychTypes.includes(packageType) || neuropsychTypes.includes(type)
+    ? 'neuropsychological'
+    : type;
+}
+
 /**
  * Extrai o nome do convênio da sessão.
  */
@@ -39,7 +48,7 @@ export function getInsuranceName(session) {
 export function classifySessionForCommission(session) {
   const method = (session.paymentMethod || '').toLowerCase();
   const origin = (session.paymentOrigin || '').toLowerCase();
-  const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+  const sessionType = commissionSessionType(session);
 
   let billingType = 'particular';
   if (method === 'liminar_credit' || origin === 'liminar' || origin === 'liminar_credit') {
@@ -166,7 +175,7 @@ export function calculateSessionCommission(doctor, session, sessionDate = null) 
   // Usa o mesmo valor base da produção (package.sessionValue > prorata > session.sessionValue)
   // Evita divergência entre produção e comissão quando session.sessionValue ≠ package.sessionValue
   const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
-  const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+  const sessionType = commissionSessionType(session);
   const isNeuropediatria = ['neuroped', 'neuropediatria'].includes(
     (doctor.specialty || '').toLowerCase().trim()
   );
@@ -226,7 +235,7 @@ export function calculateCommissionBatch(doctor, sessions) {
   const neuropsychPackages = new Map();
 
   for (const session of sessions) {
-    const sessionType = (session.sessionType || session.package?.sessionType || '').toLowerCase();
+    const sessionType = commissionSessionType(session);
 
     if (sessionType === 'neuropsych_evaluation' || sessionType === 'neuropsychological') {
       const pkgId = session.package?._id?.toString?.() || session.package;
@@ -234,7 +243,9 @@ export function calculateCommissionBatch(doctor, sessions) {
         if (!neuropsychPackages.has(pkgId)) {
           neuropsychPackages.set(pkgId, {
             completedSessions: 0,
-            totalSessions: session.package?.totalSessions || NEUROPSYCH_THRESHOLD
+            totalSessions: session.package?.totalSessions || NEUROPSYCH_THRESHOLD,
+            totalValue: session.package?.totalValue ??
+              ((session.package?.sessionValue || 0) * (session.package?.totalSessions || NEUROPSYCH_THRESHOLD))
           });
         }
         neuropsychPackages.get(pkgId).completedSessions++;
@@ -277,12 +288,15 @@ export function calculateCommissionBatch(doctor, sessions) {
   }
 
   // Processar neuropsicologia completa
-  const neuropsychValue = doctor.commissionRules?.neuropsychEvaluation || 1200;
+  const neuropsychValue = doctor.commissionRules?.neuropsychEvaluation ?? 1200;
   for (const data of neuropsychPackages.values()) {
     if (data.completedSessions >= data.totalSessions) {
+      const packageCommission = doctor.commissionRules?.neuropsychCommissionType === 'percentage'
+        ? Math.round(data.totalValue * neuropsychValue) / 100
+        : neuropsychValue;
       breakdown.neuropsychEvaluations.count++;
-      breakdown.neuropsychEvaluations.value += neuropsychValue;
-      totalCommission += neuropsychValue;
+      breakdown.neuropsychEvaluations.value += packageCommission;
+      totalCommission += packageCommission;
     }
   }
 

@@ -171,8 +171,8 @@ export const ParticularHandler = {
                     return null;
                 }
 
-                // Guard: pacote prepaid/full com cobertura insuficiente (edge case).
-                // Loga para auditoria e marca isFromPackage=true para não contaminar caixa.
+                // Erro de negócio: o catch de /complete preserva o contrato da API
+                // e a transação desfaz a conclusão sem criar recebimento fictício.
                 console.warn('[PREPAID_FALLBACK_PAYMENT]', {
                     patient: appointment.patient?._id,
                     packageId,
@@ -182,16 +182,23 @@ export const ParticularHandler = {
                     model: pkgAtual.model,
                     paymentType: pkgAtual.paymentType
                 });
+                const currency = value => new Intl.NumberFormat('pt-BR', {
+                    style: 'currency', currency: 'BRL'
+                }).format(value);
+                const consumedValue = sessionsDone * sessionValue;
+                const error = new Error(
+                    `Não foi possível concluir a sessão: o pagamento registrado no pacote pré-pago não cobre as sessões consumidas, incluindo esta. ` +
+                    `Total pago registrado: ${currency(totalPaid)}. ` +
+                    `Consumo calculado: ${sessionsDone} sessão(ões) × ${currency(sessionValue)} = ${currency(consumedValue)}. ` +
+                    `Diferença sem cobertura registrada: ${currency(consumedValue - totalPaid)}. ` +
+                    `Confira os pagamentos e as condições do pacote (valores, descontos ou sessões bônus) e regularize o registro antes de tentar novamente. ` +
+                    `Essa diferença não confirma, por si só, uma dívida do paciente.`
+                );
+                error.statusCode = 422;
+                error.code = 'PACKAGE_INSUFFICIENT_COVERAGE';
+                throw error;
             }
         }
-
-        // ⛔ NÃO REMOVER — safety net para evitar ghost payments no caixa.
-        // Quando isPrepaidCovered=false em pacote prepaid/full (edge case de dados inconsistentes),
-        // o payment criado DEVE ser marcado isFromPackage=true para ser excluído de calculateCash.
-        // Sem isso, consumo de pacote vira "entrada de caixa falsa" — bug confirmado 2026-06-01
-        // que gerou R$9.420 de inflação histórica em 58 payments (março/abril/maio/junho).
-        const isPrepaidFallback = !!(packageId && pkgAtual &&
-            (pkgAtual.model === 'prepaid' || pkgAtual.paymentType === 'full'));
 
         // Detecta per-session
         const isPerSession = packageData?.model === 'per_session' || packageData?.paymentType === 'per-session';
@@ -227,7 +234,6 @@ export const ParticularHandler = {
                             kind:          'session_payment',
                             billingType:   'particular',
                             updatedAt:     now,
-                            ...(isPrepaidFallback ? { isFromPackage: true } : {})
                         }
                     },
                     { session: mongoSession, new: true }
@@ -251,7 +257,6 @@ export const ParticularHandler = {
                     kind:          'session_payment',
                     billingType:   'particular',
                     paymentRole:   'standard',
-                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession }))[0];
                 appointmentUpdate.$set.payment = paymentDoc._id;
                 console.log(`[ParticularHandler] [FIADO] Payment pending criado (addToBalance): ${paymentDoc._id}`);
@@ -286,7 +291,6 @@ export const ParticularHandler = {
                                 billingType:   'particular',
                                 serviceDate,
                                 updatedAt:     now,
-                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
                                 // ⛔ NÃO adicionar financialDate, paidAt, paymentDate aqui ⛔
                             }
                         },
@@ -314,7 +318,6 @@ export const ParticularHandler = {
                                 billingType:   'particular',
                                 updatedAt:     now,
                                 splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
-                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
                             }
                         },
                         { session: mongoSession, new: true }
@@ -379,7 +382,6 @@ export const ParticularHandler = {
                                 // Adota orphan: linka ao appointment e session se ainda não linkado
                                 ...(!preRegistered.appointment && appointmentId ? { appointment: appointmentId } : {}),
                                 ...(!preRegistered.session && sessionId ? { session: sessionId } : {}),
-                                ...(isPrepaidFallback ? { isFromPackage: true } : {})
                             }
                         },
                         { session: mongoSession, new: true }
@@ -413,7 +415,6 @@ export const ParticularHandler = {
                         billingType:   'particular',
                         paymentRole:   'standard',
                         splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
-                        ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }], { session: mongoSession });
                     paymentCreated = paymentDoc;
                     appointmentUpdate.$set.payment = paymentCreated._id;
@@ -484,7 +485,6 @@ export const ParticularHandler = {
                         billingType:   'particular',
                         updatedAt:     now,
                         ...(!alreadyPaid ? { splitMethods: splitMethods?.length >= 2 ? splitMethods : null } : {}),
-                        ...(isPrepaidFallback ? { isFromPackage: true } : {})
                     }
                 },
                 { session: mongoSession, new: true }
@@ -530,7 +530,6 @@ export const ParticularHandler = {
                             billingType:   'particular',
                             serviceDate,
                             updatedAt:     now,
-                            ...(isPrepaidFallback ? { isFromPackage: true } : {})
                         }
                     },
                     { session: mongoSession, new: true }
@@ -558,7 +557,6 @@ export const ParticularHandler = {
                     billingType:   'particular',
                     paymentRole:   'standard',
                     splitMethods:  splitMethods?.length >= 2 ? splitMethods : null,
-                    ...(isPrepaidFallback ? { isFromPackage: true } : {})
                 }], { session: mongoSession });
                 paymentCreated = paymentDoc;
                 appointmentUpdate.$set.payment = paymentCreated._id;

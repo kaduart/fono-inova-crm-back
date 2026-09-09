@@ -91,6 +91,96 @@ async function seedTrio({ patient, doctor, pkg, status = 'scheduled', date = '20
 }
 
 describe('Package V2 — guards operacionais', () => {
+  it.each([false, true])('criação incorpora a retroativa na transação (falha de recebimento=%s)', async (failReceipt) => {
+    const base = await seedPackage({ paymentType: 'full' });
+    const retro = await seedTrio({ ...base, status: 'completed', date: '2026-09-01' });
+    await Appointment.collection.updateOne({ _id: retro.appointmentId }, { $unset: { package: 1 } });
+    await Session.collection.updateOne({ _id: retro.sessionId }, { $unset: { package: 1 } });
+    await Payment.collection.updateOne({ _id: retro.paymentId }, {
+      $unset: { package: 1 }, $set: { status: 'pending', amount: 200 }
+    });
+    const spy = failReceipt ? vi.spyOn(Payment, 'insertMany').mockRejectedValueOnce(new Error('receipt failed')) : null;
+    const response = await request(app).post('/api/v2/packages').send({
+      patientId: String(base.patient._id), doctorId: String(base.doctor._id),
+      specialty: 'fonoaudiologia', sessionType: 'fonoaudiologia',
+      totalSessions: 2, sessionValue: 200, totalValue: 400, type: 'package', model: 'prepaid',
+      calculationMode: 'sessions', preConsumedCount: 1, retroactivePaymentIds: [String(retro.paymentId)],
+      retroactivePaymentMethod: 'pix', retroactivePaymentDate: '2026-09-01',
+      date: '2026-09-01', time: '10:00', durationMonths: 1, sessionsPerWeek: 1,
+      schedule: [{ date: '2026-09-08', time: '10:00' }],
+      payments: [{ amount: 200, method: 'pix', date: '2026-09-01' }]
+    });
+    spy?.mockRestore();
+    expect(response.status, JSON.stringify(response.body)).toBe(failReceipt ? 500 : 201);
+    const payment = await Payment.findById(retro.paymentId);
+    if (failReceipt) {
+      expect(await Package.countDocuments()).toBe(1);
+      expect(await Payment.countDocuments()).toBe(1);
+      expect(payment.status).toBe('pending');
+      expect(payment.package).toBeFalsy();
+      expect((await Appointment.findById(retro.appointmentId)).package).toBeFalsy();
+      expect((await Session.findById(retro.sessionId)).package).toBeFalsy();
+    } else {
+      const pkg = await Package.findById(response.body.data.packageId);
+      expect(pkg).toMatchObject({ totalPaid: 400, totalValue: 400, totalSessions: 2, sessionsDone: 1 });
+      expect(pkg.sessions).toHaveLength(2);
+      expect(pkg.appointments).toHaveLength(2);
+      expect(pkg.payments).toHaveLength(2);
+      expect(payment.status).toBe('paid');
+      expect(payment.financialDate.toISOString()).toBe('2026-09-01T03:00:00.000Z');
+      expect(String(payment.package)).toBe(String(pkg._id));
+      expect(response.body.data.totalPaid).toBe(400);
+      const purchases = await mongoose.connection.collection('financial_ledger').find({ package: pkg._id, type: 'package_purchase' }).toArray();
+      expect(purchases).toHaveLength(1);
+      expect(purchases[0].amount).toBe(200);
+    }
+  });
+
+  it('incorpora avulso já pago sem novo recebimento e permite repetir o vínculo', async () => {
+    const base = await seedPackage({ paymentType: 'full' });
+    const retro = await seedTrio({ ...base, status: 'completed', date: '2026-09-01' });
+    const financialDate = new Date('2026-09-01T03:00:00Z');
+    await Package.collection.updateOne({ _id: base.pkg._id }, { $set: {
+      totalSessions: 2, totalValue: 400, totalPaid: 200, sessionsDone: 1, preConsumedCount: 1
+    } });
+    await Appointment.collection.updateOne({ _id: retro.appointmentId }, { $unset: { package: 1 } });
+    await Session.collection.updateOne({ _id: retro.sessionId }, { $unset: { package: 1 } });
+    await Payment.collection.updateOne({ _id: retro.paymentId }, {
+      $unset: { package: 1 }, $set: { amount: 200, financialDate, paidAt: financialDate }
+    });
+    const before = await Payment.findById(retro.paymentId).lean();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(app).post(`/api/v2/packages/${base.pkg._id}/settle-payments`)
+        .send({ paymentIds: [String(retro.paymentId)], paymentMethod: 'cash' }).expect(200);
+      expect(response.body.data).toMatchObject({ settledCount: 0, totalSettled: 0, newBalance: 0 });
+      const pkg = await Package.findById(base.pkg._id).lean();
+      expect(pkg).toMatchObject({ totalPaid: 400, sessionsDone: 1, preConsumedCount: 1 });
+      expect(pkg.sessions.map(String)).toContain(String(retro.sessionId));
+      expect(pkg.appointments.map(String)).toContain(String(retro.appointmentId));
+      expect(pkg.payments.map(String)).toEqual([String(retro.paymentId)]);
+      const after = await Payment.findById(retro.paymentId).lean();
+      for (const field of ['amount', 'status', 'kind', 'financialDate', 'paidAt', 'paymentDate', 'paymentMethod']) {
+        expect(after[field]).toEqual(before[field]);
+      }
+      expect(String(after.package)).toBe(String(base.pkg._id));
+      expect(String((await Appointment.findById(retro.appointmentId)).package)).toBe(String(base.pkg._id));
+      expect(String((await Session.findById(retro.sessionId)).package)).toBe(String(base.pkg._id));
+      expect(await Payment.countDocuments()).toBe(1);
+    }
+  });
+
+  it('não move o pagamento de outro pacote nem incorpora uma seleção incompleta', async () => {
+    const base = await seedPackage({ paymentType: 'full' });
+    const retro = await seedTrio({ ...base, status: 'completed' });
+    const otherPackageId = new mongoose.Types.ObjectId();
+    await Payment.collection.updateOne({ _id: retro.paymentId }, { $set: { package: otherPackageId } });
+    for (const paymentIds of [[String(retro.paymentId)], [String(retro.paymentId), String(new mongoose.Types.ObjectId())]]) {
+      await request(app).post(`/api/v2/packages/${base.pkg._id}/settle-payments`).send({ paymentIds }).expect(400);
+      expect(String((await Payment.findById(retro.paymentId)).package)).toBe(String(otherPackageId));
+      expect((await Package.findById(base.pkg._id)).totalPaid).toBe(0);
+    }
+  });
+
   it('inativa atomicamente o conjunto pendente e preserva histórico completed/pago', async () => {
     const base = await seedPackage();
     const pending = await seedTrio(base);
@@ -212,7 +302,7 @@ describe('Package V2 — guards operacionais', () => {
     expect(pkg).toMatchObject({ totalPaid: 100, balance: 300, financialStatus: 'partially_paid' });
   });
 
-  it('cria 2 sessões futuras em pacote de 4 quando 2 sessões são retroativas', async () => {
+  it('rejeita retroativas sem identificação antes de criar um pacote incompleto', async () => {
     const patient = await Patient.create({
       fullName: 'Paciente Retroativo', phone: '62999444444', dateOfBirth: '2015-01-01',
     });
@@ -245,14 +335,10 @@ describe('Package V2 — guards operacionais', () => {
         ],
         payments: [{ amount: 320, method: 'pix', date: '2026-08-26' }],
       })
-      .expect(201);
+      .expect(400);
 
-    expect(response.body.success).toBe(true);
-    const packageId = response.body.data.packageId;
-    const pkg = await Package.findById(packageId);
-    expect(pkg).toMatchObject({ totalSessions: 4, sessionsDone: 2, preConsumedCount: 2 });
-    expect(pkg.sessions).toHaveLength(2);
-    expect(pkg.appointments).toHaveLength(2);
+    expect(response.body.errorCode).toBe('RETROACTIVE_PAYMENTS_REQUIRED');
+    expect(await Package.countDocuments()).toBe(0);
   });
 
   it('DELETE remove pacote vazio, suas duas formas de view e publica PACKAGE_DELETED', async () => {

@@ -1,3 +1,4 @@
+import { incorporatePackagePayments } from '../services/package/incorporatePackagePayments.js';
 /**
  * 📦 Package Controller V2 - Production Grade
  * 
@@ -565,6 +566,15 @@ export const createPackageV2 = async (req, res) => {
   }
 
   const parsedConsumed = parseInt(preConsumedCount) || 0;
+  const retroactivePaymentIds = req.body.retroactivePaymentIds || [];
+  if (!Array.isArray(retroactivePaymentIds) ||
+      retroactivePaymentIds.length !== parsedConsumed ||
+      new Set(retroactivePaymentIds.map(String)).size !== parsedConsumed ||
+      retroactivePaymentIds.some(id => !mongoose.Types.ObjectId.isValid(id))) {
+    await mongoSession.endSession();
+    return res.status(400).json({ success: false, errorCode: 'RETROACTIVE_PAYMENTS_REQUIRED',
+      message: 'Selecione os pagamentos das sessões retroativas para vinculá-las ao pacote. Atualize a página e tente novamente.' });
+  }
   if (parsedConsumed < 0 || parsedConsumed >= parsedSessions) {
     await mongoSession.endSession();
     return res.status(400).json({
@@ -778,6 +788,7 @@ export const createPackageV2 = async (req, res) => {
     let appointments = [];
     let sessions = [];
     let paymentFailed = false;
+    let createdPayments = [];
     let skippedHolidays = [];
 
     if (schedule.length > 0) {
@@ -1271,7 +1282,7 @@ export const createPackageV2 = async (req, res) => {
 
     // 🏦 PACOTE PRÉ-PAGO: quita automaticamente débitos pendentes do paciente
     // O pagamento antecipado deve absorver o saldo devedor existente
-    if (model === 'prepaid' && payments.length > 0) {
+    if (model === 'prepaid' && payments.length > 0 && retroactivePaymentIds.length === 0) {
       const totalPrepaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
       try {
         const settleResult = await settlePendingDebitsForPrepaidPackage(pkg, totalPrepaid, mongoSession);
@@ -1290,6 +1301,27 @@ export const createPackageV2 = async (req, res) => {
           error: settleError.message
         });
       }
+    }
+
+    // Retroativas e recebimentos são incorporados antes do commit: falha desfaz tudo.
+    if (retroactivePaymentIds.length > 0) {
+      if (model !== 'prepaid') {
+        throw Object.assign(new Error('A incorporação de sessões retroativas exige pacote pré-pago'), { statusCode: 400 });
+      }
+      const result = await incorporatePackagePayments(pkg, retroactivePaymentIds, {
+        mongoSession, userId: req.user?._id,
+        paymentMethod: req.body.retroactivePaymentMethod,
+        paymentDate: req.body.retroactivePaymentDate,
+        requireCompleted: true
+      });
+      createdPayments = await createPrepaidPayments(pkg, payments, mongoSession);
+      await Package.updateOne({ _id: pkg._id }, {
+        $addToSet: { payments: { $each: createdPayments.map(p => p._id) } }
+      }, { session: mongoSession });
+      // Atualiza o DTO sem salvar novamente o documento com arrays anteriores.
+      pkg.totalPaid = result.totalPaid;
+      pkg.balance = result.newBalance;
+      pkg.financialStatus = result.newBalance <= 0 ? 'paid' : 'partially_paid';
     }
 
     // Vincular ao paciente
@@ -1339,11 +1371,10 @@ export const createPackageV2 = async (req, res) => {
     // ========================================
     // 5️⃣ PAYMENTS (só pré-pago) - FORA DA TRANSACTION
     // ========================================
-    let createdPayments = [];
     const paymentsStartTime = Date.now();
     if (model === 'prepaid' && payments.length > 0) {
       try {
-        createdPayments = await createPrepaidPayments(pkg, payments);
+        if (retroactivePaymentIds.length === 0) createdPayments = await createPrepaidPayments(pkg, payments);
         // Atualizar package com referências
         await Package.findByIdAndUpdate(pkg._id, {
           $addToSet: { payments: { $each: createdPayments.map(p => p._id) } }
@@ -1562,6 +1593,10 @@ export const createPackageV2 = async (req, res) => {
       stack: error.stack
     });
 
+    if (error.statusCode && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ success: false,
+        errorCode: error.code || 'PACKAGE_SETTLEMENT_INVALID', message: error.message });
+    }
     // Erros específicos
     if (error.code === 11000) {
       return res.status(409).json({
@@ -1741,123 +1776,9 @@ export const settlePackagePayments = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
     }
 
-    const patientId = pkg.patient?.toString?.() || pkg.patientId;
-
-    // Busca payments pendentes selecionados
-    const Payment = mongoose.model('Payment');
-    const payments = await Payment.find({
-      _id: { $in: paymentIds },
-      patient: patientId,
-      status: 'pending'
-    }).session(mongoSession);
-
-    if (payments.length === 0) {
-      await mongoSession.abortTransaction();
-      return res.status(400).json({ success: false, error: 'Nenhum débito pendente encontrado' });
-    }
-
-    const totalToSettle = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    // 🛡️ FLOW GUARD: valida se cada payment permite quitação manual
-    const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
-    try {
-      await FinancialGuard.execute({
-        context: 'SETTLE_PAYMENT',
-        billingType: 'settle',
-        payload: { paymentIds, packageId },
-        session: mongoSession
-      });
-    } catch (flowErr) {
-      await mongoSession.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        error: flowErr.message,
-        code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
-        meta: flowErr.meta || undefined
-      });
-    }
-
-    // Atualiza payments para vinculados ao pacote
-    for (const payment of payments) {
-      payment.package = pkg._id;
-      if (paymentMethod) payment.paymentMethod = paymentMethod;
-      await payment.save({ session: mongoSession });
-
-      // 🎯 STATUS TRANSITION: usa paymentStatusService
-      await transitionPaymentStatus(payment._id, 'paid', {
-        session: mongoSession,
-        paymentMethod: paymentMethod || payment.paymentMethod,
-        financialDate: new Date(),
-        paidAt: new Date(),
-        reason: 'package_settlement'
-      });
-    }
-
-    // Atualiza PatientBalance (crédito de quitação)
-    const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
-    if (patientBalance) {
-      patientBalance.transactions.push({
-        type: 'credit',
-        amount: totalToSettle,
-        description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
-        specialty: pkg.sessionType,
-        settledByPackageId: pkg._id,
-        registeredBy: req.user?._id,
-        transactionDate: new Date()
-      });
-      patientBalance.currentBalance -= totalToSettle;
-      patientBalance.totalCredited += totalToSettle;
-      patientBalance.lastTransactionAt = new Date();
-      await patientBalance.save({ session: mongoSession });
-    }
-
-    // Atualiza appointments vinculados
-    // 🔗 FIX: além do status financeiro, vincula appointment.package — sem isso a sessão
-    // absorvida conta em Package.totalSessions/sessionsDone mas nenhuma query que resolva
-    // "sessões deste pacote" via Appointment.package a encontra (mesma classe de gap
-    // documentada em finance-integrity-audit/).
-    const appointmentIds = payments
-      .filter(p => p.appointment)
-      .map(p => p.appointment.toString());
-
-    if (appointmentIds.length > 0) {
-      await Appointment.updateMany(
-        { _id: { $in: appointmentIds } },
-        { $set: { paymentStatus: 'paid', isPaid: true, package: pkg._id } },
-        { session: mongoSession }
-      );
-    }
-
-    // Atualiza sessions vinculadas (SINCRONIZAÇÃO CRÍTICA — antes faltava)
-    // 🔗 FIX: idem — vincula session.package pelo mesmo motivo do appointment acima.
-    const sessionIds = payments.filter(p => p.session).map(p => p.session.toString());
-    if (sessionIds.length > 0) {
-      const Session = mongoose.model('Session');
-      await Session.updateMany(
-        { _id: { $in: sessionIds } },
-        { $set: { isPaid: true, paymentStatus: 'paid', package: pkg._id } },
-        { session: mongoSession }
-      );
-    }
-
-    // Recalcula saldo do pacote
-    const totalPaid = (pkg.totalPaid || 0) + totalToSettle;
-    const balance = (pkg.totalValue || 0) - totalPaid;
-    let financialStatus = 'unpaid';
-    if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
-    else if (totalPaid > 0) financialStatus = 'partially_paid';
-    const packageUpdate = {
-      $set: { totalPaid, balance, financialStatus, updatedAt: new Date() }
-    };
-    const packageLinks = {};
-    // 🔗 FIX: registra as sessões/agendamentos absorvidos em Package.sessions[]/appointments[] —
-    // sem isso, buildPackageView() e qualquer auditoria por Package.sessions nunca "veem"
-    // a sessão retroativa que acabou de ser quitada aqui.
-    if (sessionIds.length > 0) packageLinks.sessions = { $each: sessionIds };
-    if (appointmentIds.length > 0) packageLinks.appointments = { $each: appointmentIds };
-    if (Object.keys(packageLinks).length > 0) packageUpdate.$addToSet = packageLinks;
-
-    await Package.findByIdAndUpdate(packageId, packageUpdate, { session: mongoSession });
+    const result = await incorporatePackagePayments(pkg, paymentIds, {
+      mongoSession, paymentMethod, userId: req.user?._id
+    });
 
     await mongoSession.commitTransaction();
 
@@ -1875,24 +1796,24 @@ export const settlePackagePayments = async (req, res) => {
 
     logger.info('[PackageV2] Débitos quitados', {
       packageId,
-      settledCount: payments.length,
-      totalSettled: totalToSettle
+      settledCount: result.settledCount,
+      totalSettled: result.totalSettled
     });
 
     res.json({
       success: true,
-      message: `${payments.length} débito(s) quitado(s)`,
+      message: `${result.paymentsCount} pagamento(s) vinculado(s) ao pacote; ${result.settledCount} débito(s) quitado(s)`,
       data: {
-        settledCount: payments.length,
-        totalSettled: totalToSettle,
-        newBalance: balance
+        settledCount: result.settledCount,
+        totalSettled: result.totalSettled,
+        newBalance: result.newBalance
       }
     });
 
   } catch (error) {
     await mongoSession.abortTransaction();
     logger.error('[PackageV2] Erro ao quitar débitos', { error: error.message });
-    res.status(500).json({ success: false, error: error.message });
+    res.status(error.statusCode || 500).json({ success: false, error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.meta ? { meta: error.meta } : {}) });
   } finally {
     mongoSession.endSession();
   }

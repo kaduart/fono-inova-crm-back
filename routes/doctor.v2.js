@@ -260,7 +260,9 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       role: doctor.role || 'doctor',
       weeklyAvailability: doctor.weeklyAvailability || [],
       commissionRules: {
-        rules: doctor.commissionRules?.rules || []
+        rules: doctor.commissionRules?.rules || [],
+        neuropsychEvaluation: doctor.commissionRules?.neuropsychEvaluation ?? 1200,
+        neuropsychCommissionType: doctor.commissionRules?.neuropsychCommissionType ?? 'fixed'
       },
       createdAt: doctor.createdAt,
       updatedAt: doctor.updatedAt
@@ -290,6 +292,12 @@ router.post('/', flexibleAuth, async (req, res) => {
     if (!licenseNumber) {
       return res.status(400).json(formatError(400, 'Número de registro (CRM/CRP/etc) é obrigatório'));
     }
+    if (commissionRules?.neuropsychCommissionType === 'percentage' &&
+        (typeof commissionRules.neuropsychEvaluation !== 'number' ||
+         !Number.isFinite(commissionRules.neuropsychEvaluation) ||
+         commissionRules.neuropsychEvaluation < 0 || commissionRules.neuropsychEvaluation > 100)) {
+      return res.status(400).json(formatError(400, 'Informe um percentual entre 0 e 100 para a avaliação neuropsicológica'));
+    }
 
     const doctor = await Doctor.create({
       fullName: fullName.trim(),
@@ -302,7 +310,11 @@ router.post('/', flexibleAuth, async (req, res) => {
       role: 'doctor',
       weeklyAvailability: weeklyAvailability || [],
       // Preserva regras de comissão configuradas na tela antes do profissional existir no banco
-      commissionRules: { rules: commissionRules?.rules || [] },
+      commissionRules: {
+        rules: commissionRules?.rules || [],
+        neuropsychEvaluation: commissionRules?.neuropsychEvaluation ?? 1200,
+        neuropsychCommissionType: commissionRules?.neuropsychCommissionType ?? 'fixed'
+      },
       createdBy: req.user?.id
     });
 
@@ -333,11 +345,33 @@ router.put('/:id', flexibleAuth, async (req, res) => {
   try {
     const updatePayload = { ...req.body, updatedAt: new Date(), updatedBy: req.user?.id };
 
-    // 🧹 Garante que campos legados não sejam mais persistidos
+    // Atualiza somente os campos enviados, preservando o repasse do pacote.
     if (updatePayload.commissionRules) {
-      updatePayload.commissionRules = {
-        rules: updatePayload.commissionRules.rules || []
-      };
+      const { rules, neuropsychEvaluation, neuropsychCommissionType } = updatePayload.commissionRules;
+      if (neuropsychCommissionType !== undefined && !['fixed', 'percentage'].includes(neuropsychCommissionType)) {
+        return res.status(400).json(formatError(400, 'Tipo de comissão neuropsicológica inválido'));
+      }
+      if (neuropsychEvaluation !== undefined &&
+          (typeof neuropsychEvaluation !== 'number' || !Number.isFinite(neuropsychEvaluation) || neuropsychEvaluation < 0)) {
+        return res.status(400).json(formatError(400, 'Informe um valor válido, maior ou igual a zero, para a avaliação neuropsicológica'));
+      }
+      if (neuropsychEvaluation !== undefined || neuropsychCommissionType !== undefined) {
+        const current = await Doctor.findById(req.params.id).select('commissionRules').lean();
+        if (!current) return res.status(404).json(formatError(404, 'Médico não encontrado'));
+        const effectiveType = neuropsychCommissionType ?? current.commissionRules?.neuropsychCommissionType ?? 'fixed';
+        const effectiveValue = neuropsychEvaluation ?? current.commissionRules?.neuropsychEvaluation ?? 1200;
+        if (effectiveType === 'percentage' && effectiveValue > 100) {
+          return res.status(400).json(formatError(400, 'Informe um percentual entre 0 e 100 para a avaliação neuropsicológica'));
+        }
+      }
+      delete updatePayload.commissionRules;
+      if (neuropsychCommissionType !== undefined) {
+        updatePayload['commissionRules.neuropsychCommissionType'] = neuropsychCommissionType;
+      }
+      if (rules !== undefined) updatePayload['commissionRules.rules'] = rules;
+      if (neuropsychEvaluation !== undefined) {
+        updatePayload['commissionRules.neuropsychEvaluation'] = neuropsychEvaluation;
+      }
     }
 
     const doctor = await Doctor.findByIdAndUpdate(

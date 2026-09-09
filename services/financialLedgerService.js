@@ -284,13 +284,13 @@ export async function recordPackagePurchase(pkg, payment, options = {}, mongoSes
     
     return FinancialLedger.credit({
         type: 'package_purchase',
-        amount: pkg.totalValue || pkg.amount || 0,
+        amount: payment.amount,
         patient: pkg.patient,
         package: pkg._id,
         payment: payment?._id,
         correlationId: correlationId || pkg.correlationId,
         description: `Compra de pacote - ${pkg.name || 'Pacote'} (${pkg.totalSessions} sessões)`,
-        occurredAt: pkg.purchasedAt || pkg.createdAt || new Date(),
+        occurredAt: payment.financialDate || payment.paidAt || payment.paymentDate || new Date(),
         createdBy: userId,
         createdByName: userName,
         metadata: {

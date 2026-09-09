@@ -11,6 +11,29 @@ import {
 } from '../../services/commissionRule.service.js';
 
 describe('commissionRule.service', () => {
+  it('calcula 50% uma vez por pacote completo usando o total contratado', () => {
+    const doc = { commissionRules: { neuropsychEvaluation: 50, neuropsychCommissionType: 'percentage' } };
+    const makeSessions = (id, totalValue, count = 3) => Array.from({ length: count }, () => ({
+      package: { _id: id, sessionType: 'neuropsicologia', totalSessions: 3, totalValue, sessionValue: 900 },
+      sessionType: 'session',
+      sessionValue: 900
+    }));
+    const result = calculateCommissionBatch(doc, [
+      ...makeSessions('package-a', 1500), ...makeSessions('package-b', 2000),
+      ...makeSessions('incomplete', 3000, 2)
+    ]);
+    expect(result.totalCommission).toBe(1750);
+    expect(result.breakdown.neuropsychEvaluations).toEqual({ count: 2, value: 1750 });
+    expect(result.breakdown.standardSessions.count).toBe(0);
+  });
+
+  it('preserva repasse fixo zero sem substituir pelo padrão', () => {
+    const result = calculateCommissionBatch({ commissionRules: { neuropsychEvaluation: 0 } }, [{
+      package: { _id: 'zero', sessionType: 'neuropsych_evaluation', totalSessions: 1, totalValue: 2000 }
+    }]);
+    expect(result.totalCommission).toBe(0);
+  });
+
   const doctor = {
     specialty: 'fonoaudiologia',
     commissionRules: {
