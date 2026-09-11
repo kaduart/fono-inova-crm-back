@@ -11,6 +11,7 @@ import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 import { safeRedis } from '../config/redisConnection.js';
+import { summarizeCashflowAttendance } from '../services/appointment/policies/summarizeCashflowAttendance.js';
 
 const router = express.Router();
 
@@ -132,7 +133,7 @@ router.get('/', auth, async (req, res) => {
             : targetDate === todayStr;
         const ttlSeconds = isCurrent ? REDIS_TTL_CURRENT_SECONDS : REDIS_TTL_PAST_SECONDS;
 
-        const cachedResult = await _getCached(cacheKey, ttlSeconds);
+        const cachedResult = req.query.refresh === 'true' ? null : await _getCached(cacheKey, ttlSeconds);
         if (cachedResult) {
             res.set('X-Cache-Hit', 'true');
             const { data, isStale } = cachedResult;
@@ -194,7 +195,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
         const _tCashflowBase = Date.now();
-        const [cash, production, convenioAppts] = await Promise.all([
+        const [cash, production, convenioAppts, attendanceAppointments] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end).then(r => {
                 _tick('calculateCash');
                 console.log(`[cashflow.v2] calculateCash = ${Date.now() - _tCashflowBase}ms`);
@@ -213,6 +214,9 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 .select('_id time date doctor specialty billingType insuranceProvider insuranceValue sessionValue paymentStatus patient patientName patientInfo serviceType')
                 .populate('patient', 'fullName phone')
                 .populate('doctor', 'fullName specialty')
+                .lean(),
+            Appointment.find({ date: { $gte: start, $lte: end } })
+                .select('operationalStatus clinicalStatus missed')
                 .lean()
         ]);
 
@@ -837,6 +841,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 })(),
                 porEspecialidade: porEspecialidadeCaixa,
                 eficienciaFinanceira,
+                atendimentos: summarizeCashflowAttendance(attendanceAppointments),
                 despesas: {
                     total: totalDespesas,
                     porCategoria: despesasPorCategoria,
@@ -955,7 +960,7 @@ router.get('/month', auth, async (req, res) => {
         const cacheKey = _cacheKey(undefined, undefined, undefined, month);
         const ttlSeconds = isCurrent ? REDIS_TTL_CURRENT_SECONDS : REDIS_TTL_PAST_SECONDS;
 
-        const cachedResult = await _getCached(cacheKey, ttlSeconds);
+        const cachedResult = req.query.refresh === 'true' ? null : await _getCached(cacheKey, ttlSeconds);
         if (cachedResult) {
             res.set('X-Cache-Hit', 'true');
             const { data, isStale } = cachedResult;

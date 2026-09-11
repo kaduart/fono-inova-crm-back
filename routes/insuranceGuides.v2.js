@@ -537,6 +537,24 @@ router.put('/:id', auth, async (req, res) => {
     if (evaluationAmount !== undefined) guide.evaluationAmount = evaluationAmount != null ? Number(evaluationAmount) : null;
     if (generateEvaluationBilling !== undefined) guide.generateEvaluationBilling = Boolean(generateEvaluationBilling);
 
+    // Recalcula status após edição de totalSessions/expiresAt — sem isso a guia
+    // fica "presa" em exhausted/expired mesmo depois de corrigida (mesmo padrão
+    // usado em guideService.releaseGuideSession / convenioPackageController).
+    // Nunca mexe em status terminais/deliberados (cancelled, superseded, linked, closed).
+    if (['active', 'exhausted', 'expired'].includes(guide.status)) {
+      const now = new Date();
+      const hasRemainingSessions = guide.usedSessions < guide.totalSessions;
+      const isStillValid = !guide.expiresAt || guide.expiresAt >= now;
+
+      if (hasRemainingSessions && isStillValid) {
+        guide.status = 'active';
+      } else if (!hasRemainingSessions) {
+        guide.status = 'exhausted';
+      } else if (!isStillValid) {
+        guide.status = 'expired';
+      }
+    }
+
     await guide.save();
 
     // Se foi adicionada avaliação, ainda não existe sessão de avaliação e deve gerar cobrança

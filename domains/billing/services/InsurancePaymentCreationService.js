@@ -25,7 +25,18 @@ import mongoose from 'mongoose';
 import Payment from '../../../models/Payment.js';
 import { handlePaymentEvent } from '../../../projections/paymentsProjection.js';
 
-const TERMINAL_STATUSES = ['canceled', 'refunded', 'converted_to_package', 'recognized', 'consumed'];
+// Inclui grafias legadas ainda existentes no banco. Um recebível encerrado
+// nunca pode ser escolhido e atualizado como se continuasse ativo.
+const TERMINAL_STATUSES = [
+  'canceled',
+  'cancelled',
+  'cancelado',
+  'void',
+  'refunded',
+  'converted_to_package',
+  'recognized',
+  'consumed'
+];
 
 function isActivePayment(payment) {
   if (!payment) return false;

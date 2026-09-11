@@ -211,8 +211,9 @@ async function levantar() {
   // Idempotência: só age no que ainda não foi tratado
   const pendentesA = FABRICADAS.map(byId).filter(a => a && a.operationalStatus === 'completed');
   const pendentesB = SKIP_1809 ? [] : [byId(ANOMALIA_1809)].filter(a => a && a.operationalStatus === 'completed');
+  const reaisExistentes = REAIS_EXISTENTES.map(byId).filter(a => a && a.operationalStatus === 'completed');
   const reaisParaReclassificar = SKIP_SPECIALTY ? [] :
-    REAIS_EXISTENTES.map(byId).filter(a => a && a.specialty !== guide.specialty);
+    reaisExistentes.filter(a => a.specialty !== guide.specialty);
   const planoPrecisaCorrigir = !SKIP_SPECIALTY && plan.specialty !== guide.specialty;
 
   // ── Retomabilidade da sessão real de 12/08 ──────────────────────────────
@@ -245,7 +246,7 @@ async function levantar() {
     }
   }
 
-  return { guide, plan, appts, pendentesA, pendentesB, reaisParaReclassificar, planoPrecisaCorrigir, estado1208 };
+  return { guide, plan, appts, pendentesA, pendentesB, reaisExistentes, reaisParaReclassificar, planoPrecisaCorrigir, estado1208 };
 }
 
 function projetarSaldo(e) {
@@ -364,6 +365,25 @@ async function estornar(appt, mongoSession, guide, evidencia) {
     await payment.save({ session: mongoSession });
   }
 
+  // Reparos anteriores podem ter colocado apenas Payment.status='canceled',
+  // deixando insurance.status='pending_billing'. Isso continua parecendo um
+  // recebível para leitores do domínio. Normalize também os já cancelados,
+  // sem ressuscitar nem apagar o registro histórico.
+  await Payment.updateMany(
+    { appointment: appt._id, status: 'canceled' },
+    {
+      $set: {
+        'insurance.status': null,
+        'insurance.voidedAt': new Date(),
+        'insurance.voidReason': MOTIVO_ESTORNO,
+        canceledReason: MOTIVO_ESTORNO,
+        notes: MOTIVO_ESTORNO,
+        updatedAt: new Date(),
+      },
+    },
+    { session: mongoSession }
+  );
+
   const ledger = mongoose.connection.collection('financial_ledger');
   const lancamentos = await ledger.find(
     { $or: [{ appointment: appt._id }, { appointmentId: appt._id }], reversedAt: { $exists: false } },
@@ -458,6 +478,116 @@ async function reclassificar(appt, especialidade, mongoSession) {
     { session: mongoSession });
 }
 
+const ACTIVE_PAYMENT_STATUSES = ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'];
+const ACTIVE_INSURANCE_STATUSES = ['pending_billing', 'billed', 'received'];
+
+async function inspecionarRecebivelReal(appt, mongoSession = null) {
+  const sessionsQuery = Session.find({
+    $or: [{ appointmentId: appt._id }, { appointment: appt._id }],
+    status: 'completed',
+  });
+  const paymentsQuery = Payment.find({ appointment: appt._id });
+  if (mongoSession) {
+    sessionsQuery.session(mongoSession);
+    paymentsQuery.session(mongoSession);
+  }
+  const [sessions, payments] = await Promise.all([sessionsQuery.lean(), paymentsQuery.lean()]);
+  const active = payments.filter(payment =>
+    ACTIVE_PAYMENT_STATUSES.includes(payment.status)
+    && ACTIVE_INSURANCE_STATUSES.includes(payment.insurance?.status)
+    && Number(payment.amount || 0) > 0
+  );
+  const blocked = payments.filter(payment =>
+    payment.insurance?.batchId || payment.batchId || payment.insuranceBatch
+    || ['billed', 'received', 'paid'].includes(payment.status)
+    || ['billed', 'received'].includes(payment.insurance?.status)
+  );
+  return { sessions, payments, active, blocked };
+}
+
+async function garantirRecebivelReal(appt, guide, plan, mongoSession) {
+  const state = await inspecionarRecebivelReal(appt, mongoSession);
+  if (state.sessions.length !== 1) {
+    throw new Error(`ABORTADO: atendimento real ${d10(appt.date)} ${appt.time} possui ${state.sessions.length} Sessions completed; esperado 1`);
+  }
+  if (state.active.length > 1) {
+    throw new Error(`ABORTADO: atendimento real ${d10(appt.date)} ${appt.time} possui ${state.active.length} Payments ativos`);
+  }
+
+  const sessionDoc = state.sessions[0];
+  if (state.active.length === 1) {
+    const active = state.active[0];
+    await Payment.updateOne(
+      { _id: active._id },
+      { $set: {
+        session: sessionDoc._id,
+        appointment: appt._id,
+        patient: appt.patient?._id || appt.patient,
+        doctor: appt.doctor?._id || appt.doctor,
+        specialty: guide.specialty,
+        insuranceGuide: guide._id,
+        insurancePlan: plan._id,
+        updatedAt: new Date(),
+      } },
+      { session: mongoSession }
+    );
+    await Appointment.updateOne({ _id: appt._id }, { $set: { payment: active._id } }, { session: mongoSession });
+    await Session.updateOne({ _id: sessionDoc._id }, { $set: { paymentId: active._id } }, { session: mongoSession });
+    return { paymentId: active._id, created: false };
+  }
+
+  if (state.blocked.length > 0) {
+    throw new Error(`ABORTADO: atendimento real ${d10(appt.date)} ${appt.time} tem Payment faturado/recebido ou em lote`);
+  }
+
+  const amount = Number(appt.insuranceValue || appt.sessionValue || sessionDoc.sessionValue || guide.sessionValue || 0);
+  if (!(amount > 0)) throw new Error(`ABORTADO: atendimento real ${d10(appt.date)} ${appt.time} sem valor positivo`);
+
+  const now = new Date();
+  const [payment] = await Payment.create([{
+    patient: appt.patient?._id || appt.patient,
+    doctor: appt.doctor?._id || appt.doctor,
+    appointment: appt._id,
+    session: sessionDoc._id,
+    specialty: guide.specialty,
+    amount,
+    status: 'pending',
+    type: 'service',
+    serviceType: 'session',
+    paymentMethod: 'convenio',
+    billingType: 'convenio',
+    financialDate: null,
+    paymentDate: now,
+    serviceDate: appt.date,
+    insurance: {
+      provider: guide.insurance,
+      authorizationCode: guide.number,
+      status: 'pending_billing',
+      grossAmount: amount,
+      guideId: guide._id,
+    },
+    insuranceGuide: guide._id,
+    insurancePlan: plan._id,
+    kind: 'session_payment',
+    source: 'repair_icaro_16173377_2026_09_11',
+    notes: 'Recebível recriado para sessão real confirmada por protocolo físico; Payment anterior permaneceu cancelado para auditoria.',
+    createdAt: now,
+    updatedAt: now,
+  }], { session: mongoSession });
+
+  await Appointment.updateOne(
+    { _id: appt._id },
+    { $set: { payment: payment._id, paymentStatus: 'pending_receipt', updatedAt: now } },
+    { session: mongoSession }
+  );
+  await Session.updateOne(
+    { _id: sessionDoc._id },
+    { $set: { paymentId: payment._id, paymentStatus: 'pending_receipt', paymentMethod: 'convenio', updatedAt: now } },
+    { session: mongoSession }
+  );
+  return { paymentId: payment._id, created: true };
+}
+
 async function criarSessaoReal(guide, plan, evidencia) {
   // Data no padrão do resto da agenda: meia-noite local + campo `time`
   const dateAtMidnightLocal = moment.tz(`${SESSAO_REAL.date} 00:00`, 'YYYY-MM-DD HH:mm', TZ).toDate();
@@ -487,7 +617,9 @@ async function criarSessaoReal(guide, plan, evidencia) {
         sessionValue: guide.sessionValue,
         insuranceValue: guide.sessionValue,
         notes: nota,
-        metadata: { origin: { source: 'repair_script', script: 'repair-icaro-guide-16173377' } },
+        // `metadata.origin.source` é enum fechado no Appointment. A referência
+        // detalhada do reparo permanece em `notes`/evidência acima.
+        metadata: { origin: { source: 'outro' } },
       }], { session: mongoSession });
 
       // Factory canônico — nasce 'scheduled', nunca 'completed'
@@ -528,7 +660,7 @@ async function main() {
   const estado = await levantar();
   relatorio(estado);
 
-  const { guide, plan, pendentesA, pendentesB, reaisParaReclassificar, planoPrecisaCorrigir, estado1208 } = estado;
+  const { guide, plan, pendentesA, pendentesB, reaisExistentes, reaisParaReclassificar, planoPrecisaCorrigir, estado1208 } = estado;
   const alvosEstorno = [...pendentesA, ...pendentesB];
 
   // ── PRÉ-CHECAGEM ESTRITA ──────────────────────────────────────────────
@@ -573,6 +705,20 @@ async function main() {
     if (String(plan.patient) !== SESSAO_REAL.patientId) problemas.push('paciente do plano difere do esperado');
   }
 
+  let recebiveisReaisAusentes = 0;
+  for (const appt of reaisExistentes) {
+    const state = await inspecionarRecebivelReal(appt);
+    if (state.sessions.length !== 1) problemas.push(`${d10(appt.date)} ${appt.time}: esperado 1 Session completed, encontrado ${state.sessions.length}`);
+    if (state.active.length > 1) problemas.push(`${d10(appt.date)} ${appt.time}: ${state.active.length} Payments ativos`);
+    if (state.active.length === 0) {
+      recebiveisReaisAusentes++;
+      if (state.blocked.length > 0) problemas.push(`${d10(appt.date)} ${appt.time}: há Payment faturado/recebido ou em lote`);
+      else console.log(`  ➕ ${d10(appt.date)} ${appt.time}: recebível real será recriado sem alterar o Payment cancelado`);
+    } else {
+      console.log(`  ✅ ${d10(appt.date)} ${appt.time}: já possui um recebível ativo`);
+    }
+  }
+
   const { final } = projetarSaldo(estado);
   if (final !== USED_SESSIONS_ESPERADO) {
     problemas.push(`projeção final é ${final}/${guide.totalSessions}, esperado ${USED_SESSIONS_ESPERADO}` +
@@ -596,7 +742,7 @@ async function main() {
     return;
   }
 
-  const nadaAFazer = !alvosEstorno.length && !reaisParaReclassificar.length
+  const nadaAFazer = !alvosEstorno.length && !reaisParaReclassificar.length && recebiveisReaisAusentes === 0
     && !planoPrecisaCorrigir && estado1208.situacao === 'CONCLUIDO';
   if (nadaAFazer) {
     console.log('\n✅ NO-OP — reparo já aplicado anteriormente.\n');
@@ -627,6 +773,11 @@ async function main() {
       for (const appt of reaisParaReclassificar) {
         await reclassificar(appt, guide.specialty, mongoSession);
         console.log(`  🔧 ${d10(appt.date)} ${appt.time}: ${appt.specialty} → ${guide.specialty} (cadeia completa)`);
+      }
+
+      for (const appt of reaisExistentes) {
+        const result = await garantirRecebivelReal(appt, guide, plan, mongoSession);
+        console.log(`  💰 ${d10(appt.date)} ${appt.time}: Payment ${result.created ? 'criado' : 'reutilizado'} (${String(result.paymentId).slice(-6)})`);
       }
     });
   } finally {
@@ -680,8 +831,10 @@ async function reconciliar() {
 
   const ledger = mongoose.connection.collection('financial_ledger');
   const lancamentos = await ledger.find({ appointment: { $in: appts.map(a => a._id) } }).toArray();
+  // O estorno preserva o lançamento original (marcado com reversedAt) e cria
+  // sua contrapartida negativa. O líquido auditável é a soma das duas pernas;
+  // filtrar o original contaria apenas a contrapartida e produziria saldo falso.
   const liquido = lancamentos
-    .filter(l => !l.reversedAt)
     .reduce((s, l) => s + Number(l.amount ?? l.value ?? 0), 0);
 
   const especialidades = new Set([
