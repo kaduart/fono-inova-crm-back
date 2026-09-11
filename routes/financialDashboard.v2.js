@@ -21,7 +21,6 @@ import mongoose from 'mongoose';
 import { calculateDoctorCommission } from '../services/commissionService.js';
 import { calculateCommissionBatch } from '../services/commissionRule.service.js';
 import financialMetricsService from '../services/financialMetrics.service.js';
-import financialSnapshotService from '../services/financialSnapshot.service.js';
 import financialExpenseSnapshotService from '../services/financialExpenseSnapshot.service.js';
 import { calculatePendentesEngine, getPatientPendingPayments } from '../services/financialEngine.js';
 import { isConvenioSession } from '../utils/billingHelpers.js';
@@ -236,167 +235,16 @@ router.get('/', auth, async (req, res) => {
             };
         }
 
-        // 🆕 PROJEÇÃO V2: tenta usar snapshot primeiro
-        const snapshotReady = await financialSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
-        let data, profissionais, source = 'real-time';
-
-        if (snapshotReady && !isCurrentMonth) {
-            console.log(`[DashboardV3] Usando snapshot: ${monthKey}`);
-            source = 'snapshot';
-            const snap = await financialSnapshotService.getMonthlyAggregate(targetYear, targetMonth);
-            data = {
-                caixa: snap.caixa,
-                caixaHoje: snap.caixaHoje,
-                caixaDetalhe: snap.caixaDetalhe,
-                caixaByMethod: snap.caixaByMethod,
-                producao: snap.producao,
-                producaoDetalhe: snap.producaoDetalhe,
-                saldo: snap.saldo
-            };
-
-            // 🆕 PROJEÇÃO V2 de DESPESAS (separada da receita)
-            const expenseSnapshotReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(targetYear, targetMonth);
-            let despesasSnap;
-            if (expenseSnapshotReady) {
-                const expSnap = await financialExpenseSnapshotService.getMonthlyAggregate(targetYear, targetMonth);
-                // Monta detalhe de comissões com nomes dos profissionais
-                const doctorIds = Array.from(expSnap.profissionais.keys());
-                const doctorsForExp = await Doctor.find({ _id: { $in: doctorIds } }).select('_id fullName').lean();
-                const doctorNameMap = new Map(doctorsForExp.map(d => [d._id.toString(), d.fullName]));
-                const detalheComissoes = Array.from(expSnap.profissionais.values())
-                    .filter(p => p.commission > 0 || p.commissionProvisao > 0)
-                    .map(p => ({
-                        doctorId: p.doctorId,
-                        doctorName: doctorNameMap.get(p.doctorId) || 'Profissional',
-                        total: parseFloat(((p.commission || 0) + (p.commissionProvisao || 0)).toFixed(2)),
-                        sessions: p.countSessions
-                    }));
-
-                despesasSnap = {
-                    total: parseFloat(expSnap.total.toFixed(2)),
-                    count: expSnap.count,
-                    breakdown: {
-                        expenses: parseFloat(((expSnap.breakdown.fixed || 0) + (expSnap.breakdown.variable || 0) + (expSnap.breakdown.other || 0)).toFixed(2)),
-                        comissoes: parseFloat((expSnap.breakdown.commission || 0).toFixed(2)),
-                        detalheComissoes
-                    }
-                };
-            } else {
-                despesasSnap = await calculateDespesas(targetYear, targetMonth);
-            }
-
-            const [aReceberSnap, comparativosSnap, pendentesSnap, appointmentCountsSnap] = await Promise.all([
-                calculateAReceber(targetYear, targetMonth),
-                calculateComparativos(targetYear, targetMonth),
-                calculatePendentes(targetYear, targetMonth),
-                calculateAppointmentCounts(targetYear, targetMonth),
-            ]);
-
-            const metasSnap = await calculateMetas(data, targetYear, targetMonth);
-            const profissionaisSnap = await calculateProfissionaisFromSnapshot(snap.profissionais, targetYear, targetMonth);
-
-            const insightsSnap = generateInsights(data, metasSnap, profissionaisSnap);
-            const riscoOperacionalSnap = calculateRiscoOperacional(data, metasSnap, profissionaisSnap);
-            const acoesExecutivasSnap = calculateAcoesExecutivas(data, metasSnap, profissionaisSnap, riscoOperacionalSnap);
-            const drillDownSnap = buildDrillDown(data, profissionaisSnap);
-            const indicadoresSnap = calculateIndicadores(data.caixa, data.producao, despesasSnap.total, metasSnap);
-
-            // Campos de competência derivados do snapshot (mesma fórmula do real-time)
-            const _snapConvenioAReceber  = Math.max(0, (data.producaoDetalhe?.convenio  || 0) - (data.caixaDetalhe?.convenio  || 0));
-            const _snapLiminarAReceber   = Math.max(0, (data.producaoDetalhe?.liminar   || 0) - (data.caixaDetalhe?.liminar   || 0));
-            const _snapParticularPend    = data.producaoDetalhe?.particularPendente || 0;
-            const _snapPacotePend        = data.producaoDetalhe?.pacotePendente     || 0;
-            const _snapAReceberProducao  = _snapConvenioAReceber + _snapLiminarAReceber + _snapParticularPend + _snapPacotePend;
-            const _snapRecebidoProducao  = Math.max(0, (data.producao || 0) - _snapAReceberProducao);
-            const _snapRecebimentosAntecipados       = Math.max(0, (data.caixa   || 0) - _snapRecebidoProducao);
-            const _snapPackageSales      = data.caixaDetalhe?.packageSales || 0;
-            const _snapAntecipacoes      = Math.min(_snapPackageSales, _snapRecebimentosAntecipados);
-            const _snapRetroativos       = Math.max(0, _snapRecebimentosAntecipados - _snapAntecipacoes);
-            const _snapResultadoCaixa    = data.caixa    || 0;
-            const _snapResultadoEcon     = data.producao || 0;
-            const _snapRecebimentoProd   = {
-                total:     _snapRecebidoProducao,
-                particular: Math.max(0, (data.producaoDetalhe?.particular || 0) - _snapParticularPend),
-                pacote:     Math.max(0, (data.producaoDetalhe?.pacote     || 0) - _snapPacotePend),
-                convenio:   Math.max(0, (data.producaoDetalhe?.convenio   || 0) - _snapConvenioAReceber),
-                liminar:    Math.max(0, (data.producaoDetalhe?.liminar    || 0) - _snapLiminarAReceber),
-            };
-
-            return res.json({
-                success: true,
-                source,
-                resumo: {
-                    caixa: data.caixa,
-                    caixaHoje: data.caixaHoje,
-                    caixaDetalhe: data.caixaDetalhe,
-                    producao: data.producao,
-                    producaoHoje: data.producaoHoje,
-                    producaoDetalhe: data.producaoDetalhe,
-                    resultadoEconomico: _snapResultadoEcon,
-                    receitaReconhecida: data.receitaReconhecida,
-                    novaReceitaMes: data.novaReceitaMes,
-                    resultadoCaixa: _snapResultadoCaixa,
-                    convenioAReceber: _snapConvenioAReceber,
-                    particularPendente: _snapParticularPend,
-                    pacotePendente: _snapPacotePend,
-                    recebimentoProducao: _snapRecebimentoProd,
-                    recebimentosAntecipados: _snapRecebimentosAntecipados,
-                    antecipacoes: _snapAntecipacoes,
-                    retroativos: _snapRetroativos,
-                    aReceberProducao: _snapAReceberProducao,
-                    aReceber: aReceberSnap,
-                    pendentes: pendentesSnap,
-                    saldo: data.saldo,
-                    despesas: despesasSnap,
-                    metas: metasSnap,
-                    profissionais: profissionaisSnap.ranking,
-                    indicadores: indicadoresSnap
-                },
-                data: {
-                    period: { month: targetMonth, year: targetYear },
-                    cash: {
-                        total: data.caixa,
-                        today: data.caixaHoje,
-                        breakdown: data.caixaDetalhe,
-                        byMethod: data.caixaByMethod
-                    },
-                    revenue: {
-                        total: data.producao,
-                        today: data.producaoHoje,
-                        byMethod: data.producaoDetalhe
-                    },
-                    pendentes: pendentesSnap,
-                    expenses: {
-                        total: despesasSnap.total,
-                        count: despesasSnap.count,
-                        breakdown: despesasSnap.breakdown
-                    },
-                    balance: data.saldo,
-                    resultadoCaixa: _snapResultadoCaixa,
-                    resultadoEconomico: _snapResultadoEcon,
-                    receitaReconhecida: data.receitaReconhecida,
-                    novaReceitaMes: data.novaReceitaMes,
-                    convenioAReceber: _snapConvenioAReceber,
-                    particularPendente: _snapParticularPend,
-                    pacotePendente: _snapPacotePend,
-                    recebimentoProducao: _snapRecebimentoProd,
-                    recebimentosAntecipados: _snapRecebimentosAntecipados,
-                    antecipacoes: _snapAntecipacoes,
-                    retroativos: _snapRetroativos,
-                    aReceberProducao: _snapAReceberProducao,
-                    metas: metasSnap,
-                    profissionais: profissionaisSnap,
-                    insights: insightsSnap,
-                    comparativos: comparativosSnap,
-                    riscoOperacional: riscoOperacionalSnap,
-                    acoesExecutivas: acoesExecutivasSnap,
-                    drillDown: drillDownSnap,
-                    indicadores: indicadoresSnap,
-                    appointmentCounts: appointmentCountsSnap
-                },
-                metadata: { projection: true }
-            });
-        }
+        // 🛠️ 2026-09-11: removido o atalho de FinancialDailySnapshot pra mês
+        // fechado (entidade já marcada DEPRECATED em DOMAIN_INVARIANTS.md).
+        // Auditoria em julho/2026 achou o snapshot capturando só R$4.030 dos
+        // R$37.770 reais de caixa do mês (perdeu ~89% dos eventos
+        // PAYMENT_STATUS_CHANGED) e superestimando produção — só não afetou a
+        // tela até agora porque a cobertura de dias (22/31) ficou abaixo do
+        // gatilho de 80% em isMonthlySnapshotReady(). Sempre recalcular ao
+        // vivo elimina essa divergência por completo; ver
+        // back/docs/DOMAIN_INVARIANTS.md ADR mais recente para o caso completo.
+        let data, profissionais;
 
         const _t0 = Date.now();
         const _timeit = (label, promise) => {
@@ -1159,89 +1007,6 @@ async function calculateProfissionais(data, year, month) {
 }
 
 /**
- * 👩‍⚕️ Calcula performance por profissional a partir do snapshot diário
- */
-async function calculateProfissionaisFromSnapshot(snapshotProfMap, year, month) {
-    const start = moment.tz([year, month - 1], TIMEZONE).startOf('month').utc().toDate();
-    const end = moment.tz([year, month - 1], TIMEZONE).endOf('month').utc().toDate();
-
-    const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName specialty commissionRules').lean();
-    const doctorMap = new Map(doctors.map(d => [d._id.toString(), d]));
-
-    let lista = [];
-    for (const [profId, snapProf] of snapshotProfMap.entries()) {
-        const doc = doctorMap.get(profId);
-        if (!doc) continue;
-
-        lista.push({
-            id: profId,
-            nome: doc.fullName,
-            especialidade: doc.specialty || 'Outra',
-            producao: snapProf.producao,
-            realizado: snapProf.realizado,
-            quantidade: snapProf.quantidade,
-            particular: snapProf.particular,
-            convenio: snapProf.convenio,
-            pacote: snapProf.pacote,
-            liminar: snapProf.liminar
-        });
-    }
-
-    // 💰 Calcular comissões
-    const commissionResults = await Promise.all(
-        lista.map(async (p) => {
-            try {
-                const comm = await calculateDoctorCommission(p.id, start, end);
-                return {
-                    id: p.id,
-                    comissao: {
-                        total: parseFloat(comm.totalCommission.toFixed(2)),
-                        sessoes: comm.totalSessions,
-                        breakdown: comm.breakdown
-                    }
-                };
-            } catch (err) {
-                return {
-                    id: p.id,
-                    comissao: { total: 0, sessoes: 0, breakdown: null }
-                };
-            }
-        })
-    );
-    const commissionMap = new Map(commissionResults.map(c => [c.id, c.comissao]));
-
-    const mediaProducao = lista.length > 0 ? lista.reduce((s, p) => s + p.producao, 0) / lista.length : 0;
-
-    lista = lista.map(p => {
-        const comissaoTotal = commissionMap.get(p.id)?.total || 0;
-        const lucro = parseFloat((p.producao - comissaoTotal).toFixed(2));
-        const margem = p.producao > 0 ? parseFloat(((lucro / p.producao) * 100).toFixed(1)) : 0;
-        return {
-            ...p,
-            comissao: commissionMap.get(p.id) || { total: 0, sessoes: 0, breakdown: null },
-            lucro,
-            margem,
-            ticketMedio: p.quantidade > 0 ? parseFloat((p.producao / p.quantidade).toFixed(2)) : 0,
-            eficiencia: p.producao > 0 ? parseFloat(((p.realizado / p.producao) * 100).toFixed(1)) : 0,
-            produtividade: mediaProducao > 0 ? parseFloat(((p.producao / mediaProducao) * 100).toFixed(1)) : 100
-        };
-    });
-
-    const rankingPorRealizado = [...lista].sort((a, b) => b.realizado - a.realizado);
-    const rankingPorProducao = [...lista].sort((a, b) => b.producao - a.producao);
-    const rankingPorLucro = [...lista].sort((a, b) => b.lucro - a.lucro);
-
-    return {
-        lista,
-        ranking: rankingPorRealizado.slice(0, 10),
-        rankingPorProducao: rankingPorProducao.slice(0, 10),
-        rankingPorLucro: rankingPorLucro.slice(0, 10),
-        mediaProducao: parseFloat(mediaProducao.toFixed(2)),
-        totalProfissionais: lista.length
-    };
-}
-
-/**
  * 🧠 Gera insights e recomendações operacionais
  */
 function generateInsights(data, metas, profissionais) {
@@ -1924,7 +1689,9 @@ async function calculateDespesas(year, month) {
 /**
  * 📊 Comparativos: mês atual vs mês anterior
  *
- * Regra arquitetural: usa snapshot quando disponível; fallback para runtime.
+ * Regra arquitetural: receita sempre ao vivo (unifiedFinancialService —
+ * ver nota 2026-09-11 acima sobre remoção do atalho de FinancialDailySnapshot);
+ * despesas usam snapshot quando disponível, fallback para runtime.
  */
 async function calculateComparativos(year, month, preComputed = {}) {
     const prevMonth = month === 1 ? 12 : month - 1;
@@ -1935,15 +1702,10 @@ async function calculateComparativos(year, month, preComputed = {}) {
         return parseFloat((((atual - anterior) / anterior) * 100).toFixed(1));
     };
 
-    // Mês anterior — checks em paralelo, depois fetches em paralelo
-    const [prevSnapReady, prevExpReady] = await Promise.all([
-        financialSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth),
-        financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth),
-    ]);
+    // Mês anterior
+    const prevExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
     const [prevFinancial, prevExpData] = await Promise.all([
-        prevSnapReady
-            ? financialSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
-            : calculateRealTime(prevYear, prevMonth),
+        calculateRealTime(prevYear, prevMonth),
         prevExpReady
             ? financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
             : calculateDespesas(prevYear, prevMonth),
@@ -1962,15 +1724,10 @@ async function calculateComparativos(year, month, preComputed = {}) {
         currentProducao = preComputed.currentRealTime.producao;
         currentDespesas = preComputed.currentDespesas?.total || 0;
     } else if (!isCurrentMonth) {
-        // Mês passado — checks em paralelo, depois fetches em paralelo
-        const [currentSnapReady, currentExpReady] = await Promise.all([
-            financialSnapshotService.isMonthlySnapshotReady(year, month),
-            financialExpenseSnapshotService.isMonthlySnapshotReady(year, month),
-        ]);
+        // Mês passado
+        const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
         const [currFinancial, currExpData] = await Promise.all([
-            currentSnapReady
-                ? financialSnapshotService.getMonthlyAggregate(year, month)
-                : calculateRealTime(year, month),
+            calculateRealTime(year, month),
             currentExpReady
                 ? financialExpenseSnapshotService.getMonthlyAggregate(year, month)
                 : calculateDespesas(year, month),
