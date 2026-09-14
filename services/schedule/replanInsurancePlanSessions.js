@@ -36,6 +36,7 @@ import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.j
 import { getHolidaysWithNames } from '../../config/feriadosBR-dynamic.js';
 import { buildInsuranceSession } from '../../domain/session/sessionFactory.js';
 import { checkSlotConflicts } from './generateInsurancePlanSessions.js';
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../../constants/appointmentStatus.js';
 import { executeWithSession as bulkCancelAppointments } from '../appointment/commands/bulkCancelAppointmentsCommand.js';
 import { executeWithSession as restoreCanceledAppointment } from '../appointment/commands/restoreCanceledAppointmentCommand.js';
 import { isPaymentFinanciallyReversible } from '../../domain/payment/isPaymentFinanciallyReversible.js';
@@ -157,8 +158,17 @@ export async function replanInsurancePlanSessions({
   // ── 1. Carrega TODOS os registros ligados ao plano/guia, qualquer status ──
   // (fonte de verdade é o relacionamento, não o cache generatedAppointments)
   const allAppointments = await Appointment.find({
-    $or: [{ insurancePlan: plan._id }, { insuranceGuide: guide._id }]
+    $or: [{ insurancePlan: plan._id }, { insuranceGuide: guide._id }],
+    serviceType: { $ne: 'evaluation' }
   }).session(mongoSession).lean();
+
+  // A avaliação tem data e valor próprios; nunca entra no pool do plano.
+  const evaluations = await Appointment.find({
+    patient: plan.patient,
+    insuranceGuide: guide._id,
+    serviceType: 'evaluation',
+    operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+  }).session(mongoSession).select('date time').lean();
 
   const completedAppts = allAppointments.filter(a => a.operationalStatus === 'completed');
   const frozenAppts = allAppointments.filter(a => FROZEN_STATUSES.includes(a.operationalStatus));
@@ -186,6 +196,7 @@ export async function replanInsurancePlanSessions({
   // ── 4. Série cronológica exata esperada (pula datas já ocupadas por
   // completed/frozen — ver comentário de buildExpectedSeries) ────────────
   const occupiedKeys = new Set([
+    ...evaluations.map(a => slotKeyOf(dateStrOf(a.date), a.time)),
     ...completedAppts.map(a => slotKeyOf(dateStrOf(a.date), a.time)),
     ...frozenAppts.map(a => slotKeyOf(dateStrOf(a.date), a.time))
   ]);

@@ -49,6 +49,7 @@ function releaseGenerateSessionsLock(planId) {
 async function getGuideRemainingCapacity(guideId, guideTotals, mongoSession) {
   const query = Appointment.countDocuments({
     insuranceGuide: guideId,
+    serviceType: { $ne: 'evaluation' },
     operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
   });
   if (mongoSession) query.session(mongoSession);
@@ -458,6 +459,7 @@ router.post('/:id/replan-preview', auth, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const futureNonCompleted = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
+      serviceType: { $ne: 'evaluation' },
       date: { $gte: today },
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
     }).select('_id date').sort({ date: 1 }).lean();
@@ -468,6 +470,7 @@ router.post('/:id/replan-preview', auth, async (req, res) => {
     // exatamente os appointments que este replanejamento cancelaria.
     const reservedCountAfterCancel = await Appointment.countDocuments({
       insuranceGuide: guide._id,
+      serviceType: { $ne: 'evaluation' },
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
       _id: { $nin: idsToCancel }
     });
@@ -532,6 +535,7 @@ router.patch('/:id', auth, async (req, res) => {
     // 'confirmed' incluído: PATCH de sessionValue/doctor deve propagar mesmo após confirmação
     const affected = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
+      serviceType: { $ne: 'evaluation' },
       date: { $gte: today },
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
     }).select('_id date time patient').session(session).lean();
@@ -974,6 +978,7 @@ router.delete('/:id', auth, async (req, res) => {
     // o plano).
     const appointmentsToCancel = await Appointment.find({
       _id: { $in: plan.generatedAppointments },
+      serviceType: { $ne: 'evaluation' },
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] },
       date: { $gte: today }
     }).session(session).select('_id');
@@ -1077,6 +1082,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     // não pelo cache generatedAppointments, que pode ficar inconsistente.
     const futureAppointments = await Appointment.find({
       insurancePlan: plan._id,
+      serviceType: { $ne: 'evaluation' },
       date: { $gte: today },
       operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
     }).session(session).select('date time').lean();
@@ -1264,6 +1270,7 @@ router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const pastAppointments = await Appointment.find({
       insurancePlan: plan._id,
+      serviceType: { $ne: 'evaluation' },
       date: { $lt: today },
       operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
     }).select('_id').lean();

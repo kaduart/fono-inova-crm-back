@@ -22,6 +22,7 @@ import { replaceInsuranceGuideService } from '../services/replaceInsuranceGuideS
 import { buildGuideResponse } from '../services/guideLifecycle/guideResponseBuilder.js';
 import { insurancePaymentCreationService } from '../domains/billing/services/InsurancePaymentCreationService.js';
 import { moveAppointmentGuide } from '../services/insuranceGuide/moveAppointmentGuide.js';
+import { updateGuideEvaluation } from '../services/insuranceGuide/updateGuideEvaluation.js';
 
 const router = express.Router();
 
@@ -555,6 +556,7 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
+    await updateGuideEvaluation(guide, req.body, req.user);
     await guide.save();
 
     // Se foi adicionada avaliação, ainda não existe sessão de avaliação e deve gerar cobrança
@@ -663,7 +665,7 @@ router.put('/:id', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao atualizar:', error);
-    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message, correlationId });
+    return res.status(error.statusCode || 500).json({ success: false, errorCode: error.code || 'INTERNAL_ERROR', message: error.message, correlationId });
   }
 });
 

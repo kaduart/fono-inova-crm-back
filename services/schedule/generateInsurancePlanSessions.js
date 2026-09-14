@@ -196,6 +196,7 @@ export async function generateInsurancePlanSessions({
   // autorizadas (scheduledCount > totalSessions), sem nenhum aviso.
   const reservedCount = await Appointment.countDocuments({
     insuranceGuide: guide._id,
+    serviceType: { $ne: 'evaluation' },
     operationalStatus: { $in: ['scheduled', 'pre_agendado', 'confirmed'] }
   }).session(mongoSession);
   const remaining = Math.max(0, (guide.totalSessions - guide.usedSessions) - reservedCount);
@@ -250,6 +251,14 @@ export async function generateInsurancePlanSessions({
   const orderedSlots = [...(Array.isArray(plan.slots) ? plan.slots : [])]
     .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
 
+  const evaluations = await Appointment.find({
+    patient: plan.patient,
+    insuranceGuide: guide._id,
+    serviceType: 'evaluation',
+    operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
+  }).session(mongoSession).select('date time').lean();
+  const evaluationSlots = new Set(evaluations.map(a => `${new Date(a.date).toISOString().substring(0, 10)}T${a.time}`));
+
   for (let w = 0; w < weeksNeeded && sessionsCreated < remaining; w++) {
     const currentWeekSunday = addDays(weekStart, w * 7);
 
@@ -264,6 +273,7 @@ export async function generateInsurancePlanSessions({
 
       // Pula feriados
       if (holidays.has(dateStr)) continue;
+      if (evaluationSlots.has(`${dateStr}T${slot.time}`)) continue;
 
       slots.push({
         dateStr,
@@ -294,6 +304,7 @@ export async function generateInsurancePlanSessions({
       filter: {
         patient: plan.patient,
         insurancePlan: plan._id,
+        serviceType: { $ne: 'evaluation' },
         date: {
           $gte: new Date(slot.dateStr + 'T00:00:00.000Z'),
           $lt: new Date(slot.dateStr + 'T23:59:59.999Z')
@@ -347,6 +358,7 @@ export async function generateInsurancePlanSessions({
   const createdAppointments = await Appointment.find({
     patient: plan.patient,
     insurancePlan: plan._id,
+    serviceType: { $ne: 'evaluation' },
     operationalStatus: { $in: ['scheduled', 'pre_agendado'] }
   }).session(mongoSession).lean();
 

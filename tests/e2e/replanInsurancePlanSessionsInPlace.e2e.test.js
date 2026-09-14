@@ -272,6 +272,69 @@ describe('isPaymentFinanciallyReversible — predicate canônico', () => {
 
 // ─── REPLAN IN-PLACE ───────────────────────────────────────────────────────────
 describe('replanInsurancePlanSessions — in-place', () => {
+  it('editar guia atualiza a avaliação existente, sessão e pagamento sem duplicar', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('editar-avaliacao');
+    const date = nextWeekday(2);
+    const { guide, plan } = await seedGuideAndPlan({ patient, doctor, totalSessions: 3, startDate: date, slots: [{ dayOfWeek: 2, time: '14:00' }] });
+    const trio = await seedAppointmentTrio({ patient, doctor, guide, plan, date, time: '14:00', operationalStatus: 'scheduled' });
+    await Appointment.collection.updateOne({ _id: trio.appointment._id }, { $set: { serviceType: 'evaluation', insurancePlan: null } });
+    await InsuranceGuide.collection.updateOne({ _id: guide._id }, { $set: { evaluationSessionId: trio.session._id, evaluationAmount: 80 } });
+    const guideDoc = await InsuranceGuide.findById(guide._id);
+    guideDoc.evaluationAmount = 250;
+    const newDate = addDays(date, 1).toISOString().substring(0, 10);
+    const { updateGuideEvaluation } = await import('../../services/insuranceGuide/updateGuideEvaluation.js');
+    await updateGuideEvaluation(guideDoc, { evaluationAmount: 250, evaluationDate: newDate, evaluationTime: '16:00' }, { _id: doctor._id });
+    const appointment = await Appointment.findById(trio.appointment._id).lean();
+    expect(appointment.date.toISOString().substring(0, 10)).toBe(newDate);
+    expect(appointment.time).toBe('16:00');
+    expect(appointment.sessionValue).toBe(250);
+    expect(appointment.billingType).toBe('convenio');
+    expect((await Session.findById(trio.session._id).lean()).date).toEqual(appointment.date);
+    expect((await Session.findById(trio.session._id).lean()).time).toBe('16:00');
+    expect((await Payment.findById(trio.payment._id).lean()).insurance.grossAmount).toBe(250);
+    expect((await Payment.findById(trio.payment._id).lean()).serviceDate).toEqual(appointment.date);
+    expect(await Appointment.countDocuments({ insuranceGuide: guide._id })).toBe(1);
+    const { buildGuideResponse } = await import('../../services/guideLifecycle/guideResponseBuilder.js');
+    const response = await buildGuideResponse(await InsuranceGuide.findById(guide._id).lean());
+    expect(response.guide.evaluationAppointment.date).toEqual(appointment.date);
+    expect(response.guide.evaluationAppointment.time).toBe('16:00');
+  }, 30_000);
+
+  it('preserva avaliação vinculada por engano ao plano e gera a quantidade completa de sessões', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('avaliacao');
+    const startDate = nextWeekday(2);
+    const { guide, plan } = await seedGuideAndPlan({ patient, doctor, totalSessions: 3, startDate, slots: [{ dayOfWeek: 2, time: '14:00' }] });
+    const trio = await seedAppointmentTrio({ patient, doctor, guide, plan, date: startDate, time: '14:00', operationalStatus: 'scheduled' });
+    await Appointment.collection.updateOne({ _id: trio.appointment._id }, { $set: { serviceType: 'evaluation', sessionValue: 250, insuranceValue: 250 } });
+    await Session.collection.updateOne({ _id: trio.session._id }, { $set: { serviceType: 'evaluation', sessionValue: 250 } });
+    await Payment.collection.updateOne({ _id: trio.payment._id }, { $set: { 'insurance.grossAmount': 250 } });
+    const before = await Appointment.findById(trio.appointment._id).lean();
+
+    for (let pass = 0; pass < 2; pass++) {
+      await withTransaction(session => replanInsurancePlanSessions({ planId: plan._id, guideId: guide._id, mongoSession: session }));
+      const after = await Appointment.findById(trio.appointment._id).lean();
+      expect(after.date).toEqual(before.date);
+      expect(after.time).toBe('14:00');
+      expect(after.sessionValue).toBe(250);
+      expect(after.insuranceValue).toBe(250);
+      expect((await Session.findById(trio.session._id).lean()).sessionValue).toBe(250);
+      expect((await Payment.findById(trio.payment._id).lean()).insurance.grossAmount).toBe(250);
+      expect(await Appointment.countDocuments({ insuranceGuide: guide._id, serviceType: 'session', operationalStatus: { $ne: 'canceled' } })).toBe(3);
+      const savedPlan = await InsurancePlan.findById(plan._id).lean();
+      expect(savedPlan.generatedAppointments.map(String)).not.toContain(String(trio.appointment._id));
+    }
+  }, 30_000);
+
+  it('geração incremental não desconta nem altera a avaliação do total autorizado', async () => {
+    const { patient, doctor } = await seedPatientAndDoctor('avaliacao-geracao');
+    const startDate = nextWeekday(2);
+    const { guide, plan } = await seedGuideAndPlan({ patient, doctor, totalSessions: 3, startDate, slots: [{ dayOfWeek: 2, time: '14:00' }] });
+    const trio = await seedAppointmentTrio({ patient, doctor, guide, plan, date: startDate, time: '14:00', operationalStatus: 'scheduled' });
+    await Appointment.collection.updateOne({ _id: trio.appointment._id }, { $set: { serviceType: 'evaluation', sessionValue: 250 } });
+    await withTransaction(session => generateInsurancePlanSessions({ planId: plan._id, guideId: guide._id, mongoSession: session }));
+    expect(await Appointment.countDocuments({ insuranceGuide: guide._id, serviceType: 'session' })).toBe(3);
+    expect((await Appointment.findById(trio.appointment._id).lean()).sessionValue).toBe(250);
+  }, 30_000);
   it('buraco retroativo desde startDate: cria as datas passadas faltantes (allowPastGeneration=true)', async () => {
     const { patient, doctor } = await seedPatientAndDoctor('retroativo');
     // startDate 3 semanas atrás, 1x/semana (segunda) — simula o caso Ícaro
@@ -423,6 +486,7 @@ describe('replanInsurancePlanSessions — in-place', () => {
       paymentMethod: 'convenio',
       billingType: 'convenio',
       status: 'billed',
+      paymentRole: 'balance', // O índice atual proíbe duas cobranças standard ativas.
       insurance: { provider: guide.insurance, status: 'billed', billedAt: new Date(), grossAmount: 80 },
       insuranceGuide: guide._id,
       insurancePlan: plan._id,

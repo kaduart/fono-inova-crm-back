@@ -1,5 +1,6 @@
 // services/guideLifecycle/guideResponseBuilder.js
 import { GuideLifecycleService } from './GuideLifecycleService.js';
+import Appointment from '../../models/Appointment.js';
 
 /**
  * Constrói o objeto de resposta padrão { guide, lifecycle }.
@@ -15,6 +16,9 @@ import { GuideLifecycleService } from './GuideLifecycleService.js';
 export async function buildGuideResponse(rawGuide, convenio = null, today = new Date()) {
   const guidePolicy = convenio?.guidePolicy || null;
   const defaultSessions = convenio?.defaultSessions || null;
+  const evaluationAppointment = rawGuide.evaluationSessionId
+    ? await Appointment.findOne({ session: rawGuide.evaluationSessionId, insuranceGuide: rawGuide._id, serviceType: 'evaluation' }).select('_id date time operationalStatus').lean()
+    : null;
 
   const guide = {
     _id: rawGuide._id.toString(),
@@ -31,6 +35,7 @@ export async function buildGuideResponse(rawGuide, convenio = null, today = new 
     evaluationAmount: rawGuide.evaluationAmount ?? null,
     generateEvaluationBilling: rawGuide.generateEvaluationBilling ?? true,
     evaluationSessionId: rawGuide.evaluationSessionId?.toString?.() || null,
+    evaluationAppointment,
     totalValue: (rawGuide.sessionValue != null && rawGuide.totalSessions) ? rawGuide.sessionValue * rawGuide.totalSessions : null,
     doctor: rawGuide.doctorId ? { _id: rawGuide.doctorId._id?.toString(), fullName: rawGuide.doctorId.fullName } : null,
     issuedAt: rawGuide.issuedAt || null,
