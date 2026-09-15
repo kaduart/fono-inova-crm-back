@@ -5,6 +5,7 @@
  * usando o padrão event-driven (event-store + outbox)
  */
 import express from 'express';
+import { getPatientPackageNumbers } from '../services/liminar/patientPackageNumbers.js';
 import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
@@ -753,8 +754,11 @@ router.get('/:id/appointments', auth, async (req, res) => {
       : { insuranceGuide: guideObjId };
 
     let appointments = await Appointment.find(query)
-      .select('date time status operationalStatus serviceType sessionType specialty notes doctor professionalName createdAt rescheduledFrom cancelReason')
+      .select('date time status operationalStatus serviceType sessionType specialty notes doctor professionalName createdAt rescheduledFrom cancelReason insuranceGuide package patient sessionValue insuranceValue insuranceProvider paymentMethod billingType duration')
       .populate('doctor', 'fullName')
+      .populate('patient', 'fullName')
+      .populate('insuranceGuide', 'number')
+      .populate({ path: 'package', select: 'insuranceGuide', populate: { path: 'insuranceGuide', select: 'number' } })
       .sort({ date: -1 })
       .lean();
 
@@ -771,17 +775,27 @@ router.get('/:id/appointments', auth, async (req, res) => {
       if (legacyPackages.length > 0) {
         const legacyPackageIds = legacyPackages.map(p => p._id);
         appointments = await Appointment.find({ package: { $in: legacyPackageIds } })
-          .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom')
+          .select('date time status operationalStatus serviceType sessionType notes doctor professionalName createdAt rescheduledFrom insuranceGuide package patient sessionValue insuranceValue insuranceProvider paymentMethod billingType duration')
           .populate('doctor', 'fullName')
+          .populate('patient', 'fullName')
+          .populate('insuranceGuide', 'number')
+          .populate({ path: 'package', select: 'insuranceGuide', populate: { path: 'insuranceGuide', select: 'number' } })
           .sort({ date: -1 })
           .lean();
         if (appointments.length > 0) isLegacyFallback = true;
       }
     }
 
+    const packageNumbers = await getPatientPackageNumbers(guide.patientId);
     return res.json({
       success: true,
-      data: { appointments, total: appointments.length, isLegacyFallback },
+      data: { appointments: appointments.map(appointment => {
+        const linkedGuide = appointment.insuranceGuide || appointment.package?.insuranceGuide;
+        return { ...appointment, package: appointment.package?._id || appointment.package || null,
+          packageNumber: packageNumbers.get(String(appointment.package?._id || appointment.package)) || null,
+          insuranceGuide: linkedGuide?._id || linkedGuide || null,
+          insuranceGuideNumber: linkedGuide?.number || null };
+      }), total: appointments.length, isLegacyFallback },
       meta: { version: '2.0' }
     });
 

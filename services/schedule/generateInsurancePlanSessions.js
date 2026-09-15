@@ -383,11 +383,18 @@ export async function generateInsurancePlanSessions({
   // 🛡️ PR-A: Payment de convênio deve nascer com session preenchida.
   // Criar Payment sem session e depois linkar expõe uma janela onde dois
   // processos paralelos podem inserir payments duplicados para a mesma sessão.
+  // 🚨 FIX (2026-09-15): o campo no schema de Session é `appointmentId`, nunca
+  // existiu `appointment` — esta query sempre voltava vazia, então TODA
+  // chamada desta função (replan, edição de plano, "Gerar sessões" de novo)
+  // achava que nenhum appointment tinha session e recriava do zero, deixando
+  // a session anterior órfã (Appointment.session repontava pra nova, a antiga
+  // ficava "scheduled" pra sempre e podia acusar conflito de agenda falso —
+  // achado real: 30 sessions órfãs, 6 pacientes, auditoria 2026-09-15).
   const existingSessions = await Session.find(
-    { appointment: { $in: createdAppointments.map(a => a._id) } },
-    { appointment: 1 }
+    { appointmentId: { $in: createdAppointments.map(a => a._id) } },
+    { appointmentId: 1 }
   ).session(mongoSession).lean();
-  const existingSessionApptIds = new Set(existingSessions.map(s => s.appointment?.toString()));
+  const existingSessionApptIds = new Set(existingSessions.map(s => s.appointmentId?.toString()));
 
   const appointmentsNeedingSession = createdAppointments.filter(
     a => !existingSessionApptIds.has(a._id.toString())
