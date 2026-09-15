@@ -1113,7 +1113,12 @@ router.patch('/:id', auth, async (req, res) => {
                 financialDate: updateData.financialDate,
                 paidAt: updateData.paidAt,
                 userId: req.user?._id,
-                reason: 'admin_manual_patch'
+                reason: 'admin_manual_patch',
+                // 🏦 Esta é a tela genérica de editar pagamento — não passa por
+                // register-debit/multi/pacote, que já se conciliam sozinhos.
+                // Sem isso, marcar aqui como paid nunca baixa o débito de
+                // "sessão fiada" correspondente no PatientBalance.
+                reconcilePatientBalance: true
             });
             // Remove status do updateData pois já foi tratado pelo serviço
             delete updateData.status;

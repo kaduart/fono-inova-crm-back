@@ -127,7 +127,13 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         const { patientId } = req.params;
         const { amount, description, sessionId, appointmentId } = req.body;
 
-        // 🛡️ VALIDAÇÃO (fail fast)
+        // 🛡️ VALIDAÇÃO (fail fast) — valida ANTES de publicar o evento. Um
+        // débito sem description passava batido até aqui e só quebrava horas/
+        // dias depois, quando outro fluxo desse .save() no PatientBalance
+        // inteiro (achado 2026-09-15, caso Julia Boarati — 5 lançamentos
+        // órfãos sem description travando criação de pacote sem relação
+        // nenhuma com eles). description é required no schema; falhar aqui é
+        // mais barato que descobrir isso depois via evento assíncrono.
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
             return res.status(400).json({
                 success: false,
@@ -139,6 +145,29 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             return res.status(400).json({
                 success: false,
                 error: 'Valor deve ser maior que zero'
+            });
+        }
+
+        if (typeof description !== 'string' || description.trim().length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Descrição é obrigatória',
+                code: 'MISSING_DESCRIPTION'
+            });
+        }
+
+        // 🛡️ IDEMPOTÊNCIA: appointmentId obrigatório aqui. A chave de idempotência
+        // do evento precisa ser DETERMINÍSTICA (mesmo patient+appointment sempre
+        // gera a mesma chave, mesmo em retry) — nunca Date.now()/random, senão
+        // um retry de rede ou duplo-clique publica dois eventos "diferentes" pro
+        // mesmo débito. "1 appointment = 1 débito" já é a regra de negócio
+        // (ver PatientBalance.addDebit()); débito manual sem appointment não tem
+        // chave natural, então não é aceito por esta rota.
+        if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'appointmentId é obrigatório e precisa ser válido — débito sem vínculo de agendamento não pode ser criado por esta rota',
+                code: 'MISSING_APPOINTMENT_ID'
             });
         }
 
@@ -158,8 +187,14 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             });
         }
 
-        // Publica evento para processamento async
-        const correlationId = `balance_debit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Publica evento para processamento async.
+        // 🛡️ IDEMPOTÊNCIA CANÔNICA: idempotencyKey DETERMINÍSTICO (patient+appointment,
+        // nunca Date.now()/random) — publishEvent() já checa `eventExists(idempotencyKey)`
+        // antes de enfileirar (ver infrastructure/events/eventPublisher.js) e descarta
+        // duplicata na origem. Um retry de rede ou duplo-clique gera a MESMA chave e é
+        // ignorado aqui, antes de chegar no worker.
+        const idempotencyKey = `balance_debit_${resolvedPatientId}_${appointmentId}`;
+        const correlationId = idempotencyKey;
         const eventResult = await publishEvent(
             EventTypes.BALANCE_DEBIT_REQUESTED,
             {
@@ -174,6 +209,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             },
             {
                 correlationId,
+                idempotencyKey,
                 aggregateType: 'balance',
                 aggregateId: resolvedPatientId,
                 metadata: {

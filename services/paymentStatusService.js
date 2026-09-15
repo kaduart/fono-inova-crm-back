@@ -18,6 +18,7 @@
  */
 
 import Payment from '../models/Payment.js';
+import PatientBalance from '../models/PatientBalance.js';
 import FinancialLedger from '../models/FinancialLedger.js';
 import Outbox from '../infrastructure/outbox/OutboxModel.js';
 import { EventTypes } from '../infrastructure/events/eventPublisher.js';
@@ -32,6 +33,8 @@ import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 
 const TIMEZONE = 'America/Sao_Paulo';
+
+const roundCurrency = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
 export class PaymentBatchTransitionError extends Error {
     constructor(code, message, details = undefined) {
@@ -366,6 +369,141 @@ async function reverseActiveCreditIfAny(payment, { mongoSession, userId, reason,
     }
 }
 
+/**
+ * 🏦 Concilia o débito de "sessão fiada" no PatientBalance quando um Payment
+ * particular avulso transiciona pra 'paid' FORA de um fluxo dedicado
+ * (pacote/incorporatePackagePayments, register-debit, multi) — esses já se
+ * conciliam sozinhos. Achado real de produção: Payment marcado 'paid' pela
+ * tela financeira genérica (PATCH /:id) nunca tocava o PatientBalance — o
+ * débito ficava aberto pra sempre mesmo com o dinheiro já recebido (caso
+ * Julia Boarati, 3 sessões pagas sem baixa, 2026-09-15).
+ *
+ * Escrita atômica por `transactions._id` + `isPaid:{$ne:true}` (compare-and-
+ * swap): nunca dá `.save()` no documento inteiro, então nunca é bloqueada
+ * por lançamentos antigos quebrados no mesmo array, e uma segunda chamada
+ * concorrente/retry pro MESMO débito já totalmente pago encontra
+ * `matchedCount 0` e vira no-op — sem duplicar crédito.
+ *
+ * Não decide nada sozinho quando a correspondência é ambígua: só concilia
+ * quando existe exatamente 1 débito em aberto com o mesmo `appointmentId`
+ * do Payment. Mais de um candidato (ex: dado legado duplicado) fica de fora
+ * e loga aviso — não escolhe por coincidência de valor nem de patientId.
+ */
+// exportado só pra teste unitário direto (evita acoplar ao pre-save hook do
+// model Payment, que tem guardas não relacionadas — ex: isFromPackage nunca
+// pode ter financialDate, e transitionPaymentStatus seta financialDate
+// incondicionalmente ao entrar em 'paid')
+export async function reconcilePatientBalanceDebit(payment, { mongoSession, userId, reason } = {}) {
+    if (payment.billingType !== 'particular') return { reconciled: false, why: 'not_particular' };
+    if (payment.isFromPackage || payment.kind === 'package_consumed') return { reconciled: false, why: 'package_payment_handled_elsewhere' };
+    if (!payment.appointment) return { reconciled: false, why: 'no_appointment_link' };
+
+    const balanceQuery = PatientBalance.findOne({ patient: payment.patient });
+    if (mongoSession) balanceQuery.session(mongoSession);
+    const balance = await balanceQuery.lean();
+    if (!balance) return { reconciled: false, why: 'no_balance_document' };
+
+    const byAppointment = (balance.transactions || []).filter(t =>
+        t.type === 'debit' &&
+        !t.isPaid &&
+        !t.isDeleted &&
+        t.appointmentId && String(t.appointmentId) === String(payment.appointment)
+    );
+
+    // Vínculo mais específico primeiro: se o Payment tem session e algum
+    // candidato bate por appointmentId+sessionId, prefere esse subconjunto —
+    // relevante em sinal+saldo (2 Payments pro mesmo appointment, ADR
+    // FINANCIAL_SOURCE_OF_TRUTH.md#sinal--saldo) e em qualquer cenário com
+    // mais de um débito aberto no mesmo appointment: sessionId desempata.
+    // Sem session no Payment, ou sem nenhum candidato batendo por session
+    // também, cai pro match só por appointmentId (comportamento original).
+    let candidates = byAppointment;
+    if (payment.session) {
+        const bySession = byAppointment.filter(t => t.sessionId && String(t.sessionId) === String(payment.session));
+        if (bySession.length > 0) candidates = bySession;
+    }
+
+    if (candidates.length === 0) return { reconciled: false, why: 'no_matching_debit' };
+    if (candidates.length > 1) {
+        console.warn(`[PaymentStatusService] ⚠️ ${candidates.length} débitos em aberto pro mesmo appointment ${payment.appointment} no PatientBalance ${balance._id} — conciliação automática pulada, requer revisão manual.`);
+        return { reconciled: false, why: 'ambiguous_multiple_debits', candidateIds: candidates.map(c => String(c._id)) };
+    }
+
+    const debit = candidates[0];
+    const debitAmount = roundCurrency(debit.amount);
+    const remainingOnDebit = roundCurrency(debitAmount - Number(debit.paidAmount || 0));
+    if (remainingOnDebit <= 0) return { reconciled: false, why: 'debit_already_covered' };
+
+    const settleAmount = roundCurrency(Math.min(remainingOnDebit, Number(payment.amount || 0)));
+    if (settleAmount <= 0) return { reconciled: false, why: 'nothing_to_settle' };
+
+    const newPaidAmount = roundCurrency(Number(debit.paidAmount || 0) + settleAmount);
+    const willBeFullyPaid = newPaidAmount >= debitAmount - 0.009;
+    const correlationId = `pb_reconcile_payment_${payment._id}`;
+
+    const updateOptions = { runValidators: true, context: 'query' };
+    if (mongoSession) updateOptions.session = mongoSession;
+
+    // MongoDB não permite `$set` posicional e `$push` no MESMO array path
+    // (`transactions`) numa única operação ("conflict at 'transactions'").
+    // Por isso são duas escritas atômicas sequenciais, não uma. A PRIMEIRA é
+    // o compare-and-swap que garante idempotência (`isPaid:{$ne:true}` no
+    // filtro) — se ela não casar (matchedCount 0), a segunda nunca roda e
+    // nada é duplicado. Dentro de uma transação (mongoSession), as duas
+    // commitam/abortam juntas com o resto da operação do caller.
+    // 🐛 `{'transactions._id': X, 'transactions.isPaid': {$ne:true}}` NÃO
+    // escopa as duas condições no MESMO elemento do array — `$ne` num campo
+    // multikey significa "nenhum elemento do array tem esse valor", não "o
+    // elemento encontrado não tem esse valor". Com 2+ débitos no array, isso
+    // trava a quitação de qualquer um depois que outro já foi marcado pago
+    // (achado por teste, ver tests/integration/package-prepaid-settle-balance.test.js).
+    // `$elemMatch` escopa corretamente as duas condições no mesmo elemento.
+    const flipResult = await PatientBalance.updateOne(
+        {
+            _id: balance._id,
+            transactions: { $elemMatch: { _id: debit._id, isPaid: { $ne: true } } }
+        },
+        {
+            $set: {
+                'transactions.$.isPaid': willBeFullyPaid,
+                'transactions.$.paidAmount': newPaidAmount
+            }
+        },
+        updateOptions
+    );
+
+    if (flipResult.matchedCount === 0) {
+        console.log(`[PaymentStatusService] Reconciliação de saldo: débito ${debit._id} já quitado por outra chamada (idempotente, no-op)`);
+        return { reconciled: false, why: 'already_settled_race' };
+    }
+
+    await PatientBalance.updateOne(
+        { _id: balance._id },
+        {
+            $push: {
+                transactions: {
+                    type: 'credit',
+                    amount: settleAmount,
+                    description: `Quitação automática — Payment ${payment._id} marcado pago (${reason || 'transitionPaymentStatus'})`,
+                    appointmentId: payment.appointment,
+                    sessionId: payment.session || debit.sessionId || null,
+                    specialty: debit.specialty || null,
+                    linkedDebitId: debit._id,
+                    correlationId,
+                    registeredBy: userId || null,
+                    transactionDate: new Date()
+                }
+            },
+            $inc: { currentBalance: -settleAmount, totalCredited: settleAmount },
+            $set: { lastTransactionAt: new Date() }
+        },
+        updateOptions
+    );
+
+    console.log(`[PaymentStatusService] 🏦 PatientBalance reconciliado: débito ${debit._id} (appointment ${payment.appointment}) -R$${settleAmount} via Payment ${payment._id}`);
+    return { reconciled: true, debitId: debit._id, settleAmount, fullyPaid: willBeFullyPaid };
+}
+
 export async function transitionPaymentStatus(paymentId, newStatus, options = {}) {
     const {
         financialDate,
@@ -374,7 +512,12 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         userId,
         reason = 'manual',
         session: externalSession,
-        silent = false
+        silent = false,
+        // 🏦 Opt-in explícito: concilia débito órfão no PatientBalance ao entrar
+        // em 'paid'. Default false pra não afetar os ~20 call sites existentes
+        // deste serviço — só quem sabe que está FORA de um fluxo dedicado de
+        // quitação (hoje: PATCH /api/v2/payments/:id) deve ligar isso.
+        reconcilePatientBalance = false
     } = options;
 
     // 1. Leitura inicial só pra decidir o caminho — early-return de "não
@@ -509,8 +652,24 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     if (!coreResult.changed) {
         return coreResult;
     }
-    const { payment } = coreResult;
+    const { payment, localOldStatus } = coreResult;
     const mongoSession = externalSession || null;
+
+    // 🏦 Concilia débito órfão no PatientBalance — só quando o caller pediu
+    // explicitamente (reconcilePatientBalance) e a transição é ENTRANDO em
+    // 'paid' (nunca ao sair, isso já é papel do reverseActiveCreditIfAny acima
+    // pro ledger — PatientBalance não precisa de reversão simétrica porque
+    // nunca chegou a debitar nada aqui, só creditar o que já era débito real).
+    if (reconcilePatientBalance && newStatus === 'paid' && localOldStatus !== 'paid') {
+        try {
+            await reconcilePatientBalanceDebit(payment, { mongoSession, userId, reason });
+        } catch (reconcileErr) {
+            console.error(`[PaymentStatusService] ⚠️ Falha ao conciliar PatientBalance: ${reconcileErr.message}`, { paymentId, reason });
+            // Dentro de transação: propaga pra abortar tudo junto — não deixa Payment
+            // marcado pago com a conciliação de saldo pela metade.
+            if (mongoSession) throw reconcileErr;
+        }
+    }
 
     // 5. Salva evento no Outbox (dentro da transação quando houver session)
     let event = null;

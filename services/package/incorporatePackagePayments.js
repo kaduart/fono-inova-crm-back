@@ -103,22 +103,38 @@ export async function incorporatePackagePayments(pkg, paymentIds, { mongoSession
       });
     }
 
-    // Atualiza PatientBalance (crédito de quitação)
-    const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
-    if (patientBalance && totalToSettle > 0) {
-      patientBalance.transactions.push({
-        type: 'credit',
-        amount: totalToSettle,
-        description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
-        specialty: pkg.sessionType,
-        settledByPackageId: pkg._id,
-        registeredBy: userId,
-        transactionDate: new Date()
-      });
-      patientBalance.currentBalance -= totalToSettle;
-      patientBalance.totalCredited += totalToSettle;
-      patientBalance.lastTransactionAt = new Date();
-      await patientBalance.save({ session: mongoSession });
+    // Atualiza PatientBalance (crédito de quitação) — updateOne atômico, NUNCA
+    // .save() do documento inteiro: .save() faz o Mongoose revalidar o array
+    // `transactions` inteiro (todo subdocumento, não só o novo), então um
+    // lançamento antigo quebrado (ex: sem `description`, dado legado) travava
+    // a criação de QUALQUER pacote novo pro paciente, mesmo sem relação
+    // nenhuma com a sessão sendo absorvida agora (achado 2026-09-15, caso
+    // Julia Boarati — ver back/docs/DOMAIN_INVARIANTS.md). `runValidators`
+    // mantém a validação — só que apenas da movimentação nova sendo escrita,
+    // não do histórico.
+    if (totalToSettle > 0) {
+      const patientBalanceExists = await PatientBalance.exists({ patient: patientId }).session(mongoSession);
+      if (patientBalanceExists) {
+        await PatientBalance.updateOne(
+          { patient: patientId },
+          {
+            $push: {
+              transactions: {
+                type: 'credit',
+                amount: totalToSettle,
+                description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
+                specialty: pkg.sessionType,
+                settledByPackageId: pkg._id,
+                registeredBy: userId,
+                transactionDate: new Date()
+              }
+            },
+            $inc: { currentBalance: -totalToSettle, totalCredited: totalToSettle },
+            $set: { lastTransactionAt: new Date() }
+          },
+          { session: mongoSession, runValidators: true, context: 'query' }
+        );
+      }
     }
 
     // Atualiza appointments vinculados
@@ -132,9 +148,14 @@ export async function incorporatePackagePayments(pkg, paymentIds, { mongoSession
 
     if (appointmentIds.length > 0) {
       for (const appointment of linkedAppointments) {
+        // 🐛 FIX: sem __fromFinancialGuard/__guardContext, o plugin
+        // financialSanitizer descarta silenciosamente paymentStatus/isPaid
+        // dessa escrita (achado por teste e2e — a sessão retroativa nunca
+        // ficava de fato "quitada" no Appointment, mesmo com Payment/Package
+        // corretos). Mesma flag que createAppointmentsBatch() já usa.
         await Appointment.updateOne({ _id: appointment._id }, {
           $set: applyFinancialProtection(appointment, { paymentStatus: 'paid', isPaid: true, package: pkg._id })
-        }, { session: mongoSession });
+        }, { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' });
       }
     }
 
@@ -146,7 +167,7 @@ export async function incorporatePackagePayments(pkg, paymentIds, { mongoSession
       await Session.updateMany(
         { _id: { $in: sessionIds } },
         { $set: { isPaid: true, paymentStatus: 'paid', package: pkg._id } },
-        { session: mongoSession }
+        { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
       );
     }
 

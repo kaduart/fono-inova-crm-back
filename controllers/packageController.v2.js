@@ -428,14 +428,38 @@ async function settlePendingDebitsForPrepaidPackage(pkg, totalPaid, mongoSession
   let remainingCredit = totalPaid;
   let settledAmount = 0;
   const settledDebitIds = [];
+  const newEntries = []; // débitos residuais + crédito final — um único $push no fim
+
+  // Mesma seleção/matemática de antes — só muda COMO é persistido. Cada
+  // débito é marcado via updateOne atômico por _id (nunca mais
+  // patientBalance.save() do documento inteiro: revalida o array inteiro e
+  // trava com lançamento legado quebrado sem relação com esta operação —
+  // ver ADR-019). runValidators mantém a validação da escrita nova.
+  const updateOptions = { runValidators: true, context: 'query' };
+  if (mongoSession) updateOptions.session = mongoSession;
 
   for (const debit of pendingDebits) {
     if (remainingCredit <= 0) break;
     const amountToSettle = Math.min(debit.amount, remainingCredit);
 
-    debit.settledByPackageId = pkg._id;
-    debit.isPaid = true;
-    debit.paidAmount = amountToSettle;
+    // $elemMatch escopa _id+isPaid no MESMO elemento — filtro solto
+    // ('transactions._id' + 'transactions.isPaid' como campos top-level
+    // separados) trava com 2+ débitos no array, pois $ne em campo multikey
+    // é "nenhum elemento do array tem esse valor", não "este elemento não
+    // tem esse valor" (achado por teste).
+    const flip = await PatientBalance.updateOne(
+      { _id: patientBalance._id, transactions: { $elemMatch: { _id: debit._id, isPaid: { $ne: true } } } },
+      {
+        $set: {
+          'transactions.$.isPaid': true,
+          'transactions.$.paidAmount': amountToSettle,
+          'transactions.$.settledByPackageId': pkg._id
+        }
+      },
+      updateOptions
+    );
+    if (flip.matchedCount === 0) continue; // já quitado por outra operação concorrente — não conta de novo
+
     settledAmount += amountToSettle;
     remainingCredit -= amountToSettle;
     settledDebitIds.push(debit._id);
@@ -443,7 +467,7 @@ async function settlePendingDebitsForPrepaidPackage(pkg, totalPaid, mongoSession
     // Se quitou parcialmente, ajusta o valor do débito e cria um novo débito residual
     if (amountToSettle < debit.amount) {
       const residualAmount = debit.amount - amountToSettle;
-      patientBalance.transactions.push({
+      newEntries.push({
         type: 'debit',
         amount: residualAmount,
         description: `Saldo residual não quitado pelo pacote #${pkg._id.toString().slice(-6)}`,
@@ -457,7 +481,7 @@ async function settlePendingDebitsForPrepaidPackage(pkg, totalPaid, mongoSession
   }
 
   if (settledAmount > 0) {
-    patientBalance.transactions.push({
+    newEntries.push({
       type: 'credit',
       amount: settledAmount,
       description: `Quitação via pacote pré-pago #${pkg._id.toString().slice(-6)}`,
@@ -466,11 +490,15 @@ async function settlePendingDebitsForPrepaidPackage(pkg, totalPaid, mongoSession
       transactionDate: new Date()
     });
 
-    patientBalance.currentBalance = Math.max(0, patientBalance.currentBalance - settledAmount);
-    patientBalance.totalCredited = (patientBalance.totalCredited || 0) + settledAmount;
-    patientBalance.lastTransactionAt = new Date();
-
-    await patientBalance.save({ session: mongoSession });
+    await PatientBalance.updateOne(
+      { _id: patientBalance._id },
+      {
+        $push: { transactions: { $each: newEntries } },
+        $inc: { currentBalance: -settledAmount, totalCredited: settledAmount },
+        $set: { lastTransactionAt: new Date() }
+      },
+      updateOptions
+    );
   }
 
   return { settledAmount, settledCount: settledDebitIds.length };
@@ -1113,26 +1141,43 @@ export const createPackageV2 = async (req, res) => {
           );
 
           if (debitToSettle) {
-            debitToSettle.settledByPackageId = pkg._id;
+            // Só o log de auditoria — a mutação em memória não é mais o que
+            // persiste (ver updateOne atômico abaixo; nunca mais
+            // patientBalance.save() do documento inteiro, ADR-019).
             FinanceWriteGuard.setSessionPaid(debitToSettle, true, { reason: 'reuse_appointment_v2_settle' });
-            debitToSettle.paidAmount = debitToSettle.amount;
 
-            patientBalance.transactions.push({
-              type: 'credit',
-              amount: debitToSettle.amount,
-              description: `Quitação via pacote #${pkg._id.toString().slice(-6)} (sessão avulsa atrelada)`,
-              specialty: debitToSettle.specialty || req.body.sessionType,
-              settledByPackageId: pkg._id,
-              appointmentId: reuseAppt._id,
-              registeredBy: req.user?._id,
-              transactionDate: new Date()
-            });
-
-            patientBalance.currentBalance -= debitToSettle.amount;
-            patientBalance.totalCredited += debitToSettle.amount;
-            patientBalance.lastTransactionAt = new Date();
-
-            await patientBalance.save({ session: mongoSession });
+            const settleUpdateOptions = { runValidators: true, context: 'query', session: mongoSession };
+            await PatientBalance.updateOne(
+              { _id: patientBalance._id, transactions: { $elemMatch: { _id: debitToSettle._id, isPaid: { $ne: true } } } },
+              {
+                $set: {
+                  'transactions.$.isPaid': true,
+                  'transactions.$.paidAmount': debitToSettle.amount,
+                  'transactions.$.settledByPackageId': pkg._id
+                }
+              },
+              settleUpdateOptions
+            );
+            await PatientBalance.updateOne(
+              { _id: patientBalance._id },
+              {
+                $push: {
+                  transactions: {
+                    type: 'credit',
+                    amount: debitToSettle.amount,
+                    description: `Quitação via pacote #${pkg._id.toString().slice(-6)} (sessão avulsa atrelada)`,
+                    specialty: debitToSettle.specialty || req.body.sessionType,
+                    settledByPackageId: pkg._id,
+                    appointmentId: reuseAppt._id,
+                    registeredBy: req.user?._id,
+                    transactionDate: new Date()
+                  }
+                },
+                $inc: { currentBalance: -debitToSettle.amount, totalCredited: debitToSettle.amount },
+                $set: { lastTransactionAt: new Date() }
+              },
+              settleUpdateOptions
+            );
             logger.info('[PackageV2] Débito do appointment avulso quitado via pacote', {
               appointmentId: reuseAppt._id.toString(),
               debitAmount: debitToSettle.amount,
@@ -1234,31 +1279,56 @@ export const createPackageV2 = async (req, res) => {
           );
 
           if (debitsToSettle.length > 0) {
-            const totalToSettle = debitsToSettle.reduce((sum, t) => sum + t.amount, 0);
+            const settleUpdateOptions = { runValidators: true, context: 'query', session: mongoSession };
+            let totalToSettle = 0;
+            const settledDebits = [];
 
+            // Cada débito marcado atomicamente por _id (nunca mais
+            // patientBalance.save() do documento inteiro — ADR-019). Só
+            // conta/credita os que realmente aplicaram (matchedCount>0);
+            // um já quitado por operação concorrente não é contado de novo.
             for (const debit of debitsToSettle) {
-              debit.settledByPackageId = pkg._id;
               FinanceWriteGuard.setSessionPaid(debit, true, { reason: 'package_settle_balance' });
-              debit.paidAmount = debit.amount;
+              const flip = await PatientBalance.updateOne(
+                { _id: patientBalance._id, transactions: { $elemMatch: { _id: debit._id, isPaid: { $ne: true } } } },
+                {
+                  $set: {
+                    'transactions.$.isPaid': true,
+                    'transactions.$.paidAmount': debit.amount,
+                    'transactions.$.settledByPackageId': pkg._id
+                  }
+                },
+                settleUpdateOptions
+              );
+              if (flip.matchedCount > 0) {
+                totalToSettle += debit.amount;
+                settledDebits.push(debit);
+              }
             }
 
-            patientBalance.transactions.push({
-              type: 'credit',
-              amount: totalToSettle,
-              description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
-              specialty: debitsToSettle[0]?.specialty || req.body.sessionType,
-              settledByPackageId: pkg._id,
-              registeredBy: req.user?._id,
-              transactionDate: new Date()
-            });
+            if (totalToSettle > 0) {
+              await PatientBalance.updateOne(
+                { _id: patientBalance._id },
+                {
+                  $push: {
+                    transactions: {
+                      type: 'credit',
+                      amount: totalToSettle,
+                      description: `Quitação via pacote #${pkg._id.toString().slice(-6)}`,
+                      specialty: settledDebits[0]?.specialty || req.body.sessionType,
+                      settledByPackageId: pkg._id,
+                      registeredBy: req.user?._id,
+                      transactionDate: new Date()
+                    }
+                  },
+                  $inc: { currentBalance: -totalToSettle, totalCredited: totalToSettle },
+                  $set: { lastTransactionAt: new Date() }
+                },
+                settleUpdateOptions
+              );
+            }
 
-            patientBalance.currentBalance -= totalToSettle;
-            patientBalance.totalCredited += totalToSettle;
-            patientBalance.lastTransactionAt = new Date();
-
-            await patientBalance.save({ session: mongoSession });
-
-            const appointmentIds = debitsToSettle
+            const appointmentIds = settledDebits
               .filter(t => t.appointmentId)
               .map(t => t.appointmentId);
 
@@ -1606,6 +1676,18 @@ export const createPackageV2 = async (req, res) => {
       });
     }
     
+    // Ledger financeiro do paciente com lançamento antigo inválido (ex: sem description) —
+    // trava o .save() do PatientBalance mesmo sem relação com o pacote sendo criado agora.
+    // Mensagem técnica do Mongoose não serve pro time comercial; sinaliza pra escalar ao suporte.
+    if (error.name === 'ValidationError' && /PatientBalance validation failed/i.test(error.message || '')) {
+      return res.status(422).json({
+        success: false,
+        errorCode: 'PATIENT_BALANCE_LEDGER_INCONSISTENT',
+        message: 'Não foi possível quitar o saldo da paciente: há lançamentos antigos no histórico financeiro dela com dados incompletos. Encaminhe este caso ao suporte técnico antes de tentar novamente — o pacote não foi criado e nenhum valor foi cobrado.',
+        technicalDetail: error.message
+      });
+    }
+
     // Erro de catálogo MongoDB (mudanças de schema durante transação)
     if (error.message?.includes('catalog changes') || error.message?.includes('Please retry')) {
       return res.status(503).json({
