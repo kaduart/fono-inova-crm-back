@@ -715,6 +715,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 categoria,
                 professional: doctor?.fullName || '-',
                 paymentModel: isPacote ? (isPrepaidPkg ? 'prepaid' : 'per_session') : null,
+                packageId: s.package ? (s.package._id || s.package).toString() : null,
                 paymentForms: (s.appointmentId ? paymentByApptId.get(s.appointmentId.toString())?.splitMethods : null) || appt?.paymentForms || []
             };
         });
@@ -764,14 +765,24 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         // virou conta a receber, ou consumiu um crédito já recebido antes
         // (pacote pré-pago ou liminar). Reaproveita categoria/tipo/paymentModel
         // já calculados acima — nenhuma regra financeira nova.
+        // Pacote pré-pago cujo pacote foi COMPRADO hoje: o crédito nasceu agora — a sessão
+        // de hoje é dinheiro novo entrando hoje, não consumo de um saldo de dias anteriores
+        // (mesma lógica de "isCompraHoje" já usada em transacoesCaixa via p.package direto).
+        // Sem isso, vender e já consumir um pacote no mesmo dia (comum: 1ª sessão no ato da
+        // venda) jogava o valor em "consumiramCredito" em vez de "geraramCaixaHoje".
+        const packagesPurchasedTodayIds = new Set(
+            transacoesCaixa.filter(t => t.isPackageSale && t.packageId).map(t => t.packageId)
+        );
+
         let geraramCaixaCount = 0, geraramCaixaValor = 0;
         let aReceberFuturamenteCount = 0, aReceberFuturamenteValor = 0;
         let consumiramCreditoCount = 0, consumiramCreditoValor = 0;
         for (const t of transacoesProducao) {
             const isPacotePrepago = t.tipo === 'Pacote' && t.paymentModel === 'prepaid';
+            const creditoNasceuHoje = isPacotePrepago && t.packageId && packagesPurchasedTodayIds.has(t.packageId);
             if (t.tipo === 'Convênio') {
                 aReceberFuturamenteCount++; aReceberFuturamenteValor += t.valor;
-            } else if (t.tipo === 'Liminar' || isPacotePrepago) {
+            } else if (t.tipo === 'Liminar' || (isPacotePrepago && !creditoNasceuHoje)) {
                 consumiramCreditoCount++; consumiramCreditoValor += t.valor;
             } else if (t.categoria === 'recebido') {
                 geraramCaixaCount++; geraramCaixaValor += t.valor;
@@ -880,7 +891,10 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                     professional: t.professional,
                     valor: t.valor,
                     statusPagamento: t.categoria === 'recebido' ? 'Pago' : 'Pendente',
-                    paymentModel: t.paymentModel
+                    paymentModel: t.paymentModel,
+                    // Pacote pré-pago comprado HOJE (crédito nasceu agora) — distinto de consumo
+                    // de crédito comprado em dias anteriores. Ver eficienciaFinanceira acima.
+                    pagoHoje: t.paymentModel === 'prepaid' && !!t.packageId && packagesPurchasedTodayIds.has(t.packageId)
                 })),
                 conveniosAtendidos: transacoesProducao.filter(t => t.tipo === 'Convênio').map(t => ({
                     id: t.id,

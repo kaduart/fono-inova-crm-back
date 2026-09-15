@@ -758,6 +758,20 @@ router.post('/create-sync', auth, async (req, res) => {
                 },
                 { session: mongoSession }
             );
+
+            // 🔄 Sincroniza Session.isPaid/paymentStatus — este endpoint é usado pra
+            // "pagamento no dia via tabela financeira" (ex: Pix imediato). Sem isso, a
+            // Session (já criada junto com o Appointment, ver ADR-005) fica "pendente"
+            // do lado de Produção mesmo com o Payment pago, caindo em a_receber/
+            // pendentesCobranca (mesmo bug confirmado 2026-09-15 no PATCH /:id — ver
+            // cashflow.v2.js, que classifica pelo Session, não pelo Payment).
+            if (status === 'paid') {
+                await Session.updateOne(
+                    { appointmentId },
+                    { $set: { isPaid: true, paymentStatus: 'paid', paidAt: now } },
+                    { session: mongoSession }
+                );
+            }
         }
 
         // 🏦 LEDGER: registra payment_received se status é pago
@@ -1120,6 +1134,28 @@ router.patch('/:id', auth, async (req, res) => {
                 // "sessão fiada" correspondente no PatientBalance.
                 reconcilePatientBalance: true
             });
+
+            // 🔄 Sincroniza Session.isPaid/paymentStatus quando o Payment muda PARA pago —
+            // transitionPaymentStatus() só mexe em Payment/PatientBalance/Outbox, nunca em
+            // Session. Sem isso, o Payment fica 'paid' (aparece certo no Caixa) mas a Session
+            // continua "pendente" do lado de Produção, caindo em a_receber/pendentesCobranca
+            // mesmo já paga (bug confirmado 2026-09-15, caso Murilo Azevedo Lisboa — cashflow.v2.js
+            // classifica pelo Session, não pelo Payment). Mesmo padrão já usado em /bulk-settle.
+            if (status === 'paid' && (payment.session || payment.appointmentId || payment.appointment)) {
+                const sessionFilter = payment.session
+                    ? { _id: payment.session }
+                    : { appointmentId: payment.appointmentId || payment.appointment };
+                await Session.updateOne(
+                    sessionFilter,
+                    { $set: {
+                        isPaid: true,
+                        paymentStatus: 'paid',
+                        paidAt: updateData.paidAt || payment.paidAt || new Date()
+                    } },
+                    { session: mongoSession }
+                );
+            }
+
             // Remove status do updateData pois já foi tratado pelo serviço
             delete updateData.status;
             delete updateData.paidAt;  // já setado pelo serviço
