@@ -1,3 +1,5 @@
+> **Atualização operacional — 11/09/2026:** Anápolis + Simples Nacional usa o municipal até 31/10/2026 e o nacional a partir de 01/11/2026, às 00h de Brasília (Resolução CGSN 191/2026). A fonte executável é `ResolutionPolicy` + `resolution-policies.json`. O override legado `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` foi removido. As referências históricas abaixo a setembro, stub municipal e assinatura somente mock estão superadas. Consulte [auditoria atual](./anapolis_audit_2026-09-11.md).
+
 # Decisões Fiscais da Clínica — Módulo NFS-e
 
 > **Status: 10/10 itens respondidos em 2026-07-28.** Este documento deixa de ser o gargalo do go-live — a partir de agora, o que falta é técnico (ver `go_live_nfse.md`).
@@ -12,7 +14,7 @@
 |---|---|---|---|---|
 | 1 | Regime tributário real da clínica | Sprint 1 (go-live) | Contador | ✅ Respondido 2026-07-28 — **Simples Nacional** |
 | 2 | Certificado digital (A1/A3/HSM) | Sprint 1 (go-live) | Contador/TI | ✅ Respondido 2026-07-28 — **A1, já possui** |
-| 3 | Emissor técnico (Sefin Nacional × NotaControl/Anápolis) | Sprint 1 (go-live) — decorre da #1 | Contador | ⚠️ Decorre de #1 = Sefin Nacional, **mas só a partir de 01/09/2026** — antes disso o `FiscalProviderResolver` ainda roteia para NotaControl (ver nota abaixo) |
+| 3 | Emissor técnico (Sefin Nacional × NotaControl/Anápolis) | Sprint 1 (go-live) — decorre da #1 | Contador | ✅ Municipal até 31/10/2026; Sefin Nacional desde 01/11/2026, conforme `ResolutionPolicy` |
 | 4 | Tomador Pessoa Jurídica | Sprint 2 — escala para Sprint 1 se a resposta for "sim" | Recepção/Contabilidade | ✅ Respondido 2026-07-28 — **Ambos** (CPF e CNPJ ocorrem) — escala para Sprint 1 |
 | 5 | Retenção de ISS na fonte | **Sprint 1** (escalado — resposta confirmada "sim") | Contador | ✅ Respondido 2026-07-28 — **Sim, com evidência real** (nota da Isabela F. Mendonça, Unimed Anápolis) |
 | 6 | Liminar — qual mecanismo fiscal se aplica | Sprint 2 | Contador/Jurídico | ✅ Respondido 2026-07-28 — **nenhum dos dois mecanismos; ISS cobrado normalmente** |
@@ -37,7 +39,7 @@
 
 **Contexto**: `ConfiguracaoFiscal.regimeTributario` está vazio em produção (0 documentos); a tela `FiscalConfiguration.tsx` hoje usa `LUCRO_PRESUMIDO` só como valor padrão de formulário, não como dado confirmado. Essa não é uma decisão a "tomar" — é um fato que já existe na contabilidade da clínica e só precisa ser transcrito para o sistema.
 
-**Por que importa**: se **Simples Nacional**, a partir de 01/09/2026 (Resolução CGSN nº 189/2026) a emissão passa a ser obrigatória pelo Emissor Nacional (Sefin Nacional) — o `FiscalProviderResolver.js` já tem essa regra pronta. Se **Lucro Presumido/Real**, a emissão continua pelo webservice municipal de Anápolis (NotaControl), sem data de migração prevista.
+**Por que importa**: para a clínica, optante pelo **Simples Nacional**, a emissão permanece municipal até 31/10/2026 e passa ao Emissor Nacional em 01/11/2026 (Resolução CGSN nº 191/2026). Lucro Presumido/Real permanece no webservice municipal conforme a política vigente.
 
 ---
 
@@ -67,9 +69,7 @@
 
 **Responsável**: Contador · **Status**: ⚠️ Resolvido em princípio, mas com uma pegadinha de calendário · **Data da resposta**: 2026-07-28
 
-**Achado crítico (2026-07-28)**: `FiscalProviderResolver.js` só roteia para Sefin Nacional quando `asOfDate >= 2026-09-01` — a regra de migração tem uma data de corte, não é "a partir de agora que o regime está confirmado". **Hoje (2026-07-28) o sistema ainda routaria qualquer emissão para o `AnapolisMunicipalAdapter`** (NotaControl), que segue bloqueado (403) e é stub. Duas opções:
-1. **Esperar até 01/09/2026** para emitir a primeira nota — evita depender do NotaControl inteiramente, foco 100% em certificado A1 + mTLS no `SefinNacionalAdapter`. **Recomendado**, dado que faltam ~5 semanas e o certificado A1 já existe.
-2. Perseguir o desbloqueio do NotaControl em paralelo, só se houver necessidade de emitir nota real antes de 01/09/2026.
+**Situação atual (11/09/2026)**: a `ResolutionPolicy` direciona o fluxo para `AnapolisMunicipalAdapter` até 31/10/2026. A partir de 01/11/2026 direciona para `SefinNacionalAdapter`. O adaptador municipal envia lote síncrono, mas consulta, cancelamento, DANFSe e validação XSD ainda impedem declarar o fluxo homologado.
 
 Isso não muda a resposta da pergunta (o emissor final é Sefin Nacional), só a data em que o sistema realmente usa esse caminho.
 

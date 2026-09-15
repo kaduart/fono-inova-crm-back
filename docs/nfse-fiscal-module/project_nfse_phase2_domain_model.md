@@ -1,3 +1,5 @@
+> **Atualização operacional — 11/09/2026:** Anápolis + Simples Nacional usa o municipal até 31/10/2026 e o nacional a partir de 01/11/2026, às 00h de Brasília (Resolução CGSN 191/2026). A fonte executável é `ResolutionPolicy` + `resolution-policies.json`. O override legado `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` foi removido. As referências históricas abaixo a setembro, stub municipal e assinatura somente mock estão superadas. Consulte [auditoria atual](./anapolis_audit_2026-09-11.md).
+
 # Módulo Fiscal NFS-e — Fase 2: Modelo de Domínio
 
 > Documento de arquitetura de domínio (não código). Base: `project_nfse_phase1_official_spec.md`, `dps_field_matrix.md`, `event_matrix.md`, `anapolis_integration_status.md` (Fase 1 + Fase 1.5), cruzados com `back/docs/DOMAIN_INVARIANTS.md` e `back/docs/ARQUITETURA_EVENT_DRIVEN.md` do CRM.
@@ -175,7 +177,7 @@ FiscalProfile.municipioIBGE
 ResolutionPolicy (registro configurável, por município)
     { municipioIBGE, rules: [
         { condition: { regime: 'SIMPLES_NACIONAL', validFrom: null, validUntil: '2026-08-31' }, adapter: 'AnapolisMunicipalAdapter' },
-        { condition: { regime: 'SIMPLES_NACIONAL', validFrom: '2026-09-01' }, adapter: 'SefinNacionalAdapter' },
+        { condition: { regime: 'SIMPLES_NACIONAL', validFrom: '2026-11-01T00:00:00-03:00' }, adapter: 'SefinNacionalAdapter' },
         { condition: { regime: 'LUCRO_PRESUMIDO' }, adapter: 'AnapolisMunicipalAdapter' },
         { condition: { regime: 'MEI' }, adapter: 'SefinNacionalAdapter' }
       ] }

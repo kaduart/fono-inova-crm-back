@@ -367,9 +367,9 @@ export async function emitFromPayment(req, res) {
       : ` — atendimento prestado ao paciente ${payment.patient.fullName}`;
     const resolvedServiceDescription = `${req.body.serviceDescription || selectedService.description}${beneficiarySuffix}`;
 
-    // Recuperação transparente de emissão pendente. Se ela ainda não tinha identidade (bug
-    // antigo), atualiza os dados antes do retry. Uma DPS já identificada é apenas reenviada:
-    // seus dados fiscais nunca são sobrescritos depois de receber dpsId.
+    // Recuperação segura de emissão pendente. Se ela ainda não tinha identidade (bug antigo),
+    // atualiza os dados antes da reconciliação. Uma DPS identificada nunca é reenviada sem que
+    // o provedor confirme primeiro o resultado da tentativa anterior.
     const existingInvoices = await fiscalInvoiceRepository.findByOrigin(originType, originId);
     const recoverable = existingInvoices.find((invoice) => invoice.status === FiscalInvoiceStatus.PENDING_SUBMISSION);
     if (recoverable) {
@@ -380,10 +380,19 @@ export async function emitFromPayment(req, res) {
           serviceDescription: resolvedServiceDescription,
           serviceCode: selectedService.serviceCode
         });
-      const { fiscalInvoice, outcome } = await retryFiscalSubmissionService.retry(invoiceToRetry._id, {
+      const { fiscalInvoice, outcome, reason } = await retryFiscalSubmissionService.retry(invoiceToRetry._id, {
         correlationId: req.headers['x-correlation-id']
       });
-      return res.status(200).json({ success: true, data: { fiscalInvoice, outcome, recovered: true } });
+      return res.status(200).json({
+        success: true,
+        data: {
+          fiscalInvoice,
+          outcome,
+          recovered: outcome === 'authorized',
+          reconciliationRequired: outcome === 'reconciliation_required',
+          ...(reason ? { reason } : {})
+        }
+      });
     }
 
     const draft = {
@@ -464,9 +473,9 @@ export async function getFiscalInvoice(req, res) {
 export async function retryFiscalInvoice(req, res) {
   try {
     const { id } = req.params;
-    const { outcome } = await retryFiscalSubmissionService.retry(id, { correlationId: req.headers['x-correlation-id'] });
+    const { outcome, reason } = await retryFiscalSubmissionService.retry(id, { correlationId: req.headers['x-correlation-id'] });
     const fiscalInvoice = await FiscalInvoice.findById(id).populate('patient', 'fullName');
-    res.json({ success: true, data: { fiscalInvoice, outcome } });
+    res.json({ success: true, data: { fiscalInvoice, outcome, ...(reason ? { reason } : {}) } });
   } catch (error) {
     console.error('[FiscalController] retryFiscalInvoice error:', error);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });

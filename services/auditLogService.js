@@ -226,9 +226,9 @@ export async function recordAudit({
     const diff = computeDiff(normalizedBefore, normalizedAfter);
     const severity = inferSeverity(diff, action);
 
-    const isSystemActor = !user || !user._id;
+    const isSystemActor = !user || !(user._id || user.id);
     const audit = new AuditLog({
-      userId: isSystemActor ? null : user._id,
+      userId: isSystemActor ? null : (user._id || user.id),
       actorRole: isSystemActor ? 'SYSTEM' : (user.role || null),
       action,
       entityType,

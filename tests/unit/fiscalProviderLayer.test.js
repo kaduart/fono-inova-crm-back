@@ -14,7 +14,10 @@ import { resolveProviderName } from '../../fiscal-provider/FiscalProviderResolve
 import { ANAPOLIS_IBGE_CODE } from '../../fiscal-provider/MunicipioProviderRegistry.js';
 import { MockCertificateManager } from '../../fiscal-provider/CertificateManager.js';
 import { MockAdapter } from '../../adapters/fiscal/MockAdapter.js';
-import { buildNotaControlBatchXml, buildNotaControlSoapRequest, parseNotaControlResponse } from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
+import {
+  buildNotaControlBatchXml, buildNotaControlSoapRequest, parseNotaControlResponse,
+  buildConsultarNfseDpsXml, parseConsultarNfseDpsResponse
+} from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
 import { FiscalProviderName } from '../../constants/fiscalProviders.js';
 import { RegimeTributario } from '../../constants/fiscalEnums.js';
 import { FISCAL_SERVICE_CATALOG, findFiscalServiceBySpecialty } from '../../domain/fiscal/FiscalServiceCatalog.js';
@@ -82,6 +85,32 @@ describe('DpsBuilder.buildDpsXml', () => {
     expect(() => buildDpsXml(otherService, fiscalInvoice, fiscalProfile))
       .toThrow('FISCAL_IBSCBS_NAO_CONFIGURADO');
   });
+
+  describe('trib/totTrib/pTotTribSN (Lei 12.741/2012 — confirmado pelo contador em 2026-09-14)', () => {
+    it('sem pTotTribSN configurado e sem certificado real (homologação): cai no indTotTrib=0, comportamento anterior preservado', () => {
+      const xml = buildDpsXml(snapshot, fiscalInvoice, fiscalProfile);
+      expect(xml).toContain('<totTrib><indTotTrib>0</indTotTrib></totTrib>');
+    });
+
+    it('com pTotTribSN configurado no snapshot: usa o valor real, mesmo em homologação', () => {
+      const snapshotComAliquota = { infDPS: { ...snapshot.infDPS, valores: { ...snapshot.infDPS.valores, pTotTribSN: 8 } } };
+      const xml = buildDpsXml(snapshotComAliquota, fiscalInvoice, fiscalProfile);
+      expect(xml).toContain('<totTrib><pTotTribSN>8</pTotTribSN></totTrib>');
+      expect(xml).not.toContain('indTotTrib');
+    });
+
+    it('produção (tpAmb=1) sem pTotTribSN configurado: continua bloqueando — nunca presume um percentual', () => {
+      const snapshotProducao = { infDPS: { ...snapshot.infDPS, tpAmb: 1 } };
+      expect(() => buildDpsXml(snapshotProducao, fiscalInvoice, fiscalProfile))
+        .toThrow('FISCAL_TOTAL_TRIBUTOS_NAO_CONFIGURADO');
+    });
+
+    it('produção (tpAmb=1) com pTotTribSN configurado: gera a DPS normalmente, bloqueio removido só quando há dado real', () => {
+      const snapshotProducao = { infDPS: { ...snapshot.infDPS, tpAmb: 1, valores: { ...snapshot.infDPS.valores, pTotTribSN: 8 } } };
+      const xml = buildDpsXml(snapshotProducao, fiscalInvoice, fiscalProfile);
+      expect(xml).toContain('<totTrib><pTotTribSN>8</pTotTribSN></totTrib>');
+    });
+  });
 });
 
 describe('FiscalServiceCatalog', () => {
@@ -135,7 +164,7 @@ describe('FiscalProviderResolver.resolveProviderName', () => {
     expect(provider).toBe(FiscalProviderName.ANAPOLIS_MUNICIPAL);
   });
 
-  it('Anápolis + Simples Nacional, ANTES de 01/09/2026 → webservice municipal', () => {
+  it('Anápolis + Simples Nacional, ANTES de 01/11/2026 → webservice municipal', () => {
     const provider = resolveProviderName(
       { municipioIBGE: ANAPOLIS_IBGE_CODE, regimeTributario: RegimeTributario.SIMPLES_NACIONAL },
       { asOfDate: new Date('2026-08-31') }
@@ -143,10 +172,10 @@ describe('FiscalProviderResolver.resolveProviderName', () => {
     expect(provider).toBe(FiscalProviderName.ANAPOLIS_MUNICIPAL);
   });
 
-  it('Anápolis + Simples Nacional, A PARTIR de 01/09/2026 → Sefin Nacional', () => {
+  it('Anápolis + Simples Nacional, A PARTIR de 01/11/2026 → Sefin Nacional', () => {
     const provider = resolveProviderName(
       { municipioIBGE: ANAPOLIS_IBGE_CODE, regimeTributario: RegimeTributario.SIMPLES_NACIONAL },
-      { asOfDate: new Date('2026-09-01') }
+      { asOfDate: new Date('2026-11-01T00:00:00-03:00') }
     );
     expect(provider).toBe(FiscalProviderName.SEFIN_NACIONAL);
   });
@@ -154,7 +183,7 @@ describe('FiscalProviderResolver.resolveProviderName', () => {
   it('município não catalogado → default Sefin Nacional', () => {
     const provider = resolveProviderName(
       { municipioIBGE: '9999999', regimeTributario: RegimeTributario.LUCRO_PRESUMIDO },
-      { asOfDate: new Date() }
+      { asOfDate: new Date('2026-09-11T12:00:00-03:00') }
     );
     expect(provider).toBe(FiscalProviderName.SEFIN_NACIONAL);
   });
@@ -214,5 +243,44 @@ describe('AnapolisMunicipalAdapter (Nota Control)', () => {
   it('interpreta rejeição retornada pela Nota Control', () => {
     const response = '<RecepcionarLoteDpsSincronoResult>&lt;ListaMensagemRetorno&gt;&lt;MensagemRetorno&gt;&lt;Codigo&gt;E160&lt;/Codigo&gt;&lt;Mensagem&gt;XML inválido&lt;/Mensagem&gt;&lt;/MensagemRetorno&gt;&lt;/ListaMensagemRetorno&gt;</RecepcionarLoteDpsSincronoResult>';
     expect(parseNotaControlResponse(response)).toMatchObject({ success: false, error: { code: 'E160', message: 'XML inválido' } });
+  });
+
+  it('monta o envelope de ConsultarNfsePorDps (manual §9.2.6) sem assinatura', () => {
+    const consulta = buildConsultarNfseDpsXml({ serie: 1, nDPS: 42, cnpj: '12345678000199', inscricaoMunicipal: '142' });
+    expect(consulta).toContain('<ConsultarNfseDpsEnvio');
+    expect(consulta).toContain('<IdentificacaoDps><SerieDPS>1</SerieDPS><NumDPS>42</NumDPS></IdentificacaoDps>');
+    expect(consulta).toContain('<Prestador><CNPJ>12345678000199</CNPJ><IM>142</IM></Prestador>');
+
+    const soap = buildNotaControlSoapRequest(consulta, 'ConsultarNfsePorDps');
+    expect(soap).toContain('<nfse:ConsultarNfsePorDps>');
+    expect(soap).toContain('<nfseDadosMsg><ConsultarNfseDpsEnvio');
+  });
+
+  it('parseConsultarNfseDpsResponse: NFS-e encontrada vira authorized', () => {
+    const response = '<ConsultarNfsePorDpsResult>&lt;CompNfse&gt;&lt;NFSe&gt;&lt;infNFSe id="chave123"&gt;&lt;cStat&gt;100&lt;/cStat&gt;&lt;nNFSe&gt;77&lt;/nNFSe&gt;&lt;/infNFSe&gt;&lt;/NFSe&gt;&lt;/CompNfse&gt;</ConsultarNfsePorDpsResult>';
+    const result = parseConsultarNfseDpsResponse(response);
+    expect(result.status).toBe('authorized');
+    expect(result.fields).toMatchObject({ chaveAcesso: 'chave123', nNFSe: 77, cStat: 100 });
+  });
+
+  it('parseConsultarNfseDpsResponse: mensagem "não encontrado" NUNCA vira status próprio — fica unknown (endurecido 2026-09-11)', () => {
+    // Sem amostra real de homologação para confirmar a semântica, "não encontrado" não pode ser
+    // tratado como sinal de que é seguro reenviar. Vira `unknown`, com o texto preservado só no
+    // `reason` para diagnóstico humano — nunca decide retry automaticamente.
+    const response = '<ConsultarNfsePorDpsResult>&lt;ListaMensagemRetorno&gt;&lt;MensagemRetorno&gt;&lt;Codigo&gt;E404&lt;/Codigo&gt;&lt;Mensagem&gt;DPS não encontrado na base de dados&lt;/Mensagem&gt;&lt;/MensagemRetorno&gt;&lt;/ListaMensagemRetorno&gt;</ConsultarNfsePorDpsResult>';
+    const result = parseConsultarNfseDpsResponse(response);
+    expect(result.status).toBe('unknown');
+    expect(result.reason).toContain('NAO_ENCONTRADO_NAO_CONFIRMADO');
+  });
+
+  it('parseConsultarNfseDpsResponse: mensagem não reconhecida NUNCA vira not_found nem authorized', () => {
+    const response = '<ConsultarNfsePorDpsResult>&lt;ListaMensagemRetorno&gt;&lt;MensagemRetorno&gt;&lt;Codigo&gt;E999&lt;/Codigo&gt;&lt;Mensagem&gt;Erro interno do serviço&lt;/Mensagem&gt;&lt;/MensagemRetorno&gt;&lt;/ListaMensagemRetorno&gt;</ConsultarNfsePorDpsResult>';
+    const result = parseConsultarNfseDpsResponse(response);
+    expect(result.status).toBe('unknown');
+  });
+
+  it('parseConsultarNfseDpsResponse: NFS-e sem os 3 campos oficiais completos NUNCA autoriza', () => {
+    const response = '<ConsultarNfsePorDpsResult>&lt;CompNfse&gt;&lt;NFSe&gt;&lt;infNFSe&gt;&lt;cStat&gt;100&lt;/cStat&gt;&lt;/infNFSe&gt;&lt;/NFSe&gt;&lt;/CompNfse&gt;</ConsultarNfsePorDpsResult>';
+    expect(parseConsultarNfseDpsResponse(response)).toMatchObject({ status: 'unknown' });
   });
 });

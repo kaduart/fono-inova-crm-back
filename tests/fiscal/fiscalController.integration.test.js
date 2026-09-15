@@ -3,10 +3,15 @@
  *
  * Não sobe servidor HTTP. Cada controller é chamado diretamente com objetos req/res simulados,
  * o que valida: status HTTP, shape da resposta (success/data ou success/error/message) e conteúdo.
+ *
+ * 2026-09-11: passou a usar MongoMemoryReplSet (mesmo padrão de tests/e2e/*.e2e.test.js) em vez de
+ * conectar em MONGO_URI/.env — nunca mais lê nenhuma connection string externa. Ver
+ * docs/nfse-fiscal-module/anapolis_audit_2026-09-11.md para o incidente que motivou isso: este
+ * arquivo tinha 6 `deleteMany({})` sem filtro que rodaram contra produção real.
  */
 
-import 'dotenv/config';
 import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import Patient from '../../models/Patient.js';
@@ -14,12 +19,6 @@ import Doctor from '../../models/Doctor.js';
 import Payment from '../../models/Payment.js';
 import FiscalProfile from '../../models/FiscalProfile.js';
 import Certificate from '../../models/Certificate.js';
-import FiscalInvoice from '../../models/FiscalInvoice.js';
-import FiscalSubmission from '../../models/FiscalSubmission.js';
-import FiscalSnapshot from '../../models/FiscalSnapshot.js';
-import ProviderTransaction from '../../models/ProviderTransaction.js';
-import OfficialFiscalEvent from '../../models/OfficialFiscalEvent.js';
-import FiscalAttachment from '../../models/FiscalAttachment.js';
 
 import {
   getFiscalProfile,
@@ -39,11 +38,11 @@ import { FiscalProviderName } from '../../constants/fiscalProviders.js';
 import { FiscalInvoiceStatus, CertificateStatus, RegimeTributario } from '../../constants/fiscalEnums.js';
 import { FiscalOriginType } from '../../constants/fiscalEnums.js';
 import * as MunicipioProviderRegistry from '../../fiscal-provider/MunicipioProviderRegistry.js';
+import { assertLoopbackOnlyDatabase } from './_guardAgainstProductionDb.js';
 
 const TEST_CNPJ = '00000000000191';
 
-const TEST_DB = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.TEST_MONGO_URI;
-
+let mongoServer;
 let patient, doctor, certificate, fiscalProfile, payment, emittedInvoiceId;
 let originalRegistry;
 
@@ -76,8 +75,10 @@ async function createPaidPayment(appointmentId) {
 
 describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
   beforeAll(async () => {
-    if (!TEST_DB) throw new Error('MONGO_URI não configurado');
-    await mongoose.connect(TEST_DB);
+    mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    const uri = mongoServer.getUri();
+    assertLoopbackOnlyDatabase(uri);
+    await mongoose.connect(uri);
 
     // Força o MockAdapter para Anápolis durante os testes de controller — sem endpoint real nem
     // certificado, o adapter AnapolisMunicipalAdapter falharia em network_error. Isso não altera
@@ -89,6 +90,7 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
       fullName: 'Paciente Fiscal Controller',
       dateOfBirth: new Date('1990-01-01'),
       phone: '11999999999',
+      cpf: '11122233344',
       email: `fiscal-controller.${Date.now()}@teste.com`
     });
 
@@ -121,18 +123,11 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
   });
 
   afterAll(async () => {
-    await FiscalAttachment.deleteMany({});
-    await OfficialFiscalEvent.deleteMany({});
-    await ProviderTransaction.deleteMany({});
-    await FiscalSnapshot.deleteMany({});
-    await FiscalSubmission.deleteMany({});
-    await FiscalInvoice.deleteMany({});
-    await FiscalProfile.deleteOne({ _id: fiscalProfile?._id });
-    await Certificate.deleteOne({ _id: certificate?._id });
-    await Payment.deleteMany({ patient: patient?._id });
-    await Doctor.deleteOne({ _id: doctor?._id });
-    await Patient.deleteOne({ _id: patient?._id });
+    // Banco efêmero exclusivo deste teste (MongoMemoryReplSet) — parar o servidor descarta tudo
+    // de uma vez, sem precisar de deleteMany({}) nenhum, com filtro ou sem. Nada aqui é
+    // compartilhado com nenhum outro teste nem com produção.
     await mongoose.disconnect();
+    if (mongoServer) await mongoServer.stop();
   });
 
   it('GET /profile retorna success/data ou 404 padronizado', async () => {
@@ -167,7 +162,7 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
     expect(res.body.data.razaoSocial).toContain('atualizado');
   });
 
-  it('POST /certificates retorna success/data', async () => {
+  it('POST /certificates rejeita cadastro sem arquivo e senha reais', async () => {
     const req = {
       body: {
         type: 'A1',
@@ -179,9 +174,9 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
     const res = createRes();
     await createCertificate(req, res);
 
-    expect(res.statusCode).toBe(201);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data._id).toBeDefined();
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('MISSING_REQUIRED_FIELDS');
   });
 
   it('POST /nfse/emit retorna success/data com fiscalInvoice e outcome', async () => {
@@ -246,18 +241,18 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
     expect(typeof res.body).toBe('string');
   });
 
-  it('GET /nfse/:id/pdf retorna PDF (mock)', async () => {
+  it('GET /nfse/:id/pdf informa que o DANFSe oficial ainda não foi obtido', async () => {
     const req = { params: { id: emittedInvoiceId } };
     const res = createRes();
     await downloadFiscalInvoicePdf(req, res);
 
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Type']).toBe('application/pdf');
-    expect(Buffer.isBuffer(res.body)).toBe(true);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('DANFSE_NOT_AVAILABLE');
   });
 
   it('POST /nfse/:id/cancel retorna success/data', async () => {
-    const req = { params: { fiscalInvoiceId: emittedInvoiceId.toString() }, headers: {} };
+    const req = { params: { id: emittedInvoiceId.toString() }, headers: {} };
     const res = createRes();
     await cancelFiscalInvoice(req, res);
 
@@ -267,7 +262,7 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
   });
 
   it('POST /nfse/:id/retry rejeia nota não-pendente com erro consistente', async () => {
-    const req = { params: { fiscalInvoiceId: emittedInvoiceId.toString() }, headers: {} };
+    const req = { params: { id: emittedInvoiceId.toString() }, headers: {} };
     const res = createRes();
     await retryFiscalInvoice(req, res);
 

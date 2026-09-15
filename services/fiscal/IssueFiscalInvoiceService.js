@@ -29,7 +29,7 @@ export class IssueFiscalInvoiceService {
   /**
    * @param {Object} draft - ver domain/fiscal/services/FiscalInvoiceService.createDraft
    * @param {{ correlationId?: string }} [options]
-   * @returns {Promise<{ fiscalInvoice: Object, outcome: 'authorized'|'rejected'|'network_error'|'timeout' }>}
+   * @returns {Promise<{ fiscalInvoice: Object, outcome: 'authorized'|'rejected'|'network_error'|'timeout'|'reconciliation_required' }>}
    */
   async issue(draft, options = {}) {
     const correlationId = options.correlationId || uuidv4();

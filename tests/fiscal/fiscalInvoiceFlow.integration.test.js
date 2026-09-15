@@ -2,15 +2,20 @@
  * 🧪 Teste de integração - Fluxo completo de emissão fiscal (PR2+PR3+PR4)
  *
  * Cobre o que ficou pendente desde o PR2: FiscalInvoiceService/IssueFiscalInvoiceService/
- * RetryFiscalSubmissionService fim-a-fim contra um MongoDB real (mesmo padrão de
- * tests/billing/billing-v2-e2e.test.js e tests/invoice/invoice.flow.test.js).
+ * RetryFiscalSubmissionService fim-a-fim contra um MongoDB real.
  *
- * Usa MockAdapter via `overrideAdapter` — nunca bate na Sefin Nacional real nem no endpoint
- * (inexistente) de Anápolis.
+ * 2026-09-11: passou a usar MongoMemoryReplSet (mesmo padrão já estabelecido em
+ * tests/e2e/*.e2e.test.js) em vez de conectar em MONGO_URI/.env — nunca mais lê nenhuma
+ * connection string externa. Réplica (não standalone) porque o domínio fiscal usa
+ * runTransactionWithRetry (sessões/transações Mongo). `assertLoopbackOnlyDatabase` continua como
+ * defesa em profundidade sobre a URI que o próprio MongoMemoryReplSet devolve — ver
+ * docs/nfse-fiscal-module/anapolis_audit_2026-09-11.md para o incidente que motivou isso.
+ *
+ * Usa MockAdapter via `overrideAdapter` — nunca chama a Sefin Nacional nem o endpoint de Anápolis.
  */
 
-import 'dotenv/config';
 import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import Patient from '../../models/Patient.js';
@@ -18,20 +23,18 @@ import Doctor from '../../models/Doctor.js';
 import Payment from '../../models/Payment.js';
 import FiscalProfile from '../../models/FiscalProfile.js';
 import Certificate from '../../models/Certificate.js';
-import FiscalInvoice from '../../models/FiscalInvoice.js';
 
 import { issueFiscalInvoiceService } from '../../services/fiscal/IssueFiscalInvoiceService.js';
 import { retryFiscalSubmissionService } from '../../services/fiscal/RetryFiscalSubmissionService.js';
 import { MockAdapter } from '../../adapters/fiscal/MockAdapter.js';
 import { FiscalInvoiceStatus, CertificateStatus, RegimeTributario } from '../../constants/fiscalEnums.js';
 import { FiscalOriginType } from '../../constants/fiscalEnums.js';
+import { assertLoopbackOnlyDatabase } from './_guardAgainstProductionDb.js';
 
 const TEST_CNPJ = '00000000000191';
 
-const TEST_DB = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.TEST_MONGO_URI;
-
+let mongoServer;
 let patient, doctor, certificate, fiscalProfile;
-const createdFiscalInvoiceIds = [];
 
 async function createPaidPayment(appointmentId) {
   return Payment.create({
@@ -63,13 +66,16 @@ function draftFor(appointmentId) {
 
 describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
   beforeAll(async () => {
-    if (!TEST_DB) throw new Error('MONGO_URI não configurado para o teste de integração fiscal');
-    await mongoose.connect(TEST_DB);
+    mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    const uri = mongoServer.getUri();
+    assertLoopbackOnlyDatabase(uri);
+    await mongoose.connect(uri);
 
     patient = await Patient.create({
       fullName: 'Paciente Teste Fiscal',
       dateOfBirth: new Date('1990-01-01'),
       phone: '11999999999',
+      cpf: '11122233344',
       email: `fiscal.${Date.now()}@teste.com`
     });
 
@@ -102,14 +108,11 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
   });
 
   afterAll(async () => {
-    if (createdFiscalInvoiceIds.length) {
-      await FiscalInvoice.deleteMany({ _id: { $in: createdFiscalInvoiceIds } });
-    }
-    await Certificate.deleteOne({ _id: certificate?._id });
-    await FiscalProfile.deleteOne({ _id: fiscalProfile?._id });
-    await Doctor.deleteOne({ _id: doctor?._id });
-    await Patient.deleteOne({ _id: patient?._id });
+    // Banco efêmero exclusivo deste teste (MongoMemoryReplSet) — parar o servidor descarta tudo
+    // de uma vez, sem precisar de deleteMany({}) nenhum, com filtro ou sem. Nada aqui é
+    // compartilhado com nenhum outro teste nem com produção.
     await mongoose.disconnect();
+    if (mongoServer) await mongoServer.stop();
   });
 
   it('emissão feliz: DRAFT → PENDING_SUBMISSION → AUTHORIZED', async () => {
@@ -119,7 +122,6 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
     const { fiscalInvoice, outcome } = await issueFiscalInvoiceService.issue(draftFor(appointmentId), {
       overrideAdapter: new MockAdapter({ forceOutcome: 'success' })
     });
-    createdFiscalInvoiceIds.push(fiscalInvoice._id);
 
     expect(outcome).toBe('authorized');
     expect(fiscalInvoice.status).toBe(FiscalInvoiceStatus.AUTHORIZED);
@@ -134,21 +136,19 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
     const { fiscalInvoice, outcome } = await issueFiscalInvoiceService.issue(draftFor(appointmentId), {
       overrideAdapter: new MockAdapter({ forceOutcome: 'rejected' })
     });
-    createdFiscalInvoiceIds.push(fiscalInvoice._id);
 
     expect(outcome).toBe('rejected');
     expect(fiscalInvoice.status).toBe(FiscalInvoiceStatus.REJECTED);
     expect(fiscalInvoice.rejectionReason).toBeTruthy();
   });
 
-  it('falha de infraestrutura (timeout) mantém PENDING_SUBMISSION, e retry autoriza', async () => {
+  it('timeout mantém PENDING_SUBMISSION e retry exige reconciliação sem reenviar', async () => {
     const appointmentId = new mongoose.Types.ObjectId();
     await createPaidPayment(appointmentId);
 
     const first = await issueFiscalInvoiceService.issue(draftFor(appointmentId), {
       overrideAdapter: new MockAdapter({ forceOutcome: 'timeout' })
     });
-    createdFiscalInvoiceIds.push(first.fiscalInvoice._id);
 
     expect(first.outcome).toBe('timeout');
     expect(first.fiscalInvoice.status).toBe(FiscalInvoiceStatus.PENDING_SUBMISSION);
@@ -157,8 +157,8 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
       overrideAdapter: new MockAdapter({ forceOutcome: 'success' })
     });
 
-    expect(retried.outcome).toBe('authorized');
-    expect(retried.fiscalInvoice.status).toBe(FiscalInvoiceStatus.AUTHORIZED);
+    expect(retried.outcome).toBe('reconciliation_required');
+    expect(retried.fiscalInvoice.status).toBe(FiscalInvoiceStatus.PENDING_SUBMISSION);
   });
 
   it('rejeita emissão duplicada para a mesma origem (idempotência de negócio)', async () => {
@@ -168,7 +168,6 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
     const { fiscalInvoice } = await issueFiscalInvoiceService.issue(draftFor(appointmentId), {
       overrideAdapter: new MockAdapter({ forceOutcome: 'success' })
     });
-    createdFiscalInvoiceIds.push(fiscalInvoice._id);
 
     await expect(
       issueFiscalInvoiceService.issue(draftFor(appointmentId), { overrideAdapter: new MockAdapter() })
@@ -182,7 +181,6 @@ describe('Fluxo fiscal completo (Issue → Authorize / Reject / Retry)', () => {
     const { fiscalInvoice } = await issueFiscalInvoiceService.issue(draftFor(appointmentId), {
       overrideAdapter: new MockAdapter({ forceOutcome: 'success' })
     });
-    createdFiscalInvoiceIds.push(fiscalInvoice._id);
 
     await expect(retryFiscalSubmissionService.retry(fiscalInvoice._id)).rejects.toThrow('FISCAL_INVOICE_STATUS_INVALIDO_PARA_RETRY');
   });

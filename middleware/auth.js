@@ -81,6 +81,7 @@ export const auth = async (req, res, next) => {
 
         req.user = {
             id: decoded.id,
+            _id: decoded.id,
             role: decoded.role
         };
 

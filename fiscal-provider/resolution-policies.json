@@ -1,0 +1,16 @@
+[
+  {
+    "municipioIBGE": "5201108",
+    "regimeTributario": "SIMPLES_NACIONAL",
+    "effectiveFrom": null,
+    "effectiveUntil": "2026-10-31T23:59:59.999-03:00",
+    "provider": "anapolis_municipal"
+  },
+  {
+    "municipioIBGE": "5201108",
+    "regimeTributario": "SIMPLES_NACIONAL",
+    "effectiveFrom": "2026-11-01T00:00:00.000-03:00",
+    "effectiveUntil": null,
+    "provider": "sefin_nacional"
+  }
+]

@@ -1,3 +1,5 @@
+> **Atualização operacional — 11/09/2026:** Anápolis + Simples Nacional usa o municipal até 31/10/2026 e o nacional a partir de 01/11/2026, às 00h de Brasília (Resolução CGSN 191/2026). A fonte executável é `ResolutionPolicy` + `resolution-policies.json`. O override legado `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` foi removido. As referências históricas abaixo a setembro, stub municipal e assinatura somente mock estão superadas. Consulte [auditoria atual](./anapolis_audit_2026-09-11.md).
+
 # Checklist de Conformidade — Módulo Fiscal NFS-e (Padrão Nacional)
 
 > Documento produzido a partir da auditoria funcional de 2026-07-28 (código real + Anexo I oficial `dps_field_matrix.md`, v1.01-09/02/2026). É a fonte da verdade do que falta para o módulo fiscal ser aderente ao Padrão Nacional — não o XML nem o schema isoladamente, e sim o processo completo do Emissor Nacional (Prestador → Tomador → Serviço → Tributação → Valores → Observações → Intermediário).
@@ -120,7 +122,7 @@ Cada campo é exigido por uma origem diferente — misturar as origens foi o que
 |---|---|---|---|---|---|
 | Regime tributário real da clínica | `ConfiguracaoFiscal.regimeTributario` vazio em produção; `FiscalConfiguration.tsx` usa default `LUCRO_PRESUMIDO` | Decisão Contábil | 🔴 A | Ver `decisoes_fiscais_clinica.md` #1 | [ ] |
 | Tipo de certificado digital (A1 vs A3/HSM) | Não decidido; `CertificateManager` só tem Mock | Decisão Contábil | 🔴 A | Ver `decisoes_fiscais_clinica.md` #8 | [ ] |
-| Endpoint técnico do webservice de Anápolis (NotaControl) | URL do `.asmx` conhecida, mas 403/whitelist bloqueia acesso ao WSDL | Município | 🔴 A (se regime não for Simples Nacional pós-01/09/2026) | Contatar `suporte.anapolis@notacontrol.com.br` | [ ] |
+| Endpoint técnico do webservice de Anápolis (NotaControl) | URL do `.asmx` conhecida, mas o contrato WSDL não foi validado nesta auditoria | Município | 🔴 A até 31/10/2026 para a clínica | Confirmar homologação com o suporte municipal/Nota Control | [ ] |
 | Ligação `FiscalProfile.ambiente` → host do `SefinNacionalAdapter` | Hoje sempre hardcoded para Produção Restrita (`_attemptSubmission.js:27`), ignora o campo configurado | Achado técnico (não é regra externa) | 🟡 B | Ajuste pequeno no `resolveAdapter()` — só faz sentido corrigir quando houver certificado real para testar | [ ] |
 
 ---

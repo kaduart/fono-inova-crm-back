@@ -1,3 +1,5 @@
+> **Atualização operacional — 11/09/2026:** Anápolis + Simples Nacional usa o municipal até 31/10/2026 e o nacional a partir de 01/11/2026, às 00h de Brasília (Resolução CGSN 191/2026). A fonte executável é `ResolutionPolicy` + `resolution-policies.json`. O override legado `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` foi removido. As referências históricas abaixo a setembro, stub municipal e assinatura somente mock estão superadas. Consulte [auditoria atual](./anapolis_audit_2026-09-11.md).
+
 # NFS-e — Situação de Integração de Anápolis-GO (município da clínica)
 
 > Correção de escopo: o documento `project_nfse_phase1_official_spec.md` (Seção 1) citou "Goiânia" como
@@ -134,7 +136,7 @@ há DUAS transições sobrepostas, com públicos-alvo diferentes.**
 
    Essa regra **só se aplica a ME/EPP optantes do Simples Nacional** (e situações correlatas: "Pendente de
    Opção", excesso de sublimite, opção pelo regime regular de IBS/CBS) — **não** se aplica a empresas em
-   regime normal (Lucro Presumido/Real), que **permanecem no webservice municipal** mesmo após 01/09/2026,
+   regime normal (Lucro Presumido/Real), que **permanecem no webservice municipal** após 01/11/2026,
    segundo o texto lido. MEI já usa o Emissor Nacional desde a adoção do padrão nacional (Seção 2).
 
    **✅ Confirmado por documentação oficial municipal, com data específica e público-alvo explícito.**
@@ -143,7 +145,7 @@ há DUAS transições sobrepostas, com públicos-alvo diferentes.**
 | Regime tributário do contribuinte | Onde emite hoje | Muda quando |
 |---|---|---|
 | MEI | Emissor Nacional (Ambiente Nacional) | Já migrado |
-| Simples Nacional (ME/EPP) | Webservice municipal (padrão nacional) | Migra para Ambiente Nacional em 01/09/2026 |
+| Simples Nacional (ME/EPP) | Webservice municipal (padrão nacional) | Migra para Ambiente Nacional em 01/11/2026 |
 | Lucro Presumido / Real (regime normal) | Webservice municipal (padrão nacional) | Sem previsão de migração para Ambiente Nacional encontrada nas fontes lidas |
 
 ---
@@ -205,7 +207,7 @@ negócio que esta pesquisa não pode responder: o regime tributário da clínica
   padrão, que a Sefin Nacional seria o emissor (cenário de "município sem sistema próprio"), o que **não se
   aplica a Anápolis**.
 - Se a clínica está no **Simples Nacional**: hoje (2026-07-16) também usa o webservice municipal, mas
-  **deverá migrar para o Ambiente Nacional / Emissor Nacional / API Nacional a partir de 01/09/2026** — nesse
+  **deverá migrar para o Ambiente Nacional / Emissor Nacional / API Nacional a partir de 01/11/2026** — nesse
   caso, os endpoints do documento de Fase 1 (Sefin Nacional) **passam a ser corretos a partir dessa data**,
   não antes.
 - Se a clínica é **MEI**: já usa o Emissor Nacional (Ambiente Nacional) — cenário improvável para uma clínica
@@ -227,4 +229,4 @@ negócio que esta pesquisa não pode responder: o regime tributário da clínica
 - ❓ Confirmação nominal de Anápolis na lista/planilha de municípios aderentes do Portal Nacional (arquivo
   binário não lido nesta pesquisa).
 - ❓ Regime tributário da clínica (fato de negócio, não documental) — condiciona qual host de API é o correto
-  a partir de agora vs. a partir de 01/09/2026.
+  no período municipal vs. a partir de 01/11/2026.

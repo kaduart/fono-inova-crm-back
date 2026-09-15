@@ -57,9 +57,8 @@ const gunzipBase64 = (b64) => zlib.gunzipSync(Buffer.from(b64, 'base64')).toStri
 export class SefinNacionalAdapter extends FiscalProvider {
   /**
    * @param {{ ambiente: string, httpsAgent?: object }} config
-   *   `httpsAgent` deve carregar o certificado cliente (mTLS) — hoje sempre undefined, pois não
-   *   há certificado real disponível. Chamadas reais vão falhar no handshake TLS até isso ser
-   *   resolvido — comportamento esperado, não um bug deste adapter.
+   *   `httpsAgent` carrega o certificado cliente (mTLS), construído por buildCertificateContext.
+   *   Sem certificado configurado, a autenticação real não pode ser concluída.
    */
   constructor({ ambiente = FiscalAmbiente.PRODUCAO_RESTRITA, httpsAgent } = {}) {
     super();

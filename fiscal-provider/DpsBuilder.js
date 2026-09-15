@@ -1,7 +1,7 @@
 // fiscal-provider/DpsBuilder.js
 // Provider Layer (Fase 2 v3, Seção 1) — serializa o JSON estruturado do FiscalSnapshot em XML
 // da DPS, seguindo os nomes de elemento confirmados em dps_field_matrix.md (Anexo I,
-// v1.01-20260209). Não assina digitalmente (CertificateManager, ainda mock) e não faz HTTP.
+// v1.01-20260209). Não assina digitalmente (assinatura real ou mock ? responsabilidade do CertificateManager) e não faz HTTP.
 //
 // ⚠️ LIMITAÇÃO CONHECIDA E DOCUMENTADA: fomos capazes de confirmar os NOMES e a hierarquia dos
 // elementos a partir da planilha derivada do Anexo I (dps_field_matrix.md), mas não obtivemos o
@@ -118,11 +118,17 @@ export function buildDpsXml(snapshot, fiscalInvoice, fiscalProfile) {
       `<tribMun>${el('tribISSQN', 1)}${el('tpRetISSQN', 1)}</tribMun>` +
       // O grupo existe obrigatoriamente no XSD, embora todos os seus campos sejam condicionais.
       `<tribFed></tribFed>` +
-      // Em homologação, declara que os totais estimados não serão informados. Em produção essa
-      // escolha precisa vir da configuração contábil/IBPT da clínica; não deve ser presumida.
-      (tpAmb === 2
-        ? `<totTrib>${el('indTotTrib', 0)}</totTrib>`
-        : (() => { throw new Error('FISCAL_TOTAL_TRIBUTOS_NAO_CONFIGURADO'); })()) +
+      // trib/totTrib/pTotTribSN (Lei 12.741/2012) — confirmado pelo contador da clínica
+      // (14/09/2026): % aproximado do total de tributos do Simples Nacional, vindo do
+      // FiscalProfile.pTotTribSN via snapshot (nunca hardcoded aqui — é dado contábil real,
+      // editável sem deploy). Sem essa configuração: homologação cai no "não informar" do Decreto
+      // 8.264/2014 (indTotTrib=0, opção sempre válida em teste); produção continua bloqueada até
+      // alguém configurar — nunca presume um percentual.
+      (() => {
+        if (infDPS.valores.pTotTribSN != null) return `<totTrib>${el('pTotTribSN', infDPS.valores.pTotTribSN)}</totTrib>`;
+        if (tpAmb === 2) return `<totTrib>${el('indTotTrib', 0)}</totTrib>`;
+        throw new Error('FISCAL_TOTAL_TRIBUTOS_NAO_CONFIGURADO');
+      })() +
     `</trib>`
   ].join('');
 

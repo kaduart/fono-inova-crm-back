@@ -1,6 +1,8 @@
+> **Atualização operacional — 11/09/2026:** Anápolis + Simples Nacional usa o municipal até 31/10/2026 e o nacional a partir de 01/11/2026, às 00h de Brasília (Resolução CGSN 191/2026). A fonte executável é `ResolutionPolicy` + `resolution-policies.json`. O override legado `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` foi removido. As referências históricas abaixo a setembro, stub municipal e assinatura somente mock estão superadas. Consulte [auditoria atual](./anapolis_audit_2026-09-11.md).
+
 # GO-LIVE — NFS-e (Sprint 1)
 
-> Documento de execução, não de compliance. Pergunta única: **o que falta para a clínica emitir a primeira nota fiscal real, no caso comum, conforme a regra que entra em 01/09/2026?** Tudo que não está aqui foi deliberadamente adiado — ver `compliance_checklist.md` (o que falta para 100% de aderência ao Padrão Nacional) e `decisoes_fiscais_clinica.md` (perguntas de negócio, algumas das quais alimentam este checklist diretamente).
+> Documento de execução, não de compliance. Pergunta única: **o que falta para a clínica emitir a primeira nota fiscal real pelo fluxo vigente e preparar a migração nacional de 01/11/2026?** Tudo que não está aqui foi deliberadamente adiado — ver `compliance_checklist.md`, `decisoes_fiscais_clinica.md` e a auditoria atual de Anápolis.
 >
 > Regra de escopo: um item só entra aqui se a ausência dele impede emitir **qualquer** nota no caso comum (paciente pessoa física, sem retenção, sem liminar, sem intermediário, sem substituição). Regra específica de negócio (retenção, liminar, tomador PJ) fica em Sprint 2, mesmo que pareça urgente — só sobe para cá se a resposta em `decisoes_fiscais_clinica.md` confirmar que acontece hoje.
 
@@ -10,7 +12,7 @@ Tudo isto foi implementado e testado na semana de 2026-07-16 (PR1-PR4) e continu
 
 - **Persistência completa**: `FiscalInvoice`, `FiscalProfile`, `FiscalSubmission`, `FiscalSnapshot`, `Certificate`, `OfficialFiscalEvent`, `ProviderTransaction` + repositórios.
 - **Domínio**: `FiscalStateMachineService` (máquina de estados oficial, cancelamento/substituição/análise fiscal), `FiscalInvoiceService`, `FiscalInvoicePaymentProjection`, policies/specifications/validators — 21 testes unitários passando.
-- **Provider Layer**: `FiscalProviderResolver` (município + regime + data, incluindo a regra de migração 01/09/2026 já hardcoded), `DpsBuilder` (gera XML no leiaute nacional correto), `MockAdapter` — 18 testes unitários passando.
+- **Provider Layer**: `FiscalProviderResolver` consulta `ResolutionPolicy`; Anápolis + Simples usa o municipal até 31/10/2026 e o nacional desde 01/11/2026. `DpsBuilder`, adapters municipal/nacional e mock possuem responsabilidades separadas.
 - **Application Layer**: `IssueFiscalInvoiceService` + `RetryFiscalSubmissionService` + `_attemptSubmission` orquestrando o fluxo completo — 5 testes de integração contra MongoDB real passando (42/42 no total do módulo).
 - **Frontend**: `FiscalConfiguration.tsx` (perfil + certificado) e `EmitFiscalInvoiceModal.tsx` (emissão MVP) já em produção, funcionando contra `MockAdapter`.
 - **Endpoints REST**: `POST /nfse/emit`, `/nfse/emit-from-payment`, `GET /nfse`, `GET /nfse/:id`, `/retry`, `/cancel`, download de XML/PDF — todos implementados no `fiscalController.js`.
@@ -33,12 +35,12 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 - ✅ `/ParametrosMunicipais` e `/DANFSe` neste host: **descontinuados** (501, "movido para adn.../parametrizacao/" e "/danfse/") — confirmado no spec real, não é lacuna nossa.
 - ⏸️ Assinatura digital real (XML-DSig) — implementada (`node-forge`+`xml-crypto`), **deliberadamente não testada ainda** — sequência escolhida pelo usuário: provar mTLS+API real isolado antes de somar a variável da assinatura. Próximo passo natural agora que mTLS está 100% provado.
 
-**Ferramenta permanente adicionada**: `POST /api/v2/fiscal/test-connection` — diagnóstico de conectividade mTLS reutilizável (carrega certificado do perfil ativo, monta `https.Agent`, faz uma chamada GET real, devolve `{ok, tls, certificateAccepted, httpStatus, daysUntilExpiry, ...}`). Útil pra checar rapidamente se o certificado ainda funciona sem escrever script descartável — sobretudo quando o certificado for renovado no futuro. Respeita o `FiscalProviderResolver` de verdade (hoje resolve pra `anapolis_municipal` antes de 01/09/2026 — usar `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` pra testar Sefin Nacional antes da data real).
+**Ferramenta permanente adicionada**: `POST /api/v2/fiscal/test-connection` — diagnóstico de conectividade mTLS reutilizável. Atualmente o diagnóstico suporta apenas a Sefin Nacional; o diagnóstico municipal permanece uma lacuna explícita.
 
 **Ainda em aberto:**
 - 🟡 Testar `POST /nfse` de verdade (precisa da assinatura XML-DSig funcionando — próximo passo).
 - 🟡 `GET /nfse/{chaveAcesso}` (consulta) e `/eventos` — resposta é JSON, formato exato (`NFSeGetResponseSucesso`) ainda não confirmado em detalhe (só o schema de erro foi validado nesta sessão).
-- 🗓️ `FiscalProviderResolver` só roteia para Sefin Nacional a partir de 01/09/2026 em produção real — `FISCAL_SEFIN_NACIONAL_EFFECTIVE_FROM` no `.env` permite testar antes dessa data sem mexer em código.
+- 🗓️ `FiscalProviderResolver` consulta a `ResolutionPolicy`: municipal até 31/10/2026; Sefin Nacional desde 01/11/2026, no horário de Brasília.
 - ⚠️ `FISCAL_CERT_ENCRYPTION_KEY` precisa ser adicionada nas variáveis de ambiente do Render (produção) — hoje só existe no `.env` local.
 
 ## Definition of Done por bloco
@@ -63,7 +65,7 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 6. Configurar mTLS no `SefinNacionalAdapter`
 7. Corrigir a seleção dinâmica de ambiente (`_attemptSubmission.js`)
 8. Emitir uma NFS-e em homologação (Produção Restrita) e validar com o contador
-9. **Aguardar 01/09/2026** (ou confirmar que o resolver já aponta para Sefin Nacional) e emitir a primeira NFS-e em produção
+9. Homologar o fluxo municipal vigente e preparar separadamente o corte para a Sefin Nacional em 01/11/2026
 
 ## 1. Cenário confirmado — decisão de negócio, zero código
 
@@ -73,7 +75,7 @@ O que falta abaixo é **só** o que impede esse fluxo já pronto de rodar contra
 - [x] Certificado digital decidido — A1, **já possui** (`decisoes_fiscais_clinica.md` #2)
 - [x] Emissor técnico definido — **Sefin Nacional**, decorrente do regime (`decisoes_fiscais_clinica.md` #3)
 - [ ] ~~Se NotaControl: contato...~~ **Não se aplica** — emissor definido é Sefin Nacional, não NotaControl
-- [ ] Ressalva registrada: mesmo com Sefin Nacional definido, o sistema só roteia para lá a partir de 01/09/2026 — meta de go-live ajustada para essa data
+- [ ] Confirmar homologação municipal antes da primeira emissão real e homologação nacional antes de 01/11/2026
 
 ## 2. Dados mínimos obrigatórios (só o que bloqueia emissão)
 

@@ -8,6 +8,9 @@ import Logger from '../../services/utils/Logger.js';
 const logger = new Logger('FiscalSubmissionRepository');
 
 export class FiscalSubmissionRepository {
+  async pinProvider(fiscalSubmissionId, providerSnapshot) {
+    return FiscalSubmission.findByIdAndUpdate(fiscalSubmissionId, { $set: { providerSnapshot } }, { new: true });
+  }
   async findById(fiscalSubmissionId) {
     try {
       return await FiscalSubmission.findById(fiscalSubmissionId);

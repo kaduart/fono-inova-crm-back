@@ -1,4 +1,8 @@
 import mongoose from 'mongoose';
+import { matchTherapySlots } from '../services/liminar/matchTherapySlots.js';
+import { getPatientPackageNumbers } from '../services/liminar/patientPackageNumbers.js';
+import AuditLog from '../models/AuditLog.js';
+import { applyFinancialProtection } from '../services/appointment/policies/appointmentFinancialPolicy.js';
 import LiminarContract from '../models/LiminarContract.js';
 import Payment from '../models/Payment.js';
 import TherapeuticPlan from '../models/TherapeuticPlan.js';
@@ -485,11 +489,15 @@ export async function updateTherapy(req, res) {
     }
 
     // Appointments pendentes que seriam reatribuídos ao trocar o profissional
+    const clinicDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const previousSlots = therapy.slots.map(slot => ({ dayOfWeek: slot.dayOfWeek, time: slot.time }));
     const affected = await Appointment.find({
       liminarContract: new mongoose.Types.ObjectId(contractId),
       specialty,
+      date: { $gte: new Date(`${clinicDay}T00:00:00Z`) },
+      serviceType: { $nin: ['evaluation', 're_evaluation'] },
       operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
-    }).select('_id date time').session(session).lean();
+    }).select('_id date time billingType paymentMethod').session(session).lean();
 
     // 🔄 Sincronização de horário: se o slot mudou, todo appointment pendente cujo dia da
     // semana ainda existe nos NOVOS slots é atualizado pro horário daquele dia.
@@ -503,59 +511,9 @@ export async function updateTherapy(req, res) {
     const timeSyncMap = new Map(); // appointmentId (string) -> novo time
     const toCancelIds = [];        // appointments cujo dia da semana saiu do plano (ou não tem mais slot correspondente nesse dia)
     if (slots !== undefined) {
-      // 🚨 FIX (2026-08-18): um dia da semana pode ter mais de um slot (ex: duas sessões
-      // na sexta). O Map<dayOfWeek, time> anterior tinha chave única e colapsava slots
-      // duplicados do mesmo dia — o último sobrescrevia o(s) anterior(es), sincronizando
-      // TODOS os appointments pendentes daquele dia pro mesmo horário e deixando o
-      // gap-check de generateLiminarSessions.js cego pro slot perdido (achou que não
-      // tinha nenhum appointment nesse horário e gerou duplicado por cima do outro slot).
-      // Agora é Map<dayOfWeek, time[]>, casando cada appointment pendente com o slot novo
-      // de horário mais próximo do que ele já tinha, sem repetir o mesmo slot em dois
-      // appointments diferentes.
-      const newTimesByDay = new Map();
-      for (const s of (slots || [])) {
-        if (!newTimesByDay.has(s.dayOfWeek)) newTimesByDay.set(s.dayOfWeek, []);
-        newTimesByDay.get(s.dayOfWeek).push(s.time);
-      }
-
-      const toMinutes = (time) => {
-        const [h, m] = time.split(':').map(Number);
-        return h * 60 + m;
-      };
-
-      const affectedByDay = new Map();
-      for (const a of affected) {
-        const dow = new Date(a.date).getDay();
-        if (!affectedByDay.has(dow)) affectedByDay.set(dow, []);
-        affectedByDay.get(dow).push(a);
-      }
-
-      for (const [dow, dayAppointments] of affectedByDay) {
-        const availableTimes = [...(newTimesByDay.get(dow) || [])];
-        // Ordem estável e previsível: appointment de horário mais cedo casa primeiro.
-        const sorted = [...dayAppointments].sort((a, b) => a.time.localeCompare(b.time));
-        for (const a of sorted) {
-          if (availableTimes.length === 0) {
-            toCancelIds.push(a._id);
-            continue;
-          }
-          const currentMinutes = toMinutes(a.time);
-          let closestIdx = 0;
-          let closestDiff = Infinity;
-          availableTimes.forEach((time, idx) => {
-            const diff = Math.abs(toMinutes(time) - currentMinutes);
-            if (diff < closestDiff) { closestDiff = diff; closestIdx = idx; }
-          });
-          const [claimedTime] = availableTimes.splice(closestIdx, 1);
-          // 🚨 FIX (2026-07-16): sempre sincroniza, mesmo se claimedTime === Appointment.time —
-          // não depende de detectar mudança no Appointment. Espelha o mesmo bug/fix já
-          // identificado em routes/insurancePlans.v2.js: o Appointment pode já estar correto
-          // (de uma sync anterior a este fix) enquanto a Session correspondente ficou presa
-          // no horário antigo pra sempre, porque só o Appointment era comparado aqui e a
-          // Session nunca era tocada.
-          timeSyncMap.set(String(a._id), claimedTime);
-        }
-      }
+      const matched = matchTherapySlots(affected, slots || []);
+      for (const [id, time] of matched.timeSyncMap) timeSyncMap.set(id, time);
+      toCancelIds.push(...matched.toCancelIds);
 
       if (timeSyncMap.size > 0) {
         logger.info('Sincronizando horário de appointments pendentes (slot alterado)', {
@@ -632,7 +590,7 @@ export async function updateTherapy(req, res) {
           const newTime = timeSyncMap.get(String(a._id));
           if (newTime) set.time = newTime;
           return Object.keys(set).length > 0
-            ? { updateOne: { filter: { _id: a._id }, update: { $set: set } } }
+            ? { updateOne: { filter: { _id: a._id }, update: { $set: applyFinancialProtection(a, set) } } }
             : null;
         })
         .filter(Boolean);
@@ -696,6 +654,7 @@ export async function updateTherapy(req, res) {
             clinicalStatus: 'canceled',
             paymentStatus: 'canceled',
             canceledAt: new Date(),
+            canceledBy: req.user?._id || req.user?.id || null,
             cancelReason: `Dia da semana removido da terapia "${specialty}" (plano atualizado)`,
             updatedAt: new Date()
           }
@@ -711,6 +670,17 @@ export async function updateTherapy(req, res) {
       );
     }
 
+    await AuditLog.create([{
+      userId: req.user?._id || req.user?.id || null,
+      actorRole: req.user?.role || 'SYSTEM',
+      action: 'liminar_therapy_updated', entityType: 'TherapeuticPlan', entityId: plan._id,
+      source: 'liminarContractController:updateTherapy',
+      before: { slots: previousSlots },
+      after: { slots: therapy.slots.map(slot => ({ dayOfWeek: slot.dayOfWeek, time: slot.time })) },
+      metadata: { contractId, specialty, appointmentsUpdated, appointmentsCanceled,
+        timeChanges: Array.from(timeSyncMap, ([appointmentId, time]) => ({ appointmentId, time })),
+        canceledAppointmentIds: toCancelIds.map(String) }
+    }], { session });
     await session.commitTransaction();
 
     logger.info('Terapia atualizada no plano liminar', {
@@ -773,10 +743,22 @@ export async function getContractSessions(req, res) {
   const sessions = await Appointment.find(filter)
     .populate('doctor', 'fullName specialty')
     .populate('patient', 'fullName')
+    .populate('insuranceGuide', 'number')
+    .populate('package', 'status')
     .sort({ date: 1 })
     .lean();
 
-  return res.json({ sessions });
+  const packageNumbers = await getPatientPackageNumbers(contract.patient);
+  const activePlan = await TherapeuticPlan.findOne({ liminarContract: id, status: 'active' }).lean();
+  const specialtyNumbers = Object.keys(activePlan?.therapies || {});
+  return res.json({ sessions: sessions.map(appointment => ({
+    ...appointment,
+    package: appointment.package?._id || appointment.package || null,
+    packageStatus: appointment.package?.status || null,
+    packageNumber: packageNumbers.get(String(appointment.package?._id || appointment.package)) || null,
+    liminarSpecialtyNumber: specialtyNumbers.indexOf(appointment.specialty) >= 0 ? specialtyNumbers.indexOf(appointment.specialty) + 1 : null,
+    liminarProcessNumber: contract.processNumber || null,
+  })) });
 }
 
 // ──────────────────────────────────────────────────────────────

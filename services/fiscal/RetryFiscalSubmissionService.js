@@ -1,70 +1,40 @@
-/**
- * ============================================================================
- * RETRY FISCAL SUBMISSION SERVICE
- * ============================================================================
- *
- * Application Service — PR4. Reaproveita a mesma infraestrutura do
- * IssueFiscalInvoiceService (attemptSubmission) para uma FiscalInvoice que já está
- * PENDING_SUBMISSION (emissão anterior terminou em network_error/timeout — nunca em rejeição de
- * negócio, essa é terminal por design, ver domain/fiscal/stateMachine/FiscalStateMachineService.js
- * transitionToRejected).
- * ============================================================================
- */
-
+// Após resultado indeterminado, reconciliar a DPS original antes de qualquer reenvio.
 import { v4 as uuidv4 } from 'uuid';
 import { fiscalInvoiceRepository } from '../../infrastructure/persistence/FiscalInvoiceRepository.js';
-import { startAttempt } from '../../domain/fiscal/services/FiscalSubmissionService.js';
-import { attemptSubmission } from './_attemptSubmission.js';
+import { fiscalSubmissionRepository } from '../../infrastructure/persistence/FiscalSubmissionRepository.js';
+import { reconcileSubmission } from './_attemptSubmission.js';
+import * as FiscalInvoiceService from '../../domain/fiscal/services/FiscalInvoiceService.js';
 import { FiscalInvoiceStatus } from '../../constants/fiscalEnums.js';
 
 export class RetryFiscalSubmissionService {
-  /**
-   * @param {string} fiscalInvoiceId
-   * @param {{ correlationId?: string }} [options]
-   * @returns {Promise<{ fiscalInvoice: Object, outcome: string }>}
-   */
   async retry(fiscalInvoiceId, options = {}) {
     const correlationId = options.correlationId || uuidv4();
-
     const fiscalInvoice = await fiscalInvoiceRepository.findById(fiscalInvoiceId);
     if (!fiscalInvoice) throw new Error('FISCAL_INVOICE_NAO_ENCONTRADA');
-
     if (fiscalInvoice.status !== FiscalInvoiceStatus.PENDING_SUBMISSION) {
-      throw new Error(
-        `FISCAL_INVOICE_STATUS_INVALIDO_PARA_RETRY: ${fiscalInvoice.status} — só é possível reenviar ` +
-        `uma FiscalInvoice em PENDING_SUBMISSION (falha de infraestrutura). REJECTED é terminal: ` +
-        `emitir de novo exige uma nova FiscalInvoice/DPS.`
-      );
+      throw new Error('FISCAL_INVOICE_STATUS_INVALIDO_PARA_RETRY: ' + fiscalInvoice.status);
     }
-
-    console.log('[RetryFiscalSubmissionService] Reabrindo tentativa', {
-      fiscalInvoiceId: fiscalInvoice._id.toString(),
-      correlationId
-    });
-
-    const { submission, snapshot } = await startAttempt(fiscalInvoice, { correlationId });
-
-    console.log('[RetryFiscalSubmissionService] Nova tentativa aberta, chamando provider', {
-      fiscalInvoiceId: fiscalInvoice._id.toString(),
-      fiscalSubmissionId: submission._id.toString(),
-      attemptNumber: submission.attemptNumber,
-      correlationId
-    });
-
-    const { fiscalInvoice: updated, outcome } = await attemptSubmission(fiscalInvoice, submission, snapshot, {
-      correlationId,
-      overrideAdapter: options.overrideAdapter // só usado em testes de integração
-    });
-
-    console.log('[RetryFiscalSubmissionService] Retry concluído', {
-      fiscalInvoiceId: fiscalInvoice._id.toString(),
-      attemptNumber: submission.attemptNumber,
-      outcome,
-      correlationId
-    });
-
-    return { fiscalInvoice: updated, outcome };
+    const submission = await fiscalSubmissionRepository.findLastAttempt(fiscalInvoiceId);
+    const required = (reason) => ({ fiscalInvoice, outcome: 'reconciliation_required', reason });
+    if (!submission) return required('PREVIOUS_SUBMISSION_NOT_FOUND');
+    let result;
+    try {
+      result = await reconcileSubmission(fiscalInvoice, submission, options);
+    } catch {
+      return required('RECONCILIATION_QUERY_FAILED');
+    }
+    if (result?.status === 'authorized' && result.fields?.chaveAcesso && result.fields?.nNFSe && result.fields?.cStat) {
+      const updated = await FiscalInvoiceService.recordAuthorization(fiscalInvoiceId, submission,
+        { ...result.fields, providerSnapshot: submission.providerSnapshot }, { correlationId });
+      if (result.xml) await FiscalInvoiceService.attachAttachment(fiscalInvoiceId, {
+        type: 'xml_nfse', storageRef: result.xml, mimeType: 'application/xml',
+        size: Buffer.byteLength(result.xml, 'utf8'), generatedAt: new Date()
+      });
+      return { fiscalInvoice: updated, outcome: 'authorized' };
+    }
+    // Até existir contrato homologado de ausência definitiva, nem "não encontrado"
+    // é prova suficiente para reenviar (processamento pode estar em andamento).
+    return required(result?.reason || 'RECONCILIATION_NOT_CONCLUSIVE');
   }
 }
-
 export const retryFiscalSubmissionService = new RetryFiscalSubmissionService();

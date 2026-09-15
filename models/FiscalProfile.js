@@ -34,6 +34,13 @@ const fiscalProfileSchema = new mongoose.Schema({
     default: FiscalAmbiente.PRODUCAO_RESTRITA
   },
   certificateRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Certificate' },
+  // trib/totTrib/pTotTribSN (manual §8.3, TCTribTotal) — "% aproximado do total de tributos do
+  // Simples Nacional", Lei 12.741/2012 (nada a ver com a Reforma Tributária/IBS-CBS). Confirmado
+  // pelo contador da clínica (Samuel, 14/09/2026): usar 8%, mantido mesmo que a faixa real do
+  // Simples oscile um pouco pra cima ou pra baixo — decisão dele, não do código. Editável aqui
+  // (não hardcoded em DpsBuilder.js) porque é dado tributário real da empresa, pode mudar de
+  // faixa/decisão contábil sem precisar de deploy.
+  pTotTribSN: { type: Number, min: 0, max: 100 },
   ativo: { type: Boolean, default: true, index: true }
 }, { timestamps: true });
 

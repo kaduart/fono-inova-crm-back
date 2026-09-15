@@ -12,6 +12,7 @@ import { resolveProviderName } from '../../fiscal-provider/FiscalProviderResolve
 import { buildCertificateContext } from '../../fiscal-provider/buildCertificateContext.js';
 import { FiscalProviderName } from '../../constants/fiscalProviders.js';
 import { FiscalAmbiente } from '../../constants/fiscalEnums.js';
+import { ENDPOINTS as ANAPOLIS_ENDPOINTS } from '../../adapters/fiscal/AnapolisMunicipalAdapter.js';
 
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -105,18 +106,29 @@ export async function testFiscalConnection(cnpj) {
     status: certificate.status
   };
 
-  if (providerName !== FiscalProviderName.SEFIN_NACIONAL) {
+  let host;
+  let path;
+  if (providerName === FiscalProviderName.SEFIN_NACIONAL) {
+    host = SEFIN_HOSTS[resolvedProfile.ambiente] || SEFIN_HOSTS[FiscalAmbiente.PRODUCAO_RESTRITA];
+    path = `${SEFIN_BASE_PATH}/nfse/${DIAGNOSTIC_CHAVE}`;
+  } else if (providerName === FiscalProviderName.ANAPOLIS_MUNICIPAL) {
+    const endpoint = ANAPOLIS_ENDPOINTS[resolvedProfile.ambiente] || ANAPOLIS_ENDPOINTS[FiscalAmbiente.PRODUCAO_RESTRITA];
+    const url = new URL(endpoint);
+    host = url.hostname;
+    path = url.pathname;
+  } else {
     return {
       ok: false,
       step: 'provider_not_supported',
-      message: `Diagnóstico de conectividade real só está implementado para Sefin Nacional. Provider resolvido: ${providerName}.`,
+      message: `Diagnóstico de conectividade real não está implementado para o provider ${providerName}.`,
       providerName,
       certificate: certificateInfo
     };
   }
 
-  const host = SEFIN_HOSTS[resolvedProfile.ambiente] || SEFIN_HOSTS[FiscalAmbiente.PRODUCAO_RESTRITA];
-  const path = `${SEFIN_BASE_PATH}/nfse/${DIAGNOSTIC_CHAVE}`;
+  // Requisição única GET (sem corpo SOAP, sem DPS) — para o .asmx da Nota Control isso é o
+  // comportamento padrão de um serviço ASP.NET: devolve a página de descrição do serviço ou um
+  // erro estruturado, nunca aciona RecepcionarLoteDpsSincrono nem qualquer emissão.
   const result = await get(host, path, httpsAgent);
 
   if (!result.connected) {
@@ -126,6 +138,7 @@ export async function testFiscalConnection(cnpj) {
       step: 'tls_handshake',
       tls: false,
       certificateAccepted: false,
+      providerName,
       error: result.error,
       host,
       path,
@@ -137,14 +150,19 @@ export async function testFiscalConnection(cnpj) {
   // Qualquer resposta HTTP (mesmo 4xx/5xx) prova que o handshake TLS completou e o certificado
   // foi aceito o suficiente pra chegar na camada de aplicação — só um erro de conexão (acima)
   // ou um 495 explícito (SSL Certificate Error, hosts que rejeitam na borda) indicam rejeição.
+  // Para Anápolis, um 403/ACCESS_DENIED (confirmado nos testes desta auditoria — causa ainda não
+  // determinada, ver docs/nfse-fiscal-module/anapolis_audit_2026-09-11.md §5) também chega aqui
+  // como resposta de aplicação, não como falha de handshake — `ok` reflete isso corretamente: a
+  // conexão/TLS funcionou, algo na aplicação/borda do provedor é quem devolveu 403.
   const isSslRejection = result.status === 495;
 
-  return {
+  const diagnostic = {
     ok: !isSslRejection,
     step: isSslRejection ? 'tls_handshake' : 'application_response',
     tls: true,
     certificateAccepted: !isSslRejection,
     httpStatus: result.status,
+    providerName,
     host,
     path,
     ambiente: resolvedProfile.ambiente,
@@ -152,4 +170,20 @@ export async function testFiscalConnection(cnpj) {
     responseBody: result.body,
     certificate: certificateInfo
   };
+
+  if (providerName === FiscalProviderName.ANAPOLIS_MUNICIPAL) {
+    // Informativo, não afeta `ok` — checa se o WSDL do próprio endpoint e o .xsd público do
+    // provedor estão acessíveis agora, sem exigir DPS/lote. `schemaDownload` não usa o
+    // certificado do contribuinte (é um download público, não faz parte do webservice SOAP).
+    diagnostic.wsdlAvailable = await probeGetOk(host, `${path}?WSDL`, httpsAgent);
+    diagnostic.schemaDownloadAvailable = await probeGetOk('www.notacontrol.com.br', '/download/nfse/schema_v101.xsd');
+  }
+
+  return diagnostic;
+}
+
+/** Probe leve: só diz se um GET chegou a uma resposta HTTP (qualquer status), sem devolver corpo. */
+async function probeGetOk(hostname, path, agent) {
+  const result = await get(hostname, path, agent);
+  return result.connected ? { reachable: true, httpStatus: result.status } : { reachable: false, error: result.error };
 }

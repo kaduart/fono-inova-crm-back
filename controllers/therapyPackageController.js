@@ -1,4 +1,5 @@
 import moment from 'moment';
+import { getPatientPackageNumbers } from '../services/liminar/patientPackageNumbers.js';
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import MedicalEvent from '../models/MedicalEvent.js';
@@ -1110,6 +1111,7 @@ export const packageOperations = {
                 const packages = await Package.find({ patient: patientId })
                     .populate({
                         path: 'sessions',
+                        populate: { path: 'insuranceGuide', select: '_id number' },
                     })
                     .populate({
                         path: 'payments',
@@ -1122,6 +1124,7 @@ export const packageOperations = {
                     })
                     .lean();
 
+                const packageNumbers = await getPatientPackageNumbers(patientId);
                 const enhancedPackages = packages.map(pkg => {
                     // 🐛 DEBUG: Log para verificar sessionsDone vindo do MongoDB
                     console.log(`[PackageController] Package ${pkg._id}: sessionsDone=${pkg.sessionsDone}, type=${typeof pkg.sessionsDone}`);
@@ -1133,6 +1136,8 @@ export const packageOperations = {
                     
                     return {
                         _id: pkg._id,
+                        sequenceNumber: packageNumbers.get(String(pkg._id)),
+                        packageNumber: packageNumbers.get(String(pkg._id)),
                         patient: pkg.patient,
                         doctor: pkg.doctor,
                         sessionType: pkg.sessionType,
@@ -1155,6 +1160,7 @@ export const packageOperations = {
                         time: pkg.time,
                         sessions: pkg.sessions?.map(session => ({
                             ...session,
+                            packageNumber: packageNumbers.get(String(session.package || pkg._id)),
                             date: session.date,
                             time: session.time,
                         })) || [],

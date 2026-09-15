@@ -227,7 +227,10 @@ router.put(
 router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
   try {
     const { reason, confirmedAbsence = false } = req.body;
-    const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence }, req.user);
+    const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence,
+      requestContext: { method: req.method, path: req.originalUrl,
+        correlationId: req.correlationId || req.get('x-correlation-id') || null }
+    }, req.user);
     return res.json({
       success: true,
       data: result.data,

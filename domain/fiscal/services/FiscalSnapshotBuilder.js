@@ -88,7 +88,11 @@ export async function buildSnapshot(fiscalInvoice, fiscalSubmissionId, { session
       valores: {
         vServ: fiscalInvoice.valorServico,
         vLiq: fiscalInvoice.valorLiquido,
-        vISSQN: fiscalInvoice.vISSQN
+        vISSQN: fiscalInvoice.vISSQN,
+        // trib/totTrib/pTotTribSN (Lei 12.741/2012) — snapshot da alíquota vigente no FiscalProfile
+        // no momento desta tentativa, não um valor recalculado depois (mesma garantia de
+        // imutabilidade de todo o resto do snapshot).
+        pTotTribSN: fiscalProfile.pTotTribSN ?? null
       },
       itens: (fiscalInvoice.items || []).map((item) => ({
         description: item.description,

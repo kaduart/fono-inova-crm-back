@@ -296,7 +296,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
   return updated;
 }
 
-export async function execute(id, { reason, confirmedAbsence = false }, user) {
+export async function execute(id, { reason, confirmedAbsence = false, requestContext }, user) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -335,8 +335,8 @@ export async function execute(id, { reason, confirmedAbsence = false }, user) {
       before: beforeSnapshot,
       after: result,
       source: 'appointment_command:cancelAppointmentCommand',
-      correlationId: result.correlationId,
-      metadata: { reason, confirmedAbsence },
+      correlationId: requestContext?.correlationId || result.correlationId,
+      metadata: { reason, confirmedAbsence, ...(requestContext ? { requestContext } : {}) },
     }),
     emitSocket('appointmentCanceled', {
       _id: result._id,

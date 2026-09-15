@@ -4,6 +4,10 @@
 // diretamente.
 
 export class FiscalProvider {
+  // Consulta por identidade da DPS/lote. Ausência de implementação nunca autoriza reenvio.
+  async reconcileDps() {
+    return { status: 'unknown', reason: 'PROVIDER_RECONCILIATION_NOT_IMPLEMENTED' };
+  }
   /* eslint-disable no-unused-vars */
 
   /** @returns {Promise<{ success: boolean, xml?: string, fields?: object, error?: object }>} */
