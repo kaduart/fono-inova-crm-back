@@ -195,6 +195,31 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         // 🎯 CAIXA & PRODUÇÃO — Fonte única de verdade (V2 pura)
         // ============================================================
         const _tCashflowBase = Date.now();
+
+        // 🚀 PERF (2026-09-17): comparativos (ontem/mês) não depende de NADA calculado
+        // pra "hoje" — só de targetDate, disponível desde o início da função. Antes
+        // esse bloco só começava a buscar depois que hoje+despesas+mapas auxiliares
+        // terminavam de vez (tudo em série), mesmo sendo dados 100% independentes.
+        // Dispara aqui, sem `await`, pra rodar em paralelo com TODO o resto da função —
+        // só é aguardado lá embaixo, na seção COMPARATIVOS, quando o valor é usado de
+        // fato. Não muda nenhum valor calculado, só deixa os round-trips ao Mongo
+        // sobrepor em vez de somar.
+        const yesterdayStart = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').startOf('day').utc().toDate();
+        const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
+        const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
+        const _tYesterdayCash = Date.now();
+        const comparativosPromise = Promise.all([
+            unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd).then(r => {
+                console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
+                return r;
+            }),
+            Session.find({ date: { $gte: yesterdayStart, $lte: yesterdayEnd } }).select('_id appointmentId package').lean(),
+            unifiedFinancialService.calculateCash(monthStart, end).then(r => {
+                console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
+                return r;
+            })
+        ]);
+
         const [cash, production, convenioAppts, attendanceAppointments] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end).then(r => {
                 _tick('calculateCash');
@@ -300,28 +325,10 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         // 🎯 COMPARATIVOS: ONTEM E MÊS
         // ============================================================
         const _tComparativos = Date.now();
-        const yesterdayStart = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').startOf('day').utc().toDate();
-        const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
-        const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
-
-        // 🚀 PERF (2026-09-17): yesterdayCash, yesterdaySessions e monthCash não dependem
-        // uma da outra — rodavam em await sequencial (3 round-trips ao Mongo em série),
-        // somando latência de rede desnecessariamente. Só yesterdayAppointmentsMap (abaixo)
-        // depende do resultado das duas primeiras. Paralelizar não muda nenhum valor
-        // calculado — só reduz o tempo de resposta, especialmente sensível em
-        // refresh=true (ignora o cache Redis e força recomputar tudo).
-        const _tYesterdayCash = Date.now();
-        const [yesterdayCash, yesterdaySessions, monthCash] = await Promise.all([
-            unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd).then(r => {
-                console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
-                return r;
-            }),
-            Session.find({ date: { $gte: yesterdayStart, $lte: yesterdayEnd } }).select('_id appointmentId package').lean(),
-            unifiedFinancialService.calculateCash(monthStart, end).then(r => {
-                console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
-                return r;
-            })
-        ]);
+        // Disparado lá no topo da função (comparativosPromise), em paralelo com hoje +
+        // despesas + mapas auxiliares — aqui só aguarda o que já deve estar pronto
+        // (ou quase) havendo rodado o tempo todo em segundo plano.
+        const [yesterdayCash, yesterdaySessions, monthCash] = await comparativosPromise;
         // 🎯 O caixa de ontem deve usar os MESMOS filtros do caixa de hoje
         // Busca appointments/sessions de ontem para aplicar filtros consistentes
         const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
