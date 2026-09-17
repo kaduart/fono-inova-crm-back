@@ -13,7 +13,7 @@ import Appointment from '../../models/Appointment.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
-export async function buildDoctorsOverview(limit = 10) {
+export async function buildDoctorsOverview() {
   const last30Days = moment().tz(TIMEZONE).subtract(30, 'days').toDate();
 
   // Busca médicos ativos (projection mínima)
@@ -57,7 +57,7 @@ export async function buildDoctorsOverview(limit = 10) {
     return acc;
   }, {});
 
-  const result = doctors.slice(0, limit).map(doctor => ({
+  const result = doctors.map(doctor => ({
     _id: doctor._id,
     name: doctor.fullName,
     specialty: doctor.specialty,

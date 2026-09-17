@@ -13,7 +13,7 @@ import { buildUpcomingAppointments } from './upcomingBuilder.js';
 const BLOCKS = {
   stats:    { builder: buildStats,                           ttl: 120, cacheKey: 'v2:stats' },
   charts:   { builder: buildCharts,                          ttl: 300, cacheKey: 'v2:charts' },
-  doctors:  { builder: () => buildDoctorsOverview(10),       ttl: 120, cacheKey: 'v2:doctors' },
+  doctors:  { builder: () => buildDoctorsOverview(),          ttl: 120, cacheKey: 'v2:doctors' },
   upcoming: { builder: () => buildUpcomingAppointments(10),  ttl: 60,  cacheKey: 'v2:upcoming' }
 };
 

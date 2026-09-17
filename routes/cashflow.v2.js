@@ -220,7 +220,22 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             })
         ]);
 
-        const [cash, production, convenioAppts, attendanceAppointments] = await Promise.all([
+        // 🚀 PERF (2026-09-17): despesas do período não dependem de cash/production/
+        // convenioAppts/attendanceAppointments — só de startDate/endDate/targetDate,
+        // disponíveis desde o início da função. Antes rodava em `await` separado DEPOIS
+        // do Promise.all principal (soma ao tempo total em vez de sobrepor). Mesma query,
+        // mesmo resultado — só entra como mais um membro do Promise.all abaixo.
+        const _tExpenses = Date.now();
+        const expenseQuery = {
+            status: { $nin: ['canceled', 'cancelado'] }
+        };
+        if (startDate && endDate) {
+            expenseQuery.date = { $gte: startDate, $lte: endDate };
+        } else {
+            expenseQuery.date = targetDate;
+        }
+
+        const [cash, production, convenioAppts, attendanceAppointments, expenses] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end).then(r => {
                 _tick('calculateCash');
                 console.log(`[cashflow.v2] calculateCash = ${Date.now() - _tCashflowBase}ms`);
@@ -242,23 +257,12 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 .lean(),
             Appointment.find({ date: { $gte: start, $lte: end } })
                 .select('operationalStatus clinicalStatus missed')
-                .lean()
+                .lean(),
+            Expense.find(expenseQuery).lean().then(r => {
+                console.log(`[cashflow.v2] expenses.find = ${Date.now() - _tExpenses}ms (${r.length} docs)`);
+                return r;
+            })
         ]);
-
-        // ============================================================
-        // 🎯 BUSCA DESPESAS DO PERÍODO
-        // ============================================================
-        const _tExpenses = Date.now();
-        const expenseQuery = {
-            status: { $nin: ['canceled', 'cancelado'] }
-        };
-        if (startDate && endDate) {
-            expenseQuery.date = { $gte: startDate, $lte: endDate };
-        } else {
-            expenseQuery.date = targetDate;
-        }
-        const expenses = await Expense.find(expenseQuery).lean();
-        console.log(`[cashflow.v2] expenses.find = ${Date.now() - _tExpenses}ms (${expenses.length} docs)`);
 
         // ============================================================
         // 🔧 DADOS AUXILIARES PARA EXIBIÇÃO (transações detalhadas)
@@ -334,11 +338,15 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
         const yesterdaySessionApptIds = yesterdaySessions.map(s => s.appointmentId?.toString()).filter(Boolean);
         const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
+        // 🚀 PERF (2026-09-17): populate('patient')/populate('doctor') removidos —
+        // nenhum consumidor deste map (classificação de pacote/liminar aqui embaixo,
+        // nem `transacoesOntem` na resposta, que só lê appt.time) usa nome/telefone de
+        // paciente ou nome/especialidade de médico para o comparativo de ontem. Só
+        // `package` (paymentType/model, usado pra decidir se é consumo de pré-pago) é
+        // realmente necessário. Mesmo resultado, menos round-trips ao Mongo.
         const yesterdayAppointmentsMap = yesterdayAllApptIds.length > 0
             ? await Appointment.find({ _id: { $in: yesterdayAllApptIds } })
                 .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
-                .populate('patient', 'fullName phone')
-                .populate('doctor', 'fullName specialty')
                 .populate('package', 'paymentType sessionValue totalValue totalSessions model')
                 .lean()
                 .then(list => new Map(list.map(a => [a._id.toString(), a])))
