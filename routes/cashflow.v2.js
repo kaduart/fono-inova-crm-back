@@ -302,16 +302,29 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const _tComparativos = Date.now();
         const yesterdayStart = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').startOf('day').utc().toDate();
         const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
+        const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
 
+        // 🚀 PERF (2026-09-17): yesterdayCash, yesterdaySessions e monthCash não dependem
+        // uma da outra — rodavam em await sequencial (3 round-trips ao Mongo em série),
+        // somando latência de rede desnecessariamente. Só yesterdayAppointmentsMap (abaixo)
+        // depende do resultado das duas primeiras. Paralelizar não muda nenhum valor
+        // calculado — só reduz o tempo de resposta, especialmente sensível em
+        // refresh=true (ignora o cache Redis e força recomputar tudo).
         const _tYesterdayCash = Date.now();
-        const yesterdayCash = await unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd);
-        console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
+        const [yesterdayCash, yesterdaySessions, monthCash] = await Promise.all([
+            unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd).then(r => {
+                console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
+                return r;
+            }),
+            Session.find({ date: { $gte: yesterdayStart, $lte: yesterdayEnd } }).select('_id appointmentId package').lean(),
+            unifiedFinancialService.calculateCash(monthStart, end).then(r => {
+                console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
+                return r;
+            })
+        ]);
         // 🎯 O caixa de ontem deve usar os MESMOS filtros do caixa de hoje
         // Busca appointments/sessions de ontem para aplicar filtros consistentes
         const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
-        const yesterdaySessions = await Session.find({
-            date: { $gte: yesterdayStart, $lte: yesterdayEnd }
-        }).select('_id appointmentId package').lean();
         const yesterdaySessionApptIds = yesterdaySessions.map(s => s.appointmentId?.toString()).filter(Boolean);
         const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
         const yesterdayAppointmentsMap = yesterdayAllApptIds.length > 0
@@ -356,10 +369,6 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         }).filter(Boolean);
         const yesterdayTotal = yesterdayTransacoes.reduce((s, t) => s + t.valor, 0);
 
-        const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
-        const _tMonthCash = Date.now();
-        const monthCash = await unifiedFinancialService.calculateCash(monthStart, end);
-        console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tMonthCash}ms`);
         const totalMes = monthCash.total;
         const dayOfMonth = moment.tz(targetDate, 'America/Sao_Paulo').date();
 
