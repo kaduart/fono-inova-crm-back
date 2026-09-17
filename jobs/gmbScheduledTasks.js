@@ -190,10 +190,12 @@ export const scheduleGmbCron = () => {
             // tem um módulo de callback pra /webhook/make-callback — Make PUBLICA de
             // verdade no Google a cada chamada, mas nunca avisa a gente do resultado.
             // O reenvio cego por timeout criava até 4 posts REAIS duplicados no Google
-            // Business Profile por post nosso, sempre marcando "failed" no final mesmo
-            // já tendo publicado (achado em produção 2026-08-17). Até o Make ganhar o
-            // módulo de callback, timeout vira falha pra revisão HUMANA — checar no
-            // Google se já publicou antes de usar o botão Republicar.
+            // Business Profile por post nosso (achado em produção 2026-08-17). Por isso
+            // o status vai pra 'unconfirmed' (não 'failed') — 'failed' é reservado pra
+            // falha REPORTADA (callback com status:'failed' ou erro real de envio); aqui
+            // não sabemos se publicou ou não, então não é honesto rotular como falha.
+            // Até o Make ganhar o módulo de callback, timeout vira revisão HUMANA —
+            // checar no Google se já publicou antes de usar o botão Republicar.
             const timedOut = await GmbPost.updateMany(
                 {
                     status: 'publishing_retry',
@@ -203,7 +205,7 @@ export const scheduleGmbCron = () => {
                 },
                 {
                     $set: {
-                        status: 'failed',
+                        status: 'unconfirmed',
                         nextRetryAt: null,
                         error: 'Sem confirmação do Make dentro do prazo — o Make pode ter publicado mesmo assim (scenario ainda sem callback de confirmação). Verifique no Google Business Profile antes de republicar.',
                         lastErrorAt: new Date(),
@@ -211,7 +213,7 @@ export const scheduleGmbCron = () => {
                 }
             );
             if (timedOut.modifiedCount > 0) {
-                console.warn(`⚠️ [GMB] ${timedOut.modifiedCount} post(s) sem confirmação do Make — marcados failed pra revisão manual (NÃO reenviados, evita duplicata real no Google)`);
+                console.warn(`⚠️ [GMB] ${timedOut.modifiedCount} post(s) sem confirmação do Make — marcados unconfirmed pra revisão manual (NÃO reenviados, evita duplicata real no Google)`);
             }
 
             // ── Recuperação de imagem: gera imagem para posts que ficaram sem ela ──

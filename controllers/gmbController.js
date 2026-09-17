@@ -262,7 +262,7 @@ export async function getHealth(req, res) {
       createdAt: { $gte: sevenDaysAgo },
     };
 
-    const [stuckPublished, failed, noImage, retrying, noImageSample, retryingSample, failedSample] =
+    const [stuckPublished, failed, unconfirmed, noImage, retrying, noImageSample, retryingSample, failedSample, unconfirmedSample] =
       await Promise.all([
         GmbPost.countDocuments({
           status: 'published',
@@ -270,6 +270,10 @@ export async function getHealth(req, res) {
           createdAt: { $gte: sevenDaysAgo },
         }),
         GmbPost.countDocuments({ status: 'failed' }),
+        // 'unconfirmed': Make não confirmou a publicação a tempo (scenario sem
+        // callback) — pode já ter publicado de verdade no Google. Separado de
+        // 'failed' pra não contar como erro real no badge/health.
+        GmbPost.countDocuments({ status: 'unconfirmed' }),
         GmbPost.countDocuments(noImageFilter),
         GmbPost.countDocuments(retryingFilter),
         // amostras para o painel de detalhe
@@ -288,14 +292,20 @@ export async function getHealth(req, res) {
           .sort({ lastErrorAt: -1 })
           .limit(8)
           .lean(),
+        GmbPost.find({ status: 'unconfirmed' })
+          .select('title theme createdAt lastErrorAt error retryCount')
+          .sort({ lastErrorAt: -1 })
+          .limit(8)
+          .lean(),
       ]);
 
-    const total = stuckPublished + failed + noImage + retrying;
+    const total = stuckPublished + failed + unconfirmed + noImage + retrying;
     res.json({
       success: true,
       data: {
         stuckPublished,
         failed,
+        unconfirmed,
         noImage,
         retrying,
         total,
@@ -303,6 +313,7 @@ export async function getHealth(req, res) {
           noImageSample,
           retryingSample,
           failedSample,
+          unconfirmedSample,
         },
       },
     });
