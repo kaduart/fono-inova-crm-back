@@ -13,6 +13,7 @@ import mongoose from 'mongoose';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import { resolveInsuranceProvider } from '../services/insuranceResolver.service.js';
 
 /**
  * GET /api/v2/insurance/dashboard
@@ -98,16 +99,34 @@ export async function getInsuranceDashboard(req, res) {
       pendingMatch['insurance.provider'] = provider;
     }
 
+    // 🚨 ADR-009 (DOMAIN_INVARIANTS.md): toda consulta/agrupamento por convênio
+    // (provider) deve resolver pela hierarquia de insuranceResolver.service.js —
+    // Payment.insurance.provider → Session.insuranceProvider →
+    // Session.insuranceGuide.insurance → Appointment.insuranceProvider →
+    // InsuranceBatch.insuranceProvider → Package.insuranceProvider → "Outros".
+    // Antes este endpoint resolvia só o 1º/último elo da cadeia (payment.insurance.provider
+    // isolado, ou package.insuranceProvider/insuranceCompany isolado), sem passar pelos
+    // elos intermediários — os populates abaixo alimentam a hierarquia completa.
     const [productionSessions, billingPayments, receivedPayments, pendingPayments] = await Promise.all([
       Session.find(productionMatch)
-        .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount')
+        .populate('package', 'insuranceProvider insuranceGrossAmount')
         .populate('patient', 'fullName')
+        .populate('insuranceGuide', 'insurance')
         .lean(),
       Payment.find(billingMatch)
-        .populate('session', 'date patient')
+        .populate({
+          path: 'session',
+          select: 'date patient insuranceProvider insuranceGuide',
+          populate: { path: 'insuranceGuide', select: 'insurance' }
+        })
         .populate('patient', 'fullName')
         .lean(),
       Payment.find(receivedMatch)
+        .populate({
+          path: 'session',
+          select: 'insuranceProvider insuranceGuide',
+          populate: { path: 'insuranceGuide', select: 'insurance' }
+        })
         .populate('patient', 'fullName')
         .lean(),
       Payment.find(pendingMatch)
@@ -124,9 +143,7 @@ export async function getInsuranceDashboard(req, res) {
     };
     
     for (const session of productionSessions) {
-      const providerName = session.package?.insuranceProvider || 
-                          session.package?.insuranceCompany || 
-                          'Outros';
+      const providerName = resolveInsuranceProvider({ session, package: session.package });
       const value = session.package?.insuranceGrossAmount || 80;
       
       production.total += value;
@@ -160,7 +177,7 @@ export async function getInsuranceDashboard(req, res) {
     };
     
     for (const payment of billingPayments) {
-      const providerName = payment.insurance?.provider || 'Outros';
+      const providerName = resolveInsuranceProvider({ payment, session: payment.session });
       const value = payment.insurance?.grossAmount || payment.amount || 0;
       
       billing.total += value;
@@ -193,8 +210,8 @@ export async function getInsuranceDashboard(req, res) {
     };
     
     for (const payment of receivedPayments) {
-      const providerName = payment.insurance?.provider || 'Outros';
-      const value = payment.insurance?.netAmount || 
+      const providerName = resolveInsuranceProvider({ payment, session: payment.session });
+      const value = payment.insurance?.netAmount ||
                    payment.insurance?.grossAmount || 
                    payment.amount || 0;
       

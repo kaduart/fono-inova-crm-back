@@ -498,8 +498,6 @@ router.get('/', flexibleAuth, async (req, res) => {
                 $lte: end
             };
         }
-        console.time('appointments.query');
-
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // 🔸 Adiciona limite padrão para evitar carregar muitos dados
         const limit = parseInt(req.query.limit) || 500;
@@ -545,10 +543,27 @@ router.get('/', flexibleAuth, async (req, res) => {
         // cancelado/baixado, não pendente). Fonte de verdade é PatientsView.stats.
         // totalPendingParticular (Payment-based, mesma usada no filtro "Saldo devedor"
         // da lista de pacientes e no card de saldo do dashboard).
-        const patientBalances = await PatientsView.find({
-            patientId: { $in: patientIds },
-            'stats.totalPendingParticular': { $gt: 0 }
-        }).select('patientId stats.totalPendingParticular').lean();
+        //
+        // 🚀 PERF (2026-09-18): esta busca (saldo por paciente) e a de paidPayments
+        // (sinal/saldo por appointment, logo abaixo) são independentes entre si — ambas
+        // só precisam de `appointments` (já resolvido acima), nenhuma lê o resultado da
+        // outra. Rodavam em série; disparadas juntas aqui em Promise.all.
+        const apptIdsForDeposit = appointments.map(a => a._id);
+        const [patientBalances, paidPayments] = await Promise.all([
+            PatientsView.find({
+                patientId: { $in: patientIds },
+                'stats.totalPendingParticular': { $gt: 0 }
+            }).select('patientId stats.totalPendingParticular').lean(),
+            // 🎯 SINAL + SALDO (2026-09-04): 1 query em lote (não N+1) somando os
+            // Payments pagos de cada appointment e identificando separadamente o
+            // sinal. Assim o front recebe o saldo canônico sem calculá-lo sozinho.
+            apptIdsForDeposit.length
+                ? Payment.find({
+                    appointment: { $in: apptIdsForDeposit },
+                    status: 'paid',
+                }).select('appointment amount paymentRole').lean()
+                : []
+        ]);
 
         console.log(`[Calendar] ${patientBalances.length} pacientes com saldo devedor`);
 
@@ -557,17 +572,6 @@ router.get('/', flexibleAuth, async (req, res) => {
             map[bal.patientId.toString()] = bal.stats.totalPendingParticular;
             return map;
         }, {});
-
-        // 🎯 SINAL + SALDO (2026-09-04): 1 query em lote (não N+1) somando os
-        // Payments pagos de cada appointment e identificando separadamente o
-        // sinal. Assim o front recebe o saldo canônico sem calculá-lo sozinho.
-        const apptIdsForDeposit = appointments.map(a => a._id);
-        const paidPayments = apptIdsForDeposit.length
-            ? await Payment.find({
-                appointment: { $in: apptIdsForDeposit },
-                status: 'paid',
-            }).select('appointment amount paymentRole').lean()
-            : [];
         const financialsByAppointment = paidPayments.reduce((map, p) => {
             const id = p.appointment.toString();
             map[id] ||= { depositAmount: 0, paidTotal: 0 };
