@@ -22,6 +22,16 @@ import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue, resolveSessionFinancialValueAggregate } from '../utils/resolveSessionFinancialValue.js';
 import { CASH_NON_COUNTABLE_KINDS } from '../constants/financial.js';
 
+// 🚀 PERF (2026-09-18): consultas disparadas antes do `await` que de fato as consome
+// ficam sem handler de rejeição até esse ponto — anexa um catch vazio numa cadeia
+// PARALELA (não altera nem suprime a promise original) só pra garantir que uma falha
+// nunca vira unhandledRejection; o `await` da promise original mais abaixo continua
+// propagando o erro normalmente pro caller.
+function _silence(promise) {
+    promise.catch(() => {});
+    return promise;
+}
+
 const CASH_BY_METHOD_STAGES = [
     { $project: { methodParts: { $cond: [
         { $gt: [{ $size: { $ifNull: ['$splitMethods', []] } }, 0] },
@@ -162,6 +172,24 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
         ]
     };
 
+    // 🚀 PERF (2026-09-18): a query de detalhes (item 4, mais abaixo) não depende do
+    // resultado deste aggregate — usa o mesmo `match`, mas nenhum valor calculado a
+    // partir do facet (total/byMethod/byType) é lido por ela nem vice-versa. Medição em
+    // produção (MetricLog) mostrou o facet como praticamente RTT puro (~190ms, estável
+    // independente do volume) e a query de detalhes como o custo real, variável com
+    // volume (355ms-1.8s) — rodavam em série somando os dois tempos. Dispara aqui, sem
+    // `await`, pra sobrepor com o facet; só é aguardada logo abaixo. Cronometrada aqui
+    // (não no await) pra `paymentsQueryMs` continuar medindo a duração real da query,
+    // não o tempo de espera residual depois que o facet já terminou.
+    const _paymentsFindStartedAt = Date.now();
+    let _paymentsQueryMs = 0;
+    const paymentsPromise = _silence((includeDetails && !skipPayments)
+        ? Payment.find(match).populate('patient', 'fullName').lean().then(r => {
+            _paymentsQueryMs = Date.now() - _paymentsFindStartedAt;
+            return r;
+        })
+        : Promise.resolve([]));
+
     // 1-3. Total, método e tipo em uma única aggregation com $facet.
     // 🚀 Reduz 3 round-trips ao MongoDB para 1, economizando ~360-540ms em latência de rede.
     const totalAggStartedAt = Date.now();
@@ -234,13 +262,11 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
     }
 
     // 4. Buscar payments completos — apenas quando caller precisa da lista (endpoints legados)
+    // Já disparada em paralelo com o facet (paymentsPromise, acima) — só aguarda aqui.
     let payments = [];
-    let paymentsQueryMs = 0;
     let paymentsFilterMs = 0;
     if (includeDetails && !skipPayments) {
-        const paymentsStartedAt = Date.now();
-        payments = await Payment.find(match).populate('patient', 'fullName').lean();
-        paymentsQueryMs = Date.now() - paymentsStartedAt;
+        payments = await paymentsPromise;
         const paymentsFilterStartedAt = Date.now();
         payments = payments.filter(p => {
             const nome = (p.patient?.fullName || '').toLowerCase();
@@ -258,7 +284,7 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
         totalAggMs,
         samplesMs,
         methodAndTypeAggMs: 0, // agora dentro do totalAggMs via $facet
-        paymentsQueryMs,
+        paymentsQueryMs: _paymentsQueryMs,
         paymentsFilterMs
       }
     });
@@ -532,6 +558,82 @@ export async function calculateProduction(start, end, { skipPendente = false, in
         status: 'completed'
     };
 
+    // 🚀 PERF (2026-09-18): recebidoAgg, particularPendenteAgg e sessions (itens 3-5,
+    // mais abaixo) não dependem do resultado do facet (item 1-2) — cada um usa seu
+    // próprio filtro contra `start`/`end`, nenhum lê total/count/typeAgg do facet. Rodavam
+    // em série (facet → recebidoAgg → particularPendenteAgg → sessions), somando os 4
+    // tempos. Disparadas aqui, sem `await`, pra sobrepor; só são aguardadas onde cada
+    // resultado é de fato usado, mais abaixo. `pendente = total - recebido` é a única
+    // combinação entre elas, e é aritmética local — não precisa que rodem em série.
+    const _recebidoAggStartedAt = Date.now();
+    let _recebidoAggMs = 0;
+    const recebidoPromise = _silence(Session.aggregate([
+        { $match: {
+            date: { $gte: start, $lte: end },
+            status: 'completed',
+            $or: [
+                { isPaid: true },
+                { paymentStatus: { $in: ['paid', 'package_paid'] } },
+                { paymentOrigin: 'package_prepaid' },
+                { paymentMethod: 'convenio' },
+                { paymentOrigin: 'convenio' }
+            ]
+        }},
+        ...pkgLookupStages,
+        { $group: { _id: null, total: { $sum: '$effectiveValue' } } }
+    ]).then(r => {
+        _recebidoAggMs = Date.now() - _recebidoAggStartedAt;
+        return r;
+    }));
+
+    const _particularPendenteStartedAt = Date.now();
+    let _particularPendenteAggMs = 0;
+    const particularPendentePromise = _silence(!skipPendente
+        ? Session.aggregate([
+            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+            { $unwind: '$appt' },
+            { $match: {
+                'appt.billingType': { $nin: ['convenio', 'liminar'] },
+                'appt.operationalStatus': 'completed'
+            }},
+            // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
+            { $match: {
+                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
+            }},
+            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+            { $match: { $or: [
+                { 'appt.package': { $exists: false } },
+                { 'appt.package': null },
+                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+                { 'pkg.model': 'per_session' },
+                { pkg: { $size: 0 } }
+            ]}},
+            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+            { $match: { $or: [
+                { payment: { $size: 0 } },
+                { 'payment.status': { $ne: 'paid' } }
+            ]}},
+            { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
+        ]).then(r => {
+            _particularPendenteAggMs = Date.now() - _particularPendenteStartedAt;
+            return r;
+        })
+        : Promise.resolve(null));
+
+    const _sessionsFindStartedAt = Date.now();
+    let _sessionsMs = 0;
+    const sessionsPromise = _silence(includeDetails
+        ? Session.find({
+            date: { $gte: start, $lte: end },
+            status: 'completed'
+        }).populate('package', 'sessionValue totalValue totalSessions').lean().then(r => {
+            _sessionsMs = Date.now() - _sessionsFindStartedAt;
+            return r;
+        })
+        : Promise.resolve([]));
+
     // 1-2. Total e tipo em uma única aggregation com $facet (mesmo match + pkgLookupStages).
     // 🚀 Reduz 2 round-trips para 1.
     const totalAggStartedAt = Date.now();
@@ -601,64 +703,17 @@ export async function calculateProduction(start, end, { skipPendente = false, in
     }
 
     // 3. Recebido vs Pendente (para compatibilidade com sanity-check e consumers)
-    const recebidoAggStartedAt = Date.now();
-    const recebidoAgg = await Session.aggregate([
-        { $match: {
-            date: { $gte: start, $lte: end },
-            status: 'completed',
-            $or: [
-                { isPaid: true },
-                { paymentStatus: { $in: ['paid', 'package_paid'] } },
-                { paymentOrigin: 'package_prepaid' },
-                { paymentMethod: 'convenio' },
-                { paymentOrigin: 'convenio' }
-            ]
-        }},
-        ...pkgLookupStages,
-        { $group: { _id: null, total: { $sum: '$effectiveValue' } } }
-    ]);
-    const recebidoAggMs = Date.now() - recebidoAggStartedAt;
+    // Já disparada em paralelo com o facet (recebidoPromise, acima) — só aguarda aqui.
+    const recebidoAgg = await recebidoPromise;
     const recebido = recebidoAgg[0]?.total || 0;
     const pendente = total - recebido;
 
     // 4. Particular Pendente vs Pacote Pendente — fonte: Session (nao Payment)
-    let particularPendenteAggMs = 0;
-    let particularPendente = 0;
-    if (!skipPendente) {
-        const particularPendenteAggStartedAt = Date.now();
-        // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
-        // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
-        const particularPendenteAgg = await Session.aggregate([
-            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
-            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
-            { $unwind: '$appt' },
-            { $match: {
-                'appt.billingType': { $nin: ['convenio', 'liminar'] },
-                'appt.operationalStatus': 'completed'
-            }},
-            // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
-            { $match: {
-                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
-                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
-            }},
-            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
-            { $match: { $or: [
-                { 'appt.package': { $exists: false } },
-                { 'appt.package': null },
-                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
-                { 'pkg.model': 'per_session' },
-                { pkg: { $size: 0 } }
-            ]}},
-            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
-            { $match: { $or: [
-                { payment: { $size: 0 } },
-                { 'payment.status': { $ne: 'paid' } }
-            ]}},
-            { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
-        ]);
-        particularPendenteAggMs = Date.now() - particularPendenteAggStartedAt;
-        particularPendente = particularPendenteAgg[0]?.total || 0;
-    }
+    // Já disparada em paralelo (particularPendentePromise, acima) — só aguarda aqui.
+    // CORRECAO: Payment.pending pega pagamentos de meses anteriores ainda em aberto.
+    // O correto e calcular a partir de sessoes COMPLETED no periodo que ainda nao foram pagas.
+    const particularPendenteAgg = await particularPendentePromise;
+    const particularPendente = particularPendenteAgg?.[0]?.total || 0;
 
     // Pacote Pendente: para pacotes prepaid/full, o dinheiro entrou na venda.
     // NAO deve haver pendente — sessoes sem payment vinculado sao normais (payment e do pacote).
@@ -666,16 +721,8 @@ export async function calculateProduction(start, end, { skipPendente = false, in
     const pacotePendente = 0;
 
     // 5. Buscar sessions completas para compatibilidade com endpoints legados
-    let sessions = [];
-    let sessionsMs = 0;
-    if (includeDetails) {
-        const sessionsStartedAt = Date.now();
-        sessions = await Session.find({
-            date: { $gte: start, $lte: end },
-            status: 'completed'
-        }).populate('package', 'sessionValue totalValue totalSessions').lean();
-        sessionsMs = Date.now() - sessionsStartedAt;
-    }
+    // Já disparada em paralelo (sessionsPromise, acima) — só aguarda aqui.
+    const sessions = await sessionsPromise;
 
     const executionTimeMs = Date.now() - startedAt;
     logMetric('UnifiedFinancialService', 'calculateProduction', {
@@ -685,9 +732,9 @@ export async function calculateProduction(start, end, { skipPendente = false, in
       stages: {
         totalAggMs,
         samplesMs,
-        recebidoAggMs,
-        particularPendenteAggMs,
-        sessionsMs
+        recebidoAggMs: _recebidoAggMs,
+        particularPendenteAggMs: _particularPendenteAggMs,
+        sessionsMs: _sessionsMs
       }
     });
 

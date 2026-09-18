@@ -15,6 +15,18 @@ import { summarizeCashflowAttendance } from '../services/appointment/policies/su
 
 const router = express.Router();
 
+// 🚀 PERF (2026-09-18): consultas disparadas antecipadamente (sem `await` imediato)
+// ficam sem handler de rejeição até o ponto onde são de fato aguardadas — se uma
+// falhar antes disso, o processo pode emitir unhandledRejection mesmo que o `await`
+// mais abaixo capture o erro normalmente via try/catch da rota. `_silence` anexa um
+// catch vazio numa cadeia PARALELA (não altera a promise original nem a suprime) só
+// pra garantir que sempre há um handler, então cada falha continua propagando
+// normalmente quando a promise original é aguardada de verdade, mais abaixo.
+function _silence(promise) {
+    promise.catch(() => {});
+    return promise;
+}
+
 // Cache Redis para CashflowV2 — compartilhado entre instâncias no Render
 const REDIS_CACHE_PREFIX = 'cashflow:v2:';
 const REDIS_TTL_CURRENT_SECONDS = 120;        // 2 min para dia/mês atual
@@ -208,7 +220,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const yesterdayEnd = moment.tz(targetDate, 'America/Sao_Paulo').subtract(1, 'day').endOf('day').utc().toDate();
         const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
         const _tYesterdayCash = Date.now();
-        const comparativosPromise = Promise.all([
+        const comparativosPromise = _silence(Promise.all([
             unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd).then(r => {
                 console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
                 return r;
@@ -218,7 +230,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
                 return r;
             })
-        ]);
+        ]));
 
         // 🚀 PERF (2026-09-17): despesas do período não dependem de cash/production/
         // convenioAppts/attendanceAppointments — só de startDate/endDate/targetDate,
@@ -235,7 +247,38 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             expenseQuery.date = targetDate;
         }
 
-        const [cash, production, convenioAppts, attendanceAppointments, expenses] = await Promise.all([
+        // 🚀 PERF (2026-09-18): convenioAppts/attendanceAppointments/expenses só são lidos
+        // muito mais abaixo (seções TRANSAÇÕES DE CAIXA / ATENDIMENTOS / DESPESAS — nenhum
+        // uso antes disso, confirmado por busca no arquivo). auxMaps (logo abaixo) só
+        // depende de `cash` e `production`. Antes os 5 estavam no mesmo Promise.all, então
+        // auxMaps só começava depois que o mais lento dos 5 terminasse — mesmo quando
+        // cash/production já estavam prontos. Disparadas aqui (sem `await`), mas cada uma
+        // só é aguardada no ponto onde o valor é de fato usado, deixando auxMaps começar
+        // assim que cash/production resolverem, sem esperar convenioAppts/attendance/despesas.
+        // ⚠️ .exec() é obrigatório antes de `_silence()`: Query/Aggregate do Mongoose não
+        // são Promises nativas — chamar `.catch()` numa Query direto já a EXECUTA (mesmo
+        // bug que causava "Query was already executed" no `await` real, mais abaixo, antes
+        // desta correção). `.exec()` converte pra uma Promise de verdade primeiro.
+        const convenioApptsPromise = _silence(Appointment.find({
+            date: { $gte: start, $lte: end },
+            operationalStatus: 'completed',
+            billingType: 'convenio'
+        })
+            .select('_id time date doctor specialty billingType insuranceProvider insuranceValue sessionValue paymentStatus patient patientName patientInfo serviceType')
+            .populate('patient', 'fullName phone')
+            .populate('doctor', 'fullName specialty')
+            .lean()
+            .exec());
+        const attendanceAppointmentsPromise = _silence(Appointment.find({ date: { $gte: start, $lte: end } })
+            .select('operationalStatus clinicalStatus missed')
+            .lean()
+            .exec());
+        const expensesPromise = _silence(Expense.find(expenseQuery).lean().then(r => {
+            console.log(`[cashflow.v2] expenses.find = ${Date.now() - _tExpenses}ms (${r.length} docs)`);
+            return r;
+        }));
+
+        const [cash, production] = await Promise.all([
             unifiedFinancialService.calculateCash(start, end).then(r => {
                 _tick('calculateCash');
                 console.log(`[cashflow.v2] calculateCash = ${Date.now() - _tCashflowBase}ms`);
@@ -244,22 +287,6 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             unifiedFinancialService.calculateProduction(start, end, { skipPendente: true }).then(r => {
                 _tick('calculateProduction');
                 console.log(`[cashflow.v2] calculateProduction = ${Date.now() - _tCashflowBase}ms`);
-                return r;
-            }),
-            Appointment.find({
-                date: { $gte: start, $lte: end },
-                operationalStatus: 'completed',
-                billingType: 'convenio'
-            })
-                .select('_id time date doctor specialty billingType insuranceProvider insuranceValue sessionValue paymentStatus patient patientName patientInfo serviceType')
-                .populate('patient', 'fullName phone')
-                .populate('doctor', 'fullName specialty')
-                .lean(),
-            Appointment.find({ date: { $gte: start, $lte: end } })
-                .select('operationalStatus clinicalStatus missed')
-                .lean(),
-            Expense.find(expenseQuery).lean().then(r => {
-                console.log(`[cashflow.v2] expenses.find = ${Date.now() - _tExpenses}ms (${r.length} docs)`);
                 return r;
             })
         ]);
@@ -272,7 +299,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const sessionApptIds = production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean);
         const allApptIds = Array.from(new Set([...appointmentIds, ...sessionApptIds]));
 
-        const [appointmentsMap, doctorsMap, patientMap] = await Promise.all([
+        const auxMapsPromise = Promise.all([
             allApptIds.length > 0
                 ? Appointment.find({ _id: { $in: allApptIds } })
                     .select('_id time date doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
@@ -298,8 +325,41 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 console.log(`[cashflow.v2] patientMap = ${Date.now() - _tPatients}ms (${pts.length} docs)`);
                 return new Map(pts.map(p => [p._id.toString(), p]));
             })()
-        ]);
-        console.log(`[cashflow.v2] auxMaps = ${Date.now() - _tAuxMaps}ms (appts=${allApptIds.length})`);
+        ]).then(r => {
+            console.log(`[cashflow.v2] auxMaps = ${Date.now() - _tAuxMaps}ms (appts=${allApptIds.length})`);
+            return r;
+        });
+
+        // 🚀 PERF (2026-09-18): o bloco COMPARATIVOS (mais abaixo) não depende de
+        // appointmentsMap/doctorsMap/patientMap (auxMaps) — só do que `comparativosPromise`
+        // resolve. auxMaps, por sua vez, não depende de nada do comparativos. Rodavam em
+        // série (auxMaps → comparativos); disparado aqui, junto, em Promise.all com
+        // auxMapsPromise logo abaixo, pra sobrepor os dois blocos de round-trips.
+        const _tComparativos = Date.now();
+        const comparativosTailPromise = (async () => {
+            const [yesterdayCash, yesterdaySessions, monthCash] = await comparativosPromise;
+            const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
+            const yesterdaySessionApptIds = yesterdaySessions.map(s => s.appointmentId?.toString()).filter(Boolean);
+            const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
+            const monthSessionIds = monthCash.payments
+                .filter(p => p.session && p.kind !== 'liminar_contract_receipt')
+                .map(p => p.session);
+            const [yesterdayApptDocs, monthSessionDocs] = await Promise.all([
+                yesterdayAllApptIds.length > 0
+                    ? Appointment.find({ _id: { $in: yesterdayAllApptIds } })
+                        .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
+                        .populate('package', 'paymentType sessionValue totalValue totalSessions model')
+                        .lean()
+                    : [],
+                monthSessionIds.length > 0
+                    ? Session.find({ _id: { $in: monthSessionIds } }).select('date').lean()
+                    : []
+            ]);
+            return { yesterdayCash, yesterdaySessions, monthCash, yesterdayApptDocs, monthSessionDocs };
+        })();
+
+        const [[appointmentsMap, doctorsMap, patientMap], comparativosTail] = await Promise.all([auxMapsPromise, comparativosTailPromise]);
+        const { yesterdayCash, yesterdaySessions, monthCash, yesterdayApptDocs, monthSessionDocs } = comparativosTail;
 
         // sessionId → appointmentId — fallback para payments sem p.appointment direto
         const sessionToApptIdMap = new Map(
@@ -328,29 +388,15 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         // ============================================================
         // 🎯 COMPARATIVOS: ONTEM E MÊS
         // ============================================================
-        const _tComparativos = Date.now();
-        // Disparado lá no topo da função (comparativosPromise), em paralelo com hoje +
-        // despesas + mapas auxiliares — aqui só aguarda o que já deve estar pronto
-        // (ou quase) havendo rodado o tempo todo em segundo plano.
-        const [yesterdayCash, yesterdaySessions, monthCash] = await comparativosPromise;
-        // 🎯 O caixa de ontem deve usar os MESMOS filtros do caixa de hoje
-        // Busca appointments/sessions de ontem para aplicar filtros consistentes
-        const yesterdayApptIds = yesterdayCash.payments.map(p => p.appointment?.toString()).filter(Boolean);
-        const yesterdaySessionApptIds = yesterdaySessions.map(s => s.appointmentId?.toString()).filter(Boolean);
-        const yesterdayAllApptIds = Array.from(new Set([...yesterdayApptIds, ...yesterdaySessionApptIds]));
-        // 🚀 PERF (2026-09-17): populate('patient')/populate('doctor') removidos —
-        // nenhum consumidor deste map (classificação de pacote/liminar aqui embaixo,
-        // nem `transacoesOntem` na resposta, que só lê appt.time) usa nome/telefone de
-        // paciente ou nome/especialidade de médico para o comparativo de ontem. Só
-        // `package` (paymentType/model, usado pra decidir se é consumo de pré-pago) é
-        // realmente necessário. Mesmo resultado, menos round-trips ao Mongo.
-        const yesterdayAppointmentsMap = yesterdayAllApptIds.length > 0
-            ? await Appointment.find({ _id: { $in: yesterdayAllApptIds } })
-                .select('_id time doctor specialty operationalStatus billingType insuranceProvider serviceType package patient patientName patientInfo paymentStatus paymentMethod paymentForms notes cancelReason')
-                .populate('package', 'paymentType sessionValue totalValue totalSessions model')
-                .lean()
-                .then(list => new Map(list.map(a => [a._id.toString(), a])))
-            : new Map();
+        // yesterdayCash/yesterdaySessions/monthCash/yesterdayApptDocs/monthSessionDocs já
+        // resolvidos acima (comparativosTailPromise, em paralelo com auxMapsPromise). Só
+        // monta os mapas locais a partir do que já chegou.
+        // 🚀 PERF (2026-09-17): populate('patient')/populate('doctor') removidos da busca de
+        // yesterdayApptDocs — nenhum consumidor deste map (classificação de pacote/liminar
+        // aqui embaixo, nem `transacoesOntem` na resposta, que só lê appt.time) usa nome/
+        // telefone de paciente ou nome/especialidade de médico para o comparativo de ontem.
+        // Só `package` (paymentType/model) é realmente necessário.
+        const yesterdayAppointmentsMap = new Map(yesterdayApptDocs.map(a => [a._id.toString(), a]));
         const yesterdaySessionToApptIdMap = new Map(
             yesterdaySessions.filter(s => s._id && s.appointmentId).map(s => [s._id.toString(), s.appointmentId.toString()])
         );
@@ -415,14 +461,9 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             retroactiveGapDays: 7,
             minimumBatchSessions: 2,
         };
-        const sessionIds = monthCash.payments
-            .filter(p => p.session && p.kind !== 'liminar_contract_receipt')
-            .map(p => p.session);
+        // monthSessionIds/monthSessionDocs já buscados acima, em paralelo com yesterdayApptDocs.
         const sessionDateMap = new Map();
-        if (sessionIds.length > 0) {
-            const sessionDocs = await Session.find({ _id: { $in: sessionIds } }).select('date').lean();
-            for (const s of sessionDocs) sessionDateMap.set(s._id.toString(), s.date);
-        }
+        for (const s of monthSessionDocs) sessionDateMap.set(s._id.toString(), s.date);
 
         // Agrupa pagamentos de sessão (não-liminar) por paciente + dia de recebimento,
         // para detectar quitação em lote de sessões antigas.
@@ -650,6 +691,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const countCaixaFiltrado = transacoesCaixa.length;
 
         // ========== DESPESAS DO DIA ==========
+        const expenses = await expensesPromise;
         let totalDespesas = 0;
         const despesasPorCategoria = {};
         expenses.forEach(e => {
@@ -748,6 +790,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         _tick('transacoesProducao');
 
         // Appointments convênio sem Session document — injetar como entradas sintéticas
+        const convenioAppts = await convenioApptsPromise;
         const sessionCoveredApptIds = new Set(
             production.sessions.map(s => s.appointmentId?.toString()).filter(Boolean)
         );
@@ -845,6 +888,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             pendente: dados.pendente,
             ticketMedio: dados.quantidade > 0 ? (dados.total / dados.quantidade).toFixed(2) : 0
         })).sort((a, b) => b.total - a.total);
+
+        const attendanceAppointments = await attendanceAppointmentsPromise;
 
         console.log(`[cashflow.v2] BUILD TOTAL = ${Date.now() - responseStartedAt}ms`);
         _tick('montagem');
