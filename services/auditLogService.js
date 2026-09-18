@@ -226,10 +226,26 @@ export async function recordAudit({
     const diff = computeDiff(normalizedBefore, normalizedAfter);
     const severity = inferSeverity(diff, action);
 
-    const isSystemActor = !user || !(user._id || user.id);
+    // 🐛 FIX (2026-09-18): `isSystemActor` só cobria "sem user" ou "user sem id
+    // nenhum" — contas de serviço (agenda-service, amanda-service, ver
+    // middleware/amandaAuth.js) têm `user.id` preenchido, mas com uma STRING
+    // ('agenda-service'), não um ObjectId. Isso passava pelo `isSystemActor`
+    // como se fosse usuário real, tentava gravar a string em `userId`
+    // (Schema.Types.ObjectId) e o Mongoose rejeitava (BSONError, "Cast to
+    // ObjectId failed"). Achado real em produção (2 ocorrências, 2026-09-18):
+    // toda auditoria de appointment criado/atualizado pelo app `agenda` estava
+    // silenciosamente sem log (best-effort engolia o erro), sem ninguém notar.
+    // Agora valida se o id resolvido é mesmo um ObjectId antes de usá-lo —
+    // senão trata como ator de sistema/serviço, preservando a identidade em
+    // `actorRole` (em vez de genérico 'SYSTEM') pra não perder rastreabilidade.
+    const rawActorId = user?._id || user?.id;
+    const hasValidObjectId = rawActorId && mongoose.Types.ObjectId.isValid(rawActorId);
+    const isSystemActor = !user || !rawActorId || !hasValidObjectId;
     const audit = new AuditLog({
-      userId: isSystemActor ? null : (user._id || user.id),
-      actorRole: isSystemActor ? 'SYSTEM' : (user.role || null),
+      userId: hasValidObjectId ? rawActorId : null,
+      actorRole: isSystemActor
+        ? (rawActorId ? `SERVICE:${rawActorId}` : 'SYSTEM')
+        : (user.role || null),
       action,
       entityType,
       entityId,
