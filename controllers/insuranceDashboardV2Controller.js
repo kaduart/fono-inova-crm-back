@@ -39,8 +39,17 @@ export async function getInsuranceDashboard(req, res) {
     console.log(`[InsuranceDashboardV2] Calculando dashboard para ${month}/${year}`);
     
     // =====================================================
-    // 1️⃣ PRODUÇÃO (sessões completed no mês)
+    // 🚀 PERF (2026-09-18): as 4 buscas abaixo (produção, faturamento, recebimento,
+    // pendentes) são completamente independentes entre si — cada uma usa seu próprio
+    // filtro, construído só a partir de month/year/provider. Nenhuma lê o resultado de
+    // outra (a única combinação entre elas é o cálculo do "gap", mais abaixo, feito em
+    // JS puro sobre os arrays já resolvidos — não é uma query nova). Rodavam 100% em
+    // série (4 round-trips somados); medição real de produção mostrou o endpoint
+    // levando 7,15s. Disparadas juntas aqui, em Promise.all — mesmos filtros, mesmo
+    // resultado, só a ordem de execução muda.
     // =====================================================
+
+    // 1️⃣ PRODUÇÃO (sessões completed no mês)
     const productionMatch = {
       status: 'completed',
       date: { $gte: startOfMonth, $lte: endOfMonth },
@@ -50,19 +59,62 @@ export async function getInsuranceDashboard(req, res) {
         { 'package.type': 'convenio' }
       ]
     };
-    
+
     if (provider) {
       productionMatch['$or'] = [
         { 'package.insuranceProvider': provider },
         { 'package.insuranceCompany': provider }
       ];
     }
-    
-    const productionSessions = await Session.find(productionMatch)
-      .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount')
-      .populate('patient', 'fullName')
-      .lean();
-    
+
+    // 2️⃣ FATURAMENTO (guias enviadas no mês)
+    const billingMatch = {
+      billingType: 'convenio',
+      'insurance.billedAt': { $gte: startOfMonth, $lte: endOfMonth }
+    };
+
+    if (provider) {
+      billingMatch['insurance.provider'] = provider;
+    }
+
+    // 3️⃣ RECEBIMENTO (dinheiro que entrou no caixa)
+    const receivedMatch = {
+      billingType: 'convenio',
+      'insurance.status': 'received',
+      'insurance.receivedAt': { $gte: startOfMonth, $lte: endOfMonth }
+    };
+
+    if (provider) {
+      receivedMatch['insurance.provider'] = provider;
+    }
+
+    // 4️⃣ AGING — payments pendentes (produzido mas não recebido)
+    const pendingMatch = {
+      billingType: 'convenio',
+      'insurance.status': { $in: ['pending_billing', 'billed'] }
+    };
+
+    if (provider) {
+      pendingMatch['insurance.provider'] = provider;
+    }
+
+    const [productionSessions, billingPayments, receivedPayments, pendingPayments] = await Promise.all([
+      Session.find(productionMatch)
+        .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount')
+        .populate('patient', 'fullName')
+        .lean(),
+      Payment.find(billingMatch)
+        .populate('session', 'date patient')
+        .populate('patient', 'fullName')
+        .lean(),
+      Payment.find(receivedMatch)
+        .populate('patient', 'fullName')
+        .lean(),
+      Payment.find(pendingMatch)
+        .populate('session', 'date')
+        .lean()
+    ]);
+
     const production = {
       total: 0,
       count: 0,
@@ -98,22 +150,8 @@ export async function getInsuranceDashboard(req, res) {
     }
     
     // =====================================================
-    // 2️⃣ FATURAMENTO (guias enviadas no mês)
+    // 2️⃣ FATURAMENTO (guias enviadas no mês) — billingPayments já buscado acima
     // =====================================================
-    const billingMatch = {
-      billingType: 'convenio',
-      'insurance.billedAt': { $gte: startOfMonth, $lte: endOfMonth }
-    };
-    
-    if (provider) {
-      billingMatch['insurance.provider'] = provider;
-    }
-    
-    const billingPayments = await Payment.find(billingMatch)
-      .populate('session', 'date patient')
-      .populate('patient', 'fullName')
-      .lean();
-    
     const billing = {
       total: 0,
       count: 0,
@@ -145,22 +183,8 @@ export async function getInsuranceDashboard(req, res) {
     }
     
     // =====================================================
-    // 3️⃣ RECEBIMENTO (dinheiro que entrou no caixa)
+    // 3️⃣ RECEBIMENTO (dinheiro que entrou no caixa) — receivedPayments já buscado acima
     // =====================================================
-    const receivedMatch = {
-      billingType: 'convenio',
-      'insurance.status': 'received',
-      'insurance.receivedAt': { $gte: startOfMonth, $lte: endOfMonth }
-    };
-    
-    if (provider) {
-      receivedMatch['insurance.provider'] = provider;
-    }
-    
-    const receivedPayments = await Payment.find(receivedMatch)
-      .populate('patient', 'fullName')
-      .lean();
-    
     const received = {
       total: 0,
       count: 0,
@@ -194,6 +218,7 @@ export async function getInsuranceDashboard(req, res) {
     
     // =====================================================
     // 4️⃣ AGING (dias em aberto - só o que foi produzido mas não recebido)
+    // pendingPayments já buscado acima
     // =====================================================
     const agingBuckets = {
       '0-15': { total: 0, count: 0 },
@@ -201,23 +226,9 @@ export async function getInsuranceDashboard(req, res) {
       '31-60': { total: 0, count: 0 },
       '60+': { total: 0, count: 0 }
     };
-    
+
     const now = new Date();
-    
-    // Busca payments pendentes (produzido mas não recebido)
-    const pendingMatch = {
-      billingType: 'convenio',
-      'insurance.status': { $in: ['pending_billing', 'billed'] }
-    };
-    
-    if (provider) {
-      pendingMatch['insurance.provider'] = provider;
-    }
-    
-    const pendingPayments = await Payment.find(pendingMatch)
-      .populate('session', 'date')
-      .lean();
-    
+
     for (const payment of pendingPayments) {
       // Data base: quando foi atendido (session.date) ou quando foi faturado
       const baseDate = payment.session?.date || payment.insurance?.billedAt || payment.createdAt;
