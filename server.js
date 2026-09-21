@@ -109,6 +109,8 @@ import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
 import leadRoutes from "./routes/leads.js";
 import convenioWaitlistRoutes from "./routes/convenioWaitlist.js";
+import { configureTrustProxy } from "./config/trustProxy.js";
+import { ensureConvenioWaitlistIndexes } from "./models/ConvenioWaitlist.js";
 import loginRoutes from "./routes/login.js";
 
 import patientRoutes from "./routes/patient.js";
@@ -229,6 +231,8 @@ import fiscalRoutes from './routes/fiscal.routes.js';  // 📄 MVP: Módulo Fisc
 // 🧭 Inicialização base
 // ======================================================
 const app = express();
+// Atrás do Cloudflare/Render: `req.ip` (e o rate limit por IP) só é confiável com trust proxy por nº de saltos
+configureTrustProxy(app);
 const server = http.createServer(app);
 const io = initializeSocket(server);
 
@@ -883,6 +887,12 @@ server.listen(PORT, '0.0.0.0', () => {
         
         mongoConnected = true;
         console.log("✅ MongoDB conectado");
+
+        // autoIndex é desligado em produção: garante o índice único da lista de interesse de convênios
+        // (um cadastro ativo por telefone + convênio). Não bloqueia o boot se falhar, mas registra o erro.
+        ensureConvenioWaitlistIndexes()
+          .then(() => console.log("✅ Índices da lista de interesse de convênios garantidos"))
+          .catch((idxErr) => console.error("❌ Índices da lista de interesse de convênios:", idxErr.message));
 
         // Pré-aquece o cache do dashboard em background (elimina cold start de 4s)
         setTimeout(() => warmupDashboardCache(), 2000);

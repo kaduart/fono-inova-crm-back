@@ -1,6 +1,6 @@
 // utils/convenioWaitlistPayload.js
 // Validação/normalização do cadastro público de lista de espera (sem acesso a banco, fácil de testar).
-import { CONVENIOS_WAITLIST } from '../constants/convenioWaitlist.js';
+import { CONVENIOS_WAITLIST, WAITLIST_CONSENT_VERSIONS } from '../constants/convenioWaitlist.js';
 import { validateE164 } from './phone.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,9 +29,20 @@ export function parseWaitlistPayload(body) {
         return { ok: false, message: 'Telefone inválido' };
     }
 
+    // E-mail é opcional; só valida o formato quando informado
     const email = clean(data.email, 160);
     if (email && !EMAIL_RE.test(email)) {
         return { ok: false, message: 'E-mail inválido' };
+    }
+
+    // Consentimento de contato + privacidade é obrigatório e precisa de uma versão de texto conhecida
+    const consentimento = data.consentimento && typeof data.consentimento === 'object' ? data.consentimento : {};
+    if (consentimento.aceito !== true) {
+        return { ok: false, message: 'Consentimento de contato e privacidade é obrigatório' };
+    }
+    const consentVersion = clean(consentimento.versao, 60);
+    if (!consentVersion || !WAITLIST_CONSENT_VERSIONS.includes(consentVersion)) {
+        return { ok: false, message: 'Versão do consentimento inválida' };
     }
 
     const ageRaw = data.idadeCrianca === '' || data.idadeCrianca == null ? null : Number(data.idadeCrianca);
@@ -52,6 +63,7 @@ export function parseWaitlistPayload(body) {
             especialidade: clean(data.especialidade, 80),
             idadeCrianca,
             periodo: clean(data.periodo, 40),
+            consentVersion,
             source: {
                 pagePath: clean(contexto.pagePath, 200),
                 utmSource: clean(origem.source, 80),

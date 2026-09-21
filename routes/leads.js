@@ -20,6 +20,7 @@ import validateId from '../middleware/validateId.js';
 import Lead from '../models/Leads.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from '../utils/phone.js';
+import { extractWebsiteLeadPersonalData } from '../utils/websiteLeadPayload.js';
 
 const router = express.Router();
 
@@ -55,12 +56,8 @@ router.post('/from-website', async (req, res) => {
             device
         } = req.body;
 
-        // O site (crmAnalyticsApi.js) manda nome/telefone/email no topo do body; aceita os dois formatos.
-        const dadosPessoais = req.body.dadosPessoais || {
-            nome: req.body.nome,
-            telefone: req.body.telefone,
-            email: req.body.email
-        };
+        // Aceita o formato original (dadosPessoais) e o "flat" enviado pelo site — ver utils/websiteLeadPayload.js
+        const dadosPessoais = extractWebsiteLeadPersonalData(req.body) || {};
 
         // Validação básica
         if (!dadosPessoais?.nome || !dadosPessoais?.telefone) {

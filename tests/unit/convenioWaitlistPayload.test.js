@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { WAITLIST_CONSENT_VERSIONS } from '../../constants/convenioWaitlist.js';
 import { parseWaitlistPayload } from '../../utils/convenioWaitlistPayload.js';
+
+const CONSENT = { aceito: true, versao: WAITLIST_CONSENT_VERSIONS[0] };
 
 const validBody = {
     nome: '  Maria   da Silva ',
@@ -9,6 +12,7 @@ const validBody = {
     especialidade: 'Terapia Ocupacional',
     idadeCrianca: '4',
     periodo: 'Manhã',
+    consentimento: CONSENT,
     origem: { source: 'instagram', medium: 'bio', campaign: 'links', referrer: 'direct' },
     contexto: { pagePath: '/convenio-geap-anapolis' },
     device: { type: 'mobile' },
@@ -27,6 +31,7 @@ describe('parseWaitlistPayload', () => {
             especialidade: 'Terapia Ocupacional',
             idadeCrianca: 4,
             periodo: 'Manhã',
+            consentVersion: WAITLIST_CONSENT_VERSIONS[0],
         });
         expect(result.value.source).toMatchObject({
             pagePath: '/convenio-geap-anapolis',
@@ -36,12 +41,31 @@ describe('parseWaitlistPayload', () => {
         });
     });
 
-    it('aceita cadastro só com o obrigatório (e-mail e detalhes são opcionais)', () => {
-        const result = parseWaitlistPayload({ nome: 'João Pedro', telefone: '62992013573', convenio: 'ipasgo' });
+    it('aceita cadastro só com o obrigatório: e-mail e detalhes são opcionais', () => {
+        const result = parseWaitlistPayload({
+            nome: 'João Pedro',
+            telefone: '62992013573',
+            convenio: 'ipasgo',
+            consentimento: CONSENT,
+        });
         expect(result.ok).toBe(true);
         expect(result.value.email).toBeNull();
         expect(result.value.idadeCrianca).toBeNull();
         expect(result.value.especialidade).toBeNull();
+    });
+
+    it('exige consentimento explícito (true booleano) — ausente, false ou texto são rejeitados', () => {
+        const message = 'Consentimento de contato e privacidade é obrigatório';
+        expect(parseWaitlistPayload({ ...validBody, consentimento: undefined })).toEqual({ ok: false, message });
+        expect(parseWaitlistPayload({ ...validBody, consentimento: { versao: CONSENT.versao } })).toEqual({ ok: false, message });
+        expect(parseWaitlistPayload({ ...validBody, consentimento: { aceito: false, versao: CONSENT.versao } })).toEqual({ ok: false, message });
+        expect(parseWaitlistPayload({ ...validBody, consentimento: { aceito: 'true', versao: CONSENT.versao } })).toEqual({ ok: false, message });
+    });
+
+    it('rejeita versão de consentimento desconhecida ou ausente', () => {
+        const message = 'Versão do consentimento inválida';
+        expect(parseWaitlistPayload({ ...validBody, consentimento: { aceito: true, versao: 'v-inventada' } })).toEqual({ ok: false, message });
+        expect(parseWaitlistPayload({ ...validBody, consentimento: { aceito: true } })).toEqual({ ok: false, message });
     });
 
     it('rejeita convênio desconhecido', () => {
@@ -59,9 +83,10 @@ describe('parseWaitlistPayload', () => {
         expect(parseWaitlistPayload({ ...validBody, telefone: '' }).ok).toBe(false);
     });
 
-    it('rejeita e-mail mal formado, mas aceita ausente', () => {
+    it('rejeita e-mail mal formado, mas aceita ausente ou vazio', () => {
         expect(parseWaitlistPayload({ ...validBody, email: 'sem-arroba' }).ok).toBe(false);
         expect(parseWaitlistPayload({ ...validBody, email: '' }).ok).toBe(true);
+        expect(parseWaitlistPayload({ ...validBody, email: undefined }).ok).toBe(true);
     });
 
     it('descarta idade fora de 0–18 em vez de rejeitar o cadastro', () => {
