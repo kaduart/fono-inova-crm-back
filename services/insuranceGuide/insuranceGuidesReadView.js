@@ -314,6 +314,26 @@ function toObjectId(value) {
   return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : null;
 }
 
+// 🚀 PERF (2026-09-21): projeções das leituras principais. Em produção o tempo destas consultas escala
+// com o VOLUME DE BYTES (Render Oregon ↔ Atlas SP: ~0,4s + bytes ÷ ~300KB/s). A chamada do dashboard
+// financeiro (`detail:'summary'`, que só usa `competenceBreakdown.previous.value`) trazia ~653KB
+// (guias sem `select` = 120KB; Payment com `insurance` inteiro = 296KB; sessões = 225KB) — o custo de
+// transferência sozinho (~2,6s) explicava o `aReceber` de ~3s. Cada lista abaixo contém EXATAMENTE os
+// campos que esta função lê; o resto do documento nunca chega à saída.
+// ⚠️ MANTER EM SINCRONIA: se este arquivo passar a ler outro campo de guia/sessão/payment, incluí-lo
+// aqui — senão chega `undefined` e a classificação muda em silêncio (o teste de equivalência
+// tests/unit/insuranceGuidesReadView.projection.test.js cobre os campos hoje lidos).
+//   guia    → buildEnrichedGuide (number, insurance, specialty, patientId, status, expiresAt, closedAt,
+//             billingMode, totalSessions, usedSessions, sessionValue, totalAuthorizedValue) e
+//             resolveSessionValue (sessionValue); `createdAt` só ordena no banco (não precisa vir)
+//   sessão  → date, status, sessionValue, billingBatchId, insuranceGuide; specialty/doctor/appointmentId
+//             só aparecem em `sessionDetails` (detail:'full') — o summary não os lê
+//   payment → amount, status, session; insurance.{status,grossAmount,billedAt,receivedAt}
+const GUIDE_FIELDS = '_id number insurance specialty patientId status expiresAt closedAt billingMode totalSessions usedSessions sessionValue totalAuthorizedValue';
+const SESSION_FIELDS_FULL = '_id insuranceGuide date status sessionValue specialty doctor appointmentId billingBatchId';
+const SESSION_FIELDS_SUMMARY = '_id insuranceGuide date status sessionValue billingBatchId';
+const PAYMENT_FIELDS = '_id session amount status insurance.status insurance.grossAmount insurance.billedAt insurance.receivedAt';
+
 const ORPHAN_MATCH = {
   status: 'completed',
   $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
@@ -397,6 +417,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     from, to, page = 1, limit = 0
   } = filters;
   const summaryOnly = detail === 'summary';
+  const _startedAt = Date.now();
   if (detail === 'orphans') {
     const orphanSessions = await loadOrphanSessions();
     return { guides: [], orphanSessions, orphanSessionsCount: orphanSessions.length, paymentIntegrityConflicts: [], paymentIntegrityConflictCount: 0, totals: composeGuideAggregates([]), competenceBreakdown: composePendingCompetenceBreakdown([]), pagination: { page: 1, limit: 0, total: 0, pages: 0 } };
@@ -442,6 +463,7 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   // 1. Universo = as guias. Nunca derivado de sessão pendente.
   const guides = await InsuranceGuide.find(guideMatch)
+    .select(GUIDE_FIELDS)
     .populate('patientId', summaryOnly ? 'fullName' : 'fullName phone')
     .sort({ createdAt: -1 })
     .lean();
@@ -463,7 +485,7 @@ export async function getInsuranceGuidesView(filters = {}) {
   // 2. Composição: sessões, payments, comunicações e lotes das guias listadas.
   const [sessions, legacyCommunications] = await Promise.all([
     Session.find({ insuranceGuide: { $in: guideIds } })
-      .select('_id insuranceGuide date status sessionValue specialty doctor appointmentId billingBatchId')
+      .select(summaryOnly ? SESSION_FIELDS_SUMMARY : SESSION_FIELDS_FULL)
       .populate(summaryOnly ? [] : [
         { path: 'doctor', select: 'fullName' },
         { path: 'appointmentId', select: 'time' }
@@ -518,7 +540,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       { insuranceGuide: { $in: guideIds } }
     ]
   })
-    .select('_id session insuranceGuide amount status insurance')
+    .select(PAYMENT_FIELDS)
     .lean()
     .exec();
 
@@ -829,6 +851,10 @@ export async function getInsuranceGuidesView(filters = {}) {
   const paged = limit > 0
     ? bucketed.slice((page - 1) * limit, page * limit)
     : bucketed;
+
+  // Tempo e volume da leitura (o logger.info abaixo não imprime o objeto): permite medir em produção o
+  // efeito de projeções/reordenações — o custo escala com bytes, então o nº de docs acompanha o tempo.
+  console.log(`[getInsuranceGuidesView] detail=${detail} phase=${phase} ms=${Date.now() - _startedAt} guides=${guides.length} sessions=${sessions.length} payments=${payments.length}`);
 
   logger.info('getInsuranceGuidesView done', {
     guides: totalGuides,
