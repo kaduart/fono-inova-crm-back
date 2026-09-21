@@ -139,6 +139,7 @@ router.get('/summary', authorize(['admin', 'secretary']), async (req, res) => {
 /**
  * GET /api/convenio-waitlist
  * Filtros: convenio, status, especialidade, search (nome/telefone/e-mail), from, to, page, limit
+ * Ordenação: order=asc (fila por ordem de chegada) | desc (mais recentes primeiro, padrão)
  */
 router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
     try {
@@ -164,9 +165,11 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
             filters.$or = [{ name: regex }, { email: regex }, { phone: regex }];
         }
 
+        const sortDirection = String(req.query.order).toLowerCase() === 'asc' ? 1 : -1;
+
         const [items, total] = await Promise.all([
             ConvenioWaitlist.find(filters)
-                .sort({ createdAt: -1 })
+                .sort({ createdAt: sortDirection, _id: sortDirection })
                 .skip((pageNumber - 1) * limitNumber)
                 .limit(limitNumber)
                 .lean(),
