@@ -261,7 +261,10 @@ router.get('/', auth, async (req, res) => {
         // 🚀 PERF (2026-09-18): antes eram 2 fases com barreira entre elas — a Fase 2 só
         // começava depois que a etapa MAIS LENTA da Fase 1 (aReceber, 2,8–3,9s em produção)
         // terminasse, embora nada da Fase 2 use aReceber nem pendentes. Dependências reais:
-        //   metas, profissionais → só `realTime`
+        //   metas                → só `realTime` (lê caixa/produção/visaoSemantica do resultado)
+        //   profissionais        → NADA (2026-09-21: o antigo parâmetro `data` nunca era lido dentro da
+        //                          função; a espera por `realTime` era falsa e somava ~1–3s ao total em
+        //                          produção: TOTAL = realTime + profissionais em 7 de 9 amostras)
         //   comparativos         → começa já (o mês anterior não depende de nada do atual); só a
         //                          montagem final lê `realTime`/`despesas` do mês atual (preComputed,
         //                          evita recompute), recebidos aqui como promises em voo
@@ -276,9 +279,9 @@ router.get('/', auth, async (req, res) => {
         const despesasP     = _timeit('despesas',     calculateDespesas(targetYear, targetMonth));
         const pendentesP    = _timeit('pendentes',    calculatePendentes(targetYear, targetMonth));
         const appointmentsP = _timeit('appointments', calculateAppointmentCounts(targetYear, targetMonth));
+        const profissionaisP = _timeit('profissionais', calculateProfissionais(targetYear, targetMonth));
 
         const metasP         = realTimeP.then(dataRt => _timeit('metas',         calculateMetas(dataRt, targetYear, targetMonth)));
-        const profissionaisP = realTimeP.then(dataRt => _timeit('profissionais', calculateProfissionais(dataRt, targetYear, targetMonth)));
         const comparativosP  = _timeit('comparativos', calculateComparativos(targetYear, targetMonth, { currentRealTime: realTimeP, currentDespesas: despesasP }));
 
         const [dataRt, aReceber, despesas, pendentes, appointmentCounts, metas, profissionaisRt, comparativos] = await Promise.all([
@@ -801,7 +804,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
 /**
  * 👩‍⚕️ Calcula performance por profissional — ALINHADO COM ARQUITETURA V2 (Session)
  */
-async function calculateProfissionais(data, year, month) {
+export async function calculateProfissionais(year, month) {
     const _t0 = Date.now();
     const now = moment.tz(TIMEZONE);
     const isCurrentMonth = year === now.year() && month === now.month() + 1;

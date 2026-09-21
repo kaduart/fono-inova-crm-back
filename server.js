@@ -108,6 +108,7 @@ import followupRoutes from "./routes/followup.js";
 import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
 import leadRoutes from "./routes/leads.js";
+import convenioWaitlistRoutes from "./routes/convenioWaitlist.js";
 import loginRoutes from "./routes/login.js";
 
 import patientRoutes from "./routes/patient.js";
@@ -532,6 +533,7 @@ app.use("/api/google-ads/auth", googleAdsAuthRoutes);
 app.use("/api/amanda", amandaRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/convenio-waitlist', convenioWaitlistRoutes);
 app.use("/api/ai", aiRoutes);
 app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/protocols', protocolRoutes);

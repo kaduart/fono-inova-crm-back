@@ -49,12 +49,18 @@ router.post('/from-website', async (req, res) => {
     try {
         const {
             id,
-            dadosPessoais,
             ga4,
             origem,
             contexto,
             device
         } = req.body;
+
+        // O site (crmAnalyticsApi.js) manda nome/telefone/email no topo do body; aceita os dois formatos.
+        const dadosPessoais = req.body.dadosPessoais || {
+            nome: req.body.nome,
+            telefone: req.body.telefone,
+            email: req.body.email
+        };
 
         // Validação básica
         if (!dadosPessoais?.nome || !dadosPessoais?.telefone) {
