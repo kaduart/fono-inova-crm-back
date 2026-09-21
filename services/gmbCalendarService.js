@@ -216,23 +216,23 @@ export const CALENDARIO_GMB_30_DIAS = [
   },
   {
     dia: 19,
-    tema: 'Teste de memória infantil: como avalia a memória da criança?',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/teste-de-memoria-infantil',
-    intencao: 'teste de memória infantil',
-    angulo: 'educacao',
-    funil: 'middle',
-    tipo: 'autoridade'
+    tema: 'Bebê demora para falar as primeiras palavras: o que esperar?',
+    especialidadeId: 'fonoaudiologia',
+    url: 'https://www.clinicafonoinova.com.br/fala-tardia-anapolis',
+    intencao: 'bebê demora pra falar',
+    angulo: 'duvida',
+    funil: 'top',
+    tipo: 'dor'
   },
   {
     dia: 20,
-    tema: 'Avaliação das funções executivas na infância',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/avaliacao-das-funcoes-executivas',
-    intencao: 'avaliação funções executivas criança',
-    angulo: 'educacao',
+    tema: 'Gagueira infantil: quando procurar um fonoaudiólogo?',
+    especialidadeId: 'fonoaudiologia_anapolis',
+    url: 'https://www.clinicafonoinova.com.br/fonoaudiologia-anapolis',
+    intencao: 'tratamento de gagueira',
+    angulo: 'duvida',
     funil: 'middle',
-    tipo: 'autoridade'
+    tipo: 'decisao'
   },
   {
     dia: 21,
@@ -270,13 +270,13 @@ export const CALENDARIO_GMB_30_DIAS = [
   },
   {
     dia: 24,
-    tema: 'Diferença entre avaliação neuropsicológica e psicopedagógica',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/avaliacao-neuropsicologica-e-psicopedagogica',
-    intencao: 'avaliação neuropsicológica vs psicopedagógica',
-    angulo: 'comparacao',
+    tema: 'Testagem psicológica infantil: como funciona a avaliação?',
+    especialidadeId: 'psicologia',
+    url: 'https://www.clinicafonoinova.com.br/psicologia-infantil-anapolis',
+    intencao: 'testagem psicológica',
+    angulo: 'educacao',
     funil: 'middle',
-    tipo: 'autoridade'
+    tipo: 'decisao'
   },
   {
     dia: 25,
@@ -290,13 +290,13 @@ export const CALENDARIO_GMB_30_DIAS = [
   },
   {
     dia: 26,
-    tema: 'Como funciona a avaliação neuropsicológica infantil?',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/como-funciona-avaliacao-neuropsicologica',
-    intencao: 'como funciona avaliação neuropsicológica',
+    tema: 'Teste da linguinha: quando fazer e como funciona?',
+    especialidadeId: 'freio_lingual',
+    url: 'https://www.clinicafonoinova.com.br/teste-da-linguinha-anapolis',
+    intencao: 'teste da linguinha anapolis',
     angulo: 'educacao',
-    funil: 'top',
-    tipo: 'autoridade'
+    funil: 'middle',
+    tipo: 'decisao'
   },
   {
     dia: 27,
@@ -467,6 +467,7 @@ export async function createTodaysCalendarPost(options = {}) {
       especialidade,
       customTheme: selectedVariant.customTheme,
       funnelStage: item.funil,
+      primaryKeyword: item.intencao,
       generateImage: true,
       scheduledAt,
       publishedBy: 'cron',

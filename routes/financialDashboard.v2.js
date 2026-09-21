@@ -252,22 +252,33 @@ router.get('/', auth, async (req, res) => {
             return promise.then(r => { console.log(`[FinancialDashboard] ${label} = ${Date.now() - s}ms`); return r; });
         };
 
-        // Fase 1: queries independentes em paralelo
-        const [dataRt, aReceber, despesas, pendentes, appointmentCounts] = await Promise.all([
-            _timeit('realTime',    calculateRealTime(targetYear, targetMonth)),
-            _timeit('aReceber',    calculateAReceber(targetYear, targetMonth)),
-            _timeit('despesas',    calculateDespesas(targetYear, targetMonth)),
-            _timeit('pendentes',   calculatePendentes(targetYear, targetMonth)),
-            _timeit('appointments', calculateAppointmentCounts(targetYear, targetMonth)),
+        // 🚀 PERF (2026-09-18): antes eram 2 fases com barreira entre elas — a Fase 2 só
+        // começava depois que a etapa MAIS LENTA da Fase 1 (aReceber, 2,8–3,9s em produção)
+        // terminasse, embora nada da Fase 2 use aReceber nem pendentes. Dependências reais:
+        //   metas, profissionais → só `realTime`
+        //   comparativos         → começa já (o mês anterior não depende de nada do atual); só a
+        //                          montagem final lê `realTime`/`despesas` do mês atual (preComputed,
+        //                          evita recompute), recebidos aqui como promises em voo
+        //   aReceber, pendentes, appointmentCounts → só usados na montagem da resposta
+        // Cada etapa agora dispara assim que a SUA dependência resolve. Mesmas funções, mesmos
+        // argumentos, mesmos valores — só muda quando cada uma começa. A quantidade de consultas
+        // não muda; o pico de simultaneidade pode ser maior (fases se sobrepõem), por isso está
+        // documentado aqui. Todas as promises entram no mesmo Promise.all logo abaixo (mesmo tick),
+        // então nenhuma falha fica sem handler.
+        const realTimeP     = _timeit('realTime',     calculateRealTime(targetYear, targetMonth));
+        const aReceberP     = _timeit('aReceber',     calculateAReceber(targetYear, targetMonth));
+        const despesasP     = _timeit('despesas',     calculateDespesas(targetYear, targetMonth));
+        const pendentesP    = _timeit('pendentes',    calculatePendentes(targetYear, targetMonth));
+        const appointmentsP = _timeit('appointments', calculateAppointmentCounts(targetYear, targetMonth));
+
+        const metasP         = realTimeP.then(dataRt => _timeit('metas',         calculateMetas(dataRt, targetYear, targetMonth)));
+        const profissionaisP = realTimeP.then(dataRt => _timeit('profissionais', calculateProfissionais(dataRt, targetYear, targetMonth)));
+        const comparativosP  = _timeit('comparativos', calculateComparativos(targetYear, targetMonth, { currentRealTime: realTimeP, currentDespesas: despesasP }));
+
+        const [dataRt, aReceber, despesas, pendentes, appointmentCounts, metas, profissionaisRt, comparativos] = await Promise.all([
+            realTimeP, aReceberP, despesasP, pendentesP, appointmentsP, metasP, profissionaisP, comparativosP,
         ]);
         data = dataRt;
-
-        // Fase 2: dependem de `data`; comparativos recebe preComputed para evitar recompute do mês atual
-        const [metas, profissionaisRt, comparativos] = await Promise.all([
-            _timeit('metas',         calculateMetas(data, targetYear, targetMonth)),
-            _timeit('profissionais', calculateProfissionais(data, targetYear, targetMonth)),
-            _timeit('comparativos',  calculateComparativos(targetYear, targetMonth, { currentRealTime: dataRt, currentDespesas: despesas })),
-        ]);
         profissionais = profissionaisRt;
         console.log(`[FinancialDashboard] TOTAL real-time = ${Date.now() - _t0}ms`);
 
@@ -1576,35 +1587,14 @@ export async function calculateAReceber(year, month) {
         ]
     };
 
-    const agg = await Payment.aggregate([
-        { $match: match },
-        {
-            $lookup: {
-                from: 'appointments',
-                localField: 'appointment',
-                foreignField: '_id',
-                as: 'appointmentLookup'
-            }
-        },
-        {
-            $match: {
-                $or: [
-                    { appointmentLookup: { $size: 0 } },
-                    { 'appointmentLookup.0.operationalStatus': 'completed' }
-                ]
-            }
-        },
-        {
-            $group: {
-                _id: null,
-                total: { $sum: '$amount' },
-                count: { $sum: 1 }
-            }
-        }
-    ]);
-
-    const mesAtual = agg[0]?.total || 0;
-
+    // 🚀 PERF (2026-09-18): o aggregate do mês atual e o `historico` (getInsuranceGuidesView,
+    // mais abaixo) não dependem um do outro — o segundo tem argumentos fixos e nunca lê o
+    // resultado do primeiro. Rodavam em série (soma dos dois tempos: medição real em
+    // produção mostrou `aReceber` em 2,8–3,9s, a etapa dominante do dashboard financeiro).
+    // Disparado aqui e aguardado junto. O tratamento de erro do `historico` é o mesmo de
+    // antes (falha → 0, com o mesmo log), agora embutido na própria promise pra que uma
+    // falha dele nunca vire rejeição solta enquanto o aggregate ainda está em voo.
+    //
     // 🚨 FIX (2026-09-02): `historico` era sempre 0, placeholder nunca implementado
     // — achado ao investigar a guia 202602518072 (Daiane, R$430 de sessões de junho
     // reativadas na aba Convênios) não aparecer em NENHUM card do Dashboard.
@@ -1616,13 +1606,44 @@ export async function calculateAReceber(year, month) {
     // encontrados). `competenceBreakdown.current.value` bate exatamente com
     // `mesAtual` (R$620 em ambos) — validação cruzada que confirma a fonte é
     // consistente antes de confiar no `previous.value` como historico.
-    let historico = 0;
-    try {
-        const guidesView = await getInsuranceGuidesView({ phase: 'pendingBilling', detail: 'summary' });
-        historico = guidesView.competenceBreakdown?.previous?.value || 0;
-    } catch (err) {
-        console.error('[calculateAReceber] Erro ao buscar historico via getInsuranceGuidesView:', err.message);
-    }
+    const historicoPromise = getInsuranceGuidesView({ phase: 'pendingBilling', detail: 'summary' })
+        .then(guidesView => guidesView.competenceBreakdown?.previous?.value || 0)
+        .catch(err => {
+            console.error('[calculateAReceber] Erro ao buscar historico via getInsuranceGuidesView:', err.message);
+            return 0;
+        });
+
+    const [agg, historico] = await Promise.all([
+        Payment.aggregate([
+            { $match: match },
+            {
+                $lookup: {
+                    from: 'appointments',
+                    localField: 'appointment',
+                    foreignField: '_id',
+                    as: 'appointmentLookup'
+                }
+            },
+            {
+                $match: {
+                    $or: [
+                        { appointmentLookup: { $size: 0 } },
+                        { 'appointmentLookup.0.operationalStatus': 'completed' }
+                    ]
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$amount' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]),
+        historicoPromise
+    ]);
+
+    const mesAtual = agg[0]?.total || 0;
 
     const total = mesAtual + historico;
     return {
@@ -1702,49 +1723,62 @@ async function calculateComparativos(year, month, preComputed = {}) {
         return parseFloat((((atual - anterior) / anterior) * 100).toFixed(1));
     };
 
-    // Mês anterior
-    const prevExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
-    const [prevFinancial, prevExpData] = await Promise.all([
-        calculateRealTime(prevYear, prevMonth),
-        prevExpReady
-            ? financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
-            : calculateDespesas(prevYear, prevMonth),
-    ]);
-    const prevCaixa = prevFinancial.caixa;
-    const prevProducao = prevFinancial.producao;
-    const prevDespesas = prevExpData.total;
-
-    // Mês atual — usa preComputed do Phase 1 quando disponível (evita recompute)
-    let currentCaixa = 0, currentProducao = 0, currentDespesas = 0;
+    // 🚀 PERF (2026-09-18): o cálculo do MÊS ANTERIOR e o do MÊS CORRENTE são independentes
+    // entre si — nenhum lê o resultado do outro. Antes rodavam em série (mês passado:
+    // anterior → depois o próprio mês) e, no mês atual, o anterior só começava depois que o
+    // `realTime`/`despesas` do mês atual terminavam, embora só a montagem final use esses
+    // valores. Medição em produção: TOTAL do dashboard = aReceber + comparativos (exato em 4/4
+    // execuções); comparativos ~1,2–1,7s, quase tudo recalculando o mês anterior.
+    // Agora os dois blocos disparam juntos. `preComputed.currentRealTime/currentDespesas`
+    // podem ser o valor OU uma promise (o handler passa promises em voo); o `await` só
+    // acontece onde o valor é usado. Mesmas funções, mesmos argumentos, mesmos valores.
     const nowMoment = moment.tz(TIMEZONE);
     const isCurrentMonth = year === nowMoment.year() && month === nowMoment.month() + 1;
 
-    if (isCurrentMonth && preComputed.currentRealTime) {
-        currentCaixa = preComputed.currentRealTime.caixa;
-        currentProducao = preComputed.currentRealTime.producao;
-        currentDespesas = preComputed.currentDespesas?.total || 0;
-    } else if (!isCurrentMonth) {
-        // Mês passado
-        const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
-        const [currFinancial, currExpData] = await Promise.all([
-            calculateRealTime(year, month),
-            currentExpReady
-                ? financialExpenseSnapshotService.getMonthlyAggregate(year, month)
-                : calculateDespesas(year, month),
+    // Mês anterior
+    const prevPromise = (async () => {
+        const prevExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(prevYear, prevMonth);
+        const [prevFinancial, prevExpData] = await Promise.all([
+            calculateRealTime(prevYear, prevMonth),
+            prevExpReady
+                ? financialExpenseSnapshotService.getMonthlyAggregate(prevYear, prevMonth)
+                : calculateDespesas(prevYear, prevMonth),
         ]);
-        currentCaixa = currFinancial.caixa;
-        currentProducao = currFinancial.producao;
-        currentDespesas = currExpData.total;
-    } else {
-        // Fallback: isCurrentMonth sem preComputed
-        const [currRt, currDp] = await Promise.all([
-            calculateRealTime(year, month),
-            calculateDespesas(year, month),
-        ]);
-        currentCaixa = currRt.caixa;
-        currentProducao = currRt.producao;
-        currentDespesas = currDp.total;
-    }
+        return { caixa: prevFinancial.caixa, producao: prevFinancial.producao, despesas: prevExpData.total };
+    })();
+
+    // Mês atual — usa preComputed do Phase 1 quando disponível (evita recompute)
+    const currPromise = (async () => {
+        if (isCurrentMonth && preComputed.currentRealTime) {
+            const [currRt, currDp] = await Promise.all([preComputed.currentRealTime, preComputed.currentDespesas]);
+            return { caixa: currRt.caixa, producao: currRt.producao, despesas: currDp?.total || 0 };
+        } else if (!isCurrentMonth) {
+            // Mês passado
+            const currentExpReady = await financialExpenseSnapshotService.isMonthlySnapshotReady(year, month);
+            const [currFinancial, currExpData] = await Promise.all([
+                calculateRealTime(year, month),
+                currentExpReady
+                    ? financialExpenseSnapshotService.getMonthlyAggregate(year, month)
+                    : calculateDespesas(year, month),
+            ]);
+            return { caixa: currFinancial.caixa, producao: currFinancial.producao, despesas: currExpData.total };
+        } else {
+            // Fallback: isCurrentMonth sem preComputed
+            const [currRt, currDp] = await Promise.all([
+                calculateRealTime(year, month),
+                calculateDespesas(year, month),
+            ]);
+            return { caixa: currRt.caixa, producao: currRt.producao, despesas: currDp.total };
+        }
+    })();
+
+    const [prev, curr] = await Promise.all([prevPromise, currPromise]);
+    const prevCaixa = prev.caixa;
+    const prevProducao = prev.producao;
+    const prevDespesas = prev.despesas;
+    const currentCaixa = curr.caixa;
+    const currentProducao = curr.producao;
+    const currentDespesas = curr.despesas;
 
     return {
         mesAnterior: {

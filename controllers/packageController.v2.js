@@ -21,6 +21,7 @@ import Patient from '../models/Patient.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
+import Doctor from '../models/Doctor.js';
 import PatientsView from '../models/PatientsView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import PatientBalance from '../models/PatientBalance.js';
@@ -31,6 +32,7 @@ import { createContextLogger } from '../utils/logger.js';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import { recordPackageMetric } from '../routes/package.metrics.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { getNextPackageSequenceNumber } from '../domain/package/nextSequenceNumber.js';
 import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { buildDateTime } from '../utils/datetime.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
@@ -562,6 +564,31 @@ export const createPackageV2 = async (req, res) => {
     });
   }
 
+  // 👁️ OBSERVABILIDADE (não bloqueia): pacote grava `specialty` do request, não a do médico.
+  // Caso real: Luis Henrique (terapia_ocupacional) com pacote FONO-6 (fonoaudiologia).
+  // O front já barra a combinação; aqui só registra chamadas que a contornaram (outros apps/API)
+  // até termos dado real pra decidir se vale um bloqueio hard. Nunca deve derrubar a criação.
+  try {
+    const doctorDoc = await Doctor.findById(doctorId).select('fullName specialty specialties').lean();
+    if (doctorDoc) {
+      const norm = (v) => String(v || '').toLowerCase().replace(/_/g, ' ').trim();
+      const handled = [doctorDoc.specialty, ...(doctorDoc.specialties || [])].map(norm).filter(Boolean);
+      if (handled.length > 0 && !handled.includes(norm(specialty))) {
+        logger.warn('[createPackage] specialty do pacote diverge da especialidade do profissional', {
+          doctorId: String(doctorId),
+          doctorName: doctorDoc.fullName,
+          doctorSpecialty: doctorDoc.specialty,
+          doctorSpecialties: doctorDoc.specialties || [],
+          packageSpecialty: specialty,
+        });
+      }
+    }
+  } catch (specialtyCheckError) {
+    logger.warn('[createPackage] falha ao checar especialidade do profissional (ignorado)', {
+      error: specialtyCheckError?.message,
+    });
+  }
+
   // 🛡️ HARD-BLOCK: convênio e liminar NÃO usam mais Package
   if (type === 'convenio' || model === 'convenio') {
     await mongoSession.endSession();
@@ -797,11 +824,13 @@ export const createPackageV2 = async (req, res) => {
     // criado pro mesmo paciente/especialidade em paralelo. Conta TODOS os
     // pacotes anteriores (qualquer status) — cancelado ainda ocupou um número,
     // igual conversa humana ("esse é o 3º pacote de fono dele").
-    const previousPackagesCount = await Package.countDocuments({
-      patient: patientId,
-      sessionType: sessionType || specialty
-    }).session(mongoSession);
-    const sequenceNumber = previousPackagesCount + 1;
+    // 🔧 (2026-09-21) max+1 (count só como piso pra legado sem número): count+1 gerava número
+    // duplicado quando um pacote mudava de especialidade/era removido (ver nextSequenceNumber.js).
+    const sequenceNumber = await getNextPackageSequenceNumber(
+      Package,
+      { patientId, sessionType: sessionType || specialty },
+      mongoSession
+    );
 
     const packageData = createPackageData({ ...req.body, sessionsDone: parsedConsumed });
     packageData.sequenceNumber = sequenceNumber;

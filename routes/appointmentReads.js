@@ -505,24 +505,35 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // Removido limit default para garantir que todos os appointments do período venham
-        const appointments = await Appointment.find(filter)
-            .skip(skip)
-            .limit(limit)
-            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue insuranceGuide authorizationCode serviceType sessionType sessionValue reason cancelReason canceledAt canceledBy discardReason discardedAt urgency assignedTo secretaryNotes')
-            .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
-            .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
-            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' })
-            .populate({ path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' })
-            .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
-            .populate({ path: 'canceledBy', select: 'fullName' })
+        // 🚀 PERF (2026-09-18): antes eram 3 ondas em série — find → populates (8 paths) →
+        // [saldos + pagamentos]. Os saldos (PatientsView) e os pagamentos (Payment) só precisam
+        // dos IDs crus (patient e _id), que já vêm no find SEM populate; não dependem dos
+        // documentos populados. Agora: find (lean, sem populate) → [populates ∥ saldos ∥
+        // pagamentos] = 2 ondas. Mesmos populates (mesmos paths/selects), mesmos dados; o
+        // populate é aplicado por `Appointment.populate(docs, specs)` nos documentos lean.
+        const populateSpecs = [
+            { path: 'doctor', select: 'fullName specialty email phoneNumber specialties' },
+            { path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' },
+            { path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type paymentType model liminarProcessNumber liminarCourt sessionsDone remainingSessions' },
+            { path: 'liminarContract', select: 'processNumber court totalCredit creditBalance usedCredit status mode' },
+            { path: 'session', select: 'isPaid paymentStatus partialAmount' },
+            { path: 'canceledBy', select: 'fullName' },
             // Número da guia — exibido no card do calendário pra desambiguar qual guia
             // cobre cada sessão de convênio (achado real: paciente com múltiplas guias
             // da mesma especialidade, sessão ligada à guia errada só visível no banco).
-            .populate({ path: 'insuranceGuide', select: 'number' })
+            { path: 'insuranceGuide', select: 'number' },
             // createdAt exposto para uso futuro (paymentTiming) — NÃO usar como proxy
             // de "pago antes/depois de completar" comparando com appointment.updatedAt;
             // esse campo não representa o momento da conclusão. Ver auditoria 2026-07-09.
-            .populate({ path: 'payment', select: 'status amount paymentMethod splitMethods createdAt' })
+            { path: 'payment', select: 'status amount paymentMethod splitMethods createdAt' },
+        // `lean` também nos populates: Model.populate() em documentos lean hidrata os populados
+        // como Documents do Mongoose (vazavam $__/activePaths no JSON) — o query.populate().lean()
+        // original devolvia objetos simples.
+        ].map(spec => ({ ...spec, options: { lean: true } }));
+        let appointments = await Appointment.find(filter)
+            .skip(skip)
+            .limit(limit)
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue insuranceGuide authorizationCode serviceType sessionType sessionValue reason cancelReason canceledAt canceledBy discardReason discardedAt urgency assignedTo secretaryNotes')
             .sort({ date: -1, time: 1 })
             .lean();
         console.log(`[GET /appointments] MongoDB retornou ${appointments.length} documentos`);
@@ -530,8 +541,10 @@ router.get('/', flexibleAuth, async (req, res) => {
         // pre_agendados agora são Appointments — já incluídos na query acima
 
         // 🔹 Buscar saldos dos pacientes para mostrar no calendário
+        // (ids crus do find; referência pendurada, se houver, só acrescenta um id inócuo à
+        // consulta — o saldo é aplicado por `appt.patient._id` do documento já populado)
         const patientIds = appointments
-            .map(appt => appt.patient?._id?.toString())
+            .map(appt => appt.patient?.toString())
             .filter((id, index, arr) => id && arr.indexOf(id) === index);
 
         console.log(`[Calendar] ${patientIds.length} pacientes únicos para verificar saldo`);
@@ -549,7 +562,9 @@ router.get('/', flexibleAuth, async (req, res) => {
         // só precisam de `appointments` (já resolvido acima), nenhuma lê o resultado da
         // outra. Rodavam em série; disparadas juntas aqui em Promise.all.
         const apptIdsForDeposit = appointments.map(a => a._id);
-        const [patientBalances, paidPayments] = await Promise.all([
+        const [populatedAppointments, patientBalances, paidPayments] = await Promise.all([
+            // populate dos documentos lean (in-place) — roda junto com saldos e pagamentos
+            appointments.length ? Appointment.populate(appointments, populateSpecs) : null,
             PatientsView.find({
                 patientId: { $in: patientIds },
                 'stats.totalPendingParticular': { $gt: 0 }
@@ -564,6 +579,8 @@ router.get('/', flexibleAuth, async (req, res) => {
                 }).select('appointment amount paymentRole').lean()
                 : []
         ]);
+
+        if (populatedAppointments) appointments = populatedAppointments;
 
         console.log(`[Calendar] ${patientBalances.length} pacientes com saldo devedor`);
 

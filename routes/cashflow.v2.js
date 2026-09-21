@@ -27,6 +27,19 @@ function _silence(promise) {
     return promise;
 }
 
+// 🚀 PERF (2026-09-18): campos de Payment que o cashflow REALMENTE lê nas listas de 'ontem' e 'mês'
+// (o restante do documento — insurance, integrityMetadata, histórico... — é ~70% dos bytes e só
+// atrasa a busca: em produção o tempo escala com bytes). MANTER EM SINCRONIA com os consumidores:
+//   MONTH     → monthCash.payments: session, kind, financialDate, paymentDate, patient (_id), _id, amount
+//               (seleção de sessões do mês + heurística de lote retroativo + extraordinaryTotal)
+//   YESTERDAY → yesterdayCash.payments: appointment, session, notes, description, billingType,
+//               paymentMethod, type, serviceType, package, amount, financialDate, createdAt
+//               (classificação de pacote/liminar do total de ontem + transacoesOntem)
+// O campo patient fica nas duas: o populate('patient','fullName') do calculateCash filtra pacientes de teste.
+// Se algum novo código passar a ler OUTRO campo dessas listas, incluí-lo aqui — senão chega undefined.
+const MONTH_CASH_FIELDS = '_id amount session kind financialDate paymentDate patient';
+const YESTERDAY_CASH_FIELDS = '_id amount appointment session notes description billingType paymentMethod type serviceType package financialDate createdAt patient';
+
 // Cache Redis para CashflowV2 — compartilhado entre instâncias no Render
 const REDIS_CACHE_PREFIX = 'cashflow:v2:';
 const REDIS_TTL_CURRENT_SECONDS = 120;        // 2 min para dia/mês atual
@@ -221,12 +234,12 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
         const monthStart = moment.tz(targetDate, 'America/Sao_Paulo').startOf('month').utc().toDate();
         const _tYesterdayCash = Date.now();
         const comparativosPromise = _silence(Promise.all([
-            unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd).then(r => {
+            unifiedFinancialService.calculateCash(yesterdayStart, yesterdayEnd, { detailSelect: YESTERDAY_CASH_FIELDS }).then(r => {
                 console.log(`[cashflow.v2] yesterday.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
                 return r;
             }),
             Session.find({ date: { $gte: yesterdayStart, $lte: yesterdayEnd } }).select('_id appointmentId package').lean(),
-            unifiedFinancialService.calculateCash(monthStart, end).then(r => {
+            unifiedFinancialService.calculateCash(monthStart, end, { detailSelect: MONTH_CASH_FIELDS }).then(r => {
                 console.log(`[cashflow.v2] month.calculateCash = ${Date.now() - _tYesterdayCash}ms`);
                 return r;
             })

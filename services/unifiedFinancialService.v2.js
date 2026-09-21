@@ -136,9 +136,17 @@ export function invalidateUFSCacheForDates(dates) {
 // 1) CAIXA — Payment only (imutável)
 // ============================================================
 
-export async function calculateCash(start, end, { skipPayments = false, includeDetails = true } = {}) {
+// 🚀 PERF (2026-09-18): `detailSelect` (opcional, string de campos do Mongoose) restringe os campos
+// de `payments` trazidos do Mongo. Só quem SABE exatamente quais campos vai ler deve usar
+// (hoje: as chamadas de "ontem" e "mês" do cashflow.v2.js, que só somam/classificam). Sem ela o
+// comportamento é o de sempre (documento completo). Motivo: em produção o tempo dessa busca escala
+// com o VOLUME DE BYTES (Render Oregon ↔ Atlas SP): ~355ms p/ 1 doc, ~0,9–1,8s p/ ~100 docs (~1,6KB
+// cada, dos quais `insurance`/`integrityMetadata`/`notes` são a maior parte e não são lidos ali).
+// O filtro de pacientes de teste continua igual (usa `patient.fullName` via populate) e o agregado
+// (`total`, `byMethod`, ...) não é afetado — só o array `payments` devolvido.
+export async function calculateCash(start, end, { skipPayments = false, includeDetails = true, detailSelect = null } = {}) {
     const startedAt = Date.now();
-    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails });
+    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails, detailSelect });
     const cached = _getUfsCached(cacheKey);
     if (cached) return cached;
     // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
@@ -184,10 +192,11 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
     const _paymentsFindStartedAt = Date.now();
     let _paymentsQueryMs = 0;
     const paymentsPromise = _silence((includeDetails && !skipPayments)
-        ? Payment.find(match).populate('patient', 'fullName').lean().then(r => {
-            _paymentsQueryMs = Date.now() - _paymentsFindStartedAt;
-            return r;
-        })
+        ? (detailSelect ? Payment.find(match).select(detailSelect) : Payment.find(match))
+            .populate('patient', 'fullName').lean().then(r => {
+                _paymentsQueryMs = Date.now() - _paymentsFindStartedAt;
+                return r;
+            })
         : Promise.resolve([]));
 
     // 1-3. Total, método e tipo em uma única aggregation com $facet.

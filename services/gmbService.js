@@ -255,7 +255,7 @@ export const ESPECIALIDADES = [
   {
     id: 'fonoaudiologia',
     nome: 'Fonoaudiologia',
-    url: 'https://www.clinicafonoinova.com.br/fala-tardia',
+    url: 'https://www.clinicafonoinova.com.br/fala-tardia-anapolis',
     foco: 'Fala, linguagem, pronúncia, gagueira, autismo, TDAH, atraso de fala',
     publico: 'crianças com dificuldades de comunicação',
     gancho: 'Sua criança não fala ainda?'
@@ -263,7 +263,7 @@ export const ESPECIALIDADES = [
   {
     id: 'psicologia',
     nome: 'Psicologia',
-    url: 'https://www.clinicafonoinova.com.br/psicologia',
+    url: 'https://www.clinicafonoinova.com.br/psicologia-infantil-anapolis',
     foco: 'Comportamento, emocional, ansiedade, socialização, temperamento',
     publico: 'crianças com dificuldades comportamentais ou emocionais',
     gancho: 'Seu filho está mais irritado ou ansioso?'
@@ -916,7 +916,7 @@ const ANGULOS_EMOCIONAIS = {
   }
 };
 
-export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top', tone = 'emotional') {
+export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top', tone = 'emotional', primaryKeyword = null) {
   try {
     const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
 
@@ -970,8 +970,11 @@ GATILHO EMOCIONAL: ${nicho.gatilho}` : '';
     // 🎯 KEYWORD SEO DINÂMICA - Usando problemas reais de busca
     const listaProblemas = PROBLEMAS_REAIS[especialidade.id];
     let keywordSEO;
-    
-    if (listaProblemas && listaProblemas.length) {
+
+    if (primaryKeyword) {
+      // Keyword primária vinda do calendário (`intencao`). Tira a cidade no fim porque o prompt já acrescenta "em Anápolis"
+      keywordSEO = primaryKeyword.replace(/\s+an[aá]polis\s*$/i, '').trim();
+    } else if (listaProblemas && listaProblemas.length) {
       keywordSEO = listaProblemas[Math.floor(Math.random() * listaProblemas.length)];
     } else {
       keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
@@ -982,7 +985,14 @@ GATILHO EMOCIONAL: ${nicho.gatilho}` : '';
     // 🎯 Extrai idade do problema para uso no prompt
     const matchIdade = keywordSEO.match(/(\d)\s*anos?/);
     const idadeCrianca = matchIdade ? matchIdade[1] : (Math.floor(Math.random() * 4) + 2); // fallback 2-5 anos
-    console.log('👶 Idade extraída:', idadeCrianca);
+    // 👶 Tema de recém-nascido/bebê sem idade explícita: não sorteia idade em anos (ex: teste da linguinha)
+    const ehRecemNascido = !matchIdade && (
+      especialidade.id === 'freio_lingual' ||
+      /rec[eé]m[\s-]?nascid|linguinha|orelhinha|freio\s+lingual|l[ií]ngua\s+presa|amament/i.test(keywordSEO)
+    );
+    const ehBebe = !matchIdade && !ehRecemNascido && /beb[eê]/i.test(keywordSEO);
+    const idadeTexto = ehRecemNascido ? 'poucos meses de vida' : ehBebe ? '1 a 2 anos' : `${idadeCrianca} anos`;
+    console.log('👶 Idade extraída:', idadeTexto);
 
     const messages = [
       {
@@ -1001,7 +1011,7 @@ REGRAS INEGOCIÁVEIS:
 🎯 REGRAS DE SEO LOCAL OBRIGATÓRIAS:
 1. Começar o texto com uma pergunta baseada no problema pesquisado: "${keywordSEO} em Anápolis?"
 2. Usar a cidade "Anápolis" na primeira ou segunda frase
-3. Mencionar idade ${idadeCrianca} anos no hook (obrigatório)
+3. Mencionar idade ${idadeTexto} no hook (obrigatório)
 4. Escrever como se estivesse respondendo uma busca do Google
 5. Usar frases que pais realmente digitam no Google
 `},
@@ -1026,19 +1036,19 @@ ${nichoInstrucoes}
 - COMECE com a pergunta: "${keywordSEO} em Anápolis?"
 - Primeiras 125 caracteres devem conter o hook principal com o problema real
 - Mencione "Anápolis" nas primeiras 2 frases
-- Use idade ${idadeCrianca} anos no hook (obrigatório)
+- Use idade ${idadeTexto} no hook (obrigatório)
 
 📋 ESTRUTURA OBRIGATÓRIA:
 
 1️⃣ HOOK (2 frases curtas, máx 25 palavras):
 - COMECE OBRIGATORIAMENTE com: "${keywordSEO} em Anápolis?"
 - NA MESMA FRASE ou na segunda, aplique o gatilho ${gatilhoPrincipal}
-- Mencione a idade "${idadeCrianca} anos" no hook
+- Mencione a idade "${idadeTexto}" no hook
 - Frase corrida (evite pontos no meio)
 - Interrompa o scroll imediatamente
-- Exemplo otimizado: "${keywordSEO} em Anápolis? Saiba o que fazer para crianças de ${idadeCrianca} anos"
-- Exemplo se Curiosidade: "${keywordSEO} em Anápolis? Tem uma coisa sobre crianças de ${idadeCrianca} anos que ninguém te contou..."
-- Exemplo se Contradição: "${keywordSEO} em Anápolis? Pare de fazer isso com seu filho de ${idadeCrianca} anos agora..."
+- Exemplo otimizado: "${keywordSEO} em Anápolis? Saiba o que fazer para crianças de ${idadeTexto}"
+- Exemplo se Curiosidade: "${keywordSEO} em Anápolis? Tem uma coisa sobre crianças de ${idadeTexto} que ninguém te contou..."
+- Exemplo se Contradição: "${keywordSEO} em Anápolis? Pare de fazer isso com seu filho de ${idadeTexto} agora..."
 
 2️⃣ VALOR + CONEXÃO (USE A MICRO-HISTÓRIA):
 - Comece com a história curta (1-2 frases) que mostre identificação
@@ -1051,7 +1061,7 @@ ${nichoInstrucoes}
 - Insira "${keywordSEO}" no meio do texto
 - Use termos relacionados: desenvolvimento infantil, Anápolis, terapia infantil
 - Mencione "Anápolis" pelo menos 2 vezes no texto
-- Mencione idade ${idadeCrianca} anos no texto (obrigatório)
+- Mencione idade ${idadeTexto} no texto (obrigatório)
 
 4️⃣ CTA ESTRATÉGICA:
 - Use EXATAMENTE: "${ctaFinal}"
@@ -2167,7 +2177,7 @@ export async function createDailyPost(options = {}) {
     } else {
       // 🧠 TOP/MIDDLE = GPT (foco em alcance e variedade)
       console.log('🧠 Modo: GPT (foco em alcance/SEO)');
-      generated = await generatePostForEspecialidade(especialidade, options.customTheme, funnelStage);
+      generated = await generatePostForEspecialidade(especialidade, options.customTheme, funnelStage, 'emotional', options.primaryKeyword);
       console.log(generated.isFallback ? '📝 Post template' : '✅ Texto GPT gerado');
     }
 
