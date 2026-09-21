@@ -430,6 +430,16 @@ export async function getInsuranceGuidesView(filters = {}) {
   const patientOid = toObjectId(patientId);
   if (patientOid) guideMatch.patientId = patientOid;
 
+  // 🚀 PERF (2026-09-21): as sessões órfãs (lista ou contagem) usam filtro CONSTANTE e não dependem de
+  // nenhuma outra consulta desta função — antes só eram buscadas no FIM, somando mais uma ida ao
+  // banco em série (~0,4s em produção). Disparadas aqui e só aguardadas onde sempre foram consumidas
+  // (passo 4). O `.catch` numa cadeia paralela evita unhandledRejection se a função retornar antes
+  // (sem guias) ou outra consulta falhar; o `await` do passo 4 continua propagando o erro.
+  const orphanSessionsP = (summaryOnly || guideOid) ? null : loadOrphanSessions(ORPHAN_MATCH);
+  const orphanCountP = (!guideOid && summaryOnly) ? Session.countDocuments(ORPHAN_MATCH).exec() : null;
+  orphanSessionsP?.catch(() => {});
+  orphanCountP?.catch(() => {});
+
   // 1. Universo = as guias. Nunca derivado de sessão pendente.
   const guides = await InsuranceGuide.find(guideMatch)
     .populate('patientId', summaryOnly ? 'fullName' : 'fullName phone')
@@ -471,28 +481,37 @@ export async function getInsuranceGuidesView(filters = {}) {
   ]);
 
   const sessionIds = sessions.map(s => s._id);
-  const documentedSubmissions = sessionIds.length
-    ? await BillingSubmission.find({ sessionIds: { $in: sessionIds } })
-      .select('_id sessionIds')
-      .lean()
-    : [];
-  const documentedSubmissionIds = documentedSubmissions.map(submission => submission._id);
-  const submissionCommunications = documentedSubmissionIds.length
-    ? await InsuranceCommunication.find({
-      purpose: 'billing',
-      status: 'sent',
-      billingSubmissionId: { $in: documentedSubmissionIds }
-    })
-      .select('guideId billingSubmissionId invoiceNumber invoiceDate sentAt updatedAt')
-      .sort({ updatedAt: -1 })
-      .lean()
-    : [];
-  const communications = [...legacyCommunications, ...submissionCommunications];
+  const batchIds = [...new Set(sessions.map(s => idOf(s.billingBatchId)).filter(Boolean))];
+
+  // 🚀 PERF (2026-09-21): três leituras que dependem só de `sessions`/`guideIds` (já em mãos) e NÃO
+  // umas das outras rodavam em série (BillingSubmission → InsuranceCommunication → Payment →
+  // InsuranceBatch = 4 idas ao banco encadeadas). Só a primeira cadeia tem dependência real
+  // (as comunicações precisam dos ids das submissões); Payment e lotes correm em paralelo com ela.
+  // Mesmas consultas, mesmos filtros, mesmos resultados — só muda quando cada uma começa.
+  const submissionCommunicationsP = (async () => {
+    const documentedSubmissions = sessionIds.length
+      ? await BillingSubmission.find({ sessionIds: { $in: sessionIds } })
+        .select('_id sessionIds')
+        .lean()
+      : [];
+    const documentedSubmissionIds = documentedSubmissions.map(submission => submission._id);
+    const submissionCommunications = documentedSubmissionIds.length
+      ? await InsuranceCommunication.find({
+        purpose: 'billing',
+        status: 'sent',
+        billingSubmissionId: { $in: documentedSubmissionIds }
+      })
+        .select('guideId billingSubmissionId invoiceNumber invoiceDate sentAt updatedAt')
+        .sort({ updatedAt: -1 })
+        .lean()
+      : [];
+    return { documentedSubmissions, submissionCommunications };
+  })();
 
   // Payment é buscado pelos DOIS vínculos: session e insuranceGuide. Em prod há
   // 68 payments 'billed' e 16 'received' com insuranceGuide null, e 52
   // pending_billing sem session — buscar por um só vínculo perderia parte deles.
-  const payments = await Payment.find({
+  const paymentsP = Payment.find({
     billingType: 'convenio',
     $or: [
       { session: { $in: sessionIds } },
@@ -500,18 +519,25 @@ export async function getInsuranceGuidesView(filters = {}) {
     ]
   })
     .select('_id session insuranceGuide amount status insurance')
-    .lean();
+    .lean()
+    .exec();
 
-  const batchIds = [...new Set(sessions.map(s => idOf(s.billingBatchId)).filter(Boolean))];
-  const batches = !summaryOnly && batchIds.length
+  const batchesP = !summaryOnly && batchIds.length
     // A NF vive no LOTE (`invoiceNumber`), não na guia. Sem trazer esses campos
     // a tela mostra "Faturada" sem dizer por qual nota — e no legado não há
     // InsuranceCommunication de onde inferir. `origin` distingue reconciliação
     // de faturamento executado pelo sistema.
-    ? await InsuranceBatch.find({ _id: { $in: batchIds } })
+    ? InsuranceBatch.find({ _id: { $in: batchIds } })
         .select('_id status createdAt invoiceNumber invoiceDate origin')
         .lean()
-    : [];
+        .exec()
+    : Promise.resolve([]);
+
+  // Todas no mesmo Promise.all: nenhuma rejeição fica sem handler.
+  const [{ documentedSubmissions, submissionCommunications }, payments, batches] = await Promise.all([
+    submissionCommunicationsP, paymentsP, batchesP
+  ]);
+  const communications = [...legacyCommunications, ...submissionCommunications];
   const batchById = new Map(batches.map(b => [idOf(b._id), b]));
 
   // Índices
@@ -781,12 +807,12 @@ export async function getInsuranceGuidesView(filters = {}) {
     : enriched;
 
   // 4. Sessões de convênio sem guia vinculada (rastreabilidade perdida na Session).
-  const orphanMatch = ORPHAN_MATCH;
-  const orphanSessions = summaryOnly || guideOid ? [] : await loadOrphanSessions(orphanMatch);
+  // (consultas já disparadas no início da função — ver orphanSessionsP/orphanCountP)
+  const orphanSessions = summaryOnly || guideOid ? [] : await orphanSessionsP;
   const orphanSessionsCount = guideOid
     ? 0
     : summaryOnly
-    ? await Session.countDocuments(orphanMatch)
+    ? await orphanCountP
     : orphanSessions.length;
 
   // 5. Totais da tela — somados no backend, nunca no front. Escopados ao mesmo

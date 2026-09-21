@@ -185,11 +185,16 @@ async function loadGoal(year, month, clinicId = 'default') {
 
 // GET /v2/financial/dashboard
 router.get('/', auth, async (req, res) => {
+    // 🐛 FIX (2026-09-21): estas variáveis eram declaradas DENTRO do `try`/bloco e usadas no `catch`
+    // → ReferenceError no catch: a resposta nunca era enviada e a promise de _dashPending do mês
+    // nunca resolvia, então todas as requisições seguintes do mesmo mês ficavam penduradas em
+    // PENDING até reiniciar o servidor. Declaradas aqui para o catch enxergá-las.
+    let monthKey, _ownPending, _pendingResolve, _pendingReject, _origJson;
     try {
         const { month, year } = req.query;
         const targetMonth = month ? parseInt(month) : moment().month() + 1;
         const targetYear = year ? parseInt(year) : moment().year();
-        const monthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+        monthKey = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
 
         // Cache server-side: SÓ para meses passados. Mês atual = sempre real-time.
         const now = moment.tz(TIMEZONE);
@@ -219,9 +224,10 @@ router.get('/', auth, async (req, res) => {
                     // request em voo falhou — processa normalmente
                 }
             }
-            let _pendingResolve, _pendingReject;
-            _dashPending.set(cacheKey, new Promise((rs, rj) => { _pendingResolve = rs; _pendingReject = rj; }));
-            const _origJson = res.json.bind(res);
+            _ownPending = new Promise((rs, rj) => { _pendingResolve = rs; _pendingReject = rj; });
+            _ownPending.catch(() => {}); // sem requisição aguardando, a rejeição não pode virar unhandledRejection
+            _dashPending.set(cacheKey, _ownPending);
+            _origJson = res.json.bind(res);
             res.json = (body) => {
                 setDashCached(cacheKey, body);
                 _pendingResolve?.(body);
@@ -392,8 +398,12 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[DashboardV3] Erro:', error);
+        // Restaura o res.json original ANTES de responder: o wrapper de cache guardaria o corpo
+        // de erro como resposta válida do mês (servido como 200 até o TTL expirar).
+        if (_origJson) res.json = _origJson;
         _pendingReject?.(error);
-        _dashPending.delete(monthKey);
+        // só remove a entrada se for a desta requisição (não a de outra em voo)
+        if (_ownPending && _dashPending.get(monthKey) === _ownPending) _dashPending.delete(monthKey);
         res.status(500).json({ success: false, error: error.message });
     }
 });

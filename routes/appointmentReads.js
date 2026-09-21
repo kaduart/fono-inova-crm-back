@@ -144,7 +144,9 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
             },
             {
                 path: 'package',
-                select: 'sessionType durationMonths sessionsPerWeek',
+                // paymentType/model: o modal decide se pode lançar saldo devedor (só per-session pode) —
+                // sem isso o front não distingue pacote pré-pago de per-session (ver canAddToPatientBalance).
+                select: 'sessionType durationMonths sessionsPerWeek paymentType model',
                 populate: {
                     path: 'sessions',
                     select: 'date status isPaid'
@@ -155,7 +157,7 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
                 select: 'date status isPaid confirmedAbsence',
                 populate: {
                     path: 'package',
-                    select: 'sessionType durationMonths sessionsPerWeek'
+                    select: 'sessionType durationMonths sessionsPerWeek paymentType model'
                 }
             }
         ]).lean();
@@ -656,7 +658,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         const appointment = await Appointment.findById(id)
             .populate('patient', 'fullName phone email dateOfBirth')
             .populate('doctor', 'fullName specialty')
-            .populate('package', 'totalSessions sessionsUsed sessionValue totalPaid financialStatus balance type')
+            .populate('package', 'totalSessions sessionsUsed sessionValue totalPaid financialStatus balance type paymentType model')
             .populate('liminarContract', 'processNumber court totalCredit creditBalance usedCredit status mode')
             .populate('session', 'status paymentStatus')
             .populate('payment', 'status amount paymentMethod splitMethods');
