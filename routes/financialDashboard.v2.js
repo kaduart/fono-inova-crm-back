@@ -87,6 +87,10 @@ const paymentBaseFilter = {
     amount: { $gte: 1 }
 };
 
+// 1º lote padrão do Mongo = 101 docs: sessões do mês (profissionais) e pendentes passavam disso e
+// cada um pagava um getMore extra em série.
+const READ_OPTIONS = { batchSize: 5000 };
+
 // Cache server-side para calculateProfissionais — evita recalcular produção/comissões a cada request
 const _profCache = new Map();
 const PROF_CURRENT_MONTH_TTL = 30_000;   // 30s — mês atual
@@ -824,7 +828,7 @@ export async function calculateProfissionais(year, month) {
     const sessions = await Session.find({
         date: { $gte: start, $lte: end },
         status: 'completed'
-    }).select('doctor sessionValue paymentMethod package paymentOrigin sessionType date insuranceGuide')
+    }, null, READ_OPTIONS).select('doctor sessionValue paymentMethod package paymentOrigin sessionType date insuranceGuide')
       .populate('package', 'sessionValue totalValue totalSessions')
       .lean();
     console.log(`[profissionais] sessions.find+populate = ${Date.now() - _tSessions}ms (${sessions.length} docs)`);
@@ -2114,7 +2118,7 @@ async function fetchPendingPaymentsByDateRange(start, end) {
         },
         // Remove arrays auxiliares do lookup
         { $project: { appointmentArr: 0, patientArr: 0, doctorArr: 0, insuranceGuideArr: 0 } }
-    ]).allowDiskUse(true);
+    ]).allowDiskUse(true).option(READ_OPTIONS);
 }
 
 export async function calculatePendentes(year, month) {

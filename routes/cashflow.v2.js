@@ -39,6 +39,8 @@ function _silence(promise) {
 // Se algum novo código passar a ler OUTRO campo dessas listas, incluí-lo aqui — senão chega undefined.
 const MONTH_CASH_FIELDS = '_id amount session kind financialDate paymentDate patient';
 const YESTERDAY_CASH_FIELDS = '_id amount appointment session notes description billingType paymentMethod type serviceType package financialDate createdAt patient';
+// 1º lote padrão do Mongo = 101 docs: as sessões do mês passavam disso e pagavam um getMore extra em série.
+const READ_OPTIONS = { batchSize: 5000 };
 
 // Cache Redis para CashflowV2 — compartilhado entre instâncias no Render
 const REDIS_CACHE_PREFIX = 'cashflow:v2:';
@@ -365,7 +367,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                         .lean()
                     : [],
                 monthSessionIds.length > 0
-                    ? Session.find({ _id: { $in: monthSessionIds } }).select('date').lean()
+                    ? Session.find({ _id: { $in: monthSessionIds } }, null, READ_OPTIONS).select('date').lean()
                     : []
             ]);
             return { yesterdayCash, yesterdaySessions, monthCash, yesterdayApptDocs, monthSessionDocs };

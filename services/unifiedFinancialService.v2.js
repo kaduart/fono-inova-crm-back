@@ -32,6 +32,9 @@ function _silence(promise) {
     return promise;
 }
 
+// 1º lote padrão do Mongo = 101 docs: a lista de payments do mês passava disso e pagava um getMore extra em série.
+const READ_OPTIONS = { batchSize: 5000 };
+
 const CASH_BY_METHOD_STAGES = [
     { $project: { methodParts: { $cond: [
         { $gt: [{ $size: { $ifNull: ['$splitMethods', []] } }, 0] },
@@ -192,7 +195,7 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
     const _paymentsFindStartedAt = Date.now();
     let _paymentsQueryMs = 0;
     const paymentsPromise = _silence((includeDetails && !skipPayments)
-        ? (detailSelect ? Payment.find(match).select(detailSelect) : Payment.find(match))
+        ? (detailSelect ? Payment.find(match, null, READ_OPTIONS).select(detailSelect) : Payment.find(match, null, READ_OPTIONS))
             .populate('patient', 'fullName').lean().then(r => {
                 _paymentsQueryMs = Date.now() - _paymentsFindStartedAt;
                 return r;

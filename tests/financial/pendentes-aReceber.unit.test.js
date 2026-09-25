@@ -21,6 +21,7 @@ const mockPaymentFind = vi.fn();
 function mockAggregateResult(result) {
   const p = Promise.resolve(result);
   p.allowDiskUse = vi.fn().mockReturnValue(p);
+  p.option = vi.fn().mockReturnValue(p);
   return p;
 }
 
