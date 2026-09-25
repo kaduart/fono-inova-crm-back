@@ -40,8 +40,17 @@ export const ParticularHandler = {
         if (isPrepaid) {
             FinanceWriteGuard.setSessionPaid(sessionUpdate, true, { reason: 'package_prepaid_complete' });
             FinanceWriteGuard.setSessionPaymentStatus(sessionUpdate, 'package_paid', { reason: 'package_prepaid_complete' });
+            // 🐛 FIX (2026-09-22): antes gravava paymentMethod='package_prepaid', valor fora do enum de
+            // Session.paymentMethod (só paymentOrigin aceita 'package_prepaid' — ver models/Session.js).
+            // Como a escrita passa por findOneAndUpdate/updateOne (sem runValidators), entrava no banco
+            // sem erro e só estourava (ValidationError engolido em silêncio) quando outra coisa chamava
+            // .save() no mesmo documento depois — o hook post('findOneAndUpdate') de provisionamento
+            // (models/Session.js → provisionamentoService.realizarSessao) é um desses casos: a sessão
+            // completava mas o provisionamento pós-complete falhava sem avisar ninguém. As outras 3
+            // branches desta função já usam resolvedPaymentMethod; esta é a única que hardcodeava o
+            // valor de paymentOrigin em paymentMethod.
             sessionUpdate.paymentOrigin = 'package_prepaid';
-            sessionUpdate.paymentMethod = 'package_prepaid';
+            sessionUpdate.paymentMethod = resolvedPaymentMethod;
             sessionUpdate.paidAt = new Date();
         } else if (isBalanceOrigin) {
             // Fiado / addToBalance

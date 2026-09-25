@@ -294,6 +294,16 @@ export const getAppointmentsByType = async (req, res) => {
                 pipeline: [{ $project: { fullName: 1, specialty: 1 } }]
             }
         };
+        // Só campos lidos pela classificação e pelas telas; o doc inteiro triplicava os bytes no link Render↔Atlas.
+        const projectUsedFields = {
+            $project: {
+                patient: 1, doctor: 1, date: 1, time: 1, specialty: 1, createdAt: 1,
+                operationalStatus: 1, billingType: 1, serviceType: 1, patientJourneyType: 1,
+                paymentMethod: 1, insuranceProvider: 1, insuranceGuide: 1,
+                patientInfo: 1, sessionValue: 1, professionalName: 1, payment: 1,
+                patientId: 1, patientName: 1, doctorName: 1, paymentAmount: 1, valor: 1
+            }
+        };
 
         let allAppointments;
         if (mode === 'date') {
@@ -314,6 +324,7 @@ export const getAppointmentsByType = async (req, res) => {
 
             allAppointments = await Appointment.aggregate([
                 { $match: matchStage },
+                projectUsedFields,
                 {
                     $addFields: {
                         _matchesDate: {
@@ -346,6 +357,7 @@ export const getAppointmentsByType = async (req, res) => {
         } else {
             allAppointments = await Appointment.aggregate([
                 { $match: filter },
+                projectUsedFields,
                 lookupPatient,
                 { $unwind: { path: '$patient', preserveNullAndEmptyArrays: true } },
                 lookupDoctor,

@@ -333,6 +333,8 @@ const GUIDE_FIELDS = '_id number insurance specialty patientId status expiresAt 
 const SESSION_FIELDS_FULL = '_id insuranceGuide date status sessionValue specialty doctor appointmentId billingBatchId';
 const SESSION_FIELDS_SUMMARY = '_id insuranceGuide date status sessionValue billingBatchId';
 const PAYMENT_FIELDS = '_id session amount status insurance.status insurance.grossAmount insurance.billedAt insurance.receivedAt';
+// 1º lote padrão do Mongo = 101 docs: guias/sessões/payments passavam disso e cada um pagava um getMore extra em série.
+const READ_OPTIONS = { batchSize: 5000 };
 
 const ORPHAN_MATCH = {
   status: 'completed',
@@ -462,7 +464,7 @@ export async function getInsuranceGuidesView(filters = {}) {
   orphanCountP?.catch(() => {});
 
   // 1. Universo = as guias. Nunca derivado de sessão pendente.
-  const guides = await InsuranceGuide.find(guideMatch)
+  const guides = await InsuranceGuide.find(guideMatch, null, READ_OPTIONS)
     .select(GUIDE_FIELDS)
     .populate('patientId', summaryOnly ? 'fullName' : 'fullName phone')
     .sort({ createdAt: -1 })
@@ -484,7 +486,7 @@ export async function getInsuranceGuidesView(filters = {}) {
 
   // 2. Composição: sessões, payments, comunicações e lotes das guias listadas.
   const [sessions, legacyCommunications] = await Promise.all([
-    Session.find({ insuranceGuide: { $in: guideIds } })
+    Session.find({ insuranceGuide: { $in: guideIds } }, null, READ_OPTIONS)
       .select(summaryOnly ? SESSION_FIELDS_SUMMARY : SESSION_FIELDS_FULL)
       .populate(summaryOnly ? [] : [
         { path: 'doctor', select: 'fullName' },
@@ -539,7 +541,7 @@ export async function getInsuranceGuidesView(filters = {}) {
       { session: { $in: sessionIds } },
       { insuranceGuide: { $in: guideIds } }
     ]
-  })
+  }, null, READ_OPTIONS)
     .select(PAYMENT_FIELDS)
     .lean()
     .exec();

@@ -169,56 +169,50 @@ router.get('/', flexibleAuth, async (req, res) => {
 });
 
 // Obter aniversariantes do mês
+//
+// 🐛 FIX (2026-09-22): a versão anterior extraía mês/dia fazendo `String(p.dateOfBirth)`
+// e procurando '-'/'/' na string. Isso só funciona quando o valor está gravado como STRING
+// no Mongo (import legado). `dateOfBirth` é `type: Date` no schema — pra ~286 dos 403
+// pacientes com o campo preenchido, `.lean()` devolve um objeto Date de verdade, e
+// `String(dateObject)` produz algo como "Wed Sep 22 2026 00:00:00 GMT+0000 (...)" — SEM
+// hífen nem barra. `birthMonth` ficava '' pra esses pacientes e eles desapareciam da lista
+// inteira, silenciosamente, não importa o mês do aniversário. Achado ao investigar por que
+// o badge "1 aniversário hoje!" (calculado em DashboardContentOptimized.tsx a partir da
+// lista completa de pacientes) não batia com ninguém "HOJE" nesta lista — o aniversariante
+// do dia (Date real) nunca chegava a entrar no filtro.
+//
+// dateOfBirth não tem semântica de horário — é gravado como meia-noite UTC representando
+// o dia pretendido. Por isso a extração usa getUTC*, nunca getDate()/getMonth() locais:
+// em Brasília (UTC-3), "2026-09-22T00:00:00.000Z" em hora local vira 21/09 21h — teria
+// escondido o aniversariante de hoje mesmo depois de corrigido o bug de tipo.
 router.get('/aniversariantes', auth, async (req, res) => {
   try {
     const today = new Date();
-    const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
-    
+    const currentMonth = today.getUTCMonth() + 1;
+
     console.log(`[ANIVERSARIANTES] Buscando mês: ${currentMonth}`);
-    
+
     // Busca todos os pacientes
     const allPatients = await Patient.find({
       dateOfBirth: { $exists: true, $ne: null, $ne: '' }
     }).select('fullName dateOfBirth phone email').lean();
-    
+
     console.log(`[ANIVERSARIANTES] Total pacientes com dateOfBirth: ${allPatients.length}`);
-    
-    // Filtra os que fazem aniversário no mês atual
-    const aniversariantes = allPatients.filter(p => {
-      if (!p.dateOfBirth) return false;
-      const dateStr = String(p.dateOfBirth);
-      // Tenta extrair mês de diferentes formatos
-      let birthMonth = '';
-      if (dateStr.includes('-')) {
-        // Formato: 1990-05-15 ou 05-15-1990
-        const parts = dateStr.split('-');
-        if (parts[0].length === 4) {
-          birthMonth = parts[1]; // YYYY-MM-DD
-        } else {
-          birthMonth = parts[0]; // MM-DD-YYYY
-        }
-      } else if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts[2].length === 4) {
-          birthMonth = parts[1]; // DD/MM/YYYY
-        }
-      }
-      return birthMonth === currentMonth;
-    });
-    
-    // Ordena cronologicamente pelo dia do mês
-    aniversariantes.sort((a, b) => {
-      const dayOf = (dateStr) => {
-        const s = String(dateStr);
-        if (s.includes('-')) {
-          const parts = s.split('-');
-          return parts[0].length === 4 ? parseInt(parts[2]) : parseInt(parts[1]);
-        }
-        if (s.includes('/')) return parseInt(s.split('/')[0]);
-        return 0;
-      };
-      return dayOf(a.dateOfBirth) - dayOf(b.dateOfBirth);
-    });
+
+    // new Date(valor) aceita tanto um objeto Date quanto uma string ISO/legado — cobre os
+    // dois formatos que existem hoje na coleção (ver comentário acima).
+    const toUtcDay = (dateOfBirth) => {
+      const d = new Date(dateOfBirth);
+      if (Number.isNaN(d.getTime())) return null;
+      return { month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    };
+
+    // Filtra os que fazem aniversário no mês atual e já anota o dia (evita reparsear no sort)
+    const aniversariantes = allPatients
+      .map(p => ({ ...p, __utcDay: toUtcDay(p.dateOfBirth) }))
+      .filter(p => p.__utcDay && p.__utcDay.month === currentMonth)
+      .sort((a, b) => a.__utcDay.day - b.__utcDay.day)
+      .map(({ __utcDay, ...p }) => p);
 
     console.log(`[ANIVERSARIANTES] Encontrados: ${aniversariantes.length}`);
 
