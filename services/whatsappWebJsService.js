@@ -545,9 +545,46 @@ function createClient() {
     }
   });
 
+  // ─── Atribuição de origem (marketing) — só LÊ mensagens recebidas, nunca responde ──
+  if (process.env.WA_ATTRIBUTION_CAPTURE !== 'false') {
+    newClient.on('message', (msg) => {
+      handleInboundAttribution(msg).catch((err) =>
+        console.warn('[WhatsAppWeb] ⚠️ atribuição falhou (ignorado):', err?.message)
+      );
+    });
+  }
+
   attachPageNoiseFilters(newClient);
 
   return newClient;
+}
+
+// Fire-and-forget: extrai origem (site/anúncio) da mensagem recebida e grava por telefone.
+async function handleInboundAttribution(msg) {
+  if (!msg || msg.fromMe || msg.isStatus) return;
+  const from = msg.from || '';
+  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
+
+  const text = msg.body || '';
+  const ctwaRaw = msg._data?.ctwaContext || null;
+
+  // Checagem barata antes de qualquer I/O
+  const { parseAttribution } = await import('../utils/attributionParser.js');
+  const ctwa = ctwaRaw
+    ? { sourceId: ctwaRaw.sourceId || null, sourceUrl: ctwaRaw.sourceUrl || null, ctwaClid: ctwaRaw.ctwaClid || null }
+    : null;
+  if (ctwaRaw) console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','));
+  if (!parseAttribution(text, ctwa)) return;
+
+  let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
+  if (!phone) {
+    // Contatos @lid: resolve o número real
+    try { phone = (await msg.getContact())?.number || null; } catch { phone = null; }
+  }
+  if (!phone) return;
+
+  const { captureInboundAttribution } = await import('./leadAttributionService.js');
+  await captureInboundAttribution({ phone, text, ctwa, capturedBy: 'whatsapp_web' });
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────

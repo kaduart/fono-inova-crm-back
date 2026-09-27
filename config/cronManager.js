@@ -78,6 +78,12 @@ export async function startAllCrons() {
     const { scheduleWorkerHours } = await import("../crons/workerScheduler.cron.js");
     startCron('workerScheduler', () => scheduleWorkerHours());
 
+    // Conversões offline (Meta CAPI + Google Ads) — desligado por padrão
+    if (process.env.ENABLE_ADS_CONVERSION === 'true') {
+        const { initAdsConversionCron } = await import("../crons/adsConversion.cron.js");
+        startCron('adsConversion', () => initAdsConversionCron());
+    }
+
     console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation + communicationReconciliation + workerScheduler)");
 }
 

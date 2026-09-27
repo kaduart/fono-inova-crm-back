@@ -19,7 +19,10 @@ export async function sendEventToMeta({
     leadId,
     value,          // Valor monetário
     currency = 'BRL',
-    customData = {} // Dados extras
+    customData = {}, // Dados extras
+    eventId,         // Deduplicação no Meta (ex: id do agendamento)
+    eventTime,       // Date do evento real (default: agora)
+    actionSource = 'website'
 }) {
     try {
         const pixelId = process.env.META_PIXEL_ID;
@@ -50,8 +53,9 @@ export async function sendEventToMeta({
         const payload = {
             data: [{
                 event_name: eventName,
-                event_time: Math.floor(Date.now() / 1000),
-                action_source: "website",
+                event_time: Math.floor((eventTime ? new Date(eventTime).getTime() : Date.now()) / 1000),
+                ...(eventId && { event_id: String(eventId) }),
+                action_source: actionSource,
                 event_source_url: "https://clinicafonoinova.com.br",
                 user_data,
                 custom_data: event_custom_data

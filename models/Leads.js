@@ -281,7 +281,7 @@ const leadSchema = new mongoose.Schema({
   metaTracking: {
     source: {
       type: String,
-      enum: ['meta_ads', 'google_ads', 'organic', 'indication', 'instagram', 'facebook', 'website', ''],
+      enum: ['meta_ads', 'google_ads', 'tiktok_ads', 'organic', 'indication', 'instagram', 'facebook', 'website', ''],
       default: ''
     },
     campaign: { type: String, default: null },        // Ex: "[vd-trafego]-[psico]"
@@ -289,6 +289,8 @@ const leadSchema = new mongoose.Schema({
     adsetId: { type: String, default: null },         // ID do adset
     adId: { type: String, default: null },            // ID do anúncio específico
     fbclid: { type: String, default: null },          // Facebook Click ID
+    gclid: { type: String, default: null },           // Google Click ID (antes era descartado: campo não existia no schema)
+    ttclid: { type: String, default: null },          // TikTok Click ID
     specialty: {
       type: String,
       enum: ['psicologia', 'fono', 'fisio', 'neuropsicologia', 'psicopedagogia', 'geral', ''],

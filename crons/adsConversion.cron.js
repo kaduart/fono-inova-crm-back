@@ -1,0 +1,193 @@
+// crons/adsConversion.cron.js
+// Devolve para Meta (CAPI) e Google Ads (offline por gclid) os PRIMEIROS agendamentos
+// confirmados, para as campanhas otimizarem por quem agenda — não por clique.
+//
+// Por que cron (e não evento): APPOINTMENT_CONFIRMED não tem fila consumidora e
+// agendamentos entram por vários caminhos (agenda externa, importFromAgenda, V2).
+// Varredura por createdAt pega todos. Idempotência: AdConversion.unique(appointment)
+// + event_id/order_id = id do agendamento nas plataformas.
+//
+// Env:
+//   ENABLE_ADS_CONVERSION=true        liga o cron (default: desligado)
+//   ADS_CONVERSION_DRY_RUN=true       só loga, não grava nem envia
+//   ADS_CONVERSION_DEFAULT_VALUE=220  valor quando sessionValue = 0 (ex.: convênio)
+//   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (importação)
+// Nunca envia dado clínico: só telefone (hash), valor, id e origem.
+
+import Appointment from '../models/Appointment.js';
+import Patient from '../models/Patient.js';
+import AdConversion from '../models/AdConversion.js';
+import { getAttributionByPhone } from '../services/leadAttributionService.js';
+import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
+import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
+
+const TAG = '[AdsConversion]';
+const INTERVAL_MS = 10 * 60 * 1000;
+const LOOKBACK_DAYS = 30;
+const MIN_AGE_MS = 15 * 60 * 1000;          // espera 15 min (evita agendamento criado e desfeito)
+const MAX_ATTEMPTS = 5;
+const CONFIRMED_STATUSES = ['scheduled', 'confirmed', 'paid', 'completed'];
+
+let isRunning = false;
+let intervalId = null;
+
+const isDryRun = () => process.env.ADS_CONVERSION_DRY_RUN === 'true';
+const defaultValue = () => Number(process.env.ADS_CONVERSION_DEFAULT_VALUE || 220);
+
+async function isFirstAppointment(appt) {
+  if (appt.isFirstAppointment === true || appt.patientJourneyType === 'new_patient') return true;
+  if (!appt.patient) return true; // pré-cadastro sem paciente = paciente novo
+  const earlier = await Appointment.exists({
+    patient: appt.patient,
+    _id: { $ne: appt._id },
+    createdAt: { $lt: appt.createdAt },
+  });
+  return !earlier;
+}
+
+async function resolvePhone(appt) {
+  if (appt.patient) {
+    const p = await Patient.findById(appt.patient).select('phone').lean();
+    if (p?.phone) return p.phone;
+  }
+  return appt.patientInfo?.phone || null;
+}
+
+// ─── Etapa 1: registra agendamentos novos na fila (AdConversion) ─────────────
+async function enqueueNew() {
+  const now = Date.now();
+  const candidates = await Appointment.find({
+    createdAt: { $gte: new Date(now - LOOKBACK_DAYS * 864e5), $lte: new Date(now - MIN_AGE_MS) },
+    operationalStatus: { $in: CONFIRMED_STATUSES },
+  })
+    .select('_id patient patientInfo.phone createdAt sessionValue isFirstAppointment patientJourneyType')
+    .sort({ createdAt: -1 })
+    .limit(300)
+    .lean();
+  if (!candidates.length) return 0;
+
+  const known = await AdConversion.find({ appointment: { $in: candidates.map(c => c._id) } })
+    .select('appointment').lean();
+  const knownSet = new Set(known.map(k => String(k.appointment)));
+
+  let queued = 0;
+  for (const appt of candidates) {
+    if (knownSet.has(String(appt._id))) continue;
+    try {
+      const first = await isFirstAppointment(appt);
+      const phone = first ? await resolvePhone(appt) : null;
+      const attr = phone ? await getAttributionByPhone(phone) : null;
+      const value = Number(appt.sessionValue) > 0 ? Number(appt.sessionValue) : defaultValue();
+
+      const doc = {
+        appointment: appt._id,
+        phone,
+        source: attr?.source || 'unknown',
+        attributionMethod: attr?.method || null,
+        value,
+        eventTime: appt.createdAt,
+      };
+
+      if (!first) {
+        Object.assign(doc, {
+          done: true,
+          meta: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
+          google: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
+        });
+      } else {
+        doc.meta = phone ? { status: 'pending' } : { status: 'skipped', reason: 'sem_telefone' };
+        doc.google = attr?.gclid ? { status: 'pending' } : { status: 'skipped', reason: 'sem_gclid' };
+        doc.gclid = attr?.gclid || null;
+        if (doc.meta.status !== 'pending' && doc.google.status !== 'pending') doc.done = true;
+      }
+
+      if (isDryRun()) {
+        console.log(`${TAG} [DRY] ${appt._id} first=${first} source=${doc.source} value=${value} meta=${doc.meta.status} google=${doc.google.status}`);
+        continue;
+      }
+
+      await AdConversion.create(doc);
+      queued++;
+    } catch (err) {
+      if (err?.code !== 11000) console.error(`${TAG} ❌ enqueue ${appt._id}:`, err.message);
+    }
+  }
+  return queued;
+}
+
+// ─── Etapa 2: envia pendentes com retry/backoff ─────────────────────────────
+async function processPending() {
+  const pending = await AdConversion.find({ done: false, nextAttemptAt: { $lte: new Date() } })
+    .sort({ createdAt: 1 }).limit(50);
+  let sent = 0;
+
+  for (const conv of pending) {
+    let retry = false;
+
+    if (conv.meta?.status === 'pending' || conv.meta?.status === 'failed') {
+      try {
+        // Meta só aceita event_time de até 7 dias
+        const sevenDays = 6.5 * 864e5;
+        const eventTime = Date.now() - conv.eventTime.getTime() < sevenDays ? conv.eventTime : new Date();
+        const r = await sendPurchaseToMeta({
+          phone: conv.phone,
+          value: conv.value,
+          eventId: `appt_${conv.appointment}`,
+          eventTime,
+          actionSource: 'system_generated',
+          customData: { lead_source: conv.source },
+        });
+        conv.meta = r ? { status: 'sent', sentAt: new Date() } : { status: 'skipped', reason: 'meta_capi_nao_configurado' };
+        if (r) sent++;
+      } catch (err) {
+        conv.meta = { status: 'failed', reason: String(err?.response?.data?.error?.message || err.message).slice(0, 300) };
+        retry = true;
+      }
+    }
+
+    if (conv.google?.status === 'pending' || conv.google?.status === 'failed') {
+      const r = await uploadOfflineConversion({
+        gclid: conv.gclid, value: conv.value, eventTime: conv.eventTime, orderId: conv.appointment,
+      });
+      conv.google = { status: r.status, sentAt: r.status === 'sent' ? new Date() : null, reason: r.reason || null };
+      if (r.status === 'sent') sent++;
+      if (r.status === 'failed' && r.retryable) retry = true;
+    }
+
+    conv.attempts += 1;
+    if (retry && conv.attempts < MAX_ATTEMPTS) {
+      conv.nextAttemptAt = new Date(Date.now() + 2 ** conv.attempts * 10 * 60 * 1000); // 20m, 40m, 80m, 160m
+    } else {
+      conv.done = true;
+    }
+    await conv.save();
+    console.log(`${TAG} ${conv.appointment} source=${conv.source} meta=${conv.meta.status} google=${conv.google.status} tentativa=${conv.attempts}`);
+  }
+  return sent;
+}
+
+async function runOnce() {
+  if (isRunning) return;
+  isRunning = true;
+  const t0 = Date.now();
+  try {
+    const queued = await enqueueNew();
+    const sent = isDryRun() ? 0 : await processPending();
+    if (queued || sent) console.log(`${TAG} ✅ novos=${queued} enviados=${sent} em ${Date.now() - t0}ms`);
+  } catch (err) {
+    console.error(`${TAG} ❌ Erro:`, err.message);
+  } finally {
+    isRunning = false;
+  }
+}
+
+export function initAdsConversionCron() {
+  if (intervalId) return { stop: () => clearInterval(intervalId) };
+  console.log(`🔄 Inicializando Ads Conversion Cron (a cada 10 min${isDryRun() ? ', DRY RUN' : ''})...`);
+  intervalId = setInterval(runOnce, INTERVAL_MS);
+  setTimeout(() => runOnce().catch(() => {}), 90 * 1000);
+  return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
+}
+
+export { runOnce as runAdsConversionOnce };
+export default { initAdsConversionCron };
