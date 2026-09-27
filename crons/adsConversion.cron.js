@@ -95,7 +95,10 @@ async function enqueueNew() {
           google: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
         });
       } else {
-        doc.meta = phone ? { status: 'pending' } : { status: 'skipped', reason: 'sem_telefone' };
+        const withinMetaWindow = Date.now() - new Date(appt.createdAt).getTime() < 6.5 * 864e5; // Meta: até 7 dias
+        doc.meta = !phone ? { status: 'skipped', reason: 'sem_telefone' }
+          : !withinMetaWindow ? { status: 'skipped', reason: 'fora_janela_7d_meta' }
+          : { status: 'pending' };
         doc.google = attr?.gclid ? { status: 'pending' } : { status: 'skipped', reason: 'sem_gclid' };
         doc.gclid = attr?.gclid || null;
         if (doc.meta.status !== 'pending' && doc.google.status !== 'pending') doc.done = true;
@@ -126,9 +129,7 @@ async function processPending() {
 
     if (conv.meta?.status === 'pending' || conv.meta?.status === 'failed') {
       try {
-        // Meta só aceita event_time de até 7 dias
-        const sevenDays = 6.5 * 864e5;
-        const eventTime = Date.now() - conv.eventTime.getTime() < sevenDays ? conv.eventTime : new Date();
+        const eventTime = conv.eventTime; // já filtrado na janela de 7 dias no enqueue
         const r = await sendPurchaseToMeta({
           phone: conv.phone,
           value: conv.value,
