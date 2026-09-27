@@ -12,6 +12,8 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Evolution from '../models/Evolution.js';
 import Metric from '../models/Metric.js';
+import Appointment from '../models/Appointment.js';
+import Patient from '../models/Patient.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { generatePdfFromEvolution } from '../services/generatePDF.js';
@@ -490,6 +492,75 @@ router.get('/metrics', flexibleAuth, async (req, res) => {
         res.json(success(metrics));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao buscar métricas:', error);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
+    }
+});
+
+// ─── PENDÊNCIAS (pacientes atendidos sem evolução) ────────────────────
+// Paciente pendente = teve atendimento concluído (completed/paid) nos últimos
+// 90 dias com o profissional e não tem evolução desse profissional no mesmo
+// dia ou depois do último atendimento. Calculado no backend (invariante 7).
+
+const PENDING_WINDOW_DAYS = 90;
+const ymd = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+
+router.get('/pending', flexibleAuth, async (req, res) => {
+    try {
+        const doctorIdRaw = isAdmin(req.user) && req.query.doctorId ? req.query.doctorId : req.user?.id;
+        if (!doctorIdRaw || !mongoose.Types.ObjectId.isValid(doctorIdRaw)) {
+            return res.status(400).json(failure('INVALID_DOCTOR', 'Profissional inválido'));
+        }
+        const doctor = new mongoose.Types.ObjectId(doctorIdRaw);
+        const now = new Date();
+        const since = new Date(now.getTime() - PENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+        const attended = await Appointment.aggregate([
+            {
+                $match: {
+                    doctor,
+                    patient: { $ne: null },
+                    operationalStatus: { $in: ['completed', 'paid'] },
+                    date: { $gte: since, $lte: now }
+                }
+            },
+            { $group: { _id: '$patient', lastCompletedDate: { $max: '$date' } } }
+        ]);
+
+        if (attended.length === 0) return res.json(success([], { count: 0 }));
+
+        const evolutions = await Evolution.aggregate([
+            { $match: { doctor, patient: { $in: attended.map(a => a._id) } } },
+            { $group: { _id: '$patient', lastEvolutionDate: { $max: '$date' } } }
+        ]);
+        const lastEvoByPatient = new Map(evolutions.map(e => [String(e._id), e.lastEvolutionDate]));
+
+        const pending = attended.filter(a => {
+            const lastEvo = lastEvoByPatient.get(String(a._id));
+            return !lastEvo || ymd(lastEvo) < ymd(a.lastCompletedDate);
+        });
+
+        if (pending.length === 0) return res.json(success([], { count: 0 }));
+
+        const patients = await Patient.find({
+            _id: { $in: pending.map(p => p._id) },
+            status: { $nin: ['inactive', 'lead'] },
+            isLead: { $ne: true }
+        }).select('fullName').lean();
+        const nameById = new Map(patients.map(p => [String(p._id), p.fullName]));
+
+        const data = pending
+            .filter(p => nameById.has(String(p._id)))
+            .map(p => ({
+                _id: p._id,
+                fullName: nameById.get(String(p._id)),
+                lastCompletedDate: p.lastCompletedDate,
+                lastEvolutionDate: lastEvoByPatient.get(String(p._id)) || null
+            }))
+            .sort((a, b) => new Date(a.lastCompletedDate) - new Date(b.lastCompletedDate));
+
+        res.json(success(data, { count: data.length }));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao buscar pendências:', error);
         res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });

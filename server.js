@@ -74,6 +74,7 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 // ======================================================
 import { initializeSocket } from "./config/socket.js";
 import { startRuntimeMonitor, healthEndpoint, healthFullEndpoint } from "./infrastructure/observability/runtimeMonitor.js";
+import { attachMongoPoolDiagnostics, mongoPoolRequestMiddleware } from "./infrastructure/observability/mongoPoolDiagnostics.js";
 import Followup from "./models/Followup.js";
 import { redisConnection } from "./config/redisConnection.js";
 import { registerWebhook } from "./services/sicoobService.js";
@@ -291,6 +292,9 @@ app.use((req, res, next) => {
     }
     next();
 });
+
+// Diagnóstico do pool do Mongo: 1 linha de resumo só para requisições lentas (somente log)
+app.use(mongoPoolRequestMiddleware);
 
 // 🔥 Rota de upload de mídia ANTES dos middlewares de body parsing
 // Importar apenas as rotas de upload
@@ -887,6 +891,7 @@ server.listen(PORT, '0.0.0.0', () => {
         
         mongoConnected = true;
         console.log("✅ MongoDB conectado");
+        attachMongoPoolDiagnostics(mongoose.connection.getClient());
 
         // autoIndex é desligado em produção: garante o índice único da lista de interesse de convênios
         // (um cadastro ativo por telefone + convênio). Não bloqueia o boot se falhar, mas registra o erro.
