@@ -459,6 +459,9 @@ function createClient() {
     if (process.send) {
       process.send({ type: 'whatsapp_ready' });
     }
+
+    // Worker fica desligado à noite/fim de semana: recupera a origem das mensagens recebidas nesse período
+    setTimeout(() => catchUpAttribution(newClient), 60_000);
   });
 
   newClient.on('loading_screen', async (percent, message) => {
@@ -557,6 +560,34 @@ function createClient() {
   attachPageNoiseFilters(newClient);
 
   return newClient;
+}
+
+// Varre conversas com atividade recente (default 72h = cobre fim de semana com worker suspenso).
+// Idempotente: a gravação é first-touch por telefone.
+async function catchUpAttribution(client) {
+  if (process.env.WA_ATTRIBUTION_CAPTURE === 'false' || !client) return;
+  const hours = Number(process.env.WA_ATTRIBUTION_CATCHUP_HOURS || 72);
+  const sinceSec = Math.floor(Date.now() / 1000) - hours * 3600;
+  let checked = 0;
+  try {
+    const chats = (await client.getChats())
+      .filter((c) => !c.isGroup && (c.timestamp || 0) >= sinceSec)
+      .slice(0, 150);
+    for (const chat of chats) {
+      try {
+        const msgs = await chat.fetchMessages({ limit: 8 });
+        for (const m of msgs) {
+          if (m.fromMe || (m.timestamp || 0) < sinceSec) continue;
+          await handleInboundAttribution(m);
+          checked++;
+        }
+      } catch { /* conversa com erro de carga — segue */ }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    console.log(`[WhatsAppWeb] 🔁 catch-up de atribuição: ${chats.length} conversas, ${checked} msgs verificadas (${hours}h)`);
+  } catch (err) {
+    console.warn('[WhatsAppWeb] ⚠️ catch-up de atribuição falhou (ignorado):', err?.message);
+  }
 }
 
 // Fire-and-forget: extrai origem (site/anúncio) da mensagem recebida e grava por telefone.
