@@ -35,13 +35,21 @@ router.get('/google-offline.csv', basicAuth, async (req, res) => {
     const rows = await AdConversion.find({
       gclid: { $nin: [null, ''] },
       eventTime: { $gte: new Date(Date.now() - 60 * 864e5) }, // Google aceita até 90 dias após o clique
-    }).select('gclid eventTime value').sort({ eventTime: 1 }).lean();
+    }).select('appointment gclid eventTime value').sort({ eventTime: 1 }).lean();
 
-    const lines = [
-      'Parameters:TimeZone=America/Sao_Paulo',
-      'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
-      ...rows.map((r) => [r.gclid, name, fmt(r.eventTime), Number(r.value || 0).toFixed(2), 'BRL'].map(csvCell).join(',')),
-    ];
+    // Formato padrão = Central de Dados (Data Manager): cabeçalho simples, fuso no próprio horário.
+    // ?format=legacy = modelo antigo de upload programado (linha Parameters:TimeZone + nomes em inglês).
+    const legacy = req.query.format === 'legacy';
+    const lines = legacy
+      ? [
+          'Parameters:TimeZone=America/Sao_Paulo',
+          'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
+          ...rows.map((r) => [r.gclid, name, fmt(r.eventTime), Number(r.value || 0).toFixed(2), 'BRL'].map(csvCell).join(',')),
+        ]
+      : [
+          'gclid,conversion_time,transaction_id,event_source,conversion_value,currency',
+          ...rows.map((r) => [r.gclid, `${fmt(r.eventTime)}-03:00`, `appt_${r.appointment}`, 'OTHER', Number(r.value || 0).toFixed(2), 'BRL'].map(csvCell).join(',')),
+        ];
     console.log(`[AdsFeed] Google CSV servido: ${rows.length} conversões`);
     res.set('Content-Type', 'text/csv; charset=utf-8').set('Cache-Control', 'no-store').send(lines.join('\n') + '\n');
   } catch (err) {
