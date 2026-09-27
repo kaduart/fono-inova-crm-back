@@ -37,7 +37,7 @@ export const LANDING_PAGES_DATA = [
       ]
     },
     cta: {
-      text: 'Agendar avaliação gratuita',
+      text: 'Agendar avaliação',
       link: 'https://wa.me/5562992013573?text=Olá! Vi a página sobre criança de 2 anos não fala e gostaria de agendar uma avaliação.',
       phone: '62992013573'
     },
@@ -693,7 +693,7 @@ export const LANDING_PAGES_DATA = [
       { icon: '📍', text: 'Atendimento em Anápolis' },
       { icon: '📍', text: 'Fonoaudiólogas especializadas' },
       { icon: '📍', text: 'Ambiente lúdico' },
-      { icon: '📍', text: 'Avaliação gratuita' }
+      { icon: '📍', text: 'Avaliação completa' }
     ],
     content: {
       quandoProcurar: 'Se você está em Anápolis ou região e precisa de fonoaudiologia infantil, estamos prontos para atender sua família.',
@@ -702,17 +702,17 @@ export const LANDING_PAGES_DATA = [
         'Localização central em Anápolis',
         'Equipe especializada',
         'Ambiente acolhedor',
-        'Avaliação gratuita'
+        'Avaliação completa'
       ]
     },
     cta: {
-      text: 'Agendar avaliação gratuita',
+      text: 'Agendar avaliação',
       link: 'https://wa.me/5562992013573?text=Olá! Gostaria de agendar uma avaliação fonoaudiológica em Anápolis.',
       phone: '62992013573'
     },
     seo: {
       title: 'Fonoaudiólogo em Anápolis | Avaliação Gratuita | Fono Inova',
-      description: 'Procure fonoaudiólogo especializado em Anápolis. Atendimento infantil, avaliação gratuita e ambiente acolhedor.',
+      description: 'Procure fonoaudiólogo especializado em Anápolis. Atendimento infantil, avaliação completa e ambiente acolhedor.',
       ogImage: '/images/og/fono-anapolis.jpg'
     },
     location: { city: 'Anápolis', state: 'GO' },
@@ -870,13 +870,13 @@ export const LANDING_PAGES_DATA = [
       ]
     },
     cta: {
-      text: 'Agendar avaliação gratuita',
+      text: 'Agendar avaliação',
       link: 'https://wa.me/5562992013573?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.',
       phone: '62992013573'
     },
     seo: {
       title: 'Fala Tardia Infantil | Fonoaudiólogo em Anápolis | Fono Inova',
-      description: 'Criança com atraso na fala? Saiba quando se preocupar e como a fonoaudiologia pode ajudar. Avaliação gratuita em Anápolis.',
+      description: 'Criança com atraso na fala? Saiba quando se preocupar e como a fonoaudiologia pode ajudar. Avaliação especializada em Anápolis.',
       ogImage: '/images/og/fala-tardia.jpg'
     },
     priority: 10,
@@ -1451,7 +1451,7 @@ export async function generatePostContent(slug) {
     {
       // Template 1: Foco em SEO com headline + keywords
       title: `${lp.headline} | ${lp.category.charAt(0).toUpperCase() + lp.category.slice(1)} em Anápolis`,
-      content: `${seoDescription}\n\n${lp.sinaisAlerta.slice(0, 3).map(s => `${s.icon} ${s.text}`).join('\n')}\n\n✅ ${lp.content.comoFunciona?.substring(0, 100) || 'Avaliação especializada para entender as necessidades da sua criança.'}\n\n🔍 Palavras-chave: ${keywords}\n\n👉 Saiba mais: clinicafonoinova.com.br/lp/${lp.slug}\n\n📱 Agende sua avaliação gratuita: ${whatsappNumber}`
+      content: `${seoDescription}\n\n${lp.sinaisAlerta.slice(0, 3).map(s => `${s.icon} ${s.text}`).join('\n')}\n\n✅ ${lp.content.comoFunciona?.substring(0, 100) || 'Avaliação especializada para entender as necessidades da sua criança.'}\n\n🔍 Palavras-chave: ${keywords}\n\n👉 Saiba mais: clinicafonoinova.com.br/lp/${lp.slug}\n\n📱 Agende sua avaliação pelo WhatsApp (botão abaixo)`
     },
     {
       // Template 2: Educativo com foco em beneficios

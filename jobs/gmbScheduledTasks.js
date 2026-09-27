@@ -97,13 +97,18 @@ async function criarPostParaHorario(horario, funil) {
     return null;
 }
 
+// 🔧 Volume: lote diário por especialidade (~20 posts/dia) e extras ficam DESLIGADOS por padrão.
+// Motivo: Google só exibe os posts mais recentes, volume alto = padrão de spam + fila do Make cheia + custo de imagem.
+// Religar: GMB_BATCH_ALL=true no ambiente.
+const GMB_BATCH_ALL = process.env.GMB_BATCH_ALL === 'true';
+
 export const scheduleGmbCron = () => {
     // ═══════════════════════════════════════════════════════════════
     // CRIAÇÃO DE POSTS PARA TODAS AS ESPECIALIDADES (uma vez por dia)
     // ═══════════════════════════════════════════════════════════════
     
     // 06:00 → Cria posts para todas as especialidades que faltam
-    cron.schedule('0 6 * * *', async () => {
+    if (GMB_BATCH_ALL) cron.schedule('0 6 * * *', async () => {
         try {
             console.log('🚀 [GMB] Verificando especialidades sem post...');
             await gmbService.createPostsForAllEspecialidades();
@@ -137,22 +142,23 @@ export const scheduleGmbCron = () => {
     // ═══════════════════════════════════════════════════════════════
     
     // 07:30 → Post extra das 8h (TOP - Awareness)
-    cron.schedule('30 7 * * *', async () => {
+    if (GMB_BATCH_ALL) cron.schedule('30 7 * * *', async () => {
         await criarPostParaHorario('08:00', 'top');
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
     
     // 11:30 → Post extra das 12h (MIDDLE - Consideração)
-    cron.schedule('30 11 * * *', async () => {
+    if (GMB_BATCH_ALL) cron.schedule('30 11 * * *', async () => {
         await criarPostParaHorario('12:00', 'middle');
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
     
     // 14:30 → Post extra das 15h (MIDDLE - Educação)
-    cron.schedule('30 14 * * *', async () => {
+    if (GMB_BATCH_ALL) cron.schedule('30 14 * * *', async () => {
         await criarPostParaHorario('15:00', 'middle');
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
     
     // 18:30 → Post extra das 19h (BOTTOM - Conversão)
-    cron.schedule('30 18 * * *', async () => {
+    // Fundo de funil (botão Agendar → WhatsApp): ter, qui, sáb — o calendário das 07:00 cobre os outros dias
+    cron.schedule(GMB_BATCH_ALL ? '30 18 * * *' : '30 18 * * 2,4,6', async () => {
         await criarPostParaHorario('19:00', 'bottom');
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
 
@@ -165,9 +171,11 @@ export const scheduleGmbCron = () => {
             const result = await GmbPost.deleteMany({});
             console.log(`✅ [GMB] Reset mensal: ${result.deletedCount} posts removidos. Novo ciclo iniciado.`);
 
-            // Recria posts do dia logo em seguida
-            await gmbService.createPostsForAllEspecialidades();
-            console.log('✅ [GMB] Posts do novo mês criados.');
+            // Recria posts do dia logo em seguida (só no modo lote)
+            if (GMB_BATCH_ALL) {
+                await gmbService.createPostsForAllEspecialidades();
+                console.log('✅ [GMB] Posts do novo mês criados.');
+            }
         } catch (error) {
             console.error('❌ [GMB] Erro no reset mensal:', error.message);
         }

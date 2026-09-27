@@ -161,14 +161,15 @@ export const CALENDARIO_GMB_30_DIAS = [
     tipo: 'dor'
   },
   {
+    // Substitui duplicata do dia 5 — Terapia Ocupacional não tinha nenhum dia no calendário
     dia: 14,
-    tema: 'Avaliação multidisciplinar: a melhor forma de entender seu filho',
-    especialidadeId: 'avaliacao_neuropsicologica_anapolis',
-    url: 'https://www.clinicafonoinova.com.br/artigos/avaliacao-multidisciplinar-infantil',
-    intencao: 'avaliação multidisciplinar infantil',
-    angulo: 'educacao',
+    tema: 'Terapia ocupacional infantil em Anápolis: quando procurar?',
+    especialidadeId: 'terapia_ocupacional_anapolis',
+    url: 'https://www.clinicafonoinova.com.br/terapia-ocupacional-anapolis',
+    intencao: 'terapia ocupacional infantil anapolis',
+    angulo: 'duvida',
     funil: 'middle',
-    tipo: 'autoridade'
+    tipo: 'decisao'
   },
 
   // ═══════════════════════════════════════════════════════════════
@@ -279,14 +280,15 @@ export const CALENDARIO_GMB_30_DIAS = [
     tipo: 'decisao'
   },
   {
+    // TO (sensorial/alimentar) — neuropsico já tinha 8 dias no mês
     dia: 25,
-    tema: 'Quanto tempo dura a avaliação neuropsicológica infantil?',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/quanto-tempo-dura-avaliacao-neuropsicologica',
-    intencao: 'quanto tempo dura avaliação neuropsicológica',
+    tema: 'Criança seletiva para comer ou sensível a barulho: pode ser questão sensorial?',
+    especialidadeId: 'terapia_ocupacional_anapolis',
+    url: 'https://www.clinicafonoinova.com.br/seletividade-alimentar-anapolis',
+    intencao: 'seletividade alimentar infantil',
     angulo: 'duvida',
     funil: 'middle',
-    tipo: 'decisao'
+    tipo: 'dor'
   },
   {
     dia: 26,
@@ -485,6 +487,11 @@ export async function createTodaysCalendarPost(options = {}) {
       ];
       result.post.campaign = 'calendario-tematico-30-dias';
       result.post.landingPageUrl = item.url;
+      // 🎯 Botão aponta pro conteúdo do TEMA (antes ia pra página genérica da especialidade)
+      // + UTM por variante → GA4 passa a medir o A/B (hoje só fundo de funil gerava sinal via WhatsApp)
+      if (result.post.ctaType !== 'BOOK') {
+        result.post.ctaUrl = `${item.url}?utm_source=gmb&utm_medium=post&utm_campaign=calendario&utm_content=dia${item.dia}-${selectedVariant.variant}`;
+      }
       result.post.landingPageRef = item.url.replace('https://www.clinicafonoinova.com.br/', '');
       result.post.metadata = {
         ...(result.post.metadata || {}),

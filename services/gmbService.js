@@ -415,6 +415,23 @@ export const ESPECIALIDADES = [
     foco: 'Diagnóstico TDAH, TEA, déficit de atenção, desenvolvimento cognitivo em Anápolis',
     publico: 'crianças em Anápolis com dificuldades de aprendizagem ou atenção',
     gancho: 'Seu filho apresenta dificuldade de atenção, concentração ou aprendizagem em Anápolis?'
+  },
+  // 🧠 NEUROPEDIATRIA — usada no calendário (dias 2, 10, 18, 21). Antes caía no fallback ESPECIALIDADES[0] (fono)
+  {
+    id: 'neuropediatria',
+    nome: 'Neuropediatria',
+    url: 'https://www.clinicafonoinova.com.br/neuropediatra-anapolis',
+    foco: 'Desenvolvimento neurológico, atraso no desenvolvimento, TEA, TDAH, convulsões, cefaleia',
+    publico: 'crianças com suspeita de alteração no desenvolvimento neurológico',
+    gancho: 'O desenvolvimento do seu filho está te preocupando?'
+  },
+  {
+    id: 'neuropediatria_anapolis',
+    nome: 'Neuropediatra em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/neuropediatra-anapolis',
+    foco: 'Consulta com neuropediatra em Anápolis: TEA, TDAH, atraso neurológico, convulsões',
+    publico: 'pais em Anápolis buscando neuropediatra de confiança',
+    gancho: 'Procurando neuropediatra em Anápolis?'
   }
 ];
 
@@ -430,6 +447,7 @@ const EMERGENCY_FALLBACK_ALIAS = {
   teste_da_linguinha_anapolis: 'freio_lingual',
   fisioterapia_infantil_anapolis: 'fisioterapia',
   avaliacao_neuropsicologica_anapolis: 'neuropsicologia',
+  neuropediatria_anapolis: 'neuropediatria',
 };
 
 /**
@@ -2156,9 +2174,11 @@ export async function createDailyPost(options = {}) {
       }
       
       // Substitui CTA genérica pelo link com contexto
+      // Link wa.me (contém o telefone) sai do TEXTO e vai pro BOTÃO do post:
+      // Google rejeita/penaliza post com telefone/URL no corpo, e link no texto nem é clicável no GMB
       copy = copy.replace(
         /👉 .*$/m,
-        `👉 ${whatsappLink}`
+        '👉 Toque no botão abaixo e fale com a gente pelo WhatsApp'
       );
       
       generated = {
@@ -2202,8 +2222,8 @@ export async function createDailyPost(options = {}) {
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
       imageProvider,  // 🖼️ Qual IA gerou a imagem
-      ctaType: 'LEARN_MORE',
-      ctaUrl: especialidade.url,
+      ctaType: generated.whatsappLink ? 'BOOK' : 'LEARN_MORE', // fundo de funil = botão "Agendar" direto no WhatsApp (mantém [ctx] p/ atribuição)
+      ctaUrl: generated.whatsappLink || especialidade.url,
       aiGenerated: !generated.isFallback,
       // 🎯 HÍBRIDO: Identifica qual modelo gerou
       aiModel: generated.isFallback ? 'template' : (generated.angulo ? 'high-conversion-' + generated.angulo : 'gpt-4o-mini'),

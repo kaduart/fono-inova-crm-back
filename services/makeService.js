@@ -204,7 +204,7 @@ export async function sendPostToMake(post, attempt = 1) {
   const hashtags = gerarHashtags(post.theme);
   const instagramCaption =
     `${textoShort.substring(0, 220)}\n\n` +
-    `🔗 Agende uma avaliação gratuita — link na bio!\n` +
+    `🔗 Agende uma avaliação — link na bio!\n` +
     `📍 Fono Inova · Anápolis-GO\n` +
     `📲 (62) 99201-3573\n\n` +
     `${hashtags}`;
