@@ -37,6 +37,12 @@ router.get('/google-offline.csv', basicAuth, async (req, res) => {
       eventTime: { $gte: new Date(Date.now() - 60 * 864e5) }, // Google aceita até 90 dias após o clique
     }).select('appointment gclid eventTime value').sort({ eventTime: 1 }).lean();
 
+    // Linha de exemplo só para o Google detectar o esquema na configuração (ADS_FEED_SAMPLE_ROW=true).
+    // gclid inválido + valor 0: o Google rejeita na importação, não vira conversão.
+    if (!rows.length && process.env.ADS_FEED_SAMPLE_ROW === 'true') {
+      rows.push({ appointment: 'setup_exemplo', gclid: 'EXEMPLO_CONFIGURACAO_NAO_IMPORTAR', eventTime: new Date(Date.now() - 3600e3), value: 0 });
+    }
+
     // Formato padrão = Central de Dados (Data Manager): cabeçalho simples, fuso no próprio horário.
     // ?format=legacy = modelo antigo de upload programado (linha Parameters:TimeZone + nomes em inglês).
     const legacy = req.query.format === 'legacy';
