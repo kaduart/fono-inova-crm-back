@@ -377,7 +377,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 });
 
 // POST /api/expenses/generate-commissions
-router.post('/generate-commissions', auth, authorize(['admin']), async (req, res) => {
+router.post('/generate-commissions', auth, async (req, res) => {
     try {
         const { month, year, regenerate } = req.body || {};
         const m = month ? Number(month) : undefined;
