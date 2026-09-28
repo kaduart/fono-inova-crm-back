@@ -586,7 +586,47 @@ async function catchUpAttribution(client) {
     }
     console.log(`[WhatsAppWeb] 🔁 catch-up de atribuição: ${chats.length} conversas, ${checked} msgs verificadas (${hours}h)`);
   } catch (err) {
-    console.warn('[WhatsAppWeb] ⚠️ catch-up de atribuição falhou (ignorado):', err?.message);
+    console.warn('[WhatsAppWeb] ⚠️ catch-up via getChats falhou, tentando via Store:', err?.message);
+    await catchUpAttributionViaStore(client, sinceSec, hours);
+  }
+}
+
+// Fallback: lê as últimas mensagens já carregadas no Store do WhatsApp Web (getChats quebra em algumas versões).
+async function catchUpAttributionViaStore(client, sinceSec, hours) {
+  try {
+    const rows = await client.pupPage.evaluate((since) => {
+      const out = [];
+      const chats = window.Store?.Chat?.getModelsArray?.() || [];
+      for (const c of chats) {
+        if (c.isGroup || (c.t || 0) < since) continue;
+        const server = c.id?.server;
+        const phone = server === 'c.us' ? c.id.user : (c.contact?.phoneNumber?.user || null);
+        if (!phone) continue;
+        const msgs = c.msgs?.getModelsArray?.() || [];
+        for (const m of msgs.slice(-8)) {
+          if (m.id?.fromMe || (m.t || 0) < since) continue;
+          const ctx = m.ctwaContext || null;
+          out.push({
+            phone,
+            body: m.body || '',
+            ctwa: ctx ? { sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, ctwaClid: ctx.ctwaClid || null } : null,
+          });
+        }
+      }
+      return out.slice(0, 1500);
+    }, sinceSec);
+
+    const { parseAttribution } = await import('../utils/attributionParser.js');
+    const { captureInboundAttribution } = await import('./leadAttributionService.js');
+    let found = 0;
+    for (const r of rows) {
+      if (!parseAttribution(r.body, r.ctwa)) continue;
+      const res = await captureInboundAttribution({ phone: r.phone, text: r.body, ctwa: r.ctwa, capturedBy: 'whatsapp_web_catchup' });
+      if (res) found++;
+    }
+    console.log(`[WhatsAppWeb] 🔁 catch-up (Store): ${rows.length} msgs lidas, ${found} com origem (${hours}h)`);
+  } catch (err) {
+    console.warn('[WhatsAppWeb] ⚠️ catch-up via Store falhou (ignorado):', err?.message);
   }
 }
 
