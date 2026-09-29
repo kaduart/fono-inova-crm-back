@@ -4,6 +4,8 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import Lead from '../../models/Leads.js';
+import LeadAttribution from '../../models/LeadAttribution.js';
+import AdConversion from '../../models/AdConversion.js';
 import { flexibleAuth } from '../../middleware/amandaAuth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 
@@ -172,6 +174,52 @@ router.get('/roi-by-source', flexibleAuth, asyncHandler(async (req, res) => {
             timestamp: new Date().toISOString()
         }
     });
+}));
+
+/**
+ * GET /api/v2/analytics/roi/acquisition?days=30
+ * Funil por canal a partir da atribuição automática (WhatsApp):
+ * conversas iniciadas → 1º agendamento → receita → enviado às plataformas.
+ */
+router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 864e5);
+
+    const [convs, appts] = await Promise.all([
+        LeadAttribution.aggregate([
+            { $match: { firstMessageAt: { $gte: since } } },
+            { $group: { _id: '$source', conversations: { $sum: 1 } } },
+        ]),
+        AdConversion.aggregate([
+            { $match: { eventTime: { $gte: since }, 'meta.reason': { $ne: 'nao_e_primeiro_agendamento' } } },
+            { $group: {
+                _id: '$source',
+                firstAppointments: { $sum: 1 },
+                revenue: { $sum: '$value' },
+                sentMeta: { $sum: { $cond: [{ $eq: ['$meta.status', 'sent'] }, 1, 0] } },
+                sentGoogle: { $sum: { $cond: [{ $eq: ['$google.status', 'sent'] }, 1, 0] } },
+            } },
+        ]),
+    ]);
+
+    const map = new Map();
+    for (const c of convs) map.set(c._id || 'unknown', { source: c._id || 'unknown', conversations: c.conversations, firstAppointments: 0, revenue: 0, sentMeta: 0, sentGoogle: 0 });
+    for (const a of appts) {
+        const k = a._id || 'unknown';
+        const row = map.get(k) || { source: k, conversations: 0 };
+        map.set(k, { ...row, firstAppointments: a.firstAppointments, revenue: a.revenue, sentMeta: a.sentMeta, sentGoogle: a.sentGoogle });
+    }
+    const data = [...map.values()]
+        .map((r) => ({ ...r, bookingRate: r.conversations ? +(r.firstAppointments / r.conversations).toFixed(4) : null }))
+        .sort((x, y) => y.firstAppointments - x.firstAppointments || y.conversations - x.conversations);
+
+    const totals = data.reduce((t, r) => ({
+        conversations: t.conversations + (r.conversations || 0),
+        firstAppointments: t.firstAppointments + (r.firstAppointments || 0),
+        revenue: t.revenue + (r.revenue || 0),
+    }), { conversations: 0, firstAppointments: 0, revenue: 0 });
+
+    res.json({ success: true, days, data, totals });
 }));
 
 export default router;
