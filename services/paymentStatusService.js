@@ -264,8 +264,30 @@ export async function transitionPaymentStatusBatchToReceived(transitions, option
         );
     }
 
-    await step('insert_ledger', () =>
-        FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+    try {
+        await step('insert_ledger', () =>
+            FinancialLedger.insertMany(ledgerDocs, { session: mongoSession, ordered: true }));
+    } catch (error) {
+        // 🛡️ Defesa complementar (Assunto 5, 2026-09-29): a checagem de
+        // idempotência em InsuranceBatchReceiptService.js (consulta prévia ao
+        // ledger) fecha a maior parte da janela de corrida entre duas chamadas
+        // concorrentes pro mesmo lote, mas não é 100% atômica com este insert —
+        // duas transações podem, em teoria, ler "ainda não existe" ao mesmo
+        // tempo e colidir aqui. Sem este catch, o driver do Mongo propagava o
+        // E11000 cru (MongoServerError com mensagem técnica de índice) até o
+        // controller como 500 genérico — nada de errado ficava persistido (a
+        // transação inteira é abortada pelo Mongo), mas o usuário via um erro
+        // ilegível em vez de "tente de novo". Convertido para um erro de
+        // negócio claro, tratável como 409 no controller.
+        if (error?.code === 11000) {
+            throw new PaymentBatchTransitionError(
+                'PAYMENT_STATUS_BATCH_LEDGER_CONFLICT',
+                'Este recebimento já está sendo processado por outra requisição (ou foi processado agora mesmo). Nada foi alterado nesta tentativa — recarregue a tela e confira o status antes de tentar de novo.',
+                { mongoError: error.message }
+            );
+        }
+        throw error;
+    }
     queriesExecuted += 1;
 
     const existingEventIds = await step('outbox_dedupe', async () => {

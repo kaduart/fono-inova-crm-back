@@ -11,6 +11,10 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
 
 const router = express.Router();
 
+// Cache simples em memória — evita aggregation pesada a cada request
+const _cache = new Map(); // key → { data, summary, expiresAt }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
 /**
  * GET /api/v2/analytics/roi-by-source
  *
@@ -23,6 +27,14 @@ const router = express.Router();
  */
 router.get('/roi-by-source', flexibleAuth, asyncHandler(async (req, res) => {
     const { startDate, endDate, doctorId } = req.query;
+
+    // Retorna cache se ainda válido (apenas para queries sem filtros — o caso mais comum do dashboard)
+    if (!startDate && !endDate && !doctorId) {
+        const cached = _cache.get('roi-by-source');
+        if (cached && Date.now() < cached.expiresAt) {
+            return res.json({ success: true, data: cached.data, summary: cached.summary, meta: { fromCache: true, timestamp: cached.ts } });
+        }
+    }
 
     const matchStage = {};
 
@@ -164,6 +176,11 @@ router.get('/roi-by-source', flexibleAuth, asyncHandler(async (req, res) => {
         summary.totalLeads === 0
             ? 0
             : Math.round((summary.totalConverted / summary.totalLeads) * 10000) / 10000;
+
+    // Salva no cache (apenas para queries sem filtros)
+    if (!startDate && !endDate && !doctorId) {
+        _cache.set('roi-by-source', { data, summary, expiresAt: Date.now() + CACHE_TTL_MS, ts: new Date().toISOString() });
+    }
 
     return res.json({
         success: true,

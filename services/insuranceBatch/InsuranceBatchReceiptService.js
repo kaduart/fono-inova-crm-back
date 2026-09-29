@@ -5,6 +5,7 @@ import Payment from '../../models/Payment.js';
 import Convenio from '../../models/Convenio.js';
 import BillingSubmission from '../../models/BillingSubmission.js';
 import InsuranceCommunication from '../../models/InsuranceCommunication.js';
+import FinancialLedger from '../../models/FinancialLedger.js';
 import { transitionPaymentStatusBatchToReceived, PaymentBatchTransitionError } from '../paymentStatusService.js';
 import { assertPaymentReceivable, buildReceivedUpdate } from './paymentReceiptInvariants.js';
 import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
@@ -408,12 +409,11 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
         };
         return;
       }
-      const targetPayments = pendingTargetItems.map(item => paymentById.get(item.payment.toString()));
-      const invalid = targetPayments.filter(payment => payment.insurance?.status !== 'billed');
-      if (invalid.length) {
-        throw new InsuranceBatchReceiptError('INSURANCE_BATCH_PAYMENT_NOT_BILLED', 'Todos os Payments selecionados precisam estar faturados antes da baixa', 409, { payments: invalid.map(payment => payment._id.toString()) });
-      }
-
+      // Cálculo financeiro do lote inteiro (rateio bruto→líquido) precisa vir
+      // ANTES da checagem de idempotência abaixo: um payment "órfão" (já tem
+      // ledger, mas o Payment nunca foi atualizado) precisa do mesmo
+      // grossAmount/netAmount que teria recebido na 1ª tentativa, pra ser
+      // reparado com o valor certo — não dá pra reparar sem esses números.
       let issRate = batch.issRate;
       if (issRate == null) {
         const convenio = await Convenio.findOne({ code: batch.insuranceProvider }).select('issRate').session(mongoSession).lean();
@@ -428,6 +428,107 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
       const netAmounts = allocateNetAmounts(paymentIds.map(id => grossByPayment.get(id)), totalNet);
       const netByPayment = new Map(paymentIds.map((id, index) => [id, netAmounts[index]]));
 
+      // `now` sobe pra antes de qualquer escrita (reparo de órfãos incluso)
+      // porque tanto buildReceivedUpdate quanto transitionPaymentStatusBatchToReceived
+      // precisam do mesmo "momento real do processamento" — não muda semântica,
+      // só a granularidade de milissegundos de um campo de bookkeeping interno
+      // (processedAt/updatedAt), nunca a data histórica de recebimento
+      // (receivedAt, vinda do usuário).
+      const now = new Date();
+      const receivedAtDate = receivedAt.toDate();
+
+      // 🛡️ IDEMPOTÊNCIA REAL (Assunto 5, 2026-09-29): o filtro acima confia só em
+      // Payment.insurance.status === 'received', mas esse campo pode ficar
+      // dessincronizado do FinancialLedger — seja por uma corrida entre duas
+      // chamadas quase simultâneas pro mesmo lote (retry de rede após timeout,
+      // duplo-clique no botão de recebimento: a 1ª lê o Payment como 'billed'
+      // dentro da sua transação, a 2ª também lê 'billed' porque nenhuma
+      // committou ainda, e as duas tentam inserir o MESMO FinancialLedger —
+      // correlationId único por batch+payment), seja por um dado HERDADO de um
+      // recebimento anterior que já criou o ledger mas nunca terminou de
+      // atualizar o Payment (achado real: NF 260 da Unimed Campinas/Davi Felipe
+      // Araújo — ledger de 02/09 já existia pro payment 69f9fa9ac83a33f73695f3bb,
+      // mas o Payment continuava 'billed' até hoje 29/09, quando uma nova
+      // tentativa de baixa colidiu no índice único e o driver do Mongo
+      // propagava um E11000 cru como 500 pro usuário).
+      // Consulta explícita ao ledger (fonte de verdade da idempotência, não o
+      // campo espelhado no Payment) detecta os dois casos: se o ledger já
+      // existe pra esse payment+batch, ele nunca tenta duplicar — e o Payment
+      // órfão é reparado (mesma transição que deveria ter recebido na 1ª vez),
+      // sem criar um segundo lançamento contábil pra mesma receita.
+      let candidatePayments = pendingTargetItems.map(item => paymentById.get(item.payment.toString()));
+      const candidateCorrelationIds = candidatePayments.map(payment => `insurance_batch_received_${batch._id}_${payment._id}`);
+      const existingLedgerCorrelationIds = new Set(
+        (await FinancialLedger.find({
+          correlationId: { $in: candidateCorrelationIds },
+          type: 'insurance_received'
+        }).session(mongoSession).select('correlationId').lean())
+          .map(entry => entry.correlationId)
+      );
+      const repairedOrphanIds = [];
+      if (existingLedgerCorrelationIds.size) {
+        const orphanPayments = candidatePayments.filter(payment =>
+          existingLedgerCorrelationIds.has(`insurance_batch_received_${batch._id}_${payment._id}`)
+        );
+        console.warn(
+          `[InsuranceBatchReceipt] ${orphanPayments.length} payment(s) já tinham FinancialLedger para esta NF, mas `
+          + `Payment.status não refletia isso (dado dessincronizado de um recebimento anterior incompleto, ou `
+          + `chamada concorrente) — reparando o Payment sem duplicar o ledger.`,
+          { batchId: batch._id.toString(), paymentIds: orphanPayments.map(payment => payment._id.toString()) }
+        );
+
+        for (const payment of orphanPayments) {
+          assertPaymentReceivable(payment);
+        }
+        const repairOps = orphanPayments.map(payment => {
+          const grossAmount = round(grossByPayment.get(payment._id.toString()));
+          const netAmount = netByPayment.get(payment._id.toString());
+          const { set } = buildReceivedUpdate(payment, {
+            now,
+            receivedAt: receivedAtDate,
+            grossAmount,
+            netAmount,
+            issRate
+          });
+          return {
+            updateOne: {
+              filter: { _id: payment._id, status: payment.status, 'insurance.status': payment.insurance?.status },
+              update: { $set: set }
+            }
+          };
+        });
+        const repairResult = await Payment.bulkWrite(repairOps, { session: mongoSession, ordered: true });
+        if (repairResult.modifiedCount !== repairOps.length) {
+          throw new InsuranceBatchReceiptError(
+            'INSURANCE_BATCH_ORPHAN_REPAIR_CONFLICT',
+            'Um Payment órfão (já com ledger, mas status desatualizado) mudou de estado durante o reparo',
+            409,
+            { expected: repairOps.length, modified: repairResult.modifiedCount }
+          );
+        }
+        for (const payment of orphanPayments) {
+          payment.insurance = { ...(payment.insurance || {}), status: 'received' };
+          repairedOrphanIds.push(payment._id.toString());
+        }
+        candidatePayments = candidatePayments.filter(payment => !repairedOrphanIds.includes(payment._id.toString()));
+      }
+
+      const targetPayments = candidatePayments;
+      if (!targetPayments.length && !repairedOrphanIds.length) {
+        result = {
+          idempotent: true,
+          batchId: batch._id.toString(),
+          invoiceNumber: batch.invoiceNumber,
+          status: batch.status,
+          paymentsReceived: 0
+        };
+        return;
+      }
+      const invalid = targetPayments.filter(payment => payment.insurance?.status !== 'billed');
+      if (invalid.length) {
+        throw new InsuranceBatchReceiptError('INSURANCE_BATCH_PAYMENT_NOT_BILLED', 'Todos os Payments selecionados precisam estar faturados antes da baixa', 409, { payments: invalid.map(payment => payment._id.toString()) });
+      }
+
       // ── Escrita em lote ──────────────────────────────────────────────────
       // Substitui o antigo `for...of` sequencial (transitionPaymentStatus +
       // 2º .save() + recordInsuranceReceived por Payment — 6 round-trips Mongo
@@ -436,94 +537,95 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
       // paymentReceiptInvariants.js para a tabela de paridade com os hooks de
       // Payment.js que o bulkWrite não dispara.
       //
-      // `now` sobe pra antes do loop (era declarado só depois, pro
-      // batch.processedAt) porque tanto buildReceivedUpdate quanto
-      // transitionPaymentStatusBatchToReceived precisam do mesmo "momento real
-      // do processamento" — não muda semântica, só a granularidade de
-      // milissegundos de um campo de bookkeeping interno (processedAt/updatedAt),
-      // nunca a data histórica de recebimento (receivedAt, vinda do usuário).
-      const now = new Date();
-      const receivedAtDate = receivedAt.toDate();
-      const receiptTransitions = [];
-      const receiptWarnings = [];
-      for (const payment of targetPayments) {
-        assertPaymentReceivable(payment);
-      }
-      for (const payment of targetPayments) {
-        const grossAmount = round(grossByPayment.get(payment._id.toString()));
-        const netAmount = netByPayment.get(payment._id.toString());
-        const { set, warnings } = buildReceivedUpdate(payment, {
-          now,
-          receivedAt: receivedAtDate,
-          grossAmount,
-          netAmount,
-          issRate
-        });
-        if (warnings.length) receiptWarnings.push({ paymentId: payment._id.toString(), warnings });
-        receiptTransitions.push({
-          payment,
-          set,
-          ledger: {
-            type: 'insurance_received',
-            direction: 'credit',
-            amount: netAmount,
-            billingType: 'convenio',
-            patient: payment.patient,
-            appointment: payment.appointment,
-            session: payment.session,
-            payment: payment._id,
-            correlationId: `insurance_batch_received_${batch._id}_${payment._id}`,
-            description: `Convênio recebido - ${payment.insurance?.provider || 'Convênio'}`,
-            occurredAt: receivedAtDate,
-            createdBy: userId,
-            metadata: {
-              source: 'insurance_return',
-              provider: payment.insurance?.provider,
-              grossAmount,
-              receivedAmount: netAmount,
-              glosaAmount: 0
+      // targetPayments pode vir vazio quando esta chamada só tinha payments
+      // órfãos pra reparar (ver bloco de idempotência acima) — nesse caso não
+      // há nada novo pra transitionar/ledgerar, só o reparo já aplicado.
+      // bulkWrite/insertMany com array vazio lançam erro no driver do Mongo,
+      // então esta etapa inteira é pulada, e o restante da função (cálculo de
+      // receivedPaymentIds/batch.sessions/batch.save) segue normalmente com
+      // batchResult.modifiedCount = 0.
+      let batchResult = { modifiedCount: 0 };
+      if (targetPayments.length) {
+        const receiptTransitions = [];
+        const receiptWarnings = [];
+        for (const payment of targetPayments) {
+          assertPaymentReceivable(payment);
+        }
+        for (const payment of targetPayments) {
+          const grossAmount = round(grossByPayment.get(payment._id.toString()));
+          const netAmount = netByPayment.get(payment._id.toString());
+          const { set, warnings } = buildReceivedUpdate(payment, {
+            now,
+            receivedAt: receivedAtDate,
+            grossAmount,
+            netAmount,
+            issRate
+          });
+          if (warnings.length) receiptWarnings.push({ paymentId: payment._id.toString(), warnings });
+          receiptTransitions.push({
+            payment,
+            set,
+            ledger: {
+              type: 'insurance_received',
+              direction: 'credit',
+              amount: netAmount,
+              billingType: 'convenio',
+              patient: payment.patient,
+              appointment: payment.appointment,
+              session: payment.session,
+              payment: payment._id,
+              correlationId: `insurance_batch_received_${batch._id}_${payment._id}`,
+              description: `Convênio recebido - ${payment.insurance?.provider || 'Convênio'}`,
+              occurredAt: receivedAtDate,
+              createdBy: userId,
+              metadata: {
+                source: 'insurance_return',
+                provider: payment.insurance?.provider,
+                grossAmount,
+                receivedAmount: netAmount,
+                glosaAmount: 0
+              }
             }
-          }
-        });
-      }
-      // Truncado por amostra: numa NF de 30 sessões um warning por payment vira
-      // parede de log (mesmo racional de BillingSubmissionService.js).
-      if (receiptWarnings.length) {
-        console.warn(
-          `[InsuranceBatchReceipt] ${receiptWarnings.length} payment(s) tiveram campos ausentes reconstruídos `
-          + `pelas invariantes. Amostra: ${JSON.stringify(receiptWarnings.slice(0, 3))}`
-        );
-      }
-
-      let batchResult;
-      try {
-        batchResult = await transitionPaymentStatusBatchToReceived(receiptTransitions, {
-          session: mongoSession,
-          now,
-          userId,
-          reason: 'insurance_batch_invoice_received'
-        });
-      } catch (error) {
-        if (error instanceof PaymentBatchTransitionError) {
-          throw new InsuranceBatchReceiptError(
-            'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
-            `Recebimento abortado: ${error.message}`,
-            409,
-            error.details
+          });
+        }
+        // Truncado por amostra: numa NF de 30 sessões um warning por payment vira
+        // parede de log (mesmo racional de BillingSubmissionService.js).
+        if (receiptWarnings.length) {
+          console.warn(
+            `[InsuranceBatchReceipt] ${receiptWarnings.length} payment(s) tiveram campos ausentes reconstruídos `
+            + `pelas invariantes. Amostra: ${JSON.stringify(receiptWarnings.slice(0, 3))}`
           );
         }
-        throw error;
-      }
-      if (batchResult.modifiedCount !== targetPayments.length) {
-        // Defensivo: transitionPaymentStatusBatchToReceived já teria lançado
-        // PaymentBatchTransitionError nesse caso — chegar aqui indicaria um
-        // bug na própria função, não um estado de dado esperável.
-        throw new InsuranceBatchReceiptError(
-          'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
-          'Quantidade de Payments recebidos divergiu do esperado',
-          409,
-          { expected: targetPayments.length, modified: batchResult.modifiedCount }
-        );
+
+        try {
+          batchResult = await transitionPaymentStatusBatchToReceived(receiptTransitions, {
+            session: mongoSession,
+            now,
+            userId,
+            reason: 'insurance_batch_invoice_received'
+          });
+        } catch (error) {
+          if (error instanceof PaymentBatchTransitionError) {
+            throw new InsuranceBatchReceiptError(
+              'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
+              `Recebimento abortado: ${error.message}`,
+              409,
+              error.details
+            );
+          }
+          throw error;
+        }
+        if (batchResult.modifiedCount !== targetPayments.length) {
+          // Defensivo: transitionPaymentStatusBatchToReceived já teria lançado
+          // PaymentBatchTransitionError nesse caso — chegar aqui indicaria um
+          // bug na própria função, não um estado de dado esperável.
+          throw new InsuranceBatchReceiptError(
+            'INSURANCE_BATCH_PAYMENT_INTEGRITY_CONFLICT',
+            'Quantidade de Payments recebidos divergiu do esperado',
+            409,
+            { expected: targetPayments.length, modified: batchResult.modifiedCount }
+          );
+        }
       }
 
       const receivedPaymentIds = new Set([
@@ -556,14 +658,15 @@ export async function receiveInsuranceBatch(batchId, { receivedDate, userId, gui
         batchId: batch._id.toString(),
         invoiceNumber: batch.invoiceNumber,
         status: batch.status,
-        paymentsReceived: targetPayments.length,
+        paymentsReceived: targetPayments.length + repairedOrphanIds.length,
         guidesReceived: requestedGuideIds,
         totalGross,
         issRate: batch.issRate,
         issAmount,
         totalNet,
         receivedAmount: batch.receivedAmount,
-        receivedAt: batch.receivedAt
+        receivedAt: batch.receivedAt,
+        ...(repairedOrphanIds.length ? { repairedOrphans: repairedOrphanIds.length } : {})
       };
     });
     // 🚨 FIX (2026-09-03): recebimento em lote de convênio (Payment.bulkWrite

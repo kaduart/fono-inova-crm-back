@@ -886,6 +886,8 @@ server.listen(PORT, '0.0.0.0', () => {
           readPreference: 'primary',
           retryWrites: true,
           w: 'majority',
+          maxPoolSize: 15,          // limite de conexões (Atlas M0 ~100 total, divide com Render)
+          minPoolSize: 2,
           serverSelectionTimeoutMS: 10000, // 10s timeout
           socketTimeoutMS: 45000,
           autoIndex: process.env.NODE_ENV !== 'production',

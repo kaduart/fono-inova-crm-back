@@ -12,13 +12,67 @@
 
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
+import Session from '../models/Session.js';
+import PatientBalance from '../models/PatientBalance.js';
+import { auth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
+import { EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { syncAffectedViews } from '../services/projections/syncAffectedViews.js';
+import { clearCashflowCacheForDates } from './cashflow.v2.js';
+import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
+
+// ============================================
+// HELPERS de método de pagamento — mesmo padrão de payment.v2.js (bulk-settle)
+// ============================================
+const VALID_PAYMENT_METHODS = ['dinheiro', 'pix', 'credit_card', 'debit_card', 'cartao', 'cartão', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferência', 'transferencia_bancaria', 'cash', 'bank_transfer'];
+
+const normalizePaymentMethod = (method) => {
+    const methodMap = {
+        'dinheiro': 'cash',
+        'pix': 'pix',
+        'credit_card': 'credit_card',
+        'debit_card': 'debit_card',
+        'cartao': 'credit_card',
+        'cartão': 'credit_card',
+        'cartao_credito': 'credit_card',
+        'cartao_debito': 'debit_card',
+        'transferencia': 'bank_transfer',
+        'transferência': 'bank_transfer',
+        'transferencia_bancaria': 'bank_transfer',
+        'cash': 'cash',
+        'bank_transfer': 'bank_transfer'
+    };
+    return methodMap[method] || 'cash';
+};
+
+// Mapeia método do Payment (cash/credit_card/bank_transfer) de volta para o enum do Appointment
+const mapPaymentMethodToAppointment = (method) => {
+    const map = {
+        'cash': 'dinheiro',
+        'dinheiro': 'dinheiro',
+        'pix': 'pix',
+        'credit_card': 'cartao_credito',
+        'cartao': 'cartao_credito',
+        'cartão': 'cartao_credito',
+        'debit_card': 'cartao_debito',
+        'bank_transfer': 'transferencia_bancaria',
+        'transferencia': 'transferencia_bancaria',
+        'transferência': 'transferencia_bancaria'
+    };
+    return map[method] || method;
+};
+
+const toCents = value => Math.round(Number(value) * 100);
+const fromCents = value => value / 100;
 
 /**
  * 🆕 Calcula a dívida REAL de pacotes per-session:
@@ -644,5 +698,401 @@ router.get('/aging', asyncHandler(async (req, res) => {
     });
 }));
 */
+
+/**
+ * POST /api/v2/financial/receive
+ *
+ * Registra um recebimento livre do paciente (aba "Receber"): aplica o valor
+ * informado em FIFO sobre as dívidas reais (mesmo critério de
+ * GET /patient/:patientId/pending-payments), da mais antiga pra mais nova,
+ * quitando apenas sessões inteiras que cabem no valor restante — para na
+ * primeira que não cabe, sem pular a ordem cronológica.
+ *
+ * O que sobrar (valor pago maior que a soma das dívidas quitáveis) vira
+ * crédito na conta corrente do paciente (PatientBalance.currentBalance
+ * negativo), disponível para abater dívidas futuras.
+ *
+ * Body: { patientId, amount, method|paymentMethod, mode?: 'auto', notes?, metadata?: { idempotencyKey? } }
+ *
+ * mode: único suportado hoje é 'auto' (FIFO automático).
+ *
+ * Idempotência: metadata.idempotencyKey evita reprocessar a mesma requisição
+ * (double-click, retry de rede) — reaproveita o campo Payment.bulkSettlementKey
+ * (mesmo padrão de idempotência do bulk-settle em payment.v2.js).
+ */
+router.post('/receive', auth, asyncHandler(async (req, res) => {
+    const { patientId, amount, method, paymentMethod, mode = 'auto', notes, metadata } = req.body || {};
+
+    if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        return res.status(400).json({ success: false, error: 'patientId inválido', code: 'INVALID_PATIENT_ID' });
+    }
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ success: false, error: 'amount deve ser um valor positivo', code: 'INVALID_AMOUNT' });
+    }
+    const rawMethod = method || paymentMethod;
+    if (!rawMethod || !VALID_PAYMENT_METHODS.includes(rawMethod)) {
+        return res.status(400).json({ success: false, error: 'Método de pagamento inválido', code: 'INVALID_PAYMENT_METHOD' });
+    }
+    if (mode !== 'auto') {
+        return res.status(400).json({ success: false, error: `mode '${mode}' não suportado (use 'auto')`, code: 'UNSUPPORTED_MODE' });
+    }
+
+    const primaryMethod = normalizePaymentMethod(rawMethod);
+    const patientOid = new mongoose.Types.ObjectId(patientId);
+    const idempotencyKey = metadata?.idempotencyKey ? String(metadata.idempotencyKey) : null;
+    const receiveKey = idempotencyKey ? `receive_${patientId}_${idempotencyKey}` : null;
+
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.startTransaction();
+
+    try {
+        // 🛡️ Idempotência: se já existe recibo com essa chave, retorna o mesmo resultado sem reprocessar.
+        if (receiveKey) {
+            const existingReceipt = await Payment.findOne({
+                kind: 'monthly_settlement',
+                bulkSettlementKey: receiveKey,
+                status: { $nin: ['cancelled', 'canceled', 'refunded'] }
+            }).session(mongoSession).lean();
+
+            if (existingReceipt) {
+                await mongoSession.abortTransaction();
+                return res.json({
+                    success: true,
+                    receiptId: existingReceipt._id,
+                    jobId: null,
+                    status: 'completed',
+                    amount: existingReceipt.amount,
+                    patientId,
+                    message: 'Recebimento já processado anteriormente (idempotência)',
+                    idempotent: true
+                });
+            }
+        }
+
+        const now = new Date();
+
+        // Mesma fonte de verdade de GET /pending-payments: Payment pending, não
+        // package_consumed, não convenio/liminar, sessão já completada (ou débito manual).
+        const debtPayments = await Payment.find({
+            $and: [
+                { $or: [{ patient: patientOid }, { patient: patientId }, { patientId }] },
+                { status: 'pending' },
+                { kind: { $ne: 'package_consumed' } },
+                { billingType: { $nin: ['convenio', 'liminar'] } }
+            ]
+        })
+            .populate('appointment', 'date time specialty sessionValue package operationalStatus')
+            .session(mongoSession);
+
+        const realDebts = debtPayments
+            .filter(p => !p.appointment || p.appointment.operationalStatus === 'completed')
+            .map(p => ({
+                payment: p,
+                competenceDate: p.serviceDate || p.paymentDate || p.appointment?.date || p.createdAt
+            }))
+            .sort((a, b) => new Date(a.competenceDate) - new Date(b.competenceDate));
+
+        // FIFO: quita sessões inteiras da mais antiga pra mais nova. Para na
+        // primeira que não cabe no valor restante — nunca pula pra uma mais
+        // nova pra "encaixar melhor", senão quebra a ordem de competência.
+        let remainingCents = toCents(numericAmount);
+        const toSettle = [];
+        for (const { payment } of realDebts) {
+            const amtCents = toCents(payment.amount);
+            if (amtCents > 0 && amtCents <= remainingCents) {
+                toSettle.push(payment);
+                remainingCents -= amtCents;
+            } else if (amtCents > remainingCents) {
+                break;
+            }
+        }
+        const creditCents = remainingCents;
+        const settledAmount = fromCents(toCents(numericAmount) - creditCents);
+
+        let receipt = null;
+        const affectedPackageIds = [];
+        const affectedDates = new Set([moment.tz(now, 'America/Sao_Paulo').format('YYYY-MM-DD')]);
+
+        if (toSettle.length > 0) {
+            // 🛡️ FLOW GUARD: mesma validação do bulk-settle antes de tocar em qualquer Payment.
+            const { default: FinancialGuard } = await import('../services/financialGuard/index.js');
+            const paymentIds = toSettle.map(p => p._id.toString());
+            try {
+                await FinancialGuard.execute({
+                    context: 'SETTLE_PAYMENT',
+                    billingType: 'settle',
+                    payload: { paymentIds },
+                    session: mongoSession
+                });
+            } catch (flowErr) {
+                await mongoSession.abortTransaction();
+                return res.status(400).json({
+                    success: false,
+                    error: flowErr.message,
+                    code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
+                    meta: flowErr.meta || undefined
+                });
+            }
+
+            const oldStatusById = new Map(toSettle.map(p => [p._id.toString(), p.status]));
+
+            // 1. Marca os payments selecionados como pago (bulkWrite condicional — mesmo padrão do bulk-settle)
+            const bulkOps = toSettle.map(p => ({
+                updateOne: {
+                    filter: { _id: p._id, status: 'pending' },
+                    update: {
+                        $set: {
+                            status: 'paid',
+                            paymentMethod: primaryMethod,
+                            paidAt: now,
+                            financialDate: now
+                        },
+                        $unset: { splitMethods: 1 }
+                    }
+                }
+            }));
+            const bulkResult = await Payment.bulkWrite(bulkOps, { session: mongoSession });
+            if (bulkResult.modifiedCount !== toSettle.length) {
+                const error = new Error('Payments alterados concorrentemente durante o recebimento');
+                error.code = 'BULK_SETTLEMENT_CONFLICT';
+                throw error;
+            }
+
+            // 2. Appointments vinculados
+            const withAppointment = toSettle.filter(p => p.appointment);
+            if (withAppointment.length > 0) {
+                await Appointment.bulkWrite(withAppointment.map(p => {
+                    const apptId = p.appointment?._id || p.appointment;
+                    return {
+                        updateOne: {
+                            filter: { _id: apptId },
+                            update: {
+                                $set: {
+                                    paymentStatus: 'paid',
+                                    isPaid: true,
+                                    paymentMethod: mapPaymentMethodToAppointment(primaryMethod),
+                                    paymentForms: [{ amount: p.amount, date: now, method: mapPaymentMethodToAppointment(primaryMethod) }]
+                                }
+                            }
+                        }
+                    };
+                }), { session: mongoSession });
+            }
+
+            // 2b. Sessions vinculadas (espelho do estado de pagamento)
+            const withSession = toSettle.filter(p => p.session);
+            if (withSession.length > 0) {
+                await Session.bulkWrite(withSession.map(p => ({
+                    updateOne: {
+                        filter: { _id: p.session },
+                        update: { $set: { paymentStatus: 'paid', isPaid: true, paymentMethod: primaryMethod, paidAt: now } }
+                    }
+                })), { session: mongoSession });
+            }
+
+            // 3. Packages afetados: recalcula totalPaid/balance a partir das sessions pagas
+            const packageIds = [...new Set(toSettle.filter(p => p.package).map(p => p.package.toString()))];
+            if (packageIds.length > 0) {
+                const [packages, paidCounts] = await Promise.all([
+                    Package.find({ _id: { $in: packageIds } }).session(mongoSession).lean(),
+                    Session.aggregate([
+                        { $match: { package: { $in: packageIds.map(id => new mongoose.Types.ObjectId(id)) }, isPaid: true } },
+                        { $group: { _id: '$package', count: { $sum: 1 } } }
+                    ]).session(mongoSession)
+                ]);
+                const paidCountByPkg = new Map(paidCounts.map(p => [p._id.toString(), p.count]));
+                const packageBulkOps = [];
+                for (const pkg of packages) {
+                    const pkgId = pkg._id.toString();
+                    const paidCount = paidCountByPkg.get(pkgId) || 0;
+                    const consumedValue = paidCount * (pkg.sessionValue || 0);
+                    const totalPaid = consumedValue;
+                    const balance = Math.max(0, (pkg.totalValue || 0) - totalPaid);
+                    let financialStatus = 'unpaid';
+                    if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
+                    else if (totalPaid > 0) financialStatus = 'partially_paid';
+                    packageBulkOps.push({
+                        updateOne: {
+                            filter: { _id: pkg._id },
+                            update: { $set: { totalPaid, consumedValue, balance, financialStatus, updatedAt: now } }
+                        }
+                    });
+                    affectedPackageIds.push(pkgId);
+                }
+                if (packageBulkOps.length > 0) {
+                    await Package.bulkWrite(packageBulkOps, { session: mongoSession });
+                }
+            }
+
+            // 4. Recibo consolidado auditável (serviceDate = competência mais recente das sessões quitadas)
+            const settledDates = toSettle
+                .map(p => p.serviceDate || p.paymentDate)
+                .filter(Boolean)
+                .sort((a, b) => new Date(b) - new Date(a));
+            const receiptServiceDate = settledDates[0] ? new Date(settledDates[0]) : now;
+            const first = toSettle[0];
+
+            const [createdReceipt] = await Payment.create([{
+                patient: first.patient,
+                patientId,
+                doctor: first.doctor,
+                clinicId: first.clinicId || 'default',
+                amount: settledAmount,
+                status: 'paid',
+                paymentDate: now,
+                serviceDate: receiptServiceDate,
+                paidAt: now,
+                financialDate: now,
+                paymentMethod: primaryMethod,
+                billingType: first.billingType || 'particular',
+                kind: 'monthly_settlement',
+                settledPaymentIds: toSettle.map(p => p._id),
+                bulkSettlementKey: receiveKey || `receive_${patientId}_${now.getTime()}`,
+                notes: notes || `Recebimento de ${toSettle.length} sessão(ões) via aba Receber`,
+                createdAt: now,
+                updatedAt: now
+            }], { session: mongoSession });
+            receipt = createdReceipt;
+
+            // 4b. Outbox — mesmo padrão do bulk-settle
+            const outboxEntries = toSettle.map(p => ({
+                eventType: EventTypes.PAYMENT_STATUS_CHANGED,
+                payload: {
+                    paymentId: p._id.toString(),
+                    patientId: p.patient?.toString?.() || p.patientId,
+                    appointmentId: (p.appointment?._id || p.appointment)?.toString?.(),
+                    sessionId: p.session?.toString?.(),
+                    packageId: p.package?.toString?.(),
+                    from: oldStatusById.get(p._id.toString()),
+                    to: 'paid',
+                    amount: p.amount,
+                    paymentMethod: primaryMethod,
+                    financialDate: now,
+                    paidAt: now,
+                    kind: p.kind,
+                    billingType: p.billingType,
+                    isFromPackage: p.isFromPackage,
+                    reason: 'financial_receive',
+                    userId: req.user?._id?.toString?.()
+                },
+                aggregateType: 'payment',
+                aggregateId: p._id.toString(),
+                correlationId: `payment_status_${p._id}_${oldStatusById.get(p._id.toString())}_paid_${Date.now()}`
+            }));
+            await Promise.all(
+                outboxEntries.map(entry =>
+                    saveToOutbox(entry, mongoSession).catch(outboxErr => {
+                        logger.error(`[V2 financial/receive] Falha ao salvar outbox para ${entry.aggregateId}:`, outboxErr.message);
+                        throw outboxErr;
+                    })
+                )
+            );
+
+            for (const p of toSettle) {
+                [p.serviceDate, p.paymentDate, p.financialDate].filter(Boolean).forEach(d => {
+                    affectedDates.add(moment.tz(d, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+                });
+            }
+        }
+
+        // Excedente vira crédito na conta corrente do paciente.
+        // ADR-019: PatientBalance só via updateOne/findOneAndUpdate ($push/$inc) — nunca .save()/addCredit().
+        let creditAmount = 0;
+        if (creditCents > 0) {
+            creditAmount = fromCents(creditCents);
+            const creditCorrelationId = `receive_credit_${patientId}_${now.getTime()}`;
+            await PatientBalance.findOneAndUpdate(
+                { patient: patientOid },
+                {
+                    $push: {
+                        transactions: {
+                            type: 'credit',
+                            amount: creditAmount,
+                            description: notes || 'Crédito de recebimento avulso (valor excedente às sessões em aberto)',
+                            paymentMethod: primaryMethod,
+                            correlationId: creditCorrelationId,
+                            registeredBy: req.user?._id || null,
+                            transactionDate: now
+                        }
+                    },
+                    $inc: { currentBalance: -creditAmount, totalCredited: creditAmount },
+                    $setOnInsert: { patient: patientOid, createdAt: now },
+                    $set: { lastTransactionAt: now }
+                },
+                { session: mongoSession, upsert: true, new: true }
+            );
+        }
+
+        await mongoSession.commitTransaction();
+
+        // Invalidação de cache escopada (mesmo padrão do bulk-settle) — só os dias realmente afetados.
+        const affectedDatesArr = [...affectedDates];
+        const cacheResults = await Promise.allSettled([
+            import('./financialDashboard.v2.js').then(({ invalidateDashboardCache }) => invalidateDashboardCache({ dates: affectedDatesArr })),
+            clearCashflowCacheForDates(affectedDatesArr, { throwOnError: true })
+        ]);
+        cacheResults.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                logger.warn('[V2 financial/receive] Falha ao invalidar cache após commit', {
+                    cache: index === 0 ? 'dashboard_ufs' : 'cashflow',
+                    affectedDates: affectedDatesArr,
+                    error: result.reason?.message
+                });
+            }
+        });
+
+        // Rebuild das PackageViews em background (não bloqueia resposta)
+        if (affectedPackageIds.length > 0) {
+            Promise.allSettled(
+                affectedPackageIds.map(pkgId =>
+                    syncAffectedViews({
+                        event: 'therapy_package.payment_settled',
+                        packageId: pkgId,
+                        correlationId: `financial_receive_${pkgId}_${now.getTime()}`
+                    })
+                )
+            ).catch(bgErr => {
+                logger.error('[V2 financial/receive] Erro inesperado rebuildando PackageViews em background:', bgErr.message);
+            });
+        }
+
+        logger.info('[V2 financial/receive] Recebimento processado', {
+            patientId,
+            amount: numericAmount,
+            settledCount: toSettle.length,
+            settledAmount,
+            creditAmount,
+            receiptId: receipt?._id
+        });
+
+        return res.json({
+            success: true,
+            receiptId: receipt?._id || null,
+            jobId: null,
+            status: 'completed',
+            amount: numericAmount,
+            patientId,
+            message: toSettle.length > 0
+                ? `${toSettle.length} sessão(ões) quitada(s)${creditAmount > 0 ? ` + R$ ${creditAmount.toFixed(2)} em crédito` : ''}`
+                : `R$ ${creditAmount.toFixed(2)} registrado(s) como crédito (nenhuma dívida elegível)`,
+            settled: {
+                count: toSettle.length,
+                amount: settledAmount,
+                paymentIds: toSettle.map(p => p._id)
+            },
+            credit: creditAmount
+        });
+
+    } catch (error) {
+        await safeAbortTransaction(mongoSession);
+        logger.error('[V2 financial/receive] Erro:', error.message);
+        const isConflict = error.code === 'BULK_SETTLEMENT_CONFLICT'
+            || error?.errorLabels?.includes?.('TransientTransactionError');
+        return res.status(isConflict ? 409 : 500).json({ success: false, error: error.message, code: error.code });
+    } finally {
+        mongoSession.endSession();
+    }
+}));
 
 export default router;

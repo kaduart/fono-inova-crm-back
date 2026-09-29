@@ -258,6 +258,30 @@ await PatientBalance.updateOne(
   { transactions: { $elemMatch: { _id: debitId, isPaid: { $ne: true } } } }, ...
 );
 
+// ❌ NUNCA — setar isPaid/paymentStatus em Session/Appointment sem bypass do sanitizer
+await Session.findByIdAndUpdate(id, { $set: { isPaid: false, paymentStatus: 'unpaid' } });
+// O plugin models/plugins/financialSanitizer.js REMOVE isPaid/paymentStatus de
+// QUALQUER updateOne/updateMany/findOneAndUpdate/save/insertMany que não leve
+// as options abaixo — silenciosamente, sem erro (modo 'warn', o modo real de
+// produção; só loga um warning deduplicado por 1h). O campo simplesmente some
+// do $set antes de chegar no Mongo; o resto do update aplica normal, então
+// parece ter funcionado. Já causou dois incidentes reais: (1) ADR-019 —
+// incorporatePackagePayments() nunca marcava Appointment/Session como
+// realmente quitados na absorção retroativa de pacote; (2) 2026-09-29 — um
+// script de correção manual (revert-isis-2408-2808.js) reverteu o Payment e o
+// PatientBalance corretamente, mas Session/Appointment ficaram com isPaid:true
+// por engano, e o pacote foi recalculado com o número de sessões pagas ERRADO
+// como consequência direta (ver ADR-021). O PRÓPRIO endpoint oficial
+// PATCH /api/v2/payments/:id/register-debit (payment.v2.js) TEM o mesmo bug
+// até hoje — nunca foi corrigido lá, só descoberto de novo neste incidente.
+// ✅ SEMPRE — passar o bypass nas options da query (funciona em
+//            updateOne/updateMany/findOneAndUpdate; para save()/insertMany()
+//            use Model.$locals = {...} antes de chamar, ver financialSanitizer.js)
+await Session.findByIdAndUpdate(id,
+  { $set: { isPaid: false, paymentStatus: 'unpaid' } },
+  { __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
+);
+
 // ❌ NUNCA — Payment.status muda pra 'paid' sem reconciliar o débito de fiado
 // PATCH /api/v2/payments/:id marcava Payment paid sem nunca tocar
 // PatientBalance — débito de sessão fiada ficava aberto pra sempre mesmo com
@@ -498,12 +522,28 @@ transacao para serializar concorrencia; e invalida caches somente apos commit.
 
 **Consequência:** (1) Bug de causa raiz corrigido — regeneração de plano a partir de agora reconhece Session existente e não duplica; (2) as 30 Sessions órfãs identificadas foram canceladas (`status: 'canceled'`, com nota de auditoria) via `back/scripts/maintenance` (script ad-hoc, não commitado — resultado documentado aqui); nenhum Appointment/Payment/Package foi tocado; (3) **os 1028 casos de `Session.appointmentId` apontando para Appointment inexistente foram investigados e fechados no mesmo dia — não são risco**: categoria distinta (referência pendurada por hard-delete de Appointment sem cascata, não duplicação por regeneração), mas **0 das 1028 têm data futura ou de hoje** (todas no passado; 968 nem têm `createdAt`, indicando dado bem antigo) — como todo conflito de agenda compara contra a data específica do novo agendamento, uma Session-fantasma datada no passado nunca pode colidir com nada marcado hoje ou no futuro. Não é pendência: é lixo histórico inerte, sem efeito prático, cuja única ação cabível seria limpeza de higiene de banco (não urgente, não afeta comportamento). O padrão de auditoria usado (comparar `Session.appointmentId` não-terminal contra `Appointment.session` do mesmo documento, separando "aponta pra outro" de "appointment não existe" de "Appointment.session é null", e depois checar se a data cai no passado ou no futuro) está validado e pode ser reaproveitado se o sintoma voltar; (4) mesma classe de bug já documentada no comentário de 2026-07-16 em `insuranceGuides.v2.js` (`PATCH /:id/appointments/doctor` não sincronizava Session) — ambos os casos são "algo escreve em Appointment/Session sem manter os dois em sincronia"; ao tocar qualquer fluxo de agenda de convênio, checar se a escrita usa `appointmentSessionSyncService.js` (regra de ouro: Appointment manda, Session segue) em vez de reimplementar sync ad-hoc.
 
+### ADR-021: Payments órfãos em lote de convênio (FinancialLedger existe, Payment nunca sincronizado) — idempotência por consulta ao ledger, não pelo campo espelhado
+
+**Status:** Accepted. Reparo aplicado em produção para o caso concreto (NF 260). Pendência conhecida não corrigida: `register-debit` (ver abaixo).
+
+**Data:** 2026-09-29
+**Contexto:** `POST /api/v2/insurance-batches/:id/receive` (via `receiveInsuranceBatch()`, `services/insuranceBatch/InsuranceBatchReceiptService.js`) falhava com um `E11000 duplicate key error` cru propagado como 500, ao tentar dar baixa na NF 260 (Unimed Campinas, paciente Davi Felipe Araújo, 12 sessões).
+
+**Causa raiz (dupla):**
+1. **Dado herdado, não uma corrida de hoje.** Os 12 `FinancialLedger` (`type: 'insurance_received'`, correlationId `insurance_batch_received_<batchId>_<paymentId>`) já existiam desde **02/09/2026** — quase um mês antes do incidente. Os 12 `Payment` correspondentes, porém, nunca tiveram `status`/`insurance.status` atualizados para `paid`/`received` — continuaram `billed`. Ou seja: uma tentativa anterior de processar essa NF conseguiu lançar a contabilidade mas nunca terminou de marcar os Payments — o estado ficou "pela metade" e congelado, sem sintoma visível, até a próxima tentativa de baixa esbarrar na duplicata. Hipótese mais consistente com a evidência (comentário already existente no próprio arquivo sobre a refatoração): a versão do código rodando em 02/09 ainda fazia a escrita sequencial antiga (`transitionPaymentStatus` + 2º `.save()` por Payment, um round-trip de cada vez, "6 round-trips Mongo cada" — comentário original em `receiveInsuranceBatch`), sem a garantia atômica que a consolidação em `Payment.bulkWrite()` + `FinancialLedger.insertMany()` (ambos na mesma transação) passou a dar depois. Um processo interrompido no meio dessa sequência antiga deixaria exatamente esse rastro: ledger criado, Payment não. Não há log residual de 02/09 para confirmar com 100% de certeza qual processo específico causou isso.
+2. A tentativa de HOJE (29/09), ao encontrar os Payments ainda `billed`, tentou reprocessá-los do zero e recriar o ledger — colidindo no índice único `{correlationId: 1, type: 1}` (`models/FinancialLedger.js`). **A transação abortou corretamente e atomicamente** (`mongoSession.withTransaction()` desfaz tudo, inclusive o `Payment.bulkWrite` que acabara de rodar, quando o callback lança) — a tentativa de hoje não deixou nenhum dado extra quebrado; só devolveu um erro ilegível em vez de "tente de novo" ou de reparar sozinha.
+
+**Decisão:** `receiveInsuranceBatch()` passou a tratar o `FinancialLedger` como fonte de verdade da idempotência, não o campo espelhado `Payment.insurance.status`. Antes de montar as transições de recebimento: (1) consulta explicitamente se já existe `FinancialLedger` (`type: 'insurance_received'`) para os correlationIds candidatos; (2) para os payments que já têm ledger mas o `Payment` não reflete (o caso órfão), repara o `Payment` com a MESMA transição que ele deveria ter recebido na 1ª vez (`buildReceivedUpdate`, mesmo `grossAmount`/`netAmount` do rateio do lote), via um `Payment.bulkWrite` separado, **sem** criar um segundo lançamento contábil; (3) só os payments genuinamente sem ledger seguem pro fluxo normal (`transitionPaymentStatusBatchToReceived`, que cria Payment + ledger + outbox juntos). Camada complementar: `transitionPaymentStatusBatchToReceived` (`services/paymentStatusService.js`) agora captura `error.code === 11000` no `FinancialLedger.insertMany` e relança como `PaymentBatchTransitionError` com mensagem legível (409), para a corrida verdadeiramente simultânea residual que a checagem prévia não cobre (duas transações lendo "ainda não existe" no mesmo instante) — cenário raro, mas que antes também vazava o E11000 cru.
+
+**Consequência:** (1) NF 260 reparada e verificada: os 12 Payments viraram `paid`/`received` (R$140 cada, R$1.680 total), o batch fechou como `status: 'received'`, e o `FinancialLedger` continua com exatamente 12 lançamentos (zero duplicata) — confirmado consultando o banco após a chamada real. (2) Varredura nos outros 7 lotes de convênio não-recebidos (`status` em `sent`/`processing`/`partial`) não encontrou nenhum outro caso de payment órfão — NF 260 foi isolado, não sistêmico, mas o código agora está protegido caso reapareça. (3) **Pendência aberta, não corrigida nesta sessão:** `PATCH /api/v2/payments/:id/register-debit` (`routes/payment.v2.js`) reverte `Session`/`Appointment` (`isPaid`, `paymentStatus`) sem passar `{ __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }` nas options — mesma classe de bug do `financialSanitizer` já documentada no ADR-019 item 4, encontrada de novo (ver bloco de anti-pattern acima). Esse endpoint é a rota oficial usada pela UI para "marcar pagamento como fiado" — todo reverte feito por ele desde sempre pode ter deixado Session/Appointment com `isPaid` desatualizado sem ninguém perceber, do mesmo jeito que aconteceu no script de reversão manual da Isis (24/08, 28/08) nesta mesma sessão. Precisa de auditoria similar à do ADR-020 (comparar `Payment.status='pending'` contra `Session.isPaid`/`Appointment.isPaid` correspondentes, procurando dessincronia) antes de decidir o alcance do reparo.
+
 ---
 
 ## Changelog
 
 | Data | Mudança |
 |------|---------|
+| 2026-09-29 | ADR-021: idempotência de `receiveInsuranceBatch()` (baixa de NF de convênio) migrada do campo espelhado `Payment.insurance.status` para consulta direta ao `FinancialLedger` — fecha o E11000 causado por 12 payments órfãos da NF 260 (ledger de 02/09 sem Payment sincronizado, resíduo de versão anterior não-atômica do código). Payment órfão é reparado sem duplicar lançamento contábil; corrida residual vira 409 legível em vez de 500 cru. Reforçado no anti-pattern: `financialSanitizer` descarta silenciosamente `isPaid`/`paymentStatus` sem `__fromFinancialGuard`/`__guardContext` — achado de novo (2ª vez, ver ADR-019) num script de correção manual e no endpoint oficial `register-debit`, que **continua com o bug, não corrigido nesta sessão** (pendência aberta) |
 | 2026-09-15 | ADR-020: `generateInsurancePlanSessions.js` consultava campo `appointment` (inexistente em `Session`, só existe `appointmentId`) pra checar se já tinha Session — query sempre voltava vazia, recriava Session a cada regeneração de plano e deixava a anterior órfã, contando como ocupação falsa em conflito de agenda. 30 Sessions órfãs (6 pacientes, abril–setembro/2026) canceladas. Categoria relacionada (1028 casos de `appointmentId` pra Appointment inexistente) investigada e fechada no mesmo dia — todas datadas no passado, zero risco ativo |
 | 2026-09-15 | ADR-019: PatientBalance nunca mais `.save()` do documento inteiro em nenhum dos 5 pontos do backend (sempre `updateOne` com `$elemMatch`+`runValidators` — `$elemMatch` corrigido depois de um bug real pego por teste, não por inspeção); reconciliação automática (opt-in) do débito de fiado quando Payment particular avulso entra em `paid` fora de fluxo dedicado, com desempate por `sessionId` e suporte a pagamento parcial/sinal+saldo; validação + idempotência determinística (exclui débitos revertidos) em `POST /v2/balance/:patientId/debit` e `balanceWorker.handleDebit()`; `financialSanitizer` bug pré-existente corrigido (Appointment/Session nunca ficavam de fato quitados na absorção retroativa). Causa raiz do bloqueio de criação de pacote da paciente Julia Boarati (transações legadas sem `description`, escrita compatível com o worker sem validação). Reparo dos dados da paciente preparado em dry-run, não aplicado |
 | 2026-09-11 | ADR-018: removido atalho de `FinancialDailySnapshot` do dashboard financeiro (mês fechado) — snapshot de julho/2026 capturava só 11% do caixa real. Receita agora sempre ao vivo via `unifiedFinancialService`; despesas inalteradas (snapshot próprio, sem evidência de problema) |
