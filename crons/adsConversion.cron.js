@@ -176,7 +176,7 @@ async function processPending() {
           value: conv.value,
           eventId: `appt_${conv.appointment}`,
           eventTime,
-          actionSource: 'system_generated',
+          actionSource: 'physical_store', // atendimento na clínica; 'system_generated' era aceito (events_received:1) mas não entrava nas estatísticas
           customData: { lead_source: conv.source },
         });
         conv.meta = r ? { status: 'sent', sentAt: new Date() } : { status: 'skipped', reason: 'meta_capi_nao_configurado' };

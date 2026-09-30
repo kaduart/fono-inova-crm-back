@@ -61,7 +61,10 @@ export async function sendEventToMeta({
                 event_source_url: "https://clinicafonoinova.com.br",
                 user_data,
                 custom_data: event_custom_data
-            }]
+            }],
+            // Só para validar no Gerenciador de Eventos → Testar eventos. Enquanto existir, os eventos
+            // vão apenas para a tela de teste (não entram nas estatísticas nem na otimização).
+            ...(process.env.META_TEST_EVENT_CODE && { test_event_code: process.env.META_TEST_EVENT_CODE })
         };
 
         const response = await axios.post(url, payload);
