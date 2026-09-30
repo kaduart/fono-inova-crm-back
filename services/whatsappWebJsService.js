@@ -94,6 +94,17 @@ async function saveState() {
   }
 }
 
+// Catch-up e reparo de atribuição: agendados a partir do 'ready' OU do ready forçado pelo polling.
+// Um agendamento por client (o evento real pode chegar depois do forçado).
+const attributionJobsScheduled = new WeakSet();
+function scheduleAttributionJobs(client) {
+  if (!client || attributionJobsScheduled.has(client)) return;
+  attributionJobsScheduled.add(client);
+  // Worker fica desligado à noite/fim de semana: recupera a origem das mensagens recebidas nesse período
+  setTimeout(() => catchUpAttribution(client), 60_000);
+  setTimeout(() => repairLidAttributions(client).catch((e) => console.warn('[WhatsAppWeb] reparo @lid falhou:', e.message)), 90_000);
+}
+
 // ─── Fallback: polling getState() para detectar ready quando o evento não dispara ─
 function startReadyPoll(newClient) {
   if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
@@ -120,6 +131,7 @@ function startReadyPoll(newClient) {
           retryTimeout = null;
         }
         await saveState();
+        scheduleAttributionJobs(newClient); // o evento 'ready' não disparou: sem isto catch-up/reparo nunca rodam
       }
     } catch (e) {
       // ainda não está pronto — ignora
@@ -460,9 +472,7 @@ function createClient() {
       process.send({ type: 'whatsapp_ready' });
     }
 
-    // Worker fica desligado à noite/fim de semana: recupera a origem das mensagens recebidas nesse período
-    setTimeout(() => catchUpAttribution(newClient), 60_000);
-    setTimeout(() => repairLidAttributions(newClient).catch((e) => console.warn('[WhatsAppWeb] reparo @lid falhou:', e.message)), 90_000);
+    scheduleAttributionJobs(newClient);
   });
 
   newClient.on('loading_screen', async (percent, message) => {
