@@ -26,7 +26,8 @@ const INTERVAL_MS = 10 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
 const MIN_AGE_MS = 15 * 60 * 1000;          // espera 15 min (evita agendamento criado e desfeito)
 const MAX_ATTEMPTS = 5;
-const CONFIRMED_STATUSES = ['scheduled', 'confirmed', 'paid', 'completed'];
+// pre_agendado = todo agendamento nasce assim e já é o momento em que o contato entra na base
+const CONFIRMED_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'paid', 'completed'];
 
 let isRunning = false;
 let intervalId = null;

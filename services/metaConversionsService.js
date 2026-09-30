@@ -2,6 +2,7 @@
 
 import axios from "axios";
 import crypto from "crypto";
+import { normalizeE164BR } from "../utils/phone.js";
 
 function normalizeAndHash(value) {
     if (!value) return null;
@@ -40,7 +41,8 @@ export async function sendEventToMeta({
 
         if (email) user_data.em = [normalizeAndHash(email)];
         if (phone) {
-            const digitsPhone = phone.replace(/\D/g, "");
+            // Meta exige DDI no hash (ex.: 5562999999999). Telefone salvo sem 55 nunca casa com usuário.
+            const digitsPhone = normalizeE164BR(phone) || phone.replace(/\D/g, "");
             user_data.ph = [normalizeAndHash(digitsPhone)];
         }
         if (leadId) user_data.lead_id = [String(leadId)];
