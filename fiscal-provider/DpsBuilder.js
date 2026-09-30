@@ -106,7 +106,10 @@ export function buildDpsXml(snapshot, fiscalInvoice, fiscalProfile) {
 
   const servXml = [
     `<locPrest>${el('cLocPrestacao', infDPS.serv.cLocPrestacao)}</locPrest>`,
-    `<cServ>${el('cTribNac', infDPS.serv.cTribNac)}${el('cTribMun', fiscalService.municipalServiceCode)}` +
+    // `serv.cTribMun` só é preenchido pelo smoke test de homologação (scripts/fiscal-homologacao-issnet.mjs),
+    // cujo ambiente de testes tem atividades próprias (códigos 7/6/1601). O FiscalSnapshotBuilder nunca o
+    // define, então o fluxo real continua usando sempre o código do catálogo.
+    `<cServ>${el('cTribNac', infDPS.serv.cTribNac)}${el('cTribMun', infDPS.serv.cTribMun || fiscalService.municipalServiceCode)}` +
       `${el('xDescServ', infDPS.serv.xDescServ)}${el('cNBS', fiscalService.nbsCode)}</cServ>`
   ].join('');
 
