@@ -35,6 +35,11 @@ let intervalId = null;
 const isDryRun = () => process.env.ADS_CONVERSION_DRY_RUN === 'true';
 const defaultValue = () => Number(process.env.ADS_CONVERSION_DEFAULT_VALUE || 220);
 
+// fbc no formato que a Meta exige: fb.1.<ms do clique>.<fbclid>
+const buildFbc = (attr) => (attr?.fbclid
+  ? `fb.1.${new Date(attr.firstMessageAt || Date.now()).getTime()}.${attr.fbclid}`
+  : null);
+
 async function isFirstAppointment(appt) {
   if (appt.isFirstAppointment === true || appt.patientJourneyType === 'new_patient') return true;
   if (!appt.patient) return true; // pré-cadastro sem paciente = paciente novo
@@ -102,6 +107,7 @@ async function enqueueNew() {
           : { status: 'pending' };
         doc.google = attr?.gclid ? { status: 'pending' } : { status: 'skipped', reason: 'sem_gclid' };
         doc.gclid = attr?.gclid || null;
+        doc.fbc = buildFbc(attr);
         if (doc.meta.status !== 'pending' && doc.google.status !== 'pending') doc.done = true;
       }
 
@@ -136,7 +142,7 @@ async function refreshUnknownSources() {
       if (!attr?.source) continue;
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
-        { $set: { source: attr.source, attributionMethod: attr.method || null, ...(attr.gclid ? { gclid: attr.gclid } : {}) } }
+        { $set: { source: attr.source, attributionMethod: attr.method || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}) } }
       );
       updated += res.modifiedCount || 0;
 
@@ -173,6 +179,7 @@ async function processPending() {
         const eventTime = conv.eventTime; // já filtrado na janela de 7 dias no enqueue
         const r = await sendPurchaseToMeta({
           phone: conv.phone,
+          fbc: conv.fbc,
           value: conv.value,
           eventId: `appt_${conv.appointment}`,
           eventTime,

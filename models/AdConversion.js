@@ -15,6 +15,7 @@ const adConversionSchema = new mongoose.Schema({
   source: { type: String, default: 'unknown' },
   attributionMethod: { type: String, default: null },
   gclid: { type: String, default: null },
+  fbc: { type: String, default: null },        // fb.1.<ms>.<fbclid> — identificador de clique da Meta
   value: { type: Number, default: 0 },
   eventTime: { type: Date, required: true },
   meta: { type: platformSchema, default: () => ({}) },

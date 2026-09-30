@@ -17,6 +17,7 @@ export async function sendEventToMeta({
     eventName,      // 'Lead', 'Purchase', 'Schedule', 'Contact'
     email,
     phone,
+    fbc,             // identificador de clique da Meta (fb.1.<ms>.<fbclid>)
     leadId,
     value,          // Valor monetário
     currency = 'BRL',
@@ -45,6 +46,7 @@ export async function sendEventToMeta({
             const digitsPhone = normalizeE164BR(phone) || phone.replace(/\D/g, "");
             user_data.ph = [normalizeAndHash(digitsPhone)];
         }
+        if (fbc) user_data.fbc = fbc;
         if (leadId) user_data.lead_id = [String(leadId)];
 
         // Custom data (valor, moeda, etc)
