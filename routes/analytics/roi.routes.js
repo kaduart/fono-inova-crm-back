@@ -77,7 +77,9 @@ router.get('/roi-by-source', flexibleAuth, asyncHandler(async (req, res) => {
                 pipeline: [
                     {
                         $match: {
-                            $expr: { $eq: ['$patient', '$$patientId'] },
+                            // Sem o guard, lead não convertido (patientId ausente) casa com
+                            // agendamentos sem `patient` (missing == missing) e infla "Agend."/receita.
+                            $expr: { $and: [{ $ne: [{ $ifNull: ['$$patientId', null] }, null] }, { $eq: ['$patient', '$$patientId'] }] },
                             ...appointmentMatch
                         }
                     },
