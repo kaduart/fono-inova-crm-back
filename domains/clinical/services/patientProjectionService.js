@@ -202,13 +202,40 @@ export async function buildPatientView(patientId, options = {}) {
       // (aguardando o convênio pagar). Ver card "Saldo pendente" no dashboard.
       totalPendingConvenioAwaitingBilling: totalPendingConvenioBillingAgg[0]?.total || 0,
       totalPendingConvenioBilled: totalPendingConvenioBilledAgg[0]?.total || 0,
-      firstAppointmentDate: recentAppointments.length > 0 
-        ? recentAppointments[recentAppointments.length - 1].date 
+      firstAppointmentDate: recentAppointments.length > 0
+        ? recentAppointments[recentAppointments.length - 1].date
         : null,
       lastAppointmentDate: null,  // preenchido abaixo
       nextAppointmentDate: null   // preenchido abaixo
     };
-    
+
+    // 🆕 Crédito de recebimento avulso (via /financial/receive, quando o valor
+    // pago excede as sessões em aberto — o excedente vira crédito no
+    // PatientBalance ao invés de ficar "perdido"). Rastreado por transações
+    // com correlationId próprio (receive_credit_*) para NÃO se misturar com
+    // currentBalance agregado da PatientBalance, que carrega divergência
+    // histórica (débitos de Payments já pagos por outras vias e nunca
+    // baixados na conta corrente legada — ver auditoria 2026-09-29).
+    //
+    // Mostrar "crédito disponível" e "saldo pendente" como dois números soltos
+    // é contraditório quando ambos existem ao mesmo tempo (ex: paciente com
+    // R$480 de sessões já realizadas não pagas E R$120 de crédito sobrando de
+    // um recebimento anterior — o certo é dever líquido R$360, não os dois
+    // números lado a lado). Por isso calculamos aqui o líquido, no backend
+    // (regra do projeto: KPIs financeiros nunca no frontend).
+    const availableCredit = (balance?.transactions || [])
+      .filter(t => t.type === 'credit' && typeof t.correlationId === 'string' && t.correlationId.startsWith('receive_credit_'))
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    stats.availableCredit = availableCredit;
+    stats.totalPendingParticularNet = Math.max(0, stats.totalPendingParticular - availableCredit);
+    stats.netAvailableCredit = Math.max(0, availableCredit - stats.totalPendingParticular);
+    // totalPendingNet = versão líquida do card "Saldo pendente" — só a parte
+    // particular é abatida pelo crédito (que só nasce de recebimento
+    // particular avulso); convênio segue intocado.
+    stats.totalPendingNet = stats.totalPendingParticularNet
+      + stats.totalPendingConvenioAwaitingBilling
+      + stats.totalPendingConvenioBilled;
+
     // 4. Extrai último/próximo agendamento
     const { lastAppointment, nextAppointment } = extractAppointments(recentAppointments);
     stats.lastAppointmentDate = lastAppointment?.date || null;
@@ -284,12 +311,13 @@ export async function buildPatientView(patientId, options = {}) {
       })) || [],
       
       // Saldo
-      // 🎯 FONTE DE VERDADE FINANCEIRA: usa totalPendingParticular (Payment) em vez de PatientBalance.currentBalance
+      // 🎯 FONTE DE VERDADE FINANCEIRA: usa totalPendingParticularNet (Payment
+      // menos crédito de recebimento avulso) em vez de PatientBalance.currentBalance.
       // PatientBalance é um contador mutável que pode ficar desatualizado/corrompido.
       // totalPendingParticular = status:pending EXCLUINDO convênio/insurance E SÓ quando o agendamento foi completado.
       // Agendamentos futuros não são dívida — são "a receber" (usar stats.totalPending).
       balance: {
-        current: stats.totalPendingParticular || 0,
+        current: stats.totalPendingParticularNet || 0,
         lastUpdated: new Date()
       },
       

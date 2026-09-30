@@ -51,9 +51,20 @@ const patientsViewSchema = new mongoose.Schema({
     totalPackages: { type: Number, default: 0 },
     
     totalRevenue: { type: Number, default: 0 }, // valor total pago
-    totalPending: { type: Number, default: 0 }, // valor em aberto (todos os pending)
-    totalPendingParticular: { type: Number, default: 0 }, // 🎯 dívida real do paciente (exclui convênio/insurance)
-    
+    totalPending: { type: Number, default: 0 }, // valor em aberto (todos os pending), BRUTO
+    totalPendingParticular: { type: Number, default: 0 }, // 🎯 dívida real do paciente (exclui convênio/insurance), BRUTO
+    // 🩺 Composição do totalPending de convênio (subset de totalPending) — já
+    // calculada em patientProjectionService.js, mas faltava aqui no schema
+    // (Mongoose strict descarta campo não declarado ao persistir/reler).
+    totalPendingConvenioAwaitingBilling: { type: Number, default: 0 },
+    totalPendingConvenioBilled: { type: Number, default: 0 },
+    // 🆕 Crédito de recebimento avulso (via /financial/receive) e valores
+    // líquidos — ver patientProjectionService.js buildPatientView.
+    availableCredit: { type: Number, default: 0 },
+    totalPendingParticularNet: { type: Number, default: 0 }, // dívida particular já abatida do crédito
+    netAvailableCredit: { type: Number, default: 0 }, // crédito que sobra depois de abater a dívida
+    totalPendingNet: { type: Number, default: 0 }, // totalPendingParticularNet + convênio (o que a UI deve exibir)
+
     firstAppointmentDate: { type: Date },
     lastAppointmentDate: { type: Date },
     nextAppointmentDate: { type: Date }
