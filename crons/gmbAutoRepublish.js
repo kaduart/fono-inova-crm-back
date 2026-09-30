@@ -154,13 +154,15 @@ async function cleanupOldPosts() {
 
 /**
  * 📅 Agenda execução diária
- * Roda todos os dias às 6h da manhã (1h antes do cron de criação de novos posts)
+ * Roda todos os dias às 8h (10min antes do cron do post do calendário, 08:10).
+ * Era 06:00, mas o crm-worker (onde este cron roda) fica suspenso fora do
+ * expediente e só é religado às 07:30 seg-sex — ver ADR-022.
  */
 export function scheduleGmbAutoRepublish() {
   console.log('📅 [GMB Auto-Republish] Agendando job...');
-  
-  // Cron: 0 6 * * * = Todo dia às 6:00
-  const job = cron.schedule('0 6 * * *', async () => {
+
+  // Cron: 0 8 * * * = Todo dia às 8:00
+  const job = cron.schedule('0 8 * * *', async () => {
     console.log('\n⏰ [GMB Auto-Republish] Execução iniciada');
     await republishExpiringPosts();
     await cleanupOldPosts();
@@ -169,7 +171,7 @@ export function scheduleGmbAutoRepublish() {
     timezone: 'America/Sao_Paulo'
   });
   
-  console.log('✅ [GMB Auto-Republish] Job agendado para 6h diariamente');
+  console.log('✅ [GMB Auto-Republish] Job agendado para 8h diariamente');
   
   return job;
 }

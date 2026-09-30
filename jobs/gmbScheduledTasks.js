@@ -107,8 +107,10 @@ export const scheduleGmbCron = () => {
     // CRIAÇÃO DE POSTS PARA TODAS AS ESPECIALIDADES (uma vez por dia)
     // ═══════════════════════════════════════════════════════════════
     
-    // 06:00 → Cria posts para todas as especialidades que faltam
-    if (GMB_BATCH_ALL) cron.schedule('0 6 * * *', async () => {
+    // 08:00 → Cria posts para todas as especialidades que faltam
+    // (era 06:00 — movido para dentro da janela do crm-worker, que só sobe às
+    // 07:30 seg-sex; ver ADR-022 em docs/DOMAIN_INVARIANTS.md)
+    if (GMB_BATCH_ALL) cron.schedule('0 8 * * *', async () => {
         try {
             console.log('🚀 [GMB] Verificando especialidades sem post...');
             await gmbService.createPostsForAllEspecialidades();
@@ -122,8 +124,10 @@ export const scheduleGmbCron = () => {
     // Post estratégico baseado no calendário de 30 dias
     // ═══════════════════════════════════════════════════════════════
     
-    // 07:00 → Post temático do dia (baseado nos clusters de conteúdo)
-    cron.schedule('0 7 * * *', async () => {
+    // 08:10 → Post temático do dia (baseado nos clusters de conteúdo)
+    // (era 07:00 — o crm-worker fica suspenso até 07:30 e o resume leva minutos
+    // para subir; 08:10 vem depois da republicação das 08:00. Ver ADR-022)
+    cron.schedule('10 8 * * *', async () => {
         console.log('🚀 [GMB Calendário] Iniciando criação do post temático do dia...');
         try {
             const result = await gmbCalendarService.createTodaysCalendarPost({ triggeredBy: 'cron' });
