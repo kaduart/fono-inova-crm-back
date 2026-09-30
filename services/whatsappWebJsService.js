@@ -462,6 +462,7 @@ function createClient() {
 
     // Worker fica desligado à noite/fim de semana: recupera a origem das mensagens recebidas nesse período
     setTimeout(() => catchUpAttribution(newClient), 60_000);
+    setTimeout(() => repairLidAttributions(newClient).catch((e) => console.warn('[WhatsAppWeb] reparo @lid falhou:', e.message)), 90_000);
   });
 
   newClient.on('loading_screen', async (percent, message) => {
@@ -562,6 +563,32 @@ function createClient() {
   return newClient;
 }
 
+// Converte origens gravadas com o ID @lid no lugar do telefone. Idempotente: só toca em
+// registro fora de /^55\d{10,11}$/ e só quando o WhatsApp resolve um número válido.
+async function repairLidAttributions(client) {
+  if (process.env.WA_ATTRIBUTION_CAPTURE === 'false' || !client?.getContactLidAndPhone) return;
+  const LeadAttribution = (await import('../models/LeadAttribution.js')).default;
+  const { normalizeE164BR } = await import('../utils/phone.js');
+  const bad = await LeadAttribution.find({ phone: { $not: /^55\d{10,11}$/ } }).lean();
+  let fixed = 0;
+  for (const a of bad) {
+    // normalizeE164BR prefixou "55" no lid: testa as duas formas
+    const candidates = [a.phone, a.phone.startsWith('55') ? a.phone.slice(2) : null].filter(Boolean);
+    let pn = null;
+    for (const lid of candidates) {
+      try {
+        const [r] = await client.getContactLidAndPhone([`${lid}@lid`]);
+        if (r?.pn) { pn = normalizeE164BR(String(r.pn).replace(/@.*$/, '')); if (pn) break; }
+      } catch { /* tenta o próximo */ }
+    }
+    if (!pn || !/^55\d{10,11}$/.test(pn)) continue;
+    if (await LeadAttribution.exists({ phone: pn })) await LeadAttribution.deleteOne({ _id: a._id }); // origem pelo número real prevalece
+    else await LeadAttribution.updateOne({ _id: a._id }, { $set: { phone: pn } });
+    fixed++;
+  }
+  console.log(`[WhatsAppWeb] 🔧 reparo @lid: ${fixed}/${bad.length} corrigidos`);
+}
+
 // Varre conversas com atividade recente (default 72h = cobre fim de semana com worker suspenso).
 // Idempotente: a gravação é first-touch por telefone.
 async function catchUpAttribution(client) {
@@ -601,7 +628,7 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
         if (c.isGroup || (c.t || 0) < since) continue;
         const server = c.id?.server;
         const phone = server === 'c.us' ? c.id.user : (c.contact?.phoneNumber?.user || null);
-        if (!phone) continue;
+        if (!phone || !/^55\d{10,11}$/.test(String(phone))) continue;
         const msgs = c.msgs?.getModelsArray?.() || [];
         for (const m of msgs.slice(-8)) {
           if (m.id?.fromMe || (m.t || 0) < since) continue;
@@ -630,6 +657,36 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
   }
 }
 
+// Telefone BR plausível (DDI 55 + DDD + 8/9 dígitos). IDs @lid têm 14-15 dígitos e não passam.
+const isRealBRPhone = (p) => /^55\d{10,11}$/.test(String(p || '').replace(/\D/g, ''));
+
+// Contatos @lid: Contact.number devolve o ID interno (não o telefone). Tenta as fontes
+// que expõem o número real e só aceita resultado com formato de telefone BR.
+async function resolveRealPhoneFromLid(msg, lid) {
+  const candidates = [];
+  try {
+    const client = msg.client;
+    if (client?.getContactLidAndPhone) {
+      const r = await client.getContactLidAndPhone([lid]);
+      const pn = r?.[0]?.pn;
+      if (pn) candidates.push(String(pn).replace('@c.us', ''));
+    }
+  } catch { /* lib sem o método — segue */ }
+  try {
+    const c = await msg.getContact();
+    if (c?.id?._serialized?.endsWith('@c.us')) candidates.push(c.id.user);
+    if (c?.number) candidates.push(c.number);
+  } catch { /* segue */ }
+  try {
+    const p = await msg.client?.pupPage?.evaluate((id) => {
+      const ct = window.Store?.Contact?.get?.(id);
+      return ct?.phoneNumber?.user || null;
+    }, lid);
+    if (p) candidates.push(p);
+  } catch { /* segue */ }
+  return candidates.find(isRealBRPhone) || null;
+}
+
 // Fire-and-forget: extrai origem (site/anúncio) da mensagem recebida e grava por telefone.
 async function handleInboundAttribution(msg) {
   if (!msg || msg.fromMe || msg.isStatus) return;
@@ -648,11 +705,11 @@ async function handleInboundAttribution(msg) {
   if (!parseAttribution(text, ctwa)) return;
 
   let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
+  if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
   if (!phone) {
-    // Contatos @lid: resolve o número real
-    try { phone = (await msg.getContact())?.number || null; } catch { phone = null; }
+    console.warn('[WhatsAppWeb] ⚠️ origem detectada mas telefone real não resolvido (@lid) — não gravo para não perder o vínculo com o agendamento');
+    return;
   }
-  if (!phone) return;
 
   const { captureInboundAttribution } = await import('./leadAttributionService.js');
   await captureInboundAttribution({ phone, text, ctwa, capturedBy: 'whatsapp_web' });

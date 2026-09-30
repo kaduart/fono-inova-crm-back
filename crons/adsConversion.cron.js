@@ -118,6 +118,46 @@ async function enqueueNew() {
   return queued;
 }
 
+// ─── Reclassifica "unknown" quando a origem é capturada DEPOIS do agendamento ───
+// enqueueNew grava o source uma única vez; sem isto o agendamento fica "Sem origem" para sempre.
+async function refreshUnknownSources() {
+  const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5);
+  const unknown = await AdConversion.find({
+    source: 'unknown',
+    phone: { $ne: null },
+    createdAt: { $gte: since },
+  }).select('_id phone').limit(300).lean();
+
+  let updated = 0;
+  for (const u of unknown) {
+    try {
+      const attr = await getAttributionByPhone(u.phone);
+      if (!attr?.source) continue;
+      const res = await AdConversion.updateOne(
+        { _id: u._id, source: 'unknown' },
+        { $set: { source: attr.source, attributionMethod: attr.method || null, ...(attr.gclid ? { gclid: attr.gclid } : {}) } }
+      );
+      updated += res.modifiedCount || 0;
+
+      // gclid chegou depois: reabre SÓ o envio ao Google (meta intocado), dentro de 90 dias
+      if (res.modifiedCount && attr.gclid) {
+        await AdConversion.updateOne(
+          {
+            _id: u._id,
+            'google.status': 'skipped',
+            'google.reason': 'sem_gclid',
+            eventTime: { $gte: new Date(Date.now() - 90 * 864e5) },
+          },
+          { $set: { 'google.status': 'pending', done: false, nextAttemptAt: new Date() } }
+        );
+      }
+    } catch (err) {
+      console.error(`${TAG} ❌ refresh ${u._id}:`, err.message);
+    }
+  }
+  return updated;
+}
+
 // ─── Etapa 2: envia pendentes com retry/backoff ─────────────────────────────
 async function processPending() {
   const pending = await AdConversion.find({ done: false, nextAttemptAt: { $lte: new Date() } })
@@ -173,8 +213,9 @@ async function runOnce() {
   const t0 = Date.now();
   try {
     const queued = await enqueueNew();
+    const reclassified = isDryRun() ? 0 : await refreshUnknownSources();
     const sent = isDryRun() ? 0 : await processPending();
-    if (queued || sent) console.log(`${TAG} ✅ novos=${queued} enviados=${sent} em ${Date.now() - t0}ms`);
+    if (queued || sent || reclassified) console.log(`${TAG} ✅ novos=${queued} reclassificados=${reclassified} enviados=${sent} em ${Date.now() - t0}ms`);
   } catch (err) {
     console.error(`${TAG} ❌ Erro:`, err.message);
   } finally {

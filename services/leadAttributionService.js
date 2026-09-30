@@ -18,6 +18,11 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
 
     const normalized = normalizeE164BR(phone);
     if (!normalized) return null;
+    // ID @lid vira 14-15 dígitos: gravar assim nunca casa com paciente/agendamento
+    if (!/^55\d{10,11}$/.test(normalized)) {
+      console.warn(`${TAG} ⚠️ telefone inválido (provável @lid), origem ignorada:`, { source: parsed.source, tail: normalized.slice(-4) });
+      return null;
+    }
 
     // First-touch: só grava se o telefone ainda não tem origem
     const res = await LeadAttribution.updateOne(
