@@ -37,6 +37,13 @@ router.get('/google-offline.csv', basicAuth, async (req, res) => {
       eventTime: { $gte: new Date(Date.now() - 60 * 864e5) }, // Google aceita até 90 dias após o clique
     }).select('appointment gclid eventTime value').sort({ eventTime: 1 }).lean();
 
+    // Sem conversão real o arquivo ficaria só com cabeçalho e o Google falha (erro 4000: exige ≥1 linha para
+    // detectar o esquema). Linha de exemplo com gclid inválido: o Google a descarta; some quando houver conversão real.
+    const realCount = rows.length;
+    if (!realCount) {
+      rows.push({ appointment: 'setup_exemplo', gclid: 'EXEMPLO_CONFIGURACAO_NAO_IMPORTAR', eventTime: new Date(Date.now() - 3600e3), value: 0 });
+    }
+
     // Formato padrão = Central de Dados (Data Manager): cabeçalho simples, fuso no próprio horário.
     // ?format=legacy = modelo antigo de upload programado (linha Parameters:TimeZone + nomes em inglês).
     const legacy = req.query.format === 'legacy';
@@ -50,7 +57,7 @@ router.get('/google-offline.csv', basicAuth, async (req, res) => {
           'gclid,conversion_time,transaction_id,event_source,conversion_value,currency',
           ...rows.map((r) => [r.gclid, `${fmt(r.eventTime)}-03:00`, `appt_${r.appointment}`, 'OTHER', Number(r.value || 0).toFixed(2), 'BRL'].map(csvCell).join(',')),
         ];
-    console.log(`[AdsFeed] Google CSV servido: ${rows.length} conversões`);
+    console.log(`[AdsFeed] Google CSV servido: ${realCount} conversões reais${realCount ? '' : ' (+1 linha de exemplo)'}`);
     res.set('Content-Type', 'text/csv; charset=utf-8').set('Cache-Control', 'no-store').send(lines.join('\n') + '\n');
   } catch (err) {
     console.error('[AdsFeed] ❌', err.message);

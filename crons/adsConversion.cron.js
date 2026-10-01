@@ -41,7 +41,8 @@ const buildFbc = (attr) => (attr?.fbclid
   : null);
 
 async function isFirstAppointment(appt) {
-  if (appt.isFirstAppointment === true || appt.patientJourneyType === 'new_patient') return true;
+  // NÃO confiar em appt.isFirstAppointment / patientJourneyType: marcam a 1ª sessão de um PACOTE novo,
+  // não a 1ª vez do paciente (paciente antigo com pacote novo era contado como "novo" e enviado à Meta).
   if (!appt.patient) return true; // pré-cadastro sem paciente = paciente novo
   const earlier = await Appointment.exists({
     patient: appt.patient,
