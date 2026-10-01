@@ -78,13 +78,18 @@ export async function startAllCrons() {
     const { scheduleWorkerHours } = await import("../crons/workerScheduler.cron.js");
     startCron('workerScheduler', () => scheduleWorkerHours());
 
+    // Despesas fixas: mantém o mês corrente sempre completo (idempotente, a cada 6h + catch-up no boot).
+    // Roda no crm-backend, não no crm-worker — janela do ADR-022 não se aplica.
+    const { scheduleFixedExpenseGeneration } = await import("../crons/fixedExpenseGeneration.cron.js");
+    startCron('fixedExpenseGeneration', () => scheduleFixedExpenseGeneration());
+
     // Conversões offline (Meta CAPI + Google Ads) — desligado por padrão
     if (process.env.ENABLE_ADS_CONVERSION === 'true') {
         const { initAdsConversionCron } = await import("../crons/adsConversion.cron.js");
         startCron('adsConversion', () => initAdsConversionCron());
     }
 
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation + communicationReconciliation + workerScheduler)");
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation + communicationReconciliation + workerScheduler + fixedExpenseGeneration)");
 }
 
 export default { startCron, stopCron, stopAllCrons, listActiveCrons, startAllCrons };

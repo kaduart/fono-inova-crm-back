@@ -217,6 +217,7 @@ import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 
 import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
 import financialDashboardV2Routes from './routes/financialDashboard.v2.js';  // 🚀 NOVO: Financial Dashboard V2
 import expensesV2Routes from './routes/expenses.v2.js';  // 🚀 NOVO: Expenses V2
+import fixedExpensesV2Routes from './routes/fixedExpenses.v2.js';  // Despesas fixas (modelos + geração mensal)
 import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio V2
 import liminarContractRoutes from './routes/liminarContract.js';  // ⚖️ NOVO: Liminar desacoplado
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
@@ -518,6 +519,7 @@ app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
 app.use("/api/v2/daily-summary", dailySummaryV2Routes);  // 🚀 NOVO: Daily Summary V2
 app.use("/api/v2/financial/dashboard", financialDashboardV2Routes);  // 🚀 NOVO: Financial Dashboard V2
 app.use("/api/v2/expenses", expensesV2Routes);  // 🚀 NOVO: Expenses V2
+app.use("/api/v2/fixed-expenses", fixedExpensesV2Routes);
 app.use("/api/v2/convenio", convenioV2Routes);  // 🚀 NOVO: Convênio V2
 app.use("/api/v2/liminar-contracts", liminarContractRoutes);  // ⚖️ NOVO: Liminar desacoplado
 app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2

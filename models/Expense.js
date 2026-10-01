@@ -113,6 +113,21 @@ const expenseSchema = new mongoose.Schema({
     }
   },
   
+  // 🔹 ORIGEM "DESPESA FIXA": ocorrência mensal gerada a partir de um FixedExpense.
+  // Ausente/null = despesa avulsa (ou comissão). competenceMonth = 'YYYY-MM'.
+  // O índice único parcial abaixo garante 1 ocorrência por modelo/mês — inclusive
+  // cancelada: cancelar a ocorrência NÃO apaga o doc, assim "Gerar fixas" não recria.
+  fixedExpenseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FixedExpense',
+    default: null
+  },
+  competenceMonth: {
+    type: String,
+    match: /^\d{4}-\d{2}$/,
+    default: undefined
+  },
+
   // 🔹 COMPROVANTE (URL S3/Cloudinary - futuro)
   attachment: {
     type: String,
@@ -162,6 +177,11 @@ expenseSchema.index({ date: 1, status: 1 });
 expenseSchema.index({ relatedDoctor: 1, date: 1 });
 expenseSchema.index({ category: 1, date: 1 });
 expenseSchema.index({ createdAt: 1, status: 1 });
+// Idempotência da geração de despesas fixas (só vale quando há fixedExpenseId).
+expenseSchema.index(
+  { fixedExpenseId: 1, competenceMonth: 1 },
+  { unique: true, partialFilterExpression: { fixedExpenseId: { $type: 'objectId' } } }
+);
 
 // 🔹 PRE-SAVE: atualizar updatedAt
 expenseSchema.pre('save', function(next) {

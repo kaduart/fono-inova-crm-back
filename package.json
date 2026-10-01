@@ -128,7 +128,7 @@
     "@vitest/coverage-v8": "^4.0.18",
     "jest": "^30.3.0",
     "jest-junit": "^16.0.0",
-    "mongodb-memory-server": "^9.0.0",
+    "mongodb-memory-server": "^9.5.0",
     "nodemon": "^3.1.10",
     "supertest": "^6.3.0",
     "vitest": "^4.0.18",

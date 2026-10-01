@@ -35,9 +35,16 @@ export async function invalidateExpenseCache() {
  * Gera chave de cache baseada nos filtros
  */
 function generateCacheKey(filters, version) {
-    const { month, year, doctorId, category, status, page, limit } = filters;
-    return `expenses_v2:${version}:${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${page}_${limit}`;
+    const { month, year, doctorId, category, status, origin, page, limit } = filters;
+    return `expenses_v2:${version}:${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${origin || 'all'}_${page}_${limit}`;
 }
+
+// Origem da despesa: 'fixed' (ocorrência de despesa fixa), 'commission' ou 'manual' (avulsa).
+const ORIGIN_CONDITIONS = {
+    fixed: { fixedExpenseId: { $ne: null } },
+    commission: { fixedExpenseId: null, category: 'commission' },
+    manual: { fixedExpenseId: null, category: { $ne: 'commission' } }
+};
 
 /**
  * @route   GET /api/v2/expenses
@@ -54,6 +61,7 @@ router.get('/', auth, async (req, res) => {
             category,
             subcategory,
             status,
+            origin,
             startDate,
             endDate,
             page = 1,
@@ -78,8 +86,16 @@ router.get('/', auth, async (req, res) => {
         if (subcategory) filters.subcategory = subcategory;
         if (status) filters.status = status;
 
+        // Totais por origem ignoram o filtro `origin` (os cards mostram o quadro completo
+        // mesmo com uma origem selecionada), mas respeitam os demais filtros.
+        const baseFilters = { ...filters };
+        if (origin && ORIGIN_CONDITIONS[origin]) {
+            // $and: não colide com `category` já usado no filtro.
+            filters.$and = [ORIGIN_CONDITIONS[origin]];
+        }
+
         const cacheVersion = await getCacheVersion();
-        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, page, limit }, cacheVersion);
+        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, origin, page, limit }, cacheVersion);
 
         // Verifica cache (se não forçar refresh)
         if (!nocache) {
@@ -107,19 +123,39 @@ router.get('/', auth, async (req, res) => {
             Expense.countDocuments(filters)
         ]);
 
-        // Totais
-        const totals = await Expense.aggregate([
-            { $match: filters },
-            {
-                $group: {
-                    _id: null,
-                    totalPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-                    totalPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, '$amount', 0] } },
-                    countPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
-                    countPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, 1, 0] } }
+        // Totais (pago/pendente) + quebra por origem (fixa/comissão/avulsa)
+        const [totals, originRows] = await Promise.all([
+            Expense.aggregate([
+                { $match: filters },
+                {
+                    $group: {
+                        _id: null,
+                        totalPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+                        totalPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, '$amount', 0] } },
+                        countPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                        countPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, 1, 0] } }
+                    }
                 }
-            }
+            ]),
+            Expense.aggregate([
+                { $match: { ...baseFilters, status: baseFilters.status || { $in: ['paid', 'pending', 'scheduled'] } } },
+                {
+                    $group: {
+                        _id: {
+                            $cond: [
+                                { $ne: [{ $ifNull: ['$fixedExpenseId', null] }, null] }, 'fixed',
+                                { $cond: [{ $eq: ['$category', 'commission'] }, 'commission', 'manual'] }
+                            ]
+                        },
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 }
+                    }
+                }
+            ])
         ]);
+
+        const byOrigin = { fixed: { total: 0, count: 0 }, commission: { total: 0, count: 0 }, manual: { total: 0, count: 0 } };
+        for (const r of originRows) if (byOrigin[r._id]) byOrigin[r._id] = { total: r.total, count: r.count };
 
         const result = {
             data: expenses,
@@ -134,7 +170,8 @@ router.get('/', auth, async (req, res) => {
                 totalPending: 0,
                 countPaid: 0,
                 countPending: 0
-            }
+            },
+            byOrigin
         };
 
         // Salva no cache
@@ -348,6 +385,29 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
 router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => {
     try {
         const { id } = req.params;
+
+        // 🗑️ Exclusão real (?permanent=true): só despesa AVULSA ainda pendente.
+        // Fixa gerada (fixedExpenseId) e comissão nunca somem — cancelar mantém o doc,
+        // senão "Gerar fixas"/"Gerar comissões" recriaria; paga mantém histórico.
+        if (req.query.permanent === 'true') {
+            const target = await Expense.findById(id).select('status category fixedExpenseId').lean();
+            if (!target) {
+                return res.status(404).json({ success: false, message: 'Despesa não encontrada' });
+            }
+            const isManual = !target.fixedExpenseId && target.category !== 'commission';
+            if (!isManual || !['pending', 'scheduled'].includes(target.status)) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'Exclusão definitiva só é permitida para despesas avulsas pendentes. Use cancelar.'
+                });
+            }
+            await Expense.deleteOne({ _id: id, status: { $in: ['pending', 'scheduled'] } });
+            await invalidateExpenseCache();
+            await publishEvent(EventTypes.EXPENSE_CANCELED, { expenseId: id, deleted: true },
+                { aggregateType: 'expense', aggregateId: id })
+                .catch(err => console.error('[ExpenseV2] Evento falhou (não-fatal):', err.message));
+            return res.json({ success: true, message: 'Despesa excluída' });
+        }
 
         const expense = await Expense.findByIdAndUpdate(
             id,
