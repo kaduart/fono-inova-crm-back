@@ -16,6 +16,8 @@ const leadAttributionSchema = new mongoose.Schema({
   ttclid: { type: String, default: null },
   adId: { type: String, default: null },
   ctwaClid: { type: String, default: null },
+  adTitle: { type: String, default: null },       // título do criativo (ctwaContext.title)
+  adSourceUrl: { type: String, default: null },   // link do anúncio (ctwaContext.sourceUrl)
   firstMessageAt: { type: Date, default: Date.now },
   capturedBy: { type: String, default: 'whatsapp_web' },
 }, { timestamps: true });

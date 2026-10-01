@@ -36,6 +36,9 @@ export function parseAttribution(text = '', ctwa = null) {
       confidence: 'high',
       adId: ctwa.sourceId ? String(ctwa.sourceId) : null,
       ctwaClid: ctwa.ctwaClid || null,
+      // Rótulos do criativo (aparecem no card "por anúncio"); título/URL públicos do anúncio, sem dado clínico
+      adTitle: ctwa.title ? String(ctwa.title).slice(0, 120) : null,
+      adSourceUrl: ctwa.sourceUrl ? String(ctwa.sourceUrl).slice(0, 300) : null,
     };
   }
 
@@ -61,9 +64,11 @@ export function parseAttribution(text = '', ctwa = null) {
   }
 
   // 3. Token curto dos anúncios
-  const tok = msg.match(/\((TK|IG|FB|GG)\)\s*$/m) || msg.match(/\((TK|IG|FB|GG)\)/);
+  // (TK) ou (TK-v3) / (TK:video0224): o marcador após o hífen identifica o ANÚNCIO e vira "campaign"
+  const TOKEN_RE = /\((TK|IG|FB|GG)(?:[-:]([A-Za-z0-9_-]{1,40}))?\)/;
+  const tok = msg.match(new RegExp(TOKEN_RE.source + '\\s*$', 'm')) || msg.match(TOKEN_RE);
   if (tok) {
-    return { source: TOKEN_MAP[tok[1]], method: 'token', confidence: 'high' };
+    return { source: TOKEN_MAP[tok[1]], method: 'token', confidence: 'high', campaign: tok[2] || null };
   }
 
   // 4. Palavra-chave

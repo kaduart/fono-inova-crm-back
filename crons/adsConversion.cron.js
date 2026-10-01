@@ -90,6 +90,8 @@ async function enqueueNew() {
         phone,
         source: attr?.source || 'unknown',
         attributionMethod: attr?.method || null,
+        adId: attr?.adId || null,
+        campaign: attr?.campaign || null,
         value,
         eventTime: appt.createdAt,
       };
@@ -142,7 +144,7 @@ async function refreshUnknownSources() {
       if (!attr?.source) continue;
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
-        { $set: { source: attr.source, attributionMethod: attr.method || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}) } }
+        { $set: { source: attr.source, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}) } }
       );
       updated += res.modifiedCount || 0;
 

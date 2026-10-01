@@ -14,6 +14,8 @@ const adConversionSchema = new mongoose.Schema({
   phone: { type: String, default: null },
   source: { type: String, default: 'unknown' },
   attributionMethod: { type: String, default: null },
+  adId: { type: String, default: null },       // anúncio de WhatsApp (ctwa) que originou a conversa
+  campaign: { type: String, default: null },   // campanha/ID vindo do link do site (---ref)
   gclid: { type: String, default: null },
   fbc: { type: String, default: null },        // fb.1.<ms>.<fbclid> — identificador de clique da Meta
   value: { type: Number, default: 0 },

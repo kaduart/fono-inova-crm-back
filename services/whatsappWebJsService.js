@@ -646,7 +646,7 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
           out.push({
             phone,
             body: m.body || '',
-            ctwa: ctx ? { sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, ctwaClid: ctx.ctwaClid || null } : null,
+            ctwa: ctx ? { sourceId: ctx.sourceId || null, sourceUrl: ctx.sourceUrl || null, ctwaClid: ctx.ctwaClid || null, title: ctx.title || null } : null,
           });
         }
       }
@@ -709,7 +709,7 @@ async function handleInboundAttribution(msg) {
   // Checagem barata antes de qualquer I/O
   const { parseAttribution } = await import('../utils/attributionParser.js');
   const ctwa = ctwaRaw
-    ? { sourceId: ctwaRaw.sourceId || null, sourceUrl: ctwaRaw.sourceUrl || null, ctwaClid: ctwaRaw.ctwaClid || null }
+    ? { sourceId: ctwaRaw.sourceId || null, sourceUrl: ctwaRaw.sourceUrl || null, ctwaClid: ctwaRaw.ctwaClid || null, title: ctwaRaw.title || null }
     : null;
   if (ctwaRaw) console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','));
   if (!parseAttribution(text, ctwa)) return;
