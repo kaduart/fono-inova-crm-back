@@ -495,7 +495,8 @@ export async function receberLote(req, res) {
       try {
         const result = await settleInsurancePayment(pid, {
           reason: 'manual_receive_avulso',
-          paidAt
+          paidAt,
+          actor: req.user // usuário logado → auditoria + userId no evento de status
         });
         avulsoResults.push(result);
       } catch (err) {

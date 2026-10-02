@@ -19,6 +19,7 @@ import InsuranceBatch from '../models/InsuranceBatch.js';
 import { transitionPaymentStatus } from './paymentStatusService.js';
 import { recordInsuranceReceived } from './financialLedgerService.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { recordAudit } from './auditLogService.js';
 import { getConvenioIssRate, calculateInsuranceIss } from '../utils/insuranceIss.js';
 
 const TAG = '[AutoInsuranceSettlement]';
@@ -26,7 +27,28 @@ const TAG = '[AutoInsuranceSettlement]';
 // ──────────────────────────────────────────────────────────────────────────
 // CORE: settle um único payment de convênio
 // ──────────────────────────────────────────────────────────────────────────
-export async function settleInsurancePayment(paymentId, { reason = 'auto_settlement', paidAt, financialDate } = {}) {
+// Snapshot enxuto do Payment para a auditoria (quem baixou, o quê mudou).
+const pickPaymentAuditFields = (p) => ({
+    status: p?.status ?? null,
+    amount: p?.amount ?? null,
+    billingType: p?.billingType ?? null,
+    paymentMethod: p?.paymentMethod ?? null,
+    financialDate: p?.financialDate ?? null,
+    paidAt: p?.paidAt ?? null,
+    serviceDate: p?.serviceDate ?? null,
+    insuranceStatus: p?.insurance?.status ?? null,
+    insuranceReceivedAt: p?.insurance?.receivedAt ?? null,
+    insuranceReceivedAmount: p?.insurance?.receivedAmount ?? null,
+    appointment: p?.appointment ?? null,
+    session: p?.session ?? null,
+});
+
+/**
+ * @param {object} [options]
+ * @param {object} [options.actor] usuário logado ({ id|_id, role }) — quem deu a baixa. Sem actor =
+ *   execução automática/sistema (aparece como SYSTEM na auditoria).
+ */
+export async function settleInsurancePayment(paymentId, { reason = 'auto_settlement', paidAt, financialDate, actor = null } = {}) {
     // 🔒 LOCK ATÔMICO: adquire _billingEventId antes de qualquer operação
     // findOneAndUpdate com condição → garante que apenas 1 executor processa (sem race condition)
     const eventId = `settle-${crypto.randomUUID()}`;
@@ -68,7 +90,8 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
         paymentMethod: 'convenio',
         paidAt: now,
         financialDate: sessionDate,
-        reason
+        reason,
+        userId: actor?._id || actor?.id
     });
 
     // Atualiza insurance.status → received e congela dados do recebimento
@@ -81,9 +104,25 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
             'insurance.issAmount': iss.issAmount,
             'insurance.receivedAmount': iss.netAmount,
             'insurance.receivedAt': now,
-            'insurance.receivedAtSource': 'autoInsuranceSettlementService'
+            // Antes era sempre 'autoInsuranceSettlementService', mesmo em baixa manual.
+            'insurance.receivedAtSource': actor ? `manual:${reason}` : 'autoInsuranceSettlementService'
         } }
     );
+
+    // 🧾 AUDITORIA: quem (usuário logado) deu a baixa, antes/depois. Best-effort (nunca derruba a baixa).
+    const afterSettle = await Payment.findById(paymentId).lean();
+    await recordAudit({
+        user: actor,
+        action: 'insurance_payment_received',
+        entityType: 'Payment',
+        entityId: paymentId,
+        before: locked,
+        after: afterSettle,
+        source: `insurance_settlement:${reason}`,
+        metadata: { reason, paidAt: now, financialDate: sessionDate, netAmount: iss.netAmount, actorName: actor?.fullName || actor?.name || null },
+        pickFn: pickPaymentAuditFields,
+    });
+    console.log(`${TAG} AUDIT baixa payment=${paymentId} por=${actor?._id || actor?.id || 'SISTEMA'} (${actor?.role || 'system'}) motivo=${reason}`);
 
     // 🏦 LEDGER: registra o valor LÍQUIDO no caixa
     try {
@@ -196,7 +235,7 @@ export async function runAvulsoSettlement({ dryRun = false } = {}) {
 // ──────────────────────────────────────────────────────────────────────────
 // Settle um lote inteiro (para uso no receberLote quando batch existe)
 // ──────────────────────────────────────────────────────────────────────────
-export async function settleBatch(batchId, { reason = 'manual_batch_receive', paidAt } = {}) {
+export async function settleBatch(batchId, { reason = 'manual_batch_receive', paidAt, actor = null } = {}) {
     const batch = await InsuranceBatch.findById(batchId).lean();
     if (!batch) throw new Error(`${TAG} Batch ${batchId} não encontrado`);
 
@@ -204,7 +243,7 @@ export async function settleBatch(batchId, { reason = 'manual_batch_receive', pa
     for (const s of batch.sessions || []) {
         if (!s.payment) continue;
         try {
-            const result = await settleInsurancePayment(s.payment, { reason, paidAt });
+            const result = await settleInsurancePayment(s.payment, { reason, paidAt, actor });
             results.push(result);
         } catch (err) {
             results.push({ paymentId: s.payment, error: err.message });

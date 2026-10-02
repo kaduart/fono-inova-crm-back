@@ -16,6 +16,50 @@ import unifiedFinancialService, { calculateCashTotal } from '../../services/unif
 
 const TIMEZONE = 'America/Sao_Paulo';
 
+// Paciente recorrente = N+ atendimentos realizados (completed) dentro da janela.
+// Número principal do card: RECURRING_MIN_VISITS+ em RECURRING_WINDOW_DAYS. O detalhamento
+// (todas as janelas x 3+/4+/5+) vem junto para o card exibir, sem nenhum cálculo no front.
+export const RECURRING_WINDOW_DAYS = 30;
+export const RECURRING_MIN_VISITS = 4;
+const RECURRING_WINDOWS = [30, 45];
+const RECURRING_THRESHOLDS = [3, 4, 5];
+
+async function buildRecurringPatients(now = moment().tz(TIMEZONE)) {
+  const maxDays = Math.max(...RECURRING_WINDOWS);
+  const since = (days) => now.clone().subtract(days, 'days').startOf('day').toDate();
+
+  // Uma única passada: visitas por paciente em cada janela.
+  const group = { _id: '$patient' };
+  for (const d of RECURRING_WINDOWS) {
+    group[`v${d}`] = { $sum: { $cond: [{ $gte: ['$date', since(d)] }, 1, 0] } };
+  }
+  const perPatient = await Appointment.aggregate([
+    {
+      $match: {
+        date: { $gte: since(maxDays), $lte: now.toDate() },
+        operationalStatus: 'completed',
+        isDeleted: { $ne: true },
+        patient: { $exists: true, $ne: null }
+      }
+    },
+    { $group: group }
+  ]);
+
+  const windows = RECURRING_WINDOWS.map((days) => {
+    const visits = perPatient.map((r) => r[`v${days}`]).filter((v) => v > 0);
+    const row = { days, attended: visits.length };
+    for (const min of RECURRING_THRESHOLDS) {
+      row[`min${min}`] = visits.filter((v) => v >= min).length;
+      // % sobre os pacientes atendidos na janela (calculado aqui; o front só desenha)
+      row[`pct${min}`] = row.attended > 0 ? Math.round((row[`min${min}`] / row.attended) * 100) : 0;
+    }
+    return row;
+  });
+
+  const headline = windows.find((w) => w.days === RECURRING_WINDOW_DAYS)?.[`min${RECURRING_MIN_VISITS}`] || 0;
+  return { total: headline, windowDays: RECURRING_WINDOW_DAYS, minVisits: RECURRING_MIN_VISITS, windows };
+}
+
 export async function buildStats() {
   const t0 = Date.now();
   const today = moment().tz(TIMEZONE).startOf('day');
@@ -37,7 +81,8 @@ export async function buildStats() {
     monthRevenueAgg,
     todayRevenueAgg,
     monthLeads,
-    leadsByStatus
+    leadsByStatus,
+    recurring
   ] = await Promise.all([
     timeit('doctors.count',        Doctor.countDocuments({ active: true })),
     timeit('patients.estimated',   Patient.estimatedDocumentCount()),
@@ -69,7 +114,8 @@ export async function buildStats() {
           count: { $sum: 1 }
         }
       }
-    ]))
+    ])),
+    timeit('patients.recurring',   buildRecurringPatients())
   ]);
 
   // Mapear leads por status
@@ -84,6 +130,7 @@ export async function buildStats() {
     totalDoctors,
     totalPatients,
     activePatients: totalPatients,
+    recurring,
     todayAppointments,
     weekAppointments,
     todayRevenue: todayRevenueAgg?.total || 0,

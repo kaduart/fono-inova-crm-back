@@ -1016,7 +1016,15 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                     ticketMedio,
                     ontem: yesterdayTotal
                 },
-                transacoes: transacoesCaixa,
+                // "Recebimentos do Dia" lista só pagamentos feitos no dia (paciente). Convênio
+                // recebido (baixa da operadora, frequentemente de competência anterior) continua
+                // somando em caixa.total / saldo / porTipo, mas vai em `convenioRecebido`, linha
+                // própria — assim a lista + convenioRecebido.total = caixa.total.
+                transacoes: transacoesCaixa.filter(t => t.tipo !== 'Convênio'),
+                convenioRecebido: (() => {
+                    const itens = transacoesCaixa.filter(t => t.tipo === 'Convênio');
+                    return { total: itens.reduce((s, t) => s + t.valor, 0), quantidade: itens.length, itens };
+                })(),
                 transacoesProducao: transacoesProducao,
                 transacoesOntem: yesterdayCash.payments
                     .filter(p => p && p.amount > 0)
