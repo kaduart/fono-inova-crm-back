@@ -49,6 +49,7 @@ function mapPaymentMethod(method) {
   };
   return map[method] || method || 'pix';
 }
+import { execute as rescheduleAppointment } from '../services/appointment/commands/rescheduleAppointmentCommand.js';
 import readRouter from './appointmentReads.js';
 import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 import {
@@ -182,6 +183,71 @@ router.patch(
       });
     } catch (err) {
       console.error(`[PATCH /api/v2/appointments/${req.params.id}/admin-edit] erro:`, err);
+
+      const status = err.status || 500;
+      return res.status(status).json({
+        success: false,
+        error: err.message,
+        code: err.code || 'INTERNAL_SERVER_ERROR',
+        ...(err.fields ? { fields: err.fields } : {}),
+      });
+    }
+  }
+);
+
+// Remarcação rápida (botão "Mudar data" / arrastar no calendário).
+// Body: { date: 'YYYY-MM-DD', time: 'HH:mm', reason? }. Só valida regras de remarcação
+// (status, passado, validade de guia/liminar) e delega ao mesmo updateAppointmentCommand
+// do PUT — Session/Payment/Pacote/outbox/socket continuam numa única regra de domínio.
+// checkPackageAvailability fica de fora de propósito: pacote só consome no complete (#17).
+async function injectRescheduleContext(req, res, next) {
+  try {
+    const existing = await Appointment.findById(req.params.id)
+      .select('doctor patient duration isJointSession operationalStatus')
+      .lean();
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agendamento não encontrado',
+        code: 'APPOINTMENT_NOT_FOUND',
+      });
+    }
+    // checkAppointmentConflicts lê doctor/patient/duration do body — o cliente só envia date/time.
+    req.body.doctorId = existing.doctor?.toString();
+    req.body.patientId = existing.patient?.toString();
+    req.body.duration = existing.duration;
+    req.body.isJointSession = existing.isJointSession;
+    if (existing.operationalStatus === 'pre_agendado') {
+      req.body.operationalStatus = 'pre_agendado'; // pré-agendamento pode não ter patientId
+    }
+    return next();
+  } catch (err) {
+    console.error(`[PATCH /api/v2/appointments/${req.params.id}/reschedule] contexto:`, err);
+    return res.status(500).json({
+      success: false,
+      error: 'Erro ao preparar remarcação',
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+  }
+}
+
+router.patch(
+  '/:id/reschedule',
+  validateId,
+  flexibleAuth,
+  injectRescheduleContext,
+  checkAppointmentConflicts,
+  async (req, res) => {
+    try {
+      const { date, time, reason } = req.body;
+      const result = await rescheduleAppointment(req.params.id, { date, time, reason }, req.user);
+      return res.json({
+        success: true,
+        data: result.data,
+        message: result.message,
+      });
+    } catch (err) {
+      console.error(`[PATCH /api/v2/appointments/${req.params.id}/reschedule] erro:`, err);
 
       const status = err.status || 500;
       return res.status(status).json({

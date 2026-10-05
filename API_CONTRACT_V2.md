@@ -226,6 +226,51 @@ Content-Type: application/json
 
 ---
 
+### Reschedule Appointment (remarcação rápida — botão "Mudar data" / arrastar no calendário)
+```http
+PATCH /api/v2/appointments/:id/reschedule
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "date": "2026-10-12",   // YYYY-MM-DD (required)
+  "time": "14:00",        // HH:mm (required)
+  "reason": "string"      // opcional; default "Remarcação via calendário"
+}
+```
+
+Só muda **quando** o atendimento acontece. Não envia status nem financeiro. Valida as regras de
+remarcação (`appointmentReschedulePolicy`) e **delega ao mesmo `updateAppointmentCommand` do `PUT /:id`**
+— Session, `Payment.serviceDate`, histórico da Session, outbox, socket e auditoria seguem a mesma regra
+de domínio. Consumo de pacote continua só no `complete` (nada de `sessionsDone` aqui).
+Conflito de profissional/paciente reaproveita `checkAppointmentConflicts` (o contexto doctor/patient é
+injetado a partir do próprio agendamento).
+
+**Response 200:** `{ "success": true, "data": <Appointment DTO>, "message": "Agendamento remarcado com sucesso" }`
+
+**Erros** (`{ "success": false, "error": "...", "code": "..." }`):
+
+| Status | `code` | Quando |
+|--------|--------|--------|
+| 400 | `INVALID_RESCHEDULE_PAYLOAD` | data/hora ausentes ou inválidas (ex.: `2026-02-31`, `25:99`) |
+| 400 | `NO_CHANGE` | nova data+hora iguais às atuais |
+| 403 | `FORBIDDEN` | profissional tentando remarcar agendamento de outro |
+| 404 | `APPOINTMENT_NOT_FOUND` | id inexistente |
+| 409 | *(conflito de agenda)* | profissional ou paciente já ocupado no novo horário (corpo com `conflict.*`) |
+| 409 | `APPOINTMENT_SLOT_TAKEN` | corrida pega pelo índice único `unique_appointment_slot` |
+| 409 | `GUIDE_EXPIRES_BEFORE_DATE` | convênio: guia vence antes da nova data |
+| 409 | `GUIDE_NOT_ACTIVE_FOR_RESCHEDULE` | convênio: guia `expired/cancelled/superseded/closed` |
+| 409 | `LIMINAR_EXPIRES_BEFORE_DATE` | liminar: vigência termina antes da nova data |
+| 409 | `WRITE_CONFLICT` | outro usuário alterando o mesmo agendamento (tente de novo) |
+| 422 | `INVALID_STATUS_FOR_RESCHEDULE` | `completed`, `canceled`, `missed`, `force_cancelled` |
+| 422 | `RESCHEDULE_IN_PAST` | nova data anterior a hoje (hoje é permitido) |
+
+Código: `routes/appointment.v2.js` · `services/appointment/commands/rescheduleAppointmentCommand.js` ·
+`services/appointment/policies/appointmentReschedulePolicy.js`. Frontend: `RescheduleDialog.tsx`
+(hospedado pelo `EnhancedCalendar`).
+
+---
+
 ### Get Appointment Status (Polling)
 ```http
 GET /api/v2/appointments/:id/status

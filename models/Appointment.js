@@ -641,7 +641,10 @@ appointmentSchema.pre('findOneAndUpdate', async function (next) {
       if (date && time) {
         const d = new Date(date);
         const [h, m] = String(time).split(':').map(Number);
-        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0, 0);
+        // 🚨 FIX (2026-10-05): getters UTC, igual ao computeDateTimes() do pre-save. Com getters
+        // locais, `date: "2026-10-05"` (meia-noite UTC) rolava pro dia ANTERIOR em servidor com
+        // fuso negativo (BR) — startDateTime ficava 1 dia errado (visto ao remarcar pelo calendário).
+        const start = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, 0, 0);
         const dur = duration || 40;
         const end = new Date(start.getTime() + dur * 60000);
         $set.startDateTime = start;

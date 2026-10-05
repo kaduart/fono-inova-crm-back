@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import Appointment from '../../../models/Appointment.js';
 import Patient from '../../../models/Patient.js';
 import Payment from '../../../models/Payment.js';
+import Session from '../../../models/Session.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { resolveAndMapAppointmentDTO } from '../../../utils/appointmentDto.js';
 import { CANCELED_STATUSES } from '../../../constants/appointmentStatus.js';
@@ -333,6 +334,21 @@ export async function execute(id, payload, user) {
       if (updatedAppointment.session) {
         const { syncSessionFromAppointment } = await import('../../appointmentSessionSyncService.js');
         await syncSessionFromAppointment(updatedAppointment, mongoSession);
+
+        // 🚨 FIX (2026-10-05): o sync acima faz findByIdAndUpdate({$set:{paymentStatus}}) SEM
+        // __fromFinancialGuard — o plugin financialSanitizer descarta paymentStatus em silêncio
+        // (DOMAIN_INVARIANTS.md, anti-pattern do sanitizer). Resultado visto em produção local: após
+        // reativar um cancelado, Session ficava status 'scheduled' mas paymentStatus 'canceled'
+        // (valor gravado pelo cancelAppointmentCommand) enquanto Appointment/Payment já estavam
+        // 'unpaid'/'pending'. Escopado só à reativação para não mudar o comportamento dos demais
+        // fluxos que usam o sync (achado de escopo maior — ver changelog do DOMAIN_INVARIANTS).
+        if (isReactivating && updatedAppointment.paymentStatus) {
+          await Session.findByIdAndUpdate(
+            toObjectIdString(updatedAppointment.session),
+            { $set: { paymentStatus: updatedAppointment.paymentStatus, updatedAt: new Date() } },
+            { session: mongoSession, __fromFinancialGuard: true, __guardContext: 'FINANCIAL' }
+          );
+        }
       }
 
       // Atualiza Payment (somente se não for pacote)
