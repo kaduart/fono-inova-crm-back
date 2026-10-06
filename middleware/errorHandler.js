@@ -1,4 +1,6 @@
 // middleware/errorHandler.js
+import { buildErrorResponse } from '../errors/buildErrorResponse.js';
+import '../errors/registerHumanizers.js';
 
 /**
  * Wrapper para handlers async - captura erros automaticamente
@@ -20,9 +22,9 @@ export const createBusinessError = (message, statusCode = 400, code = 'BUSINESS_
     return error;
 };
 
-export const errorHandler = (err, req, res, next) => {
-    let error = { ...err };
-    error.message = err.message;
+export const errorHandler = async (err, req, res, next) => {
+    // Resposta já iniciada: delega ao handler padrão do Express.
+    if (res.headersSent) return next(err);
 
     // Log estruturado do erro
     console.error({
@@ -34,26 +36,11 @@ export const errorHandler = (err, req, res, next) => {
         userId: req.user?.id
     });
 
-    // Tratamento específico por tipo de erro
-    if (err.name === 'ValidationError') {
-        const errors = Object.values(err.errors).map(val => ({
-            field: val.path,
-            message: val.message
-        }));
-        return res.status(400).json({
-            success: false,
-            error: 'Dados inválidos',
-            errors,
-            code: 'VALIDATION_ERROR'
-        });
-    }
-
-    // Outros tipos de erro...
-
-    res.status(err.statusCode || 500).json({
-        success: false,
-        error: error.message || 'Erro interno do servidor',
-        code: error.code || 'INTERNAL_ERROR',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    // Envelope único (ver docs/MENSAGERIA_PADRAO.md): mantém `error` e `code` de sempre e acrescenta
+    // `message`, `title`, `action`, `items`, `technicalMessage`.
+    const { status, body } = await buildErrorResponse(err, {
+        correlationId: req.headers['x-correlation-id'] || req.correlationId,
+        includeStack: process.env.NODE_ENV === 'development'
     });
+    res.status(status).json(body);
 };

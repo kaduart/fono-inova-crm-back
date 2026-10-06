@@ -7,28 +7,11 @@ import {
   listBillingSubmissions,
   updateBillingSubmission
 } from '../services/billingSubmission/BillingSubmissionService.js';
-import { humanizeBillingError } from '../services/billingSubmission/billingErrorMessages.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import '../errors/registerHumanizers.js';
 
-async function sendError(res, error) {
-  // Violação de invariante financeira é estado de negócio (409), não erro interno.
-  const status = error instanceof BillingSubmissionError
-    ? error.status
-    : (error?.name === 'PaymentInvariantError' ? 409
-      : (error?.name === 'ValidationError' || error?.name === 'CastError' ? 400 : 500));
-  if (status === 500) console.error('[BillingSubmission]', error);
-  else console.warn('[BillingSubmission]', error?.code, error?.message);
-
-  // Mensagem para o comercial: quem/qual sessão/o que fazer. Técnica preservada em technicalMessage.
-  const human = status === 500 ? { message: error.message } : await humanizeBillingError(error);
-  return res.status(status).json({
-    success: false,
-    code: error.code || 'BILLING_SUBMISSION_INTERNAL_ERROR',
-    message: human.message,
-    ...(human.technicalMessage && human.technicalMessage !== human.message ? { technicalMessage: human.technicalMessage } : {}),
-    ...(human.items ? { items: human.items } : {}),
-    ...(error.details ? { details: error.details } : {})
-  });
-}
+// Envelope e mensagens para o comercial: errors/buildErrorResponse.js + errors/registerHumanizers.js
+const sendError = (res, error) => sendApiError(res, error);
 
 export async function create(req, res) {
   try {

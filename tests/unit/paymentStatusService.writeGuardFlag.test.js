@@ -64,7 +64,7 @@ describe('transitionPaymentStatus — autorização perante o AppointmentWriteGu
         const payment = await Payment.create(basePaymentFields());
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        await transitionPaymentStatus(payment._id.toString(), 'paid', { silent: true, paidAt: new Date('2026-08-26') });
+        await transitionPaymentStatus(payment._id.toString(), 'paid', { insuranceReceipt: true, silent: true, paidAt: new Date('2026-08-26') });
 
         const guardWarnCalls = warnSpy.mock.calls.filter(c => String(c[0]).includes('AppointmentWriteGuard'));
         expect(guardWarnCalls).toHaveLength(0);
@@ -74,7 +74,7 @@ describe('transitionPaymentStatus — autorização perante o AppointmentWriteGu
     it('a flag _fromPaymentStatusService é persistida e sobrevive a uma recarga (mesma regressão do PR3 de convênio)', async () => {
         const payment = await Payment.create(basePaymentFields());
 
-        await transitionPaymentStatus(payment._id.toString(), 'paid', { silent: true, paidAt: new Date('2026-08-26') });
+        await transitionPaymentStatus(payment._id.toString(), 'paid', { insuranceReceipt: true, silent: true, paidAt: new Date('2026-08-26') });
 
         const reloaded = await Payment.findById(payment._id).select('+_fromPaymentStatusService').lean();
         expect(reloaded._fromPaymentStatusService).toBe(true);

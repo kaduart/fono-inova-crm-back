@@ -15,7 +15,10 @@ Todas as APIs V2 seguem o padrão DTO (Data Transfer Object) unificado:
 {
   success: boolean,
   data?: T,           // Presente quando success=true
-  error?: {           // Presente quando success=false
+  // ⚠️ ERRO: o formato real é o ENVELOPE PLANO descrito em docs/MENSAGERIA_PADRAO.md:
+  //   { success:false, code, message, error(=message), title?, action?, items?, details?, technicalMessage? }
+  // O objeto `error: { code, message }` abaixo NUNCA foi implementado — não usar.
+  error?: {           // (legado/aspiracional — ver nota acima)
     code: string,
     message: string,
     details?: any

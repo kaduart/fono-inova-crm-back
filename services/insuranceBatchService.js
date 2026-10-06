@@ -411,7 +411,9 @@ export async function processReturn(batchId, returnData) {
       'paid',
       {
         paymentMethod: 'convenio',
-        reason: 'insurance_return_paid'
+        reason: 'insurance_return_paid',
+        // Retorno do convênio = recebimento do convênio (única forma legítima de convênio virar 'paid')
+        insuranceReceipt: true
         // financialDate/paidAt são setados pelo transitionPaymentStatus com fallback para new Date()
       }
     );
