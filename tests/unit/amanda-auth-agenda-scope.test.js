@@ -40,6 +40,7 @@ describe('flexibleAuth — escopo mínimo do agenda-service', () => {
     ['GET', '/api/v2/appointments?startDate=2026-08-01'],
     ['GET', '/api/v2/appointments/507f1f77bcf86cd799439011'],
     ['GET', '/api/v2/appointments/available-slots?doctorId=507f1f77bcf86cd799439011'],
+    ['GET', '/api/v2/appointments/convenio-options'],
     ['POST', '/api/v2/appointments'],
     ['POST', '/api/v2/appointments/507f1f77bcf86cd799439011/reschedule'],
     ['PUT', '/api/v2/appointments/507f1f77bcf86cd799439011'],

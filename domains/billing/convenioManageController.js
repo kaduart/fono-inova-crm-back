@@ -8,6 +8,7 @@
 
 import mongoose from 'mongoose';
 import Convenio from '../../models/Convenio.js';
+import { sanitizeSpecialtyValues } from '../../utils/resolveConvenioSessionValue.js';
 import { createContextLogger } from '../../utils/logger.js';
 
 const log = createContextLogger('convenio-manage', 'admin');
@@ -173,7 +174,12 @@ export async function getConvenioDetailsHandler(req, res) {
  */
 export async function createConvenioHandler(req, res) {
     try {
-        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy, legalName, taxId, issRate } = req.body;
+        const { code, name, sessionValue, notes = '', billingMode = 'per_month', defaultSessions, guidePolicy, legalName, taxId, issRate, specialtyValues, abaSurchargePercent } = req.body;
+
+        const specialtyCheck = sanitizeSpecialtyValues(specialtyValues);
+        if (specialtyCheck.error) {
+            return res.status(400).json({ success: false, error: specialtyCheck.error });
+        }
 
         // Validação
         const validation = validateConvenioData({ code, name, sessionValue });
@@ -214,6 +220,12 @@ export async function createConvenioHandler(req, res) {
             validatedGuidePolicy = guidePolicy;
         }
 
+        if (abaSurchargePercent !== undefined && abaSurchargePercent !== null) {
+            const pct = Number(abaSurchargePercent);
+            if (!Number.isFinite(pct) || pct < 0 || pct > 500) {
+                return res.status(400).json({ success: false, error: 'abaSurchargePercent deve ser um número entre 0 e 500' });
+            }
+        }
         if (issRate !== undefined && issRate !== null) {
             const rate = Number(issRate);
             if (isNaN(rate) || rate < 0 || rate > 100) {
@@ -233,7 +245,9 @@ export async function createConvenioHandler(req, res) {
             ...(validatedGuidePolicy && { guidePolicy: validatedGuidePolicy }),
             ...(legalName !== undefined && { legalName: String(legalName).trim() }),
             ...(taxId !== undefined && { taxId: String(taxId).trim() }),
-            ...(issRate !== undefined && issRate !== null && { issRate: Number(issRate) })
+            ...(issRate !== undefined && issRate !== null && { issRate: Number(issRate) }),
+            ...(abaSurchargePercent !== undefined && abaSurchargePercent !== null && { abaSurchargePercent: Number(abaSurchargePercent) }),
+            ...(specialtyCheck.value !== undefined && { specialtyValues: specialtyCheck.value })
         });
         
         await convenio.save();
@@ -267,8 +281,13 @@ export async function createConvenioHandler(req, res) {
 export async function updateConvenioHandler(req, res) {
     try {
         const { code } = req.params;
-        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy, legalName, taxId, issRate } = req.body;
-        
+        const { name, sessionValue, notes, active, billingMode, defaultSessions, guidePolicy, legalName, taxId, issRate, specialtyValues, abaSurchargePercent } = req.body;
+
+        const specialtyCheck = sanitizeSpecialtyValues(specialtyValues);
+        if (specialtyCheck.error) {
+            return res.status(400).json({ success: false, error: specialtyCheck.error });
+        }
+
         const normalizedCode = code.toLowerCase().trim();
         
         // Busca convênio
@@ -308,7 +327,12 @@ export async function updateConvenioHandler(req, res) {
         if (notes !== undefined) {
             updateData.notes = notes.trim();
         }
-        
+
+        // Tabela por especialidade: lista completa substitui a anterior (enviar [] limpa)
+        if (specialtyCheck.value !== undefined) {
+            updateData.specialtyValues = specialtyCheck.value;
+        }
+
         if (active !== undefined) {
             updateData.active = Boolean(active);
         }
@@ -338,6 +362,9 @@ export async function updateConvenioHandler(req, res) {
                 return res.status(400).json({ success: false, error: 'issRate deve ser um número entre 0 e 100' });
             }
             updateData.issRate = rate;
+        }
+        if (abaSurchargePercent !== undefined && abaSurchargePercent !== null) {
+            updateData.abaSurchargePercent = Number(abaSurchargePercent);
         }
 
         if (guidePolicy !== undefined && guidePolicy !== null) {

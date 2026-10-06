@@ -151,8 +151,8 @@ router.post('/', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
     }
 
-    // Resolve valor da sessão: prioridade 1) body (modal), 2) guia, 3) tabela do convênio
-    const convenioValue = await Convenio.getSessionValue(guide.insurance).catch(() => null);
+    // Resolve valor da sessão: prioridade 1) body (modal), 2) guia, 3) tabela do convênio (por especialidade da guia)
+    const convenioValue = await Convenio.getSessionValue(guide.insurance, guide.specialty, { isAba: Boolean(guide.isAba) }).catch(() => null);
     const resolvedSessionValue = Number(sessionValue) || Number(guide.sessionValue) || convenioValue || 0;
 
     const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());

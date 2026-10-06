@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import GuidePolicySchema from './schemas/GuidePolicySchema.js';
 import CommunicationRuleSchema from './schemas/CommunicationRuleSchema.js';
+import { resolveConvenioSessionValue } from '../utils/resolveConvenioSessionValue.js';
 
 /**
  * 🏥 Convenio Model
@@ -32,6 +33,31 @@ const convenioSchema = new mongoose.Schema({
     default: 0
   },
   
+  // Tabela de valores POR ESPECIALIDADE (ex.: fonoaudiologia 70, fisioterapia 55).
+  // `sessionValue` acima é o valor padrão para especialidade sem linha aqui.
+  // Resolução: utils/resolveConvenioSessionValue.js — o valor é CONGELADO na guia ao criá-la
+  // (InsuranceGuide.sessionValue é a fonte oficial), então editar a tabela não afeta guias existentes.
+  specialtyValues: {
+    type: [{
+      _id: false,
+      specialty: { type: String, required: true, lowercase: true, trim: true },
+      sessionValue: { type: Number, required: true, min: 0 },
+      // Valor nominal da AVALIAÇÃO desta terapia (0 = não definido). ABA soma 50% na guia.
+      evaluationValue: { type: Number, min: 0, default: 0 }
+    }],
+    default: []
+  },
+
+  // Adicional (%) pago pelo convênio em atendimento ABA, sobre o valor da especialidade.
+  // 0 = convênio NÃO paga adicional ABA (a guia nem oferece o switch). Só alguns convênios têm.
+  // Aplicado ao criar a guia marcada como ABA (InsuranceGuide.isAba) e congelado no valor da guia.
+  abaSurchargePercent: {
+    type: Number,
+    min: 0,
+    max: 500,
+    default: 0
+  },
+
   // Status
   active: {
     type: Boolean,
@@ -108,9 +134,10 @@ convenioSchema.methods.getCommunicationRules = function(purpose = 'authorization
 };
 
 // Método estático para obter valor por código
-convenioSchema.statics.getSessionValue = async function(code) {
+// `specialty` é opcional: sem ele devolve o valor padrão (comportamento anterior).
+convenioSchema.statics.getSessionValue = async function(code, specialty, options = {}) {
   const convenio = await this.findOne({ code: code.toLowerCase(), active: true });
-  return convenio?.sessionValue || 0;
+  return resolveConvenioSessionValue(convenio, specialty, options);
 };
 
 // Método estático para inicializar convênios padrão

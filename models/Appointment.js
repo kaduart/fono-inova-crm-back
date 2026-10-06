@@ -179,6 +179,8 @@ const appointmentSchema = new mongoose.Schema({
   },
   insuranceProvider: { type: String, default: null },
   insuranceValue: { type: Number, min: 0, default: 0 },
+  // Atendimento ABA (convênio Base): o valor em insuranceValue já inclui o adicional
+  isAba: { type: Boolean, default: false },
   authorizationCode: { type: String, default: null },
   insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
   paymentForms: [{

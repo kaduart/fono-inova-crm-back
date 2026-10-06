@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import Convenio from '../models/Convenio.js';
+import { resolveConvenioSessionValue } from '../utils/resolveConvenioSessionValue.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -64,6 +65,7 @@ router.post('/', auth, async (req, res) => {
       totalSessions,
       expiresAt,
       sessionValue,
+      isAba,
       doctorId,
       issuedAt,
       notes,
@@ -119,7 +121,10 @@ router.post('/', auth, async (req, res) => {
     const insuranceCode = insurance.toLowerCase().replace(' ', '-');
     const convenioDoc = await Convenio.findOne({ code: insuranceCode });
     const billingMode = convenioDoc?.billingMode || 'per_month';
-    const resolvedSessionValue = sessionValue != null ? Number(sessionValue) : (convenioDoc?.sessionValue || 0);
+    // Valor: o digitado na guia; senão a tabela do convênio POR ESPECIALIDADE (cai no valor padrão do convênio).
+    const resolvedSessionValue = sessionValue != null
+      ? Number(sessionValue)
+      : resolveConvenioSessionValue(convenioDoc, specialty, { isAba: insuranceCode === 'base' && Boolean(isAba) });
     const totalAuthorizedValue = billingMode === 'per_guide'
       ? parseInt(totalSessions) * resolvedSessionValue
       : null;
@@ -135,8 +140,11 @@ router.post('/', auth, async (req, res) => {
       sessionsRemaining: parseInt(totalSessions),
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       billingMode,
+      isAba: Boolean(isAba),
       totalAuthorizedValue,
-      ...(sessionValue != null && { sessionValue: Number(sessionValue) }),
+      // Congela o valor resolvido na guia (fonte oficial — DOMAIN_INVARIANTS #21). Antes só ia se digitado,
+      // e guia sem valor seguia o convênio dinamicamente (valor errado por especialidade, e mudava com o tempo).
+      ...(resolvedSessionValue > 0 && { sessionValue: resolvedSessionValue }),
       ...(evaluationAmount != null && { evaluationAmount: Number(evaluationAmount) }),
       ...(generateEvaluationBilling != null && { generateEvaluationBilling: Boolean(generateEvaluationBilling) }),
       ...(doctorId && { doctorId }),
@@ -521,7 +529,7 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada', correlationId });
     }
 
-    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, doctorId, issuedAt, evaluationAmount, generateEvaluationBilling, evaluationDate, evaluationTime } = req.body;
+    const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, isAba, doctorId, issuedAt, evaluationAmount, generateEvaluationBilling, evaluationDate, evaluationTime } = req.body;
 
     if (specialty) {
       if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
@@ -534,6 +542,15 @@ router.put('/:id', auth, async (req, res) => {
     if (expiresAt) guide.expiresAt = new Date(expiresAt);
     if (notes !== undefined) guide.notes = notes;
     if (sessionValue !== undefined) guide.sessionValue = sessionValue != null ? Number(sessionValue) : null;
+    // Trocar ABA sem informar valor novo: recalcula pela tabela do convênio (+ adicional ABA)
+    if (isAba !== undefined && Boolean(isAba) !== Boolean(guide.isAba)) {
+      guide.isAba = Boolean(isAba);
+      if (sessionValue === undefined) {
+        const conv = await Convenio.findOne({ code: guide.insurance });
+        const recalculated = resolveConvenioSessionValue(conv, guide.specialty, { isAba: guide.isAba });
+        if (recalculated > 0) guide.sessionValue = recalculated;
+      }
+    }
     if (doctorId !== undefined) guide.doctorId = doctorId || null;
     if (issuedAt !== undefined) guide.issuedAt = issuedAt ? new Date(issuedAt) : null;
     if (evaluationAmount !== undefined) guide.evaluationAmount = evaluationAmount != null ? Number(evaluationAmount) : null;

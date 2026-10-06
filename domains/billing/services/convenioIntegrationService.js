@@ -10,6 +10,7 @@
 
 import mongoose from 'mongoose';
 import Convenio from '../../../models/Convenio.js';
+import { resolveConvenioSessionValue } from '../../../utils/resolveConvenioSessionValue.js';
 import InsuranceGuide from '../../../models/InsuranceGuide.js';
 import InsuranceBatch from '../../../models/InsuranceBatch.js';
 import { GuideLifecycleService } from '../../../services/guideLifecycle/GuideLifecycleService.js';
@@ -142,9 +143,14 @@ export async function createBatchFromPendingSessions(data) {
     // Gera número do lote
     const batchNumber = await generateBatchNumber(convenioCode);
 
-    // Calcula totais
-    const sessionValue = convenio.sessionValue || 0;
-    const totalGross = sessions.length * sessionValue;
+    // Valor POR SESSÃO: guia (fonte oficial) → tabela do convênio pela especialidade → padrão.
+    // Antes multiplicava todas as sessões pelo valor único do convênio (errado quando o
+    // convênio paga valores diferentes por especialidade).
+    const valueOf = ({ session, guide }) =>
+        Number(guide?.sessionValue) > 0
+            ? Number(guide.sessionValue)
+            : resolveConvenioSessionValue(convenio, guide?.specialty || session.specialty, { isAba: Boolean(guide?.isAba) });
+    const totalGross = sessionsWithGuides.reduce((sum, item) => sum + valueOf(item), 0);
 
     // Cria o lote (usando modelo existente)
     const batch = new InsuranceBatch({
@@ -156,7 +162,7 @@ export async function createBatchFromPendingSessions(data) {
             session: session._id,
             appointment: session.appointment,
             guide: guide?._id,
-            grossAmount: sessionValue,
+            grossAmount: valueOf({ session, guide }),
             netAmount: null,
             status: 'pending'
         })),

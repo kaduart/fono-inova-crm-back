@@ -13,6 +13,9 @@ import insuranceBilling from '../services/billing/insuranceBilling.js';
 import { buildBatchFromGuides, listGuidesPendingBilling } from '../services/insuranceBatchGuideAdapter.js';
 import { getInsuranceGuidesView } from '../services/insuranceGuide/insuranceGuidesReadView.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import Convenio from '../models/Convenio.js';
+import { resolveConvenioSessionValue } from '../utils/resolveConvenioSessionValue.js';
+import { applyGuideValueToLinkedSession } from '../services/insuranceGuide/applyGuideValueToLinkedSession.js';
 import { closeGuideBillingPeriod } from '../services/insuranceGuide/closeGuideBillingPeriod.js';
 
 // Constantes do modelo de faturamento — mantidas num único lugar para evitar
@@ -741,6 +744,9 @@ export async function autoLinkOrphanSessions(req, res) {
         { session: mongoSession }
       );
 
+      // Valor passa a ser o da guia (tabela por especialidade + ABA) — invariantes #21/#22
+      await applyGuideValueToLinkedSession({ session, guide, mongoSession });
+
       linked.push({ sessionId: session._id.toString(), guideId: guide._id.toString(), guideNumber: guide.number });
     }
 
@@ -874,7 +880,7 @@ export async function createGuideFromOrphan(req, res) {
   const mongoSession = await mongoose.startSession();
   mongoSession.startTransaction();
   try {
-    const { sessionId, number, totalSessions, expiresAt, sessionValue } = req.body;
+    const { sessionId, number, totalSessions, expiresAt, sessionValue, isAba } = req.body;
 
     if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ success: false, error: 'sessionId inválido' });
@@ -909,6 +915,12 @@ export async function createGuideFromOrphan(req, res) {
       return res.status(409).json({ success: false, error: 'Já existe uma guia com este número' });
     }
 
+    // Valor: digitado → tabela do convênio por especialidade (+ adicional se ABA) → valor que a sessão já tinha
+    const convenioDoc = await Convenio.findOne({ code: String(insurance).toLowerCase() }).session(mongoSession);
+    const resolvedValue = sessionValue
+      ? Number(sessionValue)
+      : (resolveConvenioSessionValue(convenioDoc, specialty, { isAba: String(insurance).toLowerCase() === 'base' && Boolean(isAba) }) || session.sessionValue || 0);
+
     const guide = new InsuranceGuide({
       number: number.toUpperCase().trim(),
       patientId,
@@ -916,7 +928,8 @@ export async function createGuideFromOrphan(req, res) {
       insurance,
       totalSessions: Number(totalSessions),
       usedSessions: 1,
-      sessionValue: sessionValue ? Number(sessionValue) : (session.sessionValue || 0),
+      isAba: Boolean(isAba),
+      sessionValue: resolvedValue,
       expiresAt: new Date(expiresAt),
       status: Number(totalSessions) <= 1 ? 'exhausted' : 'active',
       consumptionHistory: [{
@@ -938,6 +951,8 @@ export async function createGuideFromOrphan(req, res) {
       { $set: { 'insurance.guideId': guide._id, insuranceGuide: guide._id } },
       { session: mongoSession }
     );
+
+    await applyGuideValueToLinkedSession({ session, guide, mongoSession });
 
     await mongoSession.commitTransaction();
 
@@ -1020,6 +1035,8 @@ export async function linkOrphanSessionsToGuide(req, res) {
         { $set: { 'insurance.guideId': guide._id, insuranceGuide: guide._id } },
         { session: mongoSession }
       );
+
+      await applyGuideValueToLinkedSession({ session, guide, mongoSession });
 
       linked.push(session._id.toString());
     }

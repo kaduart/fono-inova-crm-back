@@ -65,6 +65,33 @@ import {
 const router = express.Router();
 
 // ======================================================================
+// Lista de convênios para o select da agenda (somente leitura).
+// Devolve só o necessário para a agenda preencher o valor: tabela por terapia
+// existe apenas no convênio Base (resolveConvenioSessionValue).
+// ======================================================================
+router.get('/convenio-options', flexibleAuth, async (req, res) => {
+  try {
+    const { default: Convenio } = await import('../models/Convenio.js');
+    const convenios = await Convenio.find({ active: true })
+      .select('code name sessionValue specialtyValues')
+      .sort({ name: 1 })
+      .lean();
+    res.json({
+      success: true,
+      data: convenios.map((c) => ({
+        code: c.code,
+        name: c.name,
+        sessionValue: c.sessionValue || 0,
+        specialtyValues: c.code === 'base' ? (c.specialtyValues || []) : [],
+        supportsAba: c.code === 'base',
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ======================================================================
 // V2-ONLY: status polling para criação async
 // ======================================================================
 router.get('/:id/status', flexibleAuth, async (req, res) => {

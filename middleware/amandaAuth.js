@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 
 const AGENDA_SERVICE_RULES = [
     // Appointments usados pela Agenda Externa.
-    { methods: ['GET'], path: /^\/api\/v2\/appointments(?:\/(?:available-slots|[0-9a-fA-F]{24}))?$/ },
+    { methods: ['GET'], path: /^\/api\/v2\/appointments(?:\/(?:available-slots|convenio-options|[0-9a-fA-F]{24}))?$/ },
     { methods: ['POST'], path: /^\/api\/v2\/appointments(?:\/[^/]+\/reschedule)?$/ },
     { methods: ['PUT'], path: /^\/api\/v2\/appointments\/[^/]+$/ },
     { methods: ['PATCH'], path: /^\/api\/v2\/appointments\/[^/]+\/(?:admin-edit|cancel|confirm|post-appointment)$/ },

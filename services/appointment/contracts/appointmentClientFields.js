@@ -24,6 +24,7 @@ export const APPOINTMENT_CLIENT_FIELD_CONTRACT = Object.freeze({
   },
   insuranceProvider: { outputDefault: null, normalizeOutput: value => value || null },
   insuranceValue: { outputDefault: 0, normalizeOutput: value => value ?? 0 },
+  isAba: { outputDefault: false, normalizeOutput: value => Boolean(value) },
   authorizationCode: { outputDefault: null, normalizeOutput: value => value || null },
 });
 

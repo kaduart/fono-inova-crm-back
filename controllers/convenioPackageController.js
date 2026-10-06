@@ -120,8 +120,11 @@ export const createConvenioPackage = async (req, res) => {
     // ===================================
     // 3. BUSCAR VALOR DO CONVÊNIO
     // ===================================
-    const convenioValue = await Convenio.getSessionValue(guide.insurance);
-    console.log(`💰 Valor do convênio ${guide.insurance}: R$ ${convenioValue}`);
+    // Fonte oficial = valor congelado na guia (DOMAIN_INVARIANTS #21); sem ele, tabela do convênio
+    // por ESPECIALIDADE (antes usava só o valor único do convênio e ignorava guia/especialidade).
+    const guideValue = Number(guide.sessionValue) > 0 ? Number(guide.sessionValue) : 0;
+    const convenioValue = guideValue || await Convenio.getSessionValue(guide.insurance, guide.specialty, { isAba: Boolean(guide.isAba) });
+    console.log(`💰 Valor da sessão (${guide.insurance}/${guide.specialty}): R$ ${convenioValue}`);
 
     // ===================================
     // 4. CRIAR PACOTE TIPO 'convenio'

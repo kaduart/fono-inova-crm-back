@@ -92,6 +92,12 @@ const insuranceGuideSchema = new mongoose.Schema({
     }
   },
 
+  // Guia de atendimento ABA — valor congelado em sessionValue já inclui o adicional ABA do convênio
+  isAba: {
+    type: Boolean,
+    default: false
+  },
+
   sessionValue: {
     type: Number,
     min: [0, 'Valor da sessão não pode ser negativo'],
