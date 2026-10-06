@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import { getIo } from "../config/socket.js";
 import { getSicoobAccessToken } from "../services/sicoobAuth.js";
 import { getWebhookInfo } from "../services/sicoobService.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 dotenv.config();
 
@@ -21,11 +23,14 @@ export const registerWebhookHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Erro ao registrar webhook:", error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Falha ao registrar webhook",
-      error: error.response?.data || error.message,
-    });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Falha ao registrar webhook", {
+        status: 500,
+        legacyError: error.response?.data || error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -49,11 +54,14 @@ export const listPixHandler = async (req, res) => {
     res.status(200).json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Erro ao listar PIX:", error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      message: "Erro ao listar PIX",
-      error: error.response?.data || error.message,
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Erro ao listar PIX", {
+        status: 500,
+        legacyError: error.response?.data || error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -76,11 +84,14 @@ export const getCobrancaHandler = async (req, res) => {
     res.status(200).json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Erro ao consultar cobrança:", error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      message: "Erro ao consultar cobrança",
-      error: error.response?.data || error.message,
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Erro ao consultar cobrança", {
+        status: 500,
+        legacyError: error.response?.data || error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -326,11 +337,14 @@ export const createGenericPixHandler = async (req, res) => {
       "❌ Erro ao criar cobrança PIX genérica:",
       error.response?.data || error.message
     );
-    return res.status(500).json({
-      success: false,
-      message: "Erro ao criar cobrança PIX genérica",
-      error: error.response?.data || error.message,
-    });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Erro ao criar cobrança PIX genérica", {
+        status: 500,
+        legacyError: error.response?.data || error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -352,10 +366,13 @@ export const createDynamicPixHandler = async (req, res) => {
     } = req.body;
 
     if (!valor || isNaN(valor)) {
-      return res.status(400).json({
-        success: false,
-        message: "Valor inválido para cobrança PIX.",
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', "Valor inválido para cobrança PIX.", {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const payload = {
@@ -395,11 +412,14 @@ export const createDynamicPixHandler = async (req, res) => {
       "❌ Erro ao criar cobrança PIX:",
       error.response?.data || error.message
     );
-    res.status(500).json({
-      success: false,
-      message: "Erro ao gerar cobrança PIX.",
-      error: error.response?.data || error.message,
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Erro ao gerar cobrança PIX.", {
+        status: 500,
+        legacyError: error.response?.data || error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -410,9 +430,6 @@ export const debugWebhookHandler = async (req, res) => {
     return res.json({ success: true, data });
   } catch (e) {
     console.error("❌ Erro ao consultar webhook:", e.response?.data || e.message);
-    return res.status(500).json({
-      success: false,
-      error: e.response?.data || e.message,
-    });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', e.response?.data || e.message, { status: 500 }), req);
   }
 };

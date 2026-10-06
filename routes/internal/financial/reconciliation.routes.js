@@ -16,6 +16,8 @@ import {
   getPatientSessionDetails,
   getTopFinancialIssues
 } from '../../../services/reconciliation.service.js';
+import { sendApiError } from '../../../errors/buildErrorResponse.js';
+import { AppError } from '../../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -28,13 +30,15 @@ function parseQuery(req) {
   };
 }
 
-function handleError(res, error) {
+function handleError(res, error, req) {
   console.error('[ReconciliationRoutes]', error);
-  res.status(500).json({
-    success: false,
-    errorCode: 'RECONCILIATION_ERROR',
-    message: error.message || 'Erro ao gerar reconciliação financeira'
-  });
+  sendApiError(
+    res,
+    new AppError('RECONCILIATION_ERROR', error.message || 'Erro ao gerar reconciliação financeira', {
+      status: 500,
+    }),
+    req
+  );
 }
 
 /**
@@ -48,7 +52,7 @@ router.get('/reconciliation', auth, authorize(['admin']), async (req, res) => {
     const result = await getGlobalReconciliation(startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -63,7 +67,7 @@ router.get('/reconciliation/doctors/:id', auth, authorize(['admin']), async (req
     const result = await getDoctorReconciliation(req.params.id, startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -78,7 +82,7 @@ router.get('/reconciliation/doctors/:id/patients/:patientId/sessions', auth, aut
     const result = await getPatientSessionDetails(req.params.id, req.params.patientId, startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -91,7 +95,7 @@ router.get('/reconciliation/doctors/ranking/differences', auth, authorize(['admi
     const result = await getDoctorRankingDifferences(startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -106,7 +110,7 @@ router.get('/reconciliation/issues', auth, authorize(['admin']), async (req, res
     const result = await getTopFinancialIssues(startDate, endDate, limit);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -119,7 +123,7 @@ router.get('/reconciliation/orphan-sessions', auth, authorize(['admin']), async 
     const result = await getOrphanSessions(startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 
@@ -132,7 +136,7 @@ router.get('/reconciliation/orphan-payments', auth, authorize(['admin']), async 
     const result = await getOrphanPayments(startDate, endDate);
     res.json({ success: true, data: result });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, req);
   }
 });
 

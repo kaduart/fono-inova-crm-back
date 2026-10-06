@@ -13,6 +13,8 @@ import { createContextLogger } from '../utils/logger.js';
 import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 import { v4 as uuidv4 } from 'uuid';
 import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -225,7 +227,14 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         log.error('totals_error', error.message);
-        res.status(500).json({ success: false, error: error.message, correlationId });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            extra: { correlationId },
+          }),
+          req
+        );
     }
 });
 
@@ -236,7 +245,7 @@ router.post('/recalculate', async (req, res) => {
         await publishEvent(EventTypes.TOTALS_RECALCULATE_REQUESTED, { clinicId: clinicId || 'default', date: targetDate, period });
         res.json({ success: true, message: 'Recálculo solicitado', data: { clinicId, date: targetDate, period } });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

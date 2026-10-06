@@ -61,6 +61,8 @@ import {
   deleteAppointment,
   postAppointment,
 } from '../services/appointmentV2Service.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -87,7 +89,7 @@ router.get('/convenio-options', flexibleAuth, async (req, res) => {
       })),
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -98,17 +100,17 @@ router.get('/:id/status', flexibleAuth, async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, error: 'ID inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
     }
     const appt = await Appointment.findById(id)
       .select('_id operationalStatus clinicalStatus paymentStatus date specialty patient')
       .lean();
     if (!appt) {
-      return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento não encontrado', { status: 404 }), req);
     }
     return res.json({ success: true, data: appt });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -139,7 +141,7 @@ router.post('/agenda/suggestions', flexibleAuth, async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -179,13 +181,9 @@ router.post('/', flexibleAuth, checkPackageAvailability, checkAppointmentConflic
       INVALID_ID: 400,
     };
 
-    const status = err.status || errorMap[err.code] || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-      ...(err.fields ? { fields: err.fields } : {}),
-    });
+    if (!err.status && errorMap[err.code]) err.status = errorMap[err.code];
+    if (err.fields) err.extra = { ...(err.extra || {}), fields: err.fields };
+    return sendApiError(res, err, req);
   }
 });
 
@@ -211,13 +209,8 @@ router.patch(
     } catch (err) {
       console.error(`[PATCH /api/v2/appointments/${req.params.id}/admin-edit] erro:`, err);
 
-      const status = err.status || 500;
-      return res.status(status).json({
-        success: false,
-        error: err.message,
-        code: err.code || 'INTERNAL_SERVER_ERROR',
-        ...(err.fields ? { fields: err.fields } : {}),
-      });
+      if (err.fields) err.extra = { ...(err.extra || {}), fields: err.fields };
+      return sendApiError(res, err, req);
     }
   }
 );
@@ -233,11 +226,13 @@ async function injectRescheduleContext(req, res, next) {
       .select('doctor patient duration isJointSession operationalStatus')
       .lean();
     if (!existing) {
-      return res.status(404).json({
-        success: false,
-        error: 'Agendamento não encontrado',
-        code: 'APPOINTMENT_NOT_FOUND',
-      });
+      return sendApiError(
+        res,
+        new AppError('APPOINTMENT_NOT_FOUND', 'Agendamento não encontrado', {
+          status: 404,
+        }),
+        req
+      );
     }
     // checkAppointmentConflicts lê doctor/patient/duration do body — o cliente só envia date/time.
     req.body.doctorId = existing.doctor?.toString();
@@ -250,11 +245,13 @@ async function injectRescheduleContext(req, res, next) {
     return next();
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/reschedule] contexto:`, err);
-    return res.status(500).json({
-      success: false,
-      error: 'Erro ao preparar remarcação',
-      code: 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_SERVER_ERROR', 'Erro ao preparar remarcação', {
+        status: 500,
+      }),
+      req
+    );
   }
 }
 
@@ -276,13 +273,8 @@ router.patch(
     } catch (err) {
       console.error(`[PATCH /api/v2/appointments/${req.params.id}/reschedule] erro:`, err);
 
-      const status = err.status || 500;
-      return res.status(status).json({
-        success: false,
-        error: err.message,
-        code: err.code || 'INTERNAL_SERVER_ERROR',
-        ...(err.fields ? { fields: err.fields } : {}),
-      });
+      if (err.fields) err.extra = { ...(err.extra || {}), fields: err.fields };
+      return sendApiError(res, err, req);
     }
   }
 );
@@ -305,13 +297,8 @@ router.put(
     } catch (err) {
       console.error(`[PUT /api/v2/appointments/${req.params.id}] erro:`, err);
 
-      const status = err.status || 500;
-      return res.status(status).json({
-        success: false,
-        error: err.message,
-        code: err.code || 'INTERNAL_SERVER_ERROR',
-        ...(err.fields ? { fields: err.fields } : {}),
-      });
+      if (err.fields) err.extra = { ...(err.extra || {}), fields: err.fields };
+      return sendApiError(res, err, req);
     }
   }
 );
@@ -332,12 +319,7 @@ router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/cancel] erro:`, err);
 
-    const status = err.status || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -353,12 +335,7 @@ router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/confirm] erro:`, err);
 
-    const status = err.status || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -375,12 +352,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/clinical-status] erro:`, err);
 
-    const status = err.status || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -397,12 +369,7 @@ router.patch('/:id/post-appointment', validateId, flexibleAuth, async (req, res)
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/post-appointment] erro:`, err);
 
-    const status = err.status || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -418,12 +385,7 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
   } catch (err) {
     console.error(`[DELETE /api/v2/appointments/${req.params.id}] erro:`, err);
 
-    const status = err.status || 500;
-    return res.status(status).json({
-      success: false,
-      error: err.message,
-      code: err.code || 'INTERNAL_SERVER_ERROR',
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -456,7 +418,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         const appointment = await Appointment.findById(id).lean();
         if (!appointment) {
-            return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento não encontrado', { status: 404 }), req);
         }
 
         let serviceResult;
@@ -573,11 +535,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const statusCode = error.statusCode && error.statusCode < 500 ? error.statusCode : 500;
         const isBusinessError = statusCode < 500;
 
-        res.status(statusCode).json({
-            error: isBusinessError ? error.message : 'Erro interno no servidor',
-            code: isBusinessError ? error.code : undefined,
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        // 5xx não expõe a mensagem original ao cliente (só em desenvolvimento, em details).
+        const safeError = isBusinessError
+            ? Object.assign(error, { status: statusCode })
+            : new AppError('INTERNAL_ERROR', 'Erro interno no servidor', {
+                status: 500,
+                ...(process.env.NODE_ENV === 'development' ? { details: error.message } : {}),
+            });
+        return sendApiError(res, safeError, req);
     }
 });
 
@@ -603,32 +568,44 @@ router.patch('/:id/professional-payment-status', validateId, auth, async (req, r
     const userId = req.user?._id?.toString();
 
     if (!['payable', 'non_payable'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Status inválido. Use "payable" ou "non_payable".'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Status inválido. Use "payable" ou "non_payable".', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     if (!reason || reason.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Motivo é obrigatório ao alterar o status de remuneração.'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Motivo é obrigatório ao alterar o status de remuneração.', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const appointment = await Appointment.findById(id).select('session patient doctor').lean();
     if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento não encontrado', { status: 404 }), req);
     }
 
     if (!appointment.session) {
-      return res.status(400).json({ success: false, error: 'Agendamento não possui sessão vinculada' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Agendamento não possui sessão vinculada', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const sessionId = appointment.session.toString();
     const beforeSession = await Session.findById(sessionId).lean();
     if (!beforeSession) {
-      return res.status(404).json({ success: false, error: 'Sessão não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Sessão não encontrada', { status: 404 }), req);
     }
 
     const update = {
@@ -673,11 +650,7 @@ router.patch('/:id/professional-payment-status', validateId, auth, async (req, r
     });
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/professional-payment-status] erro:`, err);
-    return res.status(500).json({
-      success: false,
-      error: err.message,
-      code: 'INTERNAL_SERVER_ERROR'
-    });
+    return sendApiError(res, new AppError('INTERNAL_SERVER_ERROR', err.message, { status: 500 }), req);
   }
 });
 

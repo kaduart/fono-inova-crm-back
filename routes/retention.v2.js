@@ -23,6 +23,8 @@ import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import Package from '../models/Package.js';
 import Doctor from '../models/Doctor.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -74,7 +76,13 @@ router.get('/patients', auth, async (req, res) => {
       : now.clone().startOf('month');
 
     if (!targetMoment.isValid()) {
-      return res.status(400).json({ error: 'Parâmetro month inválido. Use formato YYYY-MM.' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Parâmetro month inválido. Use formato YYYY-MM.', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const monthStart = targetMoment.clone().startOf('month').toDate();
@@ -306,7 +314,14 @@ router.get('/patients', auth, async (req, res) => {
 
   } catch (err) {
     console.error('[retention.v2] /patients error:', err);
-    return res.status(500).json({ error: 'Erro ao calcular retenção', detail: err.message });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao calcular retenção', {
+        status: 500,
+        extra: { detail: err.message },
+      }),
+      req
+    );
   }
 });
 
@@ -721,7 +736,14 @@ router.get('/slots', auth, async (req, res) => {
 
   } catch (err) {
     console.error('[retention.v2] /slots error:', err);
-    return res.status(500).json({ error: 'Erro ao calcular grade de slots', detail: err.message });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao calcular grade de slots', {
+        status: 500,
+        extra: { detail: err.message },
+      }),
+      req
+    );
   }
 });
 
@@ -926,7 +948,14 @@ router.get('/weekly', auth, async (req, res) => {
 
   } catch (err) {
     console.error('[retention.v2] /weekly error:', err);
-    return res.status(500).json({ error: 'Erro ao calcular grade semanal', detail: err.message });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao calcular grade semanal', {
+        status: 500,
+        extra: { detail: err.message },
+      }),
+      req
+    );
   }
 });
 

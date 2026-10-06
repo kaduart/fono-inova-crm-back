@@ -6,6 +6,8 @@
 import { generateInstagramPostV2, regenerateImageForPostV2 } from '../services/instagramPostService.js';
 import InstagramPost from '../models/InstagramPost.js';
 import { ESPECIALIDADES } from '../services/gmbService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // ============================================================================
 // 🚀 GERAÇÃO PRINCIPAL
@@ -24,10 +26,7 @@ export async function generatePostV2(req, res) {
     } = req.body;
     
     if (!especialidadeId) {
-      return res.status(400).json({
-        success: false,
-        error: 'especialidadeId é obrigatório'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'especialidadeId é obrigatório', { status: 400 }), req);
     }
     
     console.log('📸 [v2] Gerando post texto:', { especialidadeId, funnelStage });
@@ -54,10 +53,7 @@ export async function generatePostV2(req, res) {
     
   } catch (error) {
     console.error('❌ Erro na geração v2:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -70,10 +66,7 @@ export async function regeneratePostImage(req, res) {
     const post = await InstagramPost.findById(req.params.id);
     
     if (!post) {
-      return res.status(404).json({
-        success: false,
-        error: 'Post não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     }
     
     await regenerateImageForPostV2(post);
@@ -88,10 +81,7 @@ export async function regeneratePostImage(req, res) {
     
   } catch (error) {
     console.error('❌ Erro na regeneração:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -100,17 +90,23 @@ export async function regeneratePostImage(req, res) {
 // ============================================================================
 
 export async function previewLayoutById(req, res) {
-  res.status(400).json({
-    success: false,
-    error: 'Previews de layout desabilitados. Use IA externa (Midjourney) para imagens.'
-  });
+  sendApiError(
+    res,
+    new AppError('BAD_REQUEST', 'Previews de layout desabilitados. Use IA externa (Midjourney) para imagens.', {
+      status: 400,
+    }),
+    req
+  );
 }
 
 export async function previewAutoLayout(req, res) {
-  res.status(400).json({
-    success: false,
-    error: 'Previews automáticos desabilitados. Use IA externa (Midjourney) para imagens.'
-  });
+  sendApiError(
+    res,
+    new AppError('BAD_REQUEST', 'Previews automáticos desabilitados. Use IA externa (Midjourney) para imagens.', {
+      status: 400,
+    }),
+    req
+  );
 }
 
 // ============================================================================

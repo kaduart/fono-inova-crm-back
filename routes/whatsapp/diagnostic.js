@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import Message from '../../models/Message.js';
 import Contacts from '../../models/Contacts.js';
 import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -95,7 +96,7 @@ router.get('/chat-status', async (req, res) => {
       ...status
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -133,7 +134,7 @@ router.post('/test-message', async (req, res) => {
       clientsConnected: io?.engine?.clientsCount || 0
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -172,7 +173,7 @@ router.post('/test-full-flow', async (req, res) => {
       checkStatus: 'Use GET /api/diagnostic/chat-status para verificar o processamento'
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -196,7 +197,7 @@ router.post('/clear-debounce', async (req, res) => {
       message: `${cleared} chaves de debounce removidas`
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -237,7 +238,7 @@ router.get('/last-webhooks', async (req, res) => {
       logs: formatted
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 

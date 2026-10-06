@@ -11,6 +11,8 @@ import Convenio from '../models/Convenio.js';
 import { syncEvent } from '../services/syncService.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * 📦 Controller para Pacotes de Convênio
@@ -36,11 +38,13 @@ import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
  * }
  */
 export const createConvenioPackage = async (req, res) => {
-  return res.status(410).json({
-    success: false,
-    errorCode: 'DEPRECATED',
-    message: 'Fluxo de pacote de convênio descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.'
-  });
+  return sendApiError(
+    res,
+    new AppError('DEPRECATED', 'Fluxo de pacote de convênio descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.', {
+      status: 410,
+    }),
+    req
+  );
 
   // LEGADO — código abaixo mantido para referência, mas nunca executa
   const mongoSession = await mongoose.startSession();
@@ -411,10 +415,7 @@ export const getConvenioPackages = async (req, res) => {
     const { patientId } = req.query;
 
     if (!patientId) {
-      return res.status(400).json({
-        success: false,
-        message: 'patientId é obrigatório'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'patientId é obrigatório', { status: 400 }), req);
     }
 
     const packages = await Package.find({
@@ -462,10 +463,7 @@ export const getConvenioPackages = async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar pacotes de convênio:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, error, req);
   }
 };
 
@@ -486,10 +484,7 @@ export const getConvenioPackageById = async (req, res) => {
       .lean();
 
     if (!pkg) {
-      return res.status(404).json({
-        success: false,
-        message: 'Pacote de convênio não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Pacote de convênio não encontrado', { status: 404 }), req);
     }
 
     // 🔥 FORMATA SESSIONS INCLUINDO APPOINTMENT ID
@@ -526,10 +521,7 @@ export const getConvenioPackageById = async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar pacote:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, error, req);
   }
 };
 
@@ -699,10 +691,7 @@ export const cancelConvenioSession = async (req, res) => {
 
     console.error('Erro ao cancelar sessão:', error);
 
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
 
   } finally {
     await mongoSession.endSession();
@@ -869,10 +858,7 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
 
     console.error('Erro ao marcar sessões como pagas:', error);
 
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
 
   } finally {
     await mongoSession.endSession();
@@ -1071,10 +1057,7 @@ export const addConvenioSession = async (req, res) => {
 
     console.error('Erro ao adicionar sessão:', error);
 
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
 
   } finally {
     await mongoSession.endSession();

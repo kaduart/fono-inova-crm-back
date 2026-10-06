@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // Cache em memória de userModel.exists() — TODA request autenticada passa por
 // aqui, então sem cache é um round-trip ao Mongo por request, mesmo quando a
@@ -40,21 +42,27 @@ export const auth = async (req, res, next) => {
                       req.headers.authorization?.split(' ')[1] || 
                       req.query?.token;
         if (!token) {
-            return res.status(401).json({
-                code: 'TOKEN_REQUIRED',
-                message: 'Token não fornecido',
-                redirect: true
-            });
+            return sendApiError(
+              res,
+              new AppError('TOKEN_REQUIRED', 'Token não fornecido', {
+                status: 401,
+                extra: { redirect: true },
+              }),
+              req
+            );
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreta');
 
         // Validação reforçada do payload
         if (!decoded.id || !mongoose.Types.ObjectId.isValid(decoded.id)) {
-            return res.status(401).json({
-                code: 'INVALID_TOKEN_PAYLOAD',
-                message: 'Estrutura do token inválida'
-            });
+            return sendApiError(
+              res,
+              new AppError('INVALID_TOKEN_PAYLOAD', 'Estrutura do token inválida', {
+                status: 401,
+              }),
+              req
+            );
         }
 
         // Verificação otimizada de usuário — cacheada por USER_EXISTS_CACHE_TTL
@@ -73,10 +81,7 @@ export const auth = async (req, res, next) => {
         }
 
         if (!userExists) {
-            return res.status(401).json({
-                code: 'USER_NOT_FOUND',
-                message: 'Usuário não encontrado'
-            });
+            return sendApiError(res, new AppError('USER_NOT_FOUND', 'Usuário não encontrado', { status: 401 }), req);
         }
 
         req.user = {
@@ -113,10 +118,13 @@ export const auth = async (req, res, next) => {
 export const authorize = (roles = []) => {
     return (req, res, next) => {
         if (!roles.includes(req.user?.role)) {
-            return res.status(403).json({
-                code: 'FORBIDDEN',
-                message: 'Acesso negado para seu perfil'
-            });
+            return sendApiError(
+              res,
+              new AppError('FORBIDDEN', 'Acesso negado para seu perfil', {
+                status: 403,
+              }),
+              req
+            );
         }
         next();
     };

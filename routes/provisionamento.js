@@ -12,6 +12,8 @@ import {
   simularVenda
 } from '../services/provisionamentoService.js';
 import Payment from '../models/Payment.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -37,11 +39,7 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao calcular provisionamento:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao calcular provisionamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -118,11 +116,7 @@ router.get('/agenda-temporaria', authorize(['admin', 'secretary']), async (req, 
     });
   } catch (error) {
     console.error('Erro ao buscar agenda temporária:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar agenda temporária',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -137,10 +131,13 @@ router.get('/analitico', authorize(['admin', 'secretary']), async (req, res) => 
     const { month, year, page = 1, limit = 50 } = req.query;
 
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parâmetros obrigatórios: month e year'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const dados = await gerarRelatorioAnalitico(parseInt(month), parseInt(year));
@@ -165,7 +162,7 @@ router.get('/analitico', authorize(['admin', 'secretary']), async (req, res) => 
     });
   } catch (error) {
     console.error('Erro no analítico:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -180,11 +177,7 @@ router.get('/pacotes-andamento', authorize(['admin', 'secretary']), async (req, 
     });
   } catch (error) {
     console.error('Erro ao buscar pacotes:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar faturamento por pacote',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -201,7 +194,7 @@ router.get('/pacotes-concluidos', authorize(['admin', 'secretary']), async (req,
       data: dados
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -214,10 +207,13 @@ router.get('/fechamento-mensal', authorize(['admin']), async (req, res) => {
     const { month, year } = req.query;
 
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parâmetros obrigatórios: month e year'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const dados = await gerarRelatorioAnalitico(parseInt(month), parseInt(year));
@@ -247,7 +243,7 @@ router.get('/fechamento-mensal', authorize(['admin']), async (req, res) => {
     });
   } catch (error) {
     console.error('Erro no fechamento:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -260,10 +256,13 @@ router.get('/export/excel', authorize(['admin']), async (req, res) => {
     const { month, year } = req.query;
 
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parâmetros obrigatórios: month e year'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const exportData = await exportarExcel(parseInt(month), parseInt(year));
@@ -275,7 +274,7 @@ router.get('/export/excel', authorize(['admin']), async (req, res) => {
     });
   } catch (error) {
     console.error('Erro na exportação:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -288,7 +287,7 @@ router.get('/taxas-cartao', async (req, res) => {
     const taxas = await TaxaCartao.find({ ativo: true }).sort('nomeExibicao');
     res.json({ success: true, data: taxas });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -315,7 +314,7 @@ router.post('/simular', authorize(['admin', 'secretary']), async (req, res) => {
     });
   } catch (error) {
     console.error('Erro na simulação:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -676,7 +675,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     });
   } catch (error) {
     console.error('Erro na projeção:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -842,7 +841,7 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
     });
   } catch (error) {
     console.error('Erro ao buscar métricas:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 

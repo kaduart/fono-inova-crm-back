@@ -1,4 +1,5 @@
 import ChatProjection from '../../models/ChatProjection.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
 
 export async function getChatInbox(req, res) {
   try {
@@ -33,7 +34,7 @@ export async function getChatInbox(req, res) {
       },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 }
 
@@ -45,6 +46,6 @@ export async function markAsRead(req, res) {
 
     return res.json({ success: true });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 }

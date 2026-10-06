@@ -7,6 +7,8 @@
 
 import mongoose from 'mongoose';
 import logger from './logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const getPatientsView = () => mongoose.model('PatientsView');
 const getPatient = () => mongoose.model('Patient');
@@ -150,11 +152,7 @@ export function patientIdResolverMiddleware() {
         logger.debug(`[${correlationId}] 🔑 Middleware resolveu: ${inputId} -> ${req.resolvedPatientId}`);
       } catch (error) {
         logger.error(`[${correlationId}] ❌ Falha ao resolver patientId: ${error.message}`);
-        return res.status(400).json({
-          success: false,
-          errorCode: 'IDENTITY_RESOLUTION_FAILED',
-          message: error.message
-        });
+        return sendApiError(res, new AppError('IDENTITY_RESOLUTION_FAILED', error.message, { status: 400 }), req);
       }
     }
     

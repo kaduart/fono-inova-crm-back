@@ -8,6 +8,8 @@ import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
 import { parseLeadSource, detectSpecialtyFromMessage } from "../utils/campaignDetector.js";
 import { startRecoveryForLead } from "../services/leadRecoveryService.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -43,10 +45,13 @@ export const createLeadFromAd = async (req, res) => {
 
         // Validações
         if (!safeName || !phone) {
-            return res.status(400).json({
-                success: false,
-                error: "Campos obrigatórios: name (válido) e phone",
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Campos obrigatórios: name (válido) e phone", {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const phoneE164 = normalizeE164BR(phone);
@@ -55,11 +60,14 @@ export const createLeadFromAd = async (req, res) => {
 
         if (existing) {
             console.log(`⚠️ Lead duplicado: ${safeName} (${phoneE164})`);
-            return res.status(409).json({
-                success: false,
-                error: "Lead já existe",
-                leadId: existing._id,
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', "Lead já existe", {
+                status: 409,
+                extra: { leadId: existing._id },
+              }),
+              req
+            );
         }
 
         let initialScore = 60;
@@ -163,11 +171,14 @@ export const createLeadFromAd = async (req, res) => {
         }
     } catch (error) {
         console.error('❌ Erro ao criar lead de anúncio:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            extra: { stack: process.env.NODE_ENV === 'development' ? error.stack : undefined },
+          }),
+          req
+        );
     }
 };
 
@@ -254,10 +265,13 @@ export const googleLeadWebhook = async (req, res) => {
         } = req.body;
 
         if (!name || !phone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Campos obrigatórios: name, phone'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios: name, phone', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         await createLeadFromAd({
@@ -278,10 +292,7 @@ export const googleLeadWebhook = async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro no webhook Google:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };
 
@@ -358,7 +369,7 @@ export const createLeadFromSheet = async (req, res) => {
         }
     } catch (err) {
         console.error("Erro ao criar lead:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -388,7 +399,7 @@ export const getLeadByPhone = async (req, res) => {
         const normalized = normalizeE164BR(phone);
 
         if (!normalized) {
-            return res.status(400).json({ error: 'Telefone inválido.' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Telefone inválido.', { status: 400 }), req);
         }
 
         const matches = await Lead.find(
@@ -411,7 +422,7 @@ export const getLeadByPhone = async (req, res) => {
         res.json({ found: true, lead, alternatives });
     } catch (err) {
         console.error('Erro em by-phone:', err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -431,7 +442,7 @@ export const createNewFollowup = async (req, res) => {
         } = req.body;
 
         if (!name?.trim()) {
-            return res.status(400).json({ error: 'Nome é obrigatório.' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Nome é obrigatório.', { status: 400 }), req);
         }
 
         const phoneE164 = phone ? normalizeE164BR(phone) : null;
@@ -467,7 +478,7 @@ export const createNewFollowup = async (req, res) => {
         res.status(201).json({ success: true, message: 'Acompanhamento criado!', data: lead });
     } catch (err) {
         console.error('Erro ao criar acompanhamento:', err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -575,7 +586,7 @@ export const getSheetMetrics = async (req, res) => {
         });
     } catch (err) {
         console.error("Erro ao buscar métricas:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -589,7 +600,7 @@ export const convertLeadToPatient = async (req, res) => {
         const lead = await Lead.findById(leadId);
 
         if (!lead) {
-            return res.status(404).json({ error: 'Lead não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
         }
 
         // Criar paciente a partir do lead
@@ -624,7 +635,7 @@ export const convertLeadToPatient = async (req, res) => {
         });
     } catch (err) {
         console.error("Erro ao converter lead:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -710,7 +721,7 @@ export const getWeeklyMetrics = async (req, res) => {
         });
     } catch (err) {
         console.error("Erro ao buscar métricas semanais:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -757,10 +768,7 @@ export const getAllLeads = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Erro ao listar leads:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };
 
@@ -777,10 +785,7 @@ export const getLeadById = async (req, res) => {
             .lean();
 
         if (!lead) {
-            return res.status(404).json({
-                success: false,
-                error: 'Lead não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
         }
 
         res.json({
@@ -789,10 +794,7 @@ export const getLeadById = async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Erro ao buscar lead:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };
 // =====================================================================
@@ -888,10 +890,7 @@ export const getHistoryMetrics = async (req, res) => {
         });
     } catch (error) {
         console.error("Erro ao buscar history-metrics:", error);
-        return res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        return sendApiError(res, error, req);
     }
 };
 

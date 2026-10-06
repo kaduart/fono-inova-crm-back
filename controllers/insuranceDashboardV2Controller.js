@@ -14,6 +14,8 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import { resolveInsuranceProvider } from '../services/insuranceResolver.service.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * GET /api/v2/insurance/dashboard
@@ -28,10 +30,13 @@ export async function getInsuranceDashboard(req, res) {
     const { month, year, provider } = req.query;
     
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        error: 'Parâmetros obrigatórios: month e year (ex: ?month=04&year=2026)'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year (ex: ?month=04&year=2026)', {
+          status: 400,
+        }),
+        req
+      );
     }
     
     const startOfMonth = new Date(`${year}-${month}-01T00:00:00-03:00`);
@@ -398,11 +403,14 @@ export async function getInsuranceDashboard(req, res) {
     
   } catch (error) {
     console.error('[InsuranceDashboardV2] Erro:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erro ao calcular dashboard de convênios',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'Erro ao calcular dashboard de convênios',
+      }),
+      req
+    );
   }
 }
 

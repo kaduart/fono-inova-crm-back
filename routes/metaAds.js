@@ -6,6 +6,8 @@ import express from 'express';
 import { auth } from '../middleware/auth.js';
 import * as meta from '../services/metaAdsService.js';
 import logger from '../utils/logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 router.use(auth);
@@ -39,7 +41,13 @@ router.post('/campaigns', async (req, res) => {
   try {
     const { name, objective, dailyBudget, lifetimeBudget } = req.body;
     if (!name || !objective) {
-      return res.status(400).json({ success: false, error: 'name e objective são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'name e objective são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
     const result = await meta.createCampaign({ name, objective, dailyBudget, lifetimeBudget });
     res.status(201).json({ success: true, campaign: result });
@@ -84,7 +92,13 @@ router.post('/adsets', async (req, res) => {
   try {
     const { campaignId, name, dailyBudget, billingEvent, optimizationGoal, targeting } = req.body;
     if (!campaignId || !name || !dailyBudget) {
-      return res.status(400).json({ success: false, error: 'campaignId, name e dailyBudget são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'campaignId, name e dailyBudget são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
     const result = await meta.createAdSet({ campaignId, name, dailyBudget, billingEvent, optimizationGoal, targeting });
     res.status(201).json({ success: true, adset: result });
@@ -104,7 +118,13 @@ router.post('/ads', async (req, res) => {
   try {
     const { adsetId, name, creativeId } = req.body;
     if (!adsetId || !name || !creativeId) {
-      return res.status(400).json({ success: false, error: 'adsetId, name e creativeId são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'adsetId, name e creativeId são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
     const result = await meta.createAd({ adsetId, name, creativeId });
     res.status(201).json({ success: true, ad: result });

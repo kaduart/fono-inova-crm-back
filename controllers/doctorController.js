@@ -5,6 +5,8 @@ import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
 import TherapySession from '../models/TherapySession.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 const ObjectId = mongoose.Types.ObjectId;
 
 const toObjectId = (id) => {
@@ -37,10 +39,14 @@ export const doctorOperations = {
       const missingFields = requiredFields.filter(field => !req.body[field]);
 
       if (missingFields.length > 0) {
-        return res.status(400).json({
-          message: 'Campos obrigatórios faltando',
-          missingFields
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Campos obrigatórios faltando', {
+            status: 400,
+            extra: { missingFields },
+          }),
+          req
+        );
       }
 
       // Verificação de existência em paralelo
@@ -50,17 +56,25 @@ export const doctorOperations = {
       ]);
 
       if (existingEmail) {
-        return res.status(409).json({
-          error: 'Email já cadastrado',
-          message: 'Já existe um médico com este e-mail'
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', 'Já existe um médico com este e-mail', {
+            status: 409,
+            legacyError: 'Email já cadastrado',
+          }),
+          req
+        );
       }
 
       if (existingLicense) {
-        return res.status(409).json({
-          error: 'Registro profissional já cadastrado',
-          message: 'Já existe um médico com este número de registro'
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', 'Já existe um médico com este número de registro', {
+            status: 409,
+            legacyError: 'Registro profissional já cadastrado',
+          }),
+          req
+        );
       }
 
       const newDoctor = new Doctor({
@@ -103,24 +117,36 @@ export const doctorOperations = {
           return acc;
         }, {});
 
-        return res.status(400).json({
-          message: 'Falha na validação dos dados',
-          errors
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+            status: 400,
+            extra: { errors },
+          }),
+          req
+        );
       }
 
       if (error.code === 11000) {
         const field = Object.keys(error.keyPattern)[0];
-        return res.status(409).json({
-          error: 'Dado duplicado',
-          message: `Já existe um médico com este ${field === 'email' ? 'e-mail' : 'número de registro'}`
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', `Já existe um médico com este ${field === 'email' ? 'e-mail' : 'número de registro'}`, {
+            status: 409,
+            legacyError: 'Dado duplicado',
+          }),
+          req
+        );
       }
 
-      res.status(500).json({
-        error: 'Erro interno',
-        details: error.message // Apenas para desenvolvimento
-      });
+      sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro interno', {
+          status: 500,
+          details: error.message,
+        }),
+        req
+      );
     } finally {
       await mongoSession.endSession();
     }
@@ -132,7 +158,7 @@ export const doctorOperations = {
         const doctors = await Doctor.find({ active: true }).select('-password').lean();
         res.status(200).json(doctors);
       } catch (error) {
-        res.status(500).json({ error: 'Erro ao listar médicos.' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao listar médicos.', { status: 500 }), req);
       }
     }
   },
@@ -161,23 +187,30 @@ export const doctorOperations = {
         runValidators: true
       });
 
-      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      if (!doctor) return sendApiError(res, new AppError('NOT_FOUND', 'Doctor not found', { status: 404 }), req);
       return res.json(doctor);
     } catch (error) {
       if (error.name === 'ValidationError') {
         const errors = Object.fromEntries(
           Object.entries(error.errors).map(([k, v]) => [k, v.message])
         );
-        return res.status(400).json({ message: 'Falha na validação dos dados', errors });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+            status: 400,
+            extra: { errors },
+          }),
+          req
+        );
       }
-      return res.status(500).json({ error: 'Erro interno' });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
   },
 
   delete: async (req, res) => {
     try {
       const doctor = await Doctor.findByIdAndDelete(req.params.id);
-      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      if (!doctor) return sendApiError(res, new AppError('NOT_FOUND', 'Doctor not found', { status: 404 }), req);
       res.json({ message: 'Doctor deleted successfully' });
     } catch (error) {
       if (error.name === 'ValidationError') {
@@ -187,13 +220,17 @@ export const doctorOperations = {
           return acc;
         }, {});
 
-        return res.status(400).json({
-          message: 'Falha na validação dos dados',
-          errors
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+            status: 400,
+            extra: { errors },
+          }),
+          req
+        );
       }
 
-      return res.status(500).json({ error: 'Erro interno' });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
   },
 
@@ -206,7 +243,7 @@ export const doctorOperations = {
         { new: true, runValidators: true }
       );
       
-      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      if (!doctor) return sendApiError(res, new AppError('NOT_FOUND', 'Doctor not found', { status: 404 }), req);
       
       res.json({ 
         message: 'Profissional inativado com sucesso',
@@ -219,7 +256,13 @@ export const doctorOperations = {
       });
     } catch (error) {
       console.error('Erro ao inativar profissional:', error);
-      return res.status(500).json({ error: 'Erro interno ao inativar profissional' });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro interno ao inativar profissional', {
+          status: 500,
+        }),
+        req
+      );
     }
   },
 
@@ -232,7 +275,7 @@ export const doctorOperations = {
         { new: true, runValidators: true }
       );
       
-      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      if (!doctor) return sendApiError(res, new AppError('NOT_FOUND', 'Doctor not found', { status: 404 }), req);
       
       res.json({ 
         message: 'Profissional reativado com sucesso',
@@ -244,7 +287,13 @@ export const doctorOperations = {
       });
     } catch (error) {
       console.error('Erro ao reativar profissional:', error);
-      return res.status(500).json({ error: 'Erro interno ao reativar profissional' });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro interno ao reativar profissional', {
+          status: 500,
+        }),
+        req
+      );
     }
   },
 
@@ -254,7 +303,13 @@ export const doctorOperations = {
       const doctors = await Doctor.find({ active: true }).select('-password').lean();
       res.status(200).json(doctors);
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao listar médicos ativos.' });
+      sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro ao listar médicos ativos.', {
+          status: 500,
+        }),
+        req
+      );
     }
   },
 
@@ -264,7 +319,13 @@ export const doctorOperations = {
       const doctors = await Doctor.find({ active: false }).select('-password').lean();
       res.status(200).json(doctors);
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao listar médicos inativos.' });
+      sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro ao listar médicos inativos.', {
+          status: 500,
+        }),
+        req
+      );
     }
   }
 };
@@ -276,10 +337,14 @@ export const getCalendarAppointments = async (req, res) => {
 
     // Validar se o ID do médico é válido
     if (!mongoose.Types.ObjectId.isValid(doctorId)) {
-      return res.status(400).json({
-        error: 'ID inválido',
-        message: 'O ID do médico fornecido é inválido'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'O ID do médico fornecido é inválido', {
+          status: 400,
+          legacyError: 'ID inválido',
+        }),
+        req
+      );
     }
 
     const { start, end } = req.query;
@@ -364,17 +429,21 @@ export const getCalendarAppointments = async (req, res) => {
     res.json(events);
   } catch (error) {
     console.error('Erro ao buscar agendamentos para calendário:', error);
-    res.status(500).json({
-      error: 'Erro interno',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro interno', {
+        status: 500,
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      }),
+      req
+    );
   }
 };
 
 export const getDoctorById = async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.id);
-    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+    if (!doctor) return sendApiError(res, new AppError('NOT_FOUND', 'Doctor not found', { status: 404 }), req);
     res.json(doctor);
   } catch (error) {
     if (error.name === 'ValidationError') {
@@ -384,13 +453,17 @@ export const getDoctorById = async (req, res) => {
         return acc;
       }, {});
 
-      return res.status(400).json({
-        message: 'Falha na validação dos dados',
-        errors
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+          status: 400,
+          extra: { errors },
+        }),
+        req
+      );
     }
 
-    return res.status(500).json({ error: 'Erro interno' });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
   }
 };
 
@@ -400,15 +473,17 @@ export const getDoctorPatients = async (req, res) => {
     const { page = '1', limit = '50', search = '' } = req.query;
 
     if (!doctorId) {
-      return res.status(400).json({ code: 'MISSING_ID', message: 'ID do médico não fornecido' });
+      return sendApiError(res, new AppError('MISSING_ID', 'ID do médico não fornecido', { status: 400 }), req);
     }
     if (!mongoose.isValidObjectId(doctorId)) {
-      return res.status(400).json({
-        code: 'INVALID_ID_FORMAT',
-        message: 'Formato de ID inválido',
-        receivedId: doctorId,
-        expectedFormat: 'ObjectId hexadecimal de 24 caracteres'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_ID_FORMAT', 'Formato de ID inválido', {
+          status: 400,
+          extra: { receivedId: doctorId, expectedFormat: 'ObjectId hexadecimal de 24 caracteres' },
+        }),
+        req
+      );
     }
 
     const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
@@ -482,11 +557,14 @@ export const getDoctorPatients = async (req, res) => {
 
   } catch (error) {
     console.error('Erro no getDoctorPatients:', error);
-    return res.status(500).json({
-      code: 'SERVER_ERROR',
-      message: 'Erro interno no servidor',
-      error: error.message
-    });
+    return sendApiError(
+      res,
+      new AppError('SERVER_ERROR', 'Erro interno no servidor', {
+        status: 500,
+        legacyError: error.message,
+      }),
+      req
+    );
   }
 };
 
@@ -519,7 +597,7 @@ export const getTodaysAppointments = async (req, res) => {
     res.status(200).json(appointments);
   } catch (error) {
     console.error('Erro ao buscar agendamentos de hoje:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno no servidor', { status: 500 }), req);
   }
 };
 
@@ -537,7 +615,7 @@ export const getDoctorTherapySessions = async (req, res) => {
     res.status(200).json(sessions);
   } catch (error) {
     console.error('Erro ao buscar sessões de terapia:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno no servidor', { status: 500 }), req);
   }
 };
 
@@ -653,14 +731,14 @@ export const getDoctorStats = async (req, res) => {
     res.status(200).json(formattedResult);
   } catch (error) {
     console.error('Erro ao buscar estatísticas:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno no servidor', { status: 500 }), req);
   }
 };
 
 export const getFutureAppointments = async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: 'Não autenticado' });
+      return sendApiError(res, new AppError('UNAUTHORIZED', 'Não autenticado', { status: 401 }), req);
     }
 
     const doctorId = req.user.id;
@@ -735,13 +813,17 @@ export const getFutureAppointments = async (req, res) => {
     console.error('Erro ao buscar agendamentos futuros:', error);
 
     if (error.name === 'CastError') {
-      return res.status(400).json({ error: 'ID do médico inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID do médico inválido', { status: 400 }), req);
     }
 
-    res.status(500).json({
-      error: 'Erro interno no servidor',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro interno no servidor', {
+        status: 500,
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      }),
+      req
+    );
   }
 };
 

@@ -15,7 +15,6 @@ import Doctor from '../models/Doctor.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 
 const NEUROPED_PERCENTAGE = 0.80;
-const NEUROPSYCH_THRESHOLD = 10;
 
 function commissionSessionType(session) {
   const neuropsychTypes = ['neuropsicologia', 'neuropsych_evaluation', 'neuropsychological'];
@@ -175,7 +174,6 @@ export function calculateSessionCommission(doctor, session, sessionDate = null) 
   // Usa o mesmo valor base da produção (package.sessionValue > prorata > session.sessionValue)
   // Evita divergência entre produção e comissão quando session.sessionValue ≠ package.sessionValue
   const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
-  const sessionType = commissionSessionType(session);
   const isNeuropediatria = ['neuroped', 'neuropediatria'].includes(
     (doctor.specialty || '').toLowerCase().trim()
   );
@@ -191,15 +189,6 @@ export function calculateSessionCommission(doctor, session, sessionDate = null) 
     if (value > 0) {
       return Math.round(value * NEUROPED_PERCENTAGE * 100) / 100;
     }
-    return 0;
-  }
-
-  // Avaliação neuropsicológica em PACOTE: processada em batch (retorna 0 aqui)
-  // Avulsa (particular/liminar) usa o motor de regras normalmente
-  if (
-    (sessionType === 'neuropsych_evaluation' || sessionType === 'neuropsychological') &&
-    (session.package || session.packageId)
-  ) {
     return 0;
   }
 
@@ -232,28 +221,10 @@ export function calculateCommissionBatch(doctor, sessions) {
     (doctor.specialty || '').toLowerCase().trim()
   );
 
-  const neuropsychPackages = new Map();
-
   for (const session of sessions) {
     const sessionType = commissionSessionType(session);
 
-    if (sessionType === 'neuropsych_evaluation' || sessionType === 'neuropsychological') {
-      const pkgId = session.package?._id?.toString?.() || session.package;
-      if (pkgId) {
-        if (!neuropsychPackages.has(pkgId)) {
-          neuropsychPackages.set(pkgId, {
-            completedSessions: 0,
-            totalSessions: session.package?.totalSessions || NEUROPSYCH_THRESHOLD,
-            totalValue: session.package?.totalValue ??
-              ((session.package?.sessionValue || 0) * (session.package?.totalSessions || NEUROPSYCH_THRESHOLD))
-          });
-        }
-        neuropsychPackages.get(pkgId).completedSessions++;
-      }
-      continue;
-    }
-
-    const value = session.sessionValue || 0;
+    const value = resolveSessionFinancialValue(session) || session.sessionValue || 0;
     totalProductionBase += value;
 
     // Sessões faturadas pela clínica mas não remuneradas ao profissional
@@ -264,9 +235,14 @@ export function calculateCommissionBatch(doctor, sessions) {
     if (!isNonPayable) {
       totalCommission += commission;
 
-      const { billingType, insurance } = classifySessionForCommission(session);
+      const { insurance } = classifySessionForCommission(session);
 
-      if (sessionType === 'evaluation') {
+      // Neuropsicologia também remunera cada atendimento do período,
+      // independentemente de quantas sessões faltam para concluir o pacote.
+      if (sessionType === 'neuropsychological') {
+        breakdown.neuropsychEvaluations.count++;
+        breakdown.neuropsychEvaluations.value += commission;
+      } else if (sessionType === 'evaluation') {
         breakdown.evaluations.count++;
         breakdown.evaluations.value += commission;
       } else {
@@ -287,20 +263,7 @@ export function calculateCommissionBatch(doctor, sessions) {
     }
   }
 
-  // Processar neuropsicologia completa
-  const neuropsychValue = doctor.commissionRules?.neuropsychEvaluation ?? 1200;
-  for (const data of neuropsychPackages.values()) {
-    if (data.completedSessions >= data.totalSessions) {
-      const packageCommission = doctor.commissionRules?.neuropsychCommissionType === 'percentage'
-        ? Math.round(data.totalValue * neuropsychValue) / 100
-        : neuropsychValue;
-      breakdown.neuropsychEvaluations.count++;
-      breakdown.neuropsychEvaluations.value += packageCommission;
-      totalCommission += packageCommission;
-    }
-  }
-
-  return { totalCommission, breakdown, neuropsychPackages, totalProductionBase };
+  return { totalCommission, breakdown, totalProductionBase };
 }
 
 // ═════════════════════════════════════════════════════════════════

@@ -1,6 +1,8 @@
 // middleware/sanitize.js
 import mongoSanitize from 'express-mongo-sanitize';
 import xss from 'xss';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // ⚙️ Opções XSS: remove qualquer tag e ignora <script>/<style> por completo
 const xssOptions = {
@@ -50,7 +52,7 @@ function guardPayloadSize(req, res, next) {
     // Ajuste esse valor conforme sua realidade (ex.: 50 MB)
     const MAX = 50 * 1024 * 1024;
     if (len > MAX) {
-        return res.status(413).json({ success: false, message: 'Payload muito grande.' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Payload muito grande.', { status: 413 }), req);
     }
     next();
 }

@@ -13,6 +13,8 @@ import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, getGA4Anapolis
 import { getInternalAnalytics } from '../services/analyticsInternal.js';
 import { auth } from '../middleware/auth.js';
 import revenueAnalytics from '../services/revenueAnalyticsService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 dotenv.config();
 
@@ -167,10 +169,14 @@ router.get('/dashboard', async (req, res) => {
 
     } catch (err) {
         console.error('❌ Erro no dashboard:', err);
-        res.status(500).json({ 
-            error: 'Erro ao carregar dashboard',
-            message: err.message 
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', err.message, {
+            status: 500,
+            legacyError: 'Erro ao carregar dashboard',
+          }),
+          req
+        );
     }
 });
 
@@ -424,7 +430,7 @@ router.get('/daily-report', async (req, res) => {
 
     } catch (err) {
         console.error('❌ Erro no relatório diário:', err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -450,7 +456,7 @@ router.get('/landing-pages', async (req, res) => {
 
     } catch (err) {
         console.error('❌ Erro ao buscar LPs:', err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -479,7 +485,7 @@ router.get('/events', async (req, res) => {
         const events = await getGA4Events(startDate, endDate);
         res.json(events);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -489,7 +495,7 @@ router.get('/metrics', async (req, res) => {
         const metrics = await getGA4Metrics(startDate, endDate);
         res.json(metrics);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -503,7 +509,7 @@ router.get('/revenue/revenue-by-source', auth, async (req, res) => {
     res.json({ success: true, data, meta: { startDate, endDate } });
   } catch (error) {
     console.error('[Analytics] Error in revenue-by-source:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -517,7 +523,7 @@ router.get('/revenue/revenue-by-campaign', auth, async (req, res) => {
     res.json({ success: true, data, meta: { startDate, endDate, source } });
   } catch (error) {
     console.error('[Analytics] Error in revenue-by-campaign:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -531,7 +537,7 @@ router.get('/revenue/gmb-revenue', auth, async (req, res) => {
     res.json({ success: true, data, meta: { startDate, endDate, source: 'gmb' } });
   } catch (error) {
     console.error('[Analytics] Error in gmb-revenue:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -545,7 +551,7 @@ router.get('/revenue/dashboard', auth, async (req, res) => {
     res.json({ success: true, data, meta: { startDate, endDate } });
   } catch (error) {
     console.error('[Analytics] Error in revenue/dashboard:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -567,10 +573,7 @@ router.get('/revenue/conversion-funnel', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[Analytics] Error in conversion-funnel:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 

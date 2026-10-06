@@ -17,6 +17,8 @@ import Convenio from '../models/Convenio.js';
 import { resolveConvenioSessionValue } from '../utils/resolveConvenioSessionValue.js';
 import { applyGuideValueToLinkedSession } from '../services/insuranceGuide/applyGuideValueToLinkedSession.js';
 import { closeGuideBillingPeriod } from '../services/insuranceGuide/closeGuideBillingPeriod.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // Constantes do modelo de faturamento — mantidas num único lugar para evitar
 // strings espalhadas e facilitar manutenção.
@@ -125,12 +127,18 @@ export async function getInsuranceReceivables(req, res) {
 
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
-        return res.status(400).json({ success: false, error: 'Formato de mês inválido. Use YYYY-MM.' });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Formato de mês inválido. Use YYYY-MM.', {
+            status: 400,
+          }),
+          req
+        );
       }
       const startOfMonth = new Date(month + '-01T00:00:00-03:00');
       const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
       if (isNaN(startOfMonth.getTime()) || isNaN(endOfMonth.getTime())) {
-        return res.status(400).json({ success: false, error: 'Mês inválido.' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'Mês inválido.', { status: 400 }), req);
       }
 
       const [curY, curM] = month.split('-').map(Number);
@@ -199,7 +207,14 @@ export async function getInsuranceReceivables(req, res) {
     return _processPaymentsLegacy(res, payments, provider, prevMonthTotal);
   } catch (error) {
     console.error('[InsuranceV2] Erro:', error);
-    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        extra: { stack: error.stack },
+      }),
+      req
+    );
   }
 }
 
@@ -315,17 +330,23 @@ export async function faturarLote(req, res) {
       const adapterResult = await buildBatchFromGuides(guideIds);
 
       if (adapterResult.sessionIds.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'Nenhuma sessão elegível encontrada nas guias selecionadas'
-        });
+        return sendApiError(
+          res,
+          new AppError('NOT_FOUND', 'Nenhuma sessão elegível encontrada nas guias selecionadas', {
+            status: 404,
+          }),
+          req
+        );
       }
 
       if (!adapterResult.invoiceNumber && !notaFiscal) {
-        return res.status(400).json({
-          success: false,
-          error: 'Informe o número da Nota Fiscal para criar o lote. A NF pode ser informada no envio dos documentos ou no momento do faturamento.'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Informe o número da Nota Fiscal para criar o lote. A NF pode ser informada no envio dos documentos ou no momento do faturamento.', {
+            status: 400,
+          }),
+          req
+        );
       }
 
       const batch = await createBatch({
@@ -374,7 +395,13 @@ export async function faturarLote(req, res) {
 
     // LEGACY: fallback para paymentIds (sessão-cêntrico)
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
-      return res.status(400).json({ success: false, error: 'guideIds ou paymentIds obrigatório' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'guideIds ou paymentIds obrigatório', {
+          status: 400,
+        }),
+        req
+      );
     }
     
     // Buscar payments reais (paymentIds que são de Payment documents)
@@ -393,7 +420,13 @@ export async function faturarLote(req, res) {
       : [];
 
     if (payments.length === 0 && orphanSessions.length === 0) {
-      return res.status(404).json({ success: false, error: 'Nenhum payment ou sessão encontrada' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Nenhum payment ou sessão encontrada', {
+          status: 404,
+        }),
+        req
+      );
     }
 
     const provider = payments[0]?.insurance?.provider || orphanSessions[0]?.insuranceProvider || 'convenio';
@@ -416,7 +449,13 @@ export async function faturarLote(req, res) {
     const endDate = allDates[allDates.length - 1];
 
     if (sessionIds.length === 0) {
-      return res.status(422).json({ success: false, error: 'Nenhum payment possui sessão vinculada para faturar' });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', 'Nenhum payment possui sessão vinculada para faturar', {
+          status: 422,
+        }),
+        req
+      );
     }
 
     // 1. Criar batch V2 com sessions específicas
@@ -445,7 +484,7 @@ export async function faturarLote(req, res) {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -455,7 +494,13 @@ export async function receberLote(req, res) {
     const { paymentIds, dataRecebimento } = req.body;
 
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0 || !dataRecebimento) {
-      return res.status(400).json({ success: false, error: 'paymentIds e dataRecebimento obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'paymentIds e dataRecebimento obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const paidAt = dataRecebimento ? new Date(dataRecebimento) : new Date();
@@ -522,7 +567,7 @@ export async function receberLote(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][receberLote] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -540,18 +585,21 @@ export async function encerrarGuia(req, res) {
     const userId = req.user?.id;
 
     if (!guideId || !mongoose.Types.ObjectId.isValid(guideId)) {
-      return res.status(400).json({ success: false, error: 'guideId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'guideId inválido', { status: 400 }), req);
     }
 
     const result = await closeGuideBillingPeriod(guideId, { userId });
 
     if (result.skipped) {
-      return res.status(422).json({
-        success: false,
-        error: result.reason === 'not_per_month'
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', result.reason === 'not_per_month'
           ? 'Fechamento manual só é permitido para guias mensais (per_month)'
-          : 'Guia não encontrada'
-      });
+          : 'Guia não encontrada', {
+          status: 422,
+        }),
+        req
+      );
     }
 
     res.json({
@@ -563,7 +611,7 @@ export async function encerrarGuia(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][encerrarGuia] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -577,7 +625,7 @@ export async function billSession(req, res) {
     const { billedAmount, billedAt, notes } = req.body;
 
     if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'sessionId inválido', { status: 400 }), req);
     }
 
     const result = await insuranceBilling.markSessionAsBilled(
@@ -590,7 +638,7 @@ export async function billSession(req, res) {
     res.json(result);
   } catch (error) {
     console.error('[InsuranceV2][billSession] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -604,11 +652,11 @@ export async function receiveSession(req, res) {
     const { receivedAmount, receivedDate } = req.body;
 
     if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'sessionId inválido', { status: 400 }), req);
     }
 
     if (receivedAmount === undefined || receivedAmount === null || Number(receivedAmount) < 0) {
-      return res.status(400).json({ success: false, error: 'receivedAmount obrigatório' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'receivedAmount obrigatório', { status: 400 }), req);
     }
 
     const result = await insuranceBilling.markSessionAsReceived(
@@ -620,7 +668,7 @@ export async function receiveSession(req, res) {
     res.json(result);
   } catch (error) {
     console.error('[InsuranceV2][receiveSession] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -657,7 +705,7 @@ export async function listPendingGuides(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][listPendingGuides] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -762,7 +810,7 @@ export async function autoLinkOrphanSessions(req, res) {
   } catch (error) {
     await mongoSession.abortTransaction();
     console.error('[InsuranceV2][autoLinkOrphanSessions] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   } finally {
     mongoSession.endSession();
   }
@@ -868,7 +916,7 @@ export async function previewAutoLinkOrphanSessions(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][previewAutoLinkOrphanSessions] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -883,10 +931,16 @@ export async function createGuideFromOrphan(req, res) {
     const { sessionId, number, totalSessions, expiresAt, sessionValue, isAba } = req.body;
 
     if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'sessionId inválido', { status: 400 }), req);
     }
     if (!number || !totalSessions || !expiresAt) {
-      return res.status(400).json({ success: false, error: 'number, totalSessions e expiresAt são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'number, totalSessions e expiresAt são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const session = await Session.findById(sessionId)
@@ -895,11 +949,11 @@ export async function createGuideFromOrphan(req, res) {
       .session(mongoSession);
 
     if (!session) {
-      return res.status(404).json({ success: false, error: 'Sessão não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Sessão não encontrada', { status: 404 }), req);
     }
 
     if (session.insuranceGuide) {
-      return res.status(400).json({ success: false, error: 'Sessão já possui guia vinculada' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Sessão já possui guia vinculada', { status: 400 }), req);
     }
 
     const patientId = session.patient?._id || session.patient;
@@ -907,12 +961,18 @@ export async function createGuideFromOrphan(req, res) {
     const insurance = session.appointmentId?.insuranceProvider || 'nao_identificado';
 
     if (!patientId || !specialty) {
-      return res.status(400).json({ success: false, error: 'Paciente ou especialidade ausente na sessão' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Paciente ou especialidade ausente na sessão', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const existingGuide = await InsuranceGuide.findOne({ number: number.toUpperCase().trim() }).session(mongoSession).lean();
     if (existingGuide) {
-      return res.status(409).json({ success: false, error: 'Já existe uma guia com este número' });
+      return sendApiError(res, new AppError('CONFLICT', 'Já existe uma guia com este número', { status: 409 }), req);
     }
 
     // Valor: digitado → tabela do convênio por especialidade (+ adicional se ABA) → valor que a sessão já tinha
@@ -967,7 +1027,7 @@ export async function createGuideFromOrphan(req, res) {
   } catch (error) {
     await mongoSession.abortTransaction();
     console.error('[InsuranceV2][createGuideFromOrphan] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   } finally {
     mongoSession.endSession();
   }
@@ -984,10 +1044,22 @@ export async function linkOrphanSessionsToGuide(req, res) {
     const { guideId, guideNumber, sessionIds } = req.body;
 
     if (!guideId && !guideNumber) {
-      return res.status(400).json({ success: false, error: 'guideId ou guideNumber é obrigatório' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'guideId ou guideNumber é obrigatório', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
-      return res.status(400).json({ success: false, error: 'sessionIds deve ser um array não vazio' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'sessionIds deve ser um array não vazio', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     let guide;
@@ -998,12 +1070,18 @@ export async function linkOrphanSessionsToGuide(req, res) {
       guide = await InsuranceGuide.findOne({ number: guideNumber.toUpperCase().trim() }).session(mongoSession);
     }
     if (!guide) {
-      return res.status(404).json({ success: false, error: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     const available = guide.totalSessions - guide.usedSessions;
     if (available < sessionIds.length) {
-      return res.status(400).json({ success: false, error: `Guia tem apenas ${available} sessão(ões) disponível(eis)` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Guia tem apenas ${available} sessão(ões) disponível(eis)`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const sessions = await Session.find({
@@ -1013,7 +1091,13 @@ export async function linkOrphanSessionsToGuide(req, res) {
     }).session(mongoSession);
 
     if (sessions.length === 0) {
-      return res.status(400).json({ success: false, error: 'Nenhuma sessão órfã válida encontrada' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Nenhuma sessão órfã válida encontrada', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const linked = [];
@@ -1050,7 +1134,7 @@ export async function linkOrphanSessionsToGuide(req, res) {
   } catch (error) {
     await mongoSession.abortTransaction();
     console.error('[InsuranceV2][linkOrphanSessionsToGuide] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   } finally {
     mongoSession.endSession();
   }
@@ -1395,7 +1479,7 @@ export async function getInsuranceHistory(req, res) {
     res.json({ success: true, data: result, year: filterYear });
   } catch (error) {
     console.error('[InsuranceV2][getInsuranceHistory] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -1406,15 +1490,27 @@ export async function getPatientInsuranceSessions(req, res) {
     const { patientId, month, specialty, provider, status = 'all' } = req.query;
 
     if (!patientId || !month) {
-      return res.status(400).json({ success: false, error: 'patientId e month são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'patientId e month são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     if (!/^[0-9a-fA-F]{24}$/.test(patientId)) {
-      return res.status(400).json({ success: false, error: 'patientId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'patientId inválido', { status: 400 }), req);
     }
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
-      return res.status(400).json({ success: false, error: 'month deve estar no formato YYYY-MM' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'month deve estar no formato YYYY-MM', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const [y, m] = month.split('-').map(Number);
@@ -1947,7 +2043,7 @@ export async function getPatientInsuranceSessions(req, res) {
     });
   } catch (error) {
     console.error('[InsuranceV2][getPatientInsuranceSessions] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -1967,19 +2063,19 @@ export async function getGuidesView(req, res) {
     const validPhases = new Set(['all', 'pendingBilling', 'documentationSent', 'billed', 'received']);
     const validDetails = new Set(['full', 'summary', 'orphans']);
     if (guideId && !/^[a-f\d]{24}$/i.test(String(guideId))) {
-      return res.status(400).json({ success: false, error: 'guideId inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'guideId inválido', { status: 400 }), req);
     }
     if (guideIds && String(guideIds).split(',').some(id => !/^[a-f\d]{24}$/i.test(id.trim()))) {
-      return res.status(400).json({ success: false, error: 'guideIds inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'guideIds inválido', { status: 400 }), req);
     }
     if (phase && !validPhases.has(String(phase))) {
-      return res.status(400).json({ success: false, error: 'phase inválida' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'phase inválida', { status: 400 }), req);
     }
     if (detail && !validDetails.has(String(detail))) {
-      return res.status(400).json({ success: false, error: 'detail inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'detail inválido', { status: 400 }), req);
     }
     if (phases && String(phases).split(',').some(item => !validPhases.has(item.trim()) || item.trim() === 'all')) {
-      return res.status(400).json({ success: false, error: 'phases inválidas' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'phases inválidas', { status: 400 }), req);
     }
 
     const result = await getInsuranceGuidesView({
@@ -2016,7 +2112,7 @@ export async function getGuidesView(req, res) {
     res.json(response);
   } catch (error) {
     console.error('[InsuranceV2][getGuidesView] Erro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 

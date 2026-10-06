@@ -8,6 +8,8 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
 import { invalidateExpenseCache } from './expenses.v2.js';
 import { findMissingOccurrences, generateForMonth } from '../services/fixedExpense.service.js';
 import { computeDueDate, toCompetenceMonth } from '../utils/fixedExpenseDates.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const WRITE_ROLES = ['admin', 'secretary'];
@@ -47,7 +49,7 @@ function parsePeriod(src) {
 
 const requireUser = (req, res) => {
     if (!req.user?.id || !req.user?.role) {
-        res.status(401).json({ success: false, message: 'Usuário não autenticado.' });
+        sendApiError(res, new AppError('UNAUTHORIZED', 'Usuário não autenticado.', { status: 401 }), req);
         return false;
     }
     return true;
@@ -77,7 +79,7 @@ router.get('/', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[FixedExpenseV2] Erro ao listar:', error);
-        res.status(500).json({ success: false, message: 'Erro ao listar despesas fixas', error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -85,7 +87,13 @@ router.get('/', auth, async (req, res) => {
 router.get('/pending-generation', auth, async (req, res) => {
     try {
         const period = parsePeriod(req.query);
-        if (!period) return res.status(400).json({ success: false, message: 'year e month são obrigatórios e devem ser válidos' });
+        if (!period) return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'year e month são obrigatórios e devem ser válidos', {
+            status: 400,
+          }),
+          req
+        );
 
         const { competenceMonth, missing } = await findMissingOccurrences(period.year, period.month);
         res.json({
@@ -104,7 +112,7 @@ router.get('/pending-generation', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[FixedExpenseV2] Erro em pending-generation:', error);
-        res.status(500).json({ success: false, message: 'Erro ao verificar despesas fixas pendentes', error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -113,7 +121,13 @@ router.post('/generate', auth, authorize(WRITE_ROLES), async (req, res) => {
     try {
         if (!requireUser(req, res)) return;
         const period = parsePeriod(req.body || {});
-        if (!period) return res.status(400).json({ success: false, message: 'year e month são obrigatórios e devem ser válidos' });
+        if (!period) return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'year e month são obrigatórios e devem ser válidos', {
+            status: 400,
+          }),
+          req
+        );
 
         const { competenceMonth, created, skipped, errors } = await generateForMonth(period, req.user);
         res.status(errors.length && !created.length ? 207 : 200).json({
@@ -125,7 +139,7 @@ router.post('/generate', auth, authorize(WRITE_ROLES), async (req, res) => {
         });
     } catch (error) {
         console.error('[FixedExpenseV2] Erro ao gerar:', error);
-        res.status(500).json({ success: false, message: 'Erro ao gerar despesas fixas', error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -135,7 +149,7 @@ router.post('/', auth, authorize(WRITE_ROLES), async (req, res) => {
         if (!requireUser(req, res)) return;
         const fields = pickModelFields(req.body || {});
         const invalid = validateModelFields(fields, { partial: false });
-        if (invalid) return res.status(400).json({ success: false, message: invalid });
+        if (invalid) return sendApiError(res, new AppError('BAD_REQUEST', invalid, { status: 400 }), req);
 
         const model = await FixedExpense.create({
             ...fields,
@@ -159,20 +173,26 @@ router.post('/', auth, authorize(WRITE_ROLES), async (req, res) => {
 router.patch('/:id', auth, authorize(WRITE_ROLES), async (req, res) => {
     try {
         const { id } = req.params;
-        if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: 'ID inválido' });
+        if (!mongoose.isValidObjectId(id)) return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
 
         const fields = pickModelFields(req.body || {});
         const invalid = validateModelFields(fields, { partial: true });
-        if (invalid) return res.status(400).json({ success: false, message: invalid });
+        if (invalid) return sendApiError(res, new AppError('BAD_REQUEST', invalid, { status: 400 }), req);
 
         const model = await FixedExpense.findByIdAndUpdate(id, fields, { new: true, runValidators: true });
-        if (!model) return res.status(404).json({ success: false, message: 'Despesa fixa não encontrada' });
+        if (!model) return sendApiError(res, new AppError('NOT_FOUND', 'Despesa fixa não encontrada', { status: 404 }), req);
 
         let occurrenceUpdated = null;
         const apply = req.body?.applyToOccurrence;
         if (apply) {
             const period = parsePeriod(apply);
-            if (!period) return res.status(400).json({ success: false, message: 'applyToOccurrence precisa de year e month válidos' });
+            if (!period) return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'applyToOccurrence precisa de year e month válidos', {
+                status: 400,
+              }),
+              req
+            );
             const competenceMonth = toCompetenceMonth(period.year, period.month);
 
             const occ = await Expense.findOneAndUpdate(
@@ -212,10 +232,10 @@ router.patch('/:id', auth, authorize(WRITE_ROLES), async (req, res) => {
 router.delete('/:id', auth, authorize(WRITE_ROLES), async (req, res) => {
     try {
         const { id } = req.params;
-        if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: 'ID inválido' });
+        if (!mongoose.isValidObjectId(id)) return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
 
         const model = await FixedExpense.findById(id);
-        if (!model) return res.status(404).json({ success: false, message: 'Despesa fixa não encontrada' });
+        if (!model) return sendApiError(res, new AppError('NOT_FOUND', 'Despesa fixa não encontrada', { status: 404 }), req);
 
         const hasOccurrences = await Expense.exists({ fixedExpenseId: model._id });
         if (hasOccurrences) {
@@ -228,7 +248,7 @@ router.delete('/:id', auth, authorize(WRITE_ROLES), async (req, res) => {
         res.json({ success: true, softDeleted: false, message: 'Despesa fixa excluída' });
     } catch (error) {
         console.error('[FixedExpenseV2] Erro ao excluir:', error);
-        res.status(500).json({ success: false, message: 'Erro ao excluir despesa fixa', error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

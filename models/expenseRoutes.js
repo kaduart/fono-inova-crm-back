@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { auth, authorize } from '../middleware/auth.js';
 import Doctor from '../models/Doctor.js';
 import Expense from '../models/Expense.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -34,20 +36,26 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
         // Validação
         if (!description || !category || !amount || !date || !paymentMethod) {
-            return res.status(400).json({
-                success: false,
-                message: 'Campos obrigatórios faltando'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios faltando', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // Se vinculada a profissional, validar existência
         if (relatedDoctor) {
             const doctorExists = await Doctor.exists({ _id: relatedDoctor }).session(session);
             if (!doctorExists) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Profissional não encontrado'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('NOT_FOUND', 'Profissional não encontrado', {
+                    status: 404,
+                  }),
+                  req
+                );
             }
         }
 
@@ -82,11 +90,7 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     } catch (error) {
         await session.abortTransaction();
         console.error('Erro ao criar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao registrar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     } finally {
         session.endSession();
     }
@@ -177,11 +181,7 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao listar despesas:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao listar despesas',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -237,11 +237,7 @@ router.get('/by-doctor/:doctorId', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar despesas do profissional:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao buscar despesas',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -268,10 +264,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
             .populate('createdBy', 'fullName');
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         res.json({
@@ -282,11 +275,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
 
     } catch (error) {
         console.error('Erro ao atualizar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao atualizar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -306,10 +295,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
         );
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         res.json({
@@ -320,11 +306,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao cancelar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao cancelar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 

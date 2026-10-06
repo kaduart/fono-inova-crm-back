@@ -20,6 +20,8 @@ import {
 } from './observabilityController.js';
 import { auth, authorize } from '../../middleware/auth.js';
 import { getQueue } from '../queue/queueConfig.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = Router();
 
@@ -136,11 +138,14 @@ router.get('/whatsapp-health', async (req, res) => {
         });
     } catch (error) {
         console.error('[WhatsAppHealth] Erro:', error);
-        res.status(503).json({
-            success: false,
-            status: 'error',
-            error: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 503,
+            extra: { status: 'error' },
+          }),
+          req
+        );
     }
 });
 

@@ -21,6 +21,8 @@ import { extractMessageContent } from '../utils/whatsappMediaExtractor.js';
 import { formatWhatsAppResponse } from '../utils/whatsappFormatter.js';
 import { createContextLogger } from '../utils/logger.js';
 import { runOrchestrator } from '../services/orchestrator/runOrchestrator.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const logger = new Logger('whatsappController');
 
@@ -30,7 +32,13 @@ export const whatsappController = {
         try {
             const { phone, template, params = [], leadId } = req.body;
             if (!phone || !template) {
-                return res.status(400).json({ success: false, error: "Campos obrigatórios: phone e template" });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', "Campos obrigatórios: phone e template", {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             const to = normalizeE164BR(phone);
             const result = await sendTemplateMessage({ to, template, params, lead: leadId });
@@ -71,7 +79,7 @@ export const whatsappController = {
             res.json({ success: true, result });
         } catch (err) {
             console.error("❌ Erro ao enviar template WhatsApp:", err);
-            res.status(500).json({ success: false, error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -87,22 +95,27 @@ export const whatsappController = {
             console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
             console.log('✅ [sendText] VERSÃO CORRIGIDA — pausa Amanda ANTES do envio');
             if (!phone || !text) {
-                return res.status(400).json({
-                    success: false,
-                    error: "Campos obrigatórios: phone e text"
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', "Campos obrigatórios: phone e text", {
+                    status: 400,
+                  }),
+                  req
+                );
             }
 
             // 🔧 PRÉ-VALIDAÇÃO: Sanitiza número antes de enviar
             const sanitized = sanitizePhoneBeforeSend(phone);
             if (!sanitized.success) {
                 console.error('❌ [SANITIZE] Número inválido:', sanitized.error, phone);
-                return res.status(400).json({
-                    success: false,
-                    error: `Número de telefone inválido: ${sanitized.error}`,
-                    received: phone,
-                    normalized: sanitized.phone
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', `Número de telefone inválido: ${sanitized.error}`, {
+                    status: 400,
+                    extra: { received: phone, normalized: sanitized.phone },
+                  }),
+                  req
+                );
             }
             
             const to = sanitized.phone;
@@ -302,7 +315,7 @@ export const whatsappController = {
             });
         } catch (err) {
             console.error("❌ Erro ao enviar texto WhatsApp:", err);
-            res.status(500).json({ success: false, error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -315,10 +328,7 @@ export const whatsappController = {
             // Valida ObjectId
             if (!mongoose.Types.ObjectId.isValid(id)) {
                 console.log('❌ ID inválido:', id);
-                return res.status(400).json({
-                    success: false,
-                    error: 'ID inválido'
-                });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
             }
 
             // Busca a mensagem ANTES de deletar
@@ -326,10 +336,7 @@ export const whatsappController = {
 
             if (!message) {
                 console.log('❌ Mensagem não encontrada:', id);
-                return res.status(404).json({
-                    success: false,
-                    error: 'Mensagem não encontrada'
-                });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Mensagem não encontrada', { status: 404 }), req);
             }
 
             console.log('📋 Mensagem encontrada:', {
@@ -343,10 +350,13 @@ export const whatsappController = {
             // ✅ Só permite deletar mensagens OUTBOUND (enviadas)
             if (message.direction !== 'outbound') {
                 console.log('❌ Tentativa de deletar mensagem inbound:', message.direction);
-                return res.status(403).json({
-                    success: false,
-                    error: 'Só é possível deletar mensagens enviadas'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('FORBIDDEN', 'Só é possível deletar mensagens enviadas', {
+                    status: 403,
+                  }),
+                  req
+                );
             }
 
             // Deleta do banco
@@ -378,10 +388,7 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ Erro ao deletar mensagem:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            sendApiError(res, error, req);
         }
     },
 
@@ -660,7 +667,7 @@ export const whatsappController = {
 
         } catch (err) {
             console.error("❌ Erro ao listar contatos:", err);
-            res.status(500).json({ success: false, error: err.message });
+            sendApiError(res, err, req);
         }
     },
     async getChat(req, res) {
@@ -669,7 +676,13 @@ export const whatsappController = {
             const { limit = 50, before } = req.query;
 
             if (!phone) {
-                return res.status(400).json({ error: "Número de telefone é obrigatório" });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', "Número de telefone é obrigatório", {
+                    status: 400,
+                  }),
+                  req
+                );
             }
 
             const pE164 = normalizeE164BR(phone);
@@ -707,24 +720,36 @@ export const whatsappController = {
             });
         } catch (err) {
             console.error("❌ Erro ao buscar chat:", err);
-            return res.status(500).json({ error: err.message });
+            return sendApiError(res, err, req);
         }
     },
 
     async addContact(req, res) {
         try {
             const { name, phone, avatar } = req.body;
-            if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
+            if (!name || !phone) return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Nome e telefone são obrigatórios", {
+                status: 400,
+              }),
+              req
+            );
 
             const p = normalizeE164BR(phone);
             const existing = await Contacts.findOne({ phone: p });
-            if (existing) return res.status(400).json({ error: "Contato com esse telefone já existe" });
+            if (existing) return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Contato com esse telefone já existe", {
+                status: 400,
+              }),
+              req
+            );
 
             const contact = await Contacts.create({ name, phone: p, avatar });
             res.status(201).json(contact);
         } catch (err) {
             console.error("❌ Erro ao adicionar contato:", err);
-            res.status(500).json({ error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -735,7 +760,7 @@ export const whatsappController = {
             res.json(updated);
         } catch (err) {
             console.error("❌ Erro ao atualizar contato:", err);
-            res.status(500).json({ error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -745,7 +770,7 @@ export const whatsappController = {
             res.json({ success: true });
         } catch (err) {
             console.error("❌ Erro ao deletar contato:", err);
-            res.status(500).json({ error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -776,10 +801,13 @@ export const whatsappController = {
             }
 
             if (!lead) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Lead não encontrado para esse envio manual'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('NOT_FOUND', 'Lead não encontrado para esse envio manual', {
+                    status: 404,
+                  }),
+                  req
+                );
             }
 
             // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
@@ -852,10 +880,7 @@ export const whatsappController = {
 
         } catch (error) {
             console.error("❌ Erro em sendManualMessage:", error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            sendApiError(res, error, req);
         }
     },
 
@@ -864,7 +889,7 @@ export const whatsappController = {
             const { leadId: rawId } = req.params;
 
             if (!rawId) {
-                return res.status(400).json({ success: false, error: 'leadId obrigatório' });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'leadId obrigatório', { status: 400 }), req);
             }
 
             let leadId = null;
@@ -890,7 +915,7 @@ export const whatsappController = {
             }
 
             if (!leadId) {
-                return res.status(404).json({ success: false, error: 'Lead não encontrado' });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
             }
 
             console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${leadId}`);
@@ -1013,7 +1038,7 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ [AMANDA-RESUME] Erro:', error);
-            return res.status(500).json({ success: false, error: error.message });
+            return sendApiError(res, error, req);
         }
     },
 
@@ -1023,7 +1048,7 @@ export const whatsappController = {
             const { leadId: rawId } = req.params;
 
             if (!rawId) {
-                return res.status(400).json({ success: false, error: 'leadId obrigatório' });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'leadId obrigatório', { status: 400 }), req);
             }
 
             let leadId = null;
@@ -1049,7 +1074,7 @@ export const whatsappController = {
             }
 
             if (!leadId) {
-                return res.status(404).json({ success: false, error: 'Lead não encontrado' });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
             }
 
             console.log(`⏸️ [AMANDA-PAUSE] Pausando para lead ${leadId}`);
@@ -1074,7 +1099,7 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ [AMANDA-PAUSE] Erro:', error);
-            return res.status(500).json({ success: false, error: error.message });
+            return sendApiError(res, error, req);
         }
     },
 
@@ -1110,7 +1135,7 @@ export const whatsappController = {
 
         } catch (err) {
             console.error('Erro na busca:', err);
-            res.status(500).json({ success: false, error: err.message });
+            sendApiError(res, err, req);
         }
     },
 
@@ -1118,10 +1143,7 @@ export const whatsappController = {
     async uploadMedia(req, res) {
         try {
             if (!req.file) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Nenhum arquivo enviado'
-                });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'Nenhum arquivo enviado', { status: 400 }), req);
             }
 
             const { buffer, originalname, mimetype } = req.file;
@@ -1169,10 +1191,7 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ Erro no upload de mídia:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            sendApiError(res, error, req);
         }
     },
 
@@ -1183,10 +1202,13 @@ export const whatsappController = {
             const file = req.file;
 
             if (!phone || !file || !type) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Telefone, arquivo e tipo são obrigatórios'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'Telefone, arquivo e tipo são obrigatórios', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
 
             const to = normalizeE164BR(phone);
@@ -1231,10 +1253,7 @@ export const whatsappController = {
             // Adicionar headers CORS mesmo em erro
             res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
             res.header('Access-Control-Allow-Credentials', 'true');
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
+            sendApiError(res, error, req);
         }
     }
 };
@@ -1631,7 +1650,7 @@ export async function handleIncomingMessage(req, res) {
 
     } catch (error) {
         logger.error('Erro no whatsappController', error);
-        return res.status(500).json({ ok: false });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro', { status: 500, extra: { ok: false } }), req);
     }
 }
 

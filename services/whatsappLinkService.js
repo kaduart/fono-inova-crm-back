@@ -4,6 +4,7 @@
  */
 
 import { URL } from 'url';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 // Configurações
 const DEFAULT_PHONE = '5562999330311'; // Fono Inova
@@ -332,10 +333,7 @@ export function whatsappLinkController() {
           data: link
         });
       } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        sendApiError(res, error, req);
       }
     },
     
@@ -355,10 +353,7 @@ export function whatsappLinkController() {
           }
         });
       } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        sendApiError(res, error, req);
       }
     }
   };

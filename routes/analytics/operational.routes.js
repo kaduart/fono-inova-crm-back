@@ -8,6 +8,8 @@ import Appointment from '../../models/Appointment.js';
 import Session from '../../models/Session.js';
 import Package from '../../models/Package.js';
 import { resolveSessionFinancialValueAggregate } from '../../utils/resolveSessionFinancialValue.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -237,11 +239,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
     } catch (error) {
         console.error('[OperationalAnalytics] Erro:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar analytics operacional',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar analytics operacional',
+          }),
+          req
+        );
     }
 });
 
@@ -367,7 +372,7 @@ router.get('/recent-ops', auth, authorize(['admin']), async (req, res) => {
 
     } catch (error) {
         console.error('[OperationalAnalytics] Erro recent-ops:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

@@ -1,5 +1,7 @@
 import TherapyProtocol from '../models/TherapyProtocol.js';
 import Evolution from '../models/Evolution.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // GET /protocols - Listar todos protocolos
 export const getAllProtocols = async (req, res) => {
@@ -39,7 +41,7 @@ res.status(200).json(protocols);
 
     } catch (error) {
         console.error('❌ Erro:', error);
-        res.status(500).json({ message: 'Erro ao buscar protocolos' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar protocolos', { status: 500 }), req);
     }
 };
 
@@ -51,13 +53,13 @@ export const getProtocolByCode = async (req, res) => {
         const protocol = await TherapyProtocol.findOne({ code: code.toUpperCase() });
 
         if (!protocol) {
-            return res.status(404).json({ message: 'Protocolo não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Protocolo não encontrado', { status: 404 }), req);
         }
 
         res.status(200).json(protocol);
     } catch (error) {
         console.error('Erro ao buscar protocolo:', error);
-        res.status(500).json({ message: 'Erro ao buscar protocolo' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar protocolo', { status: 500 }), req);
     }
 };
 
@@ -75,12 +77,16 @@ export const createProtocol = async (req, res) => {
         console.error('Erro ao criar protocolo:', error);
 
         if (error.code === 11000) {
-            return res.status(400).json({
-                message: 'Código de protocolo já existe'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Código de protocolo já existe', {
+                status: 400,
+              }),
+              req
+            );
         }
 
-        res.status(500).json({ message: 'Erro ao criar protocolo' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao criar protocolo', { status: 500 }), req);
     }
 };
 
@@ -95,13 +101,13 @@ export const updateProtocol = async (req, res) => {
         );
 
         if (!protocol) {
-            return res.status(404).json({ message: 'Protocolo não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Protocolo não encontrado', { status: 404 }), req);
         }
 
         res.status(200).json(protocol);
     } catch (error) {
         console.error('Erro ao atualizar protocolo:', error);
-        res.status(500).json({ message: 'Erro ao atualizar protocolo' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao atualizar protocolo', { status: 500 }), req);
     }
 };
 
@@ -116,7 +122,7 @@ export const deactivateProtocol = async (req, res) => {
         );
 
         if (!protocol) {
-            return res.status(404).json({ message: 'Protocolo não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Protocolo não encontrado', { status: 404 }), req);
         }
 
         res.status(200).json({
@@ -125,7 +131,7 @@ export const deactivateProtocol = async (req, res) => {
         });
     } catch (error) {
         console.error('Erro ao desativar protocolo:', error);
-        res.status(500).json({ message: 'Erro ao desativar protocolo' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao desativar protocolo', { status: 500 }), req);
     }
 };
 
@@ -195,7 +201,7 @@ export const getProtocolAnalytics = async (req, res) => {
         res.status(200).json(enrichedData);
     } catch (error) {
         console.error('Erro ao buscar analytics:', error);
-        res.status(500).json({ message: 'Erro ao buscar analytics' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar analytics', { status: 500 }), req);
     }
 };
 
@@ -205,7 +211,13 @@ export const getProtocolEffectiveness = async (req, res) => {
         const { code } = req.query;
 
         if (!code) {
-            return res.status(400).json({ message: 'Código do protocolo é obrigatório' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Código do protocolo é obrigatório', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const evolutions = await Evolution.find({
@@ -215,7 +227,13 @@ export const getProtocolEffectiveness = async (req, res) => {
             .sort({ date: 1 });
 
         if (!evolutions.length) {
-            return res.status(404).json({ message: 'Nenhum uso encontrado para este protocolo' });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Nenhum uso encontrado para este protocolo', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         // Agrupar por paciente
@@ -273,6 +291,12 @@ export const getProtocolEffectiveness = async (req, res) => {
         });
     } catch (error) {
         console.error('Erro ao calcular efetividade:', error);
-        res.status(500).json({ message: 'Erro ao calcular efetividade' });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao calcular efetividade', {
+            status: 500,
+          }),
+          req
+        );
     }
 };

@@ -1,5 +1,7 @@
 // routes/reports/schoolReports.js
 import express from "express";
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 import SchoolReport from "../../models/SchoolReport.js"; // Modelo específico para relatório escolar
 
@@ -31,10 +33,7 @@ router.get('/patient/:patientId', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar relatórios escolares:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -46,10 +45,13 @@ router.get('/:id', async (req, res) => {
             .exec();
 
         if (!report) {
-            return res.status(404).json({
-                success: false,
-                error: 'Relatório escolar não encontrado'
-            });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Relatório escolar não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         res.json({
@@ -59,10 +61,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar relatório escolar:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -88,10 +87,7 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao criar relatório escolar:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -110,10 +106,13 @@ router.put('/:id', async (req, res) => {
         ).populate('patientId');
 
         if (!updatedSchoolReport) {
-            return res.status(404).json({
-                success: false,
-                error: 'Relatório escolar não encontrado'
-            });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Relatório escolar não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         res.json({
@@ -123,10 +122,7 @@ router.put('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao atualizar relatório escolar:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 

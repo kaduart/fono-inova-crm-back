@@ -15,6 +15,8 @@ import {
     getAllConveniosWithStats
 } from './services/convenioIntegrationService.js';
 import InsuranceBatch from '../../models/InsuranceBatch.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 /**
  * GET /api/insurance/convenios
@@ -30,11 +32,14 @@ export async function listConveniosHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao listar convênios:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar convênios',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar convênios',
+          }),
+          req
+        );
     }
 }
 
@@ -57,11 +62,14 @@ export async function getConvenioValueHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao buscar valor:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar valor',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar valor',
+          }),
+          req
+        );
     }
 }
 
@@ -75,10 +83,13 @@ export async function getPendingSessionsHandler(req, res) {
         const { startDate, endDate } = req.query;
         
         if (!startDate || !endDate) {
-            return res.status(400).json({
-                success: false,
-                error: 'Datas de início e fim são obrigatórias'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Datas de início e fim são obrigatórias', {
+                status: 400,
+              }),
+              req
+            );
         }
         
         const sessions = await findPendingSessionsForBilling(startDate, endDate, code);
@@ -105,11 +116,14 @@ export async function getPendingSessionsHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao buscar sessões:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar sessões',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar sessões',
+          }),
+          req
+        );
     }
 }
 
@@ -123,10 +137,13 @@ export async function createBatchAutoHandler(req, res) {
         const { startDate, endDate } = req.body;
         
         if (!startDate || !endDate) {
-            return res.status(400).json({
-                success: false,
-                error: 'Datas de início e fim são obrigatórias'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Datas de início e fim são obrigatórias', {
+                status: 400,
+              }),
+              req
+            );
         }
         
         const result = await createBatchFromPendingSessions({
@@ -147,11 +164,14 @@ export async function createBatchAutoHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao criar lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao criar lote',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao criar lote',
+          }),
+          req
+        );
     }
 }
 
@@ -176,11 +196,14 @@ export async function getConvenioStatsHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao buscar estatísticas:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar estatísticas',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar estatísticas',
+          }),
+          req
+        );
     }
 }
 
@@ -194,10 +217,13 @@ export async function processReturnHandler(req, res) {
         const { items, receivedAmount, returnFile } = req.body;
         
         if (!items || !Array.isArray(items)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Items do retorno são obrigatórios'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Items do retorno são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
         
         const result = await processConvenioReturn(id, {
@@ -213,11 +239,14 @@ export async function processReturnHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao processar retorno:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao processar retorno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao processar retorno',
+          }),
+          req
+        );
     }
 }
 
@@ -277,10 +306,13 @@ export async function getDashboardSummaryHandler(req, res) {
         });
     } catch (error) {
         console.error('[ConvenioApi] Erro ao buscar resumo:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar resumo',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar resumo',
+          }),
+          req
+        );
     }
 }

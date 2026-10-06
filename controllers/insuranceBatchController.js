@@ -4,6 +4,8 @@
 import mongoose from 'mongoose';
 import { createBatch, sendBatch, processReturn, listBatches } from '../services/insuranceBatchService.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * POST /api/v2/insurance-batches
@@ -16,10 +18,13 @@ export async function createBatchController(req, res) {
     
     // Validações
     if (!insuranceProvider || !startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'insuranceProvider, startDate e endDate são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'insuranceProvider, startDate e endDate são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
     
     const batch = await createBatch({
@@ -37,10 +42,7 @@ export async function createBatchController(req, res) {
     
   } catch (error) {
     console.error('[InsuranceBatchController] Erro ao criar lote:', error);
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
   }
 }
 
@@ -63,10 +65,7 @@ export async function sendBatchController(req, res) {
     
   } catch (error) {
     console.error('[InsuranceBatchController] Erro ao enviar lote:', error);
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
   }
 }
 
@@ -89,10 +88,7 @@ export async function processReturnController(req, res) {
     
   } catch (error) {
     console.error('[InsuranceBatchController] Erro ao processar retorno:', error);
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
   }
 }
 
@@ -118,10 +114,7 @@ export async function listBatchesController(req, res) {
     
   } catch (error) {
     console.error('[InsuranceBatchController] Erro ao listar lotes:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -139,10 +132,7 @@ export async function getBatchByIdController(req, res) {
       .populate('sessions.guide', 'number insurance');
     
     if (!batch) {
-      return res.status(404).json({
-        success: false,
-        message: 'Lote não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Lote não encontrado', { status: 404 }), req);
     }
     
     res.json({
@@ -152,10 +142,7 @@ export async function getBatchByIdController(req, res) {
     
   } catch (error) {
     console.error('[InsuranceBatchController] Erro ao buscar lote:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendApiError(res, error, req);
   }
 }
 

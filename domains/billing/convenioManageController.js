@@ -10,6 +10,8 @@ import mongoose from 'mongoose';
 import Convenio from '../../models/Convenio.js';
 import { sanitizeSpecialtyValues } from '../../utils/resolveConvenioSessionValue.js';
 import { createContextLogger } from '../../utils/logger.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const log = createContextLogger('convenio-manage', 'admin');
 
@@ -105,11 +107,14 @@ export async function listAllConveniosHandler(req, res) {
         
     } catch (error) {
         log.error('list_error', 'Erro ao listar convênios', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar convênios',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar convênios',
+          }),
+          req
+        );
     }
 }
 
@@ -126,10 +131,7 @@ export async function getConvenioDetailsHandler(req, res) {
         }).lean();
         
         if (!convenio) {
-            return res.status(404).json({
-                success: false,
-                error: 'Convênio não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Convênio não encontrado', { status: 404 }), req);
         }
         
         // Histórico de lotes
@@ -160,11 +162,14 @@ export async function getConvenioDetailsHandler(req, res) {
         
     } catch (error) {
         log.error('details_error', 'Erro ao buscar detalhes', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar detalhes',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar detalhes',
+          }),
+          req
+        );
     }
 }
 
@@ -178,17 +183,20 @@ export async function createConvenioHandler(req, res) {
 
         const specialtyCheck = sanitizeSpecialtyValues(specialtyValues);
         if (specialtyCheck.error) {
-            return res.status(400).json({ success: false, error: specialtyCheck.error });
+            return sendApiError(res, new AppError('BAD_REQUEST', specialtyCheck.error, { status: 400 }), req);
         }
 
         // Validação
         const validation = validateConvenioData({ code, name, sessionValue });
         if (!validation.valid) {
-            return res.status(400).json({
-                success: false,
-                error: 'Dados inválidos',
-                details: validation.errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Dados inválidos', {
+                status: 400,
+                details: validation.errors,
+              }),
+              req
+            );
         }
         
         const normalizedCode = code.toLowerCase().trim();
@@ -196,11 +204,14 @@ export async function createConvenioHandler(req, res) {
         // Verifica se já existe
         const existing = await Convenio.findOne({ code: normalizedCode });
         if (existing) {
-            return res.status(409).json({
-                success: false,
-                error: 'Convênio já existe',
-                message: `Já existe um convênio com o código '${normalizedCode}'`
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', `Já existe um convênio com o código '${normalizedCode}'`, {
+                status: 409,
+                legacyError: 'Convênio já existe',
+              }),
+              req
+            );
         }
         
         // Valida guidePolicy se fornecido
@@ -209,13 +220,31 @@ export async function createConvenioHandler(req, res) {
             const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity', 'advance_authorization'];
             const validStrategies = ['eligible', 'manual', 'none'];
             if (guidePolicy.renewalType && !validRenewalTypes.includes(guidePolicy.renewalType)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.renewalType inválido' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.renewalType inválido', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             if (guidePolicy.defaultMigrationStrategy && !validStrategies.includes(guidePolicy.defaultMigrationStrategy)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.defaultMigrationStrategy inválido' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.defaultMigrationStrategy inválido', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             if (guidePolicy.billingSubmissionDay != null && (guidePolicy.billingSubmissionDay < 1 || guidePolicy.billingSubmissionDay > 31)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             validatedGuidePolicy = guidePolicy;
         }
@@ -223,13 +252,25 @@ export async function createConvenioHandler(req, res) {
         if (abaSurchargePercent !== undefined && abaSurchargePercent !== null) {
             const pct = Number(abaSurchargePercent);
             if (!Number.isFinite(pct) || pct < 0 || pct > 500) {
-                return res.status(400).json({ success: false, error: 'abaSurchargePercent deve ser um número entre 0 e 500' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'abaSurchargePercent deve ser um número entre 0 e 500', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
         }
         if (issRate !== undefined && issRate !== null) {
             const rate = Number(issRate);
             if (isNaN(rate) || rate < 0 || rate > 100) {
-                return res.status(400).json({ success: false, error: 'issRate deve ser um número entre 0 e 100' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'issRate deve ser um número entre 0 e 100', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
         }
 
@@ -266,11 +307,14 @@ export async function createConvenioHandler(req, res) {
         
     } catch (error) {
         log.error('create_error', 'Erro ao criar convênio', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao criar convênio',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao criar convênio',
+          }),
+          req
+        );
     }
 }
 
@@ -285,7 +329,7 @@ export async function updateConvenioHandler(req, res) {
 
         const specialtyCheck = sanitizeSpecialtyValues(specialtyValues);
         if (specialtyCheck.error) {
-            return res.status(400).json({ success: false, error: specialtyCheck.error });
+            return sendApiError(res, new AppError('BAD_REQUEST', specialtyCheck.error, { status: 400 }), req);
         }
 
         const normalizedCode = code.toLowerCase().trim();
@@ -294,10 +338,7 @@ export async function updateConvenioHandler(req, res) {
         const convenio = await Convenio.findOne({ code: normalizedCode });
         
         if (!convenio) {
-            return res.status(404).json({
-                success: false,
-                error: 'Convênio não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Convênio não encontrado', { status: 404 }), req);
         }
         
         // Prepara dados para atualização
@@ -305,10 +346,13 @@ export async function updateConvenioHandler(req, res) {
         
         if (name !== undefined) {
             if (name.trim().length < 3) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Nome deve ter pelo menos 3 caracteres'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'Nome deve ter pelo menos 3 caracteres', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             updateData.name = name.trim();
         }
@@ -316,10 +360,13 @@ export async function updateConvenioHandler(req, res) {
         if (sessionValue !== undefined) {
             const value = Number(sessionValue);
             if (isNaN(value) || value < 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Valor da sessão deve ser um número positivo'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'Valor da sessão deve ser um número positivo', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             updateData.sessionValue = value;
         }
@@ -339,7 +386,7 @@ export async function updateConvenioHandler(req, res) {
 
         if (billingMode !== undefined) {
             if (!['per_month', 'per_guide'].includes(billingMode)) {
-                return res.status(400).json({ success: false, error: 'billingMode inválido' });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'billingMode inválido', { status: 400 }), req);
             }
             updateData.billingMode = billingMode;
         }
@@ -359,7 +406,13 @@ export async function updateConvenioHandler(req, res) {
         if (issRate !== undefined && issRate !== null) {
             const rate = Number(issRate);
             if (isNaN(rate) || rate < 0 || rate > 100) {
-                return res.status(400).json({ success: false, error: 'issRate deve ser um número entre 0 e 100' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'issRate deve ser um número entre 0 e 100', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             updateData.issRate = rate;
         }
@@ -371,13 +424,31 @@ export async function updateConvenioHandler(req, res) {
             const validRenewalTypes = ['end_of_month', 'until_consumed', 'fixed_date', 'authorization_validity', 'advance_authorization'];
             const validStrategies = ['eligible', 'manual', 'none'];
             if (guidePolicy.renewalType && !validRenewalTypes.includes(guidePolicy.renewalType)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.renewalType inválido' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.renewalType inválido', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             if (guidePolicy.defaultMigrationStrategy && !validStrategies.includes(guidePolicy.defaultMigrationStrategy)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.defaultMigrationStrategy inválido' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.defaultMigrationStrategy inválido', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             if (guidePolicy.billingSubmissionDay != null && (guidePolicy.billingSubmissionDay < 1 || guidePolicy.billingSubmissionDay > 31)) {
-                return res.status(400).json({ success: false, error: 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'guidePolicy.billingSubmissionDay deve estar entre 1 e 31', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
             // Merge parcial para não apagar campos não enviados
             updateData.guidePolicy = { ...convenio.guidePolicy?.toObject?.() ?? {}, ...guidePolicy };
@@ -404,11 +475,14 @@ export async function updateConvenioHandler(req, res) {
         
     } catch (error) {
         log.error('update_error', 'Erro ao atualizar convênio', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao atualizar convênio',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao atualizar convênio',
+          }),
+          req
+        );
     }
 }
 
@@ -424,10 +498,7 @@ export async function deactivateConvenioHandler(req, res) {
         const convenio = await Convenio.findOne({ code: normalizedCode });
         
         if (!convenio) {
-            return res.status(404).json({
-                success: false,
-                error: 'Convênio não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Convênio não encontrado', { status: 404 }), req);
         }
         
         // Verifica se há lotes pendentes
@@ -437,11 +508,14 @@ export async function deactivateConvenioHandler(req, res) {
         });
         
         if (pendingBatches > 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Não é possível desativar',
-                message: `Existem ${pendingBatches} lotes pendentes para este convênio. Finalize ou cancele-os primeiro.`
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', `Existem ${pendingBatches} lotes pendentes para este convênio. Finalize ou cancele-os primeiro.`, {
+                status: 400,
+                legacyError: 'Não é possível desativar',
+              }),
+              req
+            );
         }
         
         // Desativa
@@ -461,11 +535,14 @@ export async function deactivateConvenioHandler(req, res) {
         
     } catch (error) {
         log.error('deactivate_error', 'Erro ao desativar convênio', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao desativar convênio',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao desativar convênio',
+          }),
+          req
+        );
     }
 }
 
@@ -481,10 +558,7 @@ export async function activateConvenioHandler(req, res) {
         const convenio = await Convenio.findOne({ code: normalizedCode });
         
         if (!convenio) {
-            return res.status(404).json({
-                success: false,
-                error: 'Convênio não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Convênio não encontrado', { status: 404 }), req);
         }
         
         convenio.active = true;
@@ -503,11 +577,14 @@ export async function activateConvenioHandler(req, res) {
         
     } catch (error) {
         log.error('activate_error', 'Erro ao ativar convênio', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao ativar convênio',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao ativar convênio',
+          }),
+          req
+        );
     }
 }
 
@@ -524,10 +601,13 @@ export async function importConveniosHandler(req, res) {
         const { convenios } = req.body;
         
         if (!Array.isArray(convenios) || convenios.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Lista de convênios é obrigatória'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Lista de convênios é obrigatória', {
+                status: 400,
+              }),
+              req
+            );
         }
         
         const results = {
@@ -598,11 +678,14 @@ export async function importConveniosHandler(req, res) {
         
     } catch (error) {
         log.error('import_error', 'Erro na importação', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: 'Erro na importação',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro na importação',
+          }),
+          req
+        );
     }
 }
 
@@ -647,10 +730,13 @@ export async function validateCodeHandler(req, res) {
         });
         
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro na validação',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro na validação',
+          }),
+          req
+        );
     }
 }

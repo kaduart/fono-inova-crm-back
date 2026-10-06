@@ -8,6 +8,7 @@ import {
   createPatientDocumentFromBase64,
   listPatientDocuments
 } from '../services/communication/PatientDocumentService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ router.get('/patient/:patientId', auth, async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[PatientDocumentsRoutes] list:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -48,7 +49,7 @@ router.post('/', auth, uploadMiddleware, async (req, res) => {
     res.status(201).json({ success: true, data: doc });
   } catch (error) {
     console.error('[PatientDocumentsRoutes] upload:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -68,7 +69,7 @@ router.post('/paste', auth, async (req, res) => {
     res.status(201).json({ success: true, data: doc });
   } catch (error) {
     console.error('[PatientDocumentsRoutes] paste:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

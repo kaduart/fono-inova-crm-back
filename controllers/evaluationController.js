@@ -4,6 +4,8 @@ import TherapyProtocol from "../models/TherapyProtocol.js";
 import EvolutionHistory from "../models/EvolutionHistory.js";
 import PatientsView from "../models/PatientsView.js";
 import mongoose from 'mongoose';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // ========== FUNÇÕES AUXILIARES ==========
 const isAdmin = (user) => ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
@@ -73,7 +75,7 @@ export const createEvaluation = async (req, res) => {
 
     // ✅ patient ok
     if (!patient || !mongoose.Types.ObjectId.isValid(patient)) {
-      return res.status(400).json({ message: 'Paciente inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Paciente inválido', { status: 400 }), req);
     }
 
     // ✅ doctor SEMPRE do usuário autenticado (exceto admin, se você quiser permitir criar para outro)
@@ -82,11 +84,11 @@ export const createEvaluation = async (req, res) => {
     // ✅ specialty: se quiser, padronize pelo usuário logado (melhor consistência)
     const finalSpecialty = String(specialty || req.user.specialty || '').trim();
     if (!finalSpecialty) {
-      return res.status(400).json({ message: 'Especialidade é obrigatória' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Especialidade é obrigatória', { status: 400 }), req);
     }
 
     if (!date) {
-      return res.status(400).json({ message: 'Data é obrigatória' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Data é obrigatória', { status: 400 }), req);
     }
 
     // Converter date string para Date object
@@ -97,7 +99,7 @@ export const createEvaluation = async (req, res) => {
         throw new Error('Data inválida');
       }
     } catch (error) {
-      return res.status(400).json({ message: 'Data inválida' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Data inválida', { status: 400 }), req);
     }
 
     // Normalizar métricas
@@ -248,23 +250,35 @@ export const createEvaluation = async (req, res) => {
 
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        message: 'Erro de validação',
-        errors: errors
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Erro de validação', {
+          status: 400,
+          extra: { errors },
+        }),
+        req
+      );
     }
 
     if (error.code === 11000) {
-      return res.status(400).json({
-        message: 'Duplicação de dados',
-        error: 'Já existe uma avaliação com esses dados'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Duplicação de dados', {
+          status: 400,
+          legacyError: 'Já existe uma avaliação com esses dados',
+        }),
+        req
+      );
     }
 
-    return res.status(500).json({
-      message: 'Erro interno no servidor',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Erro desconhecido'
-    });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro interno no servidor', {
+        status: 500,
+        legacyError: process.env.NODE_ENV === 'development' ? error.message : 'Erro desconhecido',
+      }),
+      req
+    );
   }
 };
 
@@ -285,7 +299,7 @@ export const getEvaluationsByPatient = async (req, res) => {
     }
     
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
-      return res.status(400).json({ message: "Paciente inválido." });
+      return sendApiError(res, new AppError('BAD_REQUEST', "Paciente inválido.", { status: 400 }), req);
     }
 
     const scope = getEvolutionScope(req);
@@ -300,7 +314,7 @@ export const getEvaluationsByPatient = async (req, res) => {
     res.status(200).json(evaluations);
   } catch (error) {
     console.error("Erro ao buscar avaliações:", error);
-    res.status(500).json({ message: "Erro ao buscar avaliações." });
+    sendApiError(res, new AppError('INTERNAL_ERROR', "Erro ao buscar avaliações.", { status: 500 }), req);
   }
 };
 
@@ -361,10 +375,7 @@ export const getEvaluationChartData = async (req, res) => {
     res.status(200).json(chartData);
   } catch (error) {
     console.error("Erro ao buscar dados para gráficos:", error);
-    res.status(500).json({
-      message: "Erro ao buscar dados para gráficos.",
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 };
 
@@ -377,13 +388,13 @@ export const updateEvaluation = async (req, res) => {
   try {
     const evolution = await Evolution.findById(id);
     if (!evolution) {
-      return res.status(404).json({ error: 'Avaliação não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Avaliação não encontrada', { status: 404 }), req);
     }
 
     // Verificar permissão
     const isOwnerDoctor = evolution.doctor?.toString() === req.user.id;
     if (!isAdmin(req.user) && !isOwnerDoctor) {
-      return res.status(403).json({ error: 'Sem permissão para editar' });
+      return sendApiError(res, new AppError('FORBIDDEN', 'Sem permissão para editar', { status: 403 }), req);
     }
 
     // Salvar dados anteriores
@@ -426,7 +437,7 @@ export const updateEvaluation = async (req, res) => {
     res.status(200).json(evolution);
   } catch (error) {
     console.error("Erro ao atualizar avaliação:", error);
-    res.status(500).json({ message: "Erro ao atualizar avaliação." });
+    sendApiError(res, new AppError('INTERNAL_ERROR', "Erro ao atualizar avaliação.", { status: 500 }), req);
   }
 };
 
@@ -437,12 +448,12 @@ export const deleteEvaluation = async (req, res) => {
   try {
     const evolution = await Evolution.findById(id);
     if (!evolution) {
-      return res.status(404).json({ message: "Avaliação não encontrada." });
+      return sendApiError(res, new AppError('NOT_FOUND', "Avaliação não encontrada.", { status: 404 }), req);
     }
 
     const isOwnerDoctor = evolution.doctor?.toString() === String(req.user.id || req.user._id);
     if (!isAdmin(req.user) && !isOwnerDoctor) {
-      return res.status(403).json({ error: "Sem permissão para excluir" });
+      return sendApiError(res, new AppError('FORBIDDEN', "Sem permissão para excluir", { status: 403 }), req);
     }
 
     const deletedObj = evolution.toObject();
@@ -461,7 +472,7 @@ export const deleteEvaluation = async (req, res) => {
     return res.status(200).json({ message: "Avaliação excluída com sucesso." });
   } catch (error) {
     console.error("Erro ao deletar avaliação:", error);
-    return res.status(500).json({ message: "Erro ao deletar avaliação." });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', "Erro ao deletar avaliação.", { status: 500 }), req);
   }
 };
 
@@ -573,10 +584,7 @@ export const getPatientProgress = async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar progresso:', error);
-    res.status(500).json({
-      message: 'Erro ao buscar progresso do paciente',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 };
 
@@ -605,6 +613,6 @@ export const getPatientEvolutionHistory = async (req, res) => {
     res.status(200).json(history);
   } catch (error) {
     console.error('Erro ao buscar histórico:', error);
-    res.status(500).json({ message: 'Erro ao buscar histórico' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar histórico', { status: 500 }), req);
   }
 };

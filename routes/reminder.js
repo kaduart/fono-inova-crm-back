@@ -2,6 +2,8 @@ import express from 'express';
 import Reminder from '../models/Reminder.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { getIo } from '../config/socket.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -17,7 +19,7 @@ router.get('/', async (req, res) => {
         const reminders = await Reminder.find({ status: 'pending' }).sort({ dueDate: 1, dueTime: 1 });
         res.json(reminders);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -29,11 +31,11 @@ router.get('/:id', async (req, res) => {
     try {
         const reminder = await Reminder.findById(req.params.id);
         if (!reminder) {
-            return res.status(404).json({ error: 'Lembrete não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lembrete não encontrado', { status: 404 }), req);
         }
         res.json(reminder);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
     }
 });
 
@@ -54,7 +56,7 @@ router.post('/', async (req, res) => {
 
         res.status(201).json(reminder);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
     }
 });
 
@@ -72,7 +74,7 @@ router.patch('/:id', async (req, res) => {
         if (update.snoozedAt) update.snoozedAt = new Date();
 
         const reminder = await Reminder.findByIdAndUpdate(req.params.id, update, { new: true });
-        if (!reminder) return res.status(404).json({ error: 'Lembrete não encontrado' });
+        if (!reminder) return sendApiError(res, new AppError('NOT_FOUND', 'Lembrete não encontrado', { status: 404 }), req);
 
         // ✅ Emite socket
         try {
@@ -83,7 +85,7 @@ router.patch('/:id', async (req, res) => {
 
         res.json(reminder);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
     }
 });
 

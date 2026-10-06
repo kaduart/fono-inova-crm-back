@@ -11,6 +11,8 @@ import PaymentsView from '../../models/PaymentsView.js';
 import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
 import { getSnapshotsForRange, reducePaymentStats } from '../../services/financialSnapshot.service.js';
 import { createContextLogger } from '../../utils/logger.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 const log = createContextLogger(null, 'FinancialAudit');
@@ -154,7 +156,7 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     log.error('audit_error', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -183,7 +185,14 @@ router.get('/health', async (req, res) => {
       percentage
     });
   } catch (error) {
-    res.status(500).json({ healthy: false, error: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        extra: { healthy: false },
+      }),
+      req
+    );
   }
 });
 
@@ -216,7 +225,7 @@ router.get('/trend', async (req, res) => {
 
     res.json({ success: true, days });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

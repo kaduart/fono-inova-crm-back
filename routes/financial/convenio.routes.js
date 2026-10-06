@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 import { auth, authorize } from '../../middleware/auth.js';
 import ConvenioMetricsService from '../../services/financial/ConvenioMetricsService.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -25,10 +27,13 @@ router.get('/metrics', auth, authorize(['admin', 'secretary']), async (req, res)
         const { month, year } = req.query;
 
         if (!month || !year) {
-            return res.status(400).json({
-                success: false,
-                error: 'Parâmetros obrigatórios: month e year'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         console.log(`[ConvenioRoutes] Buscando métricas para ${month}/${year}`);
@@ -45,11 +50,14 @@ router.get('/metrics', auth, authorize(['admin', 'secretary']), async (req, res)
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao calcular métricas de convênio',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao calcular métricas de convênio',
+          }),
+          req
+        );
     }
 });
 
@@ -68,10 +76,13 @@ router.get('/faturamentos', auth, authorize(['admin', 'secretary']), async (req,
         const { month, year } = req.query;
 
         if (!month || !year) {
-            return res.status(400).json({
-                success: false,
-                error: 'Parâmetros obrigatórios: month e year'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Parâmetros obrigatórios: month e year', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         console.log(`[ConvenioRoutes] Buscando faturamentos para ${month}/${year}`);
@@ -88,11 +99,14 @@ router.get('/faturamentos', auth, authorize(['admin', 'secretary']), async (req,
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao buscar faturamentos:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar faturamentos',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar faturamentos',
+          }),
+          req
+        );
     }
 });
 
@@ -112,11 +126,14 @@ router.get('/dashboard-summary', auth, authorize(['admin', 'secretary']), async 
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar resumo de convênios',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar resumo de convênios',
+          }),
+          req
+        );
     }
 });
 
@@ -133,10 +150,13 @@ router.post('/faturar-lote', auth, authorize(['admin', 'secretary']), async (req
         const { paymentIds, notaFiscal, dataFaturamento } = req.body;
 
         if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Array paymentIds é obrigatório'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Array paymentIds é obrigatório', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const result = await ConvenioMetricsService.faturarEmLote({
@@ -153,11 +173,14 @@ router.post('/faturar-lote', auth, authorize(['admin', 'secretary']), async (req
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao faturar em lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao faturar atendimentos',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao faturar atendimentos',
+          }),
+          req
+        );
     }
 });
 
@@ -172,10 +195,7 @@ router.post('/faturar-todos-paciente', auth, authorize(['admin', 'secretary']), 
         const { patientId, notaFiscal } = req.body;
 
         if (!patientId) {
-            return res.status(400).json({
-                success: false,
-                error: 'patientId é obrigatório'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'patientId é obrigatório', { status: 400 }), req);
         }
 
         const result = await ConvenioMetricsService.faturarTodosDoPaciente({
@@ -192,11 +212,14 @@ router.post('/faturar-todos-paciente', auth, authorize(['admin', 'secretary']), 
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao faturar paciente:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao faturar atendimentos do paciente',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao faturar atendimentos do paciente',
+          }),
+          req
+        );
     }
 });
 
@@ -211,10 +234,13 @@ router.post('/receber', auth, authorize(['admin', 'secretary']), async (req, res
         const { paymentId, dataRecebimento, valorRecebido, notaFiscal } = req.body;
 
         if (!paymentId || !dataRecebimento) {
-            return res.status(400).json({
-                success: false,
-                error: 'paymentId e dataRecebimento são obrigatórios'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'paymentId e dataRecebimento são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const result = await ConvenioMetricsService.receberPagamentoConvenio({
@@ -232,11 +258,14 @@ router.post('/receber', auth, authorize(['admin', 'secretary']), async (req, res
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao receber pagamento:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao registrar recebimento',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao registrar recebimento',
+          }),
+          req
+        );
     }
 });
 
@@ -251,10 +280,13 @@ router.post('/receber-lote', auth, authorize(['admin', 'secretary']), async (req
         const { paymentIds, dataRecebimento } = req.body;
 
         if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0 || !dataRecebimento) {
-            return res.status(400).json({
-                success: false,
-                error: 'paymentIds (array) e dataRecebimento são obrigatórios'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'paymentIds (array) e dataRecebimento são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const result = await ConvenioMetricsService.receberEmLote({
@@ -270,11 +302,14 @@ router.post('/receber-lote', auth, authorize(['admin', 'secretary']), async (req
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao receber em lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao registrar recebimentos',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao registrar recebimentos',
+          }),
+          req
+        );
     }
 });
 
@@ -290,20 +325,20 @@ router.put('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
         const { byInsurance } = req.body;
 
         if (!byInsurance || typeof byInsurance !== 'object') {
-            return res.status(400).json({
-                success: false,
-                error: 'byInsurance deve ser um objeto com { convenio: valor }'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'byInsurance deve ser um objeto com { convenio: valor }', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const Doctor = (await import('../../models/Doctor.js')).default;
         const doctor = await Doctor.findById(doctorId);
 
         if (!doctor) {
-            return res.status(404).json({
-                success: false,
-                error: 'Profissional não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Profissional não encontrado', { status: 404 }), req);
         }
 
         // 🆕 Converte byInsurance em regras do motor novo
@@ -340,11 +375,14 @@ router.put('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao atualizar regras:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao atualizar regras de comissão',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao atualizar regras de comissão',
+          }),
+          req
+        );
     }
 });
 
@@ -363,10 +401,7 @@ router.get('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
             .select('fullName commissionRules');
 
         if (!doctor) {
-            return res.status(404).json({
-                success: false,
-                error: 'Profissional não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Profissional não encontrado', { status: 404 }), req);
         }
 
         const convenioRules = (doctor.commissionRules?.rules || [])
@@ -388,11 +423,14 @@ router.get('/commission-rules/:doctorId', auth, authorize(['admin']), async (req
 
     } catch (error) {
         console.error('[ConvenioRoutes] Erro ao buscar regras:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar regras de comissão',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao buscar regras de comissão',
+          }),
+          req
+        );
     }
 });
 

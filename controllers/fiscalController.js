@@ -23,6 +23,8 @@ import {
   findFiscalServiceByCode,
   findFiscalServiceBySpecialty
 } from '../domain/fiscal/FiscalServiceCatalog.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // ============================================================
 // CONFIGURAÇÃO FISCAL (Perfil + Certificado)
@@ -32,12 +34,26 @@ export async function getFiscalProfile(req, res) {
   try {
     const profile = await fiscalProfileRepository.findActiveByCnpj(req.query.cnpj);
     if (!profile) {
-      return res.status(404).json({ success: false, error: 'FISCAL_PROFILE_NOT_FOUND', message: 'Perfil fiscal não encontrado' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Perfil fiscal não encontrado', {
+          status: 404,
+          legacyError: 'FISCAL_PROFILE_NOT_FOUND',
+        }),
+        req
+      );
     }
     res.json({ success: true, data: profile });
   } catch (error) {
     console.error('[FiscalController] getFiscalProfile error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -45,7 +61,14 @@ export async function upsertFiscalProfile(req, res) {
   try {
     const { cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco } = req.body;
     if (!cnpj || !razaoSocial || !municipioIBGE) {
-      return res.status(400).json({ success: false, error: 'MISSING_REQUIRED_FIELDS', message: 'cnpj, razaoSocial e municipioIBGE são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'cnpj, razaoSocial e municipioIBGE são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_REQUIRED_FIELDS',
+        }),
+        req
+      );
     }
 
     let profile = await fiscalProfileRepository.findActiveByCnpj(cnpj);
@@ -61,7 +84,14 @@ export async function upsertFiscalProfile(req, res) {
     res.json({ success: true, data: profile });
   } catch (error) {
     console.error('[FiscalController] upsertFiscalProfile error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -73,11 +103,14 @@ export async function createCertificate(req, res) {
   try {
     const { type, password, issuer, status } = req.body;
     if (!type || !password || !req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'arquivo do certificado (.pfx/.p12), senha e tipo são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'arquivo do certificado (.pfx/.p12), senha e tipo são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_REQUIRED_FIELDS',
+        }),
+        req
+      );
     }
 
     // Abre o certificado de verdade agora — se a senha estiver errada ou o arquivo corrompido/
@@ -87,29 +120,42 @@ export async function createCertificate(req, res) {
     try {
       inspection = inspectPkcs12(req.file.buffer, password);
     } catch (error) {
-      return res.status(400).json({ success: false, error: 'CERTIFICADO_INVALIDO', message: error.message });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', error.message, {
+          status: 400,
+          legacyError: 'CERTIFICADO_INVALIDO',
+        }),
+        req
+      );
     }
 
     // Detecta upload duplicado do mesmo arquivo antes de gastar criptografia/gravação — comparação
     // é em texto puro (fileHash), não precisa decifrar nenhum certificado já salvo.
     const duplicate = await certificateRepository.findByFileHash(inspection.fileHash);
     if (duplicate) {
-      return res.status(409).json({
-        success: false,
-        error: 'CERTIFICADO_DUPLICADO',
-        message: `Este mesmo arquivo já foi cadastrado em ${duplicate.createdAt?.toISOString().slice(0, 10)} (${duplicate.originalFilename}).`,
-        existingCertificateId: duplicate._id
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', `Este mesmo arquivo já foi cadastrado em ${duplicate.createdAt?.toISOString().slice(0, 10)} (${duplicate.originalFilename}).`, {
+          status: 409,
+          legacyError: 'CERTIFICADO_DUPLICADO',
+          extra: { existingCertificateId: duplicate._id },
+        }),
+        req
+      );
     }
 
     // Certificado já vencido nunca é útil pra assinar nada — bloqueia aqui, não deixa entrar no
     // banco pra descobrir só na hora de emitir.
     if (new Date(inspection.notAfter) < new Date()) {
-      return res.status(400).json({
-        success: false,
-        error: 'CERTIFICADO_EXPIRADO',
-        message: `Este certificado venceu em ${new Date(inspection.notAfter).toISOString().slice(0, 10)} — não pode ser cadastrado.`
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Este certificado venceu em ${new Date(inspection.notAfter).toISOString().slice(0, 10)} — não pode ser cadastrado.`, {
+          status: 400,
+          legacyError: 'CERTIFICADO_EXPIRADO',
+        }),
+        req
+      );
     }
 
     const daysUntilExpiry = Math.floor((new Date(inspection.notAfter).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -151,7 +197,14 @@ export async function createCertificate(req, res) {
     res.status(201).json({ success: true, data: safe });
   } catch (error) {
     console.error('[FiscalController] createCertificate error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -161,7 +214,14 @@ export async function listCertificates(req, res) {
     res.json({ success: true, data: certificates });
   } catch (error) {
     console.error('[FiscalController] listCertificates error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -177,7 +237,14 @@ export async function testConnection(req, res) {
     res.status(diagnostic.ok ? 200 : 502).json({ success: diagnostic.ok, data: diagnostic });
   } catch (error) {
     console.error('[FiscalController] testConnection error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -232,7 +299,14 @@ export async function getPaymentFiscalContext(req, res) {
       .populate('package', 'sessionType specialty')
       .populate('doctor', 'specialty');
     if (!payment?.patient) {
-      return res.status(404).json({ success: false, error: 'PAYMENT_OR_PATIENT_NOT_FOUND', message: 'Pagamento ou paciente não encontrado' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Pagamento ou paciente não encontrado', {
+          status: 404,
+          legacyError: 'PAYMENT_OR_PATIENT_NOT_FOUND',
+        }),
+        req
+      );
     }
     const patient = payment.patient;
     const paymentSpecialty = payment.sessionType || payment.serviceType || payment.appointment?.specialty
@@ -261,7 +335,14 @@ export async function getPaymentFiscalContext(req, res) {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -269,7 +350,14 @@ export async function emitFiscalInvoice(req, res) {
   try {
     const { fiscalProfileId, origin, patient, professional, serviceDescription, serviceCode, valorServico, valorLiquido, vISSQN, dCompet } = req.body;
     if (!fiscalProfileId || !origin || !origin.type || !origin.id || !patient) {
-      return res.status(400).json({ success: false, error: 'MISSING_REQUIRED_FIELDS', message: 'fiscalProfileId, origin (type+id) e patient são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'fiscalProfileId, origin (type+id) e patient são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_REQUIRED_FIELDS',
+        }),
+        req
+      );
     }
 
     const draft = {
@@ -291,9 +379,24 @@ export async function emitFiscalInvoice(req, res) {
   } catch (error) {
     console.error('[FiscalController] emitFiscalInvoice error:', error);
     if (error.message?.includes('FISCAL_INVOICE_NOT_ELIGIBLE')) {
-      return res.status(422).json({ success: false, error: 'FISCAL_INVOICE_NOT_ELIGIBLE', message: error.message, reasons: error.reasons });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', error.message, {
+          status: 422,
+          legacyError: 'FISCAL_INVOICE_NOT_ELIGIBLE',
+          extra: { reasons: error.reasons },
+        }),
+        req
+      );
     }
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -301,7 +404,14 @@ export async function emitFromPayment(req, res) {
   try {
     const { paymentId } = req.body;
     if (!paymentId) {
-      return res.status(400).json({ success: false, error: 'MISSING_REQUIRED_FIELDS', message: 'paymentId é obrigatório' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'paymentId é obrigatório', {
+          status: 400,
+          legacyError: 'MISSING_REQUIRED_FIELDS',
+        }),
+        req
+      );
     }
 
     const payment = await Payment.findById(paymentId)
@@ -311,13 +421,34 @@ export async function emitFromPayment(req, res) {
       .populate('package');
 
     if (!payment) {
-      return res.status(404).json({ success: false, error: 'PAYMENT_NOT_FOUND', message: 'Pagamento não encontrado' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Pagamento não encontrado', {
+          status: 404,
+          legacyError: 'PAYMENT_NOT_FOUND',
+        }),
+        req
+      );
     }
     if (!payment.patient) {
-      return res.status(422).json({ success: false, error: 'PAYMENT_WITHOUT_PATIENT', message: 'O pagamento não possui paciente vinculado' });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', 'O pagamento não possui paciente vinculado', {
+          status: 422,
+          legacyError: 'PAYMENT_WITHOUT_PATIENT',
+        }),
+        req
+      );
     }
     if (payment.status !== 'paid') {
-      return res.status(422).json({ success: false, error: 'PAYMENT_NOT_PAID', message: 'Só é possível emitir NFSe para pagamentos com status Pago' });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', 'Só é possível emitir NFSe para pagamentos com status Pago', {
+          status: 422,
+          legacyError: 'PAYMENT_NOT_PAID',
+        }),
+        req
+      );
     }
 
     // A emissão vinda do caixa não precisa conhecer o CNPJ do prestador: ele pertence à
@@ -327,7 +458,14 @@ export async function emitFromPayment(req, res) {
       ? await fiscalProfileRepository.findActiveByCnpj(onlyDigits(req.body.cnpj))
       : await fiscalProfileRepository.findFirstActive();
     if (!fiscalProfile) {
-      return res.status(404).json({ success: false, error: 'FISCAL_PROFILE_NOT_FOUND', message: 'Perfil fiscal não configurado' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Perfil fiscal não configurado', {
+          status: 404,
+          legacyError: 'FISCAL_PROFILE_NOT_FOUND',
+        }),
+        req
+      );
     }
 
     // MVP fallback: se o perfil não tem certificado vinculado ou o certificado vinculado não existe,
@@ -340,7 +478,14 @@ export async function emitFromPayment(req, res) {
     }
     if (!certificateRefValid) {
       if (activeCertificates.length === 0) {
-        return res.status(422).json({ success: false, error: 'CERTIFICATE_NOT_FOUND', message: 'Nenhum certificado digital ativo encontrado. Configure o certificado em Config. Fiscal.' });
+        return sendApiError(
+          res,
+          new AppError('UNPROCESSABLE', 'Nenhum certificado digital ativo encontrado. Configure o certificado em Config. Fiscal.', {
+            status: 422,
+            legacyError: 'CERTIFICATE_NOT_FOUND',
+          }),
+          req
+        );
       }
       const latestCertificate = activeCertificates.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
       await fiscalProfileRepository.updateFields(fiscalProfile._id, { certificateRef: latestCertificate._id.toString() });
@@ -356,11 +501,14 @@ export async function emitFromPayment(req, res) {
     const fiscalTaker = normalizeAndValidateTaker(req.body.fiscalTaker);
     const selectedService = findFiscalServiceByCode(req.body.serviceCode);
     if (!selectedService) {
-      return res.status(422).json({
-        success: false,
-        error: 'FISCAL_SERVICE_NOT_CONFIGURED',
-        message: 'Selecione uma especialidade configurada no catálogo fiscal da clínica'
-      });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', 'Selecione uma especialidade configurada no catálogo fiscal da clínica', {
+          status: 422,
+          legacyError: 'FISCAL_SERVICE_NOT_CONFIGURED',
+        }),
+        req
+      );
     }
     const beneficiarySuffix = fiscalTaker.type === 'patient'
       ? ''
@@ -415,7 +563,15 @@ export async function emitFromPayment(req, res) {
   } catch (error) {
     console.error('[FiscalController] emitFromPayment error:', error);
     if (error.message?.includes('FISCAL_INVOICE_NOT_ELIGIBLE')) {
-      return res.status(422).json({ success: false, error: 'FISCAL_INVOICE_NOT_ELIGIBLE', message: error.message, reasons: error.reasons });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', error.message, {
+          status: 422,
+          legacyError: 'FISCAL_INVOICE_NOT_ELIGIBLE',
+          extra: { reasons: error.reasons },
+        }),
+        req
+      );
     }
     if (error.message?.startsWith('TOMADOR_')) {
       const messages = {
@@ -427,9 +583,23 @@ export async function emitFromPayment(req, res) {
         TOMADOR_CEP_INVALIDO: 'Informe um CEP com 8 dígitos',
         TOMADOR_MUNICIPIO_IBGE_INVALIDO: 'Informe o código IBGE do município com 7 dígitos'
       };
-      return res.status(422).json({ success: false, error: error.message, message: messages[error.message] || error.message });
+      return sendApiError(
+        res,
+        new AppError('UNPROCESSABLE', messages[error.message] || error.message, {
+          status: 422,
+          legacyError: error.message,
+        }),
+        req
+      );
     }
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -453,7 +623,14 @@ export async function listFiscalInvoices(req, res) {
     res.json({ success: true, data, pagination: { total, page: parseInt(page), limit: parseInt(limit) } });
   } catch (error) {
     console.error('[FiscalController] listFiscalInvoices error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -461,12 +638,26 @@ export async function getFiscalInvoice(req, res) {
   try {
     const fiscalInvoice = await fiscalInvoiceRepository.findById(req.params.id);
     if (!fiscalInvoice) {
-      return res.status(404).json({ success: false, error: 'FISCAL_INVOICE_NOT_FOUND', message: 'NFSe não encontrada' });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'NFSe não encontrada', {
+          status: 404,
+          legacyError: 'FISCAL_INVOICE_NOT_FOUND',
+        }),
+        req
+      );
     }
     res.json({ success: true, data: fiscalInvoice });
   } catch (error) {
     console.error('[FiscalController] getFiscalInvoice error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -478,7 +669,14 @@ export async function retryFiscalInvoice(req, res) {
     res.json({ success: true, data: { fiscalInvoice, outcome, ...(reason ? { reason } : {}) } });
   } catch (error) {
     console.error('[FiscalController] retryFiscalInvoice error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -489,7 +687,14 @@ export async function cancelFiscalInvoice(req, res) {
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('[FiscalController] cancelFiscalInvoice error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -501,14 +706,17 @@ export async function downloadFiscalInvoiceXml(req, res) {
   try {
     const fiscalInvoice = await fiscalInvoiceRepository.findById(req.params.id);
     if (!fiscalInvoice) {
-      return res.status(404).json({ success: false, error: 'FISCAL_INVOICE_NOT_FOUND' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'FISCAL_INVOICE_NOT_FOUND', { status: 404 }), req);
     }
     if (fiscalInvoice.status !== FiscalInvoiceStatus.AUTHORIZED) {
-      return res.status(409).json({
-        success: false,
-        error: 'NFSE_NOT_AUTHORIZED',
-        message: 'A NFS-e ainda não foi autorizada; o XML oficial não está disponível'
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'A NFS-e ainda não foi autorizada; o XML oficial não está disponível', {
+          status: 409,
+          legacyError: 'NFSE_NOT_AUTHORIZED',
+        }),
+        req
+      );
     }
 
     const attachments = await fiscalAttachmentRepository.findByType(fiscalInvoice._id, 'xml_nfse');
@@ -517,14 +725,24 @@ export async function downloadFiscalInvoiceXml(req, res) {
       return res.set('Content-Type', 'application/xml').send(attachments[0].storageRef);
     }
 
-    return res.status(404).json({
-      success: false,
-      error: 'NFSE_XML_NOT_AVAILABLE',
-      message: 'O XML oficial da NFS-e autorizada não foi armazenado'
-    });
+    return sendApiError(
+      res,
+      new AppError('NOT_FOUND', 'O XML oficial da NFS-e autorizada não foi armazenado', {
+        status: 404,
+        legacyError: 'NFSE_XML_NOT_AVAILABLE',
+      }),
+      req
+    );
   } catch (error) {
     console.error('[FiscalController] downloadFiscalInvoiceXml error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }
 
@@ -532,14 +750,17 @@ export async function downloadFiscalInvoicePdf(req, res) {
   try {
     const fiscalInvoice = await fiscalInvoiceRepository.findById(req.params.id);
     if (!fiscalInvoice) {
-      return res.status(404).json({ success: false, error: 'FISCAL_INVOICE_NOT_FOUND' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'FISCAL_INVOICE_NOT_FOUND', { status: 404 }), req);
     }
     if (fiscalInvoice.status !== FiscalInvoiceStatus.AUTHORIZED) {
-      return res.status(409).json({
-        success: false,
-        error: 'NFSE_NOT_AUTHORIZED',
-        message: 'A NFS-e ainda não foi autorizada; o DANFSe não está disponível'
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'A NFS-e ainda não foi autorizada; o DANFSe não está disponível', {
+          status: 409,
+          legacyError: 'NFSE_NOT_AUTHORIZED',
+        }),
+        req
+      );
     }
 
     const attachments = await fiscalAttachmentRepository.findByType(fiscalInvoice._id, 'danfse_pdf');
@@ -548,13 +769,23 @@ export async function downloadFiscalInvoicePdf(req, res) {
       return res.set('Content-Type', 'application/pdf').send(buffer);
     }
 
-    return res.status(404).json({
-      success: false,
-      error: 'DANFSE_NOT_AVAILABLE',
-      message: 'O DANFSe oficial ainda não foi obtido do provedor fiscal'
-    });
+    return sendApiError(
+      res,
+      new AppError('NOT_FOUND', 'O DANFSe oficial ainda não foi obtido do provedor fiscal', {
+        status: 404,
+        legacyError: 'DANFSE_NOT_AVAILABLE',
+      }),
+      req
+    );
   } catch (error) {
     console.error('[FiscalController] downloadFiscalInvoicePdf error:', error);
-    res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 }

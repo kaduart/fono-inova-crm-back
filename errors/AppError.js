@@ -18,7 +18,11 @@ export class AppError extends Error {
   /**
    * @param {string} code  Código estável em MAIÚSCULAS (ex.: PAYMENT_STATUS_NOT_BILLABLE).
    * @param {string} message  Texto técnico/resumo. O tradutor do domínio pode trocá-lo por um texto para o usuário.
-   * @param {{status?:number,title?:string,action?:string,items?:any[],details?:any,cause?:Error}} [options]
+   * @param {{status?:number,title?:string,action?:string,items?:any[],details?:any,cause?:Error,
+   *          extra?:Record<string,any>,legacyError?:string}} [options]
+   *   extra: campos de topo que consumidores antigos já leem (ex.: correlationId, conflict, suggestion) —
+   *          não sobrescrevem os campos do envelope. legacyError: texto curto antigo de `error`, quando
+   *          diferia de `message`.
    */
   constructor(code, message, options = {}) {
     super(message);
@@ -31,6 +35,8 @@ export class AppError extends Error {
     if (options.items) this.items = options.items;
     if (options.details !== undefined) this.details = options.details;
     if (options.cause) this.cause = options.cause;
+    if (options.extra) this.extra = options.extra;
+    if (options.legacyError) this.legacyError = options.legacyError;
   }
 }
 

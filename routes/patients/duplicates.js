@@ -4,6 +4,8 @@
 import express from 'express';
 import { auth, authorize } from '../../middleware/auth.js';
 import Patient from '../../models/Patient.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -31,10 +33,13 @@ router.get('/check-duplicate', auth, authorize(['admin', 'secretary']), async (r
     const { fullName, dateOfBirth, cpf, email, phone } = req.query;
 
     if (!fullName || !dateOfBirth) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome e data de nascimento são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Nome e data de nascimento são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const queries = [];
@@ -127,10 +132,7 @@ router.get('/check-duplicate', auth, authorize(['admin', 'secretary']), async (r
 
   } catch (error) {
     console.error('[CheckDuplicate] Erro:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao verificar duplicados'
-    });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao verificar duplicados', { status: 500 }), req);
   }
 });
 
@@ -203,10 +205,7 @@ router.get('/duplicates/report', auth, authorize(['admin']), async (req, res) =>
 
   } catch (error) {
     console.error('[DuplicatesReport] Erro:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao gerar relatório'
-    });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao gerar relatório', { status: 500 }), req);
   }
 });
 

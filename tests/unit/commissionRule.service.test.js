@@ -11,8 +11,11 @@ import {
 } from '../../services/commissionRule.service.js';
 
 describe('commissionRule.service', () => {
-  it('calcula 50% uma vez por pacote completo usando o total contratado', () => {
-    const doc = { commissionRules: { neuropsychEvaluation: 50, neuropsychCommissionType: 'percentage' } };
+  it('calcula 50% por atendimento mesmo em pacotes incompletos', () => {
+    const doc = { commissionRules: { rules: [{
+      serviceType: 'neuropsychological', billingType: 'particular',
+      commissionType: 'percentage', value: 50, active: true
+    }] } };
     const makeSessions = (id, totalValue, count = 3) => Array.from({ length: count }, () => ({
       package: { _id: id, sessionType: 'neuropsicologia', totalSessions: 3, totalValue, sessionValue: 900 },
       sessionType: 'session',
@@ -22,13 +25,17 @@ describe('commissionRule.service', () => {
       ...makeSessions('package-a', 1500), ...makeSessions('package-b', 2000),
       ...makeSessions('incomplete', 3000, 2)
     ]);
-    expect(result.totalCommission).toBe(1750);
-    expect(result.breakdown.neuropsychEvaluations).toEqual({ count: 2, value: 1750 });
+    expect(result.totalCommission).toBe(3600);
+    expect(result.breakdown.neuropsychEvaluations).toEqual({ count: 8, value: 3600 });
     expect(result.breakdown.standardSessions.count).toBe(0);
+    expect(result.totalProductionBase).toBe(7200);
   });
 
   it('preserva repasse fixo zero sem substituir pelo padrão', () => {
-    const result = calculateCommissionBatch({ commissionRules: { neuropsychEvaluation: 0 } }, [{
+    const result = calculateCommissionBatch({ commissionRules: { rules: [{
+      serviceType: 'neuropsychological', billingType: 'particular',
+      commissionType: 'fixed', value: 0, active: true
+    }] } }, [{
       package: { _id: 'zero', sessionType: 'neuropsych_evaluation', totalSessions: 1, totalValue: 2000 }
     }]);
     expect(result.totalCommission).toBe(0);
@@ -225,7 +232,7 @@ describe('commissionRule.service', () => {
     expect(commission).toBe(250);
   });
 
-  it('neuropsicologia em pacote retorna 0 (processada em batch)', () => {
+  it('neuropsicologia em pacote gera repasse na própria sessão', () => {
     const doc = {
       specialty: 'psicologia',
       commissionRules: {
@@ -244,10 +251,10 @@ describe('commissionRule.service', () => {
 
     const session = { paymentMethod: 'particular', sessionType: 'neuropsychological', sessionValue: 500, package: { _id: 'pkg1' } };
     const commission = calculateSessionCommission(doc, session);
-    expect(commission).toBe(0);
+    expect(commission).toBe(250);
   });
 
-  it('calcula batch com neuropsicologia completa', () => {
+  it('calcula batch com neuropsicologia por sessão sem usar valor legado do pacote', () => {
     const pkg = { _id: 'pkg1', totalSessions: 10, sessionType: 'neuropsych_evaluation' };
     const sessions = Array.from({ length: 10 }, (_, i) => ({
       status: 'completed',
@@ -259,11 +266,51 @@ describe('commissionRule.service', () => {
 
     const doc = {
       specialty: 'fonoaudiologia',
-      commissionRules: { neuropsychEvaluation: 1200, rules: [] }
+      commissionRules: { neuropsychEvaluation: 1200, rules: [{
+        serviceType: 'neuropsychological', billingType: 'particular',
+        commissionType: 'percentage', value: 50, active: true
+      }] }
     };
 
     const { totalCommission } = calculateCommissionBatch(doc, sessions);
-    expect(totalCommission).toBe(1200);
+    expect(totalCommission).toBe(750);
+  });
+
+  it('reproduz setembro da Milena: 10 atendimentos somam R$ 875', () => {
+    const doc = { commissionRules: { neuropsychEvaluation: 50, neuropsychCommissionType: 'percentage', rules: [{
+      serviceType: 'neuropsychological', billingType: 'particular',
+      commissionType: 'percentage', value: 50, active: true
+    }] } };
+    const makeSessions = (sessionValue, count, sessionType) => Array.from({ length: count }, () => ({
+      sessionType: 'psicologia', sessionValue, professionalPaymentStatus: 'payable',
+      paymentMethod: 'package_prepaid',
+      package: { _id: sessionType, sessionType, sessionValue, totalSessions: 10, totalValue: sessionValue * 10 }
+    }));
+    const result = calculateCommissionBatch(doc, [
+      ...makeSessions(200, 5, 'psicologia'),
+      ...makeSessions(150, 2, 'psicopedagogia'),
+      ...makeSessions(150, 3, 'neuropsicologia')
+    ]);
+    expect(result.totalCommission).toBe(875);
+    expect(result.totalProductionBase).toBe(1750);
+    expect(result.breakdown.standardSessions).toMatchObject({ count: 7, value: 650 });
+    expect(result.breakdown.neuropsychEvaluations).toEqual({ count: 3, value: 225 });
+  });
+
+  it('respeita non_payable na neuropsicologia e mantém a base de produção', () => {
+    const doc = { commissionRules: { rules: [{
+      serviceType: 'neuropsychological', billingType: 'particular',
+      commissionType: 'percentage', value: 50, active: true
+    }] } };
+    const session = {
+      sessionType: 'psicologia', sessionValue: 999, professionalPaymentStatus: 'non_payable',
+      package: { _id: 'pkg', sessionType: 'neuropsicologia', sessionValue: 150, totalSessions: 10 }
+    };
+    expect(calculateSessionCommission(doc, session)).toBe(0);
+    const result = calculateCommissionBatch(doc, [session]);
+    expect(result.totalCommission).toBe(0);
+    expect(result.totalProductionBase).toBe(150);
+    expect(result.breakdown.neuropsychEvaluations).toEqual({ count: 0, value: 0 });
   });
 
   // ═════════════════════════════════════════════════════════════════

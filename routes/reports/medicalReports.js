@@ -1,5 +1,7 @@
 // routes/reports/medicalReports.js
 import express from "express";
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 import MedicalReport from "../../models/MedicalReport.js"; // Você precisará criar este modelo
 
 const router = express.Router();
@@ -61,10 +63,7 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar relatórios médicos:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -100,10 +99,7 @@ router.get('/patient/:patientId', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar relatórios do paciente:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -115,10 +111,7 @@ router.get('/:id', async (req, res) => {
             .exec();
 
         if (!report) {
-            return res.status(404).json({
-                success: false,
-                error: 'Relatório não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Relatório não encontrado', { status: 404 }), req);
         }
 
         res.json({
@@ -128,10 +121,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar relatório:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -151,10 +141,13 @@ router.post('/', async (req, res) => {
 
         // Validação básica
         if (!type || !patientId || !patientName || !date) {
-            return res.status(400).json({
-                success: false,
-                error: 'Campos obrigatórios faltando: type, patientId, patientName, date'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios faltando: type, patientId, patientName, date', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const newReport = new MedicalReport({
@@ -182,10 +175,7 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao criar relatório:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -204,10 +194,7 @@ router.put('/:id', async (req, res) => {
         ).populate('patientId', 'fullName age phone email');
 
         if (!updatedReport) {
-            return res.status(404).json({
-                success: false,
-                error: 'Relatório não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Relatório não encontrado', { status: 404 }), req);
         }
 
         res.json({
@@ -217,10 +204,7 @@ router.put('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao atualizar relatório:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -232,10 +216,7 @@ router.delete('/:id', async (req, res) => {
         const deletedReport = await MedicalReport.findByIdAndDelete(id);
 
         if (!deletedReport) {
-            return res.status(404).json({
-                success: false,
-                error: 'Relatório não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Relatório não encontrado', { status: 404 }), req);
         }
 
         res.json({
@@ -246,10 +227,7 @@ router.delete('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao deletar relatório:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -281,10 +259,7 @@ router.get('/stats/patient/:patientId', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar estatísticas:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 

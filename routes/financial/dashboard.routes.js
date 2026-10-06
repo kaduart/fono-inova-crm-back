@@ -21,6 +21,7 @@ import historicalRatesService from '../../services/historicalRates.service.js';
 import FinancialDailySnapshot from '../../models/FinancialDailySnapshot.js';
 import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 import { logMetric } from '../../utils/logMetric.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -525,11 +526,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
   } catch (error) {
     console.error('[Dashboard] Erro:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erro ao carregar dashboard', 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -648,7 +645,7 @@ router.get('/projection-daily', auth, authorize(['admin', 'secretary']), async (
 
   } catch (error) {
     console.error('[Dashboard] Erro projection-daily:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -716,7 +713,7 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
     res.json({ success: true, data: debitos, total });
   } catch (error) {
     console.error('[Dashboard] Erro /debitos:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -735,7 +732,7 @@ router.get('/reconciliation', auth, authorize(['admin']), async (req, res) => {
     });
   } catch (error) {
     console.error('[Dashboard] Erro /reconciliation:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 

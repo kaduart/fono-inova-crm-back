@@ -7,6 +7,8 @@ import { isNationalHoliday, getHolidayName, isTimeBlockedByHoliday } from "../co
 import { buildDayRange, buildDateTime } from "../utils/datetime.js";
 import { ShadowPatternService } from "../domains/appointment/services/ShadowPatternService.js";
 import { ShadowLockService } from "../domains/appointment/services/ShadowLockService.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -110,40 +112,55 @@ export const checkAppointmentConflicts = async (req, res, next) => {
   }
 
   if (!doctorId || (!isPreAgendamento && !patientId) || !date || !time) {
-    return res.status(400).json({
-      error: "Dados incompletos para verificação de conflitos",
-      requiredFields: {
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', "Dados incompletos para verificação de conflitos", {
+        status: 400,
+        extra: { requiredFields: {
         doctorId: !doctorId ? "Campo obrigatório" : "OK",
         patientId: (!isPreAgendamento && !patientId) ? "Campo obrigatório" : "OK",
         date: !date ? "Campo obrigatório" : "OK",
         time: !time ? "Campo obrigatório" : "OK",
-      },
-    });
+      } },
+      }),
+      req
+    );
   }
 
   if (!isValidObjectId(doctorId) || (!isPreAgendamento && !isValidObjectId(patientId))) {
-    return res.status(400).json({
-      error: "IDs inválidos",
-      details: {
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', "IDs inválidos", {
+        status: 400,
+        details: {
         doctorId: isValidObjectId(doctorId) ? "OK" : "ObjectId inválido",
         patientId: (!isPreAgendamento && !isValidObjectId(patientId)) ? "ObjectId inválido" : "OK",
       },
-    });
+      }),
+      req
+    );
   }
 
   if (appointmentId && !isValidObjectId(appointmentId)) {
-    return res.status(400).json({
-      error: "appointmentId inválido na URL",
-      details: { appointmentId },
-    });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', "appointmentId inválido na URL", {
+        status: 400,
+        details: { appointmentId },
+      }),
+      req
+    );
   }
 
   if (!timeHHmm) {
-    return res.status(400).json({
-      error: "Formato de horário inválido",
-      expected: "HH:mm (ex: 08:00)",
-      received: time,
-    });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', "Formato de horário inválido", {
+        status: 400,
+        extra: { expected: "HH:mm (ex: 08:00)", received: time },
+      }),
+      req
+    );
   }
 
   try {
@@ -247,10 +264,12 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         ? `Horário ocupado: ${profName} atende ${occupiedBy} às ${conflictTime}${isPreAgendado ? " (pré-agendado)" : ""}.`
         : `Horário ocupado: ${profName} já tem compromisso às ${conflictTime}.`;
 
-      return res.status(409).json({
-        error: "Conflito de agenda médica",
-        message,
-        conflict: {
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', message, {
+          status: 409,
+          legacyError: "Conflito de agenda médica",
+          extra: { conflict: {
           type: "doctor",
           appointmentId: metadata.appointmentId || metadata._id,
           patientName: occupiedBy || "Nome não disponível",
@@ -258,9 +277,10 @@ export const checkAppointmentConflicts = async (req, res, next) => {
           time: conflictTime,
           operationalStatus: metadata.operationalStatus || null,
           existingAppointment: metadata,
-        },
-        suggestion: "Escolha outro horário ou outro profissional.",
-      });
+        }, suggestion: "Escolha outro horário ou outro profissional." },
+        }),
+        req
+      );
     }
 
     if (patientConflict) {
@@ -281,19 +301,22 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         ? `${patientLabel} já tem atendimento às ${conflictTime} com ${withDoctor}.`
         : `${patientLabel} já tem atendimento às ${conflictTime}.`;
 
-      return res.status(409).json({
-        error: "Conflito de agenda do paciente",
-        message,
-        conflict: {
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', message, {
+          status: 409,
+          legacyError: "Conflito de agenda do paciente",
+          extra: { conflict: {
           type: "patient",
           appointmentId: patientConflict._id,
           doctorName: withDoctor || "Nome não disponível",
           patientName: patientLabel,
           time: conflictTime,
           existingAppointment: patientConflict,
-        },
-        suggestion: "Escolha outro horário para este paciente.",
-      });
+        }, suggestion: "Escolha outro horário para este paciente." },
+        }),
+        req
+      );
     }
 
     // normalize downstream
@@ -308,13 +331,16 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       params: req.params,
     });
 
-    return res.status(500).json({
-      error: "Erro interno na verificação de conflitos",
-      details:
-        process.env.NODE_ENV === "development"
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', "Erro interno na verificação de conflitos", {
+        status: 500,
+        details: process.env.NODE_ENV === "development"
           ? { message: error.message, stack: error.stack }
           : undefined,
-    });
+      }),
+      req
+    );
   }
 };
 
@@ -684,17 +710,17 @@ export const getAvailableTimeSlots = async (req, res) => {
     const { doctorId, date } = req.query;
 
     if (!doctorId || !date) {
-      return res.status(400).json({ error: "doctorId e date são obrigatórios" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "doctorId e date são obrigatórios", { status: 400 }), req);
     }
 
     if (!isValidObjectId(doctorId)) {
-      return res.status(400).json({ error: "doctorId inválido" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "doctorId inválido", { status: 400 }), req);
     }
 
     const availableSlots = await calculateAvailableSlots(doctorId, date);
     return res.json(availableSlots);
   } catch (err) {
     console.error("❌ Erro getAvailableTimeSlots:", err);
-    return res.status(500).json({ error: err.message });
+    return sendApiError(res, err, req);
   }
 };

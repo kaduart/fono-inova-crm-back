@@ -5,6 +5,8 @@ import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,7 +47,13 @@ router.get('/auth-url', (req, res) => {
         res.json({ authUrl });
     } catch (error) {
         console.error('Erro ao gerar auth URL:', error);
-        res.status(500).json({ error: 'Falha ao gerar URL de autenticação' });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Falha ao gerar URL de autenticação', {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -79,7 +87,13 @@ router.get('/oauth2callback', async (req, res) => {
         });
     } catch (error) {
         console.error('Erro no callback do Google:', error.response?.data || error);
-        res.status(500).json({ error: 'Falha na autenticação Google Ads' });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Falha na autenticação Google Ads', {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 

@@ -22,6 +22,8 @@ import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { transition, CommunicationEvents } from '../services/communication/CommunicationStateMachine.js';
 import { getRulesForInsurance, updateRulesForInsurance } from '../services/communication/InsuranceRuleService.js';
 import { createContextLogger } from '../utils/logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const logger = createContextLogger('communication_send_endpoint');
@@ -44,7 +46,7 @@ router.get('/', auth, async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[CommunicationRoutes] list:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -66,7 +68,7 @@ router.get('/email-logs', auth, async (req, res) => {
     res.json({ success: true, data: result.data, pagination: result.pagination });
   } catch (error) {
     console.error('[CommunicationRoutes] email-logs:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -91,7 +93,7 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json({ success: true, data: request });
   } catch (error) {
     console.error('[CommunicationRoutes] create:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -116,7 +118,7 @@ router.patch('/:id/status', auth, async (req, res) => {
     res.json({ success: true, data: request });
   } catch (error) {
     console.error('[CommunicationRoutes] status:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -132,7 +134,7 @@ router.post('/:id/package', auth, async (req, res) => {
     res.json({ success: true, data: pkg });
   } catch (error) {
     console.error('[CommunicationRoutes] package:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -191,14 +193,17 @@ router.post('/:id/send', auth, async (req, res) => {
         }
       });
     } else {
-      res.status(500).json({
-        success: false,
-        error: 'Resultado inesperado do provider de entrega'
-      });
+      sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Resultado inesperado do provider de entrega', {
+          status: 500,
+        }),
+        req
+      );
     }
   } catch (error) {
     console.error('[CommunicationRoutes] send:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -209,7 +214,7 @@ router.get('/patient/:patientId', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[CommunicationRoutes] patient:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -221,7 +226,7 @@ router.get('/insurance/:insurance/rules', auth, async (req, res) => {
     res.json({ success: true, data: rules });
   } catch (error) {
     console.error('[CommunicationRoutes] rules:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -233,7 +238,7 @@ router.patch('/insurance/:insurance/rules', auth, async (req, res) => {
     res.json({ success: true, data: rules });
   } catch (error) {
     console.error('[CommunicationRoutes] update rules:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -306,7 +311,7 @@ router.post('/webhooks/resend', async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('[CommunicationRoutes] Resend webhook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -316,7 +321,7 @@ router.get('/:id/job/:jobId/status', auth, async (req, res) => {
     const queue = getQueue('communication-email');
     const job = await queue.getJob(req.params.jobId);
     if (!job) {
-      return res.status(404).json({ success: false, error: 'Job não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Job não encontrado', { status: 404 }), req);
     }
 
     const state = await job.getState();
@@ -335,7 +340,7 @@ router.get('/:id/job/:jobId/status', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[CommunicationRoutes] job status:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

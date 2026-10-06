@@ -9,6 +9,7 @@ import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress } from '../services/planningService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -80,7 +81,7 @@ router.get('/', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[GoalsV2] Erro:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -163,7 +164,7 @@ router.post('/', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[GoalsV2] Erro:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -175,7 +176,7 @@ router.delete('/:id', auth, async (req, res) => {
         await Planning.findByIdAndDelete(req.params.id);
         res.json({ success: true, message: 'Meta removida' });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

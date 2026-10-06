@@ -1,5 +1,7 @@
 import express from 'express';
 import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -30,10 +32,7 @@ router.get('/holidays', (req, res) => {
     });
   } catch (error) {
     console.error('[calendar/holidays] Erro:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erro ao buscar feriados'
-    });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar feriados', { status: 500 }), req);
   }
 });
 

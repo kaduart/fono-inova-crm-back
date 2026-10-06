@@ -1,5 +1,7 @@
 import express from 'express';
 import { auth, authorize } from '../middleware/auth.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -13,7 +15,7 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
             data: venda
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -32,7 +34,7 @@ router.post('/sessao-realizada/:sessionId', auth, async (req, res) => {
             data: resultado
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -42,10 +44,7 @@ router.get('/relatorio/analitico', auth, authorize(['admin']), async (req, res) 
         const { month, year } = req.query;
 
         if (!month || !year) {
-            return res.status(400).json({
-                success: false,
-                message: 'Informe month e year'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Informe month e year', { status: 400 }), req);
         }
 
         const dados = await provisionamentoService.gerarRelatorioAnalitico(
@@ -58,7 +57,7 @@ router.get('/relatorio/analitico', auth, authorize(['admin']), async (req, res) 
             data: dados
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -81,7 +80,7 @@ router.get('/export/excel', auth, authorize(['admin']), async (req, res) => {
 
         res.json({ success: true, dados }); // Temporário até implementar geração real
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -106,7 +105,7 @@ router.get('/dashboard', auth, async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 

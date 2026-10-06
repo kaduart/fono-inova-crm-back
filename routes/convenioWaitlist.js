@@ -13,6 +13,8 @@ import { auth, authorize } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import ConvenioWaitlist from '../models/ConvenioWaitlist.js';
 import { parseWaitlistPayload } from '../utils/convenioWaitlistPayload.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isDuplicateKeyError = (err) => err?.code === 11000;
@@ -46,7 +48,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
         try {
             const parsed = parseWaitlistPayload(req.body);
             if (!parsed.ok) {
-                return res.status(400).json({ success: false, message: parsed.message });
+                return sendApiError(res, new AppError('BAD_REQUEST', parsed.message, { status: 400 }), req);
             }
             const data = parsed.value;
             const now = new Date();
@@ -117,7 +119,13 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             return res.status(duplicate ? 200 : 201).json({ success: true, id: doc._id, duplicate });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro ao registrar interesse:', err);
-            return res.status(500).json({ success: false, message: 'Erro interno ao registrar interesse' });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Erro interno ao registrar interesse', {
+                status: 500,
+              }),
+              req
+            );
         }
     });
 
@@ -153,7 +161,13 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             return res.json({ total, porConvenio });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro no resumo:', err);
-            return res.status(500).json({ message: 'Erro ao buscar resumo da lista de interesse' });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Erro ao buscar resumo da lista de interesse', {
+                status: 500,
+              }),
+              req
+            );
         }
     });
 
@@ -208,7 +222,13 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro ao listar:', err);
-            return res.status(500).json({ message: 'Erro ao buscar lista de interesse' });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Erro ao buscar lista de interesse', {
+                status: 500,
+              }),
+              req
+            );
         }
     });
 
@@ -225,7 +245,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
 
             if (req.body.status !== undefined) {
                 if (!WAITLIST_STATUS.includes(req.body.status)) {
-                    return res.status(400).json({ message: 'Status inválido' });
+                    return sendApiError(res, new AppError('BAD_REQUEST', 'Status inválido', { status: 400 }), req);
                 }
                 set.status = req.body.status;
             }
@@ -233,11 +253,11 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 set.notes = String(req.body.notes).slice(0, 2000);
             }
             if (!Object.keys(set).length) {
-                return res.status(400).json({ message: 'Nada para atualizar' });
+                return sendApiError(res, new AppError('BAD_REQUEST', 'Nada para atualizar', { status: 400 }), req);
             }
 
             const current = await ConvenioWaitlist.findById(req.params.id);
-            if (!current) return res.status(404).json({ message: 'Cadastro não encontrado' });
+            if (!current) return sendApiError(res, new AppError('NOT_FOUND', 'Cadastro não encontrado', { status: 404 }), req);
 
             if (set.status) {
                 if (WAITLIST_ACTIVE_STATUS.includes(set.status)) {
@@ -259,9 +279,13 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 ).lean();
             } catch (err) {
                 if (isDuplicateKeyError(err)) {
-                    return res.status(409).json({
-                        message: 'Já existe outro cadastro ativo deste telefone neste convênio',
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('CONFLICT', 'Já existe outro cadastro ativo deste telefone neste convênio', {
+                        status: 409,
+                      }),
+                      req
+                    );
                 }
                 throw err;
             }
@@ -269,7 +293,13 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             return res.json({ ...updated, convenioLabel: CONVENIO_LABELS[updated.convenio] || updated.convenio });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro ao atualizar:', err);
-            return res.status(500).json({ message: 'Erro ao atualizar cadastro' });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Erro ao atualizar cadastro', {
+                status: 500,
+              }),
+              req
+            );
         }
     });
 

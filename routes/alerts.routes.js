@@ -7,6 +7,8 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import Alert from '../models/Alert.js';
 import * as alertService from '../services/alertService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -53,10 +55,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -72,10 +71,7 @@ router.get('/dashboard', async (req, res) => {
       data: dashboard
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -88,10 +84,7 @@ router.get('/:id', async (req, res) => {
     const alert = await Alert.findById(req.params.id).lean();
     
     if (!alert) {
-      return res.status(404).json({
-        success: false,
-        error: 'Alerta não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Alerta não encontrado', { status: 404 }), req);
     }
 
     res.json({
@@ -99,10 +92,7 @@ router.get('/:id', async (req, res) => {
       data: alert
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -119,10 +109,7 @@ router.post('/', async (req, res) => {
       data: alerta
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -145,10 +132,7 @@ router.post('/:id/ack', async (req, res) => {
     );
 
     if (!alert) {
-      return res.status(404).json({
-        success: false,
-        error: 'Alerta não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Alerta não encontrado', { status: 404 }), req);
     }
 
     res.json({
@@ -156,10 +140,7 @@ router.post('/:id/ack', async (req, res) => {
       data: alert
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -185,10 +166,7 @@ router.post('/:id/resolve', async (req, res) => {
     );
 
     if (!alert) {
-      return res.status(404).json({
-        success: false,
-        error: 'Alerta não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Alerta não encontrado', { status: 404 }), req);
     }
 
     res.json({
@@ -196,10 +174,7 @@ router.post('/:id/resolve', async (req, res) => {
       data: alert
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -212,10 +187,7 @@ router.delete('/:id', async (req, res) => {
     const alert = await Alert.findByIdAndDelete(req.params.id);
 
     if (!alert) {
-      return res.status(404).json({
-        success: false,
-        error: 'Alerta não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Alerta não encontrado', { status: 404 }), req);
     }
 
     res.json({
@@ -223,10 +195,7 @@ router.delete('/:id', async (req, res) => {
       message: 'Alerta removido com sucesso'
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -248,10 +217,7 @@ router.get('/by-landing-page/:slug', async (req, res) => {
       data: alerts
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 

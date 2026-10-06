@@ -12,6 +12,7 @@ import { auth } from '../middleware/auth.js';
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { buildDashboardOverview, invalidateDashboardBlocks } from '../services/adminDashboard/index.js';
 import Payment from '../models/Payment.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ router.get('/payments-summary', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[AdminDashboardV2] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -97,7 +98,7 @@ router.get('/overview', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[AdminDashboardV2] Erro no overview:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -113,7 +114,7 @@ router.post('/invalidate-cache', auth, async (req, res) => {
     res.json({ success: true, message: 'Cache invalidado' });
   } catch (error) {
     console.error('[AdminDashboardV2] Erro ao invalidar cache:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -166,7 +167,7 @@ router.get('/quick-stats', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[AdminDashboardV2] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

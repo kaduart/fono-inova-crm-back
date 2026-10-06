@@ -7,6 +7,8 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import LandingPage from '../models/LandingPage.js';
 import * as landingPageService from '../services/landingPageService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -23,10 +25,7 @@ router.post('/track', async (req, res) => {
     const { type, slug, category, url, referrer, timestamp, device, utm } = req.body;
     
     if (!type || !slug) {
-      return res.status(400).json({
-        success: false,
-        error: 'Tipo e slug são obrigatórios'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Tipo e slug são obrigatórios', { status: 400 }), req);
     }
     
     // Atualiza métricas da landing page
@@ -44,7 +43,7 @@ router.post('/track', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro no tracking:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -111,7 +110,7 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao listar landing pages:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -134,7 +133,7 @@ router.get('/daily', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar LP do dia:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -152,7 +151,7 @@ router.get('/rotation', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar rotação:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -176,7 +175,7 @@ router.get('/suggest', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao sugerir LPs:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -192,7 +191,7 @@ router.post('/seed', async (req, res) => {
   try {
     // TODO: Verificar se é admin
     // if (!req.user.isAdmin) {
-    //   return res.status(403).json({ success: false, error: 'Acesso negado' });
+    //   return sendApiError(res, new AppError('FORBIDDEN', 'Acesso negado', { status: 403 }), req);
     // }
     
     const result = await landingPageService.seedLandingPages();
@@ -204,15 +203,18 @@ router.post('/seed', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro detalhado no seed:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      details: error.errors ? Object.keys(error.errors).map(k => ({
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        details: error.errors ? Object.keys(error.errors).map(k => ({
         field: k,
         message: error.errors[k].message
       })) : null,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+        extra: { stack: process.env.NODE_ENV === 'development' ? error.stack : undefined },
+      }),
+      req
+    );
   }
 });
 
@@ -230,7 +232,7 @@ router.get('/stats', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar estatísticas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -252,7 +254,7 @@ router.post('/cron/run-now', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao executar cron:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -272,7 +274,7 @@ router.get('/cron/status', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar status:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -310,7 +312,7 @@ router.get('/metrics', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar métricas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -330,16 +332,13 @@ router.get('/:slug', async (req, res) => {
     const page = await LandingPage.findOne({ slug }).lean();
     
     if (!page) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Landing page não encontrada' 
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
     
     res.json({ success: true, data: page });
   } catch (error) {
     console.error('Erro ao buscar landing page:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -359,7 +358,7 @@ router.get('/:slug/post-suggestion', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao gerar sugestão:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -376,10 +375,7 @@ router.post('/:slug/create-post', async (req, res) => {
     // Busca a landing page
     const lp = await LandingPage.findOne({ slug });
     if (!lp) {
-      return res.status(404).json({
-        success: false,
-        error: 'Landing page não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
     
     // Gera conteúdo do post
@@ -464,7 +460,7 @@ router.post('/:slug/create-post', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Erro ao criar post:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -489,7 +485,7 @@ router.post('/:slug/use', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao marcar LP:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -503,19 +499,13 @@ router.post('/:slug/metrics', async (req, res) => {
     const { type } = req.body; // 'view' ou 'lead'
     
     if (!['view', 'lead'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Tipo deve ser "view" ou "lead"'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Tipo deve ser "view" ou "lead"', { status: 400 }), req);
     }
     
     const lp = await landingPageService.incrementMetrics(slug, type);
     
     if (!lp) {
-      return res.status(404).json({
-        success: false,
-        error: 'Landing page não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
     
     res.json({
@@ -527,7 +517,7 @@ router.post('/:slug/metrics', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao atualizar métricas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -552,10 +542,7 @@ router.put('/:slug', async (req, res) => {
     );
     
     if (!lp) {
-      return res.status(404).json({
-        success: false,
-        error: 'Landing page não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
     
     res.json({
@@ -565,7 +552,7 @@ router.put('/:slug', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao atualizar LP:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

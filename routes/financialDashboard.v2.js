@@ -411,7 +411,7 @@ router.get('/', auth, async (req, res) => {
         _pendingReject?.(error);
         // só remove a entrada se for a desta requisição (não a de outra em voo)
         if (_ownPending && _dashPending.get(monthKey) === _ownPending) _dashPending.delete(monthKey);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -424,7 +424,13 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
     try {
         const { startDate, endDate, clearFirst = true, clinicId } = req.body;
         if (!startDate || !endDate) {
-            return res.status(400).json({ success: false, error: 'startDate e endDate são obrigatórios' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         console.log(`[DashboardV3] Rebuild snapshot: ${startDate} → ${endDate} (clearFirst=${clearFirst})`);
@@ -503,7 +509,7 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[DashboardV3] Erro no rebuild:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -608,7 +614,7 @@ router.get('/audit', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[DashboardV3] Erro na auditoria:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -2476,7 +2482,7 @@ router.get('/sanity-check', auth, async (req, res) => {
             timestamp: new Date().toISOString()
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -2492,10 +2498,13 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
         const { startDate, endDate } = req.body;
 
         if (!startDate || !endDate) {
-            return res.status(400).json({
-                success: false,
-                message: 'startDate e endDate são obrigatórios (YYYY-MM-DD)'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios (YYYY-MM-DD)', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         console.log(`[DashboardV3] 🔄 Rebuild solicitado: ${startDate} → ${endDate} por ${req.user?.name || req.user?.email}`);
@@ -2515,7 +2524,7 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
         });
     } catch (err) {
         console.error('[DashboardV3] ❌ Erro no rebuild:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -2525,6 +2534,8 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
  * Não altera dados — apenas lê e reporta divergências.
  */
 import { validateSnapshotVsRealtime, validateSnapshotRange } from '../workers/financialSnapshotWorker.v2.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 router.post('/validate-snapshot', auth, async (req, res) => {
     try {
@@ -2545,10 +2556,13 @@ router.post('/validate-snapshot', auth, async (req, res) => {
         }
 
         if (!startDate || !endDate) {
-            return res.status(400).json({
-                success: false,
-                message: 'Informe date (YYYY-MM-DD) ou startDate+endDate'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Informe date (YYYY-MM-DD) ou startDate+endDate', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const result = await validateSnapshotRange(startDate, endDate);
@@ -2564,7 +2578,7 @@ router.post('/validate-snapshot', auth, async (req, res) => {
         });
     } catch (err) {
         console.error('[DashboardV3] ❌ Erro na validação:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -2624,7 +2638,7 @@ router.get('/debitos', auth, authorize(['admin', 'secretary']), async (req, res)
         res.json({ success: true, data: debitos, total });
     } catch (err) {
         console.error('[DashboardV2] Erro /debitos:', err);
-        res.status(500).json({ success: false, message: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -2634,7 +2648,13 @@ router.get('/base-recorrente', auth, authorize(['admin', 'secretary']), async (r
     try {
         const { month, year } = req.query;
         if (!month || !year) {
-            return res.status(400).json({ success: false, message: 'month e year são obrigatórios' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'month e year são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const start = moment.tz([parseInt(year), parseInt(month) - 1, 1], TIMEZONE).startOf('day').toDate();
@@ -2750,7 +2770,7 @@ router.get('/base-recorrente', auth, authorize(['admin', 'secretary']), async (r
         });
     } catch (err) {
         console.error('[DashboardV2] Erro /base-recorrente:', err);
-        res.status(500).json({ success: false, message: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -2771,7 +2791,7 @@ router.get('/audits/convenio-payments-review-count', auth, authorize(['admin']),
         });
     } catch (err) {
         console.error('[DashboardV2] Erro /audits/convenio-payments-review-count:', err);
-        res.status(500).json({ success: false, message: err.message });
+        sendApiError(res, err, req);
     }
 });
 

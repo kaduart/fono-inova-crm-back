@@ -2,6 +2,8 @@
 import express from 'express';
 import analytics from '../../services/financial/financialAnalytics.service.js';
 import { auth } from '../../middleware/auth.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -16,14 +18,20 @@ router.get('/specialties', async (req, res) => {
     try {
         const { from, to, doctorId } = req.query;
         if (!from || !to) {
-            return res.status(400).json({ success: false, error: 'Datas (from/to) são obrigatórias' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Datas (from/to) são obrigatórias', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const data = await analytics.getRevenueBySpecialty({ from, to, doctorId });
         res.json({ success: true, data });
     } catch (err) {
         console.error('Analytics specialties error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -35,14 +43,20 @@ router.get('/specialties/:specialty/details', async (req, res) => {
     try {
         const { from, to, doctorId } = req.query;
         if (!from || !to) {
-            return res.status(400).json({ success: false, error: 'Datas (from/to) são obrigatórias' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Datas (from/to) são obrigatórias', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const data = await analytics.getSpecialtyDetails({ from, to, specialty: req.params.specialty, doctorId });
         res.json({ success: true, data });
     } catch (err) {
         console.error('Analytics specialty details error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -54,14 +68,20 @@ router.get('/doctors', async (req, res) => {
     try {
         const { from, to, sessionType } = req.query;
         if (!from || !to) {
-            return res.status(400).json({ success: false, error: 'Datas (from/to) são obrigatórias' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Datas (from/to) são obrigatórias', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const data = await analytics.getRevenueByDoctor({ from, to, sessionType });
         res.json({ success: true, data });
     } catch (err) {
         console.error('Analytics doctors error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -74,7 +94,7 @@ router.get('/patients/:id/360', async (req, res) => {
         res.json({ success: true, data });
     } catch (err) {
         console.error('Patient 360 error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -88,7 +108,7 @@ router.get('/patients/list', async (req, res) => {
         res.json({ success: true, ...data });
     } catch (err) {
         console.error('Patients list error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -101,7 +121,7 @@ router.get('/alerts/today', async (req, res) => {
         res.json({ success: true, data });
     } catch (err) {
         console.error('Analytics alerts error:', err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 

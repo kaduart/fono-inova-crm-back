@@ -2,6 +2,7 @@ import express from 'express';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.get('/metrics', auth, async (req, res) => {
         
         res.json({ success: true, data: metrics });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -51,7 +52,7 @@ router.get('/faturamentos', auth, async (req, res) => {
         
         res.json({ success: true, data: batches });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -68,7 +69,7 @@ router.get('/receivable-detail', auth, async (req, res) => {
             total: receivables.reduce((sum, r) => sum + (r.valor || 0), 0)
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

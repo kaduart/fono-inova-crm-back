@@ -6,6 +6,8 @@
 
 import express from 'express';
 import { sendViaVPS, checkVPSStatus } from '../services/whatsappVPSService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -18,10 +20,7 @@ router.post('/send', async (req, res) => {
     const { phone, message } = req.body;
     
     if (!phone || !message) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'phone e message são obrigatórios' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'phone e message são obrigatórios', { status: 400 }), req);
     }
     
     const result = await sendViaVPS(phone, message);
@@ -29,10 +28,7 @@ router.post('/send', async (req, res) => {
     
   } catch (error) {
     console.error('[WhatsApp VPS] Erro:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -45,10 +41,14 @@ router.get('/status', async (req, res) => {
     const status = await checkVPSStatus();
     res.json(status);
   } catch (error) {
-    res.status(500).json({ 
-      connected: false, 
-      error: error.message 
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        extra: { connected: false },
+      }),
+      req
+    );
   }
 });
 

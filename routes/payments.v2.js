@@ -15,6 +15,8 @@ import PaymentsView from '../models/PaymentsView.js';
 import Session from '../models/Session.js';
 import { rebuildPaymentsProjection } from '../projections/paymentsProjection.js';
 import { getSnapshotsForRange, getSnapshotsForMonth, reducePaymentStats } from '../services/financialSnapshot.service.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -229,11 +231,7 @@ router.get('/', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[PaymentsV2] Erro:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            code: 'PAYMENTS_QUERY_ERROR'
-        });
+        sendApiError(res, new AppError('PAYMENTS_QUERY_ERROR', error.message, { status: 500 }), req);
     }
 });
 
@@ -254,10 +252,7 @@ router.get('/:id', auth, async (req, res) => {
         }).lean();
         
         if (!payment) {
-            return res.status(404).json({
-                success: false,
-                message: 'Pagamento não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Pagamento não encontrado', { status: 404 }), req);
         }
         
         res.json({
@@ -267,10 +262,7 @@ router.get('/:id', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[PaymentsV2] Erro ao buscar pagamento:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -282,10 +274,7 @@ router.post('/rebuild', auth, async (req, res) => {
     try {
         // Verifica se é admin
         if (req.user?.role !== 'admin') {
-            return res.status(403).json({
-                success: false,
-                message: 'Acesso negado'
-            });
+            return sendApiError(res, new AppError('FORBIDDEN', 'Acesso negado', { status: 403 }), req);
         }
         
         const { clinicId = 'default' } = req.body;
@@ -302,10 +291,7 @@ router.post('/rebuild', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[PaymentsV2] Erro no rebuild:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -381,10 +367,7 @@ router.get('/stats/summary', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[PaymentsV2] Erro nas estatísticas:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -417,7 +400,7 @@ router.get('/future-sessions/:patientId', auth, async (req, res) => {
         res.json(sessions);
     } catch (error) {
         console.error('[PaymentsV2] Erro ao buscar future-sessions:', error);
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

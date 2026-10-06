@@ -5,6 +5,8 @@ import express from "express";
 import { redisConnection as redis } from "../config/redisConnection.js";
 import { mediaLimiter } from "../middleware/rateLimiter.js";
 import { getMetaToken } from "../utils/metaToken.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -29,11 +31,13 @@ router.get("/proxy-media", async (req, res) => {
     const startedAt = Date.now();
     const token = await getMetaToken();
     if (!token) {
-        return res.status(500).json({
-            success: false,
-            error:
-                "Token do WhatsApp não configurado (verifique WHATSAPP_ACCESS_TOKEN, META_WABA_TOKEN ou META_WABA_TOKEN)",
-        });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Token do WhatsApp não configurado (verifique WHATSAPP_ACCESS_TOKEN, META_WABA_TOKEN ou META_WABA_TOKEN)", {
+            status: 500,
+          }),
+          req
+        );
     }
 
     try {
@@ -67,7 +71,13 @@ router.get("/proxy-media", async (req, res) => {
 
             if (meta.status === 404) {
                 // mídia não existe mais no Graph
-                return res.status(404).json({ success: false, error: "Mídia não disponível (Graph 404)" });
+                return sendApiError(
+                  res,
+                  new AppError('NOT_FOUND', "Mídia não disponível (Graph 404)", {
+                    status: 404,
+                  }),
+                  req
+                );
             }
             if (meta.status >= 400) {
                 return res.status(meta.status).json({ success: false, error: `Falha ao resolver mediaId (${meta.status})` });
@@ -75,7 +85,7 @@ router.get("/proxy-media", async (req, res) => {
 
             const freshUrl = meta.data?.url;
             const mime = meta.data?.mime_type || "application/octet-stream";
-            if (!freshUrl) return res.status(502).json({ success: false, error: "Graph não retornou url" });
+            if (!freshUrl) return sendApiError(res, new AppError('INTERNAL_ERROR', "Graph não retornou url", { status: 502 }), req);
 
             // 2) baixa o binário da URL fresca
             const bin = await axios.get(freshUrl, {
@@ -106,13 +116,19 @@ router.get("/proxy-media", async (req, res) => {
 
         // --- Fluxo B: compatibilidade com ?url= (antigo)
         if (!url || typeof url !== "string") {
-            return res.status(400).json({ success: false, error: 'Parâmetro "mediaId" ou "url" é obrigatório' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Parâmetro "mediaId" ou "url" é obrigatório', {
+                status: 400,
+              }),
+              req
+            );
         }
         if (url.length > URL_MAX_LENGTH || url.toLowerCase().includes("http://")) {
-            return res.status(400).json({ success: false, error: "URL inválida" });
+            return sendApiError(res, new AppError('BAD_REQUEST', "URL inválida", { status: 400 }), req);
         }
         if (!isAllowedUrl(url)) {
-            return res.status(400).json({ success: false, error: "URL inválida para proxy" });
+            return sendApiError(res, new AppError('BAD_REQUEST', "URL inválida para proxy", { status: 400 }), req);
         }
 
         const key = hashKey(url);
@@ -231,13 +247,32 @@ router.get("/proxy-media", async (req, res) => {
         });
 
         if (status === 403)
-            return res.status(403).json({ success: false, error: "Acesso negado pelo provedor de mídia" });
+            return sendApiError(
+              res,
+              new AppError('FORBIDDEN', "Acesso negado pelo provedor de mídia", {
+                status: 403,
+              }),
+              req
+            );
         if (status === 404)
-            return res.status(404).json({ success: false, error: "Mídia não encontrada no provedor" });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', "Mídia não encontrada no provedor", {
+                status: 404,
+              }),
+              req
+            );
         if (err.code === "ECONNABORTED")
-            return res.status(504).json({ success: false, error: "Timeout ao buscar mídia" });
+            return sendApiError(res, new AppError('INTERNAL_ERROR', "Timeout ao buscar mídia", { status: 504 }), req);
 
-        return res.status(500).json({ success: false, error: "Falha ao carregar mídia", details: err.message });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Falha ao carregar mídia", {
+            status: 500,
+            details: err.message,
+          }),
+          req
+        );
     }
 });
 

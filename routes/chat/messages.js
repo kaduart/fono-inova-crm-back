@@ -1,4 +1,6 @@
 import Message from '../../models/Message.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 export async function getChatMessages(req, res) {
   try {
@@ -6,7 +8,7 @@ export async function getChatMessages(req, res) {
     const { cursor, limit = 30 } = req.query;
 
     if (!leadId) {
-      return res.status(400).json({ success: false, error: 'leadId required' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'leadId required', { status: 400 }), req);
     }
 
     const query = { lead: leadId };
@@ -33,6 +35,6 @@ export async function getChatMessages(req, res) {
       hasMore: messages.length === Number(limit),
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 }

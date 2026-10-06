@@ -1,6 +1,8 @@
 // jobs/scheduledTasks.js
 import cron from 'node-cron';
 import { generateMonthlyCommissions } from '../services/commissionService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * Executa no dia 1 de cada mês às 8h (fuso America/Sao_Paulo)
@@ -55,17 +57,16 @@ export const manualCommissionTrigger = async (req, res) => {
         });
     } catch (error) {
         if (error.message === 'GENERATION_ALREADY_IN_PROGRESS') {
-            return res.status(409).json({
-                success: false,
-                message: 'Geração de comissões já está em andamento. Aguarde a conclusão.',
-                error: error.message
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', 'Geração de comissões já está em andamento. Aguarde a conclusão.', {
+                status: 409,
+                legacyError: error.message,
+              }),
+              req
+            );
         }
 
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao gerar comissões',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };

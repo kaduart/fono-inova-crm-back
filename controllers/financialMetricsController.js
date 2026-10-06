@@ -12,6 +12,8 @@
 
 import financialMetricsService from '../services/financialMetrics.service.js';
 import historicalRatesService from '../services/historicalRates.service.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * GET /api/financial/v2/overview
@@ -27,30 +29,39 @@ export const getOverview = async (req, res) => {
 
     // Validações
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_DATES',
-        message: 'startDate e endDate são obrigatórios (formato ISO 8601)'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios (formato ISO 8601)', {
+          status: 400,
+          legacyError: 'MISSING_DATES',
+        }),
+        req
+      );
     }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_DATES',
-        message: 'Datas inválidas. Use formato ISO 8601 (ex: 2026-03-01T00:00:00.000Z)'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Datas inválidas. Use formato ISO 8601 (ex: 2026-03-01T00:00:00.000Z)', {
+          status: 400,
+          legacyError: 'INVALID_DATES',
+        }),
+        req
+      );
     }
 
     if (start > end) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_RANGE',
-        message: 'startDate deve ser anterior ou igual a endDate'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'startDate deve ser anterior ou igual a endDate', {
+          status: 400,
+          legacyError: 'INVALID_RANGE',
+        }),
+        req
+      );
     }
 
     const period = { startDate: start, endDate: end };
@@ -75,11 +86,14 @@ export const getOverview = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro no financialMetricsController:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 };
 
@@ -93,11 +107,14 @@ export const getCash = async (req, res) => {
     const { startDate, endDate } = req.query;
 
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_DATES',
-        message: 'startDate e endDate são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_DATES',
+        }),
+        req
+      );
     }
 
     const period = {
@@ -114,11 +131,14 @@ export const getCash = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro ao calcular caixa:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 };
 
@@ -132,11 +152,14 @@ export const getProduction = async (req, res) => {
     const { startDate, endDate } = req.query;
 
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_DATES',
-        message: 'startDate e endDate são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_DATES',
+        }),
+        req
+      );
     }
 
     const period = {
@@ -153,11 +176,14 @@ export const getProduction = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro ao calcular produção:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 };
 
@@ -241,7 +267,7 @@ export const getReceivableDetail = async (req, res) => {
 
     res.json({ success: true, data: { items, total: items.reduce((s, i) => s + (i.grossAmount || 0), 0), count: items.length } });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 };
 
@@ -256,11 +282,14 @@ export const getHistoricalRates = async (req, res) => {
     const days = parseInt(req.query.days) || 90;
 
     if (days < 7 || days > 365) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_DAYS',
-        message: 'days deve estar entre 7 e 365'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'days deve estar entre 7 e 365', {
+          status: 400,
+          legacyError: 'INVALID_DAYS',
+        }),
+        req
+      );
     }
 
     const rates = await historicalRatesService.getHistoricalRates(days);
@@ -269,11 +298,14 @@ export const getHistoricalRates = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro ao calcular taxas históricas:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 };
 
@@ -287,11 +319,14 @@ export const getReceivable = async (req, res) => {
     const { startDate, endDate } = req.query;
 
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_DATES',
-        message: 'startDate e endDate são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'startDate e endDate são obrigatórios', {
+          status: 400,
+          legacyError: 'MISSING_DATES',
+        }),
+        req
+      );
     }
 
     const period = {
@@ -308,10 +343,13 @@ export const getReceivable = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro ao calcular a receber:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'INTERNAL_ERROR',
+      }),
+      req
+    );
   }
 };

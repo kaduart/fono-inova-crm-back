@@ -17,6 +17,8 @@ import { createSmartFollowupForLead } from "../services/followupOrchestrator.js"
 
 import Contacts from "../models/Contacts.js";
 import { normalizeE164BR } from "../utils/phone.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 /**
  * 🧩 Agendar novo follow-up (com Amanda 2.0)
  * POST /api/followups/schedule
@@ -26,16 +28,34 @@ export const scheduleFollowup = async (req, res) => {
         const { leadId, message, scheduledAt, aiOptimized = false } = req.body;
 
         if (!leadId || !scheduledAt)
-            return res.status(400).json({ error: 'Campos obrigatórios: leadId, scheduledAt' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios: leadId, scheduledAt', {
+                status: 400,
+              }),
+              req
+            );
 
         const lead = await Lead.findById(leadId);
-        if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
+        if (!lead) return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
         if (!lead.contact?.phone)
-            return res.status(400).json({ error: 'Lead sem telefone cadastrado' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Lead sem telefone cadastrado', {
+                status: 400,
+              }),
+              req
+            );
 
         const delay = new Date(scheduledAt).getTime() - Date.now();
         if (delay < 0)
-            return res.status(400).json({ error: 'Data/hora precisa ser futura' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Data/hora precisa ser futura', {
+                status: 400,
+              }),
+              req
+            );
 
         let finalMessage = message;
         let amandaVersion = '1.0';
@@ -127,7 +147,7 @@ export const scheduleFollowup = async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro ao agendar follow-up:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -139,10 +159,7 @@ export const createFollowup = async (req, res) => {
     try {
         const lead = await Lead.findById(req.body.lead);
         if (!lead) {
-            return res.status(404).json({
-                success: false,
-                message: "Lead não encontrado"
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', "Lead não encontrado", { status: 404 }), req);
         }
 
         let message = req.body.message;
@@ -223,7 +240,7 @@ export const createFollowup = async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro ao criar follow-up:", err);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -231,7 +248,7 @@ export const createAIFollowup = async (req, res) => {
     try {
         const { leadId, scheduledAt, objective } = req.body;
 
-        if (!leadId) return res.status(400).json({ error: "leadId é obrigatório" });
+        if (!leadId) return sendApiError(res, new AppError('BAD_REQUEST', "leadId é obrigatório", { status: 400 }), req);
 
         const { followup, score } = await createSmartFollowupForLead(leadId, {
             explicitScheduledAt: scheduledAt,
@@ -251,7 +268,7 @@ export const createAIFollowup = async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro ao criar follow-up IA:", err);
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -264,10 +281,10 @@ export const resendFollowup = async (req, res) => {
     try {
         const { id } = req.params;
         const followup = await Followup.findById(id).populate('lead');
-        if (!followup) return res.status(404).json({ error: 'Follow-up não encontrado' });
+        if (!followup) return sendApiError(res, new AppError('NOT_FOUND', 'Follow-up não encontrado', { status: 404 }), req);
 
         if (!followup.lead?.contact?.phone)
-            return res.status(400).json({ error: 'Lead sem telefone' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Lead sem telefone', { status: 400 }), req);
 
         // ✅ Adicionar na fila novamente
         await followupQueue.add('followup', { followupId: id }, {
@@ -279,7 +296,7 @@ export const resendFollowup = async (req, res) => {
 
         res.json({ success: true, message: 'Follow-up reenviado para fila' });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -362,7 +379,13 @@ export const getFollowupStats = async (req, res) => {
         });
     } catch (err) {
         console.error("Erro ao gerar estatísticas:", err);
-        res.status(500).json({ error: "Erro ao gerar estatísticas de follow-ups" });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar estatísticas de follow-ups", {
+            status: 500,
+          }),
+          req
+        );
     }
 };
 
@@ -393,7 +416,7 @@ export const getAllFollowups = async (req, res) => {
             .limit(100);
         res.json({ success: true, data: followups });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -404,7 +427,7 @@ export const getPendingFollowups = async (req, res) => {
             .sort({ scheduledAt: 1 });
         res.json({ success: true, data: pending });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -413,10 +436,7 @@ export const getFollowupHistory = async (req, res) => {
         const leadId = req.params.leadId || req.query.leadId;
 
         if (!leadId) {
-            return res.status(400).json({
-                success: false,
-                message: "leadId é obrigatório"
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', "leadId é obrigatório", { status: 400 }), req);
         }
 
         const history = await Followup.find({ lead: leadId })
@@ -429,10 +449,7 @@ export const getFollowupHistory = async (req, res) => {
             count: history.length
         });
     } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message
-        });
+        sendApiError(res, err, req);
     }
 };
 
@@ -457,7 +474,7 @@ export const filterFollowups = async (req, res) => {
 
         res.json({ success: true, data: followups });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        sendApiError(res, err, req);
     }
 };
 
@@ -511,7 +528,13 @@ export const getFollowupAnalytics = async (req, res) => {
         });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Erro ao gerar analytics de follow-ups" });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar analytics de follow-ups", {
+            status: 500,
+          }),
+          req
+        );
     }
 };
 
@@ -535,7 +558,14 @@ export const getFollowupTrend = async (req, res) => {
 
         res.json({ success: true, data: trend });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao gerar tendência", details: err.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar tendência", {
+            status: 500,
+            details: err.message,
+          }),
+          req
+        );
     }
 };
 
@@ -574,7 +604,14 @@ export const getFollowupConversionByOrigin = async (req, res) => {
 
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao gerar conversão por origem", details: err.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar conversão por origem", {
+            status: 500,
+            details: err.message,
+          }),
+          req
+        );
     }
 };
 
@@ -599,7 +636,14 @@ export const getAvgResponseTime = async (req, res) => {
         const avgMinutes = Math.round(avgMs / 60000);
         res.json({ success: true, data: { avgMinutes } });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao calcular tempo médio", details: err.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao calcular tempo médio", {
+            status: 500,
+            details: err.message,
+          }),
+          req
+        );
     }
 };
 
@@ -715,20 +759,17 @@ export const backfillAllUnconverted = async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro no backfill ALL unconverted:", err);
-        return res.status(500).json({
-            success: false,
-            error: err.message
-        });
+        return sendApiError(res, err, req);
     }
 };
 
 export const cancelFollowup = async (req, res) => {
     try {
         const { leadId } = req.params;
-        if (!leadId) return res.status(400).json({ success: false, error: "leadId é obrigatório" });
+        if (!leadId) return sendApiError(res, new AppError('BAD_REQUEST', "leadId é obrigatório", { status: 400 }), req);
 
         const lead = await Lead.findById(leadId).select("contact.phone");
-        if (!lead) return res.status(404).json({ success: false, error: "Lead não encontrado" });
+        if (!lead) return sendApiError(res, new AppError('NOT_FOUND', "Lead não encontrado", { status: 404 }), req);
 
         const now = new Date();
 
@@ -782,7 +823,7 @@ export const cancelFollowup = async (req, res) => {
         });
     } catch (err) {
         console.error("❌ cancelFollowup error:", err);
-        return res.status(500).json({ success: false, error: err.message });
+        return sendApiError(res, err, req);
     }
 };
 

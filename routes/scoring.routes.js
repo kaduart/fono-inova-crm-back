@@ -9,6 +9,8 @@ import LandingPage from '../models/LandingPage.js';
 import Leads from '../models/Leads.js';
 import * as scoringService from '../services/intelligentScoringService.js';
 import * as recommendationsService from '../services/recommendationsService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -59,10 +61,7 @@ router.get('/ranking', async (req, res) => {
       data: ranking
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -78,10 +77,7 @@ router.get('/landing-page/:slug', async (req, res) => {
     const lp = await LandingPage.findOne({ slug }).lean();
     
     if (!lp) {
-      return res.status(404).json({
-        success: false,
-        error: 'Landing page não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
 
     const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
@@ -111,10 +107,7 @@ router.get('/landing-page/:slug', async (req, res) => {
       data: score
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -134,10 +127,7 @@ router.get('/recommendations', async (req, res) => {
       data: report
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -155,10 +145,7 @@ router.get('/priorities', async (req, res) => {
       data: priorities
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -173,10 +160,7 @@ router.get('/landing-page/:slug/recommendations', async (req, res) => {
     const lp = await LandingPage.findOne({ slug }).lean();
     
     if (!lp) {
-      return res.status(404).json({
-        success: false,
-        error: 'Landing page não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
     }
 
     const analysis = recommendationsService.detectIssuesAndOpportunities(lp);
@@ -190,10 +174,7 @@ router.get('/landing-page/:slug/recommendations', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -210,10 +191,7 @@ router.post('/calculate', async (req, res) => {
       const lp = await LandingPage.findOne({ slug }).lean();
       
       if (!lp) {
-        return res.status(404).json({
-          success: false,
-          error: 'Landing page não encontrada'
-        });
+        return sendApiError(res, new AppError('NOT_FOUND', 'Landing page não encontrada', { status: 404 }), req);
       }
 
       const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
@@ -304,10 +282,7 @@ router.post('/calculate', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -356,10 +331,7 @@ router.get('/forecast/:slug', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 

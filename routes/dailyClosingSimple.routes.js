@@ -1,6 +1,7 @@
 import express from 'express';
 import { auth } from '../middleware/auth.js';
 import Appointment from '../models/Appointment.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -78,11 +79,7 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro em daily-closing-simple:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao buscar dados',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 

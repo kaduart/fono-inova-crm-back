@@ -7,6 +7,8 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import Leads from '../models/Leads.js';
 import * as journeyService from '../services/leadJourneyService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -29,10 +31,7 @@ router.post('/track', journeyService.journeyTrackingMiddleware(), async (req, re
       sessionId: req.journey?.sessionId
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -41,10 +40,7 @@ router.post('/identify', journeyService.journeyTrackingMiddleware(), async (req,
     const { name, email, phone, ...otherData } = req.body;
     
     if (!req.journey?.journeyId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Journey não iniciada'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Journey não iniciada', { status: 400 }), req);
     }
 
     const lead = await journeyService.identifyLead(req.journey.journeyId, {
@@ -59,10 +55,7 @@ router.post('/identify', journeyService.journeyTrackingMiddleware(), async (req,
       data: lead
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -78,10 +71,7 @@ router.get('/:journeyId', async (req, res) => {
     const journey = await journeyService.getLeadJourney(req.params.journeyId);
     
     if (!journey) {
-      return res.status(404).json({
-        success: false,
-        error: 'Jornada não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Jornada não encontrada', { status: 404 }), req);
     }
 
     res.json({
@@ -89,10 +79,7 @@ router.get('/:journeyId', async (req, res) => {
       data: journey
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -105,10 +92,7 @@ router.get('/lead/:identifier', async (req, res) => {
     const journey = await journeyService.getJourneyByIdentifier(req.params.identifier);
     
     if (!journey) {
-      return res.status(404).json({
-        success: false,
-        error: 'Jornada não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Jornada não encontrada', { status: 404 }), req);
     }
 
     res.json({
@@ -116,10 +100,7 @@ router.get('/lead/:identifier', async (req, res) => {
       data: journey
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -166,10 +147,7 @@ router.get('/analytics/summary', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -221,10 +199,7 @@ router.get('/analytics/funnel', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -268,10 +243,7 @@ router.get('/by-page/:page', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 

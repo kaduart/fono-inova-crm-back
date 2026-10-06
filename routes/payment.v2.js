@@ -38,6 +38,8 @@ import { invalidateUFSCache, invalidateUFSCacheForDates } from '../services/unif
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -157,82 +159,99 @@ router.post('/request', auth, async (req, res) => {
     
     // 1. type é obrigatório e deve ser válido
     if (!type || !VALID_PAYMENT_TYPES.includes(type)) {
-        return res.status(400).json({
-            success: false,
-            error: `Campo 'type' obrigatório. Valores válidos: ${VALID_PAYMENT_TYPES.join(', ')}`,
-            received: { type }
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', `Campo 'type' obrigatório. Valores válidos: ${VALID_PAYMENT_TYPES.join(', ')}`, {
+            status: 400,
+            extra: { received: { type } },
+          }),
+          req
+        );
     }
 
     // 2. patientId é sempre obrigatório
     if (!patientId) {
-        return res.status(400).json({
-            success: false,
-            error: 'Campo obrigatório: patientId',
-            code: 'MISSING_PATIENT_ID'
-        });
+        return sendApiError(
+          res,
+          new AppError('MISSING_PATIENT_ID', 'Campo obrigatório: patientId', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     if (!isValidObjectId(patientId)) {
-        return res.status(400).json({
-            success: false,
-            error: 'patientId inválido',
-            code: 'INVALID_PATIENT_ID',
-            received: patientId
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PATIENT_ID', 'patientId inválido', {
+            status: 400,
+            extra: { received: patientId },
+          }),
+          req
+        );
     }
 
     // 3. amount é sempre obrigatório e deve ser válido
     if (!amount || typeof amount !== 'number' || amount <= 0) {
-        return res.status(400).json({
-            success: false,
-            error: 'Campo obrigatório: amount (número > 0)',
-            code: 'INVALID_AMOUNT',
-            received: { amount, type: typeof amount }
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_AMOUNT', 'Campo obrigatório: amount (número > 0)', {
+            status: 400,
+            extra: { received: { amount, type: typeof amount } },
+          }),
+          req
+        );
     }
 
     // 4. Validação específica por tipo
     if (type === 'appointment_payment') {
         // appointment_payment REQUER appointmentId
         if (!appointmentId) {
-            return res.status(400).json({
-                success: false,
-                error: 'Para type=appointment_payment, appointmentId é obrigatório',
-                code: 'MISSING_APPOINTMENT_ID',
-                hint: 'Crie um agendamento primeiro ou use type=standalone'
-            });
+            return sendApiError(
+              res,
+              new AppError('MISSING_APPOINTMENT_ID', 'Para type=appointment_payment, appointmentId é obrigatório', {
+                status: 400,
+                extra: { hint: 'Crie um agendamento primeiro ou use type=standalone' },
+              }),
+              req
+            );
         }
         
         if (!isValidObjectId(appointmentId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'appointmentId inválido',
-                code: 'INVALID_APPOINTMENT_ID',
-                received: appointmentId
-            });
+            return sendApiError(
+              res,
+              new AppError('INVALID_APPOINTMENT_ID', 'appointmentId inválido', {
+                status: 400,
+                extra: { received: appointmentId },
+              }),
+              req
+            );
         }
     }
 
     // 5. Validação para multi_payment
     if (type === 'multi_payment' || isMultiPayment) {
         if (!debitIds?.length || !payments?.length) {
-            return res.status(400).json({
-                success: false,
-                error: 'Para multi_payment, debitIds e payments são obrigatórios',
-                code: 'MISSING_MULTI_PAYMENT_DATA'
-            });
+            return sendApiError(
+              res,
+              new AppError('MISSING_MULTI_PAYMENT_DATA', 'Para multi_payment, debitIds e payments são obrigatórios', {
+                status: 400,
+              }),
+              req
+            );
         }
     }
 
     // 6. Validação de método de pagamento
     if (!VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-        return res.status(400).json({
-            success: false,
-            error: `Método de pagamento inválido. Valores válidos: ${VALID_PAYMENT_METHODS.join(', ')}`,
-            code: 'INVALID_PAYMENT_METHOD',
-            received: paymentMethod
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PAYMENT_METHOD', `Método de pagamento inválido. Valores válidos: ${VALID_PAYMENT_METHODS.join(', ')}`, {
+            status: 400,
+            extra: { received: paymentMethod },
+          }),
+          req
+        );
     }
 
     try {
@@ -245,12 +264,14 @@ router.post('/request', auth, async (req, res) => {
                 .populate('package', 'paymentType model')
                 .lean();
             if (!apptDoc) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Agendamento não encontrado',
-                    code: 'APPOINTMENT_NOT_FOUND',
-                    appointmentId
-                });
+                return sendApiError(
+                  res,
+                  new AppError('APPOINTMENT_NOT_FOUND', 'Agendamento não encontrado', {
+                    status: 404,
+                    extra: { appointmentId },
+                  }),
+                  req
+                );
             }
 
             // 🛡️ GUARD: tipos que não permitem pagamento manual
@@ -259,28 +280,34 @@ router.post('/request', auth, async (req, res) => {
             const isPrepaid   = pkgPayType === 'full' || pkgPayType === 'prepaid';
 
             if (billingType === 'convenio') {
-                return res.status(422).json({
-                    success: false,
-                    error: 'Convênio — pagamento gerenciado pela seguradora. Não é possível registrar pagamento manual.',
-                    code: 'PAYMENT_NOT_ALLOWED_CONVENIO',
-                    billingType
-                });
+                return sendApiError(
+                  res,
+                  new AppError('PAYMENT_NOT_ALLOWED_CONVENIO', 'Convênio — pagamento gerenciado pela seguradora. Não é possível registrar pagamento manual.', {
+                    status: 422,
+                    extra: { billingType },
+                  }),
+                  req
+                );
             }
             if (billingType === 'liminar') {
-                return res.status(422).json({
-                    success: false,
-                    error: 'Liminar judicial — crédito gerenciado pelo sistema. Não é possível registrar pagamento manual.',
-                    code: 'PAYMENT_NOT_ALLOWED_LIMINAR',
-                    billingType
-                });
+                return sendApiError(
+                  res,
+                  new AppError('PAYMENT_NOT_ALLOWED_LIMINAR', 'Liminar judicial — crédito gerenciado pelo sistema. Não é possível registrar pagamento manual.', {
+                    status: 422,
+                    extra: { billingType },
+                  }),
+                  req
+                );
             }
             if (isPrepaid) {
-                return res.status(422).json({
-                    success: false,
-                    error: 'Pacote pré-pago — dinheiro já entrou na compra do pacote. Não é possível registrar pagamento por sessão.',
-                    code: 'PAYMENT_NOT_ALLOWED_PREPAID',
-                    packagePaymentType: pkgPayType
-                });
+                return sendApiError(
+                  res,
+                  new AppError('PAYMENT_NOT_ALLOWED_PREPAID', 'Pacote pré-pago — dinheiro já entrou na compra do pacote. Não é possível registrar pagamento por sessão.', {
+                    status: 422,
+                    extra: { packagePaymentType: pkgPayType },
+                  }),
+                  req
+                );
             }
         }
 
@@ -418,11 +445,13 @@ router.post('/request', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[PaymentV2] Erro ao publicar evento:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao iniciar pagamento: ' + error.message,
-            code: 'PUBLISH_ERROR'
-        });
+        sendApiError(
+          res,
+          new AppError('PUBLISH_ERROR', 'Erro ao iniciar pagamento: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -439,24 +468,28 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
         // 🛡️ VALIDAÇÃO RIGOROSA
         // ========================================
         if (!isValidObjectId(patientId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID de paciente inválido',
-                code: 'INVALID_PATIENT_ID'
-            });
+            return sendApiError(
+              res,
+              new AppError('INVALID_PATIENT_ID', 'ID de paciente inválido', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (!payments?.length || !debitIds?.length || !totalAmount || totalAmount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Dados de pagamento inválidos',
-                code: 'INVALID_PAYMENT_DATA',
+            return sendApiError(
+              res,
+              new AppError('INVALID_PAYMENT_DATA', 'Dados de pagamento inválidos', {
+                status: 400,
                 details: {
                     hasPayments: !!payments?.length,
                     hasDebitIds: !!debitIds?.length,
                     totalAmount
-                }
-            });
+                },
+              }),
+              req
+            );
         }
 
         // Verifica se há débitos pendentes (query rápida)
@@ -466,11 +499,13 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
         ).lean();
 
         if (!balance?.transactions?.length) {
-            return res.status(400).json({
-                success: false,
-                error: 'Não há débitos pendentes para este paciente',
-                code: 'NO_PENDING_DEBITS'
-            });
+            return sendApiError(
+              res,
+              new AppError('NO_PENDING_DEBITS', 'Não há débitos pendentes para este paciente', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // ========================================
@@ -543,11 +578,13 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[PaymentV2] Erro no payment-multi:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao iniciar pagamento múltiplo: ' + error.message,
-            code: 'MULTI_PAYMENT_ERROR'
-        });
+        sendApiError(
+          res,
+          new AppError('MULTI_PAYMENT_ERROR', 'Erro ao iniciar pagamento múltiplo: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -564,11 +601,7 @@ router.get('/status/:eventId', auth, async (req, res) => {
         const event = await EventStore.findOne({ eventId });
 
         if (!event) {
-            return res.status(404).json({
-                success: false,
-                error: 'Evento não encontrado',
-                code: 'EVENT_NOT_FOUND'
-            });
+            return sendApiError(res, new AppError('EVENT_NOT_FOUND', 'Evento não encontrado', { status: 404 }), req);
         }
 
         // Busca pagamento relacionado (com validação de ObjectId)
@@ -622,11 +655,13 @@ router.get('/status/:eventId', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[PaymentV2] Erro ao consultar status:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao consultar status: ' + error.message,
-            code: 'STATUS_QUERY_ERROR'
-        });
+        sendApiError(
+          res,
+          new AppError('STATUS_QUERY_ERROR', 'Erro ao consultar status: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -655,25 +690,25 @@ router.post('/create-sync', auth, async (req, res) => {
 
     // 🛡️ Validação
     if (!patientId) {
-        return res.status(400).json({
-            success: false,
-            error: 'patientId é obrigatório',
-            code: 'MISSING_PATIENT_ID'
-        });
+        return sendApiError(res, new AppError('MISSING_PATIENT_ID', 'patientId é obrigatório', { status: 400 }), req);
     }
     if (!amount || amount <= 0) {
-        return res.status(400).json({
-            success: false,
-            error: 'O valor do pagamento deve ser maior que zero. Edite o agendamento, defina um valor maior que zero e salve antes de marcar como pago.',
-            code: 'INVALID_AMOUNT'
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_AMOUNT', 'O valor do pagamento deve ser maior que zero. Edite o agendamento, defina um valor maior que zero e salve antes de marcar como pago.', {
+            status: 400,
+          }),
+          req
+        );
     }
     if (appointmentId && !isValidObjectId(appointmentId)) {
-        return res.status(400).json({
-            success: false,
-            error: 'appointmentId inválido',
-            code: 'INVALID_APPOINTMENT_ID'
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_APPOINTMENT_ID', 'appointmentId inválido', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     const mongoSession = await mongoose.startSession();
@@ -816,11 +851,13 @@ router.post('/create-sync', auth, async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         logger.error(`[V2 create-sync] ❌ Erro: ${error.message}`);
-        return res.status(500).json({
-            success: false,
-            error: 'Erro ao criar pagamento',
-            code: 'PAYMENT_CREATE_ERROR'
-        });
+        return sendApiError(
+          res,
+          new AppError('PAYMENT_CREATE_ERROR', 'Erro ao criar pagamento', {
+            status: 500,
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
     }
@@ -844,19 +881,17 @@ router.post('/webhook', async (req, res) => {
         // 🛡️ VALIDAÇÃO
         // ========================================
         if (!paymentId || !status) {
-            return res.status(400).json({
-                success: false,
-                error: 'Campos obrigatórios: paymentId, status',
-                code: 'MISSING_WEBHOOK_FIELDS'
-            });
+            return sendApiError(
+              res,
+              new AppError('MISSING_WEBHOOK_FIELDS', 'Campos obrigatórios: paymentId, status', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (!isValidObjectId(paymentId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'paymentId inválido',
-                code: 'INVALID_PAYMENT_ID'
-            });
+            return sendApiError(res, new AppError('INVALID_PAYMENT_ID', 'paymentId inválido', { status: 400 }), req);
         }
 
         const correlationId = `webhook_${gateway || 'unknown'}_${Date.now()}`;
@@ -872,11 +907,13 @@ router.post('/webhook', async (req, res) => {
             .lean();
 
         if (!paymentDoc) {
-            return res.status(404).json({
-                success: false,
-                error: 'Pagamento não encontrado',
-                code: 'PAYMENT_NOT_FOUND'
-            });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         // ========================================
@@ -957,11 +994,13 @@ router.post('/webhook', async (req, res) => {
 
     } catch (error) {
         console.error('[PaymentV2] Erro no webhook:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao processar webhook: ' + error.message,
-            code: 'WEBHOOK_ERROR'
-        });
+        sendApiError(
+          res,
+          new AppError('WEBHOOK_ERROR', 'Erro ao processar webhook: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -992,11 +1031,13 @@ router.get('/queue/status', auth, async (req, res) => {
         });
 
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao consultar fila: ' + error.message,
-            code: 'QUEUE_STATUS_ERROR'
-        });
+        sendApiError(
+          res,
+          new AppError('QUEUE_STATUS_ERROR', 'Erro ao consultar fila: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -1010,22 +1051,36 @@ router.patch('/:id', auth, async (req, res) => {
 
     // 1. Fail fast: ID válido?
     if (!isValidObjectId(id)) {
-        return res.status(400).json({
-            success: false,
-            error: 'ID de pagamento inválido',
-            code: 'INVALID_PAYMENT_ID'
-        });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PAYMENT_ID', 'ID de pagamento inválido', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     // Validação split
     if (splitMethods !== undefined) {
         if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
-            return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
+            return sendApiError(
+              res,
+              new AppError('INVALID_SPLIT', 'splitMethods deve ter pelo menos 2 entradas', {
+                status: 400,
+              }),
+              req
+            );
         }
         if (amount !== undefined) {
             const splitTotal = splitMethods.reduce((s, e) => s + (Number(e.amount) || 0), 0);
             if (Math.abs(splitTotal - amount) > 0.01) {
-                return res.status(400).json({ success: false, error: `Total do split (${splitTotal}) não corresponde ao amount (${amount})`, code: 'SPLIT_AMOUNT_MISMATCH' });
+                return sendApiError(
+                  res,
+                  new AppError('SPLIT_AMOUNT_MISMATCH', `Total do split (${splitTotal}) não corresponde ao amount (${amount})`, {
+                    status: 400,
+                  }),
+                  req
+                );
             }
         }
     }
@@ -1043,11 +1098,7 @@ router.patch('/:id', auth, async (req, res) => {
                        financialDateBody !== undefined;
 
     if (!hasChanges) {
-        return res.status(400).json({
-            success: false,
-            error: 'Nenhum campo para atualizar',
-            code: 'NO_CHANGES'
-        });
+        return sendApiError(res, new AppError('NO_CHANGES', 'Nenhum campo para atualizar', { status: 400 }), req);
     }
 
     const mongoSession = await mongoose.startSession();
@@ -1059,32 +1110,38 @@ router.patch('/:id', auth, async (req, res) => {
         
         if (!payment) {
             await mongoSession.abortTransaction();
-            return res.status(404).json({
-                success: false,
-                error: 'Pagamento não encontrado',
-                code: 'PAYMENT_NOT_FOUND'
-            });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         // 🛡️ BLOQUEIO: não permite quitar manualmente convênio, liminar ou pré-pago
         const blockedTypes = ['convenio', 'liminar'];
         if (blockedTypes.includes(payment.billingType)) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: `Pagamentos de ${payment.billingType} não podem ser quitados manualmente. O lançamento é automático pelo sistema.`,
-                code: 'PAYMENT_TYPE_BLOCKED',
-                billingType: payment.billingType
-            });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_TYPE_BLOCKED', `Pagamentos de ${payment.billingType} não podem ser quitados manualmente. O lançamento é automático pelo sistema.`, {
+                status: 400,
+                extra: { billingType: payment.billingType },
+              }),
+              req
+            );
         }
         if (payment.isFromPackage || payment.kind === 'package_consumed') {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: 'Pagamentos pré-pagos (pacote) não podem ser quitados manualmente. O consumo é automático pelo sistema.',
-                code: 'PAYMENT_TYPE_BLOCKED',
-                kind: payment.kind
-            });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_TYPE_BLOCKED', 'Pagamentos pré-pagos (pacote) não podem ser quitados manualmente. O consumo é automático pelo sistema.', {
+                status: 400,
+                extra: { kind: payment.kind },
+              }),
+              req
+            );
         }
 
         // 4. Montar update
@@ -1308,11 +1365,13 @@ router.patch('/:id', auth, async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         logger.error(`[V2 PATCH ${id}] ❌ Erro: ${error.message}`);
-        return res.status(500).json({
-            success: false,
-            error: 'Erro ao atualizar pagamento',
-            code: 'PAYMENT_UPDATE_ERROR'
-        });
+        return sendApiError(
+          res,
+          new AppError('PAYMENT_UPDATE_ERROR', 'Erro ao atualizar pagamento', {
+            status: 500,
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
     }
@@ -1329,7 +1388,13 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
     const { id } = req.params;
 
     if (!isValidObjectId(id)) {
-        return res.status(400).json({ success: false, error: 'ID de pagamento inválido', code: 'INVALID_PAYMENT_ID' });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PAYMENT_ID', 'ID de pagamento inválido', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     const mongoSession = await mongoose.startSession();
@@ -1340,30 +1405,46 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 
         if (!payment) {
             await mongoSession.abortTransaction();
-            return res.status(404).json({ success: false, error: 'Pagamento não encontrado', code: 'PAYMENT_NOT_FOUND' });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         if (payment.billingType !== 'particular') {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: `Só é possível registrar débito em pagamentos particulares. Este é ${payment.billingType}.`,
-                code: 'PAYMENT_TYPE_BLOCKED'
-            });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_TYPE_BLOCKED', `Só é possível registrar débito em pagamentos particulares. Este é ${payment.billingType}.`, {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (!['pending', 'paid'].includes(payment.status)) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: `Só é possível registrar débito em pagamentos pendentes ou pagos. Status atual: ${payment.status}.`,
-                code: 'INVALID_STATUS_FOR_DEBIT'
-            });
+            return sendApiError(
+              res,
+              new AppError('INVALID_STATUS_FOR_DEBIT', `Só é possível registrar débito em pagamentos pendentes ou pagos. Status atual: ${payment.status}.`, {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (!payment.patient) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({ success: false, error: 'Pagamento sem paciente vinculado.', code: 'PAYMENT_WITHOUT_PATIENT' });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_WITHOUT_PATIENT', 'Pagamento sem paciente vinculado.', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // Idempotência: evita débito duplicado se o botão for clicado 2x
@@ -1375,11 +1456,13 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 
         if (alreadyRegistered) {
             await mongoSession.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                error: 'Este pagamento já foi registrado como débito.',
-                code: 'ALREADY_REGISTERED_AS_DEBIT'
-            });
+            return sendApiError(
+              res,
+              new AppError('ALREADY_REGISTERED_AS_DEBIT', 'Este pagamento já foi registrado como débito.', {
+                status: 409,
+              }),
+              req
+            );
         }
 
         const wasPaid = payment.status === 'paid';
@@ -1494,11 +1577,13 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         logger.error(`[V2 register-debit ${id}] ❌ Erro: ${error.message}`);
-        return res.status(500).json({
-            success: false,
-            error: 'Erro ao registrar débito',
-            code: 'DEBIT_REGISTRATION_ERROR'
-        });
+        return sendApiError(
+          res,
+          new AppError('DEBIT_REGISTRATION_ERROR', 'Erro ao registrar débito', {
+            status: 500,
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
     }
@@ -1512,25 +1597,49 @@ router.post('/bulk-settle', auth, async (req, res) => {
     const { paymentIds, paymentMethod, totalAmount, notes, splitMethods } = req.body;
 
     if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
-        return res.status(400).json({ success: false, error: 'paymentIds obrigatório' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'paymentIds obrigatório', { status: 400 }), req);
     }
     if (new Set(paymentIds.map(String)).size !== paymentIds.length) {
-        return res.status(400).json({ success: false, error: 'paymentIds duplicados não são permitidos', code: 'DUPLICATE_PAYMENT_IDS' });
+        return sendApiError(
+          res,
+          new AppError('DUPLICATE_PAYMENT_IDS', 'paymentIds duplicados não são permitidos', {
+            status: 400,
+          }),
+          req
+        );
     }
     if (paymentIds.some(id => !isValidObjectId(id))) {
-        return res.status(400).json({ success: false, error: 'paymentId inválido', code: 'INVALID_PAYMENT_ID' });
+        return sendApiError(res, new AppError('INVALID_PAYMENT_ID', 'paymentId inválido', { status: 400 }), req);
     }
     if (!splitMethods?.length && !VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-        return res.status(400).json({ success: false, error: 'Método de pagamento inválido', code: 'INVALID_PAYMENT_METHOD' });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PAYMENT_METHOD', 'Método de pagamento inválido', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     // Validação básica de splitMethods
     if (splitMethods !== undefined) {
         if (!Array.isArray(splitMethods) || splitMethods.length < 2) {
-            return res.status(400).json({ success: false, error: 'splitMethods deve ter pelo menos 2 entradas', code: 'INVALID_SPLIT' });
+            return sendApiError(
+              res,
+              new AppError('INVALID_SPLIT', 'splitMethods deve ter pelo menos 2 entradas', {
+                status: 400,
+              }),
+              req
+            );
         }
         if (splitMethods.some(entry => !VALID_PAYMENT_METHODS.includes(entry.method) || !Number.isFinite(Number(entry.amount)) || Number(entry.amount) <= 0)) {
-            return res.status(400).json({ success: false, error: 'Split contém método ou valor inválido', code: 'INVALID_SPLIT' });
+            return sendApiError(
+              res,
+              new AppError('INVALID_SPLIT', 'Split contém método ou valor inválido', {
+                status: 400,
+              }),
+              req
+            );
         }
     }
 
@@ -1547,11 +1656,17 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         if (allRequestedPayments.length === 0) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({ success: false, error: 'Nenhum payment encontrado' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Nenhum payment encontrado', { status: 400 }), req);
         }
         if (allRequestedPayments.length !== paymentIds.length) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({ success: false, error: 'Conjunto de Payments incompleto', code: 'PAYMENT_SET_INCOMPLETE' });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_SET_INCOMPLETE', 'Conjunto de Payments incompleto', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const now = new Date();
@@ -1561,11 +1676,13 @@ router.post('/bulk-settle', auth, async (req, res) => {
         const hasMixedClinics = allRequestedPayments.some(p => (p.clinicId || 'default') !== clinicId);
         if (hasMixedPatients || hasMixedClinics) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: 'Todos os Payments devem pertencer ao mesmo paciente e clínica',
-                code: hasMixedPatients ? 'MIXED_PATIENTS' : 'MIXED_CLINICS'
-            });
+            return sendApiError(
+              res,
+              new AppError(hasMixedPatients ? 'MIXED_PATIENTS' : 'MIXED_CLINICS', 'Todos os Payments devem pertencer ao mesmo paciente e clínica', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 🛡️ IDEMPOTÊNCIA: recusa fechamento já realizado para o mesmo conjunto de payments
@@ -1579,12 +1696,14 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         if (existingSettlement) {
             await mongoSession.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                error: 'Fechamento já realizado para essas sessões',
-                code: 'BULK_SETTLEMENT_ALREADY_EXISTS',
-                data: { receiptId: existingSettlement._id }
-            });
+            return sendApiError(
+              res,
+              new AppError('BULK_SETTLEMENT_ALREADY_EXISTS', 'Fechamento já realizado para essas sessões', {
+                status: 409,
+                extra: { data: { receiptId: existingSettlement._id } },
+              }),
+              req
+            );
         }
 
         // Filtra apenas os pendentes para quitar
@@ -1592,23 +1711,33 @@ router.post('/bulk-settle', auth, async (req, res) => {
 
         if (payments.length === 0) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({ success: false, error: 'Nenhum payment pendente encontrado' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Nenhum payment pendente encontrado', {
+                status: 400,
+              }),
+              req
+            );
         }
         if (payments.length !== allRequestedPayments.length) {
             await mongoSession.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                error: 'Todos os Payments devem estar abertos para a mesma quitacao',
-                code: 'MIXED_SETTLEMENT_STATUSES'
-            });
+            return sendApiError(
+              res,
+              new AppError('MIXED_SETTLEMENT_STATUSES', 'Todos os Payments devem estar abertos para a mesma quitacao', {
+                status: 409,
+              }),
+              req
+            );
         }
         if (payments.some(p => p.status === 'partial')) {
             await mongoSession.abortTransaction();
-            return res.status(422).json({
-                success: false,
-                error: 'Quitação em lote de Payment partial exige saldo remanescente explícito',
-                code: 'PARTIAL_SETTLEMENT_REQUIRES_REMAINING_AMOUNT'
-            });
+            return sendApiError(
+              res,
+              new AppError('PARTIAL_SETTLEMENT_REQUIRES_REMAINING_AMOUNT', 'Quitação em lote de Payment partial exige saldo remanescente explícito', {
+                status: 422,
+              }),
+              req
+            );
         }
 
         // 🛡️ BACKEND é fonte de verdade do valor: soma dos payments efetivamente quitados.
@@ -1626,7 +1755,13 @@ router.post('/bulk-settle', auth, async (req, res) => {
             const splitTotalCents = splitMethods.reduce((sum, entry) => sum + toCents(entry.amount), 0);
             if (splitTotalCents !== toCents(computedTotal)) {
                 await mongoSession.abortTransaction();
-                return res.status(400).json({ success: false, error: 'Total do split não corresponde ao total calculado', code: 'SPLIT_AMOUNT_MISMATCH' });
+                return sendApiError(
+                  res,
+                  new AppError('SPLIT_AMOUNT_MISMATCH', 'Total do split não corresponde ao total calculado', {
+                    status: 400,
+                  }),
+                  req
+                );
             }
         }
         const primaryMethod = splitMethods?.length
@@ -1645,12 +1780,14 @@ router.post('/bulk-settle', auth, async (req, res) => {
             });
         } catch (flowErr) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-                success: false,
-                error: flowErr.message,
-                code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
-                meta: flowErr.meta || undefined
-            });
+            return sendApiError(
+              res,
+              new AppError(flowErr.code || 'PAYMENT_FLOW_BLOCKED', flowErr.message, {
+                status: 400,
+                extra: { meta: flowErr.meta || undefined },
+              }),
+              req
+            );
         }
 
         // 1. Marca todos os payments como pago numa ÚNICA operação (bulkWrite).
@@ -1927,10 +2064,16 @@ router.delete('/:paymentId', auth, async (req, res) => {
     const { paymentId } = req.params;
 
     if (req.user?.role !== 'admin') {
-        return res.status(403).json({ success: false, error: 'Acesso restrito a administradores', code: 'FORBIDDEN' });
+        return sendApiError(
+          res,
+          new AppError('FORBIDDEN', 'Acesso restrito a administradores', {
+            status: 403,
+          }),
+          req
+        );
     }
     if (!isValidObjectId(paymentId)) {
-        return res.status(400).json({ success: false, error: 'paymentId inválido', code: 'INVALID_PAYMENT_ID' });
+        return sendApiError(res, new AppError('INVALID_PAYMENT_ID', 'paymentId inválido', { status: 400 }), req);
     }
 
     const mongoSession = await mongoose.startSession();
@@ -1940,7 +2083,13 @@ router.delete('/:paymentId', auth, async (req, res) => {
         const payment = await Payment.findById(paymentId).session(mongoSession).lean();
         if (!payment) {
             await mongoSession.abortTransaction();
-            return res.status(404).json({ success: false, error: 'Pagamento não encontrado', code: 'PAYMENT_NOT_FOUND' });
+            return sendApiError(
+              res,
+              new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         // 🛡️ Payment financeiramente realizado (status='paid' — dinheiro já
@@ -1953,11 +2102,13 @@ router.delete('/:paymentId', auth, async (req, res) => {
         // (nunca chegou a 'paid') é seguro remover fisicamente por esta rota.
         if (payment.status === 'paid') {
             await mongoSession.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                error: 'Payment já foi pago — não pode ser excluído fisicamente (apagaria o histórico e deixaria o FinancialLedger órfão). Use o fluxo de cancelamento/estorno.',
-                code: 'PAID_PAYMENT_DELETE_BLOCKED'
-            });
+            return sendApiError(
+              res,
+              new AppError('PAID_PAYMENT_DELETE_BLOCKED', 'Payment já foi pago — não pode ser excluído fisicamente (apagaria o histórico e deixaria o FinancialLedger órfão). Use o fluxo de cancelamento/estorno.', {
+                status: 409,
+              }),
+              req
+            );
         }
 
         const cascade = { appointment: null, session: null };
@@ -1997,7 +2148,7 @@ router.delete('/:paymentId', auth, async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         logger.error(`[DELETE payment] Erro: ${error.message}`);
-        return res.status(500).json({ success: false, error: error.message, code: 'DELETE_PAYMENT_ERROR' });
+        return sendApiError(res, new AppError('DELETE_PAYMENT_ERROR', error.message, { status: 500 }), req);
     } finally {
         mongoSession.endSession();
     }

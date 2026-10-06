@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 dotenv.config();
 
@@ -14,15 +16,18 @@ export const authController = {
       const { email, role } = req.body;
 
       if (!email || !role) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email e tipo de usuário são obrigatórios'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Email e tipo de usuário são obrigatórios', {
+            status: 400,
+          }),
+          req
+        );
       }
 
       const Model = role === 'doctor' ? Doctor : role === 'admin' ? Admin : null;
       if (!Model) {
-        return res.status(400).json({ success: false, message: 'Tipo de usuário inválido' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'Tipo de usuário inválido', { status: 400 }), req);
       }
 
       const user = await Model.findOne({ email });
@@ -64,10 +69,13 @@ export const authController = {
           { $unset: { passwordResetToken: '', passwordResetExpires: '' } }
         );
         console.error('[forgotPassword][SMTP] falha:', sendErr?.message || sendErr);
-        return res.status(502).json({
-          success: false,
-          message: 'Falha ao enviar e-mail de recuperação (SMTP/Mailjet)',
-        });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Falha ao enviar e-mail de recuperação (SMTP/Mailjet)', {
+            status: 502,
+          }),
+          req
+        );
       }
 
       return res.status(200).json({
@@ -77,10 +85,7 @@ export const authController = {
 
     } catch (error) {
       console.error('Erro no processo de recuperação:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao processar solicitação'
-      });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao processar solicitação', { status: 500 }), req);
     }
   },
 
@@ -90,10 +95,16 @@ export const authController = {
       const { password, role } = req.body;
 
       if (!role || !['doctor', 'admin'].includes(role)) {
-        return res.status(400).json({ error: 'Tipo de usuário inválido' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'Tipo de usuário inválido', { status: 400 }), req);
       }
       if (!password || password.length < 6) {
-        return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres' });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Senha deve ter no mínimo 6 caracteres', {
+            status: 400,
+          }),
+          req
+        );
       }
 
       const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
@@ -105,10 +116,14 @@ export const authController = {
       }).select('+password');
 
       if (!user) {
-        return res.status(400).json({
-          error: 'Token inválido ou expirado',
-          solution: 'Solicite um novo link de redefinição'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Token inválido ou expirado', {
+            status: 400,
+            extra: { solution: 'Solicite um novo link de redefinição' },
+          }),
+          req
+        );
       }
 
       user.password = password;
@@ -131,10 +146,14 @@ export const authController = {
 
     } catch (error) {
       console.error('Erro no resetPassword:', error);
-      return res.status(500).json({
-        error: 'Erro ao atualizar senha',
-        details: error.message
-      });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro ao atualizar senha', {
+          status: 500,
+          details: error.message,
+        }),
+        req
+      );
     }
   },
 
@@ -144,11 +163,14 @@ export const authController = {
       const { role } = req.query;
 
       if (!role || !['doctor', 'admin'].includes(role)) {
-        return res.status(400).json({
-          success: false,
-          valid: false,
-          message: 'Tipo de usuário inválido'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Tipo de usuário inválido', {
+            status: 400,
+            extra: { valid: false },
+          }),
+          req
+        );
       }
 
       const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
@@ -160,11 +182,14 @@ export const authController = {
       });
 
       if (!user) {
-        return res.status(400).json({
-          success: false,
-          valid: false,
-          message: 'Token inválido ou expirado'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Token inválido ou expirado', {
+            status: 400,
+            extra: { valid: false },
+          }),
+          req
+        );
       }
 
       return res.status(200).json({
@@ -175,10 +200,7 @@ export const authController = {
 
     } catch (error) {
       console.error('Erro ao verificar token:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao verificar token'
-      });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao verificar token', { status: 500 }), req);
     }
   },
 
@@ -187,7 +209,13 @@ export const authController = {
       const { email, role } = req.body;
 
       if (!email || !role || !['admin', 'doctor'].includes(role)) {
-        return res.status(400).json({ success: false, message: 'Email e role são obrigatórios (admin|doctor)' });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Email e role são obrigatórios (admin|doctor)', {
+            status: 400,
+          }),
+          req
+        );
       }
 
       const Model = role === 'doctor' ? Doctor : Admin;
@@ -218,7 +246,13 @@ export const authController = {
 
     } catch (e) {
       console.error('[manualResetStart]', e);
-      return res.status(500).json({ success: false, message: 'Erro ao gerar link de redefinição' });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Erro ao gerar link de redefinição', {
+          status: 500,
+        }),
+        req
+      );
     }
   },
 
@@ -226,7 +260,7 @@ export const authController = {
     try {
       const { email, newPassword, role } = req.body;
       if (!email || !newPassword || !role || !['doctor', 'admin'].includes(role)) {
-        return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'Dados inválidos', { status: 400 }), req);
       }
       const Model = role === 'doctor' ? Doctor : Admin;
       const user = await Model.findOne({ email }).select('+password +requiresPasswordCreation');
@@ -241,10 +275,13 @@ export const authController = {
         !user.password || user.requiresPasswordCreation === true;
 
       if (!isFirstSet) {
-        return res.status(400).json({
-          success: false,
-          message: 'Use o link de redefinição (token) para alterar a senha'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Use o link de redefinição (token) para alterar a senha', {
+            status: 400,
+          }),
+          req
+        );
       }
 
       user.password = newPassword;
@@ -267,7 +304,7 @@ export const authController = {
       });
     } catch (err) {
       console.error('[setPasswordNoToken] erro:', err);
-      return res.status(500).json({ success: false, message: 'Erro ao criar senha' });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao criar senha', { status: 500 }), req);
     }
   }
 

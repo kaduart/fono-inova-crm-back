@@ -3,6 +3,7 @@ import express from "express";
 import { getGA4Events, getGA4Metrics } from "../services/analytics.js";
 import { analyzeHistoricalConversations, getLatestInsights } from "../services/amandaLearningService.js";
 import { getFollowupAnalytics } from "../controllers/followupController.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ router.get("/overview", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Erro overview:", error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -68,7 +69,7 @@ router.get("/ga4/metrics", async (req, res) => {
     const data = await getGA4Metrics(startDate, endDate);
     res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -78,7 +79,7 @@ router.get("/ga4/events", async (req, res) => {
     const data = await getGA4Events(startDate, endDate, eventName);
     res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -87,7 +88,7 @@ router.get("/insights", async (req, res) => {
     const insights = await getLatestInsights(10);
     res.json({ success: true, data: insights });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -97,7 +98,7 @@ router.post("/analyze-conversations", async (req, res) => {
     const result = await analyzeHistoricalConversations(days || 30, phone);
     res.json({ success: true, data: result });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -206,11 +207,7 @@ router.get("/new-patients-today", async (req, res) => {
 
   } catch (err) {
     console.error("❌ Erro em new-patients-today:", err);
-    res.status(500).json({
-      success: false,
-      message: "Erro ao buscar pacientes novos",
-      error: err.message
-    });
+    sendApiError(res, err, req);
   }
 });
 

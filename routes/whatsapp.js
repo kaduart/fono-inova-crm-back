@@ -3,6 +3,8 @@ import multer from 'multer';
 import { getIo } from '../config/socket.js';
 import { whatsappController } from '../controllers/whatsappController.js';
 import { whatsappGuard, healthCheck, getGuardStats } from '../middleware/whatsappGuard.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -67,21 +69,18 @@ const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         // Erro específico do multer
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({
-                success: false,
-                error: 'Arquivo muito grande. Limite máximo: 50MB'
-            });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Arquivo muito grande. Limite máximo: 50MB', {
+                status: 413,
+              }),
+              req
+            );
         }
-        return res.status(400).json({
-            success: false,
-            error: `Erro no upload: ${err.message}`
-        });
+        return sendApiError(res, new AppError('BAD_REQUEST', `Erro no upload: ${err.message}`, { status: 400 }), req);
     } else if (err) {
         // Outro tipo de erro
-        return res.status(400).json({
-            success: false,
-            error: err.message
-        });
+        return sendApiError(res, new AppError('BAD_REQUEST', err.message, { status: 400 }), req);
     }
     next();
 };
@@ -151,9 +150,11 @@ router.get('/webhook/test-verify', (req, res) => {
         return res.status(200).send(finalChallenge);
     }
     
-    return res.status(403).json({
-        error: "Forbidden",
-        debug: {
+    return sendApiError(
+      res,
+      new AppError('FORBIDDEN', "Forbidden", {
+        status: 403,
+        extra: { debug: {
             modeReceived: finalMode,
             tokenReceived: finalToken,
             tokenExpected: verifyToken,
@@ -161,8 +162,10 @@ router.get('/webhook/test-verify', (req, res) => {
             modeOk: finalMode === "subscribe",
             rawQuery: req.query,
             originalUrl: req.originalUrl
-        }
-    });
+        } },
+      }),
+      req
+    );
 });
 
 // 🧪 Teste de socket
@@ -207,20 +210,32 @@ router.post('/test-socket', (req, res) => {
         });
     } catch (error) {
         console.error('❌ [TEST SOCKET] Erro ao emitir:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
 // 💬 Histórico de chat — APOSENTADO: usar GET /api/v2/chat/:leadId/messages
 router.get('/chat/:phone', (_req, res) =>
-  res.status(410).json({ success: false, error: 'Endpoint aposentado. Use GET /api/v2/chat/:leadId/messages' })
+  sendApiError(
+    res,
+    new AppError('INTERNAL_ERROR', 'Endpoint aposentado. Use GET /api/v2/chat/:leadId/messages', {
+      status: 410,
+    }),
+    _req
+  )
 );
 
 // 👥 Listagem de contatos — APOSENTADO para inbox: usar GET /api/v2/chat/inbox
 // Mantido APENAS para ?search= (busca por texto não tem equivalente V2)
 router.get('/contacts', (req, res, next) => {
   if (req.query.search) return next(); // deixa passar para o controller
-  return res.status(410).json({ success: false, error: 'Endpoint aposentado. Use GET /api/v2/chat/inbox' });
+  return sendApiError(
+    res,
+    new AppError('INTERNAL_ERROR', 'Endpoint aposentado. Use GET /api/v2/chat/inbox', {
+      status: 410,
+    }),
+    req
+  );
 }, whatsappController.listContacts);
 router.post('/contacts', whatsappController.addContact);
 router.put('/contacts/:id', whatsappController.updateContact);

@@ -19,6 +19,9 @@
  */
 import { getCatalogEntry, runHumanizer } from './errorCatalog.js';
 
+// Campos do envelope — `extra` de um erro nunca os sobrescreve.
+const RESERVED_KEYS = new Set(['success', 'code', 'errorCode', 'message', 'error', 'title', 'action', 'items', 'details', 'technicalMessage', 'correlationId', 'stack']);
+
 const SYSTEM_CODE = /^E[A-Z0-9_]+$/; // ECONNRESET, ETIMEDOUT… — nunca expor ao usuário como código de negócio
 
 function resolveStatus(error, catalogEntry) {
@@ -62,24 +65,30 @@ export async function buildErrorResponse(error, { correlationId, includeStack = 
 
   if (validation) {
     message = `Dados inválidos: ${validation.map((v) => v.message).join('; ')}`;
-  } else if (!human && (error?.title || catalogEntry?.title || action)) {
-    // Sem tradutor: monta texto a partir do que o erro/catálogo declara.
+  } else if (!human && !error?.isAppError && (error?.title || catalogEntry?.title || action)) {
+    // Sem tradutor e sem mensagem explícita (AppError): monta texto a partir do que o erro/catálogo declara.
     message = [title, technicalMessage !== title ? technicalMessage : null, action].filter(Boolean).join('\n');
   }
 
   const items = human?.items ?? error?.items;
+  const extra = Object.fromEntries(
+    Object.entries(error?.extra || {}).filter(([key]) => !RESERVED_KEYS.has(key))
+  );
   const body = {
+    ...extra,
     success: false,
     code,
+    errorCode: code, // alias: parte do front e do app agenda lê `errorCode`
     message,
-    error: message, // compatibilidade com consumidores que leem `error`
+    // compatibilidade: consumidores antigos leem `error` (texto curto original, quando havia)
+    error: !human && typeof error?.legacyError === 'string' ? error.legacyError : message,
     ...(title ? { title } : {}),
     ...(action ? { action } : {}),
     ...(items ? { items } : {}),
     ...(validation ? { errors: validation } : {}),
     ...(error?.details !== undefined ? { details: error.details } : {}),
     ...(technicalMessage && technicalMessage !== message ? { technicalMessage } : {}),
-    ...(correlationId ? { correlationId } : {}),
+    ...(correlationId && !('correlationId' in extra) ? { correlationId } : {}),
     ...(includeStack && error?.stack ? { stack: error.stack } : {}),
   };
   return { status, body };

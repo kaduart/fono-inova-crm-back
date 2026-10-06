@@ -7,6 +7,8 @@ import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { safeRedis } from '../config/redisConnection.js';
 import mongoose from 'mongoose';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -45,6 +47,55 @@ const ORIGIN_CONDITIONS = {
     commission: { fixedExpenseId: null, category: 'commission' },
     manual: { fixedExpenseId: null, category: { $ne: 'commission' } }
 };
+
+// Ordem de listagem determinística: sem critério de desempate, a ordem de
+// despesas do mesmo dia dependia da ordem em que o banco devolvia os médicos na
+// geração de comissões (aparentava aleatória). Collation pt strength 1 ignora
+// acento e caixa ("Álvaro" ordena junto de "Alvaro").
+export const EXPENSE_LIST_COLLATION = { collation: { locale: 'pt', strength: 1 } };
+
+/**
+ * Pipeline da listagem: mais recente primeiro; no mesmo dia, profissional em
+ * ordem alfabética (despesas sem profissional vêm depois, por descrição);
+ * createdAt e _id fecham o desempate. Ordena ANTES do skip/limit para a
+ * paginação ser estável. Devolve `relatedDoctor` no mesmo formato do populate
+ * anterior ({ _id, fullName, specialty } ou null).
+ *
+ * `$match` de aggregate não faz cast de string → ObjectId (find fazia), então
+ * `relatedDoctor` é convertido aqui.
+ */
+export function buildExpenseListPipeline({ filters, skip, limit }) {
+    const match = { ...filters };
+    if (typeof match.relatedDoctor === 'string' && mongoose.isValidObjectId(match.relatedDoctor)) {
+        match.relatedDoctor = new mongoose.Types.ObjectId(match.relatedDoctor);
+    }
+
+    return [
+        { $match: match },
+        {
+            $lookup: {
+                from: Doctor.collection.collectionName,
+                localField: 'relatedDoctor',
+                foreignField: '_id',
+                pipeline: [{ $project: { fullName: 1, specialty: 1 } }],
+                as: '_doctor'
+            }
+        },
+        {
+            $addFields: {
+                relatedDoctor: { $ifNull: [{ $arrayElemAt: ['$_doctor', 0] }, null] },
+                _noDoctor: { $cond: [{ $gt: [{ $size: '$_doctor' }, 0] }, 0, 1] },
+                _sortName: {
+                    $ifNull: [{ $arrayElemAt: ['$_doctor.fullName', 0] }, { $ifNull: ['$description', ''] }]
+                }
+            }
+        },
+        { $sort: { date: -1, _noDoctor: 1, _sortName: 1, createdAt: -1, _id: 1 } },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { _doctor: 0, _noDoctor: 0, _sortName: 0 } }
+    ];
+}
 
 /**
  * @route   GET /api/v2/expenses
@@ -113,12 +164,10 @@ router.get('/', auth, async (req, res) => {
         const skip = (page - 1) * limit;
 
         const [expenses, total] = await Promise.all([
-            Expense.find(filters)
-                .populate('relatedDoctor', 'fullName specialty')
-                .sort({ date: -1, createdAt: -1 })
-                .skip(skip)
-                .limit(Number(limit))
-                .lean(),
+            Expense.aggregate(
+                buildExpenseListPipeline({ filters, skip, limit: Number(limit) }),
+                EXPENSE_LIST_COLLATION
+            ),
 
             Expense.countDocuments(filters)
         ]);
@@ -185,11 +234,7 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[ExpenseV2] Erro ao listar despesas:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao listar despesas',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -217,28 +262,37 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
         // 🛡️ VALIDAÇÃO (fail fast)
         if (!description || !category || !amount || !date || !paymentMethod) {
-            return res.status(400).json({
-                success: false,
-                message: 'Campos obrigatórios: description, category, amount, date, paymentMethod'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios: description, category, amount, date, paymentMethod', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 🛡️ VALIDAÇÃO: Usuário autenticado
         if (!req.user?.id || !req.user?.role) {
-            return res.status(401).json({
-                success: false,
-                message: 'Usuário não autenticado. Token inválido ou expirado.'
-            });
+            return sendApiError(
+              res,
+              new AppError('UNAUTHORIZED', 'Usuário não autenticado. Token inválido ou expirado.', {
+                status: 401,
+              }),
+              req
+            );
         }
 
         // Se vinculada a profissional, validar existência (sem session)
         if (relatedDoctor) {
             const doctorExists = await Doctor.exists({ _id: relatedDoctor });
             if (!doctorExists) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Profissional não encontrado'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('NOT_FOUND', 'Profissional não encontrado', {
+                    status: 404,
+                  }),
+                  req
+                );
             }
         }
 
@@ -313,18 +367,17 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         
         // 🛡️ Trata erro de duplicidade (idempotência)
         if (error.code === 11000) {
-            return res.status(409).json({
-                success: false,
-                message: 'Despesa duplicada detectada',
-                error: 'DUPLICATE_EXPENSE'
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', 'Despesa duplicada detectada', {
+                status: 409,
+                legacyError: 'DUPLICATE_EXPENSE',
+              }),
+              req
+            );
         }
         
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao registrar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -346,10 +399,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
             .populate('relatedDoctor', 'fullName specialty');
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         // Invalida cache
@@ -369,11 +419,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
 
     } catch (error) {
         console.error('[ExpenseV2] Erro ao atualizar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao atualizar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -392,14 +438,17 @@ router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) 
         if (req.query.permanent === 'true') {
             const target = await Expense.findById(id).select('status category fixedExpenseId').lean();
             if (!target) {
-                return res.status(404).json({ success: false, message: 'Despesa não encontrada' });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
             }
             const isManual = !target.fixedExpenseId && target.category !== 'commission';
             if (!isManual || !['pending', 'scheduled'].includes(target.status)) {
-                return res.status(409).json({
-                    success: false,
-                    message: 'Exclusão definitiva só é permitida para despesas avulsas pendentes. Use cancelar.'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('CONFLICT', 'Exclusão definitiva só é permitida para despesas avulsas pendentes. Use cancelar.', {
+                    status: 409,
+                  }),
+                  req
+                );
             }
             await Expense.deleteOne({ _id: id, status: { $in: ['pending', 'scheduled'] } });
             await invalidateExpenseCache();
@@ -416,10 +465,7 @@ router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) 
         );
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         // Invalida cache
@@ -437,11 +483,7 @@ router.delete('/:id', auth, authorize(['admin', 'secretary']), async (req, res) 
 
     } catch (error) {
         console.error('[ExpenseV2] Erro ao cancelar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao cancelar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 

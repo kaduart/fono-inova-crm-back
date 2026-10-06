@@ -31,9 +31,8 @@ function _commCacheSet(key, data) {
  *
  * Regras:
  * 1. Usa o motor de regras de comissão (commissionRule.service).
- * 2. Mantém fallback para campos legados de Doctor.commissionRules.
- * 3. Sessões regulares: valor fixo ou percentual por tipo/atendimento.
- * 4. Avaliação neuropsicológica: valor ao completar N sessões.
+ * 2. Sessões: valor fixo ou percentual por tipo/atendimento.
+ * 3. Neuropsicologia: repasse por atendimento realizado no período, inclusive em pacote.
  */
 export const calculateDoctorCommission = async (doctorId, startDate, endDate) => {
   const cacheKey = `${doctorId}_${startDate instanceof Date ? startDate.toISOString() : startDate}_${endDate instanceof Date ? endDate.toISOString() : endDate}`;
@@ -211,7 +210,7 @@ export const generateMonthlyCommissions = async (month, year, options = {}) => {
         }
 
         console.log(`   - Avaliações: ${commission.breakdown.evaluations.count}`);
-        console.log(`   - Neuro completas: ${commission.breakdown.neuropsychEvaluations.count} × R$ ${doctor.commissionRules?.neuropsychEvaluation || 1200}`);
+        console.log(`   - Atendimentos de neuropsicologia: ${commission.breakdown.neuropsychEvaluations.count}, R$ ${commission.breakdown.neuropsychEvaluations.value.toFixed(2)}`);
       }
     }
 

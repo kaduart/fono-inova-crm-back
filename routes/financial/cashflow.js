@@ -10,6 +10,8 @@ import Payment from '../../models/Payment.js';
 import Expense from '../../models/Expense.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -247,12 +249,15 @@ router.get('/summary', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[Cashflow] Erro:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao calcular fluxo de caixa',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao calcular fluxo de caixa', {
+        status: 500,
+        legacyError: error.message,
+        extra: { stack: process.env.NODE_ENV === 'development' ? error.stack : undefined },
+      }),
+      req
+    );
   }
 });
 

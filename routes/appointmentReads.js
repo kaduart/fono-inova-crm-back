@@ -10,6 +10,8 @@ import PatientsView from '../models/PatientsView.js';
 import Payment from '../models/Payment.js';
 import { mapAppointmentToEvent } from '../utils/appointmentMapper.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -59,7 +61,7 @@ router.get('/with-appointments', flexibleAuth, async (req, res) => {
         const enriched = attachLastAndNext(patients);
         res.json({ success: true, data: enriched });
     } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
+        sendApiError(res, e, req);
     }
 });
 
@@ -79,7 +81,7 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
 
         res.json(appointments.map(mapAppointmentDTO));
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -99,13 +101,17 @@ router.get('/history/:patientId', flexibleAuth, async (req, res) => {
                 return acc;
             }, {});
 
-            return res.status(400).json({
-                message: 'Falha na validação dos dados',
-                errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                status: 400,
+                extra: { errors },
+              }),
+              req
+            );
         }
 
-        return res.status(500).json({ error: 'Erro interno' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
 });
 
@@ -200,13 +206,17 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
                 return acc;
             }, {});
 
-            return res.status(400).json({
-                message: 'Falha na validação dos dados',
-                errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                status: 400,
+                extra: { errors },
+              }),
+              req
+            );
         }
 
-        return res.status(500).json({ error: 'Erro interno' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
 });
 
@@ -270,11 +280,7 @@ router.get('/count-by-status', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro na rota count-by-status:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Erro interno do servidor',
-            error: error.message
-        });
+        return sendApiError(res, error, req);
     }
 });
 
@@ -421,10 +427,14 @@ router.get('/stats', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar estatísticas:', error);
-        res.status(500).json({
-            error: 'Erro interno',
-            details: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro interno', {
+            status: 500,
+            details: error.message,
+          }),
+          req
+        );
     }
 });
 
@@ -633,16 +643,24 @@ router.get('/', flexibleAuth, async (req, res) => {
         console.error('Erro ao buscar agendamentos:', error);
 
         if (error.name === 'CastError') {
-            return res.status(400).json({
-                error: 'ID inválido',
-                message: 'O formato do ID fornecido é inválido'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'O formato do ID fornecido é inválido', {
+                status: 400,
+                legacyError: 'ID inválido',
+              }),
+              req
+            );
         }
 
-        res.status(500).json({
-            error: 'Erro interno',
-            details: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro interno', {
+            status: 500,
+            details: error.message,
+          }),
+          req
+        );
     }
 });
 
@@ -652,7 +670,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         const { id } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
         }
 
         const appointment = await Appointment.findById(id)
@@ -664,7 +682,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
             .populate('payment', 'status amount paymentMethod splitMethods');
 
         if (!appointment) {
-            return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento não encontrado', { status: 404 }), req);
         }
 
         // 🎯 SINAL + SALDO: mesmo enriquecimento do GET / (lista) — sem isso,
@@ -683,7 +701,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         res.json({ success: true, data: mapAppointmentDTO(appointment, financialAmounts) });
     } catch (error) {
         console.error('[APPOINTMENT] Erro ao buscar:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

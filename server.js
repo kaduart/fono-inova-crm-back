@@ -528,13 +528,25 @@ app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 // app.use("/api/evolutions", evolutionRoutes);
 app.use('/api/packages', (req, res) => {
   console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/packages`);
-  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/packages' });
+  return sendApiError(
+    res,
+    new AppError('LEGACY_ENDPOINT_DISABLED', 'Este endpoint legado foi desativado. Use /api/v2/packages', {
+      status: 410,
+    }),
+    req
+  );
 });
 app.use("/api/financial", financialAuditRoutes);  // 📊 Audit V1 vs V2
 // 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
 app.use('/api/payments', (req, res) => {
   console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/payments`);
-  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/payments' });
+  return sendApiError(
+    res,
+    new AppError('LEGACY_ENDPOINT_DISABLED', 'Este endpoint legado foi desativado. Use /api/v2/payments', {
+      status: 410,
+    }),
+    req
+  );
 });
 app.use("/api/users", UserRoutes);
 app.use("/api/specialties", specialtyRouter);
@@ -582,7 +594,13 @@ app.use('/api/v2/analytics/roi', roiAnalyticsRoutes);
 // 🔒 LEGADO BLOQUEADO (monitorando uso — remover após 5 dias sem hits)
 app.use('/api/insurance-guides', (req, res) => {
   console.warn(`[LEGACY HIT] ${req.method} ${req.path} — /api/insurance-guides`);
-  return res.status(410).json({ success: false, errorCode: 'LEGACY_ENDPOINT_DISABLED', message: 'Este endpoint legado foi desativado. Use /api/v2/insurance-guides' });
+  return sendApiError(
+    res,
+    new AppError('LEGACY_ENDPOINT_DISABLED', 'Este endpoint legado foi desativado. Use /api/v2/insurance-guides', {
+      status: 410,
+    }),
+    req
+  );
 });
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
@@ -645,7 +663,7 @@ app.post('/api/renew-token', auth, (req, res) => {
     res.json({ newToken });
   } catch (error) {
     console.error('Error renewing token:', error);
-    res.status(500).json({ error: 'Failed to renew token' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Failed to renew token', { status: 500 }), req);
   }
 });
 
@@ -660,6 +678,8 @@ app.get("/health", (_, res) =>
 // 🛡️ Middleware de Erros (deve vir antes do static)
 // ======================================================
 import { errorHandler } from './middleware/errorHandler.js';
+import { sendApiError } from './errors/buildErrorResponse.js';
+import { AppError } from './errors/AppError.js';
 app.use(errorHandler);
 
 // ======================================================
@@ -682,7 +702,7 @@ app.use(express.static(distPath));
 app.get("*", (req, res) => {
   // Não interfere nas rotas de API
   if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "Not found" });
+    return sendApiError(res, new AppError('NOT_FOUND', "Not found", { status: 404 }), req);
   }
   res.sendFile(path.join(distPath, "index.html"));
 });

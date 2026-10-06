@@ -3,6 +3,7 @@ import Patient from '../models/Patient.js';
 import mongoose from 'mongoose';
 import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
 import { safeRedis } from '../config/redisConnection.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
@@ -499,11 +500,7 @@ export const getAppointmentsByType = async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro em getAppointmentsByType:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao analisar agendamentos',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };
 
@@ -576,10 +573,6 @@ export const getConversionTimeline = async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro em getConversionTimeline:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao buscar timeline de conversão',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 };

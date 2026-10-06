@@ -5,6 +5,8 @@ import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import { syncEvent } from '../services/syncService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * 💰 Receber pagamento de sessão específica (modo per-session)
@@ -27,23 +29,23 @@ export const receiveSessionPayment = async (req, res) => {
             .session(mongoSession);
 
         if (!sessionDoc) {
-            return res.status(404).json({ success: false, message: 'Sessão não encontrada' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Sessão não encontrada', { status: 404 }), req);
         }
 
         // 2. Validar: sessão deve estar concluída
         if (sessionDoc.status !== 'completed') {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Só é possível receber pagamento de sessões concluídas' 
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Só é possível receber pagamento de sessões concluídas', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 3. Verifica se já foi paga
         if (sessionDoc.isPaid) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Esta sessão já está paga' 
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Esta sessão já está paga', { status: 400 }), req);
         }
 
         // 4. Definir valor
@@ -51,10 +53,13 @@ export const receiveSessionPayment = async (req, res) => {
         const paymentAmount = Number(amount) || sessionDoc.sessionValue || packageDoc?.sessionValue || 0;
 
         if (!paymentAmount || paymentAmount <= 0) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Valor de pagamento inválido' 
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Valor de pagamento inválido', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 5. Criar pagamento
@@ -195,10 +200,13 @@ export const receiveSessionPayment = async (req, res) => {
         
         console.error('❌ Erro ao receber pagamento da sessão:', error);
         
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Erro ao processar pagamento'
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message || 'Erro ao processar pagamento', {
+            status: 500,
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
     }
@@ -245,6 +253,6 @@ export const listPendingPayments = async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro ao listar pagamentos pendentes:', error);
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 };

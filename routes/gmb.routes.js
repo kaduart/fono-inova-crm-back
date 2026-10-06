@@ -8,6 +8,7 @@ import * as gmbController from '../controllers/gmbController.js';
 import * as makeService from '../services/makeService.js';
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 import { auth } from '../middleware/auth.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = Router();
 
@@ -76,7 +77,7 @@ router.get('/retry-queue/status', async (req, res) => {
       failed
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendApiError(res, err, req);
   }
 });
 

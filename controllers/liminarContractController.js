@@ -16,6 +16,8 @@ import { cancelAppointments } from '../domain/appointment/cancelAppointments.js'
 import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.js';
 import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
 import { moveLiminarAppointmentSpecialty } from '../services/liminar/moveLiminarAppointmentSpecialty.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const logger = createContextLogger('LiminarContract');
 
@@ -37,11 +39,23 @@ export async function createLiminarContract(req, res) {
   } = req.body;
 
   if (!patientId || !doctorId || !totalCredit) {
-    return res.status(400).json({ error: 'patientId, doctorId e totalCredit são obrigatórios' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'patientId, doctorId e totalCredit são obrigatórios', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   if (totalCredit <= 0) {
-    return res.status(400).json({ error: 'totalCredit deve ser maior que zero' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'totalCredit deve ser maior que zero', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   let session;
@@ -142,10 +156,16 @@ export async function createLiminarContract(req, res) {
     });
 
     if (err.code === 11000) {
-      return res.status(409).json({ error: 'Contrato com este idempotencyKey já existe' });
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'Contrato com este idempotencyKey já existe', {
+          status: 409,
+        }),
+        req
+      );
     }
 
-    return res.status(500).json({ error: err.message });
+    return sendApiError(res, err, req);
   } finally {
     if (session) {
       await session.endSession();
@@ -162,7 +182,7 @@ export async function getLiminarContract(req, res) {
     .lean();
 
   if (!contract) {
-    return res.status(404).json({ error: 'Contrato não encontrado' });
+    return sendApiError(res, new AppError('NOT_FOUND', 'Contrato não encontrado', { status: 404 }), req);
   }
 
   return res.json({ contract });
@@ -202,7 +222,7 @@ export async function rechargeContract(req, res) {
   const { amount, reason = 'judicial_recharge', receivedAt } = req.body;
 
   if (!amount || amount <= 0) {
-    return res.status(400).json({ error: 'amount deve ser maior que zero' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'amount deve ser maior que zero', { status: 400 }), req);
   }
 
   const result = await LiminarContract.findByIdAndUpdate(
@@ -227,7 +247,7 @@ export async function rechargeContract(req, res) {
   );
 
   if (!result) {
-    return res.status(404).json({ error: 'Contrato não encontrado' });
+    return sendApiError(res, new AppError('NOT_FOUND', 'Contrato não encontrado', { status: 404 }), req);
   }
 
   const rechargeDate = receivedAt ? new Date(receivedAt) : new Date();
@@ -258,7 +278,7 @@ export async function createTherapeuticPlan(req, res) {
   const contractId = req.params.id;
 
   if (!therapies || Object.keys(therapies).length === 0) {
-    return res.status(400).json({ error: 'therapies é obrigatório' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'therapies é obrigatório', { status: 400 }), req);
   }
 
   const session = await mongoose.startSession();
@@ -269,7 +289,7 @@ export async function createTherapeuticPlan(req, res) {
     const contract = await LiminarContract.findById(contractId).session(session);
     if (!contract) {
       await session.abortTransaction();
-      return res.status(404).json({ error: 'Contrato não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Contrato não encontrado', { status: 404 }), req);
     }
 
     // Encerra plano ativo atual
@@ -319,7 +339,7 @@ export async function createTherapeuticPlan(req, res) {
   } catch (err) {
     await session.abortTransaction();
     logger.error('Erro ao criar plano', { err: err.message });
-    return res.status(500).json({ error: err.message });
+    return sendApiError(res, err, req);
   } finally {
     session.endSession();
   }
@@ -346,7 +366,13 @@ export async function getActivePlan(req, res) {
   }).lean();
 
   if (!plan) {
-    return res.status(404).json({ error: 'Nenhum plano ativo para este contrato' });
+    return sendApiError(
+      res,
+      new AppError('NOT_FOUND', 'Nenhum plano ativo para este contrato', {
+        status: 404,
+      }),
+      req
+    );
   }
 
   return res.json({ plan });
@@ -372,14 +398,23 @@ export async function generateSessions(req, res) {
   // Proteção para clientes antigos e chamadas diretas. O serviço é append-only
   // e não contém mais qualquer caminho destrutivo de reset.
   if (mode === 'reset') {
-    return res.status(409).json({
-      error: 'A regeneração completa da agenda está temporariamente indisponível.',
-      errorCode: 'LIMINAR_RESET_DISABLED'
-    });
+    return sendApiError(
+      res,
+      new AppError('LIMINAR_RESET_DISABLED', 'A regeneração completa da agenda está temporariamente indisponível.', {
+        status: 409,
+      }),
+      req
+    );
   }
 
   if (mode === 'append' && (!weeks || weeks < 1 || weeks > 52)) {
-    return res.status(400).json({ error: 'weeks deve estar entre 1 e 52 no modo append' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'weeks deve estar entre 1 e 52 no modo append', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   let result;
@@ -395,14 +430,23 @@ export async function generateSessions(req, res) {
     });
   } catch (error) {
     if (error.statusCode === 409) {
-      return res.status(409).json({
-        error: error.message,
-        errorCode: error.code,
-        conflictSlots: error.conflictSlots || [],
-      });
+      return sendApiError(
+        res,
+        new AppError(error.code, error.message, {
+          status: 409,
+          extra: { conflictSlots: error.conflictSlots || [] },
+        }),
+        req
+      );
     }
     logger.error('Falha ao gerar sessões liminar', { planId, error: error.message });
-    return res.status(500).json({ error: 'Falha ao gerar sessões liminar', errorCode: 'LIMINAR_GENERATION_FAILED' });
+    return sendApiError(
+      res,
+      new AppError('LIMINAR_GENERATION_FAILED', 'Falha ao gerar sessões liminar', {
+        status: 500,
+      }),
+      req
+    );
   }
 
   logger.info('Sessões geradas', { planId, mode, ...result });
@@ -419,7 +463,7 @@ export async function getCommittedBalance(req, res) {
 
   const contract = await LiminarContract.findById(id).lean();
   if (!contract) {
-    return res.status(404).json({ error: 'Contrato não encontrado' });
+    return sendApiError(res, new AppError('NOT_FOUND', 'Contrato não encontrado', { status: 404 }), req);
   }
 
   const agg = await Appointment.aggregate([
@@ -479,13 +523,19 @@ export async function updateTherapy(req, res) {
 
     if (!plan) {
       await session.abortTransaction();
-      return res.status(404).json({ error: 'Plano ativo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano ativo não encontrado', { status: 404 }), req);
     }
 
     const therapy = plan.therapies.get(specialty);
     if (!therapy) {
       await session.abortTransaction();
-      return res.status(404).json({ error: `Especialidade "${specialty}" não encontrada no plano` });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', `Especialidade "${specialty}" não encontrada no plano`, {
+          status: 404,
+        }),
+        req
+      );
     }
 
     // Appointments pendentes que seriam reatribuídos ao trocar o profissional
@@ -556,15 +606,18 @@ export async function updateTherapy(req, res) {
           return `${dataFmt} às ${c.time} (já ocupado com ${nomePaciente})`;
         });
 
-        return res.status(409).json({
-          error: `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`,
-          code: 'CONFLITO_AGENDA',
-          conflicts: conflicts.map(c => ({
+        return sendApiError(
+          res,
+          new AppError('CONFLITO_AGENDA', `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`, {
+            status: 409,
+            extra: { conflicts: conflicts.map(c => ({
             date: c.date,
             time: c.time,
             patientName: c.patient?.fullName || null
-          }))
-        });
+          })) },
+          }),
+          req
+        );
       }
     }
 
@@ -697,14 +750,17 @@ export async function updateTherapy(req, res) {
       logger.warn('Conflito de slot ao trocar profissional da terapia (race condition)', {
         contractId, planId, specialty, err: err.message
       });
-      return res.status(409).json({
-        error: 'O horário ficou indisponível durante a operação. Tente novamente.',
-        code: 'CONFLITO_AGENDA'
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLITO_AGENDA', 'O horário ficou indisponível durante a operação. Tente novamente.', {
+          status: 409,
+        }),
+        req
+      );
     }
 
     logger.error('Erro ao atualizar terapia do plano liminar', { contractId, planId, specialty, err: err.message });
-    return res.status(500).json({ error: err.message });
+    return sendApiError(res, err, req);
   } finally {
     session.endSession();
   }
@@ -720,7 +776,7 @@ export async function getContractSessions(req, res) {
 
   const contract = await LiminarContract.findById(id).lean();
   if (!contract) {
-    return res.status(404).json({ error: 'Contrato não encontrado' });
+    return sendApiError(res, new AppError('NOT_FOUND', 'Contrato não encontrado', { status: 404 }), req);
   }
 
   const filter = {
@@ -771,13 +827,13 @@ export async function moveAppointmentSpecialty(req, res) {
   const { targetSpecialty, reason } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: 'ID do contrato inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID do contrato inválido', { status: 400 }), req);
   }
   if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
-    return res.status(400).json({ error: 'ID do agendamento inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID do agendamento inválido', { status: 400 }), req);
   }
   if (!targetSpecialty || typeof targetSpecialty !== 'string') {
-    return res.status(400).json({ error: 'targetSpecialty é obrigatório' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'targetSpecialty é obrigatório', { status: 400 }), req);
   }
 
   try {
@@ -811,10 +867,10 @@ export async function getContractIntegrity(req, res) {
   const { id } = req.params;
 
   const contract = await LiminarContract.findById(id).lean();
-  if (!contract) return res.status(404).json({ error: 'CONTRACT_NOT_FOUND' });
+  if (!contract) return sendApiError(res, new AppError('NOT_FOUND', 'CONTRACT_NOT_FOUND', { status: 404 }), req);
 
   const plan = await TherapeuticPlan.findOne({ liminarContract: contract._id, status: 'active' }).lean();
-  if (!plan) return res.status(404).json({ error: 'NO_ACTIVE_PLAN' });
+  if (!plan) return sendApiError(res, new AppError('NOT_FOUND', 'NO_ACTIVE_PLAN', { status: 404 }), req);
 
   const therapies = plan.therapies instanceof Map
     ? Object.fromEntries(plan.therapies)
@@ -917,7 +973,7 @@ export async function inactivateContract(req, res) {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: 'ID inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
   }
 
   const contractObjId = new mongoose.Types.ObjectId(id);
@@ -974,9 +1030,15 @@ export async function inactivateContract(req, res) {
       };
     });
   } catch (error) {
-    if (error.statusCode === 404) return res.status(404).json({ error: error.message });
+    if (error.statusCode === 404) return sendApiError(res, new AppError('NOT_FOUND', error.message, { status: 404 }), req);
     logger.error('Falha ao inativar contrato liminar', { contractId: id, error: error.message });
-    return res.status(500).json({ error: 'Falha ao inativar contrato liminar' });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Falha ao inativar contrato liminar', {
+        status: 500,
+      }),
+      req
+    );
   } finally {
     await mongoSession.endSession();
   }

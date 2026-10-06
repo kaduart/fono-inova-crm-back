@@ -28,6 +28,8 @@ import {
 
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -143,7 +145,13 @@ router.get("/system-monitor", auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[AdminSystem] Erro no monitor:', error.message);
-    res.status(500).json({ error: 'Falha ao coletar métricas do sistema' });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Falha ao coletar métricas do sistema', {
+        status: 500,
+      }),
+      req
+    );
   }
 });
 

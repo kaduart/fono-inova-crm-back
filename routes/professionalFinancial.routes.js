@@ -32,6 +32,8 @@ import {
   deleteCommissionRule,
   simulateCommission
 } from '../services/commissionRule.service.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -206,11 +208,7 @@ router.get('/:id/commission-simulation', auth, authorize(['admin', 'secretary'])
   try {
     const { startDate, endDate } = parseQuery(req);
     if (!startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'MISSING_PERIOD',
-        message: 'Informe startDate e endDate'
-      });
+      return sendApiError(res, new AppError('MISSING_PERIOD', 'Informe startDate e endDate', { status: 400 }), req);
     }
     const result = await simulateCommission(req.params.id, startDate, endDate);
     res.json({ success: true, data: result });
@@ -318,11 +316,7 @@ router.get('/:id/settlements/preview', auth, authorize(['admin', 'secretary']), 
   try {
     const { month, year } = req.query;
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'MISSING_PERIOD',
-        message: 'Informe month e year'
-      });
+      return sendApiError(res, new AppError('MISSING_PERIOD', 'Informe month e year', { status: 400 }), req);
     }
     const result = await previewSettlement({
       doctorId: req.params.id,
@@ -342,11 +336,7 @@ router.post('/:id/settlements/close', auth, authorize(['admin']), async (req, re
   try {
     const { month, year, force, notes } = req.body;
     if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'MISSING_PERIOD',
-        message: 'Informe month e year'
-      });
+      return sendApiError(res, new AppError('MISSING_PERIOD', 'Informe month e year', { status: 400 }), req);
     }
     const result = await closeMonthlySettlement({
       doctorId: req.params.id,

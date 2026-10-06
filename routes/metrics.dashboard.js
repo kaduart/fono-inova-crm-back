@@ -17,6 +17,8 @@ import mongoose from 'mongoose';
 import { getSnapshot } from '../orchestrators/decision/decisionMetricsService.js';
 import { auth } from '../middleware/auth.js';
 import { logMetric } from '../utils/logMetric.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const logger = createContextLogger('MetricsDashboard');
@@ -30,7 +32,13 @@ router.post('/usage', auth, async (req, res) => {
   try {
     const { service, operation, data } = req.body || {};
     if (!service || !operation) {
-      return res.status(400).json({ success: false, error: 'service e operation são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'service e operation são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     logMetric(service, operation, {
@@ -44,7 +52,7 @@ router.post('/usage', auth, async (req, res) => {
     return res.json({ success: true });
   } catch (error) {
     logger.error('usage_metric_error', 'Erro ao registrar métrica de uso', { error: error.message });
-    return res.status(500).json({ success: false, error: error.message });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -106,11 +114,14 @@ router.get('/dashboard', async (req, res) => {
 
   } catch (error) {
     logger.error('dashboard_error', 'Erro ao coletar métricas', { error: error.message });
-    res.status(500).json({
-      success: false,
-      error: 'Erro ao coletar métricas',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'Erro ao coletar métricas',
+      }),
+      req
+    );
   }
 });
 
@@ -123,10 +134,7 @@ router.get('/queues/:name', async (req, res) => {
   const { name } = req.params;
   
   if (!monitoredQueues[name]) {
-    return res.status(404).json({
-      success: false,
-      error: `Fila ${name} não encontrada`
-    });
+    return sendApiError(res, new AppError('NOT_FOUND', `Fila ${name} não encontrada`, { status: 404 }), req);
   }
 
   try {
@@ -142,10 +150,7 @@ router.get('/queues/:name', async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -164,10 +169,7 @@ router.get('/slo', async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -464,7 +466,7 @@ router.get('/decision', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

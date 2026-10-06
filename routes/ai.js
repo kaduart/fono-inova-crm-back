@@ -1,6 +1,8 @@
 // backend/routes/aiRoutes.js - NOVO ARQUIVO
 import express from "express";
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -17,10 +19,7 @@ router.post("/generate-followup", async (req, res) => {
         const lead = await Lead.findById(leadId);
 
         if (!lead) {
-            return res.status(404).json({
-                success: false,
-                error: "Lead não encontrado"
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', "Lead não encontrado", { status: 404 }), req);
         }
 
         // Enriquecer dados do lead
@@ -51,11 +50,14 @@ router.post("/generate-followup", async (req, res) => {
         });
     } catch (error) {
         console.error("❌ Erro em /ai/generate-followup:", error);
-        res.status(500).json({
-            success: false,
-            error: "Erro ao gerar follow-up",
-            details: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar follow-up", {
+            status: 500,
+            details: error.message,
+          }),
+          req
+        );
     }
 });
 
@@ -81,11 +83,14 @@ router.post("/analyze-conversation", async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: "Erro ao analisar conversa",
-            details: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao analisar conversa", {
+            status: 500,
+            details: error.message,
+          }),
+          req
+        );
     }
 });
 

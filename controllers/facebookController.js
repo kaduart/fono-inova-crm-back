@@ -3,6 +3,8 @@ import FacebookPost from '../models/FacebookPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 import { publishToFacebook } from '../services/meta/metaPublisher.js';
 import { uploadToCloudinary } from '../services/media/mediaUploadService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * Lista posts do Facebook
@@ -21,7 +23,7 @@ export async function listPosts(req, res) {
     res.json({ success: true, data: posts });
   } catch (error) {
     console.error('❌ Erro ao listar posts Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -34,7 +36,7 @@ export async function getStats(req, res) {
     res.json({ success: true, data: stats });
   } catch (error) {
     console.error('❌ Erro ao buscar stats Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -96,7 +98,7 @@ export async function generatePost(req, res) {
     });
   } catch (error) {
     console.error('❌ Erro ao iniciar geração de post Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -106,9 +108,15 @@ export async function generatePost(req, res) {
 export async function approvePost(req, res) {
   try {
     const post = await FacebookPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     if (!['draft', 'failed'].includes(post.status)) {
-      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser aprovado` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Post com status '${post.status}' não pode ser aprovado`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     post.status = 'approved';
@@ -117,7 +125,7 @@ export async function approvePost(req, res) {
     res.json({ success: true, data: post, message: '✅ Post aprovado — pronto para publicar' });
   } catch (error) {
     console.error('❌ Erro ao aprovar post Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -130,9 +138,15 @@ export async function publishPost(req, res) {
     const { target = 'organic', campaign } = req.body;
 
     const post = await FacebookPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     if (!['approved', 'draft'].includes(post.status)) {
-      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser publicado` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Post com status '${post.status}' não pode ser publicado`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const result = { success: true, data: post };
@@ -172,7 +186,7 @@ export async function publishPost(req, res) {
   } catch (error) {
     console.error('❌ Erro ao publicar post Facebook:', error);
     await FacebookPost.findByIdAndUpdate(req.params.id, { status: 'failed', errorMessage: error.message });
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -191,13 +205,13 @@ export async function updatePost(req, res) {
     );
     
     if (!post) {
-      return res.status(404).json({ success: false, error: 'Post não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     }
     
     res.json({ success: true, data: post });
   } catch (error) {
     console.error('❌ Erro ao atualizar post Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -210,23 +224,23 @@ export async function deletePost(req, res) {
     
     const post = await FacebookPost.findByIdAndDelete(id);
     if (!post) {
-      return res.status(404).json({ success: false, error: 'Post não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     }
     
     res.json({ success: true, message: 'Post deletado com sucesso' });
   } catch (error) {
     console.error('❌ Erro ao deletar post Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
 // Upload de mídia externa (imagem/vídeo criado fora do CRM)
 export async function uploadMedia(req, res) {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+    if (!req.file) return sendApiError(res, new AppError('BAD_REQUEST', 'Nenhum arquivo enviado', { status: 400 }), req);
 
     const post = await FacebookPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     const { url, resourceType } = await uploadToCloudinary(
       req.file.buffer,
@@ -242,7 +256,7 @@ export async function uploadMedia(req, res) {
     res.json({ success: true, data: { mediaUrl: url, mediaType: post.mediaType }, message: '✅ Arquivo enviado com sucesso' });
   } catch (error) {
     console.error('❌ Erro ao fazer upload Facebook:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -255,7 +269,7 @@ export async function generateImageForPost(req, res) {
     
     const post = await FacebookPost.findById(id);
     if (!post) {
-      return res.status(404).json({ success: false, error: 'Post não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     }
     
     // Busca especialidade
@@ -264,7 +278,7 @@ export async function generateImageForPost(req, res) {
     const imgResult = await generateImageForEspecialidade(especialidade, post.content);
     
     if (!imgResult?.url) {
-      return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Falha ao gerar imagem', { status: 500 }), req);
     }
     
     post.mediaUrl = imgResult.url;
@@ -275,7 +289,7 @@ export async function generateImageForPost(req, res) {
     res.json({ success: true, data: { imageUrl: imgResult.url, provider: imgResult.provider } });
   } catch (error) {
     console.error('❌ Erro ao gerar imagem:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -296,7 +310,7 @@ export async function generateCaption(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar legenda:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -317,7 +331,7 @@ export async function generateHooks(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar ganchos:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -329,7 +343,7 @@ export async function generateVariations(req, res) {
     const result = await generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -337,10 +351,10 @@ export async function generateVariations(req, res) {
 export async function scoreContent(req, res) {
   try {
     const { content, funnelStage } = req.body;
-    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    if (!content) return sendApiError(res, new AppError('BAD_REQUEST', 'content obrigatório', { status: 400 }), req);
     const score = await scorePostQuality(content, funnelStage || 'top');
     res.json({ success: true, score });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }

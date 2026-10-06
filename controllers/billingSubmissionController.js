@@ -11,14 +11,14 @@ import { sendApiError } from '../errors/buildErrorResponse.js';
 import '../errors/registerHumanizers.js';
 
 // Envelope e mensagens para o comercial: errors/buildErrorResponse.js + errors/registerHumanizers.js
-const sendError = (res, error) => sendApiError(res, error);
+const sendError = (res, error, req) => sendApiError(res, error, req);
 
 export async function create(req, res) {
   try {
     const data = await createBillingSubmission({ ...req.body, userId: req.user.id });
     res.status(201).json({ success: true, data });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 
@@ -27,7 +27,7 @@ export async function update(req, res) {
     const data = await updateBillingSubmission(req.params.id, { ...req.body, userId: req.user.id });
     res.json({ success: true, data });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 
@@ -46,7 +46,7 @@ export async function finalize(req, res) {
     });
     res.json({ success: true, data });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 
@@ -55,7 +55,7 @@ export async function cancel(req, res) {
     const data = await cancelBillingSubmission(req.params.id, { userId: req.user.id });
     res.json({ success: true, data });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 
@@ -64,7 +64,7 @@ export async function getById(req, res) {
     const data = await getBillingSubmission(req.params.id);
     res.json({ success: true, data });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 
@@ -73,7 +73,7 @@ export async function list(req, res) {
     const result = await listBillingSubmissions(req.query);
     res.json({ success: true, ...result });
   } catch (error) {
-    sendError(res, error);
+    await sendError(res, error, req);
   }
 }
 

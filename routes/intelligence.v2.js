@@ -12,6 +12,7 @@ import { auth } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -287,7 +288,7 @@ router.get('/', auth, async (req, res) => {
         
     } catch (error) {
         console.error('[IntelligenceV2] Erro:', error);
-        res.status(500).json({ success: false, error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

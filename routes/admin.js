@@ -13,6 +13,8 @@ import {
   setInsuranceFlowOverride,
   resetInsuranceFlowOverride,
 } from '../config/insuranceFlowConfig.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 dotenv.config();
 
 const router = express.Router();
@@ -76,7 +78,7 @@ router.get('/secretaries', auth, async (req, res) => {
 /* router.post('/add', auth, async (req, res) => {
 
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Not authorized to add patients' });
+    return sendApiError(res, new AppError('FORBIDDEN', 'Not authorized to add patients', { status: 403 }), req);
   }
 
   const {
@@ -132,9 +134,9 @@ router.get('/secretaries', auth, async (req, res) => {
     res.status(201).json({ message: 'Patient added successfully!' });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: 'Email, CPF or RG already exist!' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Email, CPF or RG already exist!', { status: 400 }), req);
     }
-    res.status(400).json({ error: error.message });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
   }
 }); */
 
@@ -193,11 +195,7 @@ router.get('/total-patients', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao contar pacientes:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro interno ao buscar total de pacientes',
-      error: error.message,
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -304,7 +302,7 @@ router.get('/appointments/upcoming', auth, async (req, res) => {
     res.json(upcomingAppointments);
   } catch (error) {
     console.error('Error fetching upcoming appointments:', error);
-    res.status(500).json({ error: 'Server error' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Server error', { status: 500 }), req);
   }
 });
 
@@ -314,7 +312,7 @@ router.get('/appointments/upcoming', auth, async (req, res) => {
 
 router.get('/insurance-flow-config', auth, async (req, res) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Apenas administradores' });
+    return sendApiError(res, new AppError('FORBIDDEN', 'Apenas administradores', { status: 403 }), req);
   }
   res.json({
     success: true,
@@ -325,7 +323,7 @@ router.get('/insurance-flow-config', auth, async (req, res) => {
 
 router.post('/insurance-flow-override', auth, async (req, res) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Apenas administradores' });
+    return sendApiError(res, new AppError('FORBIDDEN', 'Apenas administradores', { status: 403 }), req);
   }
 
   const { value } = req.body;
@@ -343,7 +341,7 @@ router.post('/insurance-flow-override', auth, async (req, res) => {
       envDefault: process.env.FF_INSURANCE_ORCHESTRATOR === 'true'
     });
   } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
+    sendApiError(res, new AppError('BAD_REQUEST', error.message, { status: 400 }), req);
   }
 });
 

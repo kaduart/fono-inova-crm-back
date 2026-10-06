@@ -6,6 +6,8 @@
 import express from 'express';
 import ImageBank from '../models/ImageBank.js';
 import * as imageBankService from '../services/imageBankService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -30,7 +32,7 @@ router.get('/search', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao buscar imagens:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -47,7 +49,7 @@ router.get('/stats', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao buscar estatísticas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -74,7 +76,7 @@ router.post('/add', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao adicionar imagem:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -95,7 +97,7 @@ router.post('/migrate', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao migrar imagens:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -110,10 +112,7 @@ router.get('/random', async (req, res) => {
     const image = await ImageBank.getRandomImage(especialidade, tema);
     
     if (!image) {
-      return res.status(404).json({
-        success: false,
-        message: 'Nenhuma imagem encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Nenhuma imagem encontrada', { status: 404 }), req);
     }
     
     res.json({
@@ -122,7 +121,7 @@ router.get('/random', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao buscar imagem:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -137,10 +136,7 @@ router.delete('/:publicId', async (req, res) => {
     const image = await imageBankService.archiveImage(publicId);
     
     if (!image) {
-      return res.status(404).json({
-        success: false,
-        message: 'Imagem não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Imagem não encontrada', { status: 404 }), req);
     }
     
     res.json({
@@ -150,7 +146,7 @@ router.delete('/:publicId', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao arquivar imagem:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -180,7 +176,7 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao listar imagens:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

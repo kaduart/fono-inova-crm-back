@@ -79,10 +79,13 @@ nunca se perde (`technicalMessage`). Tradutor que falha nunca derruba a resposta
 |------|----------|
 | Envelope + `errorHandler` global | ✅ implementado (back) |
 | Faturamento de convênio (`/billing-submissions`) | ✅ tradutor + early-fail + front (`BillingCommunicationWizard`) |
-| Demais controllers | ⏳ ~1.160 `res.status().json({success:false…})` ainda montam o formato à mão — continuam funcionando |
-| Front: `toast.error(extractErrorMessage(...))` | ⏳ migrar para `notifyApiError` por prioridade |
-| Duas libs de toast (`react-toastify` 90 arquivos, `react-hot-toast` 33) | ⏳ unificar em `react-toastify` |
-| App `agenda` (projeto separado) | ⏳ ler `message`/`action` do envelope |
+| Financeiro/convênio/pacote (10 arquivos: `convenioPackageController`, `insuranceBatchController`, `insuranceGuides.v2`, `insuranceV2Controller`, `packageController.v2`, `payment.v2`, `insurancePlans.v2`, `convenioManageController`, `therapyPackageController`, `liminarContractController`) | ✅ 358 pontos migrados via `scripts/codemods/migrate-api-errors.mjs` (simulação por padrão, `--apply` grava; idempotente). `errors` de validação passa por `extra` |
+| Demais controllers e rotas (120 arquivos, ~1.000 pontos: agenda, pagamentos, financeiro, leads, WhatsApp, GMB, auth…) | ✅ migrados com o mesmo codemod em 2026-10-06. Exceções deliberadas: `routes/health.js` e `observabilityController` (monitores externos); `middleware/auth.js`, `convenioApiController` (passa `result` pronto) e 1 ponto em `financial/expense.js` ficaram manuais |
+| Rotas que usam `formatError` (`doctor.v2`, `package.v2`, `patient.v2`) | ✅ `utils/apiMessages.formatError` emite o envelope no topo **e** mantém `error` como objeto `{code,message}` (legado, deprecated): há testes e front (`TherapyPackageCard`) que leem `error.code`. Normaliza as ordens de argumentos históricas |
+| Front: `extractErrorMessage` | ✅ prefere `message` quando a resposta é do envelope (tem `code`) — vale para todos os usos sem edição |
+| Front: `toast.error(extractErrorMessage(...))` | ✅ 92 pontos em 31 arquivos (financeiro, convênio, pacote, agenda, pacientes, médicos, hooks, serviços) viraram `notifyApiError`. Ficaram: `Login`, `useErrorHandler`, toasts com opções próprias e padrões que leem `response.data.error` direto |
+| Duas libs de toast | ✅ unificadas em `react-toastify` via `front/src/utils/toast.ts` (aceita `id`, `duration`, `icon`, render por função e `dismiss` do hot-toast; mesmo `id` atualiza o aviso). 34 arquivos migrados, 3 `<Toaster/>` removidos, 7 testes redirecionados. **Use `import { toast } from '.../utils/toast'`**; `react-hot-toast` não deve mais ser importado (a dependência ainda está no `package.json`) |
+| App `agenda` (projeto separado) | ✅ `src/utils/apiError.js` (`apiErrorText`) lê `message`/`action` do envelope e os formatos antigos. Contrato revisado: `reschedule` é **PATCH** (client e allowlist do token `agenda_service` estavam em POST); handlers de `appointment.v2.js` (criar/editar/remarcar/cancelar/confirmar/deletar/complete) agora usam `sendApiError`. Pendente: ~20 respostas com status dinâmico em pacote/guias/despesas (já trazem `code`/`message`) |
 
 **Ordem de migração sugerida (maior dor primeiro):** (1) financeiro/convênio/pacote — onde o comercial trava;
 (2) agenda: criar/remarcar/cancelar (conflitos já têm `extractScheduleConflictMessage`); (3) pagamentos manuais;

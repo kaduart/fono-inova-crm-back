@@ -8,6 +8,8 @@
 import express from 'express';
 import PackagesView from '../models/PackagesView.js';
 import { createContextLogger } from '../utils/logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageV2Health');
@@ -59,11 +61,14 @@ router.get('/', async (req, res) => {
     
   } catch (error) {
     logger.error('[PackageV2Health] Health check failed', { error: error.message });
-    res.status(500).json({
-      success: false,
-      error: 'Health check failed',
-      message: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        legacyError: 'Health check failed',
+      }),
+      req
+    );
   }
 });
 

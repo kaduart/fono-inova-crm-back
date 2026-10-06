@@ -8,6 +8,7 @@ import express from 'express';
 import moment from 'moment-timezone';
 import { auth, authorize } from '../../middleware/auth.js';
 import MetricLog from '../../models/MetricLog.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -75,7 +76,7 @@ router.get('/', auth, authorize(['admin']), async (req, res) => {
     });
   } catch (error) {
     console.error('[FinancialMetricsRoutes]', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

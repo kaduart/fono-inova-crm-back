@@ -12,6 +12,8 @@ import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 import { safeRedis } from '../config/redisConnection.js';
 import { summarizeCashflowAttendance } from '../services/appointment/policies/summarizeCashflowAttendance.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -211,7 +213,7 @@ router.get('/', auth, async (req, res) => {
           date: req.query?.date || req.query?.startDate,
           error: err.message
         });
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 
@@ -1058,7 +1060,13 @@ router.get('/month', auth, async (req, res) => {
     try {
         const { month } = req.query;
         if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-            return res.status(400).json({ success: false, error: 'Parâmetro month obrigatório (formato: YYYY-MM)' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Parâmetro month obrigatório (formato: YYYY-MM)', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const currentMonthStr = moment.tz('America/Sao_Paulo').format('YYYY-MM');
@@ -1105,7 +1113,7 @@ router.get('/month', auth, async (req, res) => {
           month,
           error: err.message
         });
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 });
 

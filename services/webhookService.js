@@ -4,6 +4,8 @@ import Package from "../models/Package.js";
 import Payment from "../models/Payment.js";
 import { distributePayments } from "../services/distributePayments.js";
 import moment from "moment-timezone";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * 🔔 Webhook principal para notificações PIX do Sicoob
@@ -41,7 +43,14 @@ export const handlePixWebhook = async (req, res) => {
         }
     } catch (err) {
         console.error("❌ Erro ao processar webhook:", err);
-        res.status(500).json({ mensagem: "Erro ao processar notificação" });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro', {
+            status: 500,
+            extra: { mensagem: "Erro ao processar notificação" },
+          }),
+          req
+        );
     }
 };
 

@@ -2,6 +2,8 @@ import express from 'express';
 import Notification from '../models/Notification.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { isBusinessHours } from '../utils/businessHours.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -97,7 +99,7 @@ router.get('/', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao listar:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -125,7 +127,7 @@ router.get('/count', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao contar:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -141,10 +143,7 @@ router.post('/:id/read', async (req, res) => {
     const notification = await Notification.findById(id);
     
     if (!notification) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Notificação não encontrada' 
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Notificação não encontrada', { status: 404 }), req);
     }
 
     await notification.markAsRead(userId);
@@ -165,7 +164,7 @@ router.post('/:id/read', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao marcar como lida:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -198,7 +197,7 @@ router.post('/read-all', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao marcar todas como lidas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -219,7 +218,7 @@ router.delete('/:id', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao remover:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -261,7 +260,7 @@ router.get('/pending-overnight', async (req, res) => {
 
   } catch (error) {
     console.error('[NOTIFICATIONS] Erro ao buscar pendentes:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

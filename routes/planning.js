@@ -5,6 +5,8 @@ import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
 import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const planningRefreshQueue = getQueue('planning-refresh');
 
@@ -46,11 +48,7 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao criar planejamento:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao criar planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -133,11 +131,7 @@ router.get('/', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao listar planejamentos:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao listar planejamentos',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -156,11 +150,7 @@ router.get('/:id/details', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar detalhes:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar detalhes do planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -180,11 +170,7 @@ router.patch('/:id/update-progress', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao atualizar progresso:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao atualizar progresso',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -205,11 +191,7 @@ router.post('/refresh-all', auth, authorize(['admin']), async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao enfileirar atualização de planejamentos:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao atualizar planejamentos',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -229,11 +211,7 @@ router.post('/quick/weekly', auth, authorize(['admin']), async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao criar planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -253,11 +231,7 @@ router.post('/quick/monthly', auth, authorize(['admin']), async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao criar planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -271,7 +245,13 @@ router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req
     const { month, year, monthlyRevenue, totalSessions, workHours, averageTicket, commercialTicket } = req.body;
 
     if (!month || !year || !monthlyRevenue) {
-      return res.status(400).json({ success: false, message: 'month, year e monthlyRevenue são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'month, year e monthlyRevenue são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const lastDay = new Date(year, month, 0).getDate();
@@ -318,7 +298,7 @@ router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req
     });
 
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -332,10 +312,13 @@ router.post('/auto-generate', auth, authorize(['admin', 'secretary']), async (re
     const { month, year, targets, bySpecialty, notes } = req.body;
 
     if (!month || !year || !targets || !targets.expectedRevenue) {
-      return res.status(400).json({
-        success: false,
-        message: 'month, year e targets.expectedRevenue são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'month, year e targets.expectedRevenue são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const result = await generateMonthlyCascade(month, year, targets, req.user.id, {
@@ -352,11 +335,7 @@ router.post('/auto-generate', auth, authorize(['admin', 'secretary']), async (re
 
   } catch (error) {
     console.error('[Planning Auto-Generate] ❌ Erro:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao gerar planejamentos automaticamente',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -379,11 +358,7 @@ router.patch('/:month/:year/recalculate', auth, authorize(['admin', 'secretary']
 
   } catch (error) {
     console.error('[Planning Recalculate] ❌ Erro:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao recalcular metas futuras',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -399,10 +374,7 @@ router.put('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => 
     const planning = await Planning.findById(req.params.id);
     
     if (!planning) {
-      return res.status(404).json({
-        success: false,
-        message: 'Planejamento não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Planejamento não encontrado', { status: 404 }), req);
     }
 
     // Atualizar campos
@@ -424,11 +396,7 @@ router.put('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => 
 
   } catch (error) {
     console.error('Erro ao atualizar planejamento:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao atualizar planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 
@@ -442,10 +410,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
     const planning = await Planning.findById(req.params.id);
     
     if (!planning) {
-      return res.status(404).json({
-        success: false,
-        message: 'Planejamento não encontrado'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Planejamento não encontrado', { status: 404 }), req);
     }
 
     await Planning.findByIdAndDelete(req.params.id);
@@ -457,11 +422,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao excluir planejamento:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao excluir planejamento',
-      error: error.message
-    });
+    sendApiError(res, error, req);
   }
 });
 

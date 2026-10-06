@@ -21,6 +21,8 @@ import Lead from '../models/Leads.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { extractWebsiteLeadPersonalData } from '../utils/websiteLeadPayload.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -61,10 +63,13 @@ router.post('/from-website', async (req, res) => {
 
         // Validação básica
         if (!dadosPessoais?.nome || !dadosPessoais?.telefone) {
-            return res.status(400).json({
-                success: false,
-                message: 'Dados obrigatórios: nome e telefone'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Dados obrigatórios: nome e telefone', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         console.log('🌐 Lead recebido do site Fono Inova:', {
@@ -179,11 +184,7 @@ router.post('/from-website', async (req, res) => {
 
     } catch (err) {
         console.error('❌ Erro ao processar lead do site:', err);
-        res.status(500).json({
-            success: false,
-            message: 'Erro interno ao processar lead',
-            error: err.message
-        });
+        sendApiError(res, err, req);
     }
 });
 
@@ -253,10 +254,7 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
         });
     } catch (err) {
         console.error('❌ Erro ao listar leads:', err);
-        res.status(500).json({
-            message: 'Erro ao buscar leads',
-            error: err.message
-        });
+        sendApiError(res, err, req);
     }
 });
 
@@ -325,7 +323,14 @@ router.get('/operational-counts',
             res.json({ overdue, today, total: overdue + today });
         } catch (err) {
             console.error('❌ Erro ao buscar contagens operacionais:', err);
-            res.status(500).json({ overdue: 0, today: 0, total: 0 });
+            sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Erro', {
+                status: 500,
+                extra: { overdue: 0, today: 0, total: 0 },
+              }),
+              req
+            );
         }
     }
 );
@@ -343,18 +348,13 @@ router.get('/:id',
             const lead = await Lead.findById(req.params.id);
 
             if (!lead) {
-                return res.status(404).json({
-                    message: 'Lead não encontrado'
-                });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
             }
 
             res.json(lead);
         } catch (err) {
             console.error('❌ Erro ao buscar lead:', err);
-            res.status(500).json({
-                message: 'Erro ao buscar lead',
-                error: err.message
-            });
+            sendApiError(res, err, req);
         }
     }
 );
@@ -380,10 +380,7 @@ router.post('/', authorize(['admin', 'secretary']), async (req, res) => {
         } = req.body;
 
         if (!name) {
-            return res.status(400).json({
-                success: false,
-                message: 'Campo obrigatório: name'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Campo obrigatório: name', { status: 400 }), req);
         }
 
         const leadData = {
@@ -448,11 +445,14 @@ router.post('/', authorize(['admin', 'secretary']), async (req, res) => {
         }
     } catch (err) {
         console.error('❌ Erro:', err);
-        res.status(400).json({
-            success: false,
-            message: 'Erro ao criar lead',
-            error: err.message
-        });
+        sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Erro ao criar lead', {
+            status: 400,
+            legacyError: err.message,
+          }),
+          req
+        );
     }
 });
 /**
@@ -508,9 +508,7 @@ router.put('/:id',
             );
 
             if (!lead) {
-                return res.status(404).json({
-                    message: 'Lead não encontrado'
-                });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
             }
 
             console.log('✅ Lead atualizado:', lead._id);
@@ -518,10 +516,14 @@ router.put('/:id',
             res.json(lead);
         } catch (err) {
             console.error('❌ Erro ao atualizar lead:', err);
-            res.status(400).json({
-                message: 'Erro ao atualizar lead',
-                error: err.message
-            });
+            sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Erro ao atualizar lead', {
+                status: 400,
+                legacyError: err.message,
+              }),
+              req
+            );
         }
     }
 );
@@ -539,9 +541,7 @@ router.delete('/:id',
             const lead = await Lead.findByIdAndDelete(req.params.id);
 
             if (!lead) {
-                return res.status(404).json({
-                    message: 'Lead não encontrado'
-                });
+                return sendApiError(res, new AppError('NOT_FOUND', 'Lead não encontrado', { status: 404 }), req);
             }
 
             console.log('✅ Lead deletado:', req.params.id);
@@ -549,10 +549,14 @@ router.delete('/:id',
             res.status(204).end();
         } catch (err) {
             console.error('❌ Erro ao deletar lead:', err);
-            res.status(400).json({
-                message: 'Erro ao deletar lead',
-                error: err.message
-            });
+            sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Erro ao deletar lead', {
+                status: 400,
+                legacyError: err.message,
+              }),
+              req
+            );
         }
     }
 );
@@ -625,10 +629,7 @@ router.get('/report/summary',
             res.json(summary[0]);
         } catch (err) {
             console.error('❌ Erro ao gerar relatório:', err);
-            res.status(500).json({
-                message: 'Erro ao gerar relatório',
-                error: err.message
-            });
+            sendApiError(res, err, req);
         }
     }
 );
@@ -717,11 +718,7 @@ router.get('/dashboard-metrics',
 
         } catch (err) {
             console.error('❌ Erro em dashboard-metrics:', err);
-            res.status(500).json({
-                success: false,
-                message: 'Erro ao buscar métricas',
-                error: err.message
-            });
+            sendApiError(res, err, req);
         }
     }
 );

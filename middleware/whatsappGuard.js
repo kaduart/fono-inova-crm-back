@@ -15,6 +15,7 @@ import { getIo } from '../config/socket.js';
 import Logger from '../services/utils/Logger.js';
 import { sendTemplateMessage } from '../services/whatsappService.js';
 import { normalizeE164BR } from '../utils/phone.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const logger = new Logger('WhatsAppGuard');
 
@@ -481,7 +482,7 @@ export async function getGuardStats(req, res) {
 
     } catch (err) {
         logger.error(`[STATS] Erro: ${err.message}`);
-        res.status(500).json({ success: false, error: err.message });
+        sendApiError(res, err, req);
     }
 }
 

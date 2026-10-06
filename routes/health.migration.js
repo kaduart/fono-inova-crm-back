@@ -7,6 +7,8 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -141,11 +143,7 @@ router.get('/migration', auth, async (req, res) => {
     
   } catch (error) {
     console.error('[Health Migration] Erro:', error);
-    res.status(500).json({
-      success: false,
-      errorCode: 'MIGRATION_CHECK_FAILED',
-      message: error.message
-    });
+    sendApiError(res, new AppError('MIGRATION_CHECK_FAILED', error.message, { status: 500 }), req);
   }
 });
 
@@ -205,11 +203,7 @@ router.get('/migration/packages-v1', auth, async (req, res) => {
     
   } catch (error) {
     console.error('[Health Migration] Erro:', error);
-    res.status(500).json({
-      success: false,
-      errorCode: 'MIGRATION_LIST_FAILED',
-      message: error.message
-    });
+    sendApiError(res, new AppError('MIGRATION_LIST_FAILED', error.message, { status: 500 }), req);
   }
 });
 

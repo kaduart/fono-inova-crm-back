@@ -13,6 +13,8 @@ import validateId from '../middleware/validateId.js';
 import Evolution from '../models/Evolution.js';
 import Metric from '../models/Metric.js';
 import { generatePdfFromEvolution } from '../services/generatePDF.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 router.use(auth);
@@ -34,7 +36,7 @@ router.get('/metrics', async (req, res) => {
         const metrics = await Metric.find();
         res.json(metrics);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -46,7 +48,7 @@ router.get('/:id/pdf', validateId, async (req, res) => {
             .populate('doctor', 'fullName specialty');
 
         if (!evolution) {
-            return res.status(404).json({ error: 'Evolução não encontrada' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Evolução não encontrada', { status: 404 }), req);
         }
 
         const pdfBuffer = await generatePdfFromEvolution(evolution);
@@ -56,7 +58,7 @@ router.get('/:id/pdf', validateId, async (req, res) => {
         });
         res.send(pdfBuffer);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -77,7 +79,7 @@ router.get('/search', async (req, res) => {
             .sort({ date: -1 });
         res.json(evolutions);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

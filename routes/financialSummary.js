@@ -27,6 +27,8 @@ import { syncAffectedViews } from '../services/projections/syncAffectedViews.js'
 import { clearCashflowCacheForDates } from './cashflow.v2.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 
@@ -415,12 +417,18 @@ router.get('/patient/:patientId/summary/batch', asyncHandler(async (req, res) =>
     const { packageIds } = req.query;
 
     if (!packageIds || typeof packageIds !== 'string') {
-        return res.status(400).json({ success: false, message: 'packageIds é obrigatório (lista separada por vírgula)' });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'packageIds é obrigatório (lista separada por vírgula)', {
+            status: 400,
+          }),
+          req
+        );
     }
 
     const ids = [...new Set(packageIds.split(',').map(id => id.trim()).filter(Boolean))];
     if (ids.length === 0) {
-        return res.status(400).json({ success: false, message: 'packageIds não pode ser vazio' });
+        return sendApiError(res, new AppError('BAD_REQUEST', 'packageIds não pode ser vazio', { status: 400 }), req);
     }
 
     const results = await Promise.all(
@@ -724,18 +732,36 @@ router.post('/receive', auth, asyncHandler(async (req, res) => {
     const { patientId, amount, method, paymentMethod, mode = 'auto', notes, metadata } = req.body || {};
 
     if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
-        return res.status(400).json({ success: false, error: 'patientId inválido', code: 'INVALID_PATIENT_ID' });
+        return sendApiError(res, new AppError('INVALID_PATIENT_ID', 'patientId inválido', { status: 400 }), req);
     }
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        return res.status(400).json({ success: false, error: 'amount deve ser um valor positivo', code: 'INVALID_AMOUNT' });
+        return sendApiError(
+          res,
+          new AppError('INVALID_AMOUNT', 'amount deve ser um valor positivo', {
+            status: 400,
+          }),
+          req
+        );
     }
     const rawMethod = method || paymentMethod;
     if (!rawMethod || !VALID_PAYMENT_METHODS.includes(rawMethod)) {
-        return res.status(400).json({ success: false, error: 'Método de pagamento inválido', code: 'INVALID_PAYMENT_METHOD' });
+        return sendApiError(
+          res,
+          new AppError('INVALID_PAYMENT_METHOD', 'Método de pagamento inválido', {
+            status: 400,
+          }),
+          req
+        );
     }
     if (mode !== 'auto') {
-        return res.status(400).json({ success: false, error: `mode '${mode}' não suportado (use 'auto')`, code: 'UNSUPPORTED_MODE' });
+        return sendApiError(
+          res,
+          new AppError('UNSUPPORTED_MODE', `mode '${mode}' não suportado (use 'auto')`, {
+            status: 400,
+          }),
+          req
+        );
     }
 
     const primaryMethod = normalizePaymentMethod(rawMethod);
@@ -827,12 +853,14 @@ router.post('/receive', auth, asyncHandler(async (req, res) => {
                 });
             } catch (flowErr) {
                 await mongoSession.abortTransaction();
-                return res.status(400).json({
-                    success: false,
-                    error: flowErr.message,
-                    code: flowErr.code || 'PAYMENT_FLOW_BLOCKED',
-                    meta: flowErr.meta || undefined
-                });
+                return sendApiError(
+                  res,
+                  new AppError(flowErr.code || 'PAYMENT_FLOW_BLOCKED', flowErr.message, {
+                    status: 400,
+                    extra: { meta: flowErr.meta || undefined },
+                  }),
+                  req
+                );
             }
 
             const oldStatusById = new Map(toSettle.map(p => [p._id.toString(), p.status]));

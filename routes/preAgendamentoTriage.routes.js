@@ -23,6 +23,8 @@ import EventStore from '../models/EventStore.js';
 import { cancelAppointment, confirmPreAgendamento } from '../services/appointmentV2Service.js';
 import Appointment from '../models/Appointment.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -100,10 +102,13 @@ router.get('/', flexibleAuth, async (req, res) => {
 
     } catch (error) {
         console.error('[PreAgendamentoTriage] Erro ao listar:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao listar pré-agendamentos: ' + error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao listar pré-agendamentos: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -123,7 +128,7 @@ router.post('/:id/confirm', flexibleAuth, async (req, res) => {
 
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
         }
 
         // Delega ao command canônico: transição in-place do mesmo Appointment
@@ -164,7 +169,7 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
         }
 
         const { reason } = req.body;
@@ -187,7 +192,13 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
             .lean();
 
         if (!pre) {
-            return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Pré-agendamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         res.json({ success: true, message: 'Descartado com sucesso', data: mapAppointmentDTO(pre) });
@@ -280,7 +291,13 @@ router.get('/stats/dashboard', flexibleAuth, async (req, res) => {
         });
     } catch (error) {
         console.error('[PreAgendamentoTriage] Erro ao buscar stats:', error);
-        res.status(500).json({ success: false, error: 'Erro ao buscar estatísticas: ' + error.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao buscar estatísticas: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -291,7 +308,7 @@ router.post('/:id/contact', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
         }
 
         const { channel, success, notes } = req.body;
@@ -316,13 +333,25 @@ router.post('/:id/contact', flexibleAuth, async (req, res) => {
         );
 
         if (!pre) {
-            return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Pré-agendamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         res.json({ success: true, data: mapAppointmentDTO(pre) });
     } catch (error) {
         console.error('[PreAgendamentoTriage] Erro ao registrar contato:', error);
-        res.status(500).json({ success: false, error: 'Erro ao registrar contato: ' + error.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao registrar contato: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -333,7 +362,7 @@ router.post('/:id/assign', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'ID inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
         }
 
         const { userId } = req.body;
@@ -347,13 +376,25 @@ router.post('/:id/assign', flexibleAuth, async (req, res) => {
         );
 
         if (!pre) {
-            return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+            return sendApiError(
+              res,
+              new AppError('NOT_FOUND', 'Pré-agendamento não encontrado', {
+                status: 404,
+              }),
+              req
+            );
         }
 
         res.json({ success: true, data: mapAppointmentDTO(pre) });
     } catch (error) {
         console.error('[PreAgendamentoTriage] Erro ao atribuir:', error);
-        res.status(500).json({ success: false, error: 'Erro ao atribuir pré-agendamento: ' + error.message });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao atribuir pré-agendamento: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 

@@ -14,6 +14,8 @@ import { auth } from '../middleware/auth.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { getPatientPendingPayments } from '../services/financialEngine.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -48,10 +50,7 @@ router.get('/:patientId', auth, async (req, res) => {
         const { patientId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID de paciente inválido'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID de paciente inválido', { status: 400 }), req);
         }
 
         // Resolver patientId (pode vir do patients_view)
@@ -112,10 +111,13 @@ router.get('/:patientId', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[BalanceV2] Erro ao buscar saldo:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar saldo: ' + error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao buscar saldo: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -135,25 +137,27 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         // nenhuma com eles). description é required no schema; falhar aqui é
         // mais barato que descobrir isso depois via evento assíncrono.
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID de paciente inválido'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID de paciente inválido', { status: 400 }), req);
         }
 
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Valor deve ser maior que zero'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Valor deve ser maior que zero', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (typeof description !== 'string' || description.trim().length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Descrição é obrigatória',
-                code: 'MISSING_DESCRIPTION'
-            });
+            return sendApiError(
+              res,
+              new AppError('MISSING_DESCRIPTION', 'Descrição é obrigatória', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 🛡️ IDEMPOTÊNCIA: appointmentId obrigatório aqui. A chave de idempotência
@@ -164,11 +168,13 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         // (ver PatientBalance.addDebit()); débito manual sem appointment não tem
         // chave natural, então não é aceito por esta rota.
         if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'appointmentId é obrigatório e precisa ser válido — débito sem vínculo de agendamento não pode ser criado por esta rota',
-                code: 'MISSING_APPOINTMENT_ID'
-            });
+            return sendApiError(
+              res,
+              new AppError('MISSING_APPOINTMENT_ID', 'appointmentId é obrigatório e precisa ser válido — débito sem vínculo de agendamento não pode ser criado por esta rota', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // Resolver patientId
@@ -181,10 +187,13 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         ).lean();
         
         if (balance?.processingStatus === 'updating') {
-            return res.status(409).json({
-                success: false,
-                error: 'Saldo está sendo processado, tente novamente'
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', 'Saldo está sendo processado, tente novamente', {
+                status: 409,
+              }),
+              req
+            );
         }
 
         // Publica evento para processamento async.
@@ -240,10 +249,13 @@ router.post('/:patientId/debit', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[BalanceV2] Erro ao criar débito:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao criar débito: ' + error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao criar débito: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 
@@ -256,17 +268,17 @@ router.post('/:patientId/credit', auth, async (req, res) => {
         const { amount, description } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID de paciente inválido'
-            });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'ID de paciente inválido', { status: 400 }), req);
         }
 
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Valor deve ser maior que zero'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Valor deve ser maior que zero', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const resolvedPatientId = await resolvePatientId(patientId);
@@ -277,10 +289,13 @@ router.post('/:patientId/credit', auth, async (req, res) => {
         ).lean();
 
         if (balance?.processingStatus === 'updating') {
-            return res.status(409).json({
-                success: false,
-                error: 'Saldo está sendo processado, tente novamente'
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', 'Saldo está sendo processado, tente novamente', {
+                status: 409,
+              }),
+              req
+            );
         }
 
         const correlationId = `balance_credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -326,10 +341,13 @@ router.post('/:patientId/credit', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[BalanceV2] Erro ao criar crédito:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao criar crédito: ' + error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao criar crédito: ' + error.message, {
+            status: 500,
+          }),
+          req
+        );
     }
 });
 

@@ -3,6 +3,8 @@ import { auth } from '../middleware/auth.js'; // Seu middleware de autenticaçã
 import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -28,11 +30,17 @@ router.get('/me', auth, async (req, res) => {
                     .populate('appointments');
                 break;
             default:
-                return res.status(400).json({ error: 'Tipo de usuário inválido' });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'Tipo de usuário inválido', {
+                    status: 400,
+                  }),
+                  req
+                );
         }
 
         if (!user) {
-            return res.status(404).json({ error: 'Usuário não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Usuário não encontrado', { status: 404 }), req);
         }
 
         // Adiciona o role aos dados do usuário
@@ -42,10 +50,14 @@ router.get('/me', auth, async (req, res) => {
         res.json(userData);
     } catch (error) {
         console.error('Erro ao buscar perfil do usuário:', error);
-        res.status(500).json({
-            error: 'Erro interno no servidor',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno no servidor',
+          }),
+          req
+        );
     }
 });
 

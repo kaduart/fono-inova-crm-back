@@ -24,6 +24,8 @@ import patientV2DebugRoutes from './patient.v2.debug.js';
 import { createContextLogger } from '../utils/logger.js';
 import { execute as deletePatientCommand } from '../domains/patient/commands/deletePatientCommand.js';
 import { isLikelySameName } from '../utils/patientDuplicateCheck.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const logger = createContextLogger('PatientV2Routes');
@@ -358,11 +360,14 @@ router.post('/', flexibleAuth, async (req, res) => {
       const normalizedCpf = req.body.cpf.replace(/\D/g, '');
       const cpfDup = await Patient.findOne({ cpf: normalizedCpf }).select('fullName').lean();
       if (cpfDup) {
-        return res.status(409).json({
-          success: false,
-          message: `Já existe um paciente com o CPF ${normalizedCpf} cadastrado: "${cpfDup.fullName}".`,
-          existingId: cpfDup._id.toString()
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', `Já existe um paciente com o CPF ${normalizedCpf} cadastrado: "${cpfDup.fullName}".`, {
+            status: 409,
+            extra: { existingId: cpfDup._id.toString() },
+          }),
+          req
+        );
       }
     }
 
@@ -376,11 +381,14 @@ router.post('/', flexibleAuth, async (req, res) => {
       const samePhonePatients = await Patient.find({ phone: normalizedPhone }).select('fullName').lean();
       const namePhoneDup = samePhonePatients.find(p => isLikelySameName(p.fullName, fullName));
       if (namePhoneDup) {
-        return res.status(409).json({
-          success: false,
-          message: `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`,
-          existingId: namePhoneDup._id.toString()
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`, {
+            status: 409,
+            extra: { existingId: namePhoneDup._id.toString() },
+          }),
+          req
+        );
       }
     }
 

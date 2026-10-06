@@ -27,7 +27,7 @@ export async function listPosts(req, res) {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -38,7 +38,7 @@ export async function createPost(req, res) {
     await post.save();
     res.status(201).json({ success: true, data: post });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -46,10 +46,10 @@ export async function createPost(req, res) {
 export async function getPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     res.json({ success: true, data: post });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -57,10 +57,10 @@ export async function getPost(req, res) {
 export async function updatePost(req, res) {
   try {
     const post = await GmbPost.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     res.json({ success: true, data: post });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -70,7 +70,7 @@ export async function deletePost(req, res) {
     await GmbPost.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -78,23 +78,29 @@ export async function deletePost(req, res) {
 export async function publishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     // 🚨 Verifica se o post tem imagem antes de enviar
     console.log(`[GMB Publish] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
     if (!post.mediaUrl) {
-      return res.status(400).json({
-        success: false,
-        error: 'Post não tem imagem. Gere uma imagem primeiro antes de publicar.',
-        solution: 'Clique em "Gerar nova imagem" no modal de edição do post.'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Post não tem imagem. Gere uma imagem primeiro antes de publicar.', {
+          status: 400,
+          extra: { solution: 'Clique em "Gerar nova imagem" no modal de edição do post.' },
+        }),
+        req
+      );
     }
 
     if (!makeService.isMakeConfigured()) {
-      return res.status(503).json({
-        success: false,
-        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
-      });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env', {
+          status: 503,
+        }),
+        req
+      );
     }
 
     try {
@@ -156,23 +162,29 @@ export async function publishPost(req, res) {
 export async function republishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     // 🚨 Verifica se o post tem imagem antes de enviar
     console.log(`[GMB Republish] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
     if (!post.mediaUrl) {
-      return res.status(400).json({
-        success: false,
-        error: 'Post não tem imagem. Gere uma imagem primeiro antes de republicar.',
-        solution: 'Clique em "Gerar nova imagem" no modal de edição do post.'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Post não tem imagem. Gere uma imagem primeiro antes de republicar.', {
+          status: 400,
+          extra: { solution: 'Clique em "Gerar nova imagem" no modal de edição do post.' },
+        }),
+        req
+      );
     }
 
     if (!makeService.isMakeConfigured()) {
-      return res.status(503).json({
-        success: false,
-        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
-      });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env', {
+          status: 503,
+        }),
+        req
+      );
     }
 
     const result = await makeService.sendPostToMake(post);
@@ -210,7 +222,7 @@ export async function republishPost(req, res) {
 export async function retryPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     // Antes enfileirava em gmbPublishRetryQueue ("gmb-publish-retry") — esse
     // worker nunca rodou em produção (initGmbRetryWorker importado mas
@@ -218,13 +230,22 @@ export async function retryPost(req, res) {
     // ficava preso em 'publishing_retry' pra sempre. Envia direto, igual
     // publishPost/republishPost, com o mesmo padrão seguro de confirmação.
     if (!post.mediaUrl) {
-      return res.status(400).json({
-        success: false,
-        error: 'Post não tem imagem. Gere uma imagem primeiro antes de tentar novamente.',
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Post não tem imagem. Gere uma imagem primeiro antes de tentar novamente.', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!makeService.isMakeConfigured()) {
-      return res.status(503).json({ success: false, error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env' });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env', {
+          status: 503,
+        }),
+        req
+      );
     }
 
     try {
@@ -243,7 +264,7 @@ export async function retryPost(req, res) {
       res.status(202).json({ success: true, message: 'Falha no envio — será verificado automaticamente.', queued: true });
     }
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -318,7 +339,7 @@ export async function getHealth(req, res) {
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -328,7 +349,7 @@ export async function getStats(req, res) {
     const stats = await GmbPost.getStats();
     res.json({ success: true, data: stats });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -345,7 +366,7 @@ export async function checkConnection(req, res) {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -356,7 +377,7 @@ export async function generateImagePreview(req, res) {
     const imageData = await gmbService.generatePostImage(content, especialidadeId);
     res.json({ success: true, data: imageData });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -365,7 +386,7 @@ export async function generatePreview(req, res) {
   try {
     res.json({ success: true, data: { content: 'Preview' } });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -374,7 +395,7 @@ export async function listEspecialidades(req, res) {
   try {
     res.json({ success: true, data: gmbService.ESPECIALIDADES });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -389,7 +410,7 @@ export async function getCronStatus(req, res) {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -447,7 +468,7 @@ export async function triggerManualGeneration(req, res) {
     });
   } catch (error) {
     console.error('Erro ao iniciar geração de post:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -463,7 +484,7 @@ export async function triggerWeeklyGeneration(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar semana:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -471,10 +492,13 @@ export async function triggerWeeklyGeneration(req, res) {
 export async function triggerManualPublish(req, res) {
   try {
     if (!makeService.isMakeConfigured()) {
-      return res.status(503).json({
-        success: false,
-        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
-      });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env', {
+          status: 503,
+        }),
+        req
+      );
     }
 
     const posts = await GmbPost.findScheduledForPublish(1);
@@ -487,11 +511,14 @@ export async function triggerManualPublish(req, res) {
     // 🚨 Verifica se o post tem imagem antes de enviar
     console.log(`[GMB Trigger] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
     if (!post.mediaUrl) {
-      return res.status(400).json({
-        success: false,
-        error: 'Post agendado não tem imagem. Gere uma imagem primeiro.',
-        postId: post._id
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Post agendado não tem imagem. Gere uma imagem primeiro.', {
+          status: 400,
+          extra: { postId: post._id },
+        }),
+        req
+      );
     }
     
     await makeService.sendPostToMake(post);
@@ -502,7 +529,7 @@ export async function triggerManualPublish(req, res) {
 
     res.json({ success: true, message: 'Post enviado ao Make!', postId: post._id });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -524,7 +551,7 @@ export async function createAssistedPost(req, res) {
     });
   } catch (error) {
     console.error('Erro ao criar post assistido:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -532,7 +559,7 @@ export async function createAssistedPost(req, res) {
 export async function copyPostText(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     post.assistData = post.assistData || {};
     post.assistData.copiedAt = new Date();
@@ -544,7 +571,7 @@ export async function copyPostText(req, res) {
       mediaUrl: post.mediaUrl
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -552,7 +579,7 @@ export async function copyPostText(req, res) {
 export async function markAsPublished(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     post.status = 'published';
     post.publishedAt = new Date();
@@ -561,7 +588,7 @@ export async function markAsPublished(req, res) {
 
     res.json({ success: true, message: 'Post marcado como publicado' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -570,10 +597,10 @@ export async function makeCallback(req, res) {
   try {
     const { postId, status, gmbPostId, error: makeError } = req.body;
 
-    if (!postId) return res.status(400).json({ success: false, error: 'postId obrigatório' });
+    if (!postId) return sendApiError(res, new AppError('BAD_REQUEST', 'postId obrigatório', { status: 400 }), req);
 
     const post = await GmbPost.findById(postId);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     if (status === 'published') {
       post.status = 'published';
@@ -597,11 +624,11 @@ export async function makeCallback(req, res) {
       }
       await post.save();
     } else {
-      return res.status(400).json({ success: false, error: `status inválido: ${status}` });
+      return sendApiError(res, new AppError('BAD_REQUEST', `status inválido: ${status}`, { status: 400 }), req);
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -609,7 +636,7 @@ export async function makeCallback(req, res) {
 export async function regenerateImage(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     const especialidade =
       gmbService.ESPECIALIDADES.find(e => e.id === post.theme) ||
@@ -625,7 +652,7 @@ export async function regenerateImage(req, res) {
     );
 
     if (!imgResult?.url) {
-      return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
+      return sendApiError(res, new AppError('INTERNAL_ERROR', 'Falha ao gerar imagem', { status: 500 }), req);
     }
 
     post.mediaUrl = imgResult.url;
@@ -643,7 +670,7 @@ export async function regenerateImage(req, res) {
       message: imgResult.reused ? 'Imagem do banco' : 'Imagem nova gerada!' 
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -689,7 +716,7 @@ export async function generateCaption(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar legenda:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -710,7 +737,7 @@ export async function generateHooks(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar ganchos:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -722,7 +749,7 @@ export async function generateVariations(req, res) {
     const result = await gmbService.generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -730,11 +757,11 @@ export async function generateVariations(req, res) {
 export async function scoreContent(req, res) {
   try {
     const { content, funnelStage } = req.body;
-    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    if (!content) return sendApiError(res, new AppError('BAD_REQUEST', 'content obrigatório', { status: 400 }), req);
     const score = await gmbService.scorePostQuality(content, funnelStage || 'top');
     res.json({ success: true, score });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -856,7 +883,7 @@ export async function getConversionMetrics(req, res) {
     });
   } catch (error) {
     console.error('Erro ao calcular métricas de conversão:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -867,6 +894,8 @@ export async function getConversionMetrics(req, res) {
 
 import * as gmbCalendarService from '../services/gmbCalendarService.js';
 import * as gmbABEngine from '../services/gmbABEngine.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 // 🚀 Criar post do calendário para hoje
 export async function triggerCalendarToday(req, res) {
@@ -879,7 +908,7 @@ export async function triggerCalendarToday(req, res) {
     });
   } catch (error) {
     console.error('Erro ao criar post do calendário:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -895,7 +924,7 @@ export async function triggerCalendarUpcoming(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar calendário:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -908,7 +937,7 @@ export async function listCalendar(req, res) {
       total: gmbCalendarService.CALENDARIO_GMB_30_DIAS.length
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -923,7 +952,7 @@ export async function listCalendarRuns(req, res) {
       total: runs.length
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -940,7 +969,7 @@ export async function listABTests(req, res) {
     res.json({ success: true, data: tests });
   } catch (error) {
     console.error('Erro ao listar testes A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -951,7 +980,7 @@ export async function getABPerformance(req, res) {
     res.json({ success: true, data: performance });
   } catch (error) {
     console.error('Erro ao calcular performance A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -963,7 +992,7 @@ export async function recordABWhatsAppClick(req, res) {
     res.json({ success: true, data: result, message: 'Clique no WhatsApp registrado' });
   } catch (error) {
     console.error('Erro ao registrar clique A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -975,7 +1004,7 @@ export async function recordABView(req, res) {
     res.json({ success: true, data: result, message: 'Visualização registrada' });
   } catch (error) {
     console.error('Erro ao registrar view A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -987,7 +1016,7 @@ export async function recordABLead(req, res) {
     res.json({ success: true, data: result, message: 'Lead registrado' });
   } catch (error) {
     console.error('Erro ao registrar lead A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -996,7 +1025,13 @@ export async function previewABVariant(req, res) {
   try {
     const { tema, variant } = req.body;
     if (!tema || !['A', 'B'].includes(variant)) {
-      return res.status(400).json({ success: false, error: 'tema e variant (A|B) são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'tema e variant (A|B) são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const item = { tema };
@@ -1014,6 +1049,6 @@ export async function previewABVariant(req, res) {
     });
   } catch (error) {
     console.error('Erro ao preview variante A/B:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }

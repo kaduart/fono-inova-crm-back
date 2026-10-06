@@ -4,6 +4,8 @@
 
 import AdSpy from '../models/AdSpy.js';
 import * as adSpyService from '../services/adSpyService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 /**
  * Busca anúncios na Meta Ad Library
@@ -21,10 +23,13 @@ export async function searchAds(req, res) {
     res.json({ success: true, data: ads });
   } catch (error) {
     console.error('Erro ao buscar anúncios:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Erro ao buscar anúncios' 
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message || 'Erro ao buscar anúncios', {
+        status: 500,
+      }),
+      req
+    );
   }
 }
 
@@ -36,10 +41,7 @@ export async function analyzeAd(req, res) {
     const { adText, pageName, adTitle } = req.body;
     
     if (!adText) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Texto do anúncio é obrigatório' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Texto do anúncio é obrigatório', { status: 400 }), req);
     }
     
     const analysis = await adSpyService.analyzeAd({ 
@@ -51,10 +53,13 @@ export async function analyzeAd(req, res) {
     res.json({ success: true, data: analysis });
   } catch (error) {
     console.error('Erro ao analisar anúncio:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Erro ao analisar anúncio' 
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message || 'Erro ao analisar anúncio', {
+        status: 500,
+      }),
+      req
+    );
   }
 }
 
@@ -66,10 +71,7 @@ export async function adaptAd(req, res) {
     const { adText, especialidade, funil, analysis } = req.body;
     
     if (!adText) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Texto do anúncio é obrigatório' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Texto do anúncio é obrigatório', { status: 400 }), req);
     }
     
     const adaptedPost = await adSpyService.adaptAdForClinica({
@@ -85,10 +87,13 @@ export async function adaptAd(req, res) {
     });
   } catch (error) {
     console.error('Erro ao adaptar anúncio:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Erro ao adaptar anúncio' 
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message || 'Erro ao adaptar anúncio', {
+        status: 500,
+      }),
+      req
+    );
   }
 }
 
@@ -112,10 +117,7 @@ export async function listSaved(req, res) {
     res.json({ success: true, data: ads });
   } catch (error) {
     console.error('Erro ao listar salvos:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -134,10 +136,7 @@ export async function saveAd(req, res) {
     });
     
     if (existing) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Anúncio já salvo' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Anúncio já salvo', { status: 400 }), req);
     }
     
     const ad = new AdSpy({
@@ -151,10 +150,7 @@ export async function saveAd(req, res) {
     res.json({ success: true, data: ad });
   } catch (error) {
     console.error('Erro ao salvar anúncio:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -174,10 +170,7 @@ export async function deleteSaved(req, res) {
     res.json({ success: true });
   } catch (error) {
     console.error('Erro ao deletar:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 }
 
@@ -191,9 +184,6 @@ export async function getKeywords(req, res) {
       data: adSpyService.KEYWORDS_BY_ESPECIALIDADE 
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    sendApiError(res, error, req);
   }
 }

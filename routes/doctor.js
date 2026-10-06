@@ -7,6 +7,7 @@ import {
 import { auth } from '../middleware/auth.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import validateId from '../middleware/validateId.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.get('/debug/all', flexibleAuth, async (req, res) => {
       }))
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

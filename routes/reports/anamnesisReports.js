@@ -1,4 +1,6 @@
 import express from "express";
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 import AnamnesisReport from "../../models/AnamnesisReport.js"; // Modelo específico para anamnese
 
 const router = express.Router();
@@ -29,10 +31,7 @@ router.get('/patient/:patientId', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar anamneses:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -44,10 +43,7 @@ router.get('/:id', async (req, res) => {
             .exec();
 
         if (!report) {
-            return res.status(404).json({
-                success: false,
-                error: 'Anamnese não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Anamnese não encontrada', { status: 404 }), req);
         }
 
         res.json({
@@ -57,10 +53,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar anamnese:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -86,10 +79,7 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao criar anamnese:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 
@@ -108,10 +98,7 @@ router.put('/:id', async (req, res) => {
         ).populate('patientId');
 
         if (!updatedAnamnesis) {
-            return res.status(404).json({
-                success: false,
-                error: 'Anamnese não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Anamnese não encontrada', { status: 404 }), req);
         }
 
         res.json({
@@ -121,10 +108,7 @@ router.put('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao atualizar anamnese:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor'
-        });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
 

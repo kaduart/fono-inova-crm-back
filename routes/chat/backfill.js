@@ -12,6 +12,7 @@ import Lead from '../../models/Leads.js';
 import Message from '../../models/Message.js';
 import ChatProjection from '../../models/ChatProjection.js';
 import logger from '../../utils/logger.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
 
 function truncate(str, max) {
   if (!str) return '';
@@ -148,6 +149,6 @@ export async function backfillChatProjection(req, res) {
     return res.json({ success: true, updated, total, done: true });
   } catch (err) {
     logger.error('[Backfill] Erro:', err);
-    return res.status(500).json({ success: false, error: err.message });
+    return sendApiError(res, err, req);
   }
 }

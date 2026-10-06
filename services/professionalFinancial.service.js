@@ -952,17 +952,25 @@ export async function getCommissionSessions({ doctorId, startDate, endDate }) {
     return 'particular';
   };
 
-  const items = sessions.map((session) => ({
-    sessionId: session._id,
-    date: toDateString(session.date),
-    time: session.time || null,
-    patientName: session.patient?.fullName || 'Sem nome',
-    value: round(resolveSessionFinancialValue(session)),
-    commissionValue: round(doctor ? calculateSessionCommission(doctor, session, session.date) : 0),
-    isPackage: !!session.package,
-    packageSessionType: session.package?.sessionType || null,
-    origin: resolveSessionOrigin(session)
-  }));
+  // non_payable = sessão contada/faturada pela clínica (ex.: cancelamento tardio com
+  // assinatura), mas sem repasse ao profissional. Continua na lista para o total
+  // de atendimentos bater com a folha assinada; a tela explica o R$ 0 de comissão.
+  const items = sessions.map((session) => {
+    const nonPayable = session.professionalPaymentStatus === 'non_payable';
+    return {
+      sessionId: session._id,
+      date: toDateString(session.date),
+      time: session.time || null,
+      patientName: session.patient?.fullName || 'Sem nome',
+      value: round(resolveSessionFinancialValue(session)),
+      commissionValue: round(doctor ? calculateSessionCommission(doctor, session, session.date) : 0),
+      isPackage: !!session.package,
+      packageSessionType: session.package?.sessionType || null,
+      origin: resolveSessionOrigin(session),
+      professionalPaymentStatus: nonPayable ? 'non_payable' : 'payable',
+      nonPayableReason: nonPayable ? (session.professionalPaymentOverride?.reason || null) : null
+    };
+  });
 
   logMetric('ProfessionalFinancialService', 'getCommissionSessions', {
     doctorId,

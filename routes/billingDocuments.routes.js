@@ -2,6 +2,8 @@
 import express from 'express';
 import { auth } from '../middleware/auth.js';
 import { composeBillingDocuments } from '../services/billing/BillingDocumentComposer.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -17,17 +19,17 @@ router.post('/compose', auth, async (req, res) => {
     const userId = req.user?.id;
 
     if (!patientId || !guideId) {
-      return res.status(400).json({
-        success: false,
-        error: 'patientId e guideId são obrigatórios'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'patientId e guideId são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Usuário não autenticado'
-      });
+      return sendApiError(res, new AppError('UNAUTHORIZED', 'Usuário não autenticado', { status: 401 }), req);
     }
 
     const result = await composeBillingDocuments({
@@ -44,10 +46,7 @@ router.post('/compose', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[BillingDocumentsRoutes] Erro ao compor documentos:', error);
-    return res.status(422).json({
-      success: false,
-      error: error.message
-    });
+    return sendApiError(res, new AppError('UNPROCESSABLE', error.message, { status: 422 }), req);
   }
 });
 

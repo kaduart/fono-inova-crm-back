@@ -24,6 +24,7 @@ import { updateAppointmentFromSession, updatePatientAppointments } from '../util
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 /**
  * Registra um pagamento antecipado com criação automática de:
@@ -192,11 +193,7 @@ export const handleAdvancePayment = async (req, res) => {
     } catch (error) {
         await safeAbortTransaction(mongoSession);
         console.error('❌ Erro ao registrar pagamento antecipado:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao registrar pagamento antecipado',
-            error: error.message,
-        });
+        sendApiError(res, error, req);
     } finally {
         mongoSession.endSession();
     }

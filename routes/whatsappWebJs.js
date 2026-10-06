@@ -1,6 +1,8 @@
 import express from 'express';
 import { getStatus, clearSession } from '../services/whatsappWebJsService.js';
 import { whatsappSendQueue } from '../config/bullConfig.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -28,10 +30,13 @@ router.post('/send', async (req, res) => {
     let { phone, message } = req.body;
 
     if (!phone || !message) {
-      return res.status(400).json({
-        success: false,
-        error: 'Campos obrigatórios: phone e message'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Campos obrigatórios: phone e message', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Normaliza quebras de linha
@@ -44,7 +49,7 @@ router.post('/send', async (req, res) => {
     res.json({ success: true, message: 'Mensagem enfileirada para envio', jobId: job.id });
   } catch (err) {
     console.error('[WhatsAppWeb Route] Erro:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -59,7 +64,7 @@ router.post('/reconnect', async (req, res) => {
     const result = await clearSession();
     res.json(result);
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendApiError(res, err, req);
   }
 });
 

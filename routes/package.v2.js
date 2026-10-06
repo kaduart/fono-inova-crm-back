@@ -39,6 +39,8 @@ import { rebuildPackageFromSource, auditPackage } from '../domain/package/rebuil
 
 // 🆕 NOVO: Controller síncrono para criação com agenda
 import { createPackageV2, listPackagesV2, getPackageV2, settlePackagePayments } from '../controllers/packageController.v2.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageV2');
@@ -644,19 +646,31 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
   const { doctorId, time, dayOfWeek } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, message: 'ID inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
   }
   if (!doctorId && !time && dayOfWeek === undefined) {
-    return res.status(400).json({ success: false, message: 'Informe doctorId, time e/ou dayOfWeek' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'Informe doctorId, time e/ou dayOfWeek', {
+        status: 400,
+      }),
+      req
+    );
   }
   if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
-    return res.status(400).json({ success: false, message: 'doctorId inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'doctorId inválido', { status: 400 }), req);
   }
   if (time && !/^\d{2}:\d{2}$/.test(time)) {
-    return res.status(400).json({ success: false, message: 'time deve estar no formato HH:MM' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'time deve estar no formato HH:MM', { status: 400 }), req);
   }
   if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
-    return res.status(400).json({ success: false, message: 'dayOfWeek deve ser 0 (dom) a 6 (sab)' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'dayOfWeek deve ser 0 (dom) a 6 (sab)', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   // Resolve o packageId real (pode vir como PackagesView._id)
@@ -735,12 +749,14 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
     }
   }
   if (internalCollisions.length > 0) {
-    return res.status(409).json({
-      success: false,
-      code: 'BULK_INTERNAL_COLLISION',
-      message: 'A alteração em massa colocaria duas sessões deste pacote no mesmo horário com o mesmo profissional.',
-      conflicts: internalCollisions,
-    });
+    return sendApiError(
+      res,
+      new AppError('BULK_INTERNAL_COLLISION', 'A alteração em massa colocaria duas sessões deste pacote no mesmo horário com o mesmo profissional.', {
+        status: 409,
+        extra: { conflicts: internalCollisions },
+      }),
+      req
+    );
   }
 
   // 3️⃣ Conflito de médico e paciente contra o resto do sistema (fora deste lote).
@@ -785,12 +801,14 @@ router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, re
     }
   }
   if (externalConflicts.length > 0) {
-    return res.status(409).json({
-      success: false,
-      code: 'BULK_SCHEDULE_CONFLICT',
-      message: 'Um ou mais horários da alteração em massa conflitam com agendamentos existentes.',
-      conflicts: externalConflicts,
-    });
+    return sendApiError(
+      res,
+      new AppError('BULK_SCHEDULE_CONFLICT', 'Um ou mais horários da alteração em massa conflitam com agendamentos existentes.', {
+        status: 409,
+        extra: { conflicts: externalConflicts },
+      }),
+      req
+    );
   }
 
   // 4️⃣ Zero conflito — aplica tudo (Appointment + Session + Payment) numa única transação.

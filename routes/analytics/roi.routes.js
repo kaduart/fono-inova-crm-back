@@ -9,6 +9,8 @@ import AdConversion from '../../models/AdConversion.js';
 import AdSpend from '../../models/AdSpend.js';
 import { flexibleAuth } from '../../middleware/amandaAuth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -312,10 +314,16 @@ router.get('/acquisition-by-ad', flexibleAuth, asyncHandler(async (req, res) => 
 router.post('/acquisition-by-ad/spend', flexibleAuth, asyncHandler(async (req, res) => {
     const adKey = String(req.body?.adKey || '').trim();
     const amount = Number(String(req.body?.amount ?? '').replace(',', '.'));
-    if (!adKey || adKey.length > 200) return res.status(400).json({ success: false, error: 'adKey inválido' });
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return res.status(400).json({ success: false, error: 'amount deve ser entre 0,01 e 1.000.000' });
+    if (!adKey || adKey.length > 200) return sendApiError(res, new AppError('BAD_REQUEST', 'adKey inválido', { status: 400 }), req);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'amount deve ser entre 0,01 e 1.000.000', {
+        status: 400,
+      }),
+      req
+    );
     const date = req.body?.date ? new Date(req.body.date) : new Date();
-    if (Number.isNaN(date.getTime())) return res.status(400).json({ success: false, error: 'date inválida' });
+    if (Number.isNaN(date.getTime())) return sendApiError(res, new AppError('BAD_REQUEST', 'date inválida', { status: 400 }), req);
 
     const doc = await AdSpend.create({ adKey, amount, date, createdBy: req.user?.email || req.user?._id?.toString?.() || null });
     res.status(201).json({ success: true, id: doc._id, adKey, amount, date });
@@ -324,9 +332,9 @@ router.post('/acquisition-by-ad/spend', flexibleAuth, asyncHandler(async (req, r
 /** DELETE /api/v2/analytics/roi/acquisition-by-ad/spend/last?adKey=...  — desfaz o último lançamento do anúncio */
 router.delete('/acquisition-by-ad/spend/last', flexibleAuth, asyncHandler(async (req, res) => {
     const adKey = String(req.query?.adKey || '').trim();
-    if (!adKey) return res.status(400).json({ success: false, error: 'adKey obrigatório' });
+    if (!adKey) return sendApiError(res, new AppError('BAD_REQUEST', 'adKey obrigatório', { status: 400 }), req);
     const last = await AdSpend.findOneAndDelete({ adKey }, { sort: { createdAt: -1 } });
-    if (!last) return res.status(404).json({ success: false, error: 'Nenhum lançamento para desfazer' });
+    if (!last) return sendApiError(res, new AppError('NOT_FOUND', 'Nenhum lançamento para desfazer', { status: 404 }), req);
     res.json({ success: true, removed: { id: last._id, amount: last.amount } });
 }));
 

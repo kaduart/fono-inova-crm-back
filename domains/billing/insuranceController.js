@@ -10,6 +10,8 @@ import InsuranceBatch from '../../models/InsuranceBatch.js';
 import { createBatch } from './domain/insuranceDomain.js';
 import { publishEvent } from '../../infrastructure/events/eventPublisher.js';
 import { InsuranceEventTypes } from './events/insuranceEvents.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 /**
  * Cria um novo lote de faturamento
@@ -27,19 +29,25 @@ export async function createBatchHandler(req, res) {
 
         // Validações básicas
         if (!insuranceProvider || !startDate || !endDate) {
-            return res.status(400).json({
-                success: false,
-                error: 'Dados incompletos',
-                details: ['insuranceProvider, startDate e endDate são obrigatórios']
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Dados incompletos', {
+                status: 400,
+                details: ['insuranceProvider, startDate e endDate são obrigatórios'],
+              }),
+              req
+            );
         }
 
         if (items.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Lote vazio',
-                details: ['Adicione pelo menos um item ao lote']
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Lote vazio', {
+                status: 400,
+                details: ['Adicione pelo menos um item ao lote'],
+              }),
+              req
+            );
         }
 
         // Cria o lote (domain logic)
@@ -91,11 +99,14 @@ export async function createBatchHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao criar lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -147,11 +158,14 @@ export async function listBatchesHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao listar lotes:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -166,10 +180,7 @@ export async function getBatchHandler(req, res) {
         const batch = await InsuranceBatch.findById(id).lean();
 
         if (!batch) {
-            return res.status(404).json({
-                success: false,
-                error: 'Lote não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lote não encontrado', { status: 404 }), req);
         }
 
         // Calcula métricas adicionais
@@ -191,11 +202,14 @@ export async function getBatchHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao buscar lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -210,18 +224,18 @@ export async function sealBatchHandler(req, res) {
         const batch = await InsuranceBatch.findById(id);
 
         if (!batch) {
-            return res.status(404).json({
-                success: false,
-                error: 'Lote não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lote não encontrado', { status: 404 }), req);
         }
 
         if (batch.status !== 'pending') {
-            return res.status(400).json({
-                success: false,
-                error: 'Lote não pode ser fechado',
-                details: [`Status atual: ${batch.status}. Apenas lotes 'pending' podem ser fechados.`]
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Lote não pode ser fechado', {
+                status: 400,
+                details: [`Status atual: ${batch.status}. Apenas lotes 'pending' podem ser fechados.`],
+              }),
+              req
+            );
         }
 
         // Publica evento de fechamento
@@ -252,11 +266,14 @@ export async function sealBatchHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao fechar lote:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -272,10 +289,7 @@ export async function reprocessBatchHandler(req, res) {
         const batch = await InsuranceBatch.findById(id);
 
         if (!batch) {
-            return res.status(404).json({
-                success: false,
-                error: 'Lote não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lote não encontrado', { status: 404 }), req);
         }
 
         // Publica evento de reprocessamento
@@ -305,11 +319,14 @@ export async function reprocessBatchHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao solicitar reprocessamento:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -324,10 +341,7 @@ export async function simulateResponseHandler(req, res) {
         const batch = await InsuranceBatch.findById(id);
 
         if (!batch) {
-            return res.status(404).json({
-                success: false,
-                error: 'Lote não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Lote não encontrado', { status: 404 }), req);
         }
 
         // Importa função de simulação
@@ -364,11 +378,14 @@ export async function simulateResponseHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro na simulação:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }
 
@@ -444,10 +461,13 @@ export async function getStatsHandler(req, res) {
 
     } catch (error) {
         console.error('[InsuranceController] Erro ao buscar estatísticas:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro interno',
+          }),
+          req
+        );
     }
 }

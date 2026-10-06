@@ -18,6 +18,8 @@ import { recordAudit, pickInsurancePlanFields, getInsurancePlanAuditTrail } from
 import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -124,11 +126,13 @@ router.post('/', auth, async (req, res) => {
 
     if (!guideId || !doctorId || !specialty || !startDate || !slots?.length) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        errorCode: 'VALIDATION_ERROR',
-        message: 'Campos obrigatórios: guideId, doctorId, specialty, startDate, slots'
-      });
+      return sendApiError(
+        res,
+        new AppError('VALIDATION_ERROR', 'Campos obrigatórios: guideId, doctorId, specialty, startDate, slots', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // sessionsPerWeek nunca é confiado do body: deriva sempre de slots.length
@@ -138,17 +142,19 @@ router.post('/', auth, async (req, res) => {
 
     if (!VALID_SPECIALTIES.includes(specialty)) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        errorCode: 'INVALID_SPECIALTY',
-        message: `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_SPECIALTY', `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const guide = await InsuranceGuide.findById(guideId).session(session);
     if (!guide) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('GUIDE_NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     // Resolve valor da sessão: prioridade 1) body (modal), 2) guia, 3) tabela do convênio (por especialidade da guia)
@@ -159,12 +165,14 @@ router.post('/', auth, async (req, res) => {
     if (!lifecycle.eligibility.canSchedule) {
       await session.abortTransaction();
       const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_NOT_ELIGIBLE',
-        message: blockingAlert?.message || 'Guia não elegível para agendamento',
-        lifecycle
-      });
+      return sendApiError(
+        res,
+        new AppError('GUIDE_NOT_ELIGIBLE', blockingAlert?.message || 'Guia não elegível para agendamento', {
+          status: 400,
+          extra: { lifecycle },
+        }),
+        req
+      );
     }
 
     const totalSessions = guide.totalSessions - guide.usedSessions;
@@ -216,16 +224,14 @@ router.post('/', auth, async (req, res) => {
 
       if (linkTypes.length > 0) {
         await session.abortTransaction();
-        return res.status(409).json({
-          success: false,
-          errorCode: 'PLAN_HAS_ASSOCIATED_RECORDS',
-          message: 'Já existe um plano para esta guia com agendamentos/sessões/pagamentos associados. Use "Gerar sessões" para reorganizar — criar um novo plano aqui não é permitido enquanto houver registros vinculados.',
-          existingPlanId: existingPlan._id,
-          linkedRecordTypes: linkTypes,
-          associatedAppointmentsCount: linkedAppointmentIds.length,
-          associatedSessionsCount: linkedSessionIds.length,
-          associatedPaymentsCount: linkedPaymentsCount
-        });
+        return sendApiError(
+          res,
+          new AppError('PLAN_HAS_ASSOCIATED_RECORDS', 'Já existe um plano para esta guia com agendamentos/sessões/pagamentos associados. Use "Gerar sessões" para reorganizar — criar um novo plano aqui não é permitido enquanto houver registros vinculados.', {
+            status: 409,
+            extra: { existingPlanId: existingPlan._id, linkedRecordTypes: linkTypes, associatedAppointmentsCount: linkedAppointmentIds.length, associatedSessionsCount: linkedSessionIds.length, associatedPaymentsCount: linkedPaymentsCount },
+          }),
+          req
+        );
       }
 
       // Plano existe mas não tem NENHUM vínculo em nenhuma das três entidades —
@@ -388,7 +394,7 @@ router.get('/guide/:guideId', auth, async (req, res) => {
       .lean();
 
     if (!plan) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
 
     // Planos antigos podem não ter sessionValue salvo. Recupera do primeiro payment pendente.
@@ -405,7 +411,7 @@ router.get('/guide/:guideId', auth, async (req, res) => {
     res.json({ success: true, data: plan });
   } catch (error) {
     console.error('[InsurancePlansV2] Erro ao buscar:', error);
-    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -426,15 +432,21 @@ router.post('/:id/replan-preview', auth, async (req, res) => {
     const { slots } = req.body;
 
     if (!Array.isArray(slots) || slots.length === 0) {
-      return res.status(400).json({ success: false, errorCode: 'INVALID_SLOTS', message: 'Informe ao menos um dia/horário.' });
+      return sendApiError(
+        res,
+        new AppError('INVALID_SLOTS', 'Informe ao menos um dia/horário.', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const plan = await InsurancePlan.findById(id).lean();
     if (!plan) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
     if (plan.status !== 'active') {
-      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo.' });
+      return sendApiError(res, new AppError('PLAN_NOT_ACTIVE', 'Este plano não está ativo.', { status: 400 }), req);
     }
 
     const slotFullSignature = (arr) => (arr || [])
@@ -453,7 +465,7 @@ router.post('/:id/replan-preview', auth, async (req, res) => {
 
     const guide = await InsuranceGuide.findById(plan.guide).lean();
     if (!guide) {
-      return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('GUIDE_NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     const today = new Date().toISOString().split('T')[0];
@@ -499,7 +511,7 @@ router.post('/:id/replan-preview', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[InsurancePlans][replan-preview] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -514,12 +526,18 @@ router.patch('/:id', auth, async (req, res) => {
     const plan = await InsurancePlan.findById(id).session(session);
     if (!plan) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
 
     if (plan.status !== 'active') {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Este plano não está ativo. Cancele e crie um novo.' });
+      return sendApiError(
+        res,
+        new AppError('PLAN_NOT_ACTIVE', 'Este plano não está ativo. Cancele e crie um novo.', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const beforeSnapshot = pickInsurancePlanFields(plan);
@@ -661,16 +679,18 @@ router.patch('/:id', auth, async (req, res) => {
           return `${dataFmt} às ${c.time} (já ocupado com ${nomePaciente})`;
         });
 
-        return res.status(409).json({
-          success: false,
-          errorCode: 'CONFLITO_AGENDA',
-          message: `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`,
-          conflicts: conflicts.map(c => ({
+        return sendApiError(
+          res,
+          new AppError('CONFLITO_AGENDA', `O profissional selecionado já tem agendamento em: ${detalhes.join('; ')}. Ajuste o horário ou escolha outro profissional antes de salvar.`, {
+            status: 409,
+            extra: { conflicts: conflicts.map(c => ({
             date: c.date,
             time: c.time,
             patientName: c.patient?.fullName || null
-          }))
-        });
+          })) },
+          }),
+          req
+        );
       }
     }
 
@@ -897,54 +917,54 @@ router.patch('/:id', auth, async (req, res) => {
     console.error('[InsurancePlansV2] Erro ao atualizar plano:', error);
 
     if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        errorCode: 'CONFLITO_AGENDA',
-        message: 'O horário ficou indisponível durante a operação. Tente novamente.'
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLITO_AGENDA', 'O horário ficou indisponível durante a operação. Tente novamente.', {
+          status: 409,
+        }),
+        req
+      );
     }
 
     // Erros vindos de generateInsurancePlanSessions ao regenerar por mudança de frequência
     if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
       const described = await describeSlotConflict(error);
-      return res.status(409).json({
-        success: false,
-        errorCode: 'APPOINTMENT_SLOT_CONFLICT',
-        message: described.message,
-        conflict: described.conflict
-      });
+      return sendApiError(
+        res,
+        new AppError('APPOINTMENT_SLOT_CONFLICT', described.message, {
+          status: 409,
+          extra: { conflict: described.conflict },
+        }),
+        req
+      );
     }
     if (error.message === 'GUIDE_EXHAUSTED') {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_EXHAUSTED',
-        message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
-      });
+      return sendApiError(
+        res,
+        new AppError('GUIDE_EXHAUSTED', 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (error.code === 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED') {
-      return res.status(409).json({
-        success: false,
-        errorCode: error.code,
-        message: error.message,
-        blockedBy: error.blockedBy
-      });
+      return sendApiError(
+        res,
+        new AppError(error.code, error.message, {
+          status: 409,
+          extra: { blockedBy: error.blockedBy },
+        }),
+        req
+      );
     }
     if (error.code === 'CONVENIO_REPLAN_CANCEL_FAILED') {
-      return res.status(500).json({
-        success: false,
-        errorCode: error.code,
-        message: error.message
-      });
+      return sendApiError(res, new AppError(error.code, error.message, { status: 500 }), req);
     }
     if (error.code === 'GUIDE_NOT_ELIGIBLE') {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_NOT_ELIGIBLE',
-        message: error.message
-      });
+      return sendApiError(res, new AppError('GUIDE_NOT_ELIGIBLE', error.message, { status: 400 }), req);
     }
 
-    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   } finally {
     session.endSession();
   }
@@ -963,7 +983,7 @@ router.delete('/:id', auth, async (req, res) => {
     const plan = await InsurancePlan.findById(id).session(session);
     if (!plan) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
 
     const cancelBeforeSnapshot = pickInsurancePlanFields(plan);
@@ -1020,7 +1040,7 @@ router.delete('/:id', auth, async (req, res) => {
 
   } catch (error) {
     await session.abortTransaction();
-    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   } finally {
     session.endSession();
   }
@@ -1037,11 +1057,17 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
   // confirmou o backfill retroativo) — default false preserva o comportamento padrão.
   const allowPastGeneration = req.body?.allowPastGeneration === true;
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
 
   if (!acquireGenerateSessionsLock(id)) {
-    return res.status(429).json({ success: false, errorCode: 'ALREADY_PROCESSING', message: 'Geração de sessões já em andamento para este plano. Aguarde a conclusão.' });
+    return sendApiError(
+      res,
+      new AppError('ALREADY_PROCESSING', 'Geração de sessões já em andamento para este plano. Aguarde a conclusão.', {
+        status: 429,
+      }),
+      req
+    );
   }
 
   const session = await mongoose.startSession();
@@ -1051,29 +1077,31 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     const plan = await InsurancePlan.findById(id).session(session).lean();
     if (!plan) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
     if (plan.status !== 'active') {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, errorCode: 'PLAN_NOT_ACTIVE', message: 'Plano não está ativo' });
+      return sendApiError(res, new AppError('PLAN_NOT_ACTIVE', 'Plano não está ativo', { status: 400 }), req);
     }
 
     const guide = await InsuranceGuide.findById(plan.guide).session(session).lean();
     if (!guide) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, errorCode: 'GUIDE_NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('GUIDE_NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
     if (!lifecycle.eligibility.canSchedule) {
       await session.abortTransaction();
       const blockingAlert = lifecycle.alerts.find(a => a.severity === 'error');
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_NOT_ELIGIBLE',
-        message: blockingAlert?.message || 'Guia não elegível para gerar sessões',
-        lifecycle
-      });
+      return sendApiError(
+        res,
+        new AppError('GUIDE_NOT_ELIGIBLE', blockingAlert?.message || 'Guia não elegível para gerar sessões', {
+          status: 400,
+          extra: { lifecycle },
+        }),
+        req
+      );
     }
 
     const today = new Date().toISOString().split('T')[0];
@@ -1200,44 +1228,42 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 
     if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {
       const described = await describeSlotConflict(error);
-      return res.status(409).json({
-        success: false,
-        errorCode: 'APPOINTMENT_SLOT_CONFLICT',
-        message: described.message,
-        conflict: described.conflict
-      });
+      return sendApiError(
+        res,
+        new AppError('APPOINTMENT_SLOT_CONFLICT', described.message, {
+          status: 409,
+          extra: { conflict: described.conflict },
+        }),
+        req
+      );
     }
     if (error.message === 'GUIDE_EXHAUSTED') {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_EXHAUSTED',
-        message: 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.'
-      });
+      return sendApiError(
+        res,
+        new AppError('GUIDE_EXHAUSTED', 'Esta guia não tem mais sessões disponíveis para regenerar no novo padrão.', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (error.code === 'CONVENIO_REPLAN_BLOCKED_NON_REVERSIBLE_CANCELED') {
-      return res.status(409).json({
-        success: false,
-        errorCode: error.code,
-        message: error.message,
-        blockedBy: error.blockedBy
-      });
+      return sendApiError(
+        res,
+        new AppError(error.code, error.message, {
+          status: 409,
+          extra: { blockedBy: error.blockedBy },
+        }),
+        req
+      );
     }
     if (error.code === 'CONVENIO_REPLAN_CANCEL_FAILED') {
-      return res.status(500).json({
-        success: false,
-        errorCode: error.code,
-        message: error.message
-      });
+      return sendApiError(res, new AppError(error.code, error.message, { status: 500 }), req);
     }
     if (error.code === 'GUIDE_NOT_ELIGIBLE') {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'GUIDE_NOT_ELIGIBLE',
-        message: error.message
-      });
+      return sendApiError(res, new AppError('GUIDE_NOT_ELIGIBLE', error.message, { status: 400 }), req);
     }
 
-    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   } finally {
     session.endSession();
     releaseGenerateSessionsLock(id);
@@ -1258,13 +1284,13 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
 router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
   const { id } = req.params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
 
   try {
     const plan = await InsurancePlan.findById(id).lean();
     if (!plan) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Plano não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
 
     const today = new Date().toISOString().split('T')[0];
@@ -1299,7 +1325,7 @@ router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('[InsurancePlansV2] Erro ao confirmar sessões retroativas em lote:', error);
-    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -1310,14 +1336,14 @@ router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
 router.get('/:id/changelog', auth, async (req, res) => {
   const { id } = req.params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
   try {
     const entries = await getInsurancePlanAuditTrail(id, { limit: 50 });
     res.json({ success: true, data: entries });
   } catch (error) {
     console.error('[InsurancePlansV2] Erro ao buscar changelog:', error);
-    res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 

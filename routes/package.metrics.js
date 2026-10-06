@@ -11,6 +11,7 @@
 
 import express from 'express';
 import { createContextLogger } from '../utils/logger.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageMetrics');
@@ -131,7 +132,7 @@ router.get('/', async (req, res) => {
     
   } catch (error) {
     logger.error('Error getting metrics', { error: error.message });
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

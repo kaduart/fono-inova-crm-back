@@ -17,10 +17,13 @@ const router = express.Router();
 router.post('/add', flexibleAuth, async (req, res) => {
   try {
     if (!['admin', 'secretary'].includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Você não está autorizado a adicionar paciente!'
-      });
+      return sendApiError(
+        res,
+        new AppError('FORBIDDEN', 'Você não está autorizado a adicionar paciente!', {
+          status: 403,
+        }),
+        req
+      );
     }
 
     const {
@@ -36,10 +39,13 @@ router.post('/add', flexibleAuth, async (req, res) => {
     } = req.body;
 
     if (!fullName || !dateOfBirth) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nome completo e data de nascimento são obrigatórios!'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Nome completo e data de nascimento são obrigatórios!', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Duplicata por nome (tolerante a erro de digitação) + telefone
@@ -52,11 +58,14 @@ router.post('/add', flexibleAuth, async (req, res) => {
       const samePhonePatients = await Patient.find({ phone: normalizedPhone }).select('fullName').lean();
       const namePhoneDup = samePhonePatients.find(p => isLikelySameName(p.fullName, fullName));
       if (namePhoneDup) {
-        return res.status(409).json({
-          success: false,
-          message: `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`,
-          existingId: namePhoneDup._id
-        });
+        return sendApiError(
+          res,
+          new AppError('CONFLICT', `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`, {
+            status: 409,
+            extra: { existingId: namePhoneDup._id },
+          }),
+          req
+        );
       }
     }
 
@@ -67,12 +76,14 @@ router.post('/add', flexibleAuth, async (req, res) => {
     }
 
     if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Paciente já existe no sistema!',
-        existingName: existing.fullName,
-        existingId: existing._id
-      });
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'Paciente já existe no sistema!', {
+          status: 409,
+          extra: { existingName: existing.fullName, existingId: existing._id },
+        }),
+        req
+      );
     }
 
     const newPatient = new Patient({
@@ -97,11 +108,7 @@ router.post('/add', flexibleAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('Erro ao adicionar paciente:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao adicionar paciente',
-      error: err.message
-    });
+    return sendApiError(res, err, req);
   }
 });
 
@@ -164,7 +171,14 @@ router.get('/', flexibleAuth, async (req, res) => {
     res.json(patients);
   } catch (err) {
     console.error('[PATIENTS LIST] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar pacientes', details: err.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao buscar pacientes', {
+        status: 500,
+        details: err.message,
+      }),
+      req
+    );
   }
 });
 
@@ -219,7 +233,14 @@ router.get('/aniversariantes', auth, async (req, res) => {
     res.json({ success: true, data: aniversariantes });
   } catch (err) {
     console.error('[ANIVERSARIANTES] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar aniversariantes', details: err.message });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao buscar aniversariantes', {
+        status: 500,
+        details: err.message,
+      }),
+      req
+    );
   }
 });
 
@@ -227,10 +248,10 @@ router.get('/aniversariantes', auth, async (req, res) => {
 router.get('/:id', validateId, auth, async (req, res) => {
   try {
     const patient = await Patient.findById(req.params.id);
-    if (!patient) return res.status(404).json({ error: 'Paciente não encontrado' });
+    if (!patient) return sendApiError(res, new AppError('NOT_FOUND', 'Paciente não encontrado', { status: 404 }), req);
     res.json(patient);
   } catch (err) {
-    res.status(500).json({ error: 'Erro no servidor' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro no servidor', { status: 500 }), req);
   }
 });
 
@@ -238,10 +259,10 @@ router.get('/:id', validateId, auth, async (req, res) => {
 router.put('/:id', validateId, flexibleAuth, async (req, res) => {
   try {
     const patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!patient) return res.status(404).json({ error: 'Paciente não encontrado' });
+    if (!patient) return sendApiError(res, new AppError('NOT_FOUND', 'Paciente não encontrado', { status: 404 }), req);
     res.json(patient);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendApiError(res, new AppError('BAD_REQUEST', err.message, { status: 400 }), req);
   }
 });
 
@@ -259,7 +280,7 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
     res.json({ success: true, data: appointments.map(mapAppointmentDTO) });
   } catch (err) {
     console.error('[APPOINTMENTS SUMMARY] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar agendamentos' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar agendamentos', { status: 500 }), req);
   }
 });
 
@@ -315,7 +336,13 @@ router.get('/:patientId/sessions/pending', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (err) {
     console.error('[SESSIONS PENDING] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar sessões pendentes' });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao buscar sessões pendentes', {
+        status: 500,
+      }),
+      req
+    );
   }
 });
 
@@ -384,7 +411,7 @@ router.get('/:patientId/debug-debito', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[DEBUG DEBITO] Erro:', err);
-    res.status(500).json({ error: 'Erro ao debugar débito' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao debugar débito', { status: 500 }), req);
   }
 });
 
@@ -447,7 +474,7 @@ router.get('/:patientId/balance/details', auth, async (req, res) => {
 
   } catch (err) {
     console.error('[BALANCE DETAILS] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar débitos' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar débitos', { status: 500 }), req);
   }
 });
 
@@ -473,7 +500,7 @@ router.get('/:patientId/sessions', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[SESSIONS] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar sessões' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar sessões', { status: 500 }), req);
   }
 });
 
@@ -505,12 +532,14 @@ router.get('/:patientId/sessions/v2', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[SESSIONS V2] Erro:', err);
-    res.status(500).json({ error: 'Erro ao buscar sessões' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar sessões', { status: 500 }), req);
   }
 });
 
 // Delete a patient
 import { execute as deletePatientCommand } from '../domains/patient/commands/deletePatientCommand.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 router.delete('/:id', validateId, auth, async (req, res) => {
   try {

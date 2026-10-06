@@ -17,6 +17,8 @@ import {
 } from "../services/aiAmandaService.js";
 
 import { followupQueue } from "../config/bullConfig.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -133,11 +135,14 @@ router.post("/draft", async (req, res) => {
             // se der erro aqui, ignora e usa "Cliente"
         }
 
-        return res.status(500).json({
-            success: false,
-            message: "Erro ao gerar rascunho",
-            fallback: `Oi ${firstName}! Como posso te ajudar? 💚`,
-        });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar rascunho", {
+            status: 500,
+            extra: { fallback: `Oi ${firstName}! Como posso te ajudar? 💚` },
+          }),
+          req
+        );
     }
 });
 
@@ -223,11 +228,14 @@ router.post("/reply", async (req, res) => {
             // ignora
         }
 
-        return res.status(500).json({
-            success: false,
-            message: "Erro ao gerar resposta",
-            fallback: `Oi ${firstName}! Deixa eu te passar para nossa equipe. Aguarde um momento! 💚`,
-        });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "Erro ao gerar resposta", {
+            status: 500,
+            extra: { fallback: `Oi ${firstName}! Deixa eu te passar para nossa equipe. Aguarde um momento! 💚` },
+          }),
+          req
+        );
     }
 });
 
@@ -248,10 +256,13 @@ router.post("/send", async (req, res) => {
         } = req.body;
 
         if (!leadId || !message) {
-            return res.status(400).json({
-                success: false,
-                message: "Campos obrigatórios: leadId, message",
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Campos obrigatórios: leadId, message", {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const lead = await Lead.findById(leadId);
@@ -293,11 +304,7 @@ router.post("/send", async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro ao agendar follow-up:", err);
-        return res.status(500).json({
-            success: false,
-            message: "Erro ao agendar follow-up",
-            error: err.message,
-        });
+        return sendApiError(res, err, req);
     }
 });
 
@@ -327,12 +334,15 @@ router.post("/test", async (req, res) => {
     } catch (err) {
         console.error("❌ Teste falhou:", err);
 
-        return res.status(500).json({
-            success: false,
-            message: "API Anthropic não está funcionando",
-            error: err.message,
-            apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY,
-        });
+        return sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', "API Anthropic não está funcionando", {
+            status: 500,
+            legacyError: err.message,
+            extra: { apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY },
+          }),
+          req
+        );
     }
 });
 
@@ -388,7 +398,7 @@ router.get("/status", async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Erro ao consultar status Amanda:", err);
-        return res.status(500).json({ success: false, error: err.message });
+        return sendApiError(res, err, req);
     }
 });
 

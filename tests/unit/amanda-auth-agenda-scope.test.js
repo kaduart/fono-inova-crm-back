@@ -42,7 +42,7 @@ describe('flexibleAuth — escopo mínimo do agenda-service', () => {
     ['GET', '/api/v2/appointments/available-slots?doctorId=507f1f77bcf86cd799439011'],
     ['GET', '/api/v2/appointments/convenio-options'],
     ['POST', '/api/v2/appointments'],
-    ['POST', '/api/v2/appointments/507f1f77bcf86cd799439011/reschedule'],
+    ['PATCH', '/api/v2/appointments/507f1f77bcf86cd799439011/reschedule'],
     ['PUT', '/api/v2/appointments/507f1f77bcf86cd799439011'],
     ['PATCH', '/api/v2/appointments/507f1f77bcf86cd799439011/admin-edit'],
     ['PATCH', '/api/v2/appointments/507f1f77bcf86cd799439011/cancel'],
@@ -50,8 +50,6 @@ describe('flexibleAuth — escopo mínimo do agenda-service', () => {
     ['PATCH', '/api/v2/appointments/507f1f77bcf86cd799439011/post-appointment'],
     ['DELETE', '/api/v2/appointments/507f1f77bcf86cd799439011'],
     ['GET', '/api/v2/packages?patientId=507f1f77bcf86cd799439011'],
-    ['DELETE', '/api/v2/packages/pkg1/sessions/session1'],
-    ['PATCH', '/api/v2/packages/pkg1/sessions/session1/cancel'],
     ['GET', '/api/v2/patients?limit=1000'],
     ['PUT', '/api/v2/patients/507f1f77bcf86cd799439011'],
     ['GET', '/api/v2/doctors/active'],
@@ -92,12 +90,12 @@ describe('flexibleAuth — escopo mínimo do agenda-service', () => {
     });
   });
 
-  it('responde 403 sem chamar next fora do escopo', () => {
+  it('responde 403 sem chamar next fora do escopo', async () => {
     const request = req('DELETE', '/api/v2/evolutions/507f1f77bcf86cd799439011');
     const res = response();
     const next = vi.fn();
 
-    flexibleAuth(request, res, next);
+    await flexibleAuth(request, res, next); // a resposta de erro é assíncrona (sendApiError)
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);

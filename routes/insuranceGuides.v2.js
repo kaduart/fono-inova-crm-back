@@ -25,6 +25,8 @@ import { buildGuideResponse } from '../services/guideLifecycle/guideResponseBuil
 import { insurancePaymentCreationService } from '../domains/billing/services/InsurancePaymentCreationService.js';
 import { moveAppointmentGuide } from '../services/insuranceGuide/moveAppointmentGuide.js';
 import { updateGuideEvaluation } from '../services/insuranceGuide/updateGuideEvaluation.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -77,21 +79,25 @@ router.post('/', auth, async (req, res) => {
 
     // Validações
     if (!number || !patientId || !specialty || !insurance || !totalSessions || !expiresAt) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'VALIDATION_ERROR',
-        message: 'Campos obrigatórios: number, patientId, specialty, insurance, totalSessions, expiresAt',
-        correlationId
-      });
+      return sendApiError(
+        res,
+        new AppError('VALIDATION_ERROR', 'Campos obrigatórios: number, patientId, specialty, insurance, totalSessions, expiresAt', {
+          status: 400,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     if (!VALID_SPECIALTIES.includes(specialty)) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'INVALID_SPECIALTY',
-        message: `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`,
-        correlationId
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_SPECIALTY', `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`, {
+          status: 400,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     // Resolve o patientId (aceita _id da patients_view) — a checagem de duplicidade
@@ -109,12 +115,14 @@ router.post('/', auth, async (req, res) => {
     }).select('_id number').lean();
 
     if (duplicate) {
-      return res.status(409).json({
-        success: false,
-        errorCode: 'DUPLICATE_GUIDE_NUMBER',
-        message: `Este paciente já possui a guia ${number} cadastrada`,
-        correlationId
-      });
+      return sendApiError(
+        res,
+        new AppError('DUPLICATE_GUIDE_NUMBER', `Este paciente já possui a guia ${number} cadastrada`, {
+          status: 409,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     // Busca billingMode do convênio (congela na guia para preservar histórico)
@@ -248,12 +256,14 @@ router.post('/', auth, async (req, res) => {
         console.error('[InsuranceGuidesV2] Erro ao criar avaliação:', evalError);
         // Rollback: remove a guide para não deixar estado inconsistente
         await InsuranceGuide.findByIdAndDelete(guide._id).catch(() => {});
-        return res.status(500).json({
-          success: false,
-          errorCode: 'EVALUATION_CREATION_FAILED',
-          message: `Guia não foi criada: falha ao gerar agendamento de avaliação. ${evalError.message}`,
-          correlationId
-        });
+        return sendApiError(
+          res,
+          new AppError('EVALUATION_CREATION_FAILED', `Guia não foi criada: falha ao gerar agendamento de avaliação. ${evalError.message}`, {
+            status: 500,
+            extra: { correlationId },
+          }),
+          req
+        );
       }
     }
 
@@ -298,20 +308,24 @@ router.post('/', auth, async (req, res) => {
     
     // Duplicado (índice único { patientId, number } — race condition)
     if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        errorCode: 'DUPLICATE_GUIDE_NUMBER',
-        message: 'Este paciente já possui uma guia com esse número',
-        correlationId
-      });
+      return sendApiError(
+        res,
+        new AppError('DUPLICATE_GUIDE_NUMBER', 'Este paciente já possui uma guia com esse número', {
+          status: 409,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
-    res.status(500).json({
-      success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: error.message,
-      correlationId
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', error.message, {
+        status: 500,
+        extra: { correlationId },
+      }),
+      req
+    );
   }
 });
 
@@ -333,11 +347,7 @@ router.get('/', auth, async (req, res) => {
         });
         query.patientId = new mongoose.Types.ObjectId(resolvedId);
       } catch (error) {
-        return res.status(400).json({
-          success: false,
-          errorCode: 'INVALID_PATIENT_ID',
-          message: error.message
-        });
+        return sendApiError(res, new AppError('INVALID_PATIENT_ID', error.message, { status: 400 }), req);
       }
     }
     if (insurance) query.insurance = insurance.toLowerCase();
@@ -413,11 +423,7 @@ router.get('/', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao listar:', error);
-    res.status(500).json({
-      success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -430,21 +436,13 @@ router.get('/:id', auth, async (req, res) => {
     const { id } = req.params;
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'INVALID_ID',
-        message: 'ID inválido'
-      });
+      return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
     }
 
     const guide = await InsuranceGuide.findById(id).populate('doctorId', 'fullName').lean();
 
     if (!guide) {
-      return res.status(404).json({
-        success: false,
-        errorCode: 'NOT_FOUND',
-        message: 'Guia não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     // Join com Convenio para incluir guidePolicy
@@ -462,11 +460,7 @@ router.get('/:id', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao buscar:', error);
-    res.status(500).json({
-      success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -485,12 +479,14 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
     try {
       resolvedPatientId = await resolvePatientId(patientId, { correlationId });
     } catch (error) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'INVALID_PATIENT_ID',
-        message: error.message,
-        correlationId
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_PATIENT_ID', error.message, {
+          status: 400,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     // Usar método estático do model
@@ -504,11 +500,7 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao consultar saldo:', error);
-    return res.status(500).json({
-      success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: error.message
-    });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -521,19 +513,40 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido', correlationId });
+      return sendApiError(
+        res,
+        new AppError('INVALID_ID', 'ID inválido', {
+          status: 400,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     const guide = await InsuranceGuide.findById(id);
     if (!guide) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada', correlationId });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Guia não encontrada', {
+          status: 404,
+          extra: { correlationId },
+        }),
+        req
+      );
     }
 
     const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue, isAba, doctorId, issuedAt, evaluationAmount, generateEvaluationBilling, evaluationDate, evaluationTime } = req.body;
 
     if (specialty) {
       if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
-        return res.status(400).json({ success: false, errorCode: 'INVALID_SPECIALTY', message: `Especialidade inválida`, correlationId });
+        return sendApiError(
+          res,
+          new AppError('INVALID_SPECIALTY', `Especialidade inválida`, {
+            status: 400,
+            extra: { correlationId },
+          }),
+          req
+        );
       }
       guide.specialty = specialty.toLowerCase().trim();
     }
@@ -661,12 +674,14 @@ router.put('/:id', auth, async (req, res) => {
         await guide.save();
       } catch (evalError) {
         console.error('[InsuranceGuidesV2] Erro ao criar avaliação na edição:', evalError);
-        return res.status(500).json({
-          success: false,
-          errorCode: 'EVALUATION_CREATION_FAILED',
-          message: `Falha ao gerar agendamento de avaliação. ${evalError.message}`,
-          correlationId
-        });
+        return sendApiError(
+          res,
+          new AppError('EVALUATION_CREATION_FAILED', `Falha ao gerar agendamento de avaliação. ${evalError.message}`, {
+            status: 500,
+            extra: { correlationId },
+          }),
+          req
+        );
       }
     }
 
@@ -701,7 +716,7 @@ router.delete('/:id', auth, async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
 
   try {
@@ -722,19 +737,28 @@ router.delete('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao cancelar guia:', error);
     if (error.code === 'NOT_FOUND') {
-      return res.status(404).json({ success: false, errorCode: error.code, message: error.message });
+      return sendApiError(res, new AppError(error.code, error.message, { status: 404 }), req);
     }
     if (error.code === 'ALREADY_CANCELLED') {
-      return res.status(400).json({ success: false, errorCode: error.code, message: 'Esta guia já está cancelada' });
+      return sendApiError(res, new AppError(error.code, 'Esta guia já está cancelada', { status: 400 }), req);
     }
     if (error.code === 'GUIDE_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT') {
-      return res.status(409).json({ success: false, errorCode: error.code, message: error.message, blockedBy: error.blockedBy });
+      return sendApiError(
+        res,
+        new AppError(error.code, error.message, {
+          status: 409,
+          extra: { blockedBy: error.blockedBy },
+        }),
+        req
+      );
     }
-    return res.status(500).json({
-      success: false,
-      errorCode: 'INTERNAL_ERROR',
-      message: 'Erro ao cancelar guia. Tente novamente em alguns instantes.'
-    });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao cancelar guia. Tente novamente em alguns instantes.', {
+        status: 500,
+      }),
+      req
+    );
   }
 });
 
@@ -750,7 +774,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+      return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
     }
 
     const guideObjId = new mongoose.Types.ObjectId(id);
@@ -758,7 +782,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
     // Busca a guia para obter o patientId (necessário para fallback legado)
     const guide = await InsuranceGuide.findById(guideObjId).select('patientId').lean();
     if (!guide) {
-      return res.status(404).json({ success: false, errorCode: 'NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     // Caminho 1: appointments com insuranceGuide direto
@@ -818,7 +842,7 @@ router.get('/:id/appointments', auth, async (req, res) => {
 
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao buscar agendamentos da guia:', error);
-    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -833,19 +857,31 @@ router.patch('/:id/appointments/doctor', auth, async (req, res) => {
   const { doctorId, time, dayOfWeek } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, message: 'ID inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
   }
   if (!doctorId && !time && dayOfWeek === undefined) {
-    return res.status(400).json({ success: false, message: 'Informe doctorId, time e/ou dayOfWeek' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'Informe doctorId, time e/ou dayOfWeek', {
+        status: 400,
+      }),
+      req
+    );
   }
   if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
-    return res.status(400).json({ success: false, message: 'doctorId inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'doctorId inválido', { status: 400 }), req);
   }
   if (time && !/^\d{2}:\d{2}$/.test(time)) {
-    return res.status(400).json({ success: false, message: 'time deve estar no formato HH:MM' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'time deve estar no formato HH:MM', { status: 400 }), req);
   }
   if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
-    return res.status(400).json({ success: false, message: 'dayOfWeek deve ser 0 (dom) a 6 (sab)' });
+    return sendApiError(
+      res,
+      new AppError('BAD_REQUEST', 'dayOfWeek deve ser 0 (dom) a 6 (sab)', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   const guideObjId = new mongoose.Types.ObjectId(id);
@@ -946,7 +982,7 @@ router.post('/:id/inactivate', auth, async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, errorCode: 'INVALID_ID', message: 'ID inválido' });
+    return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
 
   try {
@@ -959,15 +995,22 @@ router.post('/:id/inactivate', auth, async (req, res) => {
   } catch (error) {
     console.error('[InsuranceGuidesV2] Erro ao inativar guia:', error);
     if (error.code === 'NOT_FOUND') {
-      return res.status(404).json({ success: false, errorCode: error.code, message: error.message });
+      return sendApiError(res, new AppError(error.code, error.message, { status: 404 }), req);
     }
     if (error.code === 'ALREADY_CANCELLED') {
-      return res.status(400).json({ success: false, errorCode: error.code, message: error.message });
+      return sendApiError(res, new AppError(error.code, error.message, { status: 400 }), req);
     }
     if (error.code === 'GUIDE_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT') {
-      return res.status(409).json({ success: false, errorCode: error.code, message: error.message, blockedBy: error.blockedBy });
+      return sendApiError(
+        res,
+        new AppError(error.code, error.message, {
+          status: 409,
+          extra: { blockedBy: error.blockedBy },
+        }),
+        req
+      );
     }
-    return res.status(500).json({ success: false, errorCode: 'INTERNAL_ERROR', message: error.message });
+    return sendApiError(res, new AppError('INTERNAL_ERROR', error.message, { status: 500 }), req);
   }
 });
 
@@ -987,25 +1030,43 @@ router.post('/:id/supersede', auth, async (req, res) => {
 
   try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'ID inválido' });
+      return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
     }
 
     const { newGuide: newGuideData, replacementTrigger, replacementNotes, migrationStrategy, appointmentIds } = req.body;
 
     if (!newGuideData) {
-      return res.status(400).json({ success: false, code: 'MISSING_NEW_GUIDE', message: 'Dados da nova guia são obrigatórios' });
+      return sendApiError(
+        res,
+        new AppError('MISSING_NEW_GUIDE', 'Dados da nova guia são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!replacementTrigger) {
-      return res.status(400).json({ success: false, code: 'MISSING_TRIGGER', message: 'Motivo da substituição é obrigatório' });
+      return sendApiError(
+        res,
+        new AppError('MISSING_TRIGGER', 'Motivo da substituição é obrigatório', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!migrationStrategy) {
-      return res.status(400).json({ success: false, code: 'MISSING_STRATEGY', message: 'Estratégia de migração é obrigatória' });
+      return sendApiError(
+        res,
+        new AppError('MISSING_STRATEGY', 'Estratégia de migração é obrigatória', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Herdar patientId, insurance e specialty da guia original (imutáveis)
     const oldGuide = await InsuranceGuide.findById(id).lean();
     if (!oldGuide) {
-      return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     const newGuidePayload = {
@@ -1065,10 +1126,22 @@ router.post('/move-appointment', auth, async (req, res) => {
 
   try {
     if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
-      return res.status(400).json({ success: false, code: 'INVALID_APPOINTMENT_ID', message: 'appointmentId inválido' });
+      return sendApiError(
+        res,
+        new AppError('INVALID_APPOINTMENT_ID', 'appointmentId inválido', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!targetGuideId || !mongoose.Types.ObjectId.isValid(targetGuideId)) {
-      return res.status(400).json({ success: false, code: 'INVALID_TARGET_GUIDE_ID', message: 'targetGuideId inválido' });
+      return sendApiError(
+        res,
+        new AppError('INVALID_TARGET_GUIDE_ID', 'targetGuideId inválido', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const result = await moveAppointmentGuide({
@@ -1106,7 +1179,7 @@ router.patch('/:id', auth, async (req, res) => {
 
   try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, code: 'INVALID_ID', message: 'ID inválido' });
+      return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
     }
 
     const allowed = PATCH_ALLOWED_FIELDS;
@@ -1117,7 +1190,7 @@ router.patch('/:id', auth, async (req, res) => {
     }
 
     if (!Object.keys(update).length) {
-      return res.status(400).json({ success: false, code: 'NO_FIELDS', message: 'Nenhum campo editável informado' });
+      return sendApiError(res, new AppError('NO_FIELDS', 'Nenhum campo editável informado', { status: 400 }), req);
     }
 
     const guide = await InsuranceGuide.findByIdAndUpdate(
@@ -1127,7 +1200,7 @@ router.patch('/:id', auth, async (req, res) => {
     );
 
     if (!guide) {
-      return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Guia não encontrada' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     return res.json({ success: true, guide });

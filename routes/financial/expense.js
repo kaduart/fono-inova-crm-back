@@ -7,6 +7,8 @@ import Expense from '../../models/Expense.js';
 import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
 import { getEventStatus } from '../../infrastructure/events/eventStoreService.js';
 import EventStore from '../../models/EventStore.js';
+import { sendApiError } from '../../errors/buildErrorResponse.js';
+import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
@@ -38,20 +40,26 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 
         // Validação
         if (!description || !category || !amount || !date || !paymentMethod) {
-            return res.status(400).json({
-                success: false,
-                message: 'Campos obrigatórios faltando'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Campos obrigatórios faltando', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // Se vinculada a profissional, validar existência
         if (relatedDoctor) {
             const doctorExists = await Doctor.exists({ _id: relatedDoctor }).session(session);
             if (!doctorExists) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Profissional não encontrado'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('NOT_FOUND', 'Profissional não encontrado', {
+                    status: 404,
+                  }),
+                  req
+                );
             }
         }
 
@@ -89,12 +97,15 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         console.error('Erro ao criar despesa:', error);
         console.error('Payload recebido:', req.body);
         console.error('User:', req.user);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao registrar despesa',
-            error: error.message,
-            details: error.errors ? Object.keys(error.errors).map(k => `${k}: ${error.errors[k].message}`) : null
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', 'Erro ao registrar despesa', {
+            status: 500,
+            legacyError: error.message,
+            details: error.errors ? Object.keys(error.errors).map(k => `${k}: ${error.errors[k].message}`) : null,
+          }),
+          req
+        );
     } finally {
         session.endSession();
     }
@@ -185,11 +196,7 @@ router.get('/', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao listar despesas:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao listar despesas',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -245,11 +252,7 @@ router.get('/by-doctor/:doctorId', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao buscar despesas do profissional:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao buscar despesas',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -276,10 +279,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
             .populate('createdBy', 'fullName');
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         // 🔹 Disparar recálculo de totais (não bloqueante)
@@ -309,11 +309,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
 
     } catch (error) {
         console.error('Erro ao atualizar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao atualizar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -335,10 +331,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
             .populate('createdBy', 'fullName');
 
         if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Despesa não encontrada'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
         }
 
         // 🔹 Disparar recálculo de totais (não bloqueante)
@@ -368,11 +361,7 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao cancelar despesa:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro ao cancelar despesa',
-            error: error.message
-        });
+        sendApiError(res, error, req);
     }
 });
 
@@ -384,10 +373,13 @@ router.post('/generate-commissions', auth, async (req, res) => {
         const y = year ? Number(year) : undefined;
 
         if (!m || !y || m < 1 || m > 12 || y < 2000 || y > 2100) {
-            return res.status(400).json({
-                success: false,
-                message: 'Mês e ano são obrigatórios e devem ser válidos'
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Mês e ano são obrigatórios e devem ser válidos', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         const aggregateId = `commission-${y}-${String(m).padStart(2, '0')}`;
@@ -436,11 +428,7 @@ router.post('/generate-commissions', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('[POST /generate-commissions] Erro:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Erro ao iniciar geração de comissões',
-            error: error.message
-        });
+        return sendApiError(res, error, req);
     }
 });
 
@@ -451,10 +439,7 @@ router.get('/generate-commissions/status/:eventId', auth, authorize(['admin']), 
         const status = await getEventStatus(eventId);
 
         if (!status) {
-            return res.status(404).json({
-                success: false,
-                message: 'Evento não encontrado'
-            });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Evento não encontrado', { status: 404 }), req);
         }
 
         return res.json({
@@ -463,11 +448,7 @@ router.get('/generate-commissions/status/:eventId', auth, authorize(['admin']), 
         });
     } catch (error) {
         console.error('[GET /generate-commissions/status] Erro:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Erro ao consultar status',
-            error: error.message
-        });
+        return sendApiError(res, error, req);
     }
 });
 

@@ -39,6 +39,8 @@ import { resolvePatientId } from '../utils/identityResolver.js';
 import FinanceWriteGuard from '../services/financialGuard/FinanceWriteGuard.js';
 import { invalidateDashboardCache } from '../routes/financialDashboard.v2.js';
 import moment from 'moment-timezone';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const logger = createContextLogger('PackageV2');
 const roundCurrency = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -557,11 +559,13 @@ export const createPackageV2 = async (req, res) => {
 
   if (!patientId || !doctorId || !specialty || !totalSessions) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'MISSING_REQUIRED_FIELDS',
-      message: 'Campos obrigatórios: patientId, doctorId, specialty, totalSessions'
-    });
+    return sendApiError(
+      res,
+      new AppError('MISSING_REQUIRED_FIELDS', 'Campos obrigatórios: patientId, doctorId, specialty, totalSessions', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   // 👁️ OBSERVABILIDADE (não bloqueia): pacote grava `specialty` do request, não a do médico.
@@ -592,19 +596,23 @@ export const createPackageV2 = async (req, res) => {
   // 🛡️ HARD-BLOCK: convênio e liminar NÃO usam mais Package
   if (type === 'convenio' || model === 'convenio') {
     await mongoSession.endSession();
-    return res.status(410).json({
-      success: false,
-      errorCode: 'DEPRECATED_PACKAGE_TYPE',
-      message: 'Package tipo convênio foi descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.'
-    });
+    return sendApiError(
+      res,
+      new AppError('DEPRECATED_PACKAGE_TYPE', 'Package tipo convênio foi descontinuado. Use /api/v2/insurance-guides para criar guias de convênio diretamente.', {
+        status: 410,
+      }),
+      req
+    );
   }
   if (type === 'liminar' || model === 'liminar') {
     await mongoSession.endSession();
-    return res.status(410).json({
-      success: false,
-      errorCode: 'DEPRECATED_PACKAGE_TYPE',
-      message: 'Package tipo liminar foi descontinuado. Use /api/v2/liminar-contracts para criar contratos de liminar diretamente.'
-    });
+    return sendApiError(
+      res,
+      new AppError('DEPRECATED_PACKAGE_TYPE', 'Package tipo liminar foi descontinuado. Use /api/v2/liminar-contracts para criar contratos de liminar diretamente.', {
+        status: 410,
+      }),
+      req
+    );
   }
 
   // 🛡️ GUARD FINANCEIRO: sessionValue e totalSessions devem ser válidos
@@ -613,11 +621,13 @@ export const createPackageV2 = async (req, res) => {
 
   if (!parsedSessions || parsedSessions <= 0) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'TOTAL_SESSIONS_INVALID',
-      message: 'totalSessions deve ser um número inteiro maior que zero'
-    });
+    return sendApiError(
+      res,
+      new AppError('TOTAL_SESSIONS_INVALID', 'totalSessions deve ser um número inteiro maior que zero', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   const parsedConsumed = parseInt(preConsumedCount) || 0;
@@ -627,25 +637,34 @@ export const createPackageV2 = async (req, res) => {
       new Set(retroactivePaymentIds.map(String)).size !== parsedConsumed ||
       retroactivePaymentIds.some(id => !mongoose.Types.ObjectId.isValid(id))) {
     await mongoSession.endSession();
-    return res.status(400).json({ success: false, errorCode: 'RETROACTIVE_PAYMENTS_REQUIRED',
-      message: 'Selecione os pagamentos das sessões retroativas para vinculá-las ao pacote. Atualize a página e tente novamente.' });
+    return sendApiError(
+      res,
+      new AppError('RETROACTIVE_PAYMENTS_REQUIRED', 'Selecione os pagamentos das sessões retroativas para vinculá-las ao pacote. Atualize a página e tente novamente.', {
+        status: 400,
+      }),
+      req
+    );
   }
   if (parsedConsumed < 0 || parsedConsumed >= parsedSessions) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'PRE_CONSUMED_INVALID',
-      message: `preConsumedCount (${parsedConsumed}) deve ser menor que totalSessions (${parsedSessions})`
-    });
+    return sendApiError(
+      res,
+      new AppError('PRE_CONSUMED_INVALID', `preConsumedCount (${parsedConsumed}) deve ser menor que totalSessions (${parsedSessions})`, {
+        status: 400,
+      }),
+      req
+    );
   }
 
   if (!parsedValue || parsedValue <= 0) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'SESSION_VALUE_INVALID',
-      message: 'sessionValue deve ser um número maior que zero'
-    });
+    return sendApiError(
+      res,
+      new AppError('SESSION_VALUE_INVALID', 'sessionValue deve ser um número maior que zero', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   if (parsedValue < 50) {
@@ -658,53 +677,63 @@ export const createPackageV2 = async (req, res) => {
 
   if (!type || !['package'].includes(type)) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'INVALID_TYPE',
-      message: 'type=package é o único suportado. Use /api/v2/insurance-guides para convênio ou /api/v2/liminar-contracts para liminar.'
-    });
+    return sendApiError(
+      res,
+      new AppError('INVALID_TYPE', 'type=package é o único suportado. Use /api/v2/insurance-guides para convênio ou /api/v2/liminar-contracts para liminar.', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   if (type === 'package' && !model) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'MODEL_REQUIRED',
-      message: 'Para type=package, informe model=prepaid ou per_session'
-    });
+    return sendApiError(
+      res,
+      new AppError('MODEL_REQUIRED', 'Para type=package, informe model=prepaid ou per_session', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   if (model === 'prepaid' && Array.isArray(req.body.payments)) {
     const invalidPayment = req.body.payments.find(p => !p.amount || typeof p.amount !== 'number' || p.amount <= 0);
     if (invalidPayment) {
       await mongoSession.endSession();
-      return res.status(400).json({
-        success: false,
-        errorCode: 'INVALID_PAYMENT_AMOUNT',
-        message: 'Cada pagamento em payments[] deve ter amount (número > 0)'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_PAYMENT_AMOUNT', 'Cada pagamento em payments[] deve ter amount (número > 0)', {
+          status: 400,
+        }),
+        req
+      );
     }
   }
 
   // Validações específicas por tipo
   if ((type === 'insurance' || type === 'convenio') && !req.body.insuranceGuideId) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'INSURANCE_GUIDE_REQUIRED',
-      message: 'insuranceGuideId obrigatório para convênio'
-    });
+    return sendApiError(
+      res,
+      new AppError('INSURANCE_GUIDE_REQUIRED', 'insuranceGuideId obrigatório para convênio', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
   // Essa validação só existe para compatibilidade. Não criar novos packages liminar.
   if ((type === 'legal' || type === 'liminar') && !req.body.liminarProcessNumber) {
     await mongoSession.endSession();
-    return res.status(400).json({
-      success: false,
-      errorCode: 'LIMINAR_DATA_REQUIRED',
-      message: 'liminarProcessNumber obrigatório para liminar'
-    });
+    return sendApiError(
+      res,
+      new AppError('LIMINAR_DATA_REQUIRED', 'liminarProcessNumber obrigatório para liminar', {
+        status: 400,
+      }),
+      req
+    );
   }
 
   try {
@@ -759,12 +788,14 @@ export const createPackageV2 = async (req, res) => {
       
       await mongoSession.abortTransaction();
       
-      return res.status(409).json({
-        success: false,
-        errorCode: 'POSSIBLE_DUPLICATE',
-        message: 'Pacote similar criado recentemente. Verifique antes de continuar.',
-        data: { packageId: existingPackage._id, createdAt: existingPackage.createdAt }
-      });
+      return sendApiError(
+        res,
+        new AppError('POSSIBLE_DUPLICATE', 'Pacote similar criado recentemente. Verifique antes de continuar.', {
+          status: 409,
+          extra: { data: { packageId: existingPackage._id, createdAt: existingPackage.createdAt } },
+        }),
+        req
+      );
     }
 
     // Verificar paciente
@@ -807,11 +838,7 @@ export const createPackageV2 = async (req, res) => {
       if (!patient) {
         logger.error(`[${correlationId}] ❌ Patient aggregate não encontrado após auto-healing`, { patientId });
         await mongoSession.abortTransaction();
-        return res.status(404).json({
-          success: false,
-          errorCode: 'PATIENT_NOT_FOUND',
-          message: 'Paciente não encontrado'
-        });
+        return sendApiError(res, new AppError('PATIENT_NOT_FOUND', 'Paciente não encontrado', { status: 404 }), req);
       }
     }
 
@@ -865,21 +892,25 @@ export const createPackageV2 = async (req, res) => {
       // 🚨 VALIDAR: schedule não pode ter mais itens que sessões restantes
       if (schedule.length > remainingSessions) {
         await mongoSession.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          errorCode: 'SCHEDULE_EXCEEDS_TOTAL',
-          message: `Agenda tem ${schedule.length} sessões, mas pacote permite apenas ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`
-        });
+        return sendApiError(
+          res,
+          new AppError('SCHEDULE_EXCEEDS_TOTAL', `Agenda tem ${schedule.length} sessões, mas pacote permite apenas ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`, {
+            status: 400,
+          }),
+          req
+        );
       }
 
       // 🚨 VALIDAR: schedule deve ter EXATAMENTE remainingSessions itens
       if (schedule.length !== remainingSessions) {
         await mongoSession.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          errorCode: 'SCHEDULE_COUNT_MISMATCH',
-          message: `Agenda tem ${schedule.length} sessões, mas deve ter exatamente ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`
-        });
+        return sendApiError(
+          res,
+          new AppError('SCHEDULE_COUNT_MISMATCH', `Agenda tem ${schedule.length} sessões, mas deve ter exatamente ${remainingSessions} (${parsedSessions} total - ${parsedConsumed} pré-consumidas)`, {
+            status: 400,
+          }),
+          req
+        );
       }
 
       // 🛡️ VALIDAR CONSISTÊNCIA COM DÉBITOS: schedule não pode começar antes do débito mais antigo
@@ -895,11 +926,13 @@ export const createPackageV2 = async (req, res) => {
           const earliestScheduleDate = schedule.map(s => s.date).sort()[0];
           if (earliestScheduleDate < oldestDebtDate) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-              success: false,
-              errorCode: 'SCHEDULE_BEFORE_DEBT',
-              message: `A primeira sessão sugerida (${earliestScheduleDate}) é anterior ao débito mais antigo (${oldestDebtDate}). Ajuste a data de início.`
-            });
+            return sendApiError(
+              res,
+              new AppError('SCHEDULE_BEFORE_DEBT', `A primeira sessão sugerida (${earliestScheduleDate}) é anterior ao débito mais antigo (${oldestDebtDate}). Ajuste a data de início.`, {
+                status: 400,
+              }),
+              req
+            );
           }
         }
       }
@@ -929,11 +962,13 @@ export const createPackageV2 = async (req, res) => {
       // Se appointmentId foi informado mas não existe, erro antes de qualquer alteração
       if (appointmentId && !reuseAppt) {
         await mongoSession.abortTransaction();
-        return res.status(404).json({
-          success: false,
-          errorCode: 'REUSE_APPOINTMENT_NOT_FOUND',
-          message: 'Agendamento a ser reutilizado não encontrado'
-        });
+        return sendApiError(
+          res,
+          new AppError('REUSE_APPOINTMENT_NOT_FOUND', 'Agendamento a ser reutilizado não encontrado', {
+            status: 404,
+          }),
+          req
+        );
       }
 
       if (reuseAppt) {
@@ -942,12 +977,14 @@ export const createPackageV2 = async (req, res) => {
         const sameSpecialty = reuseAppt.specialty === specialty;
         if (!samePatient || !sameDoctor || !sameSpecialty) {
           await mongoSession.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            errorCode: 'REUSE_APPOINTMENT_CONTEXT_MISMATCH',
-            message: 'O agendamento selecionado não corresponde ao paciente, profissional e especialidade do pacote',
-            data: { samePatient, sameDoctor, sameSpecialty }
-          });
+          return sendApiError(
+            res,
+            new AppError('REUSE_APPOINTMENT_CONTEXT_MISMATCH', 'O agendamento selecionado não corresponde ao paciente, profissional e especialidade do pacote', {
+              status: 400,
+              extra: { data: { samePatient, sameDoctor, sameSpecialty } },
+            }),
+            req
+          );
         }
       }
 
@@ -963,17 +1000,19 @@ export const createPackageV2 = async (req, res) => {
           const apptDateStr = typeof reuseAppt.date === 'string'
             ? reuseAppt.date.split('T')[0]
             : reuseAppt.date.toISOString().split('T')[0];
-          return res.status(400).json({
-            success: false,
-            errorCode: 'REUSE_APPOINTMENT_SLOT_MISMATCH',
-            message: `O agendamento reutilizado está em ${apptDateStr} às ${reuseAppt.time} e não corresponde a nenhum slot do pacote`,
-            data: {
+          return sendApiError(
+            res,
+            new AppError('REUSE_APPOINTMENT_SLOT_MISMATCH', `O agendamento reutilizado está em ${apptDateStr} às ${reuseAppt.time} e não corresponde a nenhum slot do pacote`, {
+              status: 400,
+              extra: { data: {
               appointmentId: reuseAppt._id,
               appointmentDate: apptDateStr,
               appointmentTime: reuseAppt.time,
               schedule
-            }
-          });
+            } },
+            }),
+            req
+          );
         }
       }
 
@@ -1025,11 +1064,11 @@ export const createPackageV2 = async (req, res) => {
           const patientName = conflict.patient?.fullName || 'Paciente não identificado';
           const doctorName = conflict.doctor?.fullName || 'Profissional não identificado';
           const patientPhone = conflict.patient?.phone || '-';
-          return res.status(409).json({
-            success: false,
-            errorCode: 'SCHEDULE_CONFLICT',
-            message: `Conflito de agenda: ${conflictingSlot.date} às ${conflictingSlot.time} já está ocupado por ${patientName} (${patientPhone}) com ${doctorName}`,
-            data: {
+          return sendApiError(
+            res,
+            new AppError('SCHEDULE_CONFLICT', `Conflito de agenda: ${conflictingSlot.date} às ${conflictingSlot.time} já está ocupado por ${patientName} (${patientPhone}) com ${doctorName}`, {
+              status: 409,
+              extra: { data: {
               conflictingAppointment: conflict._id,
               patientName,
               patientPhone,
@@ -1037,8 +1076,10 @@ export const createPackageV2 = async (req, res) => {
               status: conflict.operationalStatus,
               date: conflictingSlot.date,
               time: conflictingSlot.time
-            }
-          });
+            } },
+            }),
+            req
+          );
         }
       }
 
@@ -1054,17 +1095,19 @@ export const createPackageV2 = async (req, res) => {
         const requestedPaymentTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
         if (existingPaidAmount + requestedPaymentTotal > pkg.totalValue + 0.009) {
           await mongoSession.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            errorCode: 'PACKAGE_OVERPAYMENT',
-            message: 'O pagamento da sessão existente somado aos novos pagamentos ultrapassa o valor total do pacote',
-            data: {
+          return sendApiError(
+            res,
+            new AppError('PACKAGE_OVERPAYMENT', 'O pagamento da sessão existente somado aos novos pagamentos ultrapassa o valor total do pacote', {
+              status: 400,
+              extra: { data: {
               existingPaidAmount,
               requestedPaymentTotal,
               totalValue: pkg.totalValue,
               maximumNewPayment: Math.max(0, pkg.totalValue - existingPaidAmount)
-            }
-          });
+            } },
+            }),
+            req
+          );
         }
 
         // Vincular ao pacote
@@ -1267,11 +1310,13 @@ export const createPackageV2 = async (req, res) => {
       const expectedAppointments = reuseAppt ? slotsToCreate.length + 1 : slotsToCreate.length;
       if (appointments.length !== expectedAppointments) {
         await mongoSession.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          errorCode: 'SCHEDULE_COUNT_MISMATCH',
-          message: `Número de sessões futuras criadas (${appointments.length}) inconsistente. Esperado: ${expectedAppointments} (${parsedSessions} contratadas - ${parsedConsumed} retroativas)`
-        });
+        return sendApiError(
+          res,
+          new AppError('SCHEDULE_COUNT_MISMATCH', `Número de sessões futuras criadas (${appointments.length}) inconsistente. Esperado: ${expectedAppointments} (${parsedSessions} contratadas - ${parsedConsumed} retroativas)`, {
+            status: 400,
+          }),
+          req
+        );
       }
       
       await pkg.save({ session: mongoSession });
@@ -1293,11 +1338,13 @@ export const createPackageV2 = async (req, res) => {
 
           if (alreadySettled.length > 0) {
             await mongoSession.abortTransaction();
-            return res.status(400).json({
-              success: false,
-              errorCode: 'DEBTS_ALREADY_SETTLED',
-              message: `${alreadySettled.length} débito(s) já foram quitados em outro pacote`
-            });
+            return sendApiError(
+              res,
+              new AppError('DEBTS_ALREADY_SETTLED', `${alreadySettled.length} débito(s) já foram quitados em outro pacote`, {
+                status: 400,
+              }),
+              req
+            );
           }
 
           const debitsToSettle = patientBalance.transactions.filter(
@@ -1698,40 +1745,42 @@ export const createPackageV2 = async (req, res) => {
     }
     // Erros específicos
     if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        errorCode: 'DUPLICATE',
-        message: 'Pacote já existe (conflito de dados)'
-      });
+      return sendApiError(
+        res,
+        new AppError('DUPLICATE', 'Pacote já existe (conflito de dados)', {
+          status: 409,
+        }),
+        req
+      );
     }
     
     // Ledger financeiro do paciente com lançamento antigo inválido (ex: sem description) —
     // trava o .save() do PatientBalance mesmo sem relação com o pacote sendo criado agora.
     // Mensagem técnica do Mongoose não serve pro time comercial; sinaliza pra escalar ao suporte.
     if (error.name === 'ValidationError' && /PatientBalance validation failed/i.test(error.message || '')) {
-      return res.status(422).json({
-        success: false,
-        errorCode: 'PATIENT_BALANCE_LEDGER_INCONSISTENT',
-        message: 'Não foi possível quitar o saldo da paciente: há lançamentos antigos no histórico financeiro dela com dados incompletos. Encaminhe este caso ao suporte técnico antes de tentar novamente — o pacote não foi criado e nenhum valor foi cobrado.',
-        technicalDetail: error.message
-      });
+      return sendApiError(
+        res,
+        new AppError('PATIENT_BALANCE_LEDGER_INCONSISTENT', 'Não foi possível quitar o saldo da paciente: há lançamentos antigos no histórico financeiro dela com dados incompletos. Encaminhe este caso ao suporte técnico antes de tentar novamente — o pacote não foi criado e nenhum valor foi cobrado.', {
+          status: 422,
+          extra: { technicalDetail: error.message },
+        }),
+        req
+      );
     }
 
     // Erro de catálogo MongoDB (mudanças de schema durante transação)
     if (error.message?.includes('catalog changes') || error.message?.includes('Please retry')) {
-      return res.status(503).json({
-        success: false,
-        errorCode: 'MONGO_CATALOG_CHANGE',
-        message: 'Mudança de schema detectada. Por favor, aguarde 5 segundos e tente novamente.',
-        retryable: true
-      });
+      return sendApiError(
+        res,
+        new AppError('MONGO_CATALOG_CHANGE', 'Mudança de schema detectada. Por favor, aguarde 5 segundos e tente novamente.', {
+          status: 503,
+          extra: { retryable: true },
+        }),
+        req
+      );
     }
 
-    res.status(500).json({
-      success: false,
-      errorCode: 'PACKAGE_CREATION_ERROR',
-      message: error.message
-    });
+    sendApiError(res, new AppError('PACKAGE_CREATION_ERROR', error.message, { status: 500 }), req);
 
   } finally {
     // 🛡️ Segurança: garante rollback se transação ainda estiver ativa
@@ -1750,11 +1799,7 @@ export const listPackagesV2 = async (req, res) => {
     let { patientId, type, status } = req.query;
 
     if (!patientId) {
-      return res.status(400).json({
-        success: false,
-        errorCode: 'MISSING_PATIENT_ID',
-        message: 'patientId obrigatório'
-      });
+      return sendApiError(res, new AppError('MISSING_PATIENT_ID', 'patientId obrigatório', { status: 400 }), req);
     }
 
     // 🔄 RESOLVER patientId (pode vir como ID da PatientsView)
@@ -1799,11 +1844,7 @@ export const listPackagesV2 = async (req, res) => {
 
   } catch (error) {
     logger.error('[PackageV2] Error listing packages', { error: error.message });
-    res.status(500).json({
-      success: false,
-      errorCode: 'LIST_ERROR',
-      message: error.message
-    });
+    sendApiError(res, new AppError('LIST_ERROR', error.message, { status: 500 }), req);
   }
 };
 
@@ -1821,11 +1862,7 @@ export const getPackageV2 = async (req, res) => {
       .lean();
 
     if (!pkg) {
-      return res.status(404).json({
-        success: false,
-        errorCode: 'PACKAGE_NOT_FOUND',
-        message: 'Pacote não encontrado'
-      });
+      return sendApiError(res, new AppError('PACKAGE_NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
     }
 
     // 🔥 FORMATA SESSIONS INCLUINDO APPOINTMENT ID
@@ -1853,11 +1890,7 @@ export const getPackageV2 = async (req, res) => {
 
   } catch (error) {
     logger.error('[PackageV2] Error getting package', { error: error.message });
-    res.status(500).json({
-      success: false,
-      errorCode: 'GET_ERROR',
-      message: error.message
-    });
+    sendApiError(res, new AppError('GET_ERROR', error.message, { status: 500 }), req);
   }
 };
 
@@ -1874,17 +1907,17 @@ export const settlePackagePayments = async (req, res) => {
 
     if (!mongoose.Types.ObjectId.isValid(packageId)) {
       await mongoSession.abortTransaction();
-      return res.status(400).json({ success: false, error: 'ID do pacote inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID do pacote inválido', { status: 400 }), req);
     }
     if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
       await mongoSession.abortTransaction();
-      return res.status(400).json({ success: false, error: 'Nenhum débito selecionado' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Nenhum débito selecionado', { status: 400 }), req);
     }
 
     const pkg = await Package.findById(packageId).session(mongoSession);
     if (!pkg) {
       await mongoSession.abortTransaction();
-      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
     }
 
     const result = await incorporatePackagePayments(pkg, paymentIds, {
@@ -1937,20 +1970,26 @@ export const addLiminarCredit = async (req, res) => {
     const { amount, reason } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, error: 'ID de pacote inválido' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID de pacote inválido', { status: 400 }), req);
     }
 
     const parsedAmount = Number(amount);
     if (!parsedAmount || parsedAmount <= 0) {
-      return res.status(400).json({ success: false, error: 'Valor deve ser maior que zero' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Valor deve ser maior que zero', { status: 400 }), req);
     }
 
     const pkg = await Package.findById(id, { type: 1 }).lean();
     if (!pkg) {
-      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
     }
     if (pkg.type !== 'liminar') {
-      return res.status(400).json({ success: false, error: 'Apenas pacotes liminar suportam recarga de crédito' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Apenas pacotes liminar suportam recarga de crédito', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const updated = await Package.findByIdAndUpdate(
@@ -1983,7 +2022,13 @@ export const addLiminarCredit = async (req, res) => {
     });
   } catch (error) {
     logger.error('[addLiminarCredit] Erro:', error);
-    return res.status(500).json({ success: false, error: 'Erro ao adicionar crédito: ' + error.message });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao adicionar crédito: ' + error.message, {
+        status: 500,
+      }),
+      req
+    );
   }
 };
 
@@ -1995,7 +2040,7 @@ export const cancelLiminarPackage = async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, error: 'ID de pacote inválido' });
+    return sendApiError(res, new AppError('BAD_REQUEST', 'ID de pacote inválido', { status: 400 }), req);
   }
 
   const mongoSession = await mongoose.startSession();
@@ -2009,15 +2054,21 @@ export const cancelLiminarPackage = async (req, res) => {
 
     if (!pkg) {
       await mongoSession.abortTransaction();
-      return res.status(404).json({ success: false, error: 'Pacote não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
     }
     if (pkg.type !== 'liminar') {
       await mongoSession.abortTransaction();
-      return res.status(400).json({ success: false, error: 'Endpoint exclusivo para pacotes liminar' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Endpoint exclusivo para pacotes liminar', {
+          status: 400,
+        }),
+        req
+      );
     }
     if (pkg.status === 'canceled') {
       await mongoSession.abortTransaction();
-      return res.status(400).json({ success: false, error: 'Pacote já está cancelado' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Pacote já está cancelado', { status: 400 }), req);
     }
 
     // Sessões que consumiram crédito
@@ -2089,7 +2140,13 @@ export const cancelLiminarPackage = async (req, res) => {
   } catch (error) {
     await mongoSession.abortTransaction();
     logger.error('[cancelLiminarPackage] Erro:', error);
-    return res.status(500).json({ success: false, error: 'Erro ao cancelar pacote: ' + error.message });
+    return sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao cancelar pacote: ' + error.message, {
+        status: 500,
+      }),
+      req
+    );
   } finally {
     mongoSession.endSession();
   }

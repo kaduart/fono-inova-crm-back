@@ -6,6 +6,8 @@ import { auth } from '../middleware/auth.js';
 import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 dotenv.config();
 
@@ -100,7 +102,7 @@ router.post('/renew-token', auth, (req, res) => {
     res.json({ newToken });
   } catch (error) {
     console.error('Error renewing token:', error);
-    res.status(500).json({ error: 'Failed to renew token' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Failed to renew token', { status: 500 }), req);
   }
 });
 

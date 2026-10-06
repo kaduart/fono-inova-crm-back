@@ -3,19 +3,19 @@
  * Use nas rotas que Amanda precisa chamar
  */
 import jwt from "jsonwebtoken";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const AGENDA_SERVICE_RULES = [
     // Appointments usados pela Agenda Externa.
     { methods: ['GET'], path: /^\/api\/v2\/appointments(?:\/(?:available-slots|convenio-options|[0-9a-fA-F]{24}))?$/ },
-    { methods: ['POST'], path: /^\/api\/v2\/appointments(?:\/[^/]+\/reschedule)?$/ },
+    { methods: ['POST'], path: /^\/api\/v2\/appointments$/ },
     { methods: ['PUT'], path: /^\/api\/v2\/appointments\/[^/]+$/ },
-    { methods: ['PATCH'], path: /^\/api\/v2\/appointments\/[^/]+\/(?:admin-edit|cancel|confirm|post-appointment)$/ },
+    { methods: ['PATCH'], path: /^\/api\/v2\/appointments\/[^/]+\/(?:admin-edit|cancel|confirm|post-appointment|reschedule)$/ },
     { methods: ['DELETE'], path: /^\/api\/v2\/appointments\/[^/]+$/ },
 
-    // Pacotes: leitura e manutenção da sessão vinculada ao appointment.
+    // Pacotes: só leitura (a agenda não altera sessão de pacote por rota própria).
     { methods: ['GET'], path: /^\/api\/v2\/packages$/ },
-    { methods: ['DELETE'], path: /^\/api\/v2\/packages\/[^/]+\/sessions\/[^/]+$/ },
-    { methods: ['PATCH'], path: /^\/api\/v2\/packages\/[^/]+\/sessions\/[^/]+\/cancel$/ },
 
     // Cadastros manipulados pelas telas atuais da Agenda.
     { methods: ['GET'], path: /^\/api\/v2\/patients$/ },
@@ -48,7 +48,7 @@ export const flexibleAuth = (req, res, next) => {
     const token = raw.startsWith("Bearer ") ? raw.slice(7).trim() : null;
 
     if (!token) {
-        return res.status(401).json({ success: false, message: "Token não fornecido" });
+        return sendApiError(res, new AppError('UNAUTHORIZED', "Token não fornecido", { status: 401 }), req);
     }
 
     // ✅ service token Amanda ou Agenda
@@ -60,11 +60,13 @@ export const flexibleAuth = (req, res, next) => {
         const isAgendaService = token === process.env.AGENDA_EXPORT_TOKEN;
 
         if (isAgendaService && !isAgendaServiceRequestAllowed(req)) {
-            return res.status(403).json({
-                success: false,
-                code: 'AGENDA_SERVICE_SCOPE_DENIED',
-                message: 'Agenda Externa não tem permissão para esta operação',
-            });
+            return sendApiError(
+              res,
+              new AppError('AGENDA_SERVICE_SCOPE_DENIED', 'Agenda Externa não tem permissão para esta operação', {
+                status: 403,
+              }),
+              req
+            );
         }
 
         req.user = {
@@ -83,6 +85,6 @@ export const flexibleAuth = (req, res, next) => {
         req.user = decoded;
         return next();
     } catch (err) {
-        return res.status(401).json({ success: false, message: "Token inválido" });
+        return sendApiError(res, new AppError('UNAUTHORIZED', "Token inválido", { status: 401 }), req);
     }
 };

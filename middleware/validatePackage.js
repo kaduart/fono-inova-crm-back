@@ -1,3 +1,5 @@
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 /**
  * Helper para extrair YYYY-MM-DD de vários formatos de data
  * Aceita: "2026-04-10", "2026-04-10T12:00:00.000Z", "2026-04-10T08:00:00-03:00", Date objects
@@ -112,44 +114,70 @@ export const validatePackageInput = (req, res, next) => {
     const hasSelectedSlots = selectedSlots && selectedSlots.length > 0 && selectedSlots[0].date && selectedSlots[0].time;
 
     if (!hasDateTime && !hasDateAndTime && !hasSelectedSlots) {
-        return res.status(400).json({ 
-            error: "Data e hora são obrigatórias",
-            details: "Envie dateTime: {date, time}, ou date + time, ou selectedSlots com date/time"
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', "Data e hora são obrigatórias", {
+            status: 400,
+            details: "Envie dateTime: {date, time}, ou date + time, ou selectedSlots com date/time",
+          }),
+          req
+        );
     }
 
     // Valida formato dateTime (legado)
     if (dateTime) {
         if (!dateTime.date || !dateTime.time) {
-            return res.status(400).json({ error: "Formato de data inválido. Use {date, time}" });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Formato de data inválido. Use {date, time}", {
+                status: 400,
+              }),
+              req
+            );
         }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateTime.date)) {
-            return res.status(400).json({ 
-                error: "Formato de data inválido. Use YYYY-MM-DD", 
-                received: dateTime.date 
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Formato de data inválido. Use YYYY-MM-DD", {
+                status: 400,
+                extra: { received: dateTime.date },
+              }),
+              req
+            );
         }
         if (!/^\d{2}:\d{2}$/.test(dateTime.time)) {
-            return res.status(400).json({ 
-                error: "Formato de horário inválido. Use HH:mm",
-                received: dateTime.time
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Formato de horário inválido. Use HH:mm", {
+                status: 400,
+                extra: { received: dateTime.time },
+              }),
+              req
+            );
         }
     }
 
     // Valida formato date + time (controller therapy)
     if (date && time) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            return res.status(400).json({ 
-                error: "Formato de data inválido. Use YYYY-MM-DD",
-                received: date
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Formato de data inválido. Use YYYY-MM-DD", {
+                status: 400,
+                extra: { received: date },
+              }),
+              req
+            );
         }
         if (!/^\d{2}:\d{2}$/.test(time)) {
-            return res.status(400).json({ 
-                error: "Formato de horário inválido. Use HH:mm",
-                received: time
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', "Formato de horário inválido. Use HH:mm", {
+                status: 400,
+                extra: { received: time },
+              }),
+              req
+            );
         }
     }
 

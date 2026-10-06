@@ -8,6 +8,8 @@
 import express from 'express';
 import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -23,7 +25,7 @@ router.patch('/appointment/:id/payment-status', async (req, res) => {
         // Buscar appointment
         const appointment = await Appointment.findById(id);
         if (!appointment) {
-            return res.status(404).json({ error: 'Appointment não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Appointment não encontrado', { status: 404 }), req);
         }
         
         // Buscar TODOS os payments do appointment (suporte a split)
@@ -120,7 +122,7 @@ router.patch('/appointment/:id/payment-status', async (req, res) => {
         
     } catch (error) {
         console.error('[Sync] Erro:', error);
-        res.status(500).json({ error: error.message });
+        sendApiError(res, error, req);
     }
 });
 

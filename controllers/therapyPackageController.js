@@ -20,6 +20,9 @@ import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
+import { redisConnection as redis } from '../config/redisConnection.js';
 
 function normalizeTimeHHmm(value) {
     if (!value) return null;
@@ -1054,20 +1057,18 @@ export const packageOperations = {
             }
 
             if (error.code === 'APPOINTMENT_IN_OTHER_PACKAGE') {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message,
-                    errorCode: 'APPOINTMENT_IN_OTHER_PACKAGE',
-                    packageId: error.packageId || null
-                });
+                return sendApiError(
+                  res,
+                  new AppError('APPOINTMENT_IN_OTHER_PACKAGE', error.message, {
+                    status: 400,
+                    extra: { packageId: error.packageId || null },
+                  }),
+                  req
+                );
             }
 
             if (error.message.includes('Conflito detectado') || error.message.includes('Conflito de agenda')) {
-                return res.status(409).json({
-                    success: false,
-                    message: error.message,
-                    errorCode: 'SESSION_CONFLICT'
-                });
+                return sendApiError(res, new AppError('SESSION_CONFLICT', error.message, { status: 409 }), req);
             }
 
             if (error.code === 11000 && error.message.includes('unique_appointment')) {
@@ -1080,20 +1081,24 @@ export const packageOperations = {
                 // 👉 Envia HTML direto
                 const detailedMessage = `Já existe um agendamento para este paciente no dia ${date} às ${time}.`;
 
-                return res.status(400).json({
-                    success: false,
-                    message: detailedMessage,
-                    errorCode: 'DUPLICATE_APPOINTMENT'
-                });
+                return sendApiError(
+                  res,
+                  new AppError('DUPLICATE_APPOINTMENT', detailedMessage, {
+                    status: 400,
+                  }),
+                  req
+                );
             }
 
             console.error('❌ Erro ao criar agendamento/pacote:', error);
 
-            return res.status(500).json({
-                success: false,
-                message: 'Erro ao criar agendamento ou pacote. Tente novamente.',
-                errorCode: 'PACKAGE_CREATION_ERROR'
-            });
+            return sendApiError(
+              res,
+              new AppError('PACKAGE_CREATION_ERROR', 'Erro ao criar agendamento ou pacote. Tente novamente.', {
+                status: 500,
+              }),
+              req
+            );
         } finally {
             await mongoSession.endSession();
         }
@@ -1105,7 +1110,13 @@ export const packageOperations = {
                 const { patientId } = req.query;
 
                 if (!patientId) {
-                    return res.status(400).json({ message: 'ID do paciente é obrigatório.' });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'ID do paciente é obrigatório.', {
+                        status: 400,
+                      }),
+                      req
+                    );
                 }
 
                 const packages = await Package.find({ patient: patientId })
@@ -1176,24 +1187,32 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
                 console.error('Erro ao buscar pacotes:', error);
-                return res.status(500).json({
-                    error: 'Erro interno no servidor',
-                    details: error.message
-                });
+                return sendApiError(
+                  res,
+                  new AppError('INTERNAL_ERROR', 'Erro interno no servidor', {
+                    status: 500,
+                    details: error.message,
+                  }),
+                  req
+                );
             }
         },
         byId: async (req, res) => {
             try {
                 const pkg = await Package.findById(req.params.id)
                     .populate('patient', 'name');
-                if (!pkg) return res.status(404).json({ error: 'Pacote não encontrado' });
+                if (!pkg) return sendApiError(res, new AppError('NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
                 res.json(pkg);
             } catch (error) {
                 if (error.name === 'ValidationError') {
@@ -1203,13 +1222,17 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
-                return res.status(500).json({ error: 'Erro interno' });
+                return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
             }
         },
         search: async (req, res) => {
@@ -1239,13 +1262,17 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
-                return res.status(500).json({ error: 'Erro interno' });
+                return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
             }
         },
     },
@@ -1260,10 +1287,14 @@ export const packageOperations = {
                 // Verificar conflito de versão
                 const currentPackage = await Package.findById(packageId);
                 if (currentPackage.version !== version) {
-                    return res.status(409).json({
-                        error: 'Conflito de versão',
-                        message: 'O pacote foi modificado por outro usuário. Por favor, recarregue os dados.'
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('CONFLICT', 'O pacote foi modificado por outro usuário. Por favor, recarregue os dados.', {
+                        status: 409,
+                        legacyError: 'Conflito de versão',
+                      }),
+                      req
+                    );
                 }
 
                 // Atualizar com incremento de versão
@@ -1282,13 +1313,17 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
-                return res.status(500).json({ error: 'Erro interno' });
+                return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
             }
         },
         session: async (req, res) => {
@@ -1919,10 +1954,7 @@ export const packageOperations = {
                 if (!transactionCommitted && mongoSession.inTransaction()) {
                     await mongoSession.abortTransaction();
                 }
-                res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
+                sendApiError(res, error, req);
             } finally {
                 await mongoSession.endSession();
             }
@@ -1950,7 +1982,13 @@ export const packageOperations = {
                         .session(session);
 
                 if (!packageDoc) {
-                    return res.status(404).json({ error: 'Pacote não encontrado' });
+                    return sendApiError(
+                      res,
+                      new AppError('NOT_FOUND', 'Pacote não encontrado', {
+                        status: 404,
+                      }),
+                      req
+                    );
                 }
 
                 // 2. Coletar todos os IDs relacionados
@@ -2040,38 +2078,52 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
                 // Erro de write conflict após retries
                 if (error.message?.includes('Write conflict')) {
-                    return res.status(409).json({
-                        error: 'Conflito de escrita detectado',
-                        message: 'Por favor, tente novamente em alguns segundos.',
-                        retryable: true,
-                        correlationId
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('CONFLICT', 'Por favor, tente novamente em alguns segundos.', {
+                        status: 409,
+                        legacyError: 'Conflito de escrita detectado',
+                        extra: { retryable: true, correlationId },
+                      }),
+                      req
+                    );
                 }
 
-                return res.status(500).json({
-                    error: 'Erro interno',
+                return sendApiError(
+                  res,
+                  new AppError('INTERNAL_ERROR', 'Erro interno', {
+                    status: 500,
                     details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-                    correlationId
-                });
+                    extra: { correlationId },
+                  }),
+                  req
+                );
             }
             } // Fecha while loop
             
             // Se chegou aqui, esgotou retries
             console.error(`[${correlationId}] Max retries exceeded`);
-            return res.status(500).json({
-                error: 'Erro interno',
-                message: 'Operação falhou após várias tentativas. Por favor, tente novamente.',
-                retryable: true,
-                correlationId
-            });
+            return sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', 'Operação falhou após várias tentativas. Por favor, tente novamente.', {
+                status: 500,
+                legacyError: 'Erro interno',
+                extra: { retryable: true, correlationId },
+              }),
+              req
+            );
         },
         session: async (req, res) => {
             const session = await mongoose.startSession();
@@ -2085,7 +2137,13 @@ export const packageOperations = {
                     .session(session);
 
                 if (!sessionDoc) {
-                    return res.status(404).json({ error: 'Sessão não encontrada' });
+                    return sendApiError(
+                      res,
+                      new AppError('NOT_FOUND', 'Sessão não encontrada', {
+                        status: 404,
+                      }),
+                      req
+                    );
                 }
 
                 // 2. Coletar IDs relacionados
@@ -2140,16 +2198,24 @@ export const packageOperations = {
                         return acc;
                     }, {});
 
-                    return res.status(400).json({
-                        message: 'Falha na validação dos dados',
-                        errors
-                    });
+                    return sendApiError(
+                      res,
+                      new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                        status: 400,
+                        extra: { errors },
+                      }),
+                      req
+                    );
                 }
 
-                res.status(500).json({
-                    error: 'Erro interno',
-                    details: process.env.NODE_ENV === 'development' ? error.message : undefined
-                });
+                sendApiError(
+                  res,
+                  new AppError('INTERNAL_ERROR', 'Erro interno', {
+                    status: 500,
+                    details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+                  }),
+                  req
+                );
             } finally {
                 await session.endSession();
             }
@@ -2174,13 +2240,17 @@ export const packageOperations = {
                     return acc;
                 }, {});
 
-                return res.status(400).json({
-                    message: 'Falha na validação dos dados',
-                    errors
-                });
+                return sendApiError(
+                  res,
+                  new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                    status: 400,
+                    extra: { errors },
+                  }),
+                  req
+                );
             }
 
-            return res.status(500).json({ error: 'Erro interno' });
+            return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
         }
     },
 
@@ -2607,10 +2677,13 @@ export const packageOperations = {
         } catch (error) {
             await mongoSession.abortTransaction();
             console.error("❌ Erro em registerPayment:", error);
-            res.status(500).json({
-                success: false,
-                message: error.message || "Erro interno ao registrar pagamento.",
-            });
+            sendApiError(
+              res,
+              new AppError('INTERNAL_ERROR', error.message || "Erro interno ao registrar pagamento.", {
+                status: 500,
+              }),
+              req
+            );
         } finally {
             await mongoSession.endSession();
         }
@@ -2625,7 +2698,7 @@ export const updateStatus = async (req, res) => {
         const validStatus = ['active', 'finished', 'canceled'];
 
         if (!validStatus.includes(status)) {
-            return res.status(400).json({ error: 'Status inválido' });
+            return sendApiError(res, new AppError('BAD_REQUEST', 'Status inválido', { status: 400 }), req);
         }
 
         const updated = await Package.findByIdAndUpdate(
@@ -2647,13 +2720,17 @@ export const updateStatus = async (req, res) => {
                 return acc;
             }, {});
 
-            return res.status(400).json({
-                message: 'Falha na validação dos dados',
-                errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                status: 400,
+                extra: { errors },
+              }),
+              req
+            );
         }
 
-        return res.status(500).json({ error: 'Erro interno' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
 };
 
@@ -2681,13 +2758,17 @@ export const generateReport = async (req, res) => {
                 return acc;
             }, {});
 
-            return res.status(400).json({
-                message: 'Falha na validação dos dados',
-                errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                status: 400,
+                extra: { errors },
+              }),
+              req
+            );
         }
 
-        return res.status(500).json({ error: 'Erro interno' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
 };
 
@@ -2696,7 +2777,7 @@ export const getPackageById = async (req, res) => {
         const packages = await Package.findById(req.params.id)
             .populate('patient', 'name birthDate'); // Campos necessários
 
-        if (!packages) return res.status(404).json({ error: 'Pacote não encontrado' });
+        if (!packages) return sendApiError(res, new AppError('NOT_FOUND', 'Pacote não encontrado', { status: 404 }), req);
         res.json(packages);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -2706,13 +2787,17 @@ export const getPackageById = async (req, res) => {
                 return acc;
             }, {});
 
-            return res.status(400).json({
-                message: 'Falha na validação dos dados',
-                errors
-            });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Falha na validação dos dados', {
+                status: 400,
+                extra: { errors },
+              }),
+              req
+            );
         }
 
-        return res.status(500).json({ error: 'Erro interno' });
+        return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno', { status: 500 }), req);
     }
 }
 
@@ -2727,12 +2812,12 @@ export const getPackageVersionHistory = async (req, res) => {
         }).select('versionHistory');
 
         if (!event) {
-            return res.status(404).json({ error: 'Histórico não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Histórico não encontrado', { status: 404 }), req);
         }
 
         res.json(event.versionHistory);
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao buscar histórico' });
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar histórico', { status: 500 }), req);
     }
 };
 
@@ -2749,11 +2834,23 @@ export const bulkCancelSessions = async (req, res) => {
         const packageId = req.params.id;
 
         if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
-            return res.status(400).json({ error: 'sessionIds deve ser um array não vazio' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'sessionIds deve ser um array não vazio', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         if (!reason || !reason.trim()) {
-            return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'O motivo do cancelamento é obrigatório', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 📝 LOG: Início da operação
@@ -2916,10 +3013,14 @@ export const bulkCancelSessions = async (req, res) => {
             timestamp: new Date().toISOString()
         });
 
-        res.status(500).json({
-            error: 'Erro ao cancelar sessões em massa',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao cancelar sessões em massa',
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
     }
@@ -2928,20 +3029,34 @@ export const bulkCancelSessions = async (req, res) => {
 // ============================================
 // 🚀 CANCELAR TODAS AS SESSÕES DO PACOTE (ULTRA SIMPLES)
 // ============================================
+// Redis fora do ar não pode travar o cancelamento: comandos pendurados viram erro após o timeout.
+const REDIS_LOCK_TIMEOUT_MS = 1500;
+const withRedisTimeout = (promise) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), REDIS_LOCK_TIMEOUT_MS)),
+]);
+
 export const cancelAllSessions = async (req, res) => {
     const startTime = Date.now();
     const packageId = req.params.id;
     
     // 🔥 IDEMPOTÊNCIA: Lock para evitar duplo clique/concorrência
     const lockKey = `cancel:all:${packageId}`;
+    let lockAcquired = false;
     try {
-        const lock = await redis?.set(lockKey, '1', 'NX', 'EX', 30); // 30s de lock
+        // NX + EX 30s. Resposta nula = a chave já existe (outro cancelamento em andamento).
+        const lock = redis ? await withRedisTimeout(redis.set(lockKey, '1', 'EX', 30, 'NX')) : 'NO_REDIS';
         if (!lock) {
-            return res.status(409).json({ 
-                error: 'Cancelamento já em andamento',
-                message: 'Aguarde alguns segundos e tente novamente'
-            });
+            return sendApiError(
+              res,
+              new AppError('CONFLICT', 'Aguarde alguns segundos e tente novamente', {
+                status: 409,
+                legacyError: 'Cancelamento já em andamento',
+              }),
+              req
+            );
         }
+        lockAcquired = lock === 'OK';
     } catch (redisErr) {
         // ⚡ Se Redis cair, continua sem lock (loga warning)
         console.warn('[CANCEL-ALL] Redis indisponível, continuando sem lock:', redisErr.message);
@@ -2954,7 +3069,13 @@ export const cancelAllSessions = async (req, res) => {
         const { confirmedAbsence = false, reason } = req.body;
 
         if (!reason || !reason.trim()) {
-            return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'O motivo do cancelamento é obrigatório', {
+                status: 400,
+              }),
+              req
+            );
         }
 
         // 🔄 ATUALIZA STATUS PARA 'CANCELING' (UX + controle)
@@ -3086,16 +3207,20 @@ export const cancelAllSessions = async (req, res) => {
             console.error('Falha ao restaurar status do pacote:', restoreErr.message);
         }
 
-        res.status(500).json({
-            error: 'Erro ao cancelar sessões',
-            message: error.message
-        });
+        sendApiError(
+          res,
+          new AppError('INTERNAL_ERROR', error.message, {
+            status: 500,
+            legacyError: 'Erro ao cancelar sessões',
+          }),
+          req
+        );
     } finally {
         await mongoSession.endSession();
         
-        // 🔓 LIBERA O LOCK (sempre, mesmo em erro)
+        // 🔓 LIBERA O LOCK (sempre, mesmo em erro) — só se este request o adquiriu
         try {
-            await redis?.del(lockKey);
+            if (lockAcquired) await withRedisTimeout(redis.del(lockKey));
         } catch (redisErr) {
             console.warn('[CANCEL-ALL] Falha ao liberar lock:', redisErr.message);
         }

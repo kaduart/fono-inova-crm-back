@@ -439,12 +439,13 @@ describe('finalizeBillingSubmission — escritas em lote', () => {
       await billingSubmissionController.finalize(req, res);
 
       expect(statusMock).toHaveBeenCalledWith(409);
-      expect(jsonMock).toHaveBeenCalledWith({
+      expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({
         success: false,
         code: 'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
+        errorCode: 'BILLING_SUBMISSION_PAYMENT_CONCURRENT_CHANGE',
         message: 'Um Payment mudou de status durante a transição em lote',
         details: { expected: 2, modified: 1 }
-      });
+      }));
 
       // A tradução HTTP não deve enfraquecer o rollback: nada persistido.
       expect(await countAll()).toMatchObject({

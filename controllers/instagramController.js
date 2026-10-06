@@ -14,6 +14,8 @@ import InstagramPost from '../models/InstagramPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 import { publishToInstagram } from '../services/meta/metaPublisher.js';
 import { uploadToCloudinary } from '../services/media/mediaUploadService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 export async function listPosts(req, res) {
   try {
@@ -27,7 +29,7 @@ export async function listPosts(req, res) {
     
     res.json({ success: true, data: posts });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -36,7 +38,7 @@ export async function getStats(req, res) {
     const stats = await InstagramPost.getStats();
     res.json({ success: true, data: stats });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -91,16 +93,22 @@ export async function generatePost(req, res) {
       status_url: `/api/instagram/posts/${post._id}`
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
 export async function approvePost(req, res) {
   try {
     const post = await InstagramPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     if (!['draft', 'failed'].includes(post.status)) {
-      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser aprovado` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Post com status '${post.status}' não pode ser aprovado`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     post.status = 'approved';
@@ -108,7 +116,7 @@ export async function approvePost(req, res) {
 
     res.json({ success: true, data: post, message: '✅ Post aprovado — pronto para publicar' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -118,12 +126,24 @@ export async function publishPost(req, res) {
     const { target = 'organic', campaign } = req.body;
 
     const post = await InstagramPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     if (!['approved', 'draft'].includes(post.status)) {
-      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser publicado` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Post com status '${post.status}' não pode ser publicado`, {
+          status: 400,
+        }),
+        req
+      );
     }
     if (!post.mediaUrl) {
-      return res.status(400).json({ success: false, error: 'Post sem imagem — gere ou faça upload de uma imagem antes de publicar' });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Post sem imagem — gere ou faça upload de uma imagem antes de publicar', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const caption = post.caption || `${post.headline}\n\n${post.content}`;
@@ -164,7 +184,7 @@ export async function publishPost(req, res) {
     res.json(result);
   } catch (error) {
     await InstagramPost.findByIdAndUpdate(req.params.id, { status: 'failed', errorMessage: error.message });
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -175,10 +195,10 @@ export async function updatePost(req, res) {
       req.body,
       { new: true }
     );
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     res.json({ success: true, data: post });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -187,17 +207,17 @@ export async function deletePost(req, res) {
     await InstagramPost.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Post deletado' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
 // Upload de mídia externa (imagem/vídeo criado fora do CRM)
 export async function uploadMedia(req, res) {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+    if (!req.file) return sendApiError(res, new AppError('BAD_REQUEST', 'Nenhum arquivo enviado', { status: 400 }), req);
 
     const post = await InstagramPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
 
     const { url, resourceType } = await uploadToCloudinary(
       req.file.buffer,
@@ -212,21 +232,21 @@ export async function uploadMedia(req, res) {
 
     res.json({ success: true, data: { mediaUrl: url, mediaType: post.mediaType }, message: '✅ Arquivo enviado com sucesso' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
 export async function generateImageForPost(req, res) {
   try {
     const post = await InstagramPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!post) return sendApiError(res, new AppError('NOT_FOUND', 'Post não encontrado', { status: 404 }), req);
     
     const mediaUrl = await regenerateImageForPost(post);
-    if (!mediaUrl) return res.status(500).json({ success: false, error: 'Falha' });
+    if (!mediaUrl) return sendApiError(res, new AppError('INTERNAL_ERROR', 'Falha', { status: 500 }), req);
     
     res.json({ success: true, data: { imageUrl: mediaUrl } });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -238,7 +258,7 @@ export async function generateHeadlinePreview(req, res) {
     const headline = await gerarHeadline({ especialidade: esp, funnelStage: funnelStage || 'top' });
     res.json({ success: true, data: headline });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -254,7 +274,7 @@ export async function generateCaptionPreview(req, res) {
     });
     res.json({ success: true, data: legenda });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -266,7 +286,7 @@ export async function generateCaption(req, res) {
     const result = await generateCaptionSEO(especialidade, customTheme, funnelStage || 'top');
     res.json({ success: true, data: result, message: '📝 Legenda SEO gerada!' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -278,7 +298,7 @@ export async function generateHooks(req, res) {
     const result = await generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
     res.json({ success: true, data: result, message: `🎣 ${count || 10} Ganchos gerados!` });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -290,7 +310,7 @@ export async function generateVariations(req, res) {
     const result = await generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -298,11 +318,11 @@ export async function generateVariations(req, res) {
 export async function scoreContent(req, res) {
   try {
     const { content, funnelStage } = req.body;
-    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    if (!content) return sendApiError(res, new AppError('BAD_REQUEST', 'content obrigatório', { status: 400 }), req);
     const score = await scorePostQuality(content, funnelStage || 'top');
     res.json({ success: true, score });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -322,6 +342,6 @@ export async function previewContent(req, res) {
       data: { headline, legenda, especialidade: esp.nome }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }

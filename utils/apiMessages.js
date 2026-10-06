@@ -97,15 +97,26 @@ export const Messages = {
 /**
  * Formata mensagem de erro para response padronizada
  */
+const HTTP_CODES = { 400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 409: 'CONFLICT', 422: 'UNPROCESSABLE', 429: 'RATE_LIMITED' };
+
 export function formatError(code, message, details = null) {
+  // Chamadores históricos usam ordens diferentes: (code, msg), (status, msg), (msg, status), (msg).
+  if (typeof message === 'number') [code, message] = [message, code];
+  if (message === undefined || message === null) { message = code; code = undefined; }
+  if (typeof code === 'number') code = HTTP_CODES[code] || (code >= 500 ? 'INTERNAL_ERROR' : 'ERROR');
+  if (!code || /\s/.test(String(code))) code = 'ERROR';
+  // Envelope padrão (docs/MENSAGERIA_PADRAO.md) no topo + `error` como OBJETO legado: rotas v2 de
+  // pacote/médico/paciente têm contrato publicado (error.code / error.message) e testes que o fixam.
+  // Código novo lê code/message do topo; `error` objeto é deprecated e não deve ser copiado.
+  const timestamp = new Date().toISOString();
   return {
     success: false,
-    error: {
-      code,
-      message,
-      details,
-      timestamp: new Date().toISOString()
-    }
+    code,
+    errorCode: code,
+    message,
+    ...(details !== null && details !== undefined ? { details } : {}),
+    error: { code, message, details, timestamp },
+    timestamp
   };
 }
 

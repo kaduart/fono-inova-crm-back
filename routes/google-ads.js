@@ -1,6 +1,8 @@
 import express from 'express';
 import { getCampaigns, getAds } from '../services/google-ads.js';
 import { validateGoogleAdsData } from '../middleware/googleValidation.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -10,10 +12,14 @@ router.get('/campaigns', validateGoogleAdsData, async (req, res) => {
     res.json(campaigns);
   } catch (error) {
     console.error('Erro detalhado:', error);
-    res.status(500).json({
-      error: 'Erro ao buscar campanhas',
-      details: error.message
-    });
+    sendApiError(
+      res,
+      new AppError('INTERNAL_ERROR', 'Erro ao buscar campanhas', {
+        status: 500,
+        details: error.message,
+      }),
+      req
+    );
   }
 });
 
@@ -23,7 +29,7 @@ router.get('/ads', validateGoogleAdsData, async (req, res) => {
     res.json(ads);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro ao buscar anúncios' });
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao buscar anúncios', { status: 500 }), req);
   }
 });
 

@@ -1,6 +1,8 @@
 import express from 'express';
 import MedicalEvent from '../models/MedicalEvent.js';
 import { auth } from '../middleware/auth.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -48,7 +50,7 @@ router.get('/patient/:patientId/timeline', auth, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro ao buscar timeline:', error);
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -105,7 +107,7 @@ router.get('/patient/:patientId/financial-summary', auth, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro ao buscar resumo financeiro:', error);
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 
@@ -118,14 +120,14 @@ router.get('/:eventId', auth, async (req, res) => {
         const event = await MedicalEvent.findById(req.params.eventId).lean();
         
         if (!event) {
-            return res.status(404).json({ success: false, message: 'Evento não encontrado' });
+            return sendApiError(res, new AppError('NOT_FOUND', 'Evento não encontrado', { status: 404 }), req);
         }
 
         res.json({ success: true, event });
 
     } catch (error) {
         console.error('❌ Erro ao buscar evento:', error);
-        res.status(500).json({ success: false, message: error.message });
+        sendApiError(res, error, req);
     }
 });
 

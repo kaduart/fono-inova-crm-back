@@ -20,6 +20,8 @@ import { transitionPaymentStatus } from "../services/paymentStatusService.js";
 import PaymentLifecycleService from "../domain/payment/PaymentLifecycleService.js";
 import { applyFinancialProtection } from "../services/appointment/policies/appointmentFinancialPolicy.js";
 import { findActiveBatchLink } from "../services/insuranceBatch/insuranceBatchGuard.js";
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -84,10 +86,13 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
         source: 'agenda_externa'
       });
     } else {
-      return res.status(400).json({
-        success: false,
-        error: 'Informe patientId (paciente existente) ou isNewPatient: true para criar novo paciente'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Informe patientId (paciente existente) ou isNewPatient: true para criar novo paciente', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // 1) Buscar doutor
@@ -135,14 +140,17 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
 
         if (existingDoctorSlot) {
           console.log(`[IMPORT-FROM-AGENDA] ⏭️ Conflito doutor ${doctor.fullName} (${existingDoctorSlot.operationalStatus}): ${date} ${time}`);
-          return res.status(409).json({
-            success: false,
-            error: `${doctor.fullName} já possui agendamento neste horário (${date} às ${time})`,
-            conflict: {
+          return sendApiError(
+            res,
+            new AppError('CONFLICT', `${doctor.fullName} já possui agendamento neste horário (${date} às ${time})`, {
+              status: 409,
+              extra: { conflict: {
               appointmentId: existingDoctorSlot._id,
               operationalStatus: existingDoctorSlot.operationalStatus
-            }
-          });
+            } },
+            }),
+            req
+          );
         }
       }
     }
@@ -233,7 +241,7 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
 
   } catch (err) {
     console.error("[IMPORT_FROM_AGENDA] error:", err);
-    return res.status(500).json({ success: false, code: "INTERNAL_ERROR", error: err.message });
+    return sendApiError(res, new AppError("INTERNAL_ERROR", err.message, { status: 500 }), req);
   }
 });
 
@@ -255,13 +263,20 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
     } = req.body;
 
     if (!_id) {
-      return res.status(400).json({ success: false, error: '_id é obrigatório' });
+      return sendApiError(res, new AppError('BAD_REQUEST', '_id é obrigatório', { status: 400 }), req);
     }
 
     const pre = await Appointment.findById(_id);
 
     if (!pre) {
-      return res.status(404).json({ success: false, error: 'Agendamento não encontrado', _id });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', 'Agendamento não encontrado', {
+          status: 404,
+          extra: { _id },
+        }),
+        req
+      );
     }
 
     // Idempotente: já confirmado
@@ -276,7 +291,13 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
     }
 
     if (pre.operationalStatus !== 'pre_agendado') {
-      return res.status(400).json({ success: false, error: `Status inválido para confirmação: ${pre.operationalStatus}` });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', `Status inválido para confirmação: ${pre.operationalStatus}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Resolver doutor
@@ -287,7 +308,13 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
       if (d) doctor = await Doctor.findById(d._id);
     }
     if (!doctor) {
-      return res.status(404).json({ success: false, error: `Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}` });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', `Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}`, {
+          status: 404,
+        }),
+        req
+      );
     }
 
     // Resolver paciente: usa existente ou cria novo pelo telefone
@@ -437,7 +464,7 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
 
   } catch (error) {
     console.error('[CONFIRMAR] Erro:', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -466,11 +493,13 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     // 1) Buscar doutor
     const doctor = await findDoctorByName(professionalName);
     if (!doctor) {
-      return res.status(400).json({
-        success: false,
-        code: "DOCTOR_NOT_FOUND",
-        error: `Profissional "${professionalName}" não encontrado no CRM`,
-      });
+      return sendApiError(
+        res,
+        new AppError("DOCTOR_NOT_FOUND", `Profissional "${professionalName}" não encontrado no CRM`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // 2) Verificar duplicata (mesmo slot já scheduled)
@@ -550,11 +579,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
   } catch (err) {
     console.error("[CRIAR-E-CONFIRMAR] error:", err);
-    return res.status(500).json({
-      success: false,
-      code: "INTERNAL_ERROR",
-      error: err.message
-    });
+    return sendApiError(res, new AppError("INTERNAL_ERROR", err.message, { status: 500 }), req);
   }
 });
 
@@ -573,7 +598,7 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
 
     if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "_id é obrigatório" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "_id é obrigatório", { status: 400 }), req);
     }
 
     console.log(`[SYNC-CANCEL] Cancelando agendamento: ${_id}`);
@@ -586,11 +611,14 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
     if (!appointment) {
       console.log(`[SYNC-CANCEL] ❌ Appointment não encontrado: ${_id}`);
       await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        error: "Agendamento não encontrado",
-        _id
-      });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', "Agendamento não encontrado", {
+          status: 404,
+          extra: { _id },
+        }),
+        req
+      );
     }
 
     console.log(`[SYNC-CANCEL] ✅ Appointment encontrado: ${appointment._id}`);
@@ -713,11 +741,7 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     console.error("[SYNC-CANCEL] Erro:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      code: "SYNC_CANCEL_ERROR"
-    });
+    return sendApiError(res, new AppError("SYNC_CANCEL_ERROR", error.message, { status: 500 }), req);
   } finally {
     session.endSession();
   }
@@ -803,7 +827,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
     console.log('[SYNC-UPDATE] 🗺️ Dados mapeados:', mappedData);
 
     if (!_id) {
-      return res.status(400).json({ success: false, error: "_id é obrigatório" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "_id é obrigatório", { status: 400 }), req);
     }
 
     console.log(`[SYNC-UPDATE] Atualizando agendamento: ${_id}`);
@@ -813,7 +837,14 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
     if (!appointment) {
       console.log(`[SYNC-UPDATE] ❌ Appointment não encontrado: ${_id}`);
-      return res.status(404).json({ success: false, error: "Agendamento não encontrado", _id });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', "Agendamento não encontrado", {
+          status: 404,
+          extra: { _id },
+        }),
+        req
+      );
     }
 
     console.log(`[SYNC-UPDATE] ✅ Appointment encontrado: ${appointment._id}`);
@@ -1116,11 +1147,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
   } catch (error) {
     console.error("[SYNC-UPDATE] Erro:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      code: "SYNC_UPDATE_ERROR"
-    });
+    return sendApiError(res, new AppError("SYNC_UPDATE_ERROR", error.message, { status: 500 }), req);
   }
 });
 
@@ -1139,7 +1166,7 @@ router.post("/agenda-externa/delete", agendaAuth, async (req, res) => {
 
     if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "_id é obrigatório" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "_id é obrigatório", { status: 400 }), req);
     }
 
     console.log(`[SYNC-DELETE] Excluindo agendamento: ${_id}`);
@@ -1152,11 +1179,14 @@ router.post("/agenda-externa/delete", agendaAuth, async (req, res) => {
     if (!appointment) {
       console.log(`[SYNC-DELETE] ❌ Appointment não encontrado: ${_id}`);
       await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        error: "Agendamento não encontrado",
-        _id
-      });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', "Agendamento não encontrado", {
+          status: 404,
+          extra: { _id },
+        }),
+        req
+      );
     }
 
     console.log(`[SYNC-DELETE] ✅ Appointment encontrado: ${appointment._id}`);
@@ -1170,7 +1200,7 @@ router.post("/agenda-externa/delete", agendaAuth, async (req, res) => {
       const msg = `Não é possível excluir este atendimento porque ele pertence ao lote de faturamento ${activeBatch.batchNumber}. Remova-o do lote ou cancele o lote antes de excluir.`;
       console.warn(`[SYNC-DELETE] ${msg}`);
       await session.abortTransaction();
-      return res.status(409).json({ success: false, error: msg, code: 'INSURANCE_BATCH_DELETE_BLOCKED' });
+      return sendApiError(res, new AppError('INSURANCE_BATCH_DELETE_BLOCKED', msg, { status: 409 }), req);
     }
 
     // 2) Deletar em cascata
@@ -1227,11 +1257,7 @@ router.post("/agenda-externa/delete", agendaAuth, async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     console.error("[SYNC-DELETE] Erro:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      code: "SYNC_DELETE_ERROR"
-    });
+    return sendApiError(res, new AppError("SYNC_DELETE_ERROR", error.message, { status: 500 }), req);
   } finally {
     session.endSession();
   }
@@ -1305,10 +1331,7 @@ router.get("/import-from-agenda/appointments-amanda", agendaAuth, async (req, re
 
   } catch (error) {
     console.error('[APPOINTMENTS-AMANDA] Erro:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -1325,7 +1348,7 @@ router.post("/agenda-externa/confirmar-agendamento", agendaAuth, async (req, res
 
     if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "_id é obrigatório" });
+      return sendApiError(res, new AppError('BAD_REQUEST', "_id é obrigatório", { status: 400 }), req);
     }
 
     console.log(`[CONFIRMAR-AGENDAMENTO] Confirmando: ${_id}`);
@@ -1334,7 +1357,14 @@ router.post("/agenda-externa/confirmar-agendamento", agendaAuth, async (req, res
 
     if (!appointment) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, error: "Agendamento não encontrado", _id });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', "Agendamento não encontrado", {
+          status: 404,
+          extra: { _id },
+        }),
+        req
+      );
     }
 
     // Já confirmado
@@ -1394,11 +1424,7 @@ router.post("/agenda-externa/confirmar-agendamento", agendaAuth, async (req, res
   } catch (error) {
     await session.abortTransaction();
     console.error("[CONFIRMAR-AGENDAMENTO] Erro:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      code: "CONFIRM_ERROR"
-    });
+    return sendApiError(res, new AppError("CONFIRM_ERROR", error.message, { status: 500 }), req);
   } finally {
     session.endSession();
   }
@@ -1446,10 +1472,13 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
 
     // Validações
     if (!startDate || !specialty) {
-      return res.status(400).json({
-        success: false,
-        error: "startDate e specialty são obrigatórios"
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', "startDate e specialty são obrigatórios", {
+          status: 400,
+        }),
+        req
+      );
     }
 
     const daysCount = Math.min(parseInt(days) || 7, 14);
@@ -1461,10 +1490,13 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
     }).lean();
 
     if (!doctors.length) {
-      return res.status(404).json({
-        success: false,
-        error: `Nenhum profissional encontrado para: ${specialty}`
-      });
+      return sendApiError(
+        res,
+        new AppError('NOT_FOUND', `Nenhum profissional encontrado para: ${specialty}`, {
+          status: 404,
+        }),
+        req
+      );
     }
 
     // 2. Gerar datas da semana
@@ -1605,11 +1637,7 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
 
   } catch (error) {
     console.error("[WEEKLY-AVAILABILITY] Erro:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      code: "WEEKLY_AVAILABILITY_ERROR"
-    });
+    return sendApiError(res, new AppError("WEEKLY_AVAILABILITY_ERROR", error.message, { status: 500 }), req);
   }
 });
 
@@ -1647,7 +1675,7 @@ router.get("/import-from-agenda/diagnostico/:patientName", async (req, res) => {
 
     res.json({ success: true, data: analysis });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -1683,7 +1711,7 @@ router.post("/import-from-agenda/limpar-henre", async (req, res) => {
 
   } catch (error) {
     console.error('[LIMPAR-HENRE] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -1745,7 +1773,7 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
 
   } catch (error) {
     await session.abortTransaction();
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   } finally {
     session.endSession();
   }
@@ -1831,7 +1859,7 @@ router.get("/import-from-agenda/auditar-unimed", async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 

@@ -10,6 +10,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
 
 const router = Router();
 
@@ -90,7 +91,7 @@ router.get('/audit/sessions', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[Audit Sessions] Erro:', err);
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -195,7 +196,7 @@ router.get('/audit/summary', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[Audit Summary] Erro:', err);
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 
@@ -263,7 +264,7 @@ router.get('/audit/revenue-delta', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('[Revenue Delta] Erro:', err);
-    res.status(500).json({ error: err.message });
+    sendApiError(res, err, req);
   }
 });
 

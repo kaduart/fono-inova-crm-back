@@ -5,6 +5,8 @@ import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import { resolvePatientId } from '../utils/identityResolver.js';
 import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycleService.js';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
 
@@ -53,37 +55,47 @@ router.post('/', auth, async (req, res) => {
 
     // Validações básicas
     if (!number || !patientId || !specialty || !insurance || !totalSessions || !expiresAt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Campos obrigatórios faltando',
-        required: ['number', 'patientId', 'specialty', 'insurance', 'totalSessions', 'expiresAt']
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Campos obrigatórios faltando', {
+          status: 400,
+          extra: { required: ['number', 'patientId', 'specialty', 'insurance', 'totalSessions', 'expiresAt'] },
+        }),
+        req
+      );
     }
 
     // Validar enum de specialty
     if (!VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
-      return res.status(400).json({
-        success: false,
-        message: `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`,
-        code: 'INVALID_SPECIALTY'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_SPECIALTY', `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar enum de insurance
     if (!VALID_INSURANCES.includes(insurance.toLowerCase().trim())) {
-      return res.status(400).json({
-        success: false,
-        message: `Convênio inválido. Válidos: ${VALID_INSURANCES.join(', ')}`,
-        code: 'INVALID_INSURANCE'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_INSURANCE', `Convênio inválido. Válidos: ${VALID_INSURANCES.join(', ')}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar totalSessions >= 1
     if (totalSessions < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Total de sessões deve ser ao menos 1'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Total de sessões deve ser ao menos 1', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar expiresAt > hoje
@@ -92,10 +104,7 @@ router.post('/', auth, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     if (expiryDate <= today) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data de validade deve ser futura'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Data de validade deve ser futura', { status: 400 }), req);
     }
 
     // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
@@ -122,11 +131,13 @@ router.post('/', auth, async (req, res) => {
       number: number.toUpperCase().trim()
     });
     if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: `Este paciente já possui a guia ${number} cadastrada`,
-        code: 'DUPLICATE_GUIDE_NUMBER'
-      });
+      return sendApiError(
+        res,
+        new AppError('DUPLICATE_GUIDE_NUMBER', `Este paciente já possui a guia ${number} cadastrada`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Criar guia
@@ -159,19 +170,19 @@ router.post('/', auth, async (req, res) => {
     console.error('Erro ao criar guia:', error);
 
     if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Erro de validação',
-        errors: Object.fromEntries(
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Erro de validação', {
+          status: 400,
+          extra: { errors: Object.fromEntries(
           Object.entries(error.errors || {}).map(([k, v]) => [k, v.message])
-        )
-      });
+        ) },
+        }),
+        req
+      );
     }
 
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -197,11 +208,7 @@ router.get('/', auth, async (req, res) => {
         filter.patientId = resolvedId;
         console.log(`[InsuranceGuides] Buscando guias para patientId: ${resolvedId}`);
       } catch (error) {
-        return res.status(400).json({
-          success: false,
-          errorCode: 'INVALID_PATIENT_ID',
-          message: error.message
-        });
+        return sendApiError(res, new AppError('INVALID_PATIENT_ID', error.message, { status: 400 }), req);
       }
     }
 
@@ -239,10 +246,7 @@ router.get('/', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao listar guias:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -257,10 +261,7 @@ router.get('/:id', auth, async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID inválido'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
     }
 
     const guide = await InsuranceGuide.findById(id)
@@ -268,10 +269,7 @@ router.get('/:id', auth, async (req, res) => {
       .populate('createdBy', 'name email');
 
     if (!guide) {
-      return res.status(404).json({
-        success: false,
-        message: 'Guia não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     return res.status(200).json({
@@ -281,10 +279,7 @@ router.get('/:id', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar guia:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -300,61 +295,64 @@ router.put('/:id', auth, async (req, res) => {
     const { specialty, insurance, totalSessions, expiresAt, notes, sessionValue } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID inválido'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
     }
 
     // Buscar guia
     const guide = await InsuranceGuide.findById(id);
 
     if (!guide) {
-      return res.status(404).json({
-        success: false,
-        message: 'Guia não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     // Restrição: só edita se lifecycle permitir
     const lifecycle = await GuideLifecycleService.evaluate(guide, new Date());
     if (!lifecycle.eligibility.canEdit) {
-      return res.status(400).json({
-        success: false,
-        message: 'Não é possível editar guia já utilizada ou em estado bloqueado',
-        code: 'GUIDE_NOT_EDITABLE',
-        details: {
+      return sendApiError(
+        res,
+        new AppError('GUIDE_NOT_EDITABLE', 'Não é possível editar guia já utilizada ou em estado bloqueado', {
+          status: 400,
+          details: {
           usedSessions: guide.usedSessions,
           status: guide.status,
           lifecycle
-        }
-      });
+        },
+        }),
+        req
+      );
     }
 
     // Validar enum de specialty
     if (specialty && !VALID_SPECIALTIES.includes(specialty.toLowerCase().trim())) {
-      return res.status(400).json({
-        success: false,
-        message: `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`,
-        code: 'INVALID_SPECIALTY'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_SPECIALTY', `Especialidade inválida. Válidas: ${VALID_SPECIALTIES.join(', ')}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar enum de insurance
     if (insurance && !VALID_INSURANCES.includes(insurance.toLowerCase().trim())) {
-      return res.status(400).json({
-        success: false,
-        message: `Convênio inválido. Válidos: ${VALID_INSURANCES.join(', ')}`,
-        code: 'INVALID_INSURANCE'
-      });
+      return sendApiError(
+        res,
+        new AppError('INVALID_INSURANCE', `Convênio inválido. Válidos: ${VALID_INSURANCES.join(', ')}`, {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar totalSessions >= 1
     if (totalSessions !== undefined && totalSessions < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Total de sessões deve ser ao menos 1'
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Total de sessões deve ser ao menos 1', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Validar expiresAt > hoje
@@ -364,10 +362,13 @@ router.put('/:id', auth, async (req, res) => {
       today.setHours(0, 0, 0, 0);
 
       if (expiryDate <= today) {
-        return res.status(400).json({
-          success: false,
-          message: 'Data de validade deve ser futura'
-        });
+        return sendApiError(
+          res,
+          new AppError('BAD_REQUEST', 'Data de validade deve ser futura', {
+            status: 400,
+          }),
+          req
+        );
       }
     }
 
@@ -396,19 +397,19 @@ router.put('/:id', auth, async (req, res) => {
     console.error('Erro ao atualizar guia:', error);
 
     if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Erro de validação',
-        errors: Object.fromEntries(
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'Erro de validação', {
+          status: 400,
+          extra: { errors: Object.fromEntries(
           Object.entries(error.errors || {}).map(([k, v]) => [k, v.message])
-        )
-      });
+        ) },
+        }),
+        req
+      );
     }
 
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -423,19 +424,13 @@ router.delete('/:id', auth, async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID inválido'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID inválido', { status: 400 }), req);
     }
 
     const guide = await InsuranceGuide.findById(id);
 
     if (!guide) {
-      return res.status(404).json({
-        success: false,
-        message: 'Guia não encontrada'
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Guia não encontrada', { status: 404 }), req);
     }
 
     // Soft delete: status = 'cancelled'
@@ -454,10 +449,7 @@ router.delete('/:id', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao cancelar guia:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 
@@ -473,10 +465,7 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
     const { specialty } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID do paciente inválido'
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'ID do paciente inválido', { status: 400 }), req);
     }
 
     // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
@@ -505,10 +494,7 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao consultar saldo:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendApiError(res, error, req);
   }
 });
 

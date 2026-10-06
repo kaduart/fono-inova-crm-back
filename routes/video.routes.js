@@ -17,6 +17,8 @@ import Video from '../models/Video.js';
 import logger from '../utils/logger.js';
 import { listPresets, getFullProductionConfig, getScriptTemplate } from '../services/video/presetService.js';
 import fs from 'fs';
+import { sendApiError } from '../errors/buildErrorResponse.js';
+import { AppError } from '../errors/AppError.js';
 
 const router = Router();
 router.use(auth);
@@ -52,7 +54,7 @@ router.get('/', async (req, res) => {
     res.json({ success: true, data: processedVideos });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao listar:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -94,10 +96,13 @@ async function handleGenerateVideo(req, res) {
     // Validação: temaFinal pode ser string vazia (geração automática)
     // mas não pode ser undefined/null; especialidadeId é obrigatório
     if (temaFinal === undefined || temaFinal === null || !especialidadeId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'tema (ou roteiro) e especialidadeId são obrigatórios' 
-      });
+      return sendApiError(
+        res,
+        new AppError('BAD_REQUEST', 'tema (ou roteiro) e especialidadeId são obrigatórios', {
+          status: 400,
+        }),
+        req
+      );
     }
 
     // Nota: modo profissional tem fallback automático para HeyGen se Pexels não configurado
@@ -176,7 +181,7 @@ async function handleGenerateVideo(req, res) {
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao iniciar pipeline:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 }
 
@@ -205,7 +210,7 @@ router.post('/preview-roteiro', async (req, res) => {
     } = req.body;
 
     if (!especialidadeId) {
-      return res.status(400).json({ success: false, error: 'especialidadeId obrigatório' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'especialidadeId obrigatório', { status: 400 }), req);
     }
 
     const { gerarRoteiro } = await import('../agents/zeus-video.js');
@@ -256,7 +261,7 @@ router.post('/preview-roteiro', async (req, res) => {
     });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao gerar preview roteiro:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -267,7 +272,7 @@ router.get('/presets', async (req, res) => {
     res.json({ success: true, presets });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao listar presets:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -276,12 +281,12 @@ router.get('/presets/:name', async (req, res) => {
   try {
     const preset = getFullProductionConfig(req.params.name);
     if (!preset) {
-      return res.status(404).json({ success: false, error: 'Preset não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Preset não encontrado', { status: 404 }), req);
     }
     res.json({ success: true, preset });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao buscar preset:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -290,7 +295,7 @@ router.get('/presets/:name/script', async (req, res) => {
   try {
     const script = getScriptTemplate(req.params.name);
     if (!script) {
-      return res.status(404).json({ success: false, error: 'Preset ou script não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Preset ou script não encontrado', { status: 404 }), req);
     }
     res.json({ 
       success: true, 
@@ -301,7 +306,7 @@ router.get('/presets/:name/script', async (req, res) => {
     });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao buscar script:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -316,12 +321,12 @@ router.post('/gerar-preset', async (req, res) => {
     } = req.body;
 
     if (!preset) {
-      return res.status(400).json({ success: false, error: 'preset é obrigatório' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'preset é obrigatório', { status: 400 }), req);
     }
 
     const presetConfig = getFullProductionConfig(preset);
     if (!presetConfig) {
-      return res.status(404).json({ success: false, error: 'Preset não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Preset não encontrado', { status: 404 }), req);
     }
 
     // Pega o script exemplo
@@ -383,7 +388,7 @@ router.post('/gerar-preset', async (req, res) => {
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao gerar vídeo com preset:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -394,7 +399,13 @@ router.get('/voices', async (req, res) => {
     const API_KEY = process.env.HEYGEN_API_KEY;
     
     if (!API_KEY) {
-      return res.status(503).json({ success: false, error: 'HEYGEN_API_KEY não configurado' });
+      return sendApiError(
+        res,
+        new AppError('INTERNAL_ERROR', 'HEYGEN_API_KEY não configurado', {
+          status: 503,
+        }),
+        req
+      );
     }
 
     const { data } = await axios.get('https://api.heygen.com/v2/voices', {
@@ -429,7 +440,7 @@ router.get('/voices', async (req, res) => {
     });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao listar vozes:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -442,10 +453,7 @@ router.get('/status/:jobId', async (req, res) => {
     const job = await videoGenerationQueue.getJob(jobId);
     
     if (!job) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Job não encontrado' 
-      });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Job não encontrado', { status: 404 }), req);
     }
 
     const state = await job.getState();
@@ -472,7 +480,7 @@ router.get('/status/:jobId', async (req, res) => {
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao consultar status:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -482,17 +490,11 @@ router.post('/lote', async (req, res) => {
     const { videos } = req.body;  // Array de { tema, especialidadeId, funil }
     
     if (!Array.isArray(videos) || videos.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Array de vídeos obrigatório' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Array de vídeos obrigatório', { status: 400 }), req);
     }
 
     if (videos.length > 10) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Máximo 10 vídeos por lote' 
-      });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Máximo 10 vídeos por lote', { status: 400 }), req);
     }
 
     const jobs = [];
@@ -551,7 +553,7 @@ router.post('/lote', async (req, res) => {
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao criar lote:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -560,7 +562,7 @@ router.post('/:id/publish', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) {
-      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     }
     
     video.publishedChannels = req.body.channels || [];
@@ -570,7 +572,7 @@ router.post('/:id/publish', async (req, res) => {
     res.json({ success: true, data: video });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao publicar:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -580,7 +582,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao deletar:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -589,10 +591,10 @@ router.post('/:id/pos-producao', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) {
-      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     }
     if (video.status !== 'ready') {
-      return res.status(400).json({ success: false, error: 'Vídeo ainda não está pronto' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Vídeo ainda não está pronto', { status: 400 }), req);
     }
 
     const {
@@ -609,7 +611,7 @@ router.post('/:id/pos-producao', async (req, res) => {
     const videoUrl = video.videoUrl || video.videoFinalUrl;
 
     if (!videoUrl) {
-      return res.status(400).json({ success: false, error: 'URL do vídeo não encontrada' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'URL do vídeo não encontrada', { status: 400 }), req);
     }
 
     // Salvar configuração e marcar como processando edição
@@ -645,7 +647,7 @@ router.post('/:id/pos-producao', async (req, res) => {
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao iniciar pós-produção:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -653,11 +655,11 @@ router.post('/:id/pos-producao', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id).lean();
-    if (!video) return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    if (!video) return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     res.json({ success: true, data: video });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao buscar vídeo:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -666,13 +668,13 @@ router.post('/:id/retry', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) {
-      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     }
     if (video.status === 'processing') {
-      return res.status(400).json({ success: false, error: 'Vídeo já está em processamento' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Vídeo já está em processamento', { status: 400 }), req);
     }
     if (video.status === 'ready') {
-      return res.status(400).json({ success: false, error: 'Vídeo já está pronto' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Vídeo já está pronto', { status: 400 }), req);
     }
 
     const clipsJaGerados = video.clipsGerados?.length || 0;
@@ -735,7 +737,7 @@ router.post('/:id/retry', async (req, res) => {
     });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao retentar:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -744,11 +746,11 @@ router.post('/:id/force-fail', async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) {
-      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     }
     
     if (video.status !== 'processing') {
-      return res.status(400).json({ success: false, error: 'Vídeo não está em processamento' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Vídeo não está em processamento', { status: 400 }), req);
     }
     
     await Video.findByIdAndUpdate(req.params.id, {
@@ -764,7 +766,7 @@ router.post('/:id/force-fail', async (req, res) => {
     res.json({ success: true, message: 'Vídeo marcado como falho' });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao forçar falha:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -796,7 +798,7 @@ router.post('/admin/cleanup-stalled', async (req, res) => {
     res.json({ success: true, message: `${updated} vídeos atualizados` });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro no cleanup:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
@@ -807,17 +809,17 @@ router.post('/:id/publish-meta', async (req, res) => {
     
     const video = await Video.findById(req.params.id);
     if (!video) {
-      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+      return sendApiError(res, new AppError('NOT_FOUND', 'Vídeo não encontrado', { status: 404 }), req);
     }
     
     if (video.status !== 'ready') {
-      return res.status(400).json({ success: false, error: 'Vídeo ainda não está pronto' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Vídeo ainda não está pronto', { status: 400 }), req);
     }
     
     // Verificar se tem URL do vídeo
     const videoUrl = video.videoUrl || video.videoFinalUrl || video.videoEditadoUrl;
     if (!videoUrl) {
-      return res.status(400).json({ success: false, error: 'URL do vídeo não disponível' });
+      return sendApiError(res, new AppError('BAD_REQUEST', 'URL do vídeo não disponível', { status: 400 }), req);
     }
     
     // Importar serviço de publicação Meta
@@ -871,7 +873,7 @@ router.post('/:id/publish-meta', async (req, res) => {
     
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao publicar no Meta:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    sendApiError(res, error, req);
   }
 });
 
