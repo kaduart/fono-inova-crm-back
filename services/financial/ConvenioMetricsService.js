@@ -894,7 +894,8 @@ class ConvenioMetricsService {
                 paymentMethod: 'convenio',
                 financialDate: dataRecebimentoBrasilia,
                 paidAt: dataRecebimentoBrasilia,
-                reason: 'convenio_metrics_receipt'
+                reason: 'convenio_metrics_receipt',
+                insuranceReceipt: true
             });
             // Atualiza paymentDate separadamente (não gerenciado pelo paymentStatusService)
             payment.paymentDate = dataRecebimentoBrasilia;

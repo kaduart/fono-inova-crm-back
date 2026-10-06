@@ -9,6 +9,7 @@ import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
 import { EventTypes } from '../../infrastructure/events/eventPublisher.js';
 import { transitionPaymentStatusBatch, PaymentBatchTransitionError } from '../paymentStatusService.js';
+import { BILLABLE_SOURCE_STATUSES } from './paymentBillingInvariants.js';
 
 const ACTIVE_PAYMENT_STATUSES = ['pending', 'pending_billing', 'billed', 'received', 'paid', 'partial'];
 
@@ -240,6 +241,20 @@ async function validateSessionScope({ patientId, provider, billingCompetence, se
     const key = payment.session?.toString();
     if (!paymentsBySession.has(key)) paymentsBySession.set(key, []);
     paymentsBySession.get(key).push(payment);
+  }
+  // Falha cedo (antes de qualquer gravação) e lista TODAS as sessões cujo Payment não está em
+  // status faturável — o comercial vê o conjunto completo de uma vez, não uma por tentativa.
+  const notBillable = ids.filter((id) => {
+    const candidates = paymentsBySession.get(id) || [];
+    return candidates.length === 1 && !BILLABLE_SOURCE_STATUSES.includes(candidates[0].status);
+  });
+  if (notBillable.length) {
+    throw new BillingSubmissionError(
+      'BILLING_SUBMISSION_PAYMENT_STATUS_NOT_BILLABLE',
+      'Há sessões com pagamento fora de "pendente de faturamento"',
+      409,
+      { sessionIds: notBillable }
+    );
   }
   for (const id of ids) {
     const candidates = paymentsBySession.get(id) || [];

@@ -91,6 +91,7 @@ export async function settleInsurancePayment(paymentId, { reason = 'auto_settlem
         paidAt: now,
         financialDate: sessionDate,
         reason,
+        insuranceReceipt: true,
         userId: actor?._id || actor?.id
     });
 

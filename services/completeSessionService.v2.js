@@ -1271,6 +1271,20 @@ function determineBillingType(appointment, packageData) {
         return 'convenio';
     }
 
+    // 🛡️ GUARD (2026-10-06, caso Antonella/Unimed): guia de convênio vinculada ao agendamento é prova de
+    // convênio, mesmo com billingType='particular' (default antigo). Sem isto o complete roteava para o
+    // fluxo particular, que marcava a sessão e o Payment como PAGOS em Pix — dinheiro que nunca entrou
+    // e faturamento travado. Convênio nunca é "pago" no atendimento: só no recebimento do convênio.
+    if (appointment?.insuranceGuide) {
+        if (appointment.billingType && appointment.billingType !== 'convenio') {
+            console.error('[determineBillingType] INCONSISTENT_BILLING: insuranceGuide vinculada mas billingType!=convenio — roteando para convenio', {
+                appointmentId: appointment._id,
+                billingType: appointment.billingType
+            });
+        }
+        return 'convenio';
+    }
+
     // 🛡️ GUARD: paymentMethod=convenio com billingType inconsistente = dado corrompido.
     // Particular nunca usa paymentMethod='convenio' — se aparecer aqui é dado errado.
     // Self-heal: roteamos para convenio para evitar que particularHandler marque como paid.
@@ -1310,5 +1324,7 @@ function determineBillingType(appointment, packageData) {
     console.warn(`[CompleteSessionV2] 🚨 FALLBACK CRÍTICO: Package sem billingType, model, type ou paymentType definidos. Assumindo 'particular'. Verifique dados do package.`);
     return 'particular';
 }
+
+export { determineBillingType };
 
 export default { completeSessionV2 };

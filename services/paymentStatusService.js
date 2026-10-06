@@ -36,6 +36,20 @@ const TIMEZONE = 'America/Sao_Paulo';
 
 const roundCurrency = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
+/**
+ * Payment de convênio só vira 'paid' quando o CONVÊNIO paga (baixa/recebimento). Marcar como pago por
+ * qualquer outro fluxo (worker de pagamento, markAsPaid, webhook, tela manual) deixa o caixa com
+ * dinheiro que não entrou e trava o faturamento (caso Antonella/Unimed, 2026-10-06).
+ */
+export class ConvenioPaidWithoutReceiptError extends Error {
+    constructor(paymentId, reason) {
+        super(`[PaymentStatusService] Payment de convênio ${paymentId} só pode ser marcado como pago pela baixa/recebimento do convênio (reason=${reason})`);
+        this.name = 'ConvenioPaidWithoutReceiptError';
+        this.code = 'CONVENIO_PAID_REQUIRES_INSURANCE_RECEIPT';
+        this.details = { paymentId: String(paymentId), reason };
+    }
+}
+
 export class PaymentBatchTransitionError extends Error {
     constructor(code, message, details = undefined) {
         super(message);
@@ -539,7 +553,10 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
         // em 'paid'. Default false pra não afetar os ~20 call sites existentes
         // deste serviço — só quem sabe que está FORA de um fluxo dedicado de
         // quitação (hoje: PATCH /api/v2/payments/:id) deve ligar isso.
-        reconcilePatientBalance = false
+        reconcilePatientBalance = false,
+        // 🏥 Declarado SOMENTE por quem representa o recebimento do convênio (baixa automática/manual
+        // e recebimento por lote). Sem isto, convênio não entra em 'paid'.
+        insuranceReceipt = false
     } = options;
 
     // 1. Leitura inicial só pra decidir o caminho — early-return de "não
@@ -557,6 +574,11 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
 
     if (oldStatus === newStatus) {
         return { payment: initialPayment, event: null, changed: false };
+    }
+
+    // 🛡️ GUARDA: convênio não vira 'paid' fora do recebimento do convênio.
+    if (newStatus === 'paid' && initialPayment.billingType === 'convenio' && !insuranceReceipt) {
+        throw new ConvenioPaidWithoutReceiptError(paymentId, reason);
     }
 
     // 🛡️ GUARDA FINANCEIRA: consumo de pacote (isFromPackage=true ou
