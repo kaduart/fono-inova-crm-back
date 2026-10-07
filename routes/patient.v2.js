@@ -18,6 +18,7 @@ import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import Patient from '../models/Patient.js';
 import PatientsView from '../models/PatientsView.js';
 import { buildPatientView } from '../domains/clinical/services/patientProjectionService.js';
+import { getPatientPendingSnapshot } from '../services/patientPendingSnapshot.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { getProjectionWorkerStatus, getProjectionMetrics } from '../domains/clinical/workers/patientProjectionWorker.js';
 import patientV2DebugRoutes from './patient.v2.debug.js';
@@ -279,8 +280,10 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     const duration = Date.now() - startTime;
     
     // ✅ NORMALIZAÇÃO: Garante que _id seja o patientId real (não o ID da view)
+    const financialSnapshot = await getPatientPendingSnapshot(resolvedPatientId);
     const normalizedView = {
       ...view,
+      stats: { ...view.stats, ...financialSnapshot.stats },
       _id: view.patientId?.toString() || view._id.toString(),
       id: view.patientId?.toString() || view._id.toString(),
     };

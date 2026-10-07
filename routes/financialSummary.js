@@ -18,6 +18,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { getPatientPendingSnapshot } from '../services/patientPendingSnapshot.js';
 import { auth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
@@ -458,26 +459,13 @@ router.get('/patient/:patientId/summary/batch', asyncHandler(async (req, res) =>
  */
 router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res) => {
     const { patientId } = req.params;
-
-    const patientOid = mongoose.Types.ObjectId.isValid(patientId)
-        ? new mongoose.Types.ObjectId(patientId)
-        : patientId;
+    const snapshot = await getPatientPendingSnapshot(patientId);
 
     // Fonte de verdade: Payment records pending.
     // ✅ CORREÇÃO: débito só existe se a sessão foi completada.
     // Agendamentos futuros são "a receber", não dívida real do paciente.
     // Inclui sessions de pacotes — NÃO usa calculateRealPackageDebt.
-    const pendingPayments = await Payment.find({
-        $and: [
-            { $or: [{ patient: patientOid }, { patient: patientId }, { patientId: patientId }] },
-            { status: 'pending' },
-            { kind: { $ne: 'package_consumed' } },
-            { billingType: { $nin: ['convenio', 'liminar'] } }
-        ]
-    })
-    .sort({ createdAt: -1 })
-    .populate('appointment', 'date time specialty sessionValue package operationalStatus')
-    .lean();
+    const pendingPayments = snapshot.receivablePayments;
 
     // Filtra: mantém apenas payments sem agendamento (débito manual) ou com sessão completada.
     // 🚨 FIX (2026-09-04): usava appointment.clinicalStatus, mas a fonte da
@@ -491,9 +479,7 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
     // real de R$180 sumia desta lista mas continuava aparecendo no resumo
     // legado do cabeçalho do paciente (PatientBalanceHeader), gerando
     // divergência entre as duas telas do mesmo paciente.
-    const realDebtPayments = pendingPayments.filter(p =>
-        !p.appointment || p.appointment.operationalStatus === 'completed'
-    );
+    const realDebtPayments = snapshot.payments;
 
     const items = realDebtPayments.map(p => {
         const appt = p.appointment;
@@ -525,6 +511,9 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         data: items,
         meta: {
             totalPending: items.reduce((s, p) => s + (p.amount || 0), 0),
+            availableCredit: snapshot.stats.availableCredit,
+            appliedCredit: snapshot.stats.appliedCredit,
+            totalPendingNet: snapshot.stats.totalPendingParticularNet,
             count: items.length,
             totalReceivable: pendingPayments.reduce((s, p) => s + (p.amount || 0), 0),
             receivableCount: pendingPayments.length
@@ -550,28 +539,69 @@ router.get('/patient/:patientId/paid-payments', asyncHandler(async (req, res) =>
         kind: { $nin: LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS }
     })
     .sort({ financialDate: -1, paidAt: -1 })
-    .populate('appointment', 'date time sessionValue')
+    .populate({
+        path: 'appointment',
+        select: 'date time sessionValue specialty doctor',
+        populate: { path: 'doctor', select: 'fullName specialty' }
+    })
+    .populate('doctor', 'fullName specialty')
     .lean();
+
+    // Recebimento (recibo) ao qual cada sessão quitada pertence. O recibo agregador
+    // (monthly_settlement / debt_settlement) fica fora da lista acima (é não-contabilizável),
+    // mas guarda settledPaymentIds + forma de pagamento reais do recebimento. Sem isso a aba
+    // Quitados não consegue agrupar "o que foi pago junto" (ex.: 7 sessões quitadas em 29/09).
+    const receiptByPaymentId = new Map();
+    if (paidPayments.length > 0) {
+        const receipts = await Payment.find({
+            settledPaymentIds: { $in: paidPayments.map(p => p._id) },
+            kind: { $in: [PAYMENT_KIND.MONTHLY_SETTLEMENT, PAYMENT_KIND.DEBT_SETTLEMENT] },
+            status: { $nin: ['canceled', 'cancelled', 'refunded'] }
+        })
+        .select('_id paidAt paymentMethod splitMethods notes amount settledPaymentIds')
+        .lean();
+
+        for (const r of receipts) {
+            for (const pid of r.settledPaymentIds || []) {
+                receiptByPaymentId.set(pid.toString(), r);
+            }
+        }
+    }
 
     res.json({
         success: true,
-        data: paidPayments.map(p => ({
-            id: p._id.toString(),
-            amount: p.amount,
-            status: p.status,
-            paidAt: p.paidAt,
-            financialDate: p.financialDate,
-            createdAt: p.createdAt,
-            paymentMethod: p.paymentMethod,
-            splitMethods: p.splitMethods,
-            appointment: p.appointment ? {
-                id: p.appointment._id?.toString(),
-                date: p.appointment.date,
-                time: p.appointment.time,
-                sessionValue: p.appointment.sessionValue
-            } : null,
-            description: p.description || null
-        })),
+        data: paidPayments.map(p => {
+            const receipt = receiptByPaymentId.get(p._id.toString());
+            return {
+                id: p._id.toString(),
+                amount: p.amount,
+                status: p.status,
+                paidAt: p.paidAt,
+                financialDate: p.financialDate,
+                createdAt: p.createdAt,
+                paymentMethod: p.paymentMethod,
+                splitMethods: p.splitMethods,
+                appointment: p.appointment ? {
+                    id: p.appointment._id?.toString(),
+                    date: p.appointment.date,
+                    time: p.appointment.time,
+                    sessionValue: p.appointment.sessionValue
+                } : null,
+                description: p.description || null,
+                specialty: p.appointment?.specialty || p.doctor?.specialty || p.appointment?.doctor?.specialty || null,
+                doctorName: p.doctor?.fullName || p.appointment?.doctor?.fullName || null,
+                serviceDate: p.serviceDate || null,
+                settlement: receipt ? {
+                    id: receipt._id.toString(),
+                    paidAt: receipt.paidAt || null,
+                    paymentMethod: receipt.paymentMethod || null,
+                    splitMethods: receipt.splitMethods || null,
+                    totalAmount: receipt.amount,
+                    sessionCount: (receipt.settledPaymentIds || []).length,
+                    notes: receipt.notes || null
+                } : null
+            };
+        }),
         meta: {
             totalPaid: paidPayments.reduce((s, p) => s + (p.amount || 0), 0),
             count: paidPayments.length

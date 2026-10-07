@@ -56,6 +56,10 @@ const balanceTransactionSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    // Consumo de crédito avulso: preserva o valor original para auditoria.
+    creditUsedAmount: { type: Number, min: 0, default: 0 },
+    creditUsedAt: { type: Date, default: null },
+    creditUsageReason: { type: String, default: null },
     // Para débitos: se está totalmente quitado
     isPaid: {
         type: Boolean,

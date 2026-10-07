@@ -26,6 +26,7 @@ import LiminarContract from '../../../models/LiminarContract.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { PatientViewContract } from '../../../contracts/ProjectionContract.js';
 import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS } from '../../../constants/financial.js';
+import { getRemainingPatientCredit } from '../../../services/patientPendingSnapshot.js';
 
 const logger = createContextLogger('PatientProjection');
 
@@ -223,9 +224,7 @@ export async function buildPatientView(patientId, options = {}) {
     // um recebimento anterior — o certo é dever líquido R$360, não os dois
     // números lado a lado). Por isso calculamos aqui o líquido, no backend
     // (regra do projeto: KPIs financeiros nunca no frontend).
-    const availableCredit = (balance?.transactions || [])
-      .filter(t => t.type === 'credit' && typeof t.correlationId === 'string' && t.correlationId.startsWith('receive_credit_'))
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const availableCredit = getRemainingPatientCredit(balance?.transactions);
     stats.availableCredit = availableCredit;
     stats.totalPendingParticularNet = Math.max(0, stats.totalPendingParticular - availableCredit);
     stats.netAvailableCredit = Math.max(0, availableCredit - stats.totalPendingParticular);
