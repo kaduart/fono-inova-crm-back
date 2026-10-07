@@ -18,7 +18,7 @@ import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import Patient from '../models/Patient.js';
 import PatientsView from '../models/PatientsView.js';
 import { buildPatientView } from '../domains/clinical/services/patientProjectionService.js';
-import { getPatientPendingSnapshot } from '../services/patientPendingSnapshot.js';
+import { getPatientPendingSnapshot, getPatientPendingSnapshots } from '../services/patientPendingSnapshot.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { getProjectionWorkerStatus, getProjectionMetrics } from '../domains/clinical/workers/patientProjectionWorker.js';
 import patientV2DebugRoutes from './patient.v2.debug.js';
@@ -120,8 +120,11 @@ router.get('/', flexibleAuth, async (req, res) => {
       });
     
     // ✅ CORREÇÃO: Mapeia para garantir que _id seja o patientId (não o ID da view)
+    const financialSnapshots = await getPatientPendingSnapshots(result.patients.map(p => p.patientId || p._id));
     const normalizedPatients = result.patients.map(p => ({
       ...p,
+      stats: { ...p.stats, ...financialSnapshots.get(String(p.patientId || p._id)).stats },
+      balance: { ...p.balance, current: financialSnapshots.get(String(p.patientId || p._id)).stats.totalPendingParticularNet },
       _id: p.patientId?.toString() || p._id.toString(), // Usa patientId como _id
       id: p.patientId?.toString() || p._id.toString(),  // Campo id também
     }));
@@ -284,6 +287,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     const normalizedView = {
       ...view,
       stats: { ...view.stats, ...financialSnapshot.stats },
+      balance: { ...view.balance, current: financialSnapshot.stats.totalPendingParticularNet },
       _id: view.patientId?.toString() || view._id.toString(),
       id: view.patientId?.toString() || view._id.toString(),
     };

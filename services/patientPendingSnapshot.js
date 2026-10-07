@@ -45,15 +45,29 @@ export function summarizePatientPending(payments, transactions = []) {
 
 // O perfil e a lista de débitos leem a mesma fonte atual, sem depender da projeção assíncrona.
 export async function getPatientPendingSnapshot(patientId) {
-  const oid = new mongoose.Types.ObjectId(patientId);
-  const [payments, balance] = await Promise.all([
+  return (await getPatientPendingSnapshots([patientId])).get(String(patientId));
+}
+
+// Uma consulta por coleção para a página inteira, sem uma requisição por paciente.
+export async function getPatientPendingSnapshots(patientIds) {
+  const ids = [...new Set(patientIds.map(String))];
+  if (!ids.length) return new Map();
+  const oids = ids.map(id => new mongoose.Types.ObjectId(id));
+  const keys = [...oids, ...ids];
+  const [payments, balances] = await Promise.all([
     Payment.find({
-      $or: [{ patient: oid }, { patient: patientId }, { patientId: oid }, { patientId }],
+      $or: [{ patient: { $in: keys } }, { patientId: { $in: keys } }],
       status: { $in: ['pending', 'billed'] },
       kind: { $nin: LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS },
     }).sort({ createdAt: -1 })
       .populate('appointment', 'date time specialty sessionValue package operationalStatus').lean(),
-    PatientBalance.findOne({ patient: oid }).select('transactions').lean(),
+    PatientBalance.find({ patient: { $in: oids } }).select('patient transactions').lean(),
   ]);
-  return summarizePatientPending(payments, balance?.transactions);
+  const grouped = new Map(ids.map(id => [id, []]));
+  for (const payment of payments) {
+    const id = String(payment.patient || payment.patientId);
+    grouped.get(id)?.push(payment);
+  }
+  const balanceByPatient = new Map(balances.map(b => [String(b.patient), b]));
+  return new Map(ids.map(id => [id, summarizePatientPending(grouped.get(id), balanceByPatient.get(id)?.transactions)]));
 }

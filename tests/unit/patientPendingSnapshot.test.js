@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { summarizePatientPending } from '../../services/patientPendingSnapshot.js';
+import { describe, it, expect, vi } from 'vitest';
+import Payment from '../../models/Payment.js';
+import PatientBalance from '../../models/PatientBalance.js';
+import { summarizePatientPending, getPatientPendingSnapshots } from '../../services/patientPendingSnapshot.js';
 
 describe('patient pending snapshot', () => {
   const completed = amount => ({ amount, status: 'pending', billingType: 'particular',
@@ -37,5 +39,29 @@ describe('patient pending snapshot', () => {
     expect(used.stats).toMatchObject({ availableCredit: 0, appliedCredit: 0, totalPendingNet: 1250 });
     const partial = summarizePatientPending([completed(1250)], [{ ...credit, creditUsedAmount: 70 }]);
     expect(partial.stats).toMatchObject({ availableCredit: 50, appliedCredit: 50, totalPendingNet: 1200 });
+  });
+
+  it('loads a page in batches and keeps patient debt and credits isolated', async () => {
+    const first = '685b0cfaaec14c7163585b5b';
+    const second = '685b0cfaaec14c7163585b5c';
+    const query = { sort: vi.fn().mockReturnThis(), populate: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([
+        { ...completed(1090), patient: first }, { ...completed(200), patient: second },
+      ]) };
+    const paymentFind = vi.spyOn(Payment, 'find').mockReturnValue(query);
+    const balanceFind = vi.spyOn(PatientBalance, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue([
+        { patient: first, transactions: [{ ...credit, creditUsedAmount: 120 }] },
+        { patient: second, transactions: [credit] },
+      ]),
+    });
+    try {
+      const snapshots = await getPatientPendingSnapshots([first, second]);
+      expect(snapshots.get(first).stats.totalPendingNet).toBe(1090);
+      expect(snapshots.get(first).stats.availableCredit).toBe(0);
+      expect(snapshots.get(second).stats.totalPendingNet).toBe(80);
+      expect(paymentFind).toHaveBeenCalledTimes(1);
+      expect(balanceFind).toHaveBeenCalledTimes(1);
+    } finally { paymentFind.mockRestore(); balanceFind.mockRestore(); }
   });
 });
