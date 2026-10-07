@@ -48,6 +48,14 @@ const ORIGIN_CONDITIONS = {
     manual: { fixedExpenseId: null, category: { $ne: 'commission' } }
 };
 
+// String de 24 hex → ObjectId; qualquer outra coisa passa intacta (o Mongoose
+// continua rejeitando valor inválido em find/count como antes).
+export function toObjectIdIfValid(value) {
+    return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value)
+        ? new mongoose.Types.ObjectId(value)
+        : value;
+}
+
 // Ordem de listagem determinística: sem critério de desempate, a ordem de
 // despesas do mesmo dia dependia da ordem em que o banco devolvia os médicos na
 // geração de comissões (aparentava aleatória). Collation pt strength 1 ignora
@@ -66,8 +74,8 @@ export const EXPENSE_LIST_COLLATION = { collation: { locale: 'pt', strength: 1 }
  */
 export function buildExpenseListPipeline({ filters, skip, limit }) {
     const match = { ...filters };
-    if (typeof match.relatedDoctor === 'string' && mongoose.isValidObjectId(match.relatedDoctor)) {
-        match.relatedDoctor = new mongoose.Types.ObjectId(match.relatedDoctor);
+    if (typeof match.relatedDoctor === 'string') {
+        match.relatedDoctor = toObjectIdIfValid(match.relatedDoctor);
     }
 
     return [
@@ -132,7 +140,9 @@ router.get('/', auth, async (req, res) => {
             filters.date = { $gte: startDate, $lte: endDate };
         }
 
-        if (doctorId) filters.relatedDoctor = doctorId;
+        // ObjectId aqui (e não string): $match de aggregate não faz cast como find/count,
+        // então com string os totais por profissional vinham zerados.
+        if (doctorId) filters.relatedDoctor = toObjectIdIfValid(doctorId);
         if (category) filters.category = category;
         if (subcategory) filters.subcategory = subcategory;
         if (status) filters.status = status;

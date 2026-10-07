@@ -68,7 +68,13 @@ export async function getAttributionByPhone(phone) {
   const normalized = normalizeE164BR(phone);
   if (!normalized) return null;
 
-  const attr = await LeadAttribution.findOne({ phone: normalized }).lean();
+  // WhatsApp costuma entregar o número no formato antigo (sem o 9 após o DDD) e o cadastro tem o 9
+  // (ou o contrário): busca as duas variantes, senão a origem nunca casa com o paciente.
+  const variants = [normalized];
+  const m = normalized.match(/^55(\d{2})(9?)(\d{8})$/);
+  if (m) variants.push(m[2] ? `55${m[1]}${m[3]}` : `55${m[1]}9${m[3]}`);
+
+  const attr = await LeadAttribution.findOne({ phone: { $in: variants } }).sort({ firstMessageAt: 1 }).lean();
   if (attr) return { ...attr, from: 'attribution' };
 
   const lead = await Lead.findOne({ 'contact.phone': normalized })

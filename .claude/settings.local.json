@@ -1,4 +1,10 @@
+
 {
+  "permissions": {
+    "allow": [
+      "Bash(node _xref*_tmp.mjs)"
+    ]
+  },
   "description": "Impeccable design detector: immediate-tier checks after Edit/Write on UI files, full-rule deep pass on Stop.",
   "hooks": {
     "PostToolUse": [
