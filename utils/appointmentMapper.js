@@ -165,6 +165,9 @@ export const mapAppointmentToEvent = (appt, extra = {}) => {
         insuranceValue: appt.insuranceValue || 0,
         insuranceGuide: appt.insuranceGuide?._id?.toString() || appt.insuranceGuide?.toString() || null,
         insuranceGuideNumber: appt.insuranceGuide?.number || null,
+        // Progresso da guia (exibição no card do calendário). usedSessions conta sessões agendadas/consumidas da guia.
+        insuranceGuideTotalSessions: typeof appt.insuranceGuide?.totalSessions === 'number' ? appt.insuranceGuide.totalSessions : null,
+        insuranceGuideUsedSessions: typeof appt.insuranceGuide?.usedSessions === 'number' ? appt.insuranceGuide.usedSessions : null,
         authorizationCode: appt.authorizationCode || '',
         // 📦 PACOTE (se houver)
         // 🚨 FIX (2026-09-04): Package.remainingSessions é virtual (totalSessions -

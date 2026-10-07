@@ -533,7 +533,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             // Número da guia — exibido no card do calendário pra desambiguar qual guia
             // cobre cada sessão de convênio (achado real: paciente com múltiplas guias
             // da mesma especialidade, sessão ligada à guia errada só visível no banco).
-            { path: 'insuranceGuide', select: 'number' },
+            { path: 'insuranceGuide', select: 'number totalSessions usedSessions' },
             // createdAt exposto para uso futuro (paymentTiming) — NÃO usar como proxy
             // de "pago antes/depois de completar" comparando com appointment.updatedAt;
             // esse campo não representa o momento da conclusão. Ver auditoria 2026-07-09.
