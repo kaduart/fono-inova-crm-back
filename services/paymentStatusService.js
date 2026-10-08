@@ -31,6 +31,7 @@ import {
 import { isPackageConsumptionPayment, PackageConsumptionInBillingError } from '../utils/packageConsumptionPayment.js';
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
+import { reconcilePackagesForPayments } from './packagePaymentReconciliation.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -602,7 +603,10 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     // a dele; senão abrimos uma própria só para este escopo.
     const willAttemptReversal = oldStatus === 'paid' && newStatus !== 'paid';
     let ownSession = null;
-    if (willAttemptReversal && !externalSession) {
+    // Baixa particular com vínculo pode encerrar pacote; cancela e quita atomicamente.
+    const willSettlePackage = newStatus === 'paid' && initialPayment.billingType === 'particular'
+        && (initialPayment.package || initialPayment.appointment || initialPayment.session);
+    if ((willAttemptReversal || willSettlePackage) && !externalSession) {
         ownSession = await mongoose.startSession();
     }
 
@@ -677,7 +681,8 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
             await reverseActiveCreditIfAny(payment, { mongoSession, userId, reason, oldStatus: localOldStatus, newStatus });
         }
 
-        return { payment, localOldStatus, changed: true };
+        const reconciledPackageIds = await reconcilePackagesForPayments([payment], mongoSession, { closeSettled: newStatus === 'paid' });
+        return { payment, localOldStatus, changed: true, reconciledPackageIds };
     };
 
     let coreResult;
@@ -696,7 +701,7 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
     if (!coreResult.changed) {
         return coreResult;
     }
-    const { payment, localOldStatus } = coreResult;
+    const { payment, localOldStatus, reconciledPackageIds } = coreResult;
     const mongoSession = externalSession || null;
 
     // 🏦 Concilia débito órfão no PatientBalance — só quando o caller pediu
@@ -729,7 +734,7 @@ export async function transitionPaymentStatus(paymentId, newStatus, options = {}
                         patientId: payment.patient?.toString?.(),
                         appointmentId: payment.appointment?.toString?.(),
                         sessionId: payment.session?.toString?.(),
-                        packageId: payment.package?.toString?.(),
+                        packageId: payment.package?.toString?.() || reconciledPackageIds[0],
                         from: oldStatus,
                         to: newStatus,
                         amount: payment.amount,

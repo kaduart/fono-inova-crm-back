@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import Lead from '../../models/Leads.js';
 import LeadAttribution from '../../models/LeadAttribution.js';
 import AdConversion from '../../models/AdConversion.js';
+import OpenAIAdConversion from '../../models/OpenAIAdConversion.js';
 import AdSpend from '../../models/AdSpend.js';
 import { flexibleAuth } from '../../middleware/amandaAuth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
@@ -235,13 +236,16 @@ router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
         .map((r) => ({ ...r, bookingRate: r.conversations ? +(r.firstAppointments / r.conversations).toFixed(4) : null }))
         .sort((x, y) => y.firstAppointments - x.firstAppointments || y.conversations - x.conversations);
 
+    const sentOpenAI = await OpenAIAdConversion.countDocuments({
+        status: 'sent', eventTime: { $gte: since },
+    });
     const totals = data.reduce((t, r) => ({
         conversations: t.conversations + (r.conversations || 0),
         firstAppointments: t.firstAppointments + (r.firstAppointments || 0),
         revenue: t.revenue + (r.revenue || 0),
     }), { conversations: 0, firstAppointments: 0, revenue: 0 });
 
-    res.json({ success: true, days, data, totals });
+    res.json({ success: true, days, data, totals: { ...totals, sentOpenAI } });
 }));
 
 /**

@@ -89,6 +89,14 @@ const packageSchema = new mongoose.Schema({
     description: 'Controle do status financeiro do pacote'
   },
 
+  settlementClosure: {
+    closedAt: Date,
+    reason: String,
+    contractValue: Number,
+    billableValue: Number,
+    canceledAppointmentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
+  },
+
   paidSessions: {
     type: Number,
     default: 0,
@@ -368,9 +376,10 @@ packageSchema.set('toJSON', { virtuals: true });
 packageSchema.set('toObject', { virtuals: true })
 
 packageSchema.pre('save', function (next) {
+  const billableValue = this.settlementClosure?.billableValue ?? this.totalValue;
   if (this.totalValue !== undefined && !isNaN(this.totalValue)) {
     // 💰 Balance financeiro: quanto falta receber
-    this.financialBalance = this.totalValue - (this.totalPaid || 0);
+    this.financialBalance = billableValue - (this.totalPaid || 0);
 
     // 🎯 Balance de consumo: quanto de crédito de sessões ainda existe
     // Pode ser negativo quando o paciente consome mais sessões do que contratou
@@ -383,7 +392,7 @@ packageSchema.pre('save', function (next) {
   // Status financeiro baseado no dinheiro realmente recebido
   if (this.totalPaid === 0) {
     this.financialStatus = 'unpaid';
-  } else if (this.totalPaid < this.totalValue) {
+  } else if (this.totalPaid < billableValue) {
     this.financialStatus = 'partially_paid';
   } else {
     this.financialStatus = 'paid';

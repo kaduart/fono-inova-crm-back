@@ -328,7 +328,7 @@ export const eventToQueueMap = {
 
     // Phase 2: adicionar 'appointment-processing' quando handler for criado
     [EventTypes.PAYMENT_CREATED]:              'patient-projection',
-    [EventTypes.PAYMENT_STATUS_CHANGED]:       'patient-projection',
+    [EventTypes.PAYMENT_STATUS_CHANGED]:       ['patient-projection', 'package-projection'],
     [EventTypes.PAYMENT_CANCELLED]:            'patient-projection',
     'INSURANCE_PAYMENT_AUTO_SETTLED': ['patient-projection', 'balance-update'],
     [EventTypes.INSURANCE_GUIDE_CREATED]: ['patient-projection'],

@@ -19,6 +19,7 @@ import Package from '../models/Package.js';
 import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { getPatientPendingSnapshot } from '../services/patientPendingSnapshot.js';
+import { reconcilePackagesForPayments } from '../services/packagePaymentReconciliation.js';
 import { auth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
@@ -949,39 +950,9 @@ router.post('/receive', auth, asyncHandler(async (req, res) => {
                 })), { session: mongoSession });
             }
 
-            // 3. Packages afetados: recalcula totalPaid/balance a partir das sessions pagas
-            const packageIds = [...new Set(toSettle.filter(p => p.package).map(p => p.package.toString()))];
-            if (packageIds.length > 0) {
-                const [packages, paidCounts] = await Promise.all([
-                    Package.find({ _id: { $in: packageIds } }).session(mongoSession).lean(),
-                    Session.aggregate([
-                        { $match: { package: { $in: packageIds.map(id => new mongoose.Types.ObjectId(id)) }, isPaid: true } },
-                        { $group: { _id: '$package', count: { $sum: 1 } } }
-                    ]).session(mongoSession)
-                ]);
-                const paidCountByPkg = new Map(paidCounts.map(p => [p._id.toString(), p.count]));
-                const packageBulkOps = [];
-                for (const pkg of packages) {
-                    const pkgId = pkg._id.toString();
-                    const paidCount = paidCountByPkg.get(pkgId) || 0;
-                    const consumedValue = paidCount * (pkg.sessionValue || 0);
-                    const totalPaid = consumedValue;
-                    const balance = Math.max(0, (pkg.totalValue || 0) - totalPaid);
-                    let financialStatus = 'unpaid';
-                    if (balance <= 0 && totalPaid > 0) financialStatus = 'paid';
-                    else if (totalPaid > 0) financialStatus = 'partially_paid';
-                    packageBulkOps.push({
-                        updateOne: {
-                            filter: { _id: pkg._id },
-                            update: { $set: { totalPaid, consumedValue, balance, financialStatus, updatedAt: now } }
-                        }
-                    });
-                    affectedPackageIds.push(pkgId);
-                }
-                if (packageBulkOps.length > 0) {
-                    await Package.bulkWrite(packageBulkOps, { session: mongoSession });
-                }
-            }
+            // 3. Pacotes afetados: soma Payments quitados, inclusive vínculo pelo Appointment.
+            const reconciledPackageIds = await reconcilePackagesForPayments(toSettle, mongoSession, { closeSettled: true });
+            affectedPackageIds.push(...reconciledPackageIds);
 
             // 4. Recibo consolidado auditável (serviceDate = competência mais recente das sessões quitadas)
             const settledDates = toSettle

@@ -21,6 +21,8 @@ import { Worker } from 'bullmq';
 import { redisConnection, getQueue } from '../../../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildPackageView, deletePackageView } from '../services/PackageProjectionService.js';
+import Payment from '../../../models/Payment.js';
+import { reconcilePackagesForPayments } from '../../../services/packagePaymentReconciliation.js';
 
 const logger = createContextLogger('PackageProjectionWorker');
 
@@ -217,6 +219,13 @@ async function processEvent(eventType, payload, correlationId) {
   const { packageId, patientId } = payload;
   
   switch (eventType) {
+    case 'PAYMENT_STATUS_CHANGED': {
+      const payment = payload.paymentId ? await Payment.findById(payload.paymentId).lean() : null;
+      const affectedIds = payment ? await reconcilePackagesForPayments([payment], null, { closeSettled: payload.to === 'paid' && payment.status === 'paid' }) : [];
+      const ids = [...new Set([...affectedIds, ...(packageId ? [String(packageId)] : [])])];
+      if (!ids.length) return { operation: 'ignored', reason: 'no_package_id' };
+      return Promise.all(ids.map(id => handlePackageBuild(id, correlationId)));
+    }
     // ========================================
     // PACKAGE LIFECYCLE
     // ========================================

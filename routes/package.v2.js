@@ -125,6 +125,23 @@ router.get('/', flexibleAuth, async (req, res) => {
         .lean(),
       PackagesView.countDocuments(query)
     ]);
+
+    // A projeção é assíncrona; a baixa já atualizou os totais transacionais.
+    // Uma leitura em lote evita devolver dinheiro antigo logo após o recebimento.
+    const financialPackages = packages.length ? await Package.find({
+      _id: { $in: packages.map(pkg => pkg.packageId) },
+      $or: [{ model: 'per_session' }, { paymentType: 'per-session' }],
+      type: { $nin: ['convenio', 'liminar'] },
+    }).select('status totalPaid balance financialBalance financialStatus').lean() : [];
+    const financialById = new Map(financialPackages.map(pkg => [String(pkg._id), pkg]));
+    for (const pkg of packages) {
+      const current = financialById.get(String(pkg.packageId));
+      if (current) {
+        for (const field of ['status', 'totalPaid', 'balance', 'financialBalance', 'financialStatus']) {
+          if (current[field] !== undefined) pkg[field] = current[field];
+        }
+      }
+    }
     
     const duration = Date.now() - startTime;
     

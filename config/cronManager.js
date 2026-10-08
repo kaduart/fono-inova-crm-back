@@ -83,6 +83,12 @@ export async function startAllCrons() {
     const { scheduleFixedExpenseGeneration } = await import("../crons/fixedExpenseGeneration.cron.js");
     startCron('fixedExpenseGeneration', () => scheduleFixedExpenseGeneration());
 
+    // OpenAI: API server-side, only the explicitly authorized minimal event.
+    if (process.env.OPENAI_ADS_CONVERSIONS_API_KEY?.trim()) {
+        const { initOpenAIAdsConversionCron } = await import("../crons/openaiAdsConversion.cron.js");
+        startCron('openaiAdsConversion', () => initOpenAIAdsConversionCron());
+    }
+
     // Conversões offline (Meta CAPI + Google Ads) — desligado por padrão
     if (process.env.ENABLE_ADS_CONVERSION === 'true') {
         const { initAdsConversionCron } = await import("../crons/adsConversion.cron.js");

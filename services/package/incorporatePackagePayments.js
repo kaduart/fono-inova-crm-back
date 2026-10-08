@@ -5,6 +5,7 @@ import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
 import PatientBalance from '../../models/PatientBalance.js';
 import { transitionPaymentStatus } from '../paymentStatusService.js';
+import { reconcilePackagePaymentIds } from '../packagePaymentReconciliation.js';
 
 function settlementError(message, code = 'PACKAGE_SETTLEMENT_INVALID', meta) {
   return Object.assign(new Error(message), { statusCode: 400, code, meta });
@@ -191,5 +192,9 @@ export async function incorporatePackagePayments(pkg, paymentIds, { mongoSession
 
     await Package.findByIdAndUpdate(packageId, packageUpdate, { session: mongoSession });
 
-    return { paymentsCount: payments.length, settledCount: pendingPayments.length, totalSettled: totalToSettle, newBalance: balance, totalPaid };
+    await reconcilePackagePaymentIds([String(packageId)], mongoSession, { closeSettled: true });
+    const reconciled = await Package.findById(packageId).session(mongoSession);
+
+    return { paymentsCount: payments.length, settledCount: pendingPayments.length, totalSettled: totalToSettle,
+      newBalance: reconciled.balance, totalPaid: reconciled.totalPaid };
 }
