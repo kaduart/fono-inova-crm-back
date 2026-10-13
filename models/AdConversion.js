@@ -22,6 +22,7 @@ const adConversionSchema = new mongoose.Schema({
   eventTime: { type: Date, required: true },
   meta: { type: platformSchema, default: () => ({}) },
   google: { type: platformSchema, default: () => ({}) },
+  tiktok: { type: platformSchema, default: () => ({}) },
   attempts: { type: Number, default: 0 },
   nextAttemptAt: { type: Date, default: Date.now, index: true },
   done: { type: Boolean, default: false, index: true },

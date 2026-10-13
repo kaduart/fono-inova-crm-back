@@ -35,7 +35,7 @@ async function processGmbJob(job) {
   let mediaUrl = null;
   let mediaType = null;
   if (generateImage !== false) {
-    const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false, job.data.provider || 'auto', { postId: post._id });
+    const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false, job.data.provider || 'auto', { postId: post._id, realOnly: true });
     mediaUrl = imgResult?.url || null;
     mediaType = mediaUrl ? 'image' : null;
   }

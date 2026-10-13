@@ -1135,7 +1135,7 @@ function generateFallbackPost(especialidade) {
   const templates = [
     `${especialidade.gancho}\n\nSe você reconhece esse sinal no seu filho, saiba que não está sozinho — e que existe solução.\n\nNa Fono Inova, nossos especialistas em ${especialidade.nome} identificam a causa real e criam um plano personalizado para cada criança.\n\nQuanto antes a avaliação, melhores os resultados. Agende uma avaliação pelo link abaixo 👇`,
 
-    `Você sabia que ${dor} é mais comum do que parece?\n\nMuitos pais passam meses esperando "melhorar sozinho" — e perdem o momento ideal de intervenção.\n\nNa Fono Inova em Anápolis, atendemos ${especialidade.publico} com uma equipe especializada e ambiente pensado para crianças.\n\nAgende uma avaliação pelo link abaixo 👇`,
+    `Se ${dor}, saiba que isso é mais comum do que parece.\n\nMuitos pais passam meses esperando "melhorar sozinho" — e perdem o momento ideal de intervenção.\n\nNa Fono Inova em Anápolis, atendemos ${especialidade.publico} com uma equipe especializada e ambiente pensado para crianças.\n\nAgende uma avaliação pelo link abaixo 👇`,
 
     `${especialidade.gancho}\n\nIsso pode ser sinal de que seu filho precisa de apoio especializado em ${especialidade.nome}.\n\nNa Fono Inova, cada criança recebe um atendimento único — porque cada desenvolvimento é único.\n\nNão espere o problema aumentar. Agende uma avaliação pelo link abaixo 👇`
   ];
@@ -1456,6 +1456,13 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     }
   } else if (options.forceNew) {
     console.log('🆕 [ImageBank] Pulando reúso - gerando imagem nova...');
+  }
+
+  // 🚫 Posts automáticos: sem foto real no ImageBank, não gera IA (confiança no perfil).
+  // Libere com GMB_ALLOW_AI_IMAGES=true. Regeneração manual (forceNew) continua liberada.
+  if (options.realOnly && provider === 'auto' && !options.forceNew && process.env.GMB_ALLOW_AI_IMAGES !== 'true') {
+    console.log('🚫 [GMB] Sem foto real no ImageBank e IA desativada — publicando sem imagem');
+    return null;
   }
 
   // Título extraído do conteúdo para o SVG de branding
@@ -2204,7 +2211,7 @@ export async function createDailyPost(options = {}) {
     let mediaUrl = null;
     let imageProvider = null;
     if (options.generateImage !== false) {
-      const imgResult = await generateImageForEspecialidade(especialidade, generated.content, false);
+      const imgResult = await generateImageForEspecialidade(especialidade, generated.content, false, 'auto', { realOnly: true });
       if (imgResult?.url) {
         mediaUrl = imgResult.url;
         imageProvider = imgResult.provider;
@@ -2389,7 +2396,7 @@ export async function createAssistedPost(options = {}) {
     const postData = await generatePostForEspecialidade(especialidade, customTheme, options.funnelStage || 'top');
 
     // Gera imagem
-    const imgResult = await generateImageForEspecialidade(especialidade, postData.content, false);
+    const imgResult = await generateImageForEspecialidade(especialidade, postData.content, false, 'auto', { realOnly: true });
     const mediaUrl = imgResult?.url || null;
 
     // 🎯 GERA LINK WHATSAPP COM CONTEXTO CODIFICADO (dentro do texto!)
