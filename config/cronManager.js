@@ -72,6 +72,12 @@ export async function startAllCrons() {
     const { scheduleStateMachineConvenioReconciliation } = await import("../crons/stateMachineConvenioReconciliation.cron.js");
     startCron('stateMachineConvenioReconciliation', () => scheduleStateMachineConvenioReconciliation());
 
+    // Parabéns de aniversário às 10h (WhatsApp): cron PRONTO, mas DESLIGADO de propósito —
+    // 1ª fase é só manual (botão no dashboard). Para ligar o automático, descomente as 2 linhas.
+    // Idempotente: 1 envio por paciente por ano, então liga sem risco de duplicar com o manual.
+    // const { scheduleBirthdayMessages } = await import("../crons/birthdayMessage.cron.js");
+    // startCron('birthdayMessage', () => scheduleBirthdayMessages());
+
     const { initCommunicationReconciliationCron } = await import("../crons/communicationReconciliation.cron.js");
     startCron('communicationReconciliation', () => initCommunicationReconciliationCron());
 

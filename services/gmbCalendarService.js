@@ -251,13 +251,13 @@ export const CALENDARIO_GMB_30_DIAS = [
   // ═══════════════════════════════════════════════════════════════
   {
     dia: 22,
-    tema: 'Como entender o laudo neuropsicológico infantil?',
-    especialidadeId: 'neuropsicologia',
-    url: 'https://www.clinicafonoinova.com.br/artigos/como-entender-laudo-neuropsicologico',
-    intencao: 'como entender laudo neuropsicológico',
-    angulo: 'educacao',
-    funil: 'middle',
-    tipo: 'autoridade'
+    tema: 'Plano de saúde e reembolso: como começar as terapias do seu filho',
+    especialidadeId: 'plano_saude_reembolso',
+    url: 'https://www.clinicafonoinova.com.br/reembolso-plano-de-saude-anapolis',
+    intencao: 'fonoaudiologia plano de saúde reembolso anapolis',
+    angulo: 'duvida',
+    funil: 'bottom',
+    tipo: 'decisao'
   },
   {
     dia: 23,
@@ -271,12 +271,12 @@ export const CALENDARIO_GMB_30_DIAS = [
   },
   {
     dia: 24,
-    tema: 'Testagem psicológica infantil: como funciona a avaliação?',
-    especialidadeId: 'psicologia',
-    url: 'https://www.clinicafonoinova.com.br/psicologia-infantil-anapolis',
-    intencao: 'testagem psicológica',
-    angulo: 'educacao',
-    funil: 'middle',
+    tema: 'Fisioterapia infantil em Anápolis: quando procurar?',
+    especialidadeId: 'fisioterapia_infantil_anapolis',
+    url: 'https://www.clinicafonoinova.com.br/fisioterapia-infantil-anapolis',
+    intencao: 'fisioterapia infantil anapolis',
+    angulo: 'local',
+    funil: 'bottom',
     tipo: 'decisao'
   },
   {

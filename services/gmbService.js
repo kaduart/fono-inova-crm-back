@@ -245,6 +245,14 @@ const PROBLEMAS_REAIS = {
     'avaliação neuropediátrica anapolis',
     'médico neuro infantil anapolis',
     'neuropediatria anapolis'
+  ],
+  plano_saude_reembolso: [
+    'plano de saúde não cobre terapia do meu filho',
+    'como pedir reembolso de terapia infantil',
+    'fonoaudiologia infantil plano de saúde anapolis',
+    'psicologia infantil plano de saúde reembolso',
+    'fisioterapia infantil reembolso plano de saúde',
+    'terapia infantil particular com recibo'
   ]
 };
 
@@ -271,7 +279,7 @@ export const ESPECIALIDADES = [
   {
     id: 'terapia_ocupacional',
     nome: 'Terapia Ocupacional',
-    url: 'https://www.clinicafonoinova.com.br/terapia-ocupacional',
+    url: 'https://www.clinicafonoinova.com.br/terapia-ocupacional-anapolis',
     foco: 'Autonomia, coordenação motora fina, alimentação, vestir, higiene',
     publico: 'crianças com dificuldades de autonomia',
     gancho: 'Sua criança ainda depende muito de você?'
@@ -279,7 +287,7 @@ export const ESPECIALIDADES = [
   {
     id: 'fisioterapia',
     nome: 'Fisioterapia',
-    url: 'https://www.clinicafonoinova.com.br/fisioterapia',
+    url: 'https://www.clinicafonoinova.com.br/fisioterapia-infantil-anapolis',
     foco: 'Postura, fortalecimento muscular, equilíbrio, tônus, motricidade global',
     publico: 'crianças com dificuldades posturais ou motoras',
     gancho: 'Sua criança tropeça muito ou tem postura curvada?'
@@ -287,7 +295,7 @@ export const ESPECIALIDADES = [
   {
     id: 'psicomotricidade',
     nome: 'Psicomotricidade',
-    url: 'https://www.clinicafonoinova.com.br/psicomotricidade',
+    url: 'https://www.clinicafonoinova.com.br/psicomotricidade-anapolis',
     foco: 'Corpo, movimento, esquema corporal, lateralidade, aprendizagem escolar',
     publico: 'crianças em fase de alfabetização',
     gancho: 'Seu filho confunde letras ou é desatento na escola?'
@@ -312,7 +320,7 @@ export const ESPECIALIDADES = [
   {
     id: 'psicopedagogia_clinica',
     nome: 'Psicopedagogia Clínica',
-    url: 'https://www.clinicafonoinova.com.br/dislexia-infantil',
+    url: 'https://www.clinicafonoinova.com.br/dislexia-anapolis',
     foco: 'Alfabetização, leitura, escrita, matemática, dislexia, disortografia',
     publico: 'crianças com dificuldades escolares',
     gancho: 'Sua criança tem dificuldade para ler ou escrever?'
@@ -320,7 +328,7 @@ export const ESPECIALIDADES = [
   {
     id: 'psicopedagogia',
     nome: 'Psicopedagogia',
-    url: 'https://www.clinicafonoinova.com.br/dificuldade-escolar',
+    url: 'https://www.clinicafonoinova.com.br/psicopedagogia',
     foco: 'Desenvolvimento cognitivo, aprendizagem escolar, raciocínio lógico',
     publico: 'crianças em desenvolvimento escolar',
     gancho: 'O desenvolvimento da sua criança está na idade certa?'
@@ -336,7 +344,7 @@ export const ESPECIALIDADES = [
   {
     id: 'tdah',
     nome: 'TDAH Infantil',
-    url: 'https://www.clinicafonoinova.com.br/tdah-infantil',
+    url: 'https://www.clinicafonoinova.com.br/tdah-anapolis',
     foco: 'TDAH, desatenção, hiperatividade, impulsividade, funções executivas',
     publico: 'crianças com TDAH ou suspeita',
     gancho: 'Seu filho é muito inquieto e não consegue se concentrar?'
@@ -344,7 +352,7 @@ export const ESPECIALIDADES = [
   {
     id: 'autismo',
     nome: 'Avaliação Autismo Infantil',
-    url: 'https://www.clinicafonoinova.com.br/avaliacao-autismo-infantil',
+    url: 'https://www.clinicafonoinova.com.br/autismo-anapolis',
     foco: 'Autismo, TEA, diagnóstico precoce, intervenção especializada',
     publico: 'crianças com suspeita ou diagnóstico de autismo',
     gancho: 'Seu filho não olha nos olhos ou não responde ao nome?'
@@ -432,6 +440,14 @@ export const ESPECIALIDADES = [
     foco: 'Consulta com neuropediatra em Anápolis: TEA, TDAH, atraso neurológico, convulsões',
     publico: 'pais em Anápolis buscando neuropediatra de confiança',
     gancho: 'Procurando neuropediatra em Anápolis?'
+  },
+  {
+    id: 'plano_saude_reembolso',
+    nome: 'Plano de Saúde e Reembolso',
+    url: 'https://www.clinicafonoinova.com.br/reembolso-plano-de-saude-anapolis',
+    foco: 'Atendimento particular com recibo para pedir reembolso ao plano de saúde: fonoaudiologia, psicologia, terapia ocupacional e fisioterapia infantil',
+    publico: 'pais em Anápolis que têm plano de saúde e buscam terapias para o filho',
+    gancho: 'Seu filho precisa de terapia e você tem plano de saúde?'
   }
 ];
 
@@ -448,6 +464,7 @@ const EMERGENCY_FALLBACK_ALIAS = {
   fisioterapia_infantil_anapolis: 'fisioterapia',
   avaliacao_neuropsicologica_anapolis: 'neuropsicologia',
   neuropediatria_anapolis: 'neuropediatria',
+  plano_saude_reembolso: 'fonoaudiologia',
 };
 
 /**
@@ -718,6 +735,12 @@ const PROMPTS_ESPECIALIDADE = {
     urgencia: 'problemas neurológicos infantojuvenis exigem avaliação médica especializada em Anápolis — quanto antes o diagnóstico, melhor o prognóstico',
     diferencial: 'na Fono Inova em Anápolis temos neuropediatra que atende crianças e adolescentes — avaliação completa com direito a receituário e encaminhamentos',
     gatilho: 'pais de Anápolis buscando neuropediatra de confiança para avaliar ou acompanhar a condição neurológica do filho',
+  },
+  plano_saude_reembolso: {
+    dor: 'o filho precisa de fonoaudiologia, psicologia, terapia ocupacional ou fisioterapia e os pais têm dúvida sobre como funciona o plano de saúde e o reembolso',
+    urgencia: 'esperar a resposta do plano pode atrasar o início das terapias — e na infância cada mês conta para o desenvolvimento',
+    diferencial: 'na Fono Inova o atendimento é particular, com equipe multidisciplinar no mesmo lugar, e a clínica emite o recibo para a família solicitar o reembolso ao plano, conforme o contrato (a clínica não garante o reembolso)',
+    gatilho: 'pais de Anápolis que têm plano de saúde, ouviram que a terapia não é coberta ou demora, e querem entender como começar o tratamento',
   },
 };
 

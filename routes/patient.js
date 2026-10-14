@@ -10,6 +10,7 @@ import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import PatientsView from '../models/PatientsView.js';
 import { isLikelySameName } from '../utils/patientDuplicateCheck.js';
+import { sendBirthdayMessage, summarizeBirthdays } from '../services/birthday/birthdayMessageService.js';
 
 const router = express.Router();
 
@@ -209,7 +210,7 @@ router.get('/aniversariantes', auth, async (req, res) => {
     // Busca todos os pacientes
     const allPatients = await Patient.find({
       dateOfBirth: { $exists: true, $ne: null, $ne: '' }
-    }).select('fullName dateOfBirth phone email').lean();
+    }).select('fullName dateOfBirth phone email status birthdayMessageSentYear').lean();
 
     console.log(`[ANIVERSARIANTES] Total pacientes com dateOfBirth: ${allPatients.length}`);
 
@@ -230,7 +231,10 @@ router.get('/aniversariantes', auth, async (req, res) => {
 
     console.log(`[ANIVERSARIANTES] Encontrados: ${aniversariantes.length}`);
 
-    res.json({ success: true, data: aniversariantes });
+    // Contagem do dia e "já recebeu o parabéns" calculados aqui (fonte única) — o front só exibe.
+    const { list, meta } = summarizeBirthdays(aniversariantes);
+
+    res.json({ success: true, data: list, meta });
   } catch (err) {
     console.error('[ANIVERSARIANTES] Erro:', err);
     sendApiError(
@@ -241,6 +245,34 @@ router.get('/aniversariantes', auth, async (req, res) => {
       }),
       req
     );
+  }
+});
+
+// Enviar parabéns de aniversário (WhatsApp) — botão "Enviar lembrete" do card de aniversariantes.
+// Mesmo serviço do cron das 10h: só no dia do aniversário e 1 vez por ano (trava no Patient),
+// então clique manual e cron não duplicam. Resposta: { success, sent, jobId } ou erro 4xx.
+const BIRTHDAY_REASON_ERRORS = {
+  not_found: { code: 'NOT_FOUND', status: 404, message: 'Paciente não encontrado' },
+  not_birthday_today: { code: 'BAD_REQUEST', status: 400, message: 'A mensagem só pode ser enviada no dia do aniversário' },
+  already_sent: { code: 'BAD_REQUEST', status: 409, message: 'A mensagem de aniversário deste ano já foi enviada' },
+  invalid_phone: { code: 'BAD_REQUEST', status: 422, message: 'Paciente sem telefone válido cadastrado' },
+};
+
+router.post('/:id/birthday-message', validateId, auth, async (req, res) => {
+  try {
+    if (!['admin', 'secretary'].includes(req.user.role)) {
+      return sendApiError(res, new AppError('FORBIDDEN', 'Você não está autorizado a enviar mensagens', { status: 403 }), req);
+    }
+
+    const result = await sendBirthdayMessage(req.params.id);
+    if (!result.sent) {
+      const e = BIRTHDAY_REASON_ERRORS[result.reason] || BIRTHDAY_REASON_ERRORS.not_found;
+      return sendApiError(res, new AppError(e.code, e.message, { status: e.status }), req);
+    }
+
+    res.json({ success: true, sent: true, jobId: result.jobId });
+  } catch (err) {
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao enviar mensagem de aniversário', { status: 500, details: err.message }), req);
   }
 });
 

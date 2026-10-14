@@ -60,6 +60,12 @@ const patientSchema = new mongoose.Schema({
   packages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],
   imageAuthorization: { type: Boolean, default: false },
 
+  // Parabéns de aniversário (services/birthday/birthdayMessageService.js): trava de 1 envio
+  // por paciente por ano, gravada de forma atômica ANTES de enfileirar — vale tanto pro cron
+  // das 10h quanto pro botão manual do dashboard, então os dois nunca mandam duas vezes.
+  birthdayMessageSentYear: { type: Number, default: null },
+  birthdayMessageSentAt: { type: Date, default: null },
+
   // ─── FUNIL CRM ─────────────────────────────────────────────
   status: {
     type: String,
