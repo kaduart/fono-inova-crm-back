@@ -3,6 +3,7 @@
 // Fontes (ordem de confiança):
 //   1. ctwaContext do WhatsApp (anúncio click-to-WhatsApp da Meta, quando presente)
 //   2. Assinatura do site: "---ref:<source>|<campaign>|<gclid|fbclid>|utm_source=<x>"
+//   2b. Contexto GMB: "[ctx:base64]" gerado pelo gmbService (src:'gmb')
 //   3. Token curto no texto pré-preenchido dos anúncios: (TK) (IG) (FB) (GG)
 //   4. Palavra-chave no texto ("vi no tiktok", "instagram"...) — menor confiança
 // Função pura, sem I/O — testável isoladamente.
@@ -24,6 +25,31 @@ const KEYWORDS = [
 
 const none = (v) => (!v || v === 'none' || v === 'null' || v === 'undefined' ? null : v);
 
+/**
+ * Tenta decodificar o payload [ctx:base64url] embutido pelo gmbService.
+ * Retorna { source, campaign, ... } se for src:'gmb', null caso contrário.
+ */
+function parseGmbCtx(msg) {
+  const m = msg.match(/\[ctx:([A-Za-z0-9_-]+)\]/);
+  if (!m) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8'));
+    if (payload?.src !== 'gmb') return null;
+    return {
+      source: 'gmb',
+      method: 'gmb_ctx',
+      confidence: 'high',
+      campaign: payload.esp || null,
+      gmbAngle: payload.ang || null,
+      gmbFunnel: payload.fun || null,
+      gclid: null,
+      fbclid: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function parseAttribution(text = '', ctwa = null) {
   const msg = String(text || '');
 
@@ -36,7 +62,6 @@ export function parseAttribution(text = '', ctwa = null) {
       confidence: 'high',
       adId: ctwa.sourceId ? String(ctwa.sourceId) : null,
       ctwaClid: ctwa.ctwaClid || null,
-      // Rótulos do criativo (aparecem no card "por anúncio"); título/URL públicos do anúncio, sem dado clínico
       adTitle: ctwa.title ? String(ctwa.title).slice(0, 120) : null,
       adSourceUrl: ctwa.sourceUrl ? String(ctwa.sourceUrl).slice(0, 300) : null,
     };
@@ -58,13 +83,16 @@ export function parseAttribution(text = '', ctwa = null) {
     };
     if (clickId) {
       if (source === 'meta_ads') out.fbclid = clickId;
-      else out.gclid = clickId; // google_ads e demais: gclid tem prioridade no site
+      else out.gclid = clickId;
     }
     return out;
   }
 
+  // 2b. Contexto GMB embutido pelo gmbService ([ctx:base64url])
+  const gmbCtx = parseGmbCtx(msg);
+  if (gmbCtx) return gmbCtx;
+
   // 3. Token curto dos anúncios
-  // (TK) ou (TK-v3) / (TK:video0224): o marcador após o hífen identifica o ANÚNCIO e vira "campaign"
   const TOKEN_RE = /\((TK|IG|FB|GG)(?:[-:]([A-Za-z0-9_-]{1,40}))?\)/;
   const tok = msg.match(new RegExp(TOKEN_RE.source + '\\s*$', 'm')) || msg.match(TOKEN_RE);
   if (tok) {

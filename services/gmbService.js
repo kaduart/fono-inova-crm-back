@@ -2193,7 +2193,8 @@ export async function createDailyPost(options = {}) {
       
       // 🎯 Embute ctx DENTRO da mensagem (WhatsApp não passa params de URL)
       const whatsappNumber = '5562992013573';
-      const whatsappText = `Oi! Vi o conteúdo sobre ${problema.substring(0, 30)} e quero agendar [ctx:${encodedContext}]`;
+      const whatsappText = `Oi! Vi o conteúdo sobre ${problema.substring(0, 30)} e quero agendar [ctx:${encodedContext}]
+---ref:gmb|${especialidade.id}||utm_source=gmb`;
       const whatsappMessage = encodeURIComponent(whatsappText);
       const whatsappLink = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
       
@@ -2444,7 +2445,8 @@ export async function createAssistedPost(options = {}) {
     
     // 🎯 Embute ctx DENTRO da mensagem (WhatsApp não passa params extras)
     const especialidadeNome = especialidade.nome.toLowerCase();
-    const whatsappText = `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor [ctx:${encodedContext}]`;
+    const whatsappText = `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor [ctx:${encodedContext}]
+---ref:gmb|${especialidade.id}||utm_source=gmb`;
     const whatsappMessage = encodeURIComponent(whatsappText);
     const whatsappLink = `https://wa.me/5562992013573?text=${whatsappMessage}`;
     
