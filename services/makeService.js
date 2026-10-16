@@ -16,6 +16,8 @@
  *   }
  */
 
+import { ensureLocalHashtags } from './socialLocalHashtags.js';
+
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const MAKE_TIMEOUT_MS = 15000; // 15s
 const MAX_RETRIES = 3;
@@ -92,9 +94,9 @@ export class MakeQueueFullError extends Error {
 
 // Hashtags por especialidade
 function gerarHashtags(tema) {
-  const base = '#fonoinova #fonoaudiologia #desenvolvimentoinfantil #terapiainfantil #criançassaudaveis #anapolisgo';
+  const base = '#fonoinova #desenvolvimentoinfantil #terapiainfantil #criançassaudaveis #anapolisgo';
   const extras = {
-    fonoaudiologia:       '#atrasodafala #fala #linguagem #autismo #tdah #fonoaudióloga',
+    fonoaudiologia:       '#fonoaudiologia #atrasodafala #fala #linguagem #autismo #tdah #fonoaudióloga',
     psicologia:           '#psicologiainfantil #saudeemocional #comportamento #ansiedadeinfantil',
     terapia_ocupacional:  '#terapiaocupacional #integracaosensorial #autonomia #motricidade',
     fisioterapia:         '#fisioterapiainfantil #motricidade #postura #hipotonia',
@@ -169,7 +171,9 @@ export async function sendPostToMake(post, attempt = 1) {
   }
 
   // ── Legendas por canal ───────────────────────────────────────────────
-  const textoBase = post.content || '';
+  const postTopic = [post.assistData?.contextPayload?.prob, post.title, post.aiPrompt]
+    .filter(Boolean).join(' | ');
+  const textoBase = ensureLocalHashtags(post.content, post.theme, 1500, postTopic);
   const ctaUrl    = post.ctaUrl || 'https://www.clinicafonoinova.com.br/';
 
   // Valida imagem antes de enviar — URL inválida derruba o cenário no Make
@@ -202,12 +206,16 @@ export async function sendPostToMake(post, attempt = 1) {
   // Instagram: texto curto (até 150 chars) + hashtags + link na bio
   const textoShort = textoBase.split('\n').filter(Boolean).slice(0, 2).join('\n');
   const hashtags = gerarHashtags(post.theme);
-  const instagramCaption =
+  const instagramCaption = ensureLocalHashtags(
     `${textoShort.substring(0, 220)}\n\n` +
     `🔗 Agende uma avaliação — link na bio!\n` +
     `📍 Fono Inova · Anápolis-GO\n` +
     `📲 (62) 99201-3573\n\n` +
-    `${hashtags}`;
+    `${hashtags}`,
+    post.theme,
+    Infinity,
+    postTopic,
+  );
 
   // Facebook: texto completo + link explícito + WhatsApp
   const facebookCaption =
@@ -235,7 +243,7 @@ export async function sendPostToMake(post, attempt = 1) {
   const payload = {
     postId: post._id.toString(),
     title: post.title || '',
-    content: post.content || '',          // GMB summary (até 1500 chars)
+    content: textoBase,                   // GMB summary (até 1500 chars)
     mediaUrl: safeMediaUrl,                // validado — null se inacessível
     mediaUrlBranded: safeMediaUrl,         // alias
     ctaUrl,
@@ -245,7 +253,7 @@ export async function sendPostToMake(post, attempt = 1) {
     // Legendas por canal
     instagramCaption,                      // para o módulo Instagram no Make
     facebookCaption,                       // para o módulo Facebook no Make
-    copyText: post.assistData?.copyText || post.content || '',
+    copyText: ensureLocalHashtags(post.assistData?.copyText || post.content, post.theme, Infinity, postTopic),
   };
 
   console.log(`🔗 [Make] Enviando post "${post.title?.substring(0, 40)}"... (tentativa ${attempt}/${MAX_RETRIES})`);

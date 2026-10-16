@@ -1056,6 +1056,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                             operationalStatus: 'canceled',
                             clinicalStatus: 'canceled',
                             status: 'canceled',
+                            cancelSource: 'package_exhausted',
                             cancelReason: 'Pacote finalizado - sessões esgotadas',
                             updatedAt: new Date()
                         }

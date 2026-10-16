@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
+import { ensureLocalHashtags } from './socialLocalHashtags.js';
 
 
 // OpenAI - GPT-3.5
@@ -1122,7 +1123,7 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
       temperature: 0.8
     });
 
-    const content = response.choices[0].message.content.trim();
+    const content = ensureLocalHashtags(response.choices[0].message.content, especialidade, Infinity, customTheme || keywordSEO);
     
     // Extrai título do hook (primeiras 80 chars da primeira linha não vazia)
     const linhas = content.split('\n').filter(l => l.trim());
@@ -1144,14 +1145,14 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
 
   } catch (error) {
     console.error('❌ Erro OpenAI:', error.message, error.stack);
-    return generateFallbackPost(especialidade);
+    return generateFallbackPost(especialidade, customTheme || primaryKeyword);
   }
 }
 
 /**
  * 📝 POST TEMPLATE (FALLBACK)
  */
-function generateFallbackPost(especialidade) {
+function generateFallbackPost(especialidade, topic = '') {
   const nicho = PROMPTS_ESPECIALIDADE[especialidade.id];
   const dor = nicho?.dor?.split(',')[0] || especialidade.foco.split(',')[0];
 
@@ -1168,7 +1169,7 @@ function generateFallbackPost(especialidade) {
 
   return {
     title: especialidade.gancho,
-    content: template,
+    content: ensureLocalHashtags(template, especialidade, Infinity, topic),
     especialidade,
     isFallback: true
   };
@@ -2214,7 +2215,7 @@ export async function createDailyPost(options = {}) {
       
       generated = {
         title: problema.charAt(0).toUpperCase() + problema.slice(1) + '?',
-        content: copy,
+        content: ensureLocalHashtags(copy, especialidade, Infinity, problema),
         especialidade,
         isFallback: false,
         angulo: result.angulo,
@@ -2247,7 +2248,7 @@ export async function createDailyPost(options = {}) {
 
     const post = new GmbPost({
       title: generated.title,
-      content: generated.content,
+      content: ensureLocalHashtags(generated.content, especialidade, Infinity, options.customTheme || options.primaryKeyword || generated.problema || generated.title),
       theme: especialidade.id,
       tags: [especialidade.id, 'terapia', 'pediatria', options.publishedBy === 'cron' ? 'auto' : 'manual'],
       mediaUrl,
@@ -2450,7 +2451,7 @@ export async function createAssistedPost(options = {}) {
     const whatsappMessage = encodeURIComponent(whatsappText);
     const whatsappLink = `https://wa.me/5562992013573?text=${whatsappMessage}`;
     
-    const copyText = `${postData.content}
+    const copyText = `${ensureLocalHashtags(postData.content, especialidade, Infinity, customTheme || postData.problema)}
 
 ---
 💚 Fono Inova - Centro de Desenvolvimento Infantil
@@ -2461,7 +2462,7 @@ export async function createAssistedPost(options = {}) {
     // Salva no banco
     const post = new GmbPost({
       title: postData.title,
-      content: postData.content,
+      content: ensureLocalHashtags(postData.content, especialidade, Infinity, customTheme || postData.problema),
       theme: especialidade.id,
       type,
       status: 'ready',
@@ -2575,7 +2576,7 @@ OUTPUT: Apenas a legenda pronta para copiar e colar.`
       temperature: 0.8
     });
 
-    const caption = response.choices[0].message.content.trim();
+    const caption = ensureLocalHashtags(response.choices[0].message.content, especialidade, Infinity, customTheme || keywordSEO);
     
     // Calcula densidade da keyword
     const wordCount = caption.split(/\s+/).length;
