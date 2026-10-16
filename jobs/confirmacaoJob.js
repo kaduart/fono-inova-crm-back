@@ -90,6 +90,7 @@ async function processarDecisoesFinais() {
         operationalStatus: 'canceled',
         clinicalStatus: 'missed',
         canceledAt: new Date(),
+        cancelSource: 'unconfirmed_auto',
         cancelReason: 'Não confirmou até 18h (automático)',
         $push: {
           history: {

@@ -708,6 +708,7 @@ export async function updateTherapy(req, res) {
             paymentStatus: 'canceled',
             canceledAt: new Date(),
             canceledBy: req.user?._id || req.user?.id || null,
+            cancelSource: 'liminar_plan_update',
             cancelReason: `Dia da semana removido da terapia "${specialty}" (plano atualizado)`,
             updatedAt: new Date()
           }

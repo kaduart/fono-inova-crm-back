@@ -23,11 +23,13 @@ import { executeWithSession as cancelAppointmentWithSession } from './cancelAppo
  * @param {string} params.reason - Motivo do cancelamento
  * @param {boolean} [params.confirmedAbsence=false] - Falta confirmada
  * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration|converted_to_package)
+ * @param {string} [params.cancelRequester] - Quem solicitou (patient|professional|clinic); ausente = "Não informado"
+ * @param {Date} [params.cancelRequestedAt] - Quando o pedido chegou
  * @param {Object} [user] - Usuário/system
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<{ canceled: number, errors: Array<{id, error}> }>}
  */
-export async function executeWithSession(ids, { reason, confirmedAbsence = false, cancelSource }, user, session) {
+export async function executeWithSession(ids, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt }, user, session) {
   if (!reason) {
     throw new Error('O motivo do cancelamento é obrigatório');
   }
@@ -39,7 +41,7 @@ export async function executeWithSession(ids, { reason, confirmedAbsence = false
     try {
       const result = await cancelAppointmentWithSession(
         id,
-        { reason, confirmedAbsence, cancelSource },
+        { reason, confirmedAbsence, cancelSource, cancelRequester, cancelRequestedAt },
         user,
         session
       );

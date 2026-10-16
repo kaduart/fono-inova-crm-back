@@ -1,4 +1,5 @@
 import axios from "axios";
+import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 import express from "express";
 import mongoose from "mongoose";
 import { agendaAuth } from "../middleware/agendaAuth.js";
@@ -601,6 +602,18 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
       return sendApiError(res, new AppError('BAD_REQUEST', "_id é obrigatório", { status: 400 }), req);
     }
 
+    // Solicitante OPCIONAL por enquanto (a agenda externa ainda não envia). Se vier, é validado e
+    // gravado; se não vier, fica "Não informado" com cancelChannel='agenda_service' — nunca inferido.
+    // Contrato: back/docs/CANCEL_REQUESTER_INTEGRATION_CONTRACT.md
+    let cancelRequester = null;
+    let cancelRequestedAt = null;
+    try {
+      ({ cancelRequester, cancelRequestedAt } = parseCancelRequester(req.body, { required: false }));
+    } catch (reqErr) {
+      await session.abortTransaction();
+      return sendApiError(res, reqErr, req);
+    }
+
     console.log(`[SYNC-CANCEL] Cancelando agendamento: ${_id}`);
 
     // Buscar appointment direto pelo _id
@@ -699,6 +712,9 @@ router.post("/agenda-externa/cancel", agendaAuth, async (req, res) => {
           cancelReason: reason,
           canceledAt: new Date(),
           confirmedAbsence,
+          ...(cancelRequester
+            ? { cancelRequester, cancelRequestedAt: cancelRequestedAt || new Date() }
+            : { cancelChannel: 'agenda_service' }),
           updatedAt: new Date()
         },
         $push: {

@@ -26,6 +26,8 @@ import moment from 'moment-timezone';
 import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { recordAudit } from '../services/auditLogService.js';
+import { requestCancellationNotification } from '../services/appointment/cancellationNotification.service.js';
+import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 import { normalizeAdminEditPayload } from '../utils/adminEditPayloadNormalizer.js';
 import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
 import { getInsuranceFlowConfig } from '../config/insuranceFlowConfig.js';
@@ -307,18 +309,50 @@ router.put(
 router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
   try {
     const { reason, confirmedAbsence = false } = req.body;
-    const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence,
+    // Cancelamento manual: o solicitante é obrigatório (relatório de compromisso).
+    // Exceção: token de serviço (agenda-service externa/Amanda) — esses clientes ainda
+    // não enviam o campo; exigir derrubaria o cancelamento por lá. Se enviarem, é
+    // validado e gravado; senão fica "Não informado". Remover a exceção quando migrarem.
+    const parsed = parseCancelRequester(req.body, { required: !req.user?.isService });
+    const { cancelRequester, cancelRequestedAt } = parsed;
+    // Sem solicitante: registra o CANAL (visível no relatório), nunca um solicitante inferido.
+    const cancelChannel = cancelRequester ? null
+      : (parsed.cancelChannel
+        || (req.user?.id === 'amanda-service' ? 'amanda' : req.user?.id === 'agenda-service' ? 'agenda_service' : null));
+    const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel,
       requestContext: { method: req.method, path: req.originalUrl,
         correlationId: req.correlationId || req.get('x-correlation-id') || null }
     }, req.user);
+    // Aviso por WhatsApp: SÓ se o cliente pediu explicitamente e DEPOIS do cancelamento salvo.
+    // Falha aqui não desfaz o cancelamento — o resultado real vai na resposta.
+    let notification = { status: 'not_requested' };
+    if (req.body?.notifyPatient === true) {
+      try {
+        notification = await requestCancellationNotification(req.params.id);
+      } catch (nErr) {
+        console.error('[cancel] aviso WhatsApp falhou:', nErr);
+        notification = { status: 'failed', error: nErr.message };
+      }
+    }
     return res.json({
       success: true,
       data: result.data,
       message: result.message,
+      notification,
     });
   } catch (err) {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/cancel] erro:`, err);
 
+    return sendApiError(res, err, req);
+  }
+});
+
+// Reenviar/enviar o aviso de cancelamento (sem cancelar de novo). Idempotente por cancelamento.
+router.post('/:id/cancel/notify-patient', validateId, flexibleAuth, async (req, res) => {
+  try {
+    const notification = await requestCancellationNotification(req.params.id);
+    return res.json({ success: notification.status !== 'failed', notification });
+  } catch (err) {
     return sendApiError(res, err, req);
   }
 });

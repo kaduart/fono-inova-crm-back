@@ -40,11 +40,13 @@ import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
  * @param {string} params.reason - Motivo do cancelamento
  * @param {boolean} [params.confirmedAbsence=false] - Falta confirmada
  * @param {string} [params.cancelSource] - Origem do cancelamento (patient|clinic|system_billing|guide_closure|migration|converted_to_package)
- * @param {Object} [user] - Usuário que disparou
+ * @param {string} [params.cancelRequester] - Quem SOLICITOU (patient|professional|clinic). Ausente = "Não informado"
+ * @param {Date} [params.cancelRequestedAt] - Quando o pedido chegou (default: agora, via canceledAt)
+ * @param {Object} [user] - Usuário que disparou (REGISTRADOR — não é o solicitante)
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<Appointment>} Appointment atualizado
  */
-export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource }, user, session) {
+export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt, cancelChannel }, user, session) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -240,6 +242,9 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         visualFlag: 'blocked',
         cancelReason: reason,
         ...(cancelSource ? { cancelSource } : {}),
+        ...(cancelRequester
+          ? { cancelRequester, cancelRequestedAt: cancelRequestedAt || new Date() }
+          : cancelChannel ? { cancelChannel } : {}),
         canceledAt: new Date(),
         canceledBy: user?._id,
         confirmedAbsence,
@@ -253,7 +258,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
           changedBy: user?._id,
           timestamp: new Date(),
           context: 'operacional',
-          details: { reason, confirmedAbsence, cancelSource },
+          details: { reason, confirmedAbsence, cancelSource, cancelRequester, cancelRequestedAt },
         },
       },
     },
@@ -283,6 +288,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         sessionId: toObjectIdString(appointment.session),
         reason,
         confirmedAbsence,
+        cancelRequester: cancelRequester || null,
         cancelledAt: new Date(),
         cancelledBy: user?._id?.toString()
       },
@@ -296,7 +302,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
   return updated;
 }
 
-export async function execute(id, { reason, confirmedAbsence = false, requestContext }, user) {
+export async function execute(id, { reason, confirmedAbsence = false, cancelRequester, cancelRequestedAt, cancelChannel, requestContext }, user) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -313,7 +319,7 @@ export async function execute(id, { reason, confirmedAbsence = false, requestCon
   const beforeSnapshot = alreadyCanceled;
 
   const result = await runTransactionWithRetry(async (session) => {
-    return executeWithSession(id, { reason, confirmedAbsence }, user, session);
+    return executeWithSession(id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel }, user, session);
   });
 
   // Projeções, auditoria e socket são independentes após o commit. Mantemos
@@ -336,7 +342,7 @@ export async function execute(id, { reason, confirmedAbsence = false, requestCon
       after: result,
       source: 'appointment_command:cancelAppointmentCommand',
       correlationId: requestContext?.correlationId || result.correlationId,
-      metadata: { reason, confirmedAbsence, ...(requestContext ? { requestContext } : {}) },
+      metadata: { reason, confirmedAbsence, cancelRequester: cancelRequester || null, ...(requestContext ? { requestContext } : {}) },
     }),
     emitSocket('appointmentCanceled', {
       _id: result._id,

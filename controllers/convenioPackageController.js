@@ -13,6 +13,7 @@ import { buildPackageView } from '../domains/billing/services/PackageProjectionS
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 
 /**
  * 📦 Controller para Pacotes de Convênio
@@ -547,6 +548,9 @@ export const cancelConvenioSession = async (req, res) => {
       throw new Error('O motivo do cancelamento é obrigatório');
     }
 
+    // Quem solicitou é obrigatório em todo cancelamento manual (lança 400 se ausente/inválido)
+    const { cancelRequester, cancelRequestedAt, cancelChannel } = parseCancelRequester(req.body);
+
     // ===================================
     // 1. VALIDAR PACOTE
     // ===================================
@@ -654,6 +658,10 @@ export const cancelConvenioSession = async (req, res) => {
           clinicalStatus: 'missed',
           cancelReason: reason,
           canceledAt: new Date(),
+          cancelRequester,
+          cancelRequestedAt: cancelRequestedAt || new Date(),
+          cancelChannel: cancelRequester ? null : (cancelChannel || null),
+          canceledBy: req.user?._id,
           _fromWriteGateway: true,
         },
         { session: mongoSession }

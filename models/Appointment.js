@@ -246,7 +246,12 @@ const appointmentSchema = new mongoose.Schema({
     newStatus: String,
     changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     timestamp: Date,
-    context: String
+    context: String,
+    // Detalhes do evento (ex.: cancelamento → reason, cancelRequester, cancelSource).
+    // Antes de 2026-10-16 o campo não existia no schema e o Mongoose descartava o
+    // `details` que os commands já enviavam. Preserva o evento mesmo se o
+    // agendamento for reativado/remarcado depois.
+    details: mongoose.Schema.Types.Mixed
   }],
 
   // ─── ATRIBUIÇÃO DE LEAD (REVENUE TRACKING) ─────────────────
@@ -388,7 +393,39 @@ const appointmentSchema = new mongoose.Schema({
   // referência da transferência e do pacote de destino. Nunca gera receita nova.
   cancelSource: {
     type: String,
-    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration', 'converted_to_package']
+    enum: ['patient', 'clinic', 'system_billing', 'guide_closure', 'migration', 'converted_to_package',
+           // 2026-10-16: rotinas automáticas que antes cancelavam SEM marca (não são pedido de ninguém)
+           'liminar_plan_update', 'unconfirmed_auto', 'package_exhausted']
+  },
+  // Quem SOLICITOU o cancelamento (2026-10-16). Eixo diferente de cancelSource
+  // (rotina do sistema) e de canceledBy (usuário que registrou). null = "Não
+  // informado" — histórico anterior e cancelamentos automáticos; nunca inferir.
+  cancelRequester: {
+    type: String,
+    enum: ['patient', 'professional', 'clinic'],
+    default: null
+  },
+  // Quando o pedido realmente chegou (pode ser anterior a canceledAt, que é o
+  // momento do registro no CRM). Base do cálculo de antecedência no relatório.
+  cancelRequestedAt: {
+    type: Date,
+    default: null
+  },
+  // Origem do cancelamento QUANDO o solicitante não foi informado (agenda externa,
+  // Amanda ou tela antiga durante a transição). Só para visibilidade no relatório.
+  cancelChannel: {
+    type: String,
+    enum: ['agenda_service', 'amanda', 'legacy_client'],
+    default: null
+  },
+  // Aviso de cancelamento por WhatsApp (services/appointment/cancellationNotification.service.js).
+  // 'queued' = enfileirado, NUNCA "entregue". Limpo ao reativar o agendamento.
+  cancellationNotification: {
+    status: { type: String, enum: ['queued', 'failed', 'no_phone'], default: undefined },
+    jobId: { type: String, default: undefined },
+    requestedAt: { type: Date, default: undefined },
+    attempts: { type: Number, default: undefined },
+    error: { type: String, default: undefined },
   },
 
   /**

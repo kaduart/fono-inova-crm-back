@@ -22,6 +22,7 @@ import { handlePaymentEvent } from '../projections/paymentsProjection.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 import { redisConnection as redis } from '../config/redisConnection.js';
 
 function normalizeTimeHHmm(value) {
@@ -2853,6 +2854,13 @@ export const bulkCancelSessions = async (req, res) => {
             );
         }
 
+        let cancelRequester, cancelRequestedAt, cancelChannel;
+        try {
+            ({ cancelRequester, cancelRequestedAt, cancelChannel } = parseCancelRequester(req.body));
+        } catch (reqErr) {
+            return sendApiError(res, reqErr, req);
+        }
+
         // 📝 LOG: Início da operação
         console.log({
             event: 'BULK_CANCEL_START',
@@ -2932,6 +2940,10 @@ export const bulkCancelSessions = async (req, res) => {
                         clinicalStatus: 'missed',
                         cancelReason: reason,
                         canceledAt: new Date(),
+                        cancelRequester,
+                        cancelRequestedAt: cancelRequestedAt || new Date(),
+                        cancelChannel: cancelRequester ? null : (cancelChannel || null),
+                        canceledBy: req.user?._id,
                     }
                 },
                 { session: mongoSession }
@@ -3078,6 +3090,13 @@ export const cancelAllSessions = async (req, res) => {
             );
         }
 
+        let cancelRequester, cancelRequestedAt, cancelChannel;
+        try {
+            ({ cancelRequester, cancelRequestedAt, cancelChannel } = parseCancelRequester(req.body));
+        } catch (reqErr) {
+            return sendApiError(res, reqErr, req);
+        }
+
         // 🔄 ATUALIZA STATUS PARA 'CANCELING' (UX + controle)
         await Package.findByIdAndUpdate(
             packageId,
@@ -3117,6 +3136,10 @@ export const cancelAllSessions = async (req, res) => {
                     clinicalStatus: 'missed',
                     cancelReason: reason,
                     canceledAt: new Date(),
+                    cancelRequester,
+                    cancelRequestedAt: cancelRequestedAt || new Date(),
+                    cancelChannel: cancelRequester ? null : (cancelChannel || null),
+                    canceledBy: req.user?._id,
                 }
             },
             { session: mongoSession }

@@ -223,7 +223,7 @@ describe('Cancelamento de pacote — therapyPackageController', () => {
 
     const req = {
       params: { id: pkg._id.toString() },
-      body: { sessionIds: [sess._id.toString()], reason: 'Sessões remanescentes canceladas a pedido' },
+      body: { sessionIds: [sess._id.toString()], reason: 'Sessões remanescentes canceladas a pedido', cancelRequester: 'patient' },
     };
     const res = mockRes();
     await therapyPackageController.bulkCancelSessions(req, res);
@@ -250,7 +250,7 @@ describe('Cancelamento de pacote — therapyPackageController', () => {
     const patient = await createPatient();
     const { pkg, appt } = await createPackageWithAppointment(doctor, patient);
 
-    const req = { params: { id: pkg._id.toString() }, body: { reason: 'Pacote cancelado pelo paciente' } };
+    const req = { params: { id: pkg._id.toString() }, body: { reason: 'Pacote cancelado pelo paciente', cancelRequester: 'patient' } };
     const res = mockRes();
     await therapyPackageController.cancelAllSessions(req, res);
 
@@ -312,7 +312,7 @@ describe('Cancelamento de sessão de convênio — convenioPackageController', (
 
     const req = {
       params: { packageId: pkg._id.toString(), sessionId: sess._id.toString() },
-      body: { reason: 'Guia de convênio expirada' },
+      body: { reason: 'Guia de convênio expirada', cancelRequester: 'clinic' },
     };
     const res = mockRes();
     await convenioPackageController.cancelConvenioSession(req, res);

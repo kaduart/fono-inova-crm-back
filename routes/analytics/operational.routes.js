@@ -10,6 +10,7 @@ import Package from '../../models/Package.js';
 import { resolveSessionFinancialValueAggregate } from '../../utils/resolveSessionFinancialValue.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
 import { AppError } from '../../errors/AppError.js';
+import { getCancellationReport, getCancellationDetails } from '../../services/analytics/cancellationReport.service.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -373,6 +374,42 @@ router.get('/recent-ops', auth, authorize(['admin']), async (req, res) => {
     } catch (error) {
         console.error('[OperationalAnalytics] Erro recent-ops:', error);
         sendApiError(res, error, req);
+    }
+});
+
+/**
+ * @route   GET /api/v2/analytics/operational/cancellations
+ * @desc    Cancelamentos por SOLICITANTE (paciente/profissional/clínica): quantidade,
+ *          %, taxa por profissional/paciente e antecedência (<24h). Ver
+ *          services/analytics/cancellationReport.service.js para as definições.
+ * @query   startDate, endDate (YYYY-MM-DD, pela data do atendimento), doctorId?, patientId?, specialty?
+ * @access  Admin/Secretary
+ */
+router.get('/cancellations', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { startDate, endDate, doctorId, patientId, specialty } = req.query;
+        const data = await getCancellationReport({ startDate, endDate, doctorId, patientId, specialty });
+        return res.json({ success: true, data });
+    } catch (err) {
+        console.error('[analytics/operational/cancellations] erro:', err);
+        return sendApiError(res, err, req);
+    }
+});
+
+/**
+ * @route   GET /api/v2/analytics/operational/cancellations/details
+ * @desc    Detalhamento (datas, motivo, antecedência, quem registrou) dos cancelamentos
+ * @query   startDate, endDate, requester? (patient|professional|clinic|unspecified), doctorId?, patientId?, specialty?
+ * @access  Admin/Secretary
+ */
+router.get('/cancellations/details', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { startDate, endDate, requester, doctorId, patientId, specialty } = req.query;
+        const items = await getCancellationDetails({ startDate, endDate, requester, doctorId, patientId, specialty });
+        return res.json({ success: true, data: { total: items.length, items } });
+    } catch (err) {
+        console.error('[analytics/operational/cancellations/details] erro:', err);
+        return sendApiError(res, err, req);
     }
 });
 

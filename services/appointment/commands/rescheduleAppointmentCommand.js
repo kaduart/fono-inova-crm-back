@@ -59,7 +59,7 @@ export async function execute(id, { date, time, reason } = {}, user) {
       rescheduleReason: reason || (reactivating ? 'Reativado e remarcado via calendário' : 'Remarcação via calendário'),
       rescheduledAt: new Date(),
       ...(reactivating
-        ? { operationalStatus: 'scheduled', canceledAt: null, cancelReason: '' }
+        ? { operationalStatus: 'scheduled', canceledAt: null, cancelReason: '', cancelRequester: null, cancelRequestedAt: null, cancelChannel: null, cancellationNotification: null }
         : {}),
     },
     user
