@@ -752,6 +752,20 @@ router.delete('/:id', auth, async (req, res) => {
         req
       );
     }
+    // Conflito de escrita esgotou as retentativas da transação (mesmo motivo
+    // do /inactivate): nada foi aplicado por ESTA tentativa — oriente a
+    // atualizar a tela e conferir o status antes de repetir.
+    if (error.code === 112 || error.codeName === 'WriteConflict' || error.errorLabels?.includes('TransientTransactionError')) {
+      return sendApiError(
+        res,
+        new AppError(
+          'CONFLICT_STATE',
+          'Não foi possível concluir o cancelamento nesta tentativa: outra alteração na guia aconteceu ao mesmo tempo. Atualize a tela e confira o status da guia antes de tentar novamente.',
+          { status: 409, cause: error }
+        ),
+        req
+      );
+    }
     return sendApiError(
       res,
       new AppError('INTERNAL_ERROR', 'Erro ao cancelar guia. Tente novamente em alguns instantes.', {
@@ -1007,6 +1021,21 @@ router.post('/:id/inactivate', auth, async (req, res) => {
           status: 409,
           extra: { blockedBy: error.blockedBy },
         }),
+        req
+      );
+    }
+    // Conflito de escrita esgotou as retentativas da transação (duas
+    // inativações concorrentes da mesma guia, ou outro fluxo tocando os mesmos
+    // appointments). Nada foi aplicado por ESTA tentativa — peça para
+    // atualizar a tela e conferir o status antes de repetir.
+    if (error.code === 112 || error.codeName === 'WriteConflict' || error.errorLabels?.includes('TransientTransactionError')) {
+      return sendApiError(
+        res,
+        new AppError(
+          'CONFLICT_STATE',
+          'Não foi possível concluir a inativação nesta tentativa: outra alteração na guia aconteceu ao mesmo tempo. Atualize a tela e confira o status da guia antes de tentar novamente.',
+          { status: 409, cause: error }
+        ),
         req
       );
     }

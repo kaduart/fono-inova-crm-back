@@ -28,7 +28,6 @@
 //                                             cascata inteira (appointments + plano
 //                                             + pacotes) concluir sem erro
 
-import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import InsuranceGuide from '../../models/InsuranceGuide.js';
@@ -36,6 +35,7 @@ import InsurancePlan from '../../models/InsurancePlan.js';
 import Package from '../../models/Package.js';
 import { executeWithSession as cancelAppointmentWithSession } from '../../services/appointment/commands/cancelAppointmentCommand.js';
 import { isPaymentFinanciallyReversible } from '../payment/isPaymentFinanciallyReversible.js';
+import { runTransactionWithRetry } from '../../utils/transactionRetry.js';
 
 const NEVER_TOUCHED_STATUSES = ['completed'];
 const ALREADY_CANCELED_STATUSES = ['canceled', 'cancelled'];
@@ -44,13 +44,14 @@ const ALREADY_CANCELED_STATUSES = ['canceled', 'cancelled'];
  * @param {string|ObjectId} guideId
  * @param {Object} params
  * @param {Object} [params.user] - usuário que disparou a inativação (audit)
- * @returns {Promise<{ appointmentsCanceled: number, planCanceled: boolean, packageCanceled: boolean }>}
+ * @returns {Promise<{ appointmentsCanceled: number, planCanceled: boolean, packageCanceled: boolean, wasAlreadyCancelled: boolean }>}
  */
 export async function cancelInsuranceGuideCascade(guideId, { user } = {}) {
-  const mongoSession = await mongoose.startSession();
-  mongoSession.startTransaction();
-
-  try {
+  // A cascata inteira roda em UMA transação e é retentada em conflito
+  // transiente (WriteConflict / TransientTransactionError) — mesmo padrão de
+  // package.v2.js. Sem isso, duas inativações concorrentes da mesma guia
+  // faziam uma delas falhar com 500 mesmo após o rollback correto.
+  const outcome = await runTransactionWithRetry(async (mongoSession) => {
     const guide = await InsuranceGuide.findById(guideId).session(mongoSession);
     if (!guide) {
       const err = new Error('Guia não encontrada');
@@ -162,22 +163,29 @@ export async function cancelInsuranceGuideCascade(guideId, { user } = {}) {
       await guide.save({ session: mongoSession });
     }
 
-    await mongoSession.commitTransaction();
-
-    console.log('[cancelInsuranceGuideCascade] Guia inativada', {
+    return {
       guideId: guide._id.toString(),
       guideNumber: guide.number,
       wasAlreadyCancelled,
       appointmentsCanceled,
       planCanceled,
       packageCanceled
-    });
+    };
+  });
 
-    return { appointmentsCanceled, planCanceled, packageCanceled, wasAlreadyCancelled };
-  } catch (err) {
-    await mongoSession.abortTransaction();
-    throw err;
-  } finally {
-    mongoSession.endSession();
-  }
+  console.log('[cancelInsuranceGuideCascade] Guia inativada', {
+    guideId: outcome.guideId,
+    guideNumber: outcome.guideNumber,
+    wasAlreadyCancelled: outcome.wasAlreadyCancelled,
+    appointmentsCanceled: outcome.appointmentsCanceled,
+    planCanceled: outcome.planCanceled,
+    packageCanceled: outcome.packageCanceled
+  });
+
+  return {
+    appointmentsCanceled: outcome.appointmentsCanceled,
+    planCanceled: outcome.planCanceled,
+    packageCanceled: outcome.packageCanceled,
+    wasAlreadyCancelled: outcome.wasAlreadyCancelled
+  };
 }
