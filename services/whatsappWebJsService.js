@@ -1031,14 +1031,14 @@ export async function sendMessage(phone, message, options = {}) {
       try {
         if (typeof Poll !== 'function') throw new Error('Poll não disponível nesta versão');
         const poll = new Poll(
-          'Você poderá comparecer?',
-          ['Sim, confirmo ✅', 'Preciso remarcar ↪️'],
+          'Confirme sua presença 💚',
+          ['Confirmar presença ✅', 'Falar com a recepção'],
           { allowMultipleAnswers: false }
         );
         result = await client.sendMessage(numberId._serialized, poll);
       } catch (pollError) {
         console.warn('[WhatsAppWeb] ⚠️ Opções clicáveis indisponíveis; enviando fallback em texto:', pollError.message);
-        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Solicitar cancelamento/remarcação`);
+        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Falar com a recepção`);
       }
     } else {
       result = await client.sendMessage(numberId._serialized, message);

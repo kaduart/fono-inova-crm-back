@@ -18,8 +18,11 @@ export function classifyAttendanceConfirmationResponse(text) {
   const value = normalizeText(text);
   if (!value) return null;
 
-  if (/^(2|cancelar|cancela|cancele|cancelado|remarcar|desmarcar|cancelar remarcar)$/.test(value)) {
+  if (/^(cancelar|cancela|cancele|cancelado|remarcar|desmarcar|cancelar remarcar)$/.test(value)) {
     return 'change_requested';
+  }
+  if (/^(2|falar com a recepcao)$/.test(value)) {
+    return 'review_required';
   }
   if (/^(1|sim|confirmo|confirmo a presenca|confirmar presenca|confirmado|confirmada|presenca confirmada)$/.test(value)) {
     return 'confirmed';
@@ -131,8 +134,8 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
   const normalizedOption = normalizeText(optionName);
   const status = normalizedOption.includes('confirmar presenca') || normalizedOption.includes('sim confirmo')
     ? 'confirmed'
-    : normalizedOption.includes('cancelar remarcar') || normalizedOption.includes('preciso remarcar')
-      ? 'change_requested'
+    : normalizedOption.includes('falar com a recepcao')
+      ? 'review_required'
       : null;
   if (!normalizedPhone || !pollMessageId || !status) {
     return { matched: false, reason: 'unrecognized' };

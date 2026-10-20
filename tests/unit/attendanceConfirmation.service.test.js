@@ -7,7 +7,8 @@ describe('classifyAttendanceConfirmationResponse', () => {
     ['1', 'confirmed'],
     ['sim', 'confirmed'],
     ['Confirmo a presença', 'confirmed'],
-    ['2', 'change_requested'],
+    ['2', 'review_required'],
+    ['falar com a recepção', 'review_required'],
     ['remarcar', 'change_requested'],
     ['cancelar', 'change_requested'],
   ])('classifica %s como %s', (text, expected) => {
