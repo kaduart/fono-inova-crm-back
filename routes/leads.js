@@ -1,3 +1,4 @@
+import { commercialPlaybook } from '../constants/commercialPlaybook.js';
 // routes/leads.js - VERSÃO UNIFICADA E OTIMIZADA
 import express from 'express';
 import {
@@ -25,6 +26,11 @@ import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
+
+// Catálogo de apoio humano. Não cria Followup nem publica eventos de envio.
+router.get('/commercial-playbook', authorize(['admin', 'secretary']), (_req, res) => {
+    res.json({ success: true, data: commercialPlaybook });
+});
 
 // =====================================================================
 // 🌐 WEBHOOKS PÚBLICOS (SEM AUTH) - Meta, Google Ads e Site Fono Inova
@@ -312,11 +318,11 @@ router.get('/operational-counts',
             const [overdue, today] = await Promise.all([
                 Lead.countDocuments({
                     'operational.nextActionAt': { $lt: startOfToday },
-                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou'] },
+                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou', 'agendado'] },
                 }),
                 Lead.countDocuments({
                     'operational.nextActionAt': { $gte: startOfToday, $lte: endOfToday },
-                    'operational.pipeline': { $nin: ['virou_paciente'] },
+                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou', 'agendado'] },
                 }),
             ]);
 

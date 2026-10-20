@@ -439,6 +439,7 @@ export const createNewFollowup = async (req, res) => {
             nextActionAt,
             followupReason,
             nextActionNote,
+            responsibleName,
         } = req.body;
 
         if (!name?.trim()) {
@@ -470,6 +471,7 @@ export const createNewFollowup = async (req, res) => {
                 nextActionAt: safeNextActionAt,
                 followupReason: followupReason || 'nenhuma',
                 nextActionNote: nextActionNote || null,
+                responsibleName: responsibleName?.trim() || req.user?.name || null,
                 lastHumanContactAt: new Date(),
                 phone: phoneE164,
             },

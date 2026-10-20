@@ -378,6 +378,8 @@ const leadSchema = new mongoose.Schema({
       type: String,
       enum: [
         'novo_contato',
+        'em_atendimento',
+        'aguardando_clinica',
         'aguardando_resposta',
         'interessado',
         'aguardando_decisao',
@@ -403,6 +405,7 @@ const leadSchema = new mongoose.Schema({
       ],
       default: 'nenhuma',
     },
+    responsibleName: { type: String, trim: true, maxlength: 120, default: null },
     nextActionNote: { type: String, default: null },
     lastHumanContactAt: { type: Date, default: null },
     phone: { type: String, default: null },
