@@ -22,6 +22,7 @@ import { resolveLeadByPhone } from '../../../controllers/leadController.js';
 import Contacts from '../../../models/Contacts.js';
 import Message from '../../../models/Message.js';
 import logger from '../../../utils/logger.js';
+import { recordAttendanceConfirmationResponse } from '../../../services/appointment/attendanceConfirmation.service.js';
 
 export function createMessagePersistenceWorker() {
   console.log('🚀 [MessagePersistenceWorker] REGISTRADO — pronto para consumir');
@@ -143,6 +144,18 @@ export function createMessagePersistenceWorker() {
       const messageId = savedMessage._id.toString();
       const leadId = lead?._id ? String(lead._id) : null;
       console.log('💾 [MessagePersistenceWorker] MENSAGEM SALVA:', { messageId, leadId, from, direction: 'inbound' });
+
+      // Atualiza a confirmação somente quando existe lembrete vinculado e a resposta é inequívoca.
+      try {
+        await recordAttendanceConfirmationResponse({
+          phone: from,
+          text: contentToSave,
+          messageId: wamid,
+          respondedAt: timestamp,
+        });
+      } catch (confirmationError) {
+        logger.warn('[MessagePersistenceWorker] attendance_confirmation_failed', { error: confirmationError.message });
+      }
 
       // 🔔 EMITE SOCKET IMEDIATAMENTE (garante atualização da sidebar em tempo real)
       try {

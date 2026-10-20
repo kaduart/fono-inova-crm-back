@@ -217,5 +217,10 @@ export const mapAppointmentToEvent = (appt, extra = {}) => {
         crm: appt.crm || null,
         // 💳 Método de pagamento — para exibir na agenda
         paymentMethod: appt.paymentMethod || appt.payment?.paymentMethod || null,
+        attendanceConfirmation: appt.attendanceConfirmation || (
+            ['pre_agendado', 'scheduled', 'confirmed', 'pending'].includes(appt.operationalStatus)
+                ? { status: 'pending', channel: 'whatsapp' }
+                : null
+        ),
     };
 };

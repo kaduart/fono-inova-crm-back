@@ -3,6 +3,7 @@ import { getStatus, clearSession } from '../services/whatsappWebJsService.js';
 import { whatsappSendQueue } from '../config/bullConfig.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { markAttendanceConfirmationQueued } from '../services/appointment/attendanceConfirmation.service.js';
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ router.get('/status', async (req, res) => {
  */
 router.post('/send', async (req, res) => {
   try {
-    let { phone, message } = req.body;
+    let { phone, message, appointmentId, purpose } = req.body;
 
     if (!phone || !message) {
       return sendApiError(
@@ -44,7 +45,18 @@ router.post('/send', async (req, res) => {
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '\r');
 
-    const job = await whatsappSendQueue.add('send-message', { phone, message });
+    if (purpose === 'attendance_confirmation' && !appointmentId) {
+      return sendApiError(res, new AppError('BAD_REQUEST', 'appointmentId é obrigatório para confirmação de atendimento', { status: 400 }), req);
+    }
+
+    const job = await whatsappSendQueue.add('send-message', { phone, message, appointmentId, purpose });
+    if (purpose === 'attendance_confirmation') {
+      const appointment = await markAttendanceConfirmationQueued(appointmentId, { jobId: job.id });
+      if (!appointment) {
+        await job.remove().catch(() => {});
+        return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento ativo não encontrado', { status: 404 }), req);
+      }
+    }
     console.log('[WhatsAppWeb Route] Mensagem enfileirada:', job.id);
     res.json({ success: true, message: 'Mensagem enfileirada para envio', jobId: job.id });
   } catch (err) {

@@ -27,6 +27,7 @@ import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { requestCancellationNotification } from '../services/appointment/cancellationNotification.service.js';
+import { markAttendanceConfirmationSent } from '../services/appointment/attendanceConfirmation.service.js';
 import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 import { normalizeAdminEditPayload } from '../utils/adminEditPayloadNormalizer.js';
 import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
@@ -370,6 +371,21 @@ router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
     console.error(`[PATCH /api/v2/appointments/${req.params.id}/confirm] erro:`, err);
 
     return sendApiError(res, err, req);
+  }
+});
+
+// Marca o lembrete de confirmação enviado por um canal de fallback (VPS/Meta).
+router.patch('/:id/attendance-confirmation/sent', validateId, flexibleAuth, async (req, res) => {
+  try {
+    const result = await markAttendanceConfirmationSent(req.params.id, {
+      messageId: req.body?.messageId,
+    });
+    if (!result.matchedCount) {
+      return sendApiError(res, new AppError('NOT_FOUND', 'Confirmação pendente não encontrada', { status: 404 }), req);
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    return sendApiError(res, error, req);
   }
 });
 

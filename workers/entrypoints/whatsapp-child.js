@@ -202,10 +202,17 @@ async function main() {
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
     const whatsappWorker = new Worker('whatsapp-send', async (job) => {
-        const { phone, message } = job.data;
+        const { phone, message, appointmentId, purpose } = job.data;
         console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
         console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
-        const result = await sendMessage(phone, message);
+        const result = await sendMessage(phone, message, {
+            attendanceConfirmation: purpose === 'attendance_confirmation',
+            appointmentId,
+        });
+        if (purpose === 'attendance_confirmation' && appointmentId) {
+            const { markAttendanceConfirmationSent } = await import('../../services/appointment/attendanceConfirmation.service.js');
+            await markAttendanceConfirmationSent(appointmentId, { messageId: result?.messageId || job.id });
+        }
         console.log(`[CHILD WORKER] ✅ Job ${job.id} — enviado com sucesso`);
         return result;
     }, {

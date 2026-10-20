@@ -204,6 +204,24 @@ const appointmentSchema = new mongoose.Schema({
   postAppointmentSentAt: { type: Date, default: null },
   reviewRequestSentAt: { type: Date, default: null },
 
+  // Confirmação de presença respondida pelo paciente via WhatsApp.
+  // É independente de operationalStatus: uma resposta "cancelar" exige que a
+  // equipe efetive o cancelamento pelo fluxo normal, preservando auditoria e financeiro.
+  attendanceConfirmation: {
+    status: {
+      type: String,
+        enum: ['pending', 'no_response', 'confirmed', 'change_requested', 'review_required'],
+      default: 'pending'
+    },
+    channel: { type: String, enum: ['whatsapp'], default: 'whatsapp' },
+    queuedAt: { type: Date, default: undefined },
+    sentAt: { type: Date, default: undefined },
+    respondedAt: { type: Date, default: undefined },
+    messageId: { type: String, default: undefined },
+    responseMessageId: { type: String, default: undefined },
+    responseText: { type: String, default: undefined },
+  },
+
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
     type: String,

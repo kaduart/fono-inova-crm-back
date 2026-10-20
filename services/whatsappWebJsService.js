@@ -15,7 +15,7 @@
 
 import './setPuppeteerCache.js';
 import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
+const { Client, LocalAuth, Buttons } = pkg;
 import { MongoStore } from 'wwebjs-mongo';
 import mongoose from 'mongoose';
 import qrcode from 'qrcode';
@@ -568,6 +568,13 @@ function createClient() {
     });
   }
 
+  // O chip comum não passa pelo webhook da API oficial; captura a confirmação aqui.
+  newClient.on('message', (msg) => {
+    handleInboundAppointmentConfirmation(msg).catch((err) =>
+      console.warn('[WhatsAppWeb] ⚠️ confirmação de atendimento falhou (ignorado):', err?.message)
+    );
+  });
+
   attachPageNoiseFilters(newClient);
 
   return newClient;
@@ -723,6 +730,25 @@ async function handleInboundAttribution(msg) {
 
   const { captureInboundAttribution } = await import('./leadAttributionService.js');
   await captureInboundAttribution({ phone, text, ctwa, capturedBy: 'whatsapp_web' });
+}
+
+async function handleInboundAppointmentConfirmation(msg) {
+  if (!msg || msg.fromMe || msg.isStatus) return;
+  const from = msg.from || '';
+  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
+
+  let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
+  if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
+  if (!phone) return;
+
+  const { recordAttendanceConfirmationResponse } = await import('./appointment/attendanceConfirmation.service.js');
+  await recordAttendanceConfirmationResponse({
+    phone,
+    text: msg.body || '',
+    buttonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
+    messageId: msg.id?._serialized || msg.id || null,
+    respondedAt: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
+  });
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
@@ -958,7 +984,7 @@ export async function getStatus() {
 }
 
 // ─── Enviar mensagem ─────────────────────────────────────────────────────────
-export async function sendMessage(phone, message) {
+export async function sendMessage(phone, message, options = {}) {
   if (!isReady || !client) {
     throw new Error('WhatsApp não está conectado');
   }
@@ -972,7 +998,27 @@ export async function sendMessage(phone, message) {
     if (!numberId) {
       throw new Error(`Número ${clean} não possui WhatsApp`);
     }
-    const result = await client.sendMessage(numberId._serialized, message);
+    let result;
+    if (options.attendanceConfirmation && options.appointmentId) {
+      try {
+        if (typeof Buttons !== 'function') throw new Error('Buttons não disponível nesta versão');
+        const buttons = new Buttons(
+          message,
+          [
+            { id: `attendance_confirm:${options.appointmentId}`, body: 'Confirmar presença' },
+            { id: `attendance_change:${options.appointmentId}`, body: 'Cancelar / Remarcar' },
+          ],
+          'Confirmação de atendimento',
+          'Clínica Fono Inova'
+        );
+        result = await client.sendMessage(numberId._serialized, buttons);
+      } catch (buttonError) {
+        console.warn('[WhatsAppWeb] ⚠️ Botões indisponíveis; enviando fallback em texto:', buttonError.message);
+        result = await client.sendMessage(numberId._serialized, `${message}\n\nResponda:\n*1* — Confirmar presença\n*2* — Solicitar cancelamento/remarcação`);
+      }
+    } else {
+      result = await client.sendMessage(numberId._serialized, message);
+    }
     const messageId = result?.id?._serialized || 'unknown';
     console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
     return { success: true, messageId };

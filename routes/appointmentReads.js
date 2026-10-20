@@ -545,7 +545,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         let appointments = await Appointment.find(filter)
             .skip(skip)
             .limit(limit)
-            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue insuranceGuide authorizationCode serviceType sessionType sessionValue reason cancelReason canceledAt canceledBy discardReason discardedAt urgency assignedTo secretaryNotes')
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus paymentMethod visualFlag patient patientInfo professionalName doctor package liminarContract session payment metadata billingType insuranceProvider insuranceValue insuranceGuide authorizationCode serviceType sessionType sessionValue reason cancelReason canceledAt canceledBy discardReason discardedAt urgency assignedTo secretaryNotes attendanceConfirmation')
             .sort({ date: -1, time: 1 })
             .lean();
         console.log(`[GET /appointments] MongoDB retornou ${appointments.length} documentos`);

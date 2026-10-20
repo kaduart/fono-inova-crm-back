@@ -230,6 +230,11 @@ export function mapAppointmentDTO(appointment, extra = {}) {
         // Pós-atendimento WhatsApp
         postAppointmentSentAt: appointment.postAppointmentSentAt || null,
         reviewRequestSentAt: appointment.reviewRequestSentAt || null,
+        attendanceConfirmation: appointment.attendanceConfirmation || (
+            ['pre_agendado', 'scheduled', 'confirmed', 'pending'].includes(appointment.operationalStatus)
+                ? { status: 'pending', channel: 'whatsapp' }
+                : null
+        ),
     };
 }
 
