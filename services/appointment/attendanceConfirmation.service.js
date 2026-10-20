@@ -127,9 +127,51 @@ export async function recordAttendanceConfirmationResponse({ phone, text, button
   };
 }
 
+export async function recordAttendanceConfirmationPollVote({ phone, pollMessageId, optionName, respondedAt = new Date() } = {}) {
+  const normalizedPhone = normalizeE164BR(phone);
+  const normalizedOption = normalizeText(optionName);
+  const status = normalizedOption.includes('confirmar presenca')
+    ? 'confirmed'
+    : normalizedOption.includes('cancelar remarcar')
+      ? 'change_requested'
+      : null;
+  if (!normalizedPhone || !pollMessageId || !status) {
+    return { matched: false, reason: 'unrecognized' };
+  }
+
+  const appointment = await Appointment.findOne({
+    operationalStatus: { $in: ACTIVE_STATUSES },
+    'attendanceConfirmation.messageId': String(pollMessageId),
+    'attendanceConfirmation.status': { $in: ['pending', 'no_response'] },
+  })
+    .select('_id patient patientInfo attendanceConfirmation')
+    .populate('patient', 'phone')
+    .lean();
+
+  const appointmentPhone = normalizeE164BR(appointment?.patient?.phone || appointment?.patientInfo?.phone || '');
+  if (!appointment || appointmentPhone !== normalizedPhone) {
+    return { matched: false, reason: 'appointment_not_found' };
+  }
+
+  const updated = await Appointment.updateOne(
+    { _id: appointment._id, 'attendanceConfirmation.status': { $in: ['pending', 'no_response'] } },
+    {
+      $set: {
+        'attendanceConfirmation.status': status,
+        'attendanceConfirmation.respondedAt': respondedAt,
+        'attendanceConfirmation.responseMessageId': String(pollMessageId),
+        'attendanceConfirmation.responseText': String(optionName).slice(0, 300),
+      },
+    }
+  );
+
+  return { matched: updated.modifiedCount === 1, appointmentId: String(appointment._id), status };
+}
+
 export default {
   classifyAttendanceConfirmationResponse,
   markAttendanceConfirmationQueued,
   markAttendanceConfirmationSent,
   recordAttendanceConfirmationResponse,
+  recordAttendanceConfirmationPollVote,
 };

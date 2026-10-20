@@ -15,7 +15,7 @@
 
 import './setPuppeteerCache.js';
 import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth, Buttons } = pkg;
+const { Client, LocalAuth, Poll } = pkg;
 import { MongoStore } from 'wwebjs-mongo';
 import mongoose from 'mongoose';
 import qrcode from 'qrcode';
@@ -575,6 +575,13 @@ function createClient() {
     );
   });
 
+  // As opções clicáveis são enviadas como enquete, recurso suportado pelo WhatsApp Web.
+  newClient.on('vote_update', (vote) => {
+    handleInboundAttendancePollVote(vote).catch((err) =>
+      console.warn('[WhatsAppWeb] ⚠️ voto de confirmação falhou (ignorado):', err?.message)
+    );
+  });
+
   attachPageNoiseFilters(newClient);
 
   return newClient;
@@ -748,6 +755,26 @@ async function handleInboundAppointmentConfirmation(msg) {
     buttonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
     messageId: msg.id?._serialized || msg.id || null,
     respondedAt: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
+  });
+}
+
+async function handleInboundAttendancePollVote(vote) {
+  const selectedOption = vote?.selectedOptions?.[0]?.name || '';
+  if (!selectedOption) return;
+
+  const voter = vote?.voter?._serialized || vote?.voter || '';
+  const phone = String(voter).endsWith('@c.us') ? String(voter).replace('@c.us', '') : null;
+  const pollMessageId = vote?.parentMsgKey?._serialized
+    || vote?.parentMessage?.id?._serialized
+    || null;
+  if (!phone || !pollMessageId) return;
+
+  const { recordAttendanceConfirmationPollVote } = await import('./appointment/attendanceConfirmation.service.js');
+  await recordAttendanceConfirmationPollVote({
+    phone,
+    pollMessageId,
+    optionName: selectedOption,
+    respondedAt: vote?.interractedAtTs ? new Date(Number(vote.interractedAtTs)) : new Date(),
   });
 }
 
@@ -1000,21 +1027,18 @@ export async function sendMessage(phone, message, options = {}) {
     }
     let result;
     if (options.attendanceConfirmation && options.appointmentId) {
+      await client.sendMessage(numberId._serialized, message);
       try {
-        if (typeof Buttons !== 'function') throw new Error('Buttons não disponível nesta versão');
-        const buttons = new Buttons(
-          message,
-          [
-            { id: `attendance_confirm:${options.appointmentId}`, body: 'Confirmar presença' },
-            { id: `attendance_change:${options.appointmentId}`, body: 'Cancelar / Remarcar' },
-          ],
-          'Confirmação de atendimento',
-          'Clínica Fono Inova'
+        if (typeof Poll !== 'function') throw new Error('Poll não disponível nesta versão');
+        const poll = new Poll(
+          'Confirme este atendimento:',
+          ['✅ Confirmar presença', '↪️ Cancelar / Remarcar'],
+          { allowMultipleAnswers: false }
         );
-        result = await client.sendMessage(numberId._serialized, buttons);
-      } catch (buttonError) {
-        console.warn('[WhatsAppWeb] ⚠️ Botões indisponíveis; enviando fallback em texto:', buttonError.message);
-        result = await client.sendMessage(numberId._serialized, `${message}\n\nResponda:\n*1* — Confirmar presença\n*2* — Solicitar cancelamento/remarcação`);
+        result = await client.sendMessage(numberId._serialized, poll);
+      } catch (pollError) {
+        console.warn('[WhatsAppWeb] ⚠️ Opções clicáveis indisponíveis; enviando fallback em texto:', pollError.message);
+        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Solicitar cancelamento/remarcação`);
       }
     } else {
       result = await client.sendMessage(numberId._serialized, message);
