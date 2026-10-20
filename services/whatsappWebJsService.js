@@ -1031,8 +1031,8 @@ export async function sendMessage(phone, message, options = {}) {
       try {
         if (typeof Poll !== 'function') throw new Error('Poll não disponível nesta versão');
         const poll = new Poll(
-          'Confirme este atendimento:',
-          ['✅ Confirmar presença', '↪️ Cancelar / Remarcar'],
+          'Você poderá comparecer?',
+          ['Sim, confirmo ✅', 'Preciso remarcar ↪️'],
           { allowMultipleAnswers: false }
         );
         result = await client.sendMessage(numberId._serialized, poll);

@@ -38,7 +38,7 @@ function parseButtonAction(buttonId) {
 
 export async function markAttendanceConfirmationQueued(appointmentId, { jobId, queuedAt = new Date() } = {}) {
   return Appointment.findOneAndUpdate(
-    { _id: appointmentId, operationalStatus: { $in: ACTIVE_STATUSES } },
+    { _id: appointmentId },
     {
       $set: {
         'attendanceConfirmation.status': 'pending',
@@ -61,7 +61,6 @@ export async function markAttendanceConfirmationSent(appointmentId, { messageId,
   return Appointment.updateOne(
     {
       _id: appointmentId,
-      operationalStatus: { $in: ACTIVE_STATUSES },
       'attendanceConfirmation.status': { $nin: ['confirmed', 'change_requested', 'review_required'] },
     },
     {
@@ -130,9 +129,9 @@ export async function recordAttendanceConfirmationResponse({ phone, text, button
 export async function recordAttendanceConfirmationPollVote({ phone, pollMessageId, optionName, respondedAt = new Date() } = {}) {
   const normalizedPhone = normalizeE164BR(phone);
   const normalizedOption = normalizeText(optionName);
-  const status = normalizedOption.includes('confirmar presenca')
+  const status = normalizedOption.includes('confirmar presenca') || normalizedOption.includes('sim confirmo')
     ? 'confirmed'
-    : normalizedOption.includes('cancelar remarcar')
+    : normalizedOption.includes('cancelar remarcar') || normalizedOption.includes('preciso remarcar')
       ? 'change_requested'
       : null;
   if (!normalizedPhone || !pollMessageId || !status) {
@@ -140,7 +139,6 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
   }
 
   const appointment = await Appointment.findOne({
-    operationalStatus: { $in: ACTIVE_STATUSES },
     'attendanceConfirmation.messageId': String(pollMessageId),
     'attendanceConfirmation.status': { $in: ['pending', 'no_response'] },
   })
