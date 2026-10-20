@@ -1,7 +1,61 @@
 import Appointment from '../../models/Appointment.js';
 import { normalizeE164BR } from '../../utils/phone.js';
 
-const ACTIVE_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'pending'];
+// A confirmação do paciente é independente do status operacional do atendimento:
+// "Faltou"/"Concluído" pertencem à linha; a resposta pertence à coluna Confirmação.
+// Por isso nada aqui filtra operationalStatus — ver tests/unit/attendanceConfirmation.record.test.js
+const PENDING_CONFIRMATION_STATUSES = ['pending', 'no_response'];
+
+function isRealMessageId(value) {
+  const v = String(value || '').trim();
+  return !!v && !/^(unknown|undefined|null)$/i.test(v);
+}
+
+function responseWindow(respondedAt = new Date()) {
+  const start = new Date(respondedAt);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(respondedAt);
+  end.setDate(end.getDate() + 2);
+  end.setHours(23, 59, 59, 999);
+  return {
+    start,
+    end,
+    sentSince: new Date(new Date(respondedAt).getTime() - (48 * 60 * 60 * 1000)),
+  };
+}
+
+async function findPendingConfirmationByPhone(normalizedPhone, respondedAt = new Date()) {
+  const { start, end, sentSince } = responseWindow(respondedAt);
+
+  return (
+    await Appointment.find({
+      date: { $gte: start, $lte: end },
+      'attendanceConfirmation.status': { $in: PENDING_CONFIRMATION_STATUSES },
+      'attendanceConfirmation.sentAt': { $gte: sentSince },
+    })
+      .select('_id date time patient patientInfo attendanceConfirmation')
+      .populate('patient', 'phone')
+      .sort({ 'attendanceConfirmation.sentAt': -1, date: 1, time: 1 })
+      .lean()
+  ).find((candidate) => {
+    const candidatePhone = normalizeE164BR(candidate.patient?.phone || candidate.patientInfo?.phone || '');
+    return candidatePhone && candidatePhone === normalizedPhone;
+  }) || null;
+}
+
+async function findPendingConfirmationById(appointmentId, normalizedPhone) {
+  const candidate = await Appointment.findOne({
+    _id: appointmentId,
+    'attendanceConfirmation.status': { $in: PENDING_CONFIRMATION_STATUSES },
+  })
+    .select('_id date time patient patientInfo attendanceConfirmation')
+    .populate('patient', 'phone')
+    .lean();
+
+  if (!candidate) return null;
+  const candidatePhone = normalizeE164BR(candidate.patient?.phone || candidate.patientInfo?.phone || '');
+  return candidatePhone === normalizedPhone ? candidate : null;
+}
 
 function normalizeText(value) {
   return String(value || '')
@@ -39,7 +93,7 @@ function parseButtonAction(buttonId) {
   };
 }
 
-export async function markAttendanceConfirmationQueued(appointmentId, { jobId, queuedAt = new Date() } = {}) {
+export async function markAttendanceConfirmationQueued(appointmentId, { queuedAt = new Date() } = {}) {
   return Appointment.findOneAndUpdate(
     { _id: appointmentId },
     {
@@ -47,7 +101,9 @@ export async function markAttendanceConfirmationQueued(appointmentId, { jobId, q
         'attendanceConfirmation.status': 'pending',
         'attendanceConfirmation.channel': 'whatsapp',
         'attendanceConfirmation.queuedAt': queuedAt,
-        'attendanceConfirmation.messageId': jobId ? String(jobId) : undefined,
+        // Fica sem messageId até o worker gravar o ID real do envio. O ID do job
+        // BullMQ nunca casa com o voto da enquete e travava o registro da resposta.
+        'attendanceConfirmation.messageId': undefined,
       },
       $unset: {
         'attendanceConfirmation.sentAt': 1,
@@ -71,7 +127,9 @@ export async function markAttendanceConfirmationSent(appointmentId, { messageId,
         'attendanceConfirmation.status': 'no_response',
         'attendanceConfirmation.channel': 'whatsapp',
         'attendanceConfirmation.sentAt': sentAt,
-        ...(messageId ? { 'attendanceConfirmation.messageId': String(messageId) } : {}),
+        // 'unknown' e o id do job BullMQ não servem para casar o voto da enquete;
+        // gravá-los esconde o problema e mantém um ID inválido no registro.
+        ...(isRealMessageId(messageId) ? { 'attendanceConfirmation.messageId': String(messageId) } : {}),
       },
     }
   );
@@ -83,35 +141,15 @@ export async function recordAttendanceConfirmationResponse({ phone, text, button
   const normalizedPhone = normalizeE164BR(phone);
   if (!normalizedPhone) return { matched: false, reason: 'unrecognized' };
 
-  const start = new Date(respondedAt);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(respondedAt);
-  end.setDate(end.getDate() + 2);
-  end.setHours(23, 59, 59, 999);
-  const sentSince = new Date(new Date(respondedAt).getTime() - (48 * 60 * 60 * 1000));
-
-  const candidates = await Appointment.find({
-    ...(buttonAction?.appointmentId ? { _id: buttonAction.appointmentId } : {}),
-    date: { $gte: start, $lte: end },
-    operationalStatus: { $in: ACTIVE_STATUSES },
-    'attendanceConfirmation.status': { $in: ['pending', 'no_response'] },
-    'attendanceConfirmation.sentAt': { $gte: sentSince },
-  })
-    .select('_id date time patient patientInfo attendanceConfirmation')
-    .populate('patient', 'phone')
-    .sort({ 'attendanceConfirmation.sentAt': -1, date: 1, time: 1 })
-    .lean();
-
-  const appointment = candidates.find((candidate) => {
-    const candidatePhone = normalizeE164BR(candidate.patient?.phone || candidate.patientInfo?.phone || '');
-    return candidatePhone && candidatePhone === normalizedPhone;
-  });
+  const appointment = buttonAction?.appointmentId
+    ? await findPendingConfirmationById(buttonAction.appointmentId, normalizedPhone)
+    : await findPendingConfirmationByPhone(normalizedPhone, respondedAt);
   if (!appointment) return { matched: false, reason: 'appointment_not_found' };
 
   const resolvedStatus = status || 'review_required';
 
   const updated = await Appointment.updateOne(
-    { _id: appointment._id, 'attendanceConfirmation.status': { $in: ['pending', 'no_response'] } },
+    { _id: appointment._id, 'attendanceConfirmation.status': { $in: PENDING_CONFIRMATION_STATUSES } },
     {
       $set: {
         'attendanceConfirmation.status': resolvedStatus,
@@ -137,30 +175,44 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
     : normalizedOption.includes('falar com a recepcao')
       ? 'review_required'
       : null;
-  if (!normalizedPhone || !pollMessageId || !status) {
+  if (!normalizedPhone || !status) {
     return { matched: false, reason: 'unrecognized' };
   }
 
-  const appointment = await Appointment.findOne({
-    'attendanceConfirmation.messageId': String(pollMessageId),
-    'attendanceConfirmation.status': { $in: ['pending', 'no_response'] },
-  })
-    .select('_id patient patientInfo attendanceConfirmation')
-    .populate('patient', 'phone')
-    .lean();
+  // 1) Caminho ideal: o ID da enquete gravado no envio casa com o voto recebido.
+  let appointment = null;
+  if (isRealMessageId(pollMessageId)) {
+    const byMessageId = await Appointment.findOne({
+      'attendanceConfirmation.messageId': String(pollMessageId),
+      'attendanceConfirmation.status': { $in: PENDING_CONFIRMATION_STATUSES },
+    })
+      .select('_id patient patientInfo attendanceConfirmation')
+      .populate('patient', 'phone')
+      .lean();
 
-  const appointmentPhone = normalizeE164BR(appointment?.patient?.phone || appointment?.patientInfo?.phone || '');
-  if (!appointment || appointmentPhone !== normalizedPhone) {
+    const byMessageIdPhone = normalizeE164BR(byMessageId?.patient?.phone || byMessageId?.patientInfo?.phone || '');
+    if (byMessageId && byMessageIdPhone === normalizedPhone) {
+      appointment = byMessageId;
+    }
+  }
+
+  // 2) Fallback: o WhatsApp Web nem sempre devolve o ID da enquete ao enviar (já
+  //    gravamos 'unknown'), e aí o clique do paciente era descartado em silêncio.
+  //    Sem ID confiável, localizamos pela telefone + janela da confirmação enviada.
+  if (!appointment) {
+    appointment = await findPendingConfirmationByPhone(normalizedPhone, respondedAt);
+  }
+  if (!appointment) {
     return { matched: false, reason: 'appointment_not_found' };
   }
 
   const updated = await Appointment.updateOne(
-    { _id: appointment._id, 'attendanceConfirmation.status': { $in: ['pending', 'no_response'] } },
+    { _id: appointment._id, 'attendanceConfirmation.status': { $in: PENDING_CONFIRMATION_STATUSES } },
     {
       $set: {
         'attendanceConfirmation.status': status,
         'attendanceConfirmation.respondedAt': respondedAt,
-        'attendanceConfirmation.responseMessageId': String(pollMessageId),
+        'attendanceConfirmation.responseMessageId': isRealMessageId(pollMessageId) ? String(pollMessageId) : undefined,
         'attendanceConfirmation.responseText': String(optionName).slice(0, 300),
       },
     }

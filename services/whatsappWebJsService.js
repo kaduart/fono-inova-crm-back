@@ -1035,16 +1035,20 @@ export async function sendMessage(phone, message, options = {}) {
           ['Confirmar presença ✅', 'Falar com a recepção'],
           { allowMultipleAnswers: false }
         );
-        result = await client.sendMessage(numberId._serialized, poll);
+        // waitUntilMsgSent: sem esperar o envio efetivo, a biblioteca devolve
+        // `undefined` para criação de enquete e gravávamos 'unknown' no agendamento.
+        result = await client.sendMessage(numberId._serialized, poll, { waitUntilMsgSent: true });
       } catch (pollError) {
         console.warn('[WhatsAppWeb] ⚠️ Opções clicáveis indisponíveis; enviando fallback em texto:', pollError.message);
-        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Falar com a recepção`);
+        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Falar com a recepção`, { waitUntilMsgSent: true });
       }
     } else {
-      result = await client.sendMessage(numberId._serialized, message);
+      result = await client.sendMessage(numberId._serialized, message, { waitUntilMsgSent: true });
     }
-    const messageId = result?.id?._serialized || 'unknown';
-    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId}`);
+    // `null` (e não 'unknown'): um ID falso faz o voto da enquete casar com nada e
+    // some com o registro em silêncio. Sem ID, o serviço cai no fallback por telefone.
+    const messageId = result?.id?._serialized || null;
+    console.log(`[WhatsAppWeb] ✅ Enviado para ${clean} — ID: ${messageId || 'sem id (fallback por telefone ativo)'}`);
     return { success: true, messageId };
   } catch (err) {
     console.error(`[WhatsAppWeb] ❌ Erro ao enviar para ${clean}:`, err.message);

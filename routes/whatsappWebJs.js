@@ -51,7 +51,7 @@ router.post('/send', async (req, res) => {
 
     const job = await whatsappSendQueue.add('send-message', { phone, message, appointmentId, purpose });
     if (purpose === 'attendance_confirmation') {
-      const appointment = await markAttendanceConfirmationQueued(appointmentId, { jobId: job.id });
+      const appointment = await markAttendanceConfirmationQueued(appointmentId);
       if (!appointment) {
         await job.remove().catch(() => {});
         return sendApiError(res, new AppError('NOT_FOUND', 'Agendamento ativo não encontrado', { status: 404 }), req);

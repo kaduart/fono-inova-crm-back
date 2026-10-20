@@ -211,7 +211,7 @@ async function main() {
         });
         if (purpose === 'attendance_confirmation' && appointmentId) {
             const { markAttendanceConfirmationSent } = await import('../../services/appointment/attendanceConfirmation.service.js');
-            await markAttendanceConfirmationSent(appointmentId, { messageId: result?.messageId || job.id });
+            await markAttendanceConfirmationSent(appointmentId, { messageId: result?.messageId || null });
         }
         console.log(`[CHILD WORKER] ✅ Job ${job.id} — enviado com sucesso`);
         return result;
