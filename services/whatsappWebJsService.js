@@ -23,6 +23,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { normalizeE164BR } from '../utils/phone.js';
+import { resolveAttendancePollVoterPhone } from '../utils/attendancePollVoter.js';
 import { PINNED_CHROME_VERSION, chromeBinarySubpath } from '../config/chromeVersion.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
 
@@ -762,20 +763,25 @@ async function handleInboundAttendancePollVote(vote) {
   const selectedOption = vote?.selectedOptions?.[0]?.name || '';
   if (!selectedOption) return;
 
-  const voter = vote?.voter?._serialized || vote?.voter || '';
-  const phone = String(voter).endsWith('@c.us') ? String(voter).replace('@c.us', '') : null;
+  const phone = await resolveAttendancePollVoterPhone(vote, client);
   const pollMessageId = vote?.parentMsgKey?._serialized
     || vote?.parentMessage?.id?._serialized
     || null;
-  if (!phone || !pollMessageId) return;
+  if (!phone) {
+    console.warn('[WhatsAppWeb] ⚠️ voto de confirmação ignorado: telefone do paciente não resolvido');
+    return;
+  }
 
   const { recordAttendanceConfirmationPollVote } = await import('./appointment/attendanceConfirmation.service.js');
-  await recordAttendanceConfirmationPollVote({
+  const result = await recordAttendanceConfirmationPollVote({
     phone,
     pollMessageId,
     optionName: selectedOption,
     respondedAt: vote?.interractedAtTs ? new Date(Number(vote.interractedAtTs)) : new Date(),
   });
+  if (!result?.matched) {
+    console.warn('[WhatsAppWeb] ⚠️ voto recebido, mas nenhum lembrete pendente foi vinculado:', result?.reason || 'desconhecido');
+  }
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
