@@ -1,0 +1,74 @@
+# Backup noturno do MongoDB de produção (Atlas M0 não tem backup).
+# Dump criptografado (AES256) guardado como artifact privado por 14 dias.
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   MONGO_BACKUP_URI   — URI do usuário SOMENTE LEITURA de produção (inclui o nome do banco)
+#   BACKUP_PASSPHRASE  — senha da criptografia (guardar também fora do GitHub; sem ela o backup não abre)
+#
+# Restauração: ver docs/BACKUP_RESTORE.md
+name: backup-noturno
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 03:00 America/Sao_Paulo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # MongoDB descartável só para o teste de restauração (some ao fim do job)
+    services:
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+    steps:
+      - name: Instalar MongoDB Database Tools
+        run: |
+          wget -q https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb
+          sudo apt-get install -y ./mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb
+
+      - name: Dump + criptografia
+        env:
+          MONGO_BACKUP_URI: ${{ secrets.MONGO_BACKUP_URI }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$MONGO_BACKUP_URI" && test -n "$BACKUP_PASSPHRASE"
+          STAMP=$(date -u +%Y%m%dT%H%MZ)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          mongodump --uri "$MONGO_BACKUP_URI" --archive=dump.archive.gz --gzip 2> dump.log
+          DUMPED=$(grep -oE 'done dumping [^ ]+ \(([0-9]+) documents?\)' dump.log | grep -oE '\(([0-9]+)' | tr -d '(' | paste -sd+ | bc)
+          echo "Documentos no dump: $DUMPED"
+          echo "DUMPED=$DUMPED" >> "$GITHUB_ENV"
+          SIZE=$(stat -c%s dump.archive.gz)
+          echo "Tamanho do dump: $SIZE bytes"
+          test "$SIZE" -gt 1000000 # dump vazio/pequeno demais = falha (banco apagado ou credencial errada)
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" \
+              -o "mongo-prod-$STAMP.archive.gz.gpg" dump.archive.gz
+
+      - name: Teste real de restauração (MongoDB descartável do job)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # Restaura o arquivo JÁ CRIPTOGRAFADO (o mesmo que será guardado) e confere a contagem
+          gpg --batch --quiet --passphrase "$BACKUP_PASSPHRASE" -d "mongo-prod-$STAMP.archive.gz.gpg" > check.archive.gz
+          mongorestore --uri "mongodb://127.0.0.1:27017" --archive=check.archive.gz --gzip 2> restore.log
+          tail -3 restore.log
+          RESTORED=$(grep -oE '([0-9]+) document\(s\) restored successfully' restore.log | grep -oE '^[0-9]+')
+          echo "Dump: $DUMPED documentos | Restaurados: $RESTORED"
+          test "$RESTORED" -eq "$DUMPED"
+          rm -f dump.archive.gz check.archive.gz dump.log restore.log
+
+      - name: Guardar backup (14 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mongo-prod-${{ env.STAMP }}
+          path: mongo-prod-*.archive.gz.gpg
+          retention-days: 14
+          if-no-files-found: error
