@@ -46,6 +46,7 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
       if (parsed.campaign) set['metaTracking.campaign'] = parsed.campaign;
       if (parsed.gclid) set['metaTracking.gclid'] = parsed.gclid;
       if (parsed.fbclid) set['metaTracking.fbclid'] = parsed.fbclid;
+      if (parsed.ttclid) set['metaTracking.ttclid'] = parsed.ttclid;
       if (parsed.adId) set['metaTracking.adId'] = parsed.adId;
       await Lead.updateOne(
         { 'contact.phone': normalized, 'metaTracking.source': { $in: [null, '', undefined] } },

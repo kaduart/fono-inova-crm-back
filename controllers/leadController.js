@@ -463,7 +463,7 @@ export const createNewFollowup = async (req, res) => {
             manualControl: {
                 active: true,
                 takenOverAt: new Date(),
-                takenOverBy: req.user?.name || null,
+                takenOverBy: req.user?._id || req.user?.id || null,
                 autoResumeAfter: null,
             },
             operational: {
@@ -971,6 +971,7 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
             firstMessage: defaults.firstMessage,
             fbclid: defaults.fbclid || detection.fbclid,
             gclid: defaults.gclid || detection.gclid,
+            ttclid: defaults.ttclid || detection.ttclid,
             utmSource: defaults.utmSource || detection.utmSource,
             utmCampaign: defaults.utmCampaign || detection.utmCampaign,
             utmMedium: defaults.utmMedium || detection.utmMedium,

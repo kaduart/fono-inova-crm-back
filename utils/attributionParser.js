@@ -80,9 +80,11 @@ export function parseAttribution(text = '', ctwa = null) {
       utmSource: none(sig[4].trim()),
       gclid: null,
       fbclid: null,
+      ttclid: null,
     };
     if (clickId) {
       if (source === 'meta_ads') out.fbclid = clickId;
+      else if (source === 'tiktok_ads') out.ttclid = clickId;
       else out.gclid = clickId;
     }
     return out;

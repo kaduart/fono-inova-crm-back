@@ -18,6 +18,8 @@ const adConversionSchema = new mongoose.Schema({
   campaign: { type: String, default: null },   // campanha/ID vindo do link do site (---ref)
   gclid: { type: String, default: null },
   fbc: { type: String, default: null },        // fb.1.<ms>.<fbclid> — identificador de clique da Meta
+  ttclid: { type: String, default: null },     // TikTok Click ID (anúncio → site → WhatsApp)
+  ctwaClid: { type: String, default: null },   // Click-to-WhatsApp (CTWA) click ID da Meta
   value: { type: Number, default: 0 },
   eventTime: { type: Date, required: true },
   meta: { type: platformSchema, default: () => ({}) },
