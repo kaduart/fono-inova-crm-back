@@ -87,6 +87,7 @@ export async function getAttributionByPhone(phone) {
       method: 'lead',
       gclid: lead.metaTracking.gclid || null,
       fbclid: lead.metaTracking.fbclid || null,
+      ttclid: lead.metaTracking.ttclid || null,
       leadId: lead._id,
       from: 'lead',
     };

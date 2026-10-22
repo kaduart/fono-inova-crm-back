@@ -1,6 +1,6 @@
 // crons/adsConversion.cron.js
-// Devolve para Meta (CAPI) e Google Ads (offline por gclid) os PRIMEIROS agendamentos
-// confirmados, para as campanhas otimizarem por quem agenda — não por clique.
+// Devolve para Meta (CAPI), Google Ads (offline por gclid) e TikTok (Events API por ttclid)
+// os PRIMEIROS agendamentos confirmados, para as campanhas otimizarem por quem agenda — não por clique.
 //
 // Por que cron (e não evento): APPOINTMENT_CONFIRMED não tem fila consumidora e
 // agendamentos entram por vários caminhos (agenda externa, importFromAgenda, V2).
@@ -12,7 +12,9 @@
 //   ADS_CONVERSION_DRY_RUN=true       só loga, não grava nem envia
 //   ADS_CONVERSION_DEFAULT_VALUE=220  valor quando sessionValue = 0 (ex.: convênio)
 //   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (importação)
+//   TIKTOK_EVENTS_TOKEN               Access Token da TikTok Events API (envio por ttclid)
 // Nunca envia dado clínico: só telefone (hash), valor, id e origem.
+// Doc: back/docs/ADS_CONVERSION_CONTRACT.md
 
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
@@ -20,6 +22,7 @@ import AdConversion from '../models/AdConversion.js';
 import { getAttributionByPhone } from '../services/leadAttributionService.js';
 import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
+import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
 
 const TAG = '[AdsConversion]';
 const INTERVAL_MS = 10 * 60 * 1000;
@@ -102,6 +105,7 @@ async function enqueueNew() {
           done: true,
           meta: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
           google: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
+          tiktok: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
         });
       } else {
         const withinMetaWindow = Date.now() - new Date(appt.createdAt).getTime() < 6.5 * 864e5; // Meta: até 7 dias
@@ -111,11 +115,17 @@ async function enqueueNew() {
         doc.google = attr?.gclid ? { status: 'pending' } : { status: 'skipped', reason: 'sem_gclid' };
         doc.gclid = attr?.gclid || null;
         doc.fbc = buildFbc(attr);
-        if (doc.meta.status !== 'pending' && doc.google.status !== 'pending') doc.done = true;
+        // TikTok: ttclid tem janela de atribuição de 7 dias (igual à Meta)
+        const withinTikTokWindow = Date.now() - new Date(appt.createdAt).getTime() < 6.5 * 864e5;
+        doc.ttclid = attr?.ttclid || null;
+        doc.tiktok = !attr?.ttclid ? { status: 'skipped', reason: 'sem_ttclid' }
+          : !withinTikTokWindow ? { status: 'skipped', reason: 'fora_janela_7d_tiktok' }
+          : { status: 'pending' };
+        if (doc.meta.status !== 'pending' && doc.google.status !== 'pending' && doc.tiktok.status !== 'pending') doc.done = true;
       }
 
       if (isDryRun()) {
-        console.log(`${TAG} [DRY] ${appt._id} first=${first} source=${doc.source} value=${value} meta=${doc.meta.status} google=${doc.google.status}`);
+        console.log(`${TAG} [DRY] ${appt._id} first=${first} source=${doc.source} value=${value} meta=${doc.meta.status} google=${doc.google.status} tiktok=${doc.tiktok.status}`);
         continue;
       }
 
@@ -145,7 +155,7 @@ async function refreshUnknownSources() {
       if (!attr?.source) continue;
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
-        { $set: { source: attr.source, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}) } }
+        { $set: { source: attr.source, attributionMethod: attr.method || null, adId: attr.adId || null, campaign: attr.campaign || null, ...(attr.gclid ? { gclid: attr.gclid } : {}), ...(attr.fbclid ? { fbc: buildFbc(attr) } : {}), ...(attr.ttclid ? { ttclid: attr.ttclid } : {}) } }
       );
       updated += res.modifiedCount || 0;
 
@@ -159,6 +169,19 @@ async function refreshUnknownSources() {
             eventTime: { $gte: new Date(Date.now() - 90 * 864e5) },
           },
           { $set: { 'google.status': 'pending', done: false, nextAttemptAt: new Date() } }
+        );
+      }
+
+      // ttclid chegou depois: reabre SÓ o envio ao TikTok, dentro da janela de 7 dias
+      if (res.modifiedCount && attr.ttclid) {
+        await AdConversion.updateOne(
+          {
+            _id: u._id,
+            'tiktok.status': 'skipped',
+            'tiktok.reason': 'sem_ttclid',
+            eventTime: { $gte: new Date(Date.now() - 6.5 * 864e5) },
+          },
+          { $set: { 'tiktok.status': 'pending', done: false, nextAttemptAt: new Date() } }
         );
       }
     } catch (err) {
@@ -206,6 +229,25 @@ async function processPending() {
       if (r.status === 'failed' && r.retryable) retry = true;
     }
 
+    // TikTok Events API — envio por ttclid (janela de 7 dias garantida no enqueue)
+    if (conv.tiktok?.status === 'pending' || conv.tiktok?.status === 'failed') {
+      try {
+        const r = await sendEventToTikTok({
+          phone: conv.phone,
+          ttclid: conv.ttclid,
+          value: conv.value,
+          eventId: `appt_${conv.appointment}`,
+          eventTime: conv.eventTime,
+          customData: { content_name: conv.source },
+        });
+        conv.tiktok = r ? { status: 'sent', sentAt: new Date() } : { status: 'skipped', reason: 'tiktok_events_nao_configurado' };
+        if (r) sent++;
+      } catch (err) {
+        conv.tiktok = { status: 'failed', reason: String(err?.response?.data?.message || err.message).slice(0, 300) };
+        retry = true;
+      }
+    }
+
     conv.attempts += 1;
     if (retry && conv.attempts < MAX_ATTEMPTS) {
       conv.nextAttemptAt = new Date(Date.now() + 2 ** conv.attempts * 10 * 60 * 1000); // 20m, 40m, 80m, 160m
@@ -213,7 +255,7 @@ async function processPending() {
       conv.done = true;
     }
     await conv.save();
-    console.log(`${TAG} ${conv.appointment} source=${conv.source} meta=${conv.meta.status} google=${conv.google.status} tentativa=${conv.attempts}`);
+    console.log(`${TAG} ${conv.appointment} source=${conv.source} meta=${conv.meta.status} google=${conv.google.status} tiktok=${conv.tiktok?.status || '-'} tentativa=${conv.attempts}`);
   }
   return sent;
 }
