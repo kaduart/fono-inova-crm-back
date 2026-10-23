@@ -95,8 +95,8 @@ export async function startAllCrons() {
         startCron('openaiAdsConversion', () => initOpenAIAdsConversionCron());
     }
 
-    // Conversões offline (Meta CAPI + Google Ads) — desligado por padrão
-    if (process.env.ENABLE_ADS_CONVERSION === 'true') {
+    // Conversões offline (Meta CAPI + Google Ads + TikTok) — liga quando há credencial de envio
+    if (process.env.TIKTOK_EVENTS_TOKEN?.trim() || process.env.META_CONVERSIONS_TOKEN?.trim()) {
         const { initAdsConversionCron } = await import("../crons/adsConversion.cron.js");
         startCron('adsConversion', () => initAdsConversionCron());
     }
