@@ -1,4 +1,8 @@
 #!/bin/bash
+# REPLICACAO_LEGADA_BLOQUEADA: este script apaga o banco apontado pela URI.
+printf '%s\n' 'BLOQUEADO: replicacao legada destrutiva. Use um destino de desenvolvimento novo e uma ferramenta revisada.' >&2
+exit 1
+
 # Comando direto para replicar test → crm_development
 
 echo "🔄 Replicando banco test → crm_development"

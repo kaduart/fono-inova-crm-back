@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   backup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # MongoDB descartável só para o teste de restauração (some ao fim do job)
     services:
@@ -26,6 +26,11 @@ jobs:
         image: mongo:8.0
         ports:
           - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)'"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 12
     steps:
       - name: Instalar MongoDB Database Tools
         run: |
@@ -33,42 +38,65 @@ jobs:
           sudo apt-get install -y ./mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb
 
       - name: Dump + criptografia
+        id: dump
         env:
           MONGO_BACKUP_URI: ${{ secrets.MONGO_BACKUP_URI }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
           set -euo pipefail
           test -n "$MONGO_BACKUP_URI" && test -n "$BACKUP_PASSPHRASE"
-          STAMP=$(date -u +%Y%m%dT%H%MZ)
+          python3 -c 'import os; from urllib.parse import urlsplit; u=urlsplit(os.environ["MONGO_BACKUP_URI"]); assert u.hostname == "producao.rj6hivl.mongodb.net" and u.path == "/fono_inova_prod", "O backup deve ler o cluster Producao / fono_inova_prod"'
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
           echo "STAMP=$STAMP" >> "$GITHUB_ENV"
-          mongodump --uri "$MONGO_BACKUP_URI" --archive=dump.archive.gz --gzip 2> dump.log
+          if ! mongodump --uri "$MONGO_BACKUP_URI" --archive=dump.archive.gz --gzip 2> dump.log; then
+            echo "::error::mongodump falhou"
+            sed -E 's#mongodb(\+srv)?://[^[:space:]]+#mongodb://[REDACTED]#g; s/(dup key:).*/\1 [REDACTED]/' dump.log | tail -20
+            exit 1
+          fi
           DUMPED=$(grep -oE 'done dumping [^ ]+ \(([0-9]+) documents?\)' dump.log | grep -oE '\(([0-9]+)' | tr -d '(' | paste -sd+ | bc)
           echo "Documentos no dump: $DUMPED"
           echo "DUMPED=$DUMPED" >> "$GITHUB_ENV"
           SIZE=$(stat -c%s dump.archive.gz)
           echo "Tamanho do dump: $SIZE bytes"
           test "$SIZE" -gt 1000000 # dump vazio/pequeno demais = falha (banco apagado ou credencial errada)
-          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" \
+          gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" \
               -o "mongo-prod-$STAMP.archive.gz.gpg" dump.archive.gz
 
       - name: Teste real de restauração (MongoDB descartável do job)
+        id: restore
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          MONGO_CONTAINER_ID: ${{ job.services.mongo.id }}
         run: |
           set -euo pipefail
           # Restaura o arquivo JÁ CRIPTOGRAFADO (o mesmo que será guardado) e confere a contagem
-          gpg --batch --quiet --passphrase "$BACKUP_PASSPHRASE" -d "mongo-prod-$STAMP.archive.gz.gpg" > check.archive.gz
-          mongorestore --uri "mongodb://127.0.0.1:27017" --archive=check.archive.gz --gzip 2> restore.log
+          # Mantém os documentos históricos com TTL durante a validação descartável.
+          docker exec "$MONGO_CONTAINER_ID" mongosh --quiet --eval 'if (!db.adminCommand({setParameter: 1, ttlMonitorEnabled: false}).ok) quit(1)'
+          gpg --batch --quiet --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" -d "mongo-prod-$STAMP.archive.gz.gpg" > check.archive.gz
+          if ! mongorestore --uri "mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=10000" --archive=check.archive.gz --gzip --stopOnError 2> restore.log; then
+            echo "::error::mongorestore falhou no MongoDB descartável"
+            sed -E 's#mongodb(\+srv)?://[^[:space:]]+#mongodb://[REDACTED]#g; s/(dup key:).*/\1 [REDACTED]/' restore.log | tail -40
+            exit 1
+          fi
           tail -3 restore.log
           RESTORED=$(grep -oE '([0-9]+) document\(s\) restored successfully' restore.log | grep -oE '^[0-9]+')
           echo "Dump: $DUMPED documentos | Restaurados: $RESTORED"
           test "$RESTORED" -eq "$DUMPED"
+          # Confere também os documentos realmente presentes no banco restaurado.
+          ACTUAL=$(docker exec "$MONGO_CONTAINER_ID" mongosh --quiet --eval 'const d=db.getSiblingDB("fono_inova_prod"); print(d.getCollectionInfos({type:"collection"}).reduce((n,c)=>n+d.getCollection(c.name).countDocuments({}),0))')
+          echo "Documentos conferidos no banco descartável: $ACTUAL"
+          test "$ACTUAL" -eq "$DUMPED"
           rm -f dump.archive.gz check.archive.gz dump.log restore.log
 
       - name: Guardar backup (14 dias)
+        if: ${{ always() && steps.dump.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: mongo-prod-${{ env.STAMP }}
+          name: mongo-prod-${{ env.STAMP }}-${{ steps.restore.outcome == 'success' && 'verified' || 'unverified' }}
           path: mongo-prod-*.archive.gz.gpg
           retention-days: 14
           if-no-files-found: error
+
+      - name: Remover cópias locais sem criptografia
+        if: always()
+        run: rm -f dump.archive.gz check.archive.gz dump.log restore.log

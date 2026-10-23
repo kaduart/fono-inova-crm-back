@@ -30,7 +30,7 @@
  */
 
 const BANCOS_PRODUTIVOS = ['fono_inova_prod'];
-const CLUSTERS_PRODUTIVOS = ['cluster0.g2c3sdk.mongodb.net'];
+const CLUSTERS_PRODUTIVOS = ['cluster0.g2c3sdk.mongodb.net', 'producao.rj6hivl.mongodb.net'];
 
 export class ProductionWriteBlocked extends Error {
   constructor(message) {

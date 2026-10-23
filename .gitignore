@@ -127,3 +127,5 @@ logs/populate-iss-rate-*.json
 # Scripts de auditoria/one-off (gerados durante investigações, não fazem parte da aplicação)
 scripts/auditoria*
 scripts/audit*
+
+.wa-sales-auth/
