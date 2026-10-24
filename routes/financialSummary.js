@@ -20,7 +20,7 @@ import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { getPatientPendingSnapshot } from '../services/patientPendingSnapshot.js';
 import { reconcilePackagesForPayments } from '../services/packagePaymentReconciliation.js';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS, PAYMENT_KIND } from '../constants/financial.js';
 import { EventTypes } from '../infrastructure/events/eventPublisher.js';
@@ -458,8 +458,9 @@ router.get('/patient/:patientId/summary/batch', asyncHandler(async (req, res) =>
  * NÃO inclui Payments pending vinculados a appointments de pacotes per-session,
  * pois a dívida real dessas sessões já está representada no Package.balance.
  */
-router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res) => {
+router.get('/patient/:patientId/pending-payments', auth, authorize(['admin', 'secretary']), asyncHandler(async (req, res) => {
     const { patientId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(patientId)) return res.status(400).json({ success: false, code: 'INVALID_PATIENT_ID' });
     const snapshot = await getPatientPendingSnapshot(patientId);
 
     // Fonte de verdade: Payment records pending.
@@ -482,7 +483,7 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
     // divergência entre as duas telas do mesmo paciente.
     const realDebtPayments = snapshot.payments;
 
-    const items = realDebtPayments.map(p => {
+    const items = snapshot.debtItems || realDebtPayments.map(p => {
         const appt = p.appointment;
         const specialty = appt?.specialty || p.specialty || null;
         const packageId = appt?.package?.toString() || p.package?.toString() || null;
@@ -511,11 +512,14 @@ router.get('/patient/:patientId/pending-payments', asyncHandler(async (req, res)
         success: true,
         data: items,
         meta: {
-            totalPending: items.reduce((s, p) => s + (p.amount || 0), 0),
+            totalPending: items.filter(p => p.countInDebt !== false).reduce((s, p) => s + (p.amount || 0), 0),
             availableCredit: snapshot.stats.availableCredit,
             appliedCredit: snapshot.stats.appliedCredit,
             totalPendingNet: snapshot.stats.totalPendingParticularNet,
             count: items.length,
+            collectibleCount: snapshot.stats.collectibleCount || 0,
+            reviewCount: snapshot.stats.reviewCount || 0,
+            reviewAmount: snapshot.stats.reviewAmount || 0,
             totalReceivable: pendingPayments.reduce((s, p) => s + (p.amount || 0), 0),
             receivableCount: pendingPayments.length
         }

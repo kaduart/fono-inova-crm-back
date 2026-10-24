@@ -1,3 +1,6 @@
+import Session from '../../models/Session.js';
+import Appointment from '../../models/Appointment.js';
+import Package from '../../models/Package.js';
 import { describe, it, expect, vi } from 'vitest';
 import Payment from '../../models/Payment.js';
 import PatientBalance from '../../models/PatientBalance.js';
@@ -48,6 +51,7 @@ describe('patient pending snapshot', () => {
       lean: vi.fn().mockResolvedValue([
         { ...completed(1090), patient: first }, { ...completed(200), patient: second },
       ]) };
+    const extraMocks = [vi.spyOn(Session, 'find').mockReturnValue({lean: vi.fn().mockResolvedValue([])}), vi.spyOn(Appointment, 'find').mockReturnValue({lean: vi.fn().mockResolvedValue([])}), vi.spyOn(Package, 'find').mockReturnValue({select:vi.fn().mockReturnThis(),lean:vi.fn().mockResolvedValue([])})];
     const paymentFind = vi.spyOn(Payment, 'find').mockReturnValue(query);
     const balanceFind = vi.spyOn(PatientBalance, 'find').mockReturnValue({
       select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue([
@@ -62,6 +66,6 @@ describe('patient pending snapshot', () => {
       expect(snapshots.get(second).stats.totalPendingNet).toBe(80);
       expect(paymentFind).toHaveBeenCalledTimes(1);
       expect(balanceFind).toHaveBeenCalledTimes(1);
-    } finally { paymentFind.mockRestore(); balanceFind.mockRestore(); }
+    } finally { paymentFind.mockRestore(); balanceFind.mockRestore(); extraMocks.forEach(mock => mock.mockRestore()); }
   });
 });
