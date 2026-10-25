@@ -4,8 +4,11 @@ const protectedBilling = x => ['convenio', 'insurance', 'liminar'].includes(x?.b
 const canceled = x => ['canceled', 'cancelled', 'force_cancelled', 'refunded'].some(status => x?.status === status || x?.operationalStatus === status);
 const paidSession = x => x?.isPaid === true || ['paid', 'package_paid', 'recognized'].includes(x?.paymentStatus);
 const coveredPayment = p => p.isFromPackage || LEGACY_FINANCIAL_VIEW_EXCLUDED_KINDS.includes(p.kind);
-const recoveryReview = a => a?.visualFlag === 'blocked' && a.balanceDescription?.startsWith('RECOVERY_REVIEW:')
-    ? a.balanceDescription.slice('RECOVERY_REVIEW:'.length).trim() : null;
+const recoveryReview = (a, s) => {
+    const note = [a?.visualFlag === 'blocked' && a.balanceDescription, s?.visualFlag === 'blocked' && s.notes]
+        .find(value => typeof value === 'string' && value.startsWith('RECOVERY_REVIEW:'));
+    return note ? note.slice('RECOVERY_REVIEW:'.length).trim() : null;
+};
 // This function only constructs a read model: no events, updates or generated Payments.
 const isSettledDebitFor = (t, sid, aid) => t.type === 'debit' && !t.isDeleted
     && (t.isPaid || t.settledByPackageId || Number(t.paidAmount) >= Number(t.amount))
@@ -39,8 +42,8 @@ export function consolidatePatientDebt({ payments = [], sessions = [], appointme
         // The canonical Payment wins over ledger/session shadows. Conflicts are visible,
         // but cannot become another charge. A paid deposit alone does not settle a balance.
         let reason = null;
-        if (recoveryReview(a))
-            reason = recoveryReview(a);
+        if (recoveryReview(a, session))
+            reason = recoveryReview(a, session);
         else if (!a && (p.appointmentId || p.appointment))
             reason = 'Agendamento vinculado não localizado; conferir origem';
         else if (canceled(a) || canceled(session))
@@ -81,8 +84,8 @@ export function consolidatePatientDebt({ payments = [], sessions = [], appointme
             continue;
         const related = relation(sid, aid), a = appts.get(aid), s = sessions.find(x => id(x) === sid);
         let reason = null;
-        if (recoveryReview(a))
-            reason = recoveryReview(a);
+        if (recoveryReview(a, s))
+            reason = recoveryReview(a, s);
         else if (related.some(p => p.status === 'paid'))
             reason = 'Pagamento já localizado; conferir baixa do débito';
         else if (related.some(p => canceled(p)) || canceled(a) || canceled(s))
@@ -104,7 +107,7 @@ export function consolidatePatientDebt({ payments = [], sessions = [], appointme
     }
     for (const s of sessions) {
         const sid = id(s), aid = id(s.appointmentId);
-        if (s.status !== 'completed' || paidSession(s) || !['pending', 'unpaid', 'partial', 'pending_balance'].includes(s.paymentStatus) || coveredSessions.has(sid) || coveredAppointments.has(aid))
+        if (s.status !== 'completed' || paidSession(s) || (!['pending', 'unpaid', 'partial', 'pending_balance'].includes(s.paymentStatus) && !recoveryReview(appts.get(aid), s)) || coveredSessions.has(sid) || coveredAppointments.has(aid))
             continue;
         const a = appts.get(aid), pkg = pkgs.get(id(s.package));
         if (protectedBilling(s) || protectedBilling(a) || canceled(a) || canceled(pkg) || pkg?.model === 'prepaid' || ['package_prepaid', 'convenio', 'liminar', 'liminar_credit'].includes(s.paymentMethod))
@@ -117,7 +120,7 @@ export function consolidatePatientDebt({ payments = [], sessions = [], appointme
         const amount = round(Number(s.sessionValue) - Number(s.partialAmount || 0));
         if (!(amount > 0 && Number.isFinite(amount)))
             continue;
-        const reason = recoveryReview(a) || (paidSession(a) ? 'Agendamento marcado como quitado; conferir sessão' : (s.package || a?.package) && !pkg ? 'Pacote vinculado não localizado; conferir cobertura' : null);
+        const reason = recoveryReview(a, s) || (paidSession(a) ? 'Agendamento marcado como quitado; conferir sessão' : (s.package || a?.package) && !pkg ? 'Pacote vinculado não localizado; conferir cobertura' : null);
         items.push(dto(s, 'session', amount, a, { canSettle: false, description: 'Sessão realizada sem lançamento de pagamento', requiresReview: !!reason, reviewReason: reason, countInDebt: !reason }));
         cover(sid, aid);
     }
