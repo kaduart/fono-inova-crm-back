@@ -12,9 +12,12 @@
  * padrão de tests/e2e/*.e2e.test.js) e NUNCA lê MONGO_URI/.env. Ele só apaga os
  * documentos que ele mesmo cria (marcados pelo `correlationId` deste arquivo).
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+
+const emitSocketEventMock = vi.hoisted(() => vi.fn().mockResolvedValue({ emitted: true, via: 'test' }));
+vi.mock('../../config/socket.js', () => ({ emitSocketEvent: emitSocketEventMock }));
 
 const PHONE = '5562999999999';
 // Marca exclusiva dos documentos deste teste — o cleanup usa `correlationId`.
@@ -39,6 +42,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterEach(async () => {
+  emitSocketEventMock.mockClear();
   await Appointment.deleteMany({ correlationId: testCorrelationId });
 });
 
@@ -81,6 +85,13 @@ describe('resposta do paciente é registrada independente do status operacional'
     expect(saved.attendanceConfirmation.respondedAt).toBeInstanceOf(Date);
     // A resposta não mexe no status do atendimento.
     expect(saved.operationalStatus).toBe('missed');
+    expect(emitSocketEventMock).toHaveBeenCalledWith(
+      'appointmentUpdated',
+      expect.objectContaining({
+        _id: String(appointment._id),
+        attendanceConfirmation: expect.objectContaining({ status: 'confirmed' }),
+      })
+    );
   });
 
   it('registra a votação da enquete mesmo sem ID de mensagem confiável', async () => {

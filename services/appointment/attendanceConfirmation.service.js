@@ -6,6 +6,22 @@ import { normalizeE164BR } from '../../utils/phone.js';
 // Por isso nada aqui filtra operationalStatus — ver tests/unit/attendanceConfirmation.record.test.js
 const PENDING_CONFIRMATION_STATUSES = ['pending', 'no_response'];
 
+async function emitAttendanceConfirmationUpdated(appointmentId, attendanceConfirmation) {
+  try {
+    // Este serviço também roda no worker do WhatsApp, onde não existe uma instância
+    // local do Socket.IO. emitSocketEvent usa o bridge Redis nesse cenário.
+    const { emitSocketEvent } = await import('../../config/socket.js');
+    await emitSocketEvent('appointmentUpdated', {
+      _id: String(appointmentId),
+      attendanceConfirmation,
+      source: 'whatsapp_attendance_confirmation',
+    });
+  } catch (error) {
+    // A confirmação já foi persistida. Falha de realtime nunca deve desfazer o voto.
+    console.warn('[AttendanceConfirmation] realtime_emit_failed:', error?.message);
+  }
+}
+
 function isRealMessageId(value) {
   const v = String(value || '').trim();
   return !!v && !/^(unknown|undefined|null)$/i.test(v);
@@ -94,7 +110,7 @@ function parseButtonAction(buttonId) {
 }
 
 export async function markAttendanceConfirmationQueued(appointmentId, { queuedAt = new Date() } = {}) {
-  return Appointment.findOneAndUpdate(
+  const appointment = await Appointment.findOneAndUpdate(
     { _id: appointmentId },
     {
       $set: {
@@ -114,10 +130,20 @@ export async function markAttendanceConfirmationQueued(appointmentId, { queuedAt
     },
     { new: true }
   ).lean();
+
+  if (appointment) {
+    await emitAttendanceConfirmationUpdated(appointment._id, {
+      status: 'pending',
+      channel: 'whatsapp',
+      queuedAt,
+    });
+  }
+
+  return appointment;
 }
 
 export async function markAttendanceConfirmationSent(appointmentId, { messageId, sentAt = new Date() } = {}) {
-  return Appointment.updateOne(
+  const result = await Appointment.updateOne(
     {
       _id: appointmentId,
       'attendanceConfirmation.status': { $nin: ['confirmed', 'change_requested', 'review_required'] },
@@ -133,6 +159,17 @@ export async function markAttendanceConfirmationSent(appointmentId, { messageId,
       },
     }
   );
+
+  if (result.modifiedCount === 1) {
+    await emitAttendanceConfirmationUpdated(appointmentId, {
+      status: 'no_response',
+      channel: 'whatsapp',
+      sentAt,
+      ...(isRealMessageId(messageId) ? { messageId: String(messageId) } : {}),
+    });
+  }
+
+  return result;
 }
 
 export async function recordAttendanceConfirmationResponse({ phone, text, buttonId, messageId, respondedAt = new Date() } = {}) {
@@ -159,6 +196,16 @@ export async function recordAttendanceConfirmationResponse({ phone, text, button
       },
     }
   );
+
+  if (updated.modifiedCount === 1) {
+    await emitAttendanceConfirmationUpdated(appointment._id, {
+      status: resolvedStatus,
+      channel: 'whatsapp',
+      respondedAt,
+      responseMessageId: messageId ? String(messageId) : undefined,
+      responseText: String(text).slice(0, 300),
+    });
+  }
 
   return {
     matched: updated.modifiedCount === 1,
@@ -217,6 +264,16 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
       },
     }
   );
+
+  if (updated.modifiedCount === 1) {
+    await emitAttendanceConfirmationUpdated(appointment._id, {
+      status,
+      channel: 'whatsapp',
+      respondedAt,
+      responseMessageId: isRealMessageId(pollMessageId) ? String(pollMessageId) : undefined,
+      responseText: String(optionName).slice(0, 300),
+    });
+  }
 
   return { matched: updated.modifiedCount === 1, appointmentId: String(appointment._id), status };
 }
