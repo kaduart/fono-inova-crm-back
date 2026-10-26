@@ -57,6 +57,8 @@ const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
 let readyPollInterval = null;
 let stateSaveInterval = null;
+let attendancePollSyncInterval = null;
+let attendancePollSyncRunning = false;
 
 function updateState(updates) {
   Object.assign(whatsappState, updates, { updatedAt: new Date().toISOString() });
@@ -106,6 +108,51 @@ function scheduleAttributionJobs(client) {
   setTimeout(() => repairLidAttributions(client).catch((e) => console.warn('[WhatsAppWeb] reparo @lid falhou:', e.message)), 90_000);
 }
 
+async function syncPendingAttendancePollVotes(activeClient) {
+  if (attendancePollSyncRunning || !isReady || !activeClient?.getPollVotes) return;
+  attendancePollSyncRunning = true;
+  try {
+    const { default: Appointment } = await import('../models/Appointment.js');
+    const sentSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const pending = await Appointment.find({
+      'attendanceConfirmation.status': { $in: ['pending', 'no_response'] },
+      'attendanceConfirmation.messageId': { $exists: true, $nin: [null, '', 'unknown'] },
+      'attendanceConfirmation.sentAt': { $gte: sentSince },
+    })
+      .select('_id attendanceConfirmation.messageId')
+      .sort({ 'attendanceConfirmation.sentAt': -1 })
+      .limit(100)
+      .lean();
+
+    for (const appointment of pending) {
+      const messageId = appointment.attendanceConfirmation?.messageId;
+      if (!messageId) continue;
+      try {
+        const votes = await activeClient.getPollVotes(String(messageId));
+        for (const vote of votes || []) {
+          console.log(`[WhatsAppWeb] 🗳️ voto recuperado por sincronização para agendamento ${appointment._id}`);
+          await handleInboundAttendancePollVote(vote);
+        }
+      } catch (err) {
+        console.warn(`[WhatsAppWeb] ⚠️ não foi possível consultar voto da enquete ${String(messageId).slice(-24)}:`, err?.message || err);
+      }
+    }
+  } catch (err) {
+    console.warn('[WhatsAppWeb] ⚠️ sincronização de votos pendentes falhou:', err?.message || err);
+  } finally {
+    attendancePollSyncRunning = false;
+  }
+}
+
+function startAttendancePollSync(activeClient) {
+  if (attendancePollSyncInterval) clearInterval(attendancePollSyncInterval);
+  attendancePollSyncInterval = setInterval(
+    () => syncPendingAttendancePollVotes(activeClient),
+    15_000
+  );
+  setTimeout(() => syncPendingAttendancePollVotes(activeClient), 5_000);
+}
+
 // ─── Fallback: polling getState() para detectar ready quando o evento não dispara ─
 function startReadyPoll(newClient) {
   if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
@@ -133,6 +180,7 @@ function startReadyPoll(newClient) {
         }
         await saveState();
         scheduleAttributionJobs(newClient); // o evento 'ready' não disparou: sem isto catch-up/reparo nunca rodam
+        startAttendancePollSync(newClient);
       }
     } catch (e) {
       // ainda não está pronto — ignora
@@ -474,6 +522,7 @@ function createClient() {
     }
 
     scheduleAttributionJobs(newClient);
+    startAttendancePollSync(newClient);
   });
 
   newClient.on('loading_screen', async (percent, message) => {
@@ -493,6 +542,7 @@ function createClient() {
     console.log(`[WhatsAppWeb][${ts}] 🔴 disconnected: ${reason}`);
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
+    if (attendancePollSyncInterval) { clearInterval(attendancePollSyncInterval); attendancePollSyncInterval = null; }
     isReady = false;
     connectionStatus = 'disconnected';
     whatsappState.ready = false;
@@ -578,6 +628,7 @@ function createClient() {
 
   // As opções clicáveis são enviadas como enquete, recurso suportado pelo WhatsApp Web.
   newClient.on('vote_update', (vote) => {
+    console.log('[WhatsAppWeb] 🗳️ vote_update recebido');
     handleInboundAttendancePollVote(vote).catch((err) =>
       console.warn('[WhatsAppWeb] ⚠️ voto de confirmação falhou (ignorado):', err?.message)
     );
@@ -946,6 +997,7 @@ export async function initWhatsAppClient() {
 async function safeDestroyClient() {
   if (!client) return;
   if (stateSaveInterval) { clearInterval(stateSaveInterval); stateSaveInterval = null; }
+  if (attendancePollSyncInterval) { clearInterval(attendancePollSyncInterval); attendancePollSyncInterval = null; }
   try {
     await client.destroy();
     console.log('[WhatsAppWeb] Cliente destruído para retry.');
