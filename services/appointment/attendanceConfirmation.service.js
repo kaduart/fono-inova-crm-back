@@ -278,10 +278,51 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
   return { matched: updated.modifiedCount === 1, appointmentId: String(appointment._id), status };
 }
 
+export async function updateAttendanceConfirmationManually(
+  appointmentId,
+  { status, userId, updatedAt = new Date() } = {}
+) {
+  const allowedStatuses = ['pending', 'no_response', 'confirmed', 'change_requested', 'review_required'];
+  if (!allowedStatuses.includes(status)) {
+    return { updated: false, reason: 'invalid_status' };
+  }
+
+  const before = await Appointment.findById(appointmentId).lean();
+  if (!before) return { updated: false, reason: 'appointment_not_found' };
+
+  const statusLabels = {
+    pending: 'Pendente',
+    no_response: 'Sem resposta',
+    confirmed: 'Confirmou',
+    change_requested: 'Solicitou alteração',
+    review_required: 'Falar com a recepção',
+  };
+
+  const attendanceConfirmation = {
+    ...before.attendanceConfirmation,
+    status,
+    channel: 'manual',
+    respondedAt: updatedAt,
+    responseText: `Alterado pela equipe: ${statusLabels[status]}`,
+    manualUpdatedAt: updatedAt,
+    ...(userId ? { manualUpdatedBy: userId } : {}),
+  };
+
+  const appointment = await Appointment.findByIdAndUpdate(
+    appointmentId,
+    { $set: { attendanceConfirmation } },
+    { new: true, runValidators: true }
+  ).lean();
+
+  await emitAttendanceConfirmationUpdated(appointmentId, attendanceConfirmation);
+  return { updated: true, before, appointment };
+}
+
 export default {
   classifyAttendanceConfirmationResponse,
   markAttendanceConfirmationQueued,
   markAttendanceConfirmationSent,
   recordAttendanceConfirmationResponse,
   recordAttendanceConfirmationPollVote,
+  updateAttendanceConfirmationManually,
 };

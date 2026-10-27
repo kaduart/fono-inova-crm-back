@@ -27,6 +27,7 @@ let mongoServer;
 let Appointment;
 let recordAttendanceConfirmationResponse;
 let recordAttendanceConfirmationPollVote;
+let updateAttendanceConfirmationManually;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryReplSet.create({
@@ -36,7 +37,11 @@ beforeAll(async () => {
   await mongoose.connect(mongoServer.getUri());
 
   Appointment = (await import('../../models/Appointment.js')).default;
-  ({ recordAttendanceConfirmationResponse, recordAttendanceConfirmationPollVote } = await import(
+  ({
+    recordAttendanceConfirmationResponse,
+    recordAttendanceConfirmationPollVote,
+    updateAttendanceConfirmationManually,
+  } = await import(
     '../../services/appointment/attendanceConfirmation.service.js'
   ));
 }, 120_000);
@@ -147,5 +152,34 @@ describe('resposta do paciente é registrada independente do status operacional'
     const result = await recordAttendanceConfirmationResponse({ phone: '5511888888888', text: 'Sim, confirmo' });
 
     expect(result.matched).toBe(false);
+  });
+
+  it('permite ajuste manual sem alterar o status operacional', async () => {
+    const appointment = await seedAppointment({
+      attendanceConfirmation: { status: 'confirmed', sentAt: new Date() },
+    });
+
+    const result = await updateAttendanceConfirmationManually(appointment._id, {
+      status: 'review_required',
+    });
+
+    expect(result.updated).toBe(true);
+    const saved = await Appointment.findById(appointment._id).lean();
+    expect(saved.attendanceConfirmation).toMatchObject({
+      status: 'review_required',
+      channel: 'manual',
+      responseText: 'Alterado pela equipe: Falar com a recepção',
+    });
+    expect(saved.operationalStatus).toBe('missed');
+    expect(emitSocketEventMock).toHaveBeenCalledWith(
+      'appointmentUpdated',
+      expect.objectContaining({
+        _id: String(appointment._id),
+        attendanceConfirmation: expect.objectContaining({
+          status: 'review_required',
+          channel: 'manual',
+        }),
+      })
+    );
   });
 });

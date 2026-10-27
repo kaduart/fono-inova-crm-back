@@ -27,7 +27,10 @@ import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { requestCancellationNotification } from '../services/appointment/cancellationNotification.service.js';
-import { markAttendanceConfirmationSent } from '../services/appointment/attendanceConfirmation.service.js';
+import {
+  markAttendanceConfirmationSent,
+  updateAttendanceConfirmationManually,
+} from '../services/appointment/attendanceConfirmation.service.js';
 import { parseCancelRequester } from '../domain/appointment/cancelRequester.js';
 import { normalizeAdminEditPayload } from '../utils/adminEditPayloadNormalizer.js';
 import completeInsuranceAppointmentCommand from '../services/appointment/commands/completeInsuranceAppointmentCommand.js';
@@ -217,6 +220,49 @@ router.patch(
     }
   }
 );
+
+// Ajuste excepcional da confirmação pela equipe da agenda. Não altera o status
+// operacional do atendimento e mantém origem/data/usuário para auditoria.
+router.patch('/:id/attendance-confirmation', validateId, flexibleAuth, async (req, res) => {
+  try {
+    const status = String(req.body?.status || '');
+    const userId = req.user?._id || req.user?.id || null;
+    const result = await updateAttendanceConfirmationManually(req.params.id, { status, userId });
+
+    if (!result.updated) {
+      const invalid = result.reason === 'invalid_status';
+      return sendApiError(
+        res,
+        new AppError(
+          invalid ? 'VALIDATION_ERROR' : 'APPOINTMENT_NOT_FOUND',
+          invalid ? 'Status de confirmação inválido' : 'Agendamento não encontrado',
+          { status: invalid ? 400 : 404 }
+        ),
+        req
+      );
+    }
+
+    await recordAudit({
+      user: userId ? { _id: userId } : null,
+      action: 'attendance_confirmation_manual_update',
+      entityType: 'Appointment',
+      entityId: req.params.id,
+      before: result.before,
+      after: result.appointment,
+      source: 'appointment.v2:attendance-confirmation',
+      correlationId: req.headers['x-correlation-id'] || `attendance_manual_${Date.now()}`,
+    });
+
+    return res.json({
+      success: true,
+      data: result.appointment,
+      message: 'Confirmação atualizada pela equipe',
+    });
+  } catch (err) {
+    console.error(`[PATCH /api/v2/appointments/${req.params.id}/attendance-confirmation] erro:`, err);
+    return sendApiError(res, err, req);
+  }
+});
 
 // Remarcação rápida (botão "Mudar data" / arrastar no calendário).
 // Body: { date: 'YYYY-MM-DD', time: 'HH:mm', reason? }. Só valida regras de remarcação

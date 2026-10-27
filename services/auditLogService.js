@@ -62,6 +62,7 @@ const AUDITABLE_FIELDS = new Set([
   'notes',
   'rescheduledFrom',
   'originalAppointmentId',
+  'attendanceConfirmation',
 ]);
 
 function isPlainObject(value) {

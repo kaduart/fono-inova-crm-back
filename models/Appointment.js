@@ -213,13 +213,15 @@ const appointmentSchema = new mongoose.Schema({
         enum: ['pending', 'no_response', 'confirmed', 'change_requested', 'review_required'],
       default: 'pending'
     },
-    channel: { type: String, enum: ['whatsapp'], default: 'whatsapp' },
+    channel: { type: String, enum: ['whatsapp', 'manual'], default: 'whatsapp' },
     queuedAt: { type: Date, default: undefined },
     sentAt: { type: Date, default: undefined },
     respondedAt: { type: Date, default: undefined },
     messageId: { type: String, default: undefined },
     responseMessageId: { type: String, default: undefined },
     responseText: { type: String, default: undefined },
+    manualUpdatedAt: { type: Date, default: undefined },
+    manualUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
   },
 
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
