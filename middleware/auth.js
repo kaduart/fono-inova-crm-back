@@ -52,7 +52,7 @@ export const auth = async (req, res, next) => {
             );
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreta');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         // Validação reforçada do payload
         if (!decoded.id || !mongoose.Types.ObjectId.isValid(decoded.id)) {

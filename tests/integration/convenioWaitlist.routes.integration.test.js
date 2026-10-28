@@ -20,7 +20,9 @@ let mongod;
 let app;
 const tokens = {};
 
-const signToken = (role, id) => jwt.sign({ id: String(id), role }, process.env.JWT_SECRET || 'secreta', { expiresIn: '1h' });
+// auth.js não tem mais fallback de segredo: o teste define o seu
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-convenio-waitlist';
+const signToken = (role, id) => jwt.sign({ id: String(id), role }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const bearer = (role) => ({ Authorization: `Bearer ${tokens[role]}` });
 
 const cadastro = (overrides = {}) => ({
