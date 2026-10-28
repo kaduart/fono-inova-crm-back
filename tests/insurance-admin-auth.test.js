@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
 dotenv.config();
+// auth.js não tem mais fallback de segredo: garante um para o teste
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-insurance-admin';
 
 describe('auth em /insurance/admin/convenios', () => {
     let app;
@@ -32,7 +34,7 @@ describe('auth em /insurance/admin/convenios', () => {
             hasRealAdmin = true;
             validToken = jwt.sign(
                 { id: admin._id.toString(), role: 'admin' },
-                process.env.JWT_SECRET || 'secreta',
+                process.env.JWT_SECRET,
                 { expiresIn: '5m' }
             );
         }

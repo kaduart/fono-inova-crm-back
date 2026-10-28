@@ -6,7 +6,7 @@ export const optionalAuth = async (req, res, next) => {
     try {
         const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
         if (token) {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreta');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
             if (decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
                 const userModel = mongoose.model(
