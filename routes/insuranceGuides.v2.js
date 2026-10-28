@@ -27,8 +27,17 @@ import { moveAppointmentGuide } from '../services/insuranceGuide/moveAppointment
 import { updateGuideEvaluation } from '../services/insuranceGuide/updateGuideEvaluation.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { endOfDay } from '../utils/dateUtils.js';
 
 const router = express.Router();
+
+// 🚨 FIX (2026-10-28): vencimento "YYYY-MM-DD" vira o FIM daquele dia em Brasília.
+// Antes virava 00:00 UTC (= 21h do dia anterior em BRT): a tela mostrava um dia a menos
+// (salvava 26/11, aparecia 25/11) e completar sessão no próprio dia do vencimento dava
+// GUIDE_EXPIRED (consumeSession compara expiresAt < data da sessão). Valor ISO completo
+// (clientes antigos) segue como veio.
+const parseExpiresAt = (value) =>
+  (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? endOfDay(value) : new Date(value));
 
 // Constantes de validação
 const VALID_SPECIALTIES = [
@@ -146,7 +155,7 @@ router.post('/', auth, async (req, res) => {
       totalSessions: parseInt(totalSessions),
       sessionsUsed: 0,
       sessionsRemaining: parseInt(totalSessions),
-      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      expiresAt: expiresAt ? parseExpiresAt(expiresAt) : null,
       billingMode,
       isAba: Boolean(isAba),
       totalAuthorizedValue,
@@ -552,7 +561,7 @@ router.put('/:id', auth, async (req, res) => {
     }
     if (insurance) guide.insurance = insurance.toLowerCase().replace(' ', '-');
     if (totalSessions !== undefined) guide.totalSessions = parseInt(totalSessions);
-    if (expiresAt) guide.expiresAt = new Date(expiresAt);
+    if (expiresAt) guide.expiresAt = parseExpiresAt(expiresAt);
     if (notes !== undefined) guide.notes = notes;
     if (sessionValue !== undefined) guide.sessionValue = sessionValue != null ? Number(sessionValue) : null;
     // Trocar ABA sem informar valor novo: recalcula pela tabela do convênio (+ adicional ABA)
@@ -1100,6 +1109,7 @@ router.post('/:id/supersede', auth, async (req, res) => {
 
     const newGuidePayload = {
       ...newGuideData,
+      ...(newGuideData.expiresAt && { expiresAt: parseExpiresAt(newGuideData.expiresAt) }),
       patientId: oldGuide.patientId,
       insurance: oldGuide.insurance,
       specialty: oldGuide.specialty,
@@ -1221,6 +1231,7 @@ router.patch('/:id', auth, async (req, res) => {
     if (!Object.keys(update).length) {
       return sendApiError(res, new AppError('NO_FIELDS', 'Nenhum campo editável informado', { status: 400 }), req);
     }
+    if (update.expiresAt) update.expiresAt = parseExpiresAt(update.expiresAt);
 
     const guide = await InsuranceGuide.findByIdAndUpdate(
       id,
