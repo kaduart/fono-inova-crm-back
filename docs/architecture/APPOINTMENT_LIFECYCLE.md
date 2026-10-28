@@ -145,3 +145,20 @@ não foi feito agora. Ver ADR-001 em `DOMAIN_INVARIANTS.md`.
 | Data | Mudança |
 |---|---|
 | 2026-07-22 | Criação — par simétrico cancel/restore, fix `sessionsDone` negativo e `$pull` de ID errado, `restorePackageOnCancel`/`consumePackageSession` reintegrados (eram código órfão desde abril/2026), `restoreCanceledAppointmentCommand` criado do zero. |
+
+---
+
+## Eventos Socket.IO por transição (2026-10-28)
+
+Emitidos pós-commit via `services/appointment/helpers/socketHelper.js` (nunca quebram o fluxo). O front reage em `AppointmentsContext`, `PaymentsContext`, `PatientsContext` e `PatientDashboard`.
+
+| Transição | Evento | Origem |
+|---|---|---|
+| criar | `appointmentCreated` | `createAppointmentCommand.js` |
+| editar / confirmar / confirmar pré-agendamento | `appointmentUpdated` | `updateAppointmentCommand.js`, `confirmAppointmentCommand.js`, `confirmPreAgendamentoCommand.js` |
+| status clínico | `appointmentUpdated` (+ legado `appointment:updated`) | `clinicalStatusCommand.js` |
+| concluir | `appointmentCompleted` | `routes/appointment.v2.js` (`PATCH /:id/complete`) |
+| cancelar | `appointmentCanceled` | `cancelAppointmentCommand.js` |
+| excluir | `appointmentDeleted` | `deleteAppointmentCommand.js` |
+
+Ao criar uma transição nova, emitir o evento aqui e conferir se há listener no front (`grep socketManager.on`).

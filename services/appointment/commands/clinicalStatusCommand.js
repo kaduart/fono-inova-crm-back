@@ -64,7 +64,10 @@ export async function execute(id, status, user) {
   });
 
   setImmediate(() => {
-    emitSocket('appointment:updated', { appointmentId: updatedAppointment._id, clinicalStatus: status });
+    const payload = { appointmentId: updatedAppointment._id, clinicalStatus: status };
+    // O front escuta 'appointmentUpdated'; 'appointment:updated' mantido por compatibilidade
+    emitSocket('appointmentUpdated', payload);
+    emitSocket('appointment:updated', payload);
   });
 
   return {
