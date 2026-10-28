@@ -17,9 +17,25 @@ import { cancelPendingSessions } from '../domain/session/cancelPendingSessions.j
 import { cancelPendingPayments } from '../domain/payment/cancelPendingPayments.js';
 import { moveLiminarAppointmentSpecialty } from '../services/liminar/moveLiminarAppointmentSpecialty.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
+import { recordHistoricalCancellations } from '../services/liminar/recordHistoricalCancellations.js';
 import { AppError } from '../errors/AppError.js';
 
 const logger = createContextLogger('LiminarContract');
+
+export async function addHistoricalCancellations(req, res) {
+  if (!req.user) return sendApiError(res, new AppError('UNAUTHORIZED', 'Autenticação necessária.', { status: 401 }), req);
+  if (!['admin', 'superadmin', 'secretary'].includes(String(req.user.role).toLowerCase())) {
+    return sendApiError(res, new AppError('FORBIDDEN', 'Sem permissão para registrar cancelamentos históricos.', { status: 403 }), req);
+  }
+  try {
+    const result = await recordHistoricalCancellations({ contractId: req.params.id, planId: req.params.planId,
+      cancellations: req.body?.cancellations, dryRun: req.body?.dryRun, user: req.user });
+    return res.status(result.conflicts.length && !result.dryRun ? 409 : 200).json(result);
+  } catch (error) {
+    return sendApiError(res, new AppError(error.code || 'HISTORICAL_CANCELLATION_FAILED',
+      error.statusCode ? error.message : 'Falha ao registrar cancelamentos históricos.', { status: error.statusCode || 500 }), req);
+  }
+}
 
 // ──────────────────────────────────────────────────────────────
 // POST /api/v2/liminar-contracts

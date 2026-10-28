@@ -1,4 +1,5 @@
 import express from 'express';
+import { auth } from '../middleware/auth.js';
 import {
   createLiminarContract,
   getLiminarContract,
@@ -8,6 +9,7 @@ import {
   listTherapeuticPlans,
   getActivePlan,
   generateSessions,
+  addHistoricalCancellations,
   getCommittedBalance,
   getContractSessions,
   updateTherapy,
@@ -34,6 +36,7 @@ router.post('/:id/plans',                          createTherapeuticPlan);
 router.get('/:id/plans',                           listTherapeuticPlans);
 router.get('/:id/plans/active',                    getActivePlan);
 router.post('/:id/plans/:planId/generate-sessions', generateSessions);
+router.post('/:id/plans/:planId/historical-cancellations', auth, addHistoricalCancellations);
 router.patch('/:id/plans/:planId/therapies/:specialty', updateTherapy);
 
 export default router;
