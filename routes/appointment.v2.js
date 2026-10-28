@@ -69,6 +69,7 @@ import {
 } from '../services/appointmentV2Service.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { emitSocket } from '../services/appointment/helpers/socketHelper.js';
 
 const router = express.Router();
 
@@ -580,6 +581,17 @@ router.patch('/:id/complete', auth, async (req, res) => {
             const apptDateStr = moment.tz(populatedAppointment.date, 'America/Sao_Paulo').format('YYYY-MM-DD');
             clearCashflowCache(apptDateStr);
         }
+
+        // 📡 Outras telas abertas (Pagamentos, Pacientes, agenda de outro usuário) escutam
+        // 'appointmentCompleted' — até 2026-10-28 ninguém emitia. Pós-commit, nunca quebra o fluxo.
+        setImmediate(() => {
+            emitSocket('appointmentCompleted', {
+                appointmentId: id,
+                patientId: populatedAppointment?.patient?._id?.toString?.() || null,
+                doctorId: populatedAppointment?.doctor?._id?.toString?.() || null,
+                billingType: populatedAppointment?.billingType || null,
+            });
+        });
 
         const durationMs = Date.now() - startTime;
         console.log(`[complete] ✅ Completo via serviço oficial`, {

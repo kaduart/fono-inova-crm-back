@@ -39,9 +39,16 @@ export const registerWebhook = async () => {
   
   const token = await getSicoobAccessToken();
   const url = `${API_BASE}/webhook/${PIX_KEY}`;
-  const webhookUrl =
+  const baseWebhookUrl = (
     process.env.SICOOB_WEBHOOK_URL ||
-    "https://fono-inova-crm-back.onrender.com/api/pix/webhook";
+    "https://fono-inova-crm-back.onrender.com/api/pix/webhook"
+  ).replace(/\/+$/, "");
+  // 🔒 Com SICOOB_WEBHOOK_SECRET, registra a URL com o segredo no path
+  // (ver routes/pix.js). Sem a env, mantém a URL legada.
+  const secret = process.env.SICOOB_WEBHOOK_SECRET;
+  const webhookUrl = secret
+    ? `${baseWebhookUrl}/${encodeURIComponent(secret)}`
+    : baseWebhookUrl;
 
   const body = { webhookUrl };
 
@@ -54,7 +61,7 @@ export const registerWebhook = async () => {
       },
     });
 
-    console.log("✅ Webhook registrado com sucesso:", response.data);
+    console.log(`✅ Webhook registrado com sucesso (${secret ? "com segredo" : "SEM segredo"}):`, response.status);
     return response.data;
   } catch (error) {
     console.error(
@@ -83,7 +90,7 @@ export const getWebhookInfo = async () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    console.log("📡 Webhook atual:", response.data);
+    console.log("📡 Webhook atual consultado (URL omitida do log: pode conter segredo)");
     return response.data;
   } catch (error) {
     console.error(

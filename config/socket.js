@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import { redisConnection } from "./redisConnection.js";
+import { socketAuthMiddleware, getSocketAuthMode } from "./socketAuth.js";
 
 let io = null; // Inicia como null
 const REDIS_SOCKET_CHANNEL = "socket:emit";
@@ -69,6 +70,10 @@ export const initializeSocket = (server) => {
       console.error("❌ Erro ao configurar Redis bridge:", err.message);
     }
   }
+
+  // 🔒 Autenticação do handshake (JWT ou token de serviço). Ver config/socketAuth.js
+  io.use(socketAuthMiddleware);
+  console.log(`🔒 Socket.IO auth mode: ${getSocketAuthMode()}`);
 
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
