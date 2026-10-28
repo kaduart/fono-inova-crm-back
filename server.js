@@ -495,8 +495,10 @@ app.use("/api/v2/admin/dashboard", adminDashboardV2Routes);  // 🚀 NOVO: Admin
 app.use("/api/admin", adminSystemRoutes);  // 🖥️ Bull Board + system-monitor
 app.use("/api/admin/whatsapp-queue", adminWhatsappQueueRoutes);  // 🚨 Kill switch da fila whatsapp-send
 app.use("/api/doctors", doctorRoutes);
-app.use("/api/patients", patientRoutes);
+// Duplicados ANTES do router principal: senão GET /:id (com validateId) captura
+// /check-duplicate e responde 400 "ID inválido".
 app.use("/api/patients", patientDuplicatesRoutes);
+app.use("/api/patients", patientRoutes);
 // 🚫 INATIVADO: appointmentRoutes V1 removido (usando apenas V2)
 // app.use("/api/appointments", appointmentRoutes);
 
