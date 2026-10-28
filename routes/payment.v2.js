@@ -20,6 +20,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
+import { requireWebhookSecret } from '../middleware/webhookAuth.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
@@ -867,7 +868,8 @@ router.post('/create-sync', auth, async (req, res) => {
 // POST /api/v2/payments/webhook
 // Webhook para confirmação externa (Sicoob, etc)
 // ============================================
-router.post('/webhook', async (req, res) => {
+// 🔒 Exige PAYMENT_WEBHOOK_SECRET (header x-webhook-secret ou Bearer). Sem a env → 503.
+router.post('/webhook', requireWebhookSecret('PAYMENT_WEBHOOK_SECRET', { label: 'payments/webhook' }), async (req, res) => {
     const {
         paymentId,
         transactionId,

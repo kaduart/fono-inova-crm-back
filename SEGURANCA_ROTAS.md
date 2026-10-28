@@ -79,6 +79,12 @@ curl http://localhost:5000/api/v2/appointments/123 \
 
 ---
 
+## 🔒 Webhooks e Socket.IO (2026-10-28)
+
+Webhook de pagamento, webhook PIX e Socket.IO passaram a exigir segredo/token. Ver `docs/WEBHOOK_SOCKET_AUTH.md` (inclui o passo a passo de rollout).
+
+---
+
 ## 💀 Conclusão
 
 **Para Complete/Cancel:**
