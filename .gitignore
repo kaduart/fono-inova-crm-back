@@ -129,3 +129,15 @@ scripts/auditoria*
 scripts/audit*
 
 .wa-sales-auth/
+
+# ─── Saídas de scripts e dados locais (LGPD) — destrackeados em 2026-10-28 ───
+# Relatórios/IDs gerados contra produção na raiz e backups pontuais de correção
+/*-report*.json
+/*-no-payment-*.json
+/validacao-producao-ids.json
+/benchmark-financial-v2-report.json
+backups-isabela/
+backups-*/
+# QR code de pareamento do WhatsApp e PID local
+qr-code.png
+*.pid

@@ -83,6 +83,9 @@ curl http://localhost:5000/api/v2/appointments/123 \
 
 Webhook de pagamento, webhook PIX e Socket.IO passaram a exigir segredo/token. Ver `docs/WEBHOOK_SOCKET_AUTH.md` (inclui o passo a passo de rollout).
 
+- `middleware/auth.js` e `middleware/publicAuth.js` não aceitam mais o fallback `'secreta'`: sem `JWT_SECRET`, todo token é recusado (o login já não funcionava sem ele, pois `jwt.sign` exige o segredo).
+- `/api/patients/check-duplicate` estava sendo capturado pelo `GET /:id` do router principal (400 "ID inválido"). O router de duplicados agora é montado antes.
+
 ---
 
 ## 💀 Conclusão
