@@ -795,7 +795,7 @@ function initFollowupWatcher() {
 // ======================================================
 // 🚀 INICIA SERVIDOR IMEDIATAMENTE (antes das inicializações)
 // ======================================================
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, process.env.ESPELHO === 'true' ? '127.0.0.1' : '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
 });
@@ -868,7 +868,7 @@ server.listen(PORT, '0.0.0.0', () => {
       }
       
       // 🎯 Inicia projections independentemente (útil para dev:api:full)
-      if (process.env.ENABLE_WORKERS === "true" || process.env.ENABLE_PROJECTIONS === "true") {
+      if (process.env.ESPELHO !== 'true' && (process.env.ENABLE_WORKERS === "true" || process.env.ENABLE_PROJECTIONS === "true")) {
         try {
           const { default: FinancialProjectionHandler } = await import("./projections/financialProjection.js");
           FinancialProjectionHandler.start();
@@ -949,7 +949,7 @@ server.listen(PORT, '0.0.0.0', () => {
     // que de fato sobe em produção (crm-backend). workers/startWorkers.js
     // também chama isso, mas não é o Start Command real do crm-worker
     // (que é workers/entrypoints/whatsapp-only.js — ver DOMAIN_INVARIANTS.md)
-    startWhatsAppPipelineGuard();
+    if (process.env.ESPELHO !== 'true') startWhatsAppPipelineGuard();
 
     // 👉 CRONS CRÍTICOS HABILITADOS
     if (process.env.ENABLE_CRONS !== 'false') {
@@ -979,7 +979,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
     // Registrar Webhook PIX no Sicoob
     try {
-      await registerWebhook();
+      if (process.env.ESPELHO !== 'true') await registerWebhook();
       console.log("🔗 Webhook PIX registrado com sucesso");
     } catch (err) {
       console.warn("⚠️ Falha ao registrar webhook PIX:", err.message);

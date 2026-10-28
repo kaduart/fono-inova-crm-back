@@ -4,6 +4,7 @@
 import LiminarContract from '../../../models/LiminarContract.js';
 import Appointment from '../../../models/Appointment.js';
 import { executeWithSession as cancelAppointmentWithSession } from '../../appointment/commands/cancelAppointmentCommand.js';
+import { AppError } from '../../../errors/AppError.js';
 
 export default {
   async handle({ context, payload, session }) {
@@ -32,16 +33,16 @@ async function handleComplete({ payload, session }) {
   const contract = await LiminarContract.findById(liminarContractId).session(session);
 
   if (!contract) {
-    throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
+    throw new AppError('LIMINAR_CONTRACT_NOT_FOUND', 'Contrato de liminar não encontrado', { status: 404 });
   }
 
   if (contract.status !== 'active') {
-    throw new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
+    throw new AppError('LIMINAR_CONTRACT_NOT_ACTIVE', `Contrato de liminar não está ativo (status atual: ${contract.status})`, { status: 409, details: { contractStatus: contract.status } });
   }
 
   if (contract.creditBalance < sessionValue) {
     throw new Error(
-      `LIMINAR_NO_CREDIT: Disponível R$${contract.creditBalance}, necessário R$${sessionValue}`
+      new AppError('LIMINAR_NO_CREDIT', `Crédito insuficiente no contrato de liminar: disponível R$${contract.creditBalance}, necessário R$${sessionValue}`, { status: 422, details: { creditBalance: contract.creditBalance, sessionValue } })
     );
   }
 
@@ -73,7 +74,7 @@ async function handleComplete({ payload, session }) {
   );
 
   if (!result) {
-    throw new Error('LIMINAR_DEBIT_FAILED: race condition ou saldo insuficiente');
+    throw new AppError('LIMINAR_DEBIT_FAILED', 'Falha ao debitar crédito da liminar (condição de corrida ou saldo insuficiente)', { status: 409 });
   }
 
   // Esgotado? Atualiza status
@@ -183,7 +184,7 @@ async function handleCancel({ payload, session }) {
 
   if (!result) {
     const current = await LiminarContract.findById(liminarContractId).session(session).lean();
-    if (!current) throw new Error('LIMINAR_CONTRACT_NOT_FOUND on reversal');
+    if (!current) throw new AppError('LIMINAR_CONTRACT_NOT_FOUND', 'Contrato de liminar não encontrado (reversão)', { status: 404 });
     const alreadyReversed = current.creditHistory?.some(item =>
       item.type === 'reversal'
       && item.reason === 'appointment_canceled'
@@ -197,7 +198,7 @@ async function handleCancel({ payload, session }) {
         creditBalance: current.creditBalance,
       };
     }
-    throw new Error('LIMINAR_REVERSAL_CREDIT_INCONSISTENT');
+    throw new AppError('LIMINAR_REVERSAL_CREDIT_INCONSISTENT', 'Inconsistência de crédito ao reverter a liminar', { status: 409 });
   }
 
   // Reativa se estava exhausted e agora tem crédito

@@ -625,10 +625,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
             durationMs,
             error: error.message,
             stack: error.stack,
-            statusCode: error.statusCode || 500
+            statusCode: error.status || error.statusCode || 500
         });
 
-        const statusCode = error.statusCode && error.statusCode < 500 ? error.statusCode : 500;
+        const statusCode = (error.status || error.statusCode) && (error.status || error.statusCode) < 500 ? (error.status || error.statusCode) : 500;
         const isBusinessError = statusCode < 500;
 
         // 5xx não expõe a mensagem original ao cliente (só em desenvolvimento, em details).

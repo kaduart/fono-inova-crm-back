@@ -137,4 +137,17 @@ describe('appointmentReschedulePolicy', () => {
   it('pacote não tem validade própria — remarca normalmente', () => {
     expect(() => run({ appointment: { ...base, serviceType: 'package_session' } })).not.toThrow();
   });
+
+  // 2026-10-28: vencimento gravado como fim do dia em Brasília (26/11 → 2026-11-27T02:59:59.999Z)
+  it('vencimento fim do dia em BRT: aceita o próprio dia e recusa o seguinte', () => {
+    const guide = { number: '16510723', status: 'active', expiresAt: new Date('2026-11-27T02:59:59.999Z') };
+    expect(() => run({ guide, newDate: '2026-11-26' })).not.toThrow();
+    expectCode(() => run({ guide, newDate: '2026-11-27' }), 'GUIDE_EXPIRES_BEFORE_DATE', 409);
+  });
+
+  it('vencimento legado a 00:00 UTC conta como o próprio dia UTC', () => {
+    const guide = { number: '1', status: 'active', expiresAt: new Date('2026-11-26T00:00:00.000Z') };
+    expect(() => run({ guide, newDate: '2026-11-26' })).not.toThrow();
+    expectCode(() => run({ guide, newDate: '2026-11-27' }), 'GUIDE_EXPIRES_BEFORE_DATE', 409);
+  });
 });

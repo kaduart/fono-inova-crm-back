@@ -39,6 +39,22 @@ export function toDateOnly(value) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().substring(0, 10);
 }
 
+/**
+ * Dia 'YYYY-MM-DD' do vencimento da guia. Desde 2026-10-28 o vencimento é gravado como fim
+ * do dia em Brasília (ver parseExpiresAt em routes/insuranceGuides.v2.js) — em UTC cai no dia
+ * seguinte, então o dia vem do fuso de Brasília. Guias antigas foram gravadas a 00:00 UTC do
+ * dia pretendido: nesse caso o dia é a própria data UTC.
+ */
+export function guideExpiryDateOnly(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) {
+    return d.toISOString().substring(0, 10);
+  }
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
 function formatBR(dateOnly) {
   const [y, m, d] = dateOnly.split('-');
   return `${d}/${m}/${y}`;
@@ -98,7 +114,7 @@ export function assertRescheduleAllowed({ appointment, guide = null, liminar = n
         'GUIDE_NOT_ACTIVE_FOR_RESCHEDULE'
       );
     }
-    const expires = toDateOnly(guide.expiresAt);
+    const expires = guideExpiryDateOnly(guide.expiresAt);
     if (expires && targetDate > expires) {
       throw buildError(
         `A guia${guide.number ? ` #${guide.number}` : ''} vence em ${formatBR(expires)}. Escolha uma data até esse dia.`,
