@@ -66,8 +66,13 @@ export async function startAllCrons() {
     const { schedulePatientConsistency } = await import("../crons/patientConsistency.cron.js");
     startCron('patientConsistency', () => schedulePatientConsistency());
 
-    const { schedulePreAgendamentoExpiration } = await import("../crons/preAgendamentoExpiration.cron.js");
-    startCron('preAgendamentoExpiration', () => schedulePreAgendamentoExpiration());
+    // Expiração automática pre_agendado → missed: DESLIGADA de propósito (2026-10-28).
+    // Plano de convênio com início retroativo nasce pré-agendado no passado e o cron marcava
+    // tudo como falta (auto_expired) — falta ocupa vaga da guia, então "Gerar" não repunha
+    // e sessões que aconteceram ficavam como falta (caso Linda Ayla, guia 16510723).
+    // Falta agora só por ação humana. Para religar, descomente as 2 linhas.
+    // const { schedulePreAgendamentoExpiration } = await import("../crons/preAgendamentoExpiration.cron.js");
+    // startCron('preAgendamentoExpiration', () => schedulePreAgendamentoExpiration());
 
     const { scheduleStateMachineConvenioReconciliation } = await import("../crons/stateMachineConvenioReconciliation.cron.js");
     startCron('stateMachineConvenioReconciliation', () => scheduleStateMachineConvenioReconciliation());
@@ -101,7 +106,7 @@ export async function startAllCrons() {
         startCron('adsConversion', () => initAdsConversionCron());
     }
 
-    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + preAgendamentoExpiration + stateMachineConvenioReconciliation + communicationReconciliation + workerScheduler + fixedExpenseGeneration)");
+    console.log("✅ Crons críticos habilitados (appointmentRecovery + eventReaper + financialSnapshotAudit + patientConsistency + stateMachineConvenioReconciliation + communicationReconciliation + workerScheduler + fixedExpenseGeneration)");
 }
 
 export default { startCron, stopCron, stopAllCrons, listActiveCrons, startAllCrons };
