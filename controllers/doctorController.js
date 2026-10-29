@@ -586,10 +586,13 @@ export const getTodaysAppointments = async (req, res) => {
       doctor: new ObjectId(doctorId)
     };
 
+    // Campos extras (telefone, cobrança, jornada) alimentam a linha da agenda do painel
+    // do terapeuta: WhatsApp do responsável, convênio/particular, Liminar, Novo paciente.
     const appointments = await Appointment.find(filter)
-      .populate('patient', 'fullName')
+      .populate('patient', 'fullName phone dateOfBirth')
       .populate('payment', 'status')
-      .select('_id date time operationalStatus clinicalStatus patient payment')
+      .select('_id date time duration operationalStatus clinicalStatus patient payment billingType insuranceProvider serviceType sessionType specialty patientJourneyType liminarContract package reason')
+      .sort({ time: 1 })
       .lean();
 
     console.log('[GET_TODAYS_APPOINTMENTS] encontrados:', appointments.length);
@@ -694,26 +697,40 @@ export const getDoctorStats = async (req, res) => {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
+    // Comparecimento = concluídos ÷ atendimentos previstos ATÉ AGORA no mês (exclui futuros,
+    // cancelados e suspensos). Antes o divisor incluía o mês inteiro, então no começo do mês
+    // ou com sessões futuras o índice despencava (ex.: 0% com 10 consultas agendadas).
+    const CANCELED_LIKE = ['canceled', 'force_cancelled', 'suspended'];
     const [monthlyStats, activePatients] = await Promise.all([
       Appointment.aggregate([
         { $match: { doctor, date: { $gte: startOfMonth, $lte: endOfMonth } } },
         { $group: {
           _id: null,
           total: { $sum: 1 },
-          completed: { $sum: { $cond: [{ $eq: ['$operationalStatus', 'completed'] }, 1, 0] } }
+          completed: { $sum: { $cond: [{ $eq: ['$operationalStatus', 'completed'] }, 1, 0] } },
+          missed: { $sum: { $cond: [{ $eq: ['$operationalStatus', 'missed'] }, 1, 0] } },
+          canceled: { $sum: { $cond: [{ $in: ['$operationalStatus', CANCELED_LIKE] }, 1, 0] } },
+          expectedSoFar: { $sum: { $cond: [{ $and: [
+            { $lte: ['$date', now] },
+            { $not: [{ $in: ['$operationalStatus', CANCELED_LIKE] }] }
+          ] }, 1, 0] } }
         }}
       ]),
       Appointment.distinct('patient', { doctor, date: { $gte: startOfMonth, $lte: endOfMonth } })
     ]);
 
-    const monthly = monthlyStats[0] || { total: 0, completed: 0 };
+    const monthly = monthlyStats[0] || { total: 0, completed: 0, missed: 0, canceled: 0, expectedSoFar: 0 };
 
     const formattedResult = {
       today: result.total,
       monthlyAppointments: monthly.total,
       monthlyCompleted: monthly.completed,
+      monthlyMissed: monthly.missed,
+      monthlyCanceled: monthly.canceled,
+      monthlyExpectedSoFar: monthly.expectedSoFar,
       activePatients: activePatients.length,
-      attendanceRate: monthly.total > 0 ? Math.round((monthly.completed / monthly.total) * 100) : 0,
+      // null = sem atendimentos previstos até agora (o front mostra "—", não 0%)
+      attendanceRate: monthly.expectedSoFar > 0 ? Math.round((monthly.completed / monthly.expectedSoFar) * 100) : null,
       clinical: {
         pending: result.clinicalStatus.pending || 0,
         inProgress: result.clinicalStatus.in_progress || 0,
