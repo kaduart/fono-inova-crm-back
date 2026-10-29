@@ -9,16 +9,16 @@ import { buildLiminarSession } from '../../domain/session/sessionFactory.js';
 import { normalizeCancellations, classifyExistingCancellation, cancellationError } from './historicalCancellationRules.js';
 
 // Manual historical entry only. No Payment, credit operation, outbox or notification.
-export async function recordHistoricalCancellations({ contractId, planId, cancellations, dryRun, user }) {
+export async function recordHistoricalCancellations({ contractId, planId, cancellations, dryRun, user, mongoSession }) {
   const rows = normalizeCancellations(cancellations);
   const actor = user?.id || user?._id;
   if (!mongoose.isValidObjectId(actor)) throw cancellationError('Usuário autenticado inválido.', 401);
   if (![contractId, planId].every(x => mongoose.isValidObjectId(x))) throw cancellationError('Contrato ou plano inválido.');
   if (typeof dryRun !== 'boolean') throw cancellationError('Informe dryRun como booleano.');
-  const session = await mongoose.startSession();
+  const session = mongoSession || await mongoose.startSession();
   let result;
   try {
-    await session.withTransaction(async () => {
+    const execute = async () => {
       const plan = await TherapeuticPlan.findOne({ _id: planId, liminarContract: contractId }).session(session).lean();
       const contract = await LiminarContract.findById(contractId).session(session).lean();
       if (!plan || !contract || String(plan.patient) !== String(contract.patient)) throw cancellationError('Plano e contrato incompatíveis.', 404);
@@ -66,7 +66,8 @@ export async function recordHistoricalCancellations({ contractId, planId, cancel
         row.sessionId = String(clinicalSession._id);
         result.created++;
       }
-    });
+    };
+    if (mongoSession) await execute(); else await session.withTransaction(execute);
     return result;
-  } finally { await session.endSession(); }
+  } finally { if (!mongoSession) await session.endSession(); }
 }

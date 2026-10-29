@@ -35,7 +35,7 @@ router.post('/:id/inactivate', inactivateContract);
 router.post('/:id/plans',                          createTherapeuticPlan);
 router.get('/:id/plans',                           listTherapeuticPlans);
 router.get('/:id/plans/active',                    getActivePlan);
-router.post('/:id/plans/:planId/generate-sessions', generateSessions);
+router.post('/:id/plans/:planId/generate-sessions', auth, generateSessions);
 router.post('/:id/plans/:planId/historical-cancellations', auth, addHistoricalCancellations);
 router.patch('/:id/plans/:planId/therapies/:specialty', updateTherapy);
 

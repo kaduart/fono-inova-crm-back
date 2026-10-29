@@ -409,6 +409,8 @@ export async function generateSessions(req, res) {
     endDate,
     skipHolidays = true,
     specialties,
+    cancellations = [],
+    dryRun = false,
   } = req.body;
 
   // Proteção para clientes antigos e chamadas diretas. O serviço é append-only
@@ -437,6 +439,8 @@ export async function generateSessions(req, res) {
   try {
     result = await generateLiminarSessions({
       planId,
+      contractId: req.params.id,
+      cancellations, dryRun, user: req.user,
       mode,
       weeks,
       startDate,
@@ -455,6 +459,7 @@ export async function generateSessions(req, res) {
         req
       );
     }
+    if (error.statusCode && error.statusCode !== 409) return sendApiError(res, new AppError(error.code || 'BAD_REQUEST', error.message, { status: error.statusCode }), req);
     logger.error('Falha ao gerar sessões liminar', { planId, error: error.message });
     return sendApiError(
       res,

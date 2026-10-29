@@ -1,3 +1,4 @@
+import { recordHistoricalCancellations } from '../liminar/recordHistoricalCancellations.js';
 import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import Session from '../../models/Session.js';
@@ -45,8 +46,9 @@ function conflictError(message, conflictSlots = []) {
 
 /** Append-only. Decision reads and all writes run in one Mongo transaction. */
 export async function generateLiminarSessions({
-  planId, mode = 'append', weeks = 4, startDate, skipHolidays = true, specialties,
+  planId, contractId, mode = 'append', weeks = 4, startDate, skipHolidays = true, specialties, cancellations = [], dryRun = false, user,
 }) {
+  if (!Array.isArray(cancellations) || typeof dryRun !== 'boolean') throw Object.assign(new Error('Cancelamentos ou prévia inválidos.'), { statusCode: 400 });
   if (mode !== 'append') {
     const error = new Error('LIMINAR_RESET_DISABLED');
     error.statusCode = 409;
@@ -56,14 +58,21 @@ export async function generateLiminarSessions({
 
   const mongoSession = await mongoose.startSession();
   let response;
+  let cancellationResult = null;
   try {
-    await mongoSession.withTransaction(async () => {
+    const execute = async () => {
       const plan = await TherapeuticPlan.findById(planId).session(mongoSession).lean();
       if (!plan) throw new Error('PLAN_NOT_FOUND');
       if (plan.status !== 'active') throw new Error(`PLAN_NOT_ACTIVE: status=${plan.status}`);
 
       const contract = await LiminarContract.findById(plan.liminarContract).session(mongoSession).lean();
       if (!contract) throw new Error('LIMINAR_CONTRACT_NOT_FOUND');
+      if (contractId && String(contract._id) !== String(contractId)) throw conflictError('O plano não pertence a este contrato.');
+      if (cancellations.length) {
+        if (!['admin', 'superadmin', 'secretary'].includes(String(user?.role).toLowerCase())) throw Object.assign(new Error('Sem permissão para registrar cancelamentos.'), { statusCode: 403 });
+        cancellationResult = await recordHistoricalCancellations({ contractId: String(contract._id), planId, cancellations, dryRun: false, user, mongoSession });
+        if (cancellationResult.conflicts.length) throw conflictError('Confira os cancelamentos antes de gerar.', cancellationResult.conflicts);
+      }
       if (contract.status !== 'active') {
         const error = new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
         error.statusCode = 409;
@@ -87,6 +96,13 @@ export async function generateLiminarSessions({
             operationalStatus: { $nin: CANCELED_STATUSES },
           }).session(mongoSession)
         : 0;
+
+      const specialtyCounts = new Map();
+      for (const [specialty, config] of activeEntries) {
+        if (config.totalSessions != null) specialtyCounts.set(specialty, await Appointment.countDocuments({
+          liminarContract: contract._id, specialty, operationalStatus: { $nin: CANCELED_STATUSES },
+        }).session(mongoSession));
+      }
 
       const holidaysByYear = new Map();
       const isHoliday = dateStr => {
@@ -117,6 +133,8 @@ export async function generateLiminarSessions({
       const floor = requestedStart && requestedStart > today ? requestedStart : today;
       const minDate = anchor > floor ? anchor : floor;
       const candidates = [];
+      const validityDates = [plan.endDate, contract.expirationDate].filter(Boolean).map(d => new Date(d));
+      const lastDate = validityDates.length ? new Date(Math.min(...validityDates.map(Number))) : null;
 
       for (const [specialty, config] of activeEntries) {
         for (const configuredSlot of (Array.isArray(config.slots) ? config.slots : [])) {
@@ -124,7 +142,8 @@ export async function generateLiminarSessions({
             patient: contract.patient, liminarContract: contract._id, specialty,
             time: configuredSlot.time, date: { $gte: minDate },
             // Existing canceled occurrences remain in history and are never regenerated here.
-          }).select('date').session(mongoSession).lean();
+          }).select('date operationalStatus').session(mongoSession).lean();
+          const canceledDates = new Set(existing.filter(item => CANCELED_STATUSES.includes(item.operationalStatus)).map(item => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.date))));
           const existingDates = new Set(existing
             .filter(item => new Date(item.date).getDay() === configuredSlot.dayOfWeek)
             .map(item => new Date(item.date).toISOString().split('T')[0]));
@@ -135,7 +154,8 @@ export async function generateLiminarSessions({
           let guard = 0;
           while (occurrences < weeks && guard++ < 260) {
             const dateStr = candidate.toISOString().split('T')[0];
-            if (!isHoliday(dateStr)) {
+            if (lastDate && dateStr > lastDate.toISOString().slice(0, 10)) break;
+            if (!isHoliday(dateStr) && !canceledDates.has(dateStr)) {
               occurrences++;
               if (!existingDates.has(dateStr)) {
                 candidates.push({
@@ -187,8 +207,11 @@ export async function generateLiminarSessions({
         const exceedsCredit = runningCost + slot.sessionValue > contract.creditBalance;
         const exceedsSessions = contract.totalSessions != null
           && existingSessionsCount + kept.length >= contract.totalSessions;
-        if (exceedsCredit || exceedsSessions) {
-          (exceedsSessions && !exceedsCredit ? sessionBlocked : saldoBlocked).push(slot);
+        const specialtyLimit = therapies[slot.specialty]?.totalSessions;
+        const exceedsSpecialty = specialtyLimit != null && (specialtyCounts.get(slot.specialty) || 0)
+          + kept.filter(s => s.specialty === slot.specialty).length >= specialtyLimit;
+        if (exceedsCredit || exceedsSessions || exceedsSpecialty) {
+          ((exceedsSessions || exceedsSpecialty) && !exceedsCredit ? sessionBlocked : saldoBlocked).push(slot);
         } else {
           kept.push(slot);
           runningCost += slot.sessionValue;
@@ -242,8 +265,12 @@ export async function generateLiminarSessions({
         limiteSessoesAtingido: sessionBlocked.length > 0,
         slotsBloqueadosPorLimiteSessoes: sessionBlocked.length,
       };
-    });
-    return response;
+    };
+    if (dryRun) {
+      mongoSession.startTransaction();
+      try { await execute(); } finally { await mongoSession.abortTransaction(); }
+    } else await mongoSession.withTransaction(execute);
+    return { ...response, dryRun, cancellations: cancellationResult };
   } finally {
     await mongoSession.endSession();
   }
