@@ -467,10 +467,16 @@ export const getDoctorById = async (req, res) => {
   }
 };
 
+// Lista "Meus pacientes" do painel do terapeuta (somente leitura).
+// pre_agendado conta como sessão futura (DOMAIN_INVARIANTS: entra em todo filtro ativo).
+const PATIENT_LIST_CANCELED = ['canceled', 'force_cancelled'];
+const PATIENT_LIST_OPEN = ['pre_agendado', 'scheduled', 'confirmed', 'pending'];
+const INACTIVE_AFTER_DAYS = 60;
+
 export const getDoctorPatients = async (req, res) => {
   try {
     const doctorId = req.user?.id;
-    const { page = '1', limit = '50', search = '' } = req.query;
+    const { page = '1', limit = '50', search = '', care = '', sort = 'next', ids = '' } = req.query;
 
     if (!doctorId) {
       return sendApiError(res, new AppError('MISSING_ID', 'ID do médico não fornecido', { status: 400 }), req);
@@ -490,59 +496,101 @@ export const getDoctorPatients = async (req, res) => {
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
 
-    // Passo 1: buscar os appointments do médico (ignora cancelados)
+    // Passo 1: appointments do médico (ignora cancelados) — base da lista e do status de atendimento
     const appointments = await Appointment.find({
       doctor: doctorObjectId,
-      operationalStatus: { $ne: 'canceled' }
-    }).select('patient date time operationalStatus').lean();
+      operationalStatus: { $nin: PATIENT_LIST_CANCELED }
+    }).select('patient date time operationalStatus billingType insuranceProvider liminarContract').lean();
 
+    const summaryEmpty = { total: 0, active: 0, no_next: 0, inactive: 0, birthday: 0 };
     if (!appointments.length) {
       return res.json({
         success: true,
         data: [],
-        meta: { total: 0, page: pageNum, totalPages: 0, limit: limitNum }
+        meta: { total: 0, page: pageNum, totalPages: 0, limit: limitNum, summary: summaryEmpty }
       });
     }
 
-    // Passo 2: pegar IDs únicos dos pacientes
-    const patientIds = [...new Set(appointments
-      .filter(a => a.patient)
-      .map(a => a.patient.toString()))];
-
-    // Passo 3: construir filtro de pacientes
-    const patientFilter = { _id: { $in: patientIds } };
-    if (search && search.trim()) {
-      patientFilter.fullName = { $regex: search.trim(), $options: 'i' };
+    // Passo 2: agrupar por paciente
+    const byPatient = new Map();
+    for (const a of appointments) {
+      if (!a.patient) continue;
+      const k = a.patient.toString();
+      if (!byPatient.has(k)) byPatient.set(k, []);
+      byPatient.get(k).push(a);
     }
 
-    // Passo 4: buscar os pacientes (com paginação)
-    const skip = (pageNum - 1) * limitNum;
-    const [patients, total] = await Promise.all([
-      Patient.find(patientFilter)
-        .select('fullName phone email imageAuthorization')
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Patient.countDocuments(patientFilter)
-    ]);
+    // Passo 3: dados do paciente (lista do terapeuta é pequena; filtro/ordenação/paginação em memória)
+    const patientFilter = { _id: { $in: [...byPatient.keys()] } };
+    if (search && search.trim()) {
+      const term = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const digits = search.replace(/\D/g, '');
+      patientFilter.$or = [
+        { fullName: { $regex: term, $options: 'i' } },
+        { legalGuardian: { $regex: term, $options: 'i' } },
+        ...(digits.length >= 4 ? [{ phone: { $regex: digits.split('').join('\\D*') } }] : []),
+      ];
+    }
+    const patients = await Patient.find(patientFilter)
+      .select('fullName phone email imageAuthorization dateOfBirth healthPlan mainComplaint legalGuardian')
+      .lean();
 
-    // Passo 5: enriquecer pacientes com last/next appointment
+    // Passo 4: enriquecer com última/próxima sessão e status de atendimento
+    // careStatus: active = tem sessão futura; no_next = atendido nos últimos 60 dias sem agendamento; inactive = resto
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    const recentLimit = new Date(today); recentLimit.setDate(recentLimit.getDate() - INACTIVE_AFTER_DAYS);
+    const month = today.getMonth();
+    const byTime = (a, b) => new Date(a.date) - new Date(b.date) || String(a.time || '').localeCompare(String(b.time || ''));
 
-    const enriched = patients.map(p => {
-      const apptsThisPatient = appointments.filter(a => a.patient && a.patient.toString() === p._id.toString());
-
-      const future = apptsThisPatient.filter(a => new Date(a.date) >= today)
-        .sort((a, b) => new Date(a.date) - new Date(b.date));
-      const past = apptsThisPatient.filter(a => new Date(a.date) < today)
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
-
+    const enrichedAll = patients.map(p => {
+      const appts = byPatient.get(p._id.toString()) || [];
+      const future = appts.filter(a => new Date(a.date) >= today && PATIENT_LIST_OPEN.includes(a.operationalStatus)).sort(byTime);
+      const past = appts.filter(a => new Date(a.date) < today).sort((a, b) => byTime(b, a));
+      const ref = future[0] || past[0] || null; // forma de cobrança vigente: a da próxima sessão, senão a da última
+      const last = past[0] || null;
+      const careStatus = future.length ? 'active' : (last && new Date(last.date) >= recentLimit ? 'no_next' : 'inactive');
+      const birthdayThisMonth = !!p.dateOfBirth && new Date(p.dateOfBirth).getUTCMonth() === month;
       return {
         ...p,
         nextAppointment: future[0] || null,
-        lastAppointment: past[0]?.date || null
+        lastAppointment: last?.date || null,
+        completedSessions: appts.filter(a => a.operationalStatus === 'completed').length,
+        billingType: ref?.billingType || null,
+        insuranceProvider: ref?.insuranceProvider || p.healthPlan?.name || null,
+        hasLiminar: appts.some(a => a.liminarContract),
+        careStatus,
+        birthdayThisMonth,
       };
     });
+
+    const summary = {
+      total: enrichedAll.length,
+      active: enrichedAll.filter(p => p.careStatus === 'active').length,
+      no_next: enrichedAll.filter(p => p.careStatus === 'no_next').length,
+      inactive: enrichedAll.filter(p => p.careStatus === 'inactive').length,
+      birthday: enrichedAll.filter(p => p.birthdayThisMonth).length,
+    };
+
+    // Passo 5: filtro rápido, ordenação e paginação
+    const idList = ids ? String(ids).split(',').filter(Boolean) : null;
+    let list = enrichedAll;
+    if (care === 'birthday') list = list.filter(p => p.birthdayThisMonth);
+    else if (['active', 'no_next', 'inactive'].includes(care)) list = list.filter(p => p.careStatus === care);
+    if (idList) list = list.filter(p => idList.includes(p._id.toString()));
+
+    if (sort === 'name') list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'));
+    else if (sort === 'last') list.sort((a, b) => new Date(b.lastAppointment || 0) - new Date(a.lastAppointment || 0));
+    else {
+      // padrão: quem tem próxima sessão primeiro (mais cedo antes); depois os sem agendamento, mais recentes antes
+      const nextKey = p => (p.nextAppointment ? new Date(p.nextAppointment.date).getTime() : Infinity);
+      list.sort((a, b) => (nextKey(a) - nextKey(b))
+        || String(a.nextAppointment?.time || '').localeCompare(String(b.nextAppointment?.time || ''))
+        || (new Date(b.lastAppointment || 0) - new Date(a.lastAppointment || 0)));
+    }
+
+    const total = list.length;
+    const skip = (pageNum - 1) * limitNum;
+    const enriched = list.slice(skip, skip + limitNum);
 
     return res.json({
       success: true,
@@ -551,7 +599,8 @@ export const getDoctorPatients = async (req, res) => {
         total,
         page: pageNum,
         totalPages: Math.ceil(total / limitNum),
-        limit: limitNum
+        limit: limitNum,
+        summary
       }
     });
 
