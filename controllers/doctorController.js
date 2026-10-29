@@ -893,74 +893,136 @@ export const getFutureAppointments = async (req, res) => {
   }
 };
 
-// GET /api/doctors/:id/attendance-summary
+// GET /api/doctors/:id/attendance-summary?range=month|last_month|30d|90d|6m
+// Frequência por paciente na janela pedida, lida dos AGENDAMENTOS (mesma base e mesma conta do
+// /doctors/appointments/stats do Dashboard). Antes lia a coleção Session pelo createdAt, sempre no
+// mês atual, e contava falta como "cancelado com falta confirmada" — o DOMAIN_INVARIANTS define
+// falta = operationalStatus 'missed'. Campos antigos mantidos (patient, total, attended, missed,
+// canceled, pending, frequency, lastSession); novos: expected, nextAppointment, cancelRequester.
+const ATTENDANCE_RANGES = ['month', 'last_month', '7d', '30d', '90d', '6m'];
+const ATTENDANCE_CANCELED = ['canceled', 'force_cancelled', 'suspended'];
+const ATTENDANCE_OPEN = ['pre_agendado', 'scheduled', 'confirmed', 'pending'];
+
+export function attendanceWindows(range = 'month', now = new Date()) {
+  const r = ATTENDANCE_RANGES.includes(range) ? range : 'month';
+  const y = now.getFullYear(), m = now.getMonth();
+  if (r === 'month') {
+    const start = new Date(y, m, 1);
+    const prevStart = new Date(y, m - 1, 1);
+    // mesmo trecho do mês anterior (1 → hoje), para comparar parecido com parecido
+    const prevEnd = new Date(Math.min(new Date(y, m - 1, now.getDate(), 23, 59, 59, 999), new Date(y, m, 0, 23, 59, 59, 999)));
+    return { range: r, start, end: now, prevStart, prevEnd };
+  }
+  if (r === 'last_month') {
+    return {
+      range: r,
+      start: new Date(y, m - 1, 1), end: new Date(y, m, 0, 23, 59, 59, 999),
+      prevStart: new Date(y, m - 2, 1), prevEnd: new Date(y, m - 1, 0, 23, 59, 59, 999),
+    };
+  }
+  const days = { '7d': 7, '30d': 30, '90d': 90, '6m': 182 }[r];
+  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = new Date(start); prevStart.setDate(prevStart.getDate() - days);
+  return { range: r, start, end: now, prevStart, prevEnd };
+}
+
+function emptyTotals() {
+  return { total: 0, attended: 0, missed: 0, canceled: 0, pending: 0, expected: 0,
+    canceledBy: { patient: 0, professional: 0, clinic: 0, unknown: 0 } };
+}
+
+function addToTotals(t, a, now) {
+  const st = a.operationalStatus;
+  t.total++;
+  if (st === 'completed') t.attended++;
+  else if (st === 'missed') t.missed++;
+  else if (ATTENDANCE_CANCELED.includes(st)) {
+    t.canceled++;
+    const who = ['patient', 'professional', 'clinic'].includes(a.cancelRequester) ? a.cancelRequester : 'unknown';
+    t.canceledBy[who]++;
+  } else if (ATTENDANCE_OPEN.includes(st)) t.pending++;
+  if (new Date(a.date) <= now && !ATTENDANCE_CANCELED.includes(st)) t.expected++;
+}
+
+const rate = (t) => (t.expected > 0 ? Math.round((t.attended / t.expected) * 100) : null);
+
 export const getAtendencePatient = async (req, res) => {
   try {
     const doctorId = req.params.id;
-
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const endOfMonth = new Date();
-
-    // Busca todas as sessões do doutor com paciente populado
-    const sessions = await Session.find({
-      doctor: doctorId,
-      createdAt: { $gte: startOfMonth, $lte: endOfMonth }
-    })
-      .populate('patient', 'fullName')
-      .sort({ date: -1 });
-
-
-    const summary = {};
-
-    for (const s of sessions) {
-      const pid = s.patient?._id?.toString();
-      if (!pid) continue;
-
-      if (!summary[pid]) {
-        summary[pid] = {
-          patient: s.patient,
-          total: 0,
-          attended: 0,   // compareceu
-          missed: 0,     // faltou
-          canceled: 0,   // cancelou sem falta
-          pending: 0,    // pendente/agendado
-          lastSession: s.date,
-        };
-      }
-
-      summary[pid].total++;
-
-      switch (s.status) {
-        case 'completed':
-          summary[pid].attended++;
-          break;
-
-        case 'canceled':
-          if (s.confirmedAbsence === true) {
-            summary[pid].missed++;
-          } else {
-            summary[pid].canceled++;
-          }
-          break;
-
-        case 'pending':
-        case 'scheduled':
-          summary[pid].pending++;
-          break;
-      }
-
-      if (new Date(s.date) > new Date(summary[pid].lastSession)) {
-        summary[pid].lastSession = s.date;
-      }
+    if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({ success: false, message: 'Profissional inválido.' });
     }
+    const doctor = new mongoose.Types.ObjectId(doctorId);
+    const now = new Date();
+    const w = attendanceWindows(req.query.range, now);
 
-    // Calcula frequência por paciente
-    const result = Object.values(summary).map((s) => ({
-      ...s,
-      frequency: s.total > 0 ? Math.round((s.attended / s.total) * 100) : 0,
-    }));
+    const fields = 'patient date time operationalStatus cancelRequester';
+    const [inWindow, inPrev] = await Promise.all([
+      Appointment.find({ doctor, patient: { $ne: null }, date: { $gte: w.start, $lte: w.end } }).select(fields).lean(),
+      Appointment.find({ doctor, patient: { $ne: null }, date: { $gte: w.prevStart, $lte: w.prevEnd } }).select('date operationalStatus cancelRequester').lean(),
+    ]);
 
-    res.json({ success: true, data: result });
+    const summary = emptyTotals();
+    const previous = emptyTotals();
+    inPrev.forEach(a => addToTotals(previous, a, now));
+
+    const byPatient = new Map();
+    for (const a of inWindow) {
+      addToTotals(summary, a, now);
+      const k = a.patient.toString();
+      if (!byPatient.has(k)) byPatient.set(k, emptyTotals());
+      addToTotals(byPatient.get(k), a, now);
+    }
+    const ids = [...byPatient.keys()].map(id => new mongoose.Types.ObjectId(id));
+
+    // Última sessão realizada e próxima sessão em aberto, fora da janela (o que importa para agir)
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const [patients, lastDone, nextOpen] = ids.length ? await Promise.all([
+      Patient.find({ _id: { $in: ids } }).select('fullName phone legalGuardian').lean(),
+      Appointment.aggregate([
+        { $match: { doctor, patient: { $in: ids }, operationalStatus: 'completed', date: { $lte: now } } },
+        { $group: { _id: '$patient', date: { $max: '$date' } } },
+      ]),
+      Appointment.aggregate([
+        { $match: { doctor, patient: { $in: ids }, operationalStatus: { $in: ATTENDANCE_OPEN }, date: { $gte: today } } },
+        { $sort: { date: 1, time: 1 } },
+        { $group: { _id: '$patient', date: { $first: '$date' }, time: { $first: '$time' } } },
+      ]),
+    ]) : [[], [], []];
+
+    const patientById = new Map(patients.map(p => [p._id.toString(), p]));
+    const lastById = new Map(lastDone.map(x => [x._id.toString(), x.date]));
+    const nextById = new Map(nextOpen.map(x => [x._id.toString(), { date: x.date, time: x.time || null }]));
+
+    const data = [...byPatient.entries()]
+      .filter(([id]) => patientById.has(id))
+      .map(([id, t]) => {
+        const p = patientById.get(id);
+        return {
+          patient: { _id: p._id, fullName: p.fullName, phone: p.phone || null, legalGuardian: p.legalGuardian || null },
+          total: t.total,
+          attended: t.attended,
+          missed: t.missed,
+          canceled: t.canceled,
+          pending: t.pending,
+          expected: t.expected,
+          frequency: rate(t),
+          lastSession: lastById.get(id) || null,
+          nextAppointment: nextById.get(id) || null,
+        };
+      });
+
+    res.json({
+      success: true,
+      data,
+      meta: {
+        range: w.range,
+        start: w.start, end: w.end, prevStart: w.prevStart, prevEnd: w.prevEnd,
+        summary: { ...summary, attendanceRate: rate(summary), patients: data.length },
+        previous: { ...previous, attendanceRate: rate(previous) },
+      },
+    });
   } catch (err) {
     console.error('❌ Erro ao gerar resumo de frequência:', err);
     res
