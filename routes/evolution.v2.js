@@ -472,10 +472,14 @@ router.get('/search', flexibleAuth, async (req, res) => {
         if (protocol) filter.activeProtocols = protocol;
 
         const scope = getEvolutionScope(req);
-        const evolutions = await Evolution.find({ ...filter, ...scope })
+        // limit opcional (ex.: "últimas 5 avaliações" na aba Evolução); sem ele mantém o comportamento antigo
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 0), 100);
+        let query = Evolution.find({ ...filter, ...scope })
             .populate('doctor', 'fullName specialty')
             .populate('patient', 'fullName')
-            .sort({ date: -1 });
+            .sort({ date: -1, createdAt: -1 });
+        if (limit) query = query.limit(limit);
+        const evolutions = await query;
 
         res.json(success(evolutions));
     } catch (error) {
