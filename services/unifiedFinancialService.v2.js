@@ -147,14 +147,12 @@ export function invalidateUFSCacheForDates(dates) {
 // cada, dos quais `insurance`/`integrityMetadata`/`notes` são a maior parte e não são lidos ali).
 // O filtro de pacientes de teste continua igual (usa `patient.fullName` via populate) e o agregado
 // (`total`, `byMethod`, ...) não é afetado — só o array `payments` devolvido.
-export async function calculateCash(start, end, { skipPayments = false, includeDetails = true, detailSelect = null } = {}) {
-    const startedAt = Date.now();
-    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails, detailSelect });
-    const cached = _getUfsCached(cacheKey);
-    if (cached) return cached;
-    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
-    // NÃO usar filtragem manual. NÃO usar heurística de texto.
-    const match = {
+/**
+ * Filtro canônico de CAIXA (SSOT). Exportado para leituras que precisam do mesmo
+ * critério restrito a um subconjunto (ex.: caixa dos pacientes novos em Vendas & Marketing).
+ */
+export function buildCashMatch(start, end) {
+    return {
         status: 'paid',
         amount: { $gt: 0 },
         kind: { $nin: CASH_NON_COUNTABLE_KINDS },
@@ -182,6 +180,16 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
             }
         ]
     };
+}
+
+export async function calculateCash(start, end, { skipPayments = false, includeDetails = true, detailSelect = null } = {}) {
+    const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails, detailSelect });
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
+    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
+    // NÃO usar filtragem manual. NÃO usar heurística de texto.
+    const match = buildCashMatch(start, end);
 
     // 🚀 PERF (2026-09-18): a query de detalhes (item 4, mais abaixo) não depende do
     // resultado deste aggregate — usa o mesmo `match`, mas nenhum valor calculado a

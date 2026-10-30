@@ -304,61 +304,59 @@ export const resendFollowup = async (req, res) => {
 // 📊 FUNÇÕES ANALÍTICAS (MANTIDAS COMO ESTÃO)
 // =====================================================================
 
+let _followupStatsCache = null; // { data, expiresAt } — 60s, a tela de Leads abre isso a cada visita
 export const getFollowupStats = async (req, res) => {
     try {
-        const total = await Followup.countDocuments();
-        const sent = await Followup.countDocuments({ status: "sent" });
-        const failed = await Followup.countDocuments({ status: "failed" });
-        const scheduled = await Followup.countDocuments({ status: "scheduled" });
-        const processing = await Followup.countDocuments({ status: "processing" });
-        const responded = await Followup.countDocuments({ responded: true });
-        const aiOptimized = await Followup.countDocuments({ aiOptimized: true });
-
+        if (_followupStatsCache && _followupStatsCache.expiresAt > Date.now()) {
+            return res.json({ success: true, data: _followupStatsCache.data });
+        }
+        // 🚀 PERF: antes eram 11 consultas em série; agora 1 aggregate com $facet
+        const sentHour = { $hour: { date: "$sentAt", timezone: "America/Sao_Paulo" } };
+        const sentDay = { $dayOfWeek: { date: "$sentAt", timezone: "America/Sao_Paulo" } };
+        const respondedInt = { $cond: [{ $eq: ["$responded", true] }, 1, 0] };
+        const bestBy = (key) => [
+            { $match: { status: "sent" } },
+            { $group: { _id: key, total: { $sum: 1 }, responded: { $sum: respondedInt } } },
+            { $project: { total: 1, responseRate: { $multiply: [{ $divide: ["$responded", "$total"] }, 100] } } },
+            { $sort: { responseRate: -1 } },
+            { $limit: 1 },
+        ];
+        const [f] = await Followup.aggregate([{ $facet: {
+            counts: [{ $group: {
+                _id: null,
+                total: { $sum: 1 },
+                sent: { $sum: { $cond: [{ $eq: ["$status", "sent"] }, 1, 0] } },
+                failed: { $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] } },
+                scheduled: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
+                processing: { $sum: { $cond: [{ $eq: ["$status", "processing"] }, 1, 0] } },
+                responded: { $sum: respondedInt },
+                aiOptimized: { $sum: { $cond: [{ $eq: ["$aiOptimized", true] }, 1, 0] } },
+                aiConversionCount: { $sum: { $cond: [{ $and: [{ $eq: ["$aiOptimized", true] }, { $eq: ["$responded", true] }] }, 1, 0] } },
+            } }],
+            bestHours: bestBy(sentHour),
+            bestDays: bestBy(sentDay),
+            aiPerformance: [
+                { $match: { aiOptimized: true, status: "sent" } },
+                { $group: { _id: null, total: { $sum: 1 }, responded: { $sum: respondedInt }, avgResponseTime: { $avg: "$responseTimeMinutes" } } },
+            ],
+        } }]);
+        const c = f.counts[0] || {};
+        const { total = 0, sent = 0, failed = 0, scheduled = 0, processing = 0, responded = 0, aiOptimized = 0, aiConversionCount = 0 } = c;
         const conversionRate = total ? ((responded / total) * 100).toFixed(1) : 0;
-        const aiConversionCount = await Followup.countDocuments({ aiOptimized: true, responded: true });
         const aiConversionRate = aiOptimized ? ((aiConversionCount / aiOptimized) * 100).toFixed(1) : 0;
-
-        const bestHours = await Followup.aggregate([
-            { $match: { status: "sent" } },
-            { $project: { hour: { $hour: { date: "$sentAt", timezone: "America/Sao_Paulo" } } } },
-            { $group: { _id: "$hour", total: { $sum: 1 }, responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } } } },
-            { $project: { hour: "$_id", total: 1, responseRate: { $multiply: [{ $divide: ["$responded", "$total"] }, 100] } } },
-            { $sort: { responseRate: -1 } },
-            { $limit: 1 },
-        ]);
-
-        const bestDays = await Followup.aggregate([
-            { $match: { status: "sent" } },
-            { $project: { weekday: { $dayOfWeek: { date: "$sentAt", timezone: "America/Sao_Paulo" } } } },
-            { $group: { _id: "$weekday", total: { $sum: 1 }, responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } } } },
-            { $project: { weekday: "$_id", total: 1, responseRate: { $multiply: [{ $divide: ["$responded", "$total"] }, 100] } } },
-            { $sort: { responseRate: -1 } },
-            { $limit: 1 },
-        ]);
+        const bestHours = f.bestHours.map(h => ({ hour: h._id, ...h }));
+        const bestDays = f.bestDays.map(d => ({ weekday: d._id, ...d }));
+        const aiPerformance = f.aiPerformance;
 
         const weekdayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
         const bestHour = bestHours[0]?.hour ?? "-";
         const bestDay = weekdayNames[(bestDays[0]?.weekday ?? 1) - 1];
 
-        const aiPerformance = await Followup.aggregate([
-            { $match: { aiOptimized: true, status: "sent" } },
-            {
-                $group: {
-                    _id: null,
-                    total: { $sum: 1 },
-                    responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } },
-                    avgResponseTime: { $avg: "$responseTimeMinutes" }
-                }
-            }
-        ]);
-
         const aiData = aiPerformance[0] || { total: 0, responded: 0, avgResponseTime: 0 };
         const aiEffectiveness = aiData.total && total ?
             ((aiData.responded / aiData.total) / (responded / total) * 100).toFixed(1) : 0;
 
-        res.json({
-            success: true,
-            data: {
+        const data = {
                 total,
                 sent,
                 failed,
@@ -375,8 +373,9 @@ export const getFollowupStats = async (req, res) => {
                     aiEffectiveness,
                     recommendedStrategy: bestHour !== "-" ? `Focar nos horários das ${bestHour}h` : 'Coletar mais dados'
                 }
-            },
-        });
+            };
+        _followupStatsCache = { data, expiresAt: Date.now() + 60_000 };
+        res.json({ success: true, data });
     } catch (err) {
         console.error("Erro ao gerar estatísticas:", err);
         sendApiError(

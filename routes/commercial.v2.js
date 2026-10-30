@@ -24,6 +24,7 @@ import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
 import CommercialContact from '../models/CommercialContact.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
+import { leadsSummary, roiSummary } from '../services/commercial/salesSummary.js';
 import { AppError } from '../errors/AppError.js';
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince,
@@ -274,6 +275,25 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
     res.json({ success: true, data: { hours, items } });
   } catch (err) {
     console.error('[commercial.v2] /leads-waiting error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Vendas & Marketing (docs/SALES_MARKETING.md): KPIs do funil e ROI por período, calculados no back.
+router.get('/leads-summary', ...staff, async (req, res) => {
+  try {
+    res.json({ success: true, data: await leadsSummary(req.query.start, req.query.end) });
+  } catch (err) {
+    console.error('[commercial.v2] /leads-summary error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+router.get('/roi-summary', ...staff, async (req, res) => {
+  try {
+    res.json({ success: true, data: await roiSummary(req.query.start, req.query.end) });
+  } catch (err) {
+    console.error('[commercial.v2] /roi-summary error:', err);
     sendApiError(res, err, req);
   }
 });
