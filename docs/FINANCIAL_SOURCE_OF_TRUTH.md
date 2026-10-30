@@ -357,3 +357,9 @@ para o backfill (`paymentRole='standard'` em todo Payment legado) e troca de
 3. Se não, **adicione a lógica no service oficial correto**, nunca num controller ou no frontend.
 4. Sempre adicione `executionTimeMs` e contadores via `logMetric()`.
 5. Documente aqui.
+
+## Caixa do dia em `GET /v2/cashflow` (30/10/2026)
+
+- `caixa.total` e `comparativos.ontem` seguem a regra do banco (`calculateCash`): a mesma base da meta, da visão do mês (`/v2/cashflow/month`) e da aba Pagamentos.
+- A rota não tira mais pagamentos do caixa por heurística (texto "pacote", pacote pré-pago com sessão não concluída). Esses itens continuam na lista com `foraNaRegraAntiga: true`, e os totais antigos ficam em `caixa.totalRegraAntiga` e `comparativos.ontemRegraAntiga`, só para auditoria.
+- `agenda` = `{ previsto, sessoes, perdido, faltasOuCancelados }`. O valor usa `resolveSessionFinancialValue` (FINANCIAL_CONTRACT §3), e `pre_agendado` entra no previsto (ADR-006).

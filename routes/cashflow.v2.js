@@ -11,7 +11,7 @@ import unifiedFinancialService from '../services/unifiedFinancialService.v2.js';
 import { logMetric } from '../utils/logMetric.js';
 import { resolveSessionFinancialValue } from '../utils/resolveSessionFinancialValue.js';
 import { safeRedis } from '../config/redisConnection.js';
-import { summarizeCashflowAttendance } from '../services/appointment/policies/summarizeCashflowAttendance.js';
+import { summarizeCashflowAttendance, summarizeCashflowAgendaValue } from '../services/appointment/policies/summarizeCashflowAttendance.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
@@ -287,7 +287,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             .lean()
             .exec());
         const attendanceAppointmentsPromise = _silence(Appointment.find({ date: { $gte: start, $lte: end } })
-            .select('operationalStatus clinicalStatus missed')
+            .select('operationalStatus clinicalStatus missed sessionValue package')
+            .populate('package', 'sessionValue totalValue totalSessions')
             .lean()
             .exec());
         const expensesPromise = _silence(Expense.find(expenseQuery).lean().then(r => {
@@ -445,7 +446,10 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             }
             return { valor: p.amount };
         }).filter(Boolean);
-        const yesterdayTotal = yesterdayTransacoes.reduce((s, t) => s + t.valor, 0);
+        // Regra do banco (calculateCash): mesma base da meta, da visão do mês e da aba Pagamentos.
+        // A soma com os filtros antigos da rota fica só para auditoria (ontemRegraAntiga).
+        const yesterdayTotalRegraAntiga = yesterdayTransacoes.reduce((s, t) => s + t.valor, 0);
+        const yesterdayTotal = yesterdayCash.payments.reduce((s, p) => s + (p.amount || 0), 0);
 
         const totalMes = monthCash.total;
         const dayOfMonth = moment.tz(targetDate, 'America/Sao_Paulo').date();
@@ -577,9 +581,9 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             const pkgPaymentType = appt?.package?.paymentType || appt?.package?.model;
             const isPrepaidPackage = pkgPaymentType === 'full' || pkgPaymentType === 'prepaid';
             // Consumo de pacote PRÉ-PAGO só entra no caixa se a sessão foi concluída — exceto pré-pagamentos e per-session (pagamento real do dia)
-            if (isPackagePayment && isPrepaidPackage && appt && appt.operationalStatus !== 'completed' && !isPrepagamento) {
-                return null;
-            }
+            // Antes a rota tirava estes pagamentos do caixa. Agora o total segue a regra do banco
+            // (calculateCash já exclui isFromPackage); o item só fica marcado para auditoria.
+            let foraNaRegraAntiga = isPackagePayment && isPrepaidPackage && appt && appt.operationalStatus !== 'completed' && !isPrepagamento;
 
             if (isLiminar) {
                 tipo = 'Liminar';
@@ -601,7 +605,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 // Consumo pré-pago exige session vinculada — avulso (session: null) é cash real recebido
                 const isPrepaidConsumo = !isCompraHoje && !!p.session && (pkgPaymentType === 'full' || pkgPaymentType === 'prepaid' || isSessionPrepaid === true);
 
-                if (isPrepaidConsumo) return null;
+                if (isPrepaidConsumo) foraNaRegraAntiga = true;
             } else if (notes.includes('convênio') || desc.includes('convenio') || p.type === 'insurance' || p.billingType === 'convenio') {
                 tipo = 'Convênio';
                 servico = 'Sessão Convênio';
@@ -667,7 +671,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 isPackageSale: tipo === 'Pacote' && !!p.package,
                 isPrepago: !!(appt?.date && p.financialDate && moment(p.financialDate).tz('America/Sao_Paulo').startOf('day').isBefore(moment(appt.date).tz('America/Sao_Paulo').startOf('day'))),
                 appointmentStatus: appt?.operationalStatus || '-',
-                paymentForms: p.splitMethods || appt?.paymentForms || []
+                paymentForms: p.splitMethods || appt?.paymentForms || [],
+                foraNaRegraAntiga: !!foraNaRegraAntiga
             };
         }).filter(Boolean);
         console.log(`[cashflow.v2] transacoesCaixa.process = ${Date.now() - _tTransacoesCaixa}ms (${transacoesCaixa.length} items)`);
@@ -677,6 +682,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
 
         // Recalcula totais do caixa a partir das transações já filtradas
         const totalCaixaFiltrado = transacoesCaixa.reduce((s, t) => s + t.valor, 0);
+        const totalCaixaRegraAntiga = transacoesCaixa.reduce((s, t) => s + (t.foraNaRegraAntiga ? 0 : t.valor), 0);
         const _splitMethodToLabel = m => {
             const ml = (m || '').toLowerCase();
             if (ml.includes('pix')) return 'Pix';
@@ -926,7 +932,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                     outros: outrosFiltrado,
                     qtdPix,
                     qtdDinheiro,
-                    qtdCartao
+                    qtdCartao,
+                    totalRegraAntiga: totalCaixaRegraAntiga
                 },
                 porTipo: (() => {
                     const acc = { particular: 0, pacote: 0, convenio: 0, liminar: 0 };
@@ -941,6 +948,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 porEspecialidade: porEspecialidadeCaixa,
                 eficienciaFinanceira,
                 atendimentos: summarizeCashflowAttendance(attendanceAppointments),
+                agenda: summarizeCashflowAgendaValue(attendanceAppointments),
                 despesas: {
                     total: totalDespesas,
                     porCategoria: despesasPorCategoria,
@@ -1005,6 +1013,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 })),
                 comparativos: {
                     ontem: yesterdayTotal,
+                    ontemRegraAntiga: yesterdayTotalRegraAntiga,
                     variacaoVsOntem: parseFloat(variacao),
                     mediaDiariaMes: parseFloat(mediaDiariaMes.toFixed(2)),
                     vsMediaMes: parseFloat(vsMediaMes),
