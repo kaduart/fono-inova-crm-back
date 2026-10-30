@@ -211,6 +211,7 @@ import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Rea
 import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
 import retentionV2Routes from './routes/retention.v2.js';        // 🏥 NOVO: Retenção Clínica V2
+import commercialV2Routes from './routes/commercial.v2.js';      // Filas comerciais (encaixe, pacote acabando, reativação, lead sem resposta)
 import operationalV2Routes from './routes/operational.v2.js';    // 🏥 NOVO: Painel Operacional V2
 import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
@@ -509,6 +510,7 @@ app.use("/api/v2/cashflow", cashflowV2Routes);
 app.use("/api/v2/goals", goalsV2Routes);
 app.use("/api/v2/intelligence", intelligenceV2Routes);  // 🚀 NOVO: Inteligência Financeira V2
 app.use("/api/v2/retention", retentionV2Routes);        // 🏥 NOVO: Retenção Clínica V2
+app.use("/api/v2/commercial", commercialV2Routes);      // Filas comerciais — docs/COMMERCIAL_QUEUES.md
 app.use("/api/v2/payments", paymentsV2Routes);  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 app.use("/api/v2/payments", paymentV2Routes);  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 app.use("/api/v2/appointments", appointmentV2Routes);

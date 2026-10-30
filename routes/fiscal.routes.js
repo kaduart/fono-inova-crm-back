@@ -4,7 +4,7 @@
 
 import express from 'express';
 import multer from 'multer';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
 import {
   getFiscalProfile,
   upsertFiscalProfile,
@@ -24,6 +24,11 @@ import {
 
 const router = express.Router();
 
+// Só a gestão mexe no fiscal. Configuração (perfil, certificado, teste) é só admin;
+// emitir, cancelar e consultar notas é admin ou secretária. Profissional não acessa.
+const gestao = authorize(['admin', 'secretary']);
+const somenteAdmin = authorize(['admin']);
+
 // Upload do certificado digital (.pfx/.p12) — memória apenas (o buffer é criptografado e
 // persistido no controller; nunca gravado em disco em texto claro). Certificado A1 típico tem
 // poucos KB, 5MB é folga generosa.
@@ -38,23 +43,23 @@ const certificateUpload = multer({
 });
 
 // Configuração fiscal
-router.get('/profile', auth, getFiscalProfile);
-router.post('/profile', auth, upsertFiscalProfile);
-router.get('/certificates', auth, listCertificates);
-router.post('/certificates', auth, certificateUpload.single('file'), createCertificate);
-router.post('/test-connection', auth, testConnection);
+router.get('/profile', auth, gestao, getFiscalProfile);
+router.post('/profile', auth, somenteAdmin, upsertFiscalProfile);
+router.get('/certificates', auth, gestao, listCertificates);
+router.post('/certificates', auth, somenteAdmin, certificateUpload.single('file'), createCertificate);
+router.post('/test-connection', auth, somenteAdmin, testConnection);
 
 // Emissão e consulta
-router.post('/nfse/emit', auth, emitFiscalInvoice);
-router.post('/nfse/emit-from-payment', auth, emitFromPayment);
-router.get('/nfse/payment/:paymentId/context', auth, getPaymentFiscalContext);
-router.get('/nfse', auth, listFiscalInvoices);
-router.get('/nfse/:id', auth, getFiscalInvoice);
-router.post('/nfse/:id/retry', auth, retryFiscalInvoice);
-router.post('/nfse/:id/cancel', auth, cancelFiscalInvoice);
+router.post('/nfse/emit', auth, gestao, emitFiscalInvoice);
+router.post('/nfse/emit-from-payment', auth, gestao, emitFromPayment);
+router.get('/nfse/payment/:paymentId/context', auth, gestao, getPaymentFiscalContext);
+router.get('/nfse', auth, gestao, listFiscalInvoices);
+router.get('/nfse/:id', auth, gestao, getFiscalInvoice);
+router.post('/nfse/:id/retry', auth, gestao, retryFiscalInvoice);
+router.post('/nfse/:id/cancel', auth, gestao, cancelFiscalInvoice);
 
 // Download
-router.get('/nfse/:id/xml', auth, downloadFiscalInvoiceXml);
-router.get('/nfse/:id/pdf', auth, downloadFiscalInvoicePdf);
+router.get('/nfse/:id/xml', auth, gestao, downloadFiscalInvoiceXml);
+router.get('/nfse/:id/pdf', auth, gestao, downloadFiscalInvoicePdf);
 
 export default router;

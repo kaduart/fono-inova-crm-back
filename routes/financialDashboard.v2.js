@@ -300,6 +300,7 @@ router.get('/', auth, async (req, res) => {
         const acoesExecutivas = calculateAcoesExecutivas(data, metas, profissionais, riscoOperacional);
         const drillDown = buildDrillDown(data, profissionais);
         const indicadores = calculateIndicadores(data.caixa, data.producao, despesas.total, metas);
+        const kpis = buildKpis({ data, metas, despesas, comparativos, indicadores });
 
         res.json({
             success: true,
@@ -350,7 +351,9 @@ router.get('/', auth, async (req, res) => {
                 pendentes,
                 expenses: {
                     total: despesas.total,
-                    count: despesas.count
+                    count: despesas.count,
+                    // A tela de Indicadores lê expenses.breakdown (comissões e detalhe por profissional).
+                    breakdown: despesas.breakdown
                 },
                 balance: data.saldo,
                 resultadoEconomico: data.resultadoEconomico,
@@ -396,7 +399,9 @@ router.get('/', auth, async (req, res) => {
                 acoesExecutivas,
                 drillDown,
                 indicadores,
-                appointmentCounts
+                appointmentCounts,
+                // Números prontos da página Indicadores (a tela não calcula nada).
+                kpis
             },
             metadata: {
                 projection: false
@@ -740,7 +745,7 @@ async function calculateMetas(data, year, month, clinicId = 'default') {
             diferenca: parseFloat(diferencaRitmo.toFixed(2)),
             mediaDiariaAtual: parseFloat(mediaDiariaAtual.toFixed(2)),
             percentualEsperado: parseFloat(percentualEsperado.toFixed(1)),
-            // 🎯 percentualRealizado = % de PRODUÇÃO contra meta
+            // 🎯 percentualRealizado = % da META REALIZADA (caixa − retroativo − liminar) contra a meta
             percentualRealizado: parseFloat(percentualRealizado.toFixed(1)),
             // 🚨 FIX (2026-09-01): daysPassed já calculado certo acima (linha 746,
             // considera mês fechado) mas nunca era devolvido aqui — o frontend lê
@@ -1687,10 +1692,19 @@ async function calculateDespesas(year, month) {
         status: { $nin: ['canceled', 'cancelado'] }
     }).lean();
 
-    const expenseTotal = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-
     // 💰 Calcular comissões de todos os profissionais ativos no mês
     const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName commissionRules.rules').lean();
+
+    // A comissão de quem tem regra já entra recalculada abaixo. A despesa 'commission' que o job
+    // mensal grava para essa pessoa é o mesmo dinheiro: somar as duas contava a comissão duas vezes.
+    // Comissão lançada para quem NÃO tem regra continua contando como despesa normal.
+    const withRules = new Set(
+        doctors.filter(d => (d.commissionRules?.rules?.length ?? 0) > 0).map(d => d._id.toString())
+    );
+    const isRecalculatedCommission = (e) =>
+        e.category === 'commission' && e.relatedDoctor && withRules.has(e.relatedDoctor.toString());
+    const countedExpenses = expenses.filter(e => !isRecalculatedCommission(e));
+    const expenseTotal = countedExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
     const commissionResults = await Promise.all(
         doctors.map(async (d) => {
             const hasRules = (d.commissionRules?.rules?.length ?? 0) > 0;
@@ -1720,7 +1734,7 @@ async function calculateDespesas(year, month) {
 
     return {
         total: parseFloat((expenseTotal + commissionTotal).toFixed(2)),
-        count: expenses.length,
+        count: countedExpenses.length,
         breakdown: {
             expenses: parseFloat(expenseTotal.toFixed(2)),
             comissoes: parseFloat(commissionTotal.toFixed(2)),
@@ -2001,6 +2015,61 @@ function buildDrillDown(data, profissionais) {
             emAtencao: profissionaisDetalhe.filter(p => p.diagnostico.status === 'atencao').length,
             topPerformers: profissionaisDetalhe.filter(p => p.diagnostico.status === 'top').length
         }
+    };
+}
+
+/**
+ * Números do topo da página Indicadores, já na régua certa de cada camada:
+ *   Meta realizada = caixa − convênio retroativo − liminar (FinancialSemantic.js META)
+ *   Caixa e Produção com variação vs mês anterior (calculateComparativos)
+ *   A receber separado por tipo; liminar à parte porque nunca entra na meta
+ *   Resultado = caixa − despesas (calculateIndicadores)
+ * Antes a tela recalculava "*SemLiminar", liminar a receber e % recebido.
+ */
+function buildKpis({ data, metas, despesas, comparativos, indicadores }) {
+    const r2 = n => parseFloat((Number(n) || 0).toFixed(2));
+    const producaoLiminar = data.producaoDetalhe?.liminar || 0;
+    const caixaLiminar = data.caixaDetalhe?.liminar || 0;
+    const liminarAReceber = Math.max(0, producaoLiminar - caixaLiminar);
+    const metaMensal = metas?.configuracao?.metaMensal || 0;
+    const projecaoEsperada = metas?.projecao?.esperada || 0;
+    return {
+        metaRealizada: {
+            valor: r2(metas?.realizado?.mes),
+            meta: r2(metaMensal),
+            percentual: metas?.ritmo?.percentualRealizado ?? 0,
+            percentualEsperado: metas?.ritmo?.percentualEsperado ?? 0,
+            projecaoEsperada: r2(projecaoEsperada),
+            percentualProjetado: metaMensal > 0 ? parseFloat(((projecaoEsperada / metaMensal) * 100).toFixed(1)) : null,
+            status: metas?.statusMeta || null,
+            liminarForaDaMeta: r2(metas?.excluidoDaMeta?.liminar),
+            retroativoForaDaMeta: r2(metas?.excluidoDaMeta?.retroativoConvenio),
+        },
+        caixa: {
+            valor: r2(data.caixa),
+            anterior: comparativos?.mesAnterior?.caixa ?? null,
+            variacao: comparativos?.variacao?.caixa ?? null,
+        },
+        producao: {
+            valor: r2(data.producao),
+            anterior: comparativos?.mesAnterior?.producao ?? null,
+            variacao: comparativos?.variacao?.producao ?? null,
+            recebida: r2(data.recebimentoProducao?.total ?? data.recebimentoProducao),
+        },
+        aReceber: {
+            valor: r2(Math.max(0, (data.aReceberProducao || 0) - liminarAReceber)),
+            particular: r2(data.particularPendente),
+            pacote: r2(data.pacotePendente),
+            convenio: r2(data.convenioAReceber),
+            liminar: r2(liminarAReceber),
+        },
+        resultado: {
+            valor: r2(indicadores?.lucro),
+            margem: indicadores?.margemPercentual ?? 0,
+            despesas: r2(despesas?.total),
+            comissoes: r2(despesas?.breakdown?.comissoes),
+            profissionaisSemRegra: despesas?.breakdown?.semRegra ?? 0,
+        },
     };
 }
 

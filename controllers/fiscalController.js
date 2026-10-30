@@ -32,7 +32,12 @@ import { AppError } from '../errors/AppError.js';
 
 export async function getFiscalProfile(req, res) {
   try {
-    const profile = await fiscalProfileRepository.findActiveByCnpj(req.query.cnpj);
+    // Sem CNPJ na query devolve o perfil ativo (a clínica tem um só). Antes a tela mandava
+    // um CNPJ fixo no código; editar o CNPJ criava outro perfil que a tela nunca mais lia.
+    const cnpjQuery = String(req.query.cnpj || '').replace(/\D/g, '');
+    const profile = cnpjQuery
+      ? await fiscalProfileRepository.findActiveByCnpj(cnpjQuery)
+      : await fiscalProfileRepository.findFirstActive();
     if (!profile) {
       return sendApiError(
         res,
@@ -59,7 +64,9 @@ export async function getFiscalProfile(req, res) {
 
 export async function upsertFiscalProfile(req, res) {
   try {
-    const { cnpj, razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco } = req.body;
+    const { razaoSocial, municipioIBGE, cnae, codigoServicoLC116, inscricaoMunicipal, regimeTributario, ambiente, certificateRef, endereco } = req.body;
+    // CNPJ só com dígitos: com máscara, a busca não achava o perfil e criava outro.
+    const cnpj = String(req.body.cnpj || '').replace(/\D/g, '');
     if (!cnpj || !razaoSocial || !municipioIBGE) {
       return sendApiError(
         res,
@@ -603,24 +610,71 @@ export async function emitFromPayment(req, res) {
   }
 }
 
+// Lista de NFS-e com filtro de mês (data de emissão; sem emissão, data de criação), situação e
+// busca por paciente, número ou chave. Devolve contagem por situação e totais do mês para os
+// chips e a faixa de resumo, somados aqui (a tela não recalcula).
 export async function listFiscalInvoices(req, res) {
   try {
-    const { status, patient, limit = 50, page = 1 } = req.query;
-    const filter = {};
-    if (status) filter.status = status;
-    if (patient) filter.patient = patient;
+    const { status, patient, q, month, year } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const [data, total] = await Promise.all([
+    const base = {};
+    if (patient) base.patient = patient;
+    const m = parseInt(month); const y = parseInt(year);
+    if (m >= 1 && m <= 12 && y >= 2020) {
+      // Limites do mês em Brasília (UTC-3, sem horário de verão desde 2019).
+      const start = new Date(Date.UTC(y, m - 1, 1, 3, 0, 0));
+      const end = new Date(Date.UTC(y, m, 1, 3, 0, 0) - 1);
+      base.$or = [
+        { dhEmi: { $gte: start, $lte: end } },
+        { dhEmi: null, createdAt: { $gte: start, $lte: end } }
+      ];
+    }
+    const term = String(q || '').trim();
+    if (term) {
+      const digits = term.replace(/\D/g, '');
+      const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const Patient = mongoose.model('Patient');
+      const patientIds = await Patient.find({ fullName: { $regex: esc, $options: 'i' } }).select('_id').limit(200).lean();
+      const or = [{ patient: { $in: patientIds.map(p => p._id) } }];
+      if (digits) {
+        if (digits.length <= 9) or.push({ nNFSe: Number(digits) });
+        or.push({ chaveAcesso: { $regex: digits } });
+      }
+      base.$and = [...(base.$and || []), { $or: or }];
+    }
+    const filter = status ? { ...base, status } : base;
+
+    const [data, total, byStatus] = await Promise.all([
       FiscalInvoice.find(filter)
         .populate('patient', 'fullName')
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      FiscalInvoice.countDocuments(filter)
+        .skip((page - 1) * limit)
+        .limit(limit),
+      FiscalInvoice.countDocuments(filter),
+      FiscalInvoice.aggregate([
+        { $match: base },
+        { $group: { _id: '$status', count: { $sum: 1 }, valor: { $sum: { $ifNull: ['$valorServico', 0] } } } }
+      ])
     ]);
 
-    res.json({ success: true, data, pagination: { total, page: parseInt(page), limit: parseInt(limit) } });
+    const statusCounts = { todos: 0 };
+    const totals = { emitido: { count: 0, valor: 0 }, cancelado: { count: 0, valor: 0 } };
+    for (const row of byStatus) {
+      statusCounts[row._id] = row.count;
+      statusCounts.todos += row.count;
+      if (row._id === FiscalInvoiceStatus.AUTHORIZED) totals.emitido = { count: row.count, valor: Math.round(row.valor * 100) / 100 };
+      if (row._id === FiscalInvoiceStatus.CANCELLED || row._id === FiscalInvoiceStatus.CANCELLED_SUBSTITUTED) {
+        totals.cancelado.count += row.count;
+        totals.cancelado.valor = Math.round((totals.cancelado.valor + row.valor) * 100) / 100;
+      }
+    }
+
+    res.json({
+      success: true, data, statusCounts, totals,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) }
+    });
   } catch (error) {
     console.error('[FiscalController] listFiscalInvoices error:', error);
     sendApiError(
@@ -683,10 +737,41 @@ export async function retryFiscalInvoice(req, res) {
 export async function cancelFiscalInvoice(req, res) {
   try {
     const { id: fiscalInvoiceId } = req.params;
-    const result = await FiscalInvoiceService.requestCancellation(fiscalInvoiceId, { correlationId: req.headers['x-correlation-id'] });
+    const reason = String(req.body?.reason || '').trim();
+    // A NFS-e exige justificativa no cancelamento (mínimo de 15 caracteres no padrão nacional).
+    if (reason.length < 15) {
+      return sendApiError(
+        res,
+        new AppError('VALIDATION_ERROR', 'Informe o motivo do cancelamento (mínimo de 15 caracteres)', {
+          status: 400,
+          legacyError: 'CANCEL_REASON_REQUIRED',
+        }),
+        req
+      );
+    }
+    const result = await FiscalInvoiceService.requestCancellation(fiscalInvoiceId, {
+      correlationId: req.headers['x-correlation-id'],
+      reason,
+      requestedBy: req.user?.id || req.user?._id || null,
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('[FiscalController] cancelFiscalInvoice error:', error);
+    const msg = String(error?.message || '');
+    if (msg.startsWith('FISCAL_INVOICE_NAO_ENCONTRADA')) {
+      return sendApiError(res, new AppError('NOT_FOUND', 'Nota fiscal não encontrada', { status: 404 }), req);
+    }
+    if (msg.startsWith('FISCAL_INVOICE_CANCELLATION_NOT_ELIGIBLE') || msg.startsWith('FISCAL_EVENT_TRANSITION_REJECTED')) {
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'Esta nota não pode ser cancelada na situação atual', {
+          status: 409,
+          legacyError: 'NFSE_CANCEL_NOT_ALLOWED',
+          details: { reasons: error.reasons || [error.code].filter(Boolean) },
+        }),
+        req
+      );
+    }
     sendApiError(
       res,
       new AppError('INTERNAL_ERROR', error.message, {

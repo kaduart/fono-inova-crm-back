@@ -132,7 +132,7 @@ class FinancialAnalyticsService {
             {
                 $match: {
                     status: 'completed',
-                    date: { $gte: from, $lte: to },
+                    date: { $gte: new Date(from + 'T00:00:00.000Z'), $lte: new Date(to + 'T23:59:59.999Z') }, // Session.date é Date: string não casava no aggregate
                     $or: [
                         { paymentMethod: 'convenio' },
                         { package: { $exists: true, $ne: null } }
@@ -236,7 +236,7 @@ class FinancialAnalyticsService {
             {
                 $match: {
                     status: 'completed',
-                    date: { $gte: from, $lte: to },
+                    date: { $gte: new Date(from + 'T00:00:00.000Z'), $lte: new Date(to + 'T23:59:59.999Z') }, // Session.date é Date: string não casava no aggregate
                     $or: [
                         { paymentMethod: 'convenio' },
                         { package: { $exists: true, $ne: null } }
@@ -380,7 +380,7 @@ class FinancialAnalyticsService {
             {
                 $match: {
                     status: 'completed',
-                    date: { $gte: from, $lte: to },
+                    date: { $gte: new Date(from + 'T00:00:00.000Z'), $lte: new Date(to + 'T23:59:59.999Z') }, // Session.date é Date: string não casava no aggregate
                     $or: [
                         { paymentMethod: 'convenio' },
                         { package: { $exists: true, $ne: null } }
