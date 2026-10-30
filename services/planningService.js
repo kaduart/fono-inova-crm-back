@@ -225,10 +225,14 @@ export const calculateDetailedProgress = async (planningId) => {
         if (!planning) throw new Error('Planejamento não encontrado');
 
         const { start, end } = planning.period;
+        // Limites do dia em São Paulo. Com a string 'YYYY-MM-DD' o Mongo lia meia-noite UTC:
+        // o último dia do período ficava de fora e entravam pagamentos das 21h da véspera.
+        const startDt = moment.tz(start, 'America/Sao_Paulo').startOf('day').toDate();
+        const endDt = moment.tz(end, 'America/Sao_Paulo').endOf('day').toDate();
 
         // 1. Buscar pagamentos do período com detalhes do paciente
         const pagamentos = await Payment.find({
-            paymentDate: { $gte: start, $lte: end },
+            paymentDate: { $gte: startDt, $lte: endDt },
             status: 'paid'
         })
             .populate('patient', 'fullName phoneNumber')
@@ -259,10 +263,7 @@ export const calculateDetailedProgress = async (planningId) => {
 
         // 2. Buscar pacotes fechados no período
         const pacotes = await Package.find({
-            date: {
-                $gte: new Date(start + 'T00:00:00.000Z'),
-                $lte: new Date(end + 'T23:59:59.999Z')
-            }
+            date: { $gte: startDt, $lte: endDt }
         })
             .populate('patient', 'fullName')
             .populate('doctor', 'fullName specialty')
@@ -294,13 +295,13 @@ export const calculateDetailedProgress = async (planningId) => {
         });
 
         const totalSessions = await Session.countDocuments({
-            date: { $gte: start, $lte: end },
+            date: { $gte: startDt, $lte: endDt },
             status: 'completed'
         });
 
         // 3.1 Convênio a receber (informativo — não entra em totalRevenue)
         const pagamentosConvenioPendentes = await Payment.find({
-            paymentDate: { $gte: start, $lte: end },
+            paymentDate: { $gte: startDt, $lte: endDt },
             billingType: 'convenio',
             'insurance.status': { $in: ['pending_billing', 'billed'] }
         }).lean();

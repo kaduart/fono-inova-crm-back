@@ -3,6 +3,7 @@ import express from 'express';
 import { auth, authorize } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
+import { getAnnualPlanning } from '../services/planningAnnual.js';
 import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
@@ -131,6 +132,23 @@ router.get('/', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao listar planejamentos:', error);
+    sendApiError(res, error, req);
+  }
+});
+
+/**
+ * @route   GET /api/planning/annual?year=2026
+ * @desc    Metas do ano: meta e realizado (regra da Meta Realizada) de cada mês, com totais do ano
+ */
+router.get('/annual', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
+    if (year !== undefined && (!Number.isInteger(year) || year < 2020 || year > 2100)) {
+      throw new AppError('BAD_REQUEST', 'Ano inválido', { status: 400 });
+    }
+    res.json({ success: true, data: await getAnnualPlanning(year) });
+  } catch (error) {
+    console.error('Erro ao montar metas do ano:', error);
     sendApiError(res, error, req);
   }
 });

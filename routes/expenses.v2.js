@@ -147,10 +147,24 @@ router.get('/', auth, async (req, res) => {
         if (doctorId) filters.relatedDoctor = toObjectIdIfValid(doctorId);
         if (category) filters.category = category;
         if (subcategory) filters.subcategory = subcategory;
-        if (status) filters.status = status;
+        // Chips da tela: 'open' (pendente + agendada) e 'overdue' (em aberto com data já passada, dia de SP).
+        const hoje = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const OPEN = ['pending', 'scheduled'];
+        const dateFilter = filters.date;
+        if (status === 'open') filters.status = { $in: OPEN };
+        else if (status === 'overdue') {
+            filters.status = { $in: OPEN };
+            filters.date = { ...(filters.date || {}), $lt: hoje };
+        }
+        else if (status) filters.status = status;
         // Sem status escolhido, a aba pede para não trazer canceladas. Antes elas ocupavam vaga
         // na página de 50 e eram tiradas na tela, e a página aparecia com menos linhas.
         else if (semCanceladas) filters.status = { $nin: ['canceled', 'cancelado'] };
+
+        // Contagem dos chips de status: respeita os demais filtros (inclusive origem), ignora o de status.
+        const statusBase = { ...filters };
+        delete statusBase.status;
+        if (dateFilter) statusBase.date = dateFilter; else delete statusBase.date;
 
         // Totais por origem ignoram o filtro `origin` (os cards mostram o quadro completo
         // mesmo com uma origem selecionada), mas respeitam os demais filtros.
@@ -159,6 +173,8 @@ router.get('/', auth, async (req, res) => {
             // $and: não colide com `category` já usado no filtro.
             filters.$and = [ORIGIN_CONDITIONS[origin]];
         }
+
+        if (origin && ORIGIN_CONDITIONS[origin]) statusBase.$and = [ORIGIN_CONDITIONS[origin]];
 
         const cacheVersion = await getCacheVersion();
         const cacheKey = generateCacheKey({ month, year, doctorId, category, subcategory, status, origin, startDate, endDate, excludeCanceled: semCanceladas, page, limit }, cacheVersion);
@@ -187,10 +203,12 @@ router.get('/', auth, async (req, res) => {
             Expense.countDocuments(filters)
         ]);
 
-        // Totais (pago/pendente) + quebra por origem (fixa/comissão/avulsa)
-        const [totals, originRows] = await Promise.all([
+        // Totais (pago/pendente) + quebra por origem (fixa/comissão/avulsa).
+        // Os totais seguem o mês e a origem, não o chip de status: o resumo do topo não zera
+        // "Pago" quando o filtro é "A pagar".
+        const [totals, originRows, statusRows] = await Promise.all([
             Expense.aggregate([
-                { $match: filters },
+                { $match: statusBase },
                 {
                     $group: {
                         _id: null,
@@ -215,8 +233,30 @@ router.get('/', auth, async (req, res) => {
                         count: { $sum: 1 }
                     }
                 }
+            ]),
+            Expense.aggregate([
+                { $match: statusBase },
+                {
+                    $group: {
+                        _id: null,
+                        todas: { $sum: { $cond: [{ $in: ['$status', ['canceled', 'cancelado']] }, 0, 1] } },
+                        open: { $sum: { $cond: [{ $in: ['$status', OPEN] }, 1, 0] } },
+                        overdue: { $sum: { $cond: [{ $and: [{ $in: ['$status', OPEN] }, { $lt: ['$date', hoje] }] }, 1, 0] } },
+                        overdueTotal: { $sum: { $cond: [{ $and: [{ $in: ['$status', OPEN] }, { $lt: ['$date', hoje] }] }, '$amount', 0] } },
+                        paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                        canceled: { $sum: { $cond: [{ $in: ['$status', ['canceled', 'cancelado']] }, 1, 0] } }
+                    }
+                }
             ])
         ]);
+        const sc = statusRows[0] || {};
+        const statusCounts = {
+            todas: sc.todas || 0,
+            open: sc.open || 0,
+            overdue: sc.overdue || 0,
+            paid: sc.paid || 0,
+            canceled: sc.canceled || 0
+        };
 
         const byOrigin = { fixed: { total: 0, count: 0 }, commission: { total: 0, count: 0 }, manual: { total: 0, count: 0 } };
         for (const r of originRows) if (byOrigin[r._id]) byOrigin[r._id] = { total: r.total, count: r.count };
@@ -229,12 +269,17 @@ router.get('/', auth, async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit)
             },
-            totals: totals[0] || {
-                totalPaid: 0,
-                totalPending: 0,
-                countPaid: 0,
-                countPending: 0
-            },
+            totals: (() => {
+                const t = totals[0] || { totalPaid: 0, totalPending: 0, countPaid: 0, countPending: 0 };
+                const { _id, ...rest } = t;
+                return {
+                    ...rest,
+                    // Total do mês e vencidas calculados aqui para a tela não somar nada.
+                    grandTotal: Math.round(((rest.totalPaid || 0) + (rest.totalPending || 0)) * 100) / 100,
+                    overdueTotal: Math.round((sc.overdueTotal || 0) * 100) / 100
+                };
+            })(),
+            statusCounts,
             byOrigin
         };
 
