@@ -1,5 +1,6 @@
 import express from 'express';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
+import { getInsuranceSummary } from '../services/insuranceGuide/insuranceSummary.js';
 import controller from '../controllers/insuranceV2Controller.js';
 import dashboardController from '../controllers/insuranceDashboardV2Controller.js';
 
@@ -7,6 +8,18 @@ const router = express.Router();
 
 // GET /api/v2/insurance/dashboard - Funil financeiro completo
 router.get('/insurance/dashboard', auth, dashboardController.getInsuranceDashboard);
+
+// GET /api/v2/insurance/summary?month=YYYY-MM - números da aba Convênios que dependem do mês
+// (recebido pela data do depósito, NFs em aberto, fila "precisa de ação"). Somente leitura.
+router.get('/insurance/summary', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const data = await getInsuranceSummary({ month: req.query.month });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[InsuranceV2][summary] Erro:', error.message);
+    res.status(500).json({ success: false, error: 'Erro ao calcular o resumo de convênios' });
+  }
+});
 
 // GET /api/v2/payments/insurance/receivables
 router.get('/payments/insurance/receivables', auth, controller.getInsuranceReceivables);

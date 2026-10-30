@@ -1308,15 +1308,14 @@ export async function getInsuranceHistory(req, res) {
       if (patientId && !byMonth[monthKey][prov][patientName].patientId) {
         byMonth[monthKey][prov][patientName].patientId = patientId;
       }
-      if (!byMonth[monthKey][prov][patientName].specialties[specialty])
-        byMonth[monthKey][prov][patientName].specialties[specialty] = { sessions: 0, value: 0, source, batchStatus };
-      byMonth[monthKey][prov][patientName].specialties[specialty].sessions += 1;
-      byMonth[monthKey][prov][patientName].specialties[specialty].value   += value;
-      // Prioriza status mais avançado
-      const rank = { received: 3, billed: 2, pending_batch: 1 };
-      const cur = byMonth[monthKey][prov][patientName].specialties[specialty].batchStatus;
-      if ((rank[batchStatus] || 0) > (rank[cur] || 0))
-        byMonth[monthKey][prov][patientName].specialties[specialty].batchStatus = batchStatus;
+      // Uma linha por especialidade E status. Antes o grupo inteiro herdava o
+      // status mais avançado: 1 sessão recebida + 3 pendentes aparecia toda como
+      // "Recebido" e inflava Recebido/Faturado no Histórico.
+      const key = `${specialty}__${batchStatus}`;
+      const specs = byMonth[monthKey][prov][patientName].specialties;
+      if (!specs[key]) specs[key] = { specialty, sessions: 0, value: 0, source, batchStatus };
+      specs[key].sessions += 1;
+      specs[key].value   += value;
     }
 
     // ⚠️ A fonte "Packages" foi REMOVIDA daqui (ADR-001 / FINANCIAL_SOURCE_OF_TRUTH.md:62).
@@ -1445,7 +1444,7 @@ export async function getInsuranceHistory(req, res) {
         const patients = Object.keys(provData).map(patName => {
           const pd = provData[patName];
           const specialties = Object.keys(pd.specialties).map(sp => ({
-            specialty: sp,
+            specialty: pd.specialties[sp].specialty,
             sessions: pd.specialties[sp].sessions,
             value: pd.specialties[sp].value,
             source: pd.specialties[sp].source,

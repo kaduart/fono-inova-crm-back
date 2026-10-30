@@ -439,6 +439,16 @@ describe('📆 composePendingCompetenceBreakdown() — backlog por guia', () => 
         assert.deepStrictEqual(result.current, { value: 0, sessions: 0 });
     });
 
+    it('o mês atual é o de São Paulo, mesmo com o servidor em UTC já no mês seguinte', () => {
+        // 01/09 01:00 UTC = 31/08 22:00 em Brasília
+        const result = composePendingCompetenceBreakdown([
+            { phase: SessionPhase.PENDING_BILLING, date: '2026-08-20', value: 100 }
+        ], new Date('2026-09-01T01:00:00.000Z'));
+
+        assert.strictEqual(result.referenceMonth, '2026-08');
+        assert.deepStrictEqual(result.current, { value: 100, sessions: 1 });
+    });
+
     it('arredonda valores financeiros sem perder a quantidade de sessões', () => {
         const result = composePendingCompetenceBreakdown([
             { phase: SessionPhase.PENDING_BILLING, date: '2026-07-01', value: 10.005 },
