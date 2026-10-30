@@ -16,13 +16,26 @@ const TIMEZONE = 'America/Sao_Paulo';
 
 export async function buildCharts() {
   const today = moment().tz(TIMEZONE);
-  const last7Days = today.clone().subtract(6, 'days');
+  const DAYS = 14;
+  const firstDay = today.clone().subtract(DAYS - 1, 'days');
   const last30Days = today.clone().subtract(29, 'days');
 
   // Datas para preenchimento
-  const dates7Days = Array.from({ length: 7 }, (_, i) =>
-    last7Days.clone().add(i, 'days').format('YYYY-MM-DD')
+  const datesRange = Array.from({ length: DAYS }, (_, i) =>
+    firstDay.clone().add(i, 'days').format('YYYY-MM-DD')
   );
+
+  // Appointment.date é Date gravado como o DIA (meio-dia ou meia-noite UTC). Antes o $match
+  // comparava com string 'YYYY-MM-DD' e não casava nenhum documento: o gráfico vinha zerado.
+  // Janela em UTC do primeiro ao último dia, e agrupamento pelo dia UTC.
+  const utcDay = (ymd, end = false) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, end ? 23 : 0, end ? 59 : 0, end ? 59 : 0, end ? 999 : 0));
+  };
+  const todayYmd = today.format('YYYY-MM-DD');
+  const apptRange = (fromYmd) => ({ $gte: utcDay(fromYmd), $lte: utcDay(todayYmd, true) });
+  // mesmo critério do card "Sessões hoje" (statsBuilder)
+  const NOT_COUNTED = ['canceled', 'pre_agendado'];
 
   const [
     appointmentsByDay,
@@ -30,17 +43,17 @@ export async function buildCharts() {
     revenueByDay,
     patientsBySpecialty
   ] = await Promise.all([
-    // Agendamentos por dia (últimos 7 dias)
+    // Sessões por dia (últimos 14 dias)
     Appointment.aggregate([
       {
         $match: {
-          date: { $gte: last7Days.format('YYYY-MM-DD') },
-          operationalStatus: { $nin: ['canceled'] }
+          date: apptRange(firstDay.format('YYYY-MM-DD')),
+          operationalStatus: { $nin: NOT_COUNTED }
         }
       },
       {
         $group: {
-          _id: '$date',
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           count: { $sum: 1 }
         }
       },
@@ -64,25 +77,21 @@ export async function buildCharts() {
       { $limit: 6 }
     ]),
 
-    // Receita por dia (últimos 7 dias) — fonte única de verdade
-    unifiedFinancialService.calculateCashByDay(last7Days.toDate(), today.toDate()),
+    // Caixa por dia (últimos 14 dias) — fonte única de verdade
+    unifiedFinancialService.calculateCashByDay(firstDay.clone().startOf('day').toDate(), today.toDate()),
 
-    // Pacientes por especialidade (últimos 30 dias)
+    // Pacientes atendidos por especialidade (últimos 30 dias): pacientes distintos, não sessões
     Appointment.aggregate([
       {
         $match: {
-          date: { $gte: last30Days.format('YYYY-MM-DD') },
-          operationalStatus: { $nin: ['canceled'] }
+          date: apptRange(last30Days.format('YYYY-MM-DD')),
+          operationalStatus: { $nin: NOT_COUNTED }
         }
       },
-      {
-        $group: {
-          _id: '$specialty',
-          count: { $sum: 1 }
-        }
-      },
+      { $group: { _id: { specialty: '$specialty', patient: '$patient' } } },
+      { $group: { _id: '$_id.specialty', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
-      { $limit: 5 }
+      { $limit: 6 }
     ])
   ]);
 
@@ -104,11 +113,11 @@ export async function buildCharts() {
   }
 
   return {
-    appointmentsChart: dates7Days.map(date => ({
+    appointmentsChart: datesRange.map(date => ({
       date: moment(date).format('DD/MM'),
       count: appointmentsMap[date] || 0
     })),
-    revenueChart: dates7Days.map(date => ({
+    revenueChart: datesRange.map(date => ({
       date: moment(date).format('DD/MM'),
       value: revenueMap[date] || 0
     })),

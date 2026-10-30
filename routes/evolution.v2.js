@@ -273,9 +273,14 @@ router.get('/chart/:patientId', flexibleAuth, async (req, res) => {
             return res.status(400).json(failure('INVALID_ID', 'ID de paciente inválido'));
         }
 
+        // Entra quem tem métricas OU notas por área. Antes só entrava quem tinha métricas, e as
+        // evoluções só com áreas sumiam do gráfico (cada área aparecia com "1 registro").
         const evolutions = await Evolution.find({
             patient: patientId,
-            metrics: { $exists: true, $not: { $size: 0 } },
+            $or: [
+                { metrics: { $exists: true, $not: { $size: 0 } } },
+                { evaluationAreas: { $exists: true, $not: { $size: 0 } } }
+            ],
             ...getEvolutionScope(req)
         }).sort({ date: 1 });
 
@@ -340,10 +345,17 @@ router.get('/chart/:patientId', flexibleAuth, async (req, res) => {
             evaluationTypes[key] = data.values;
         });
 
+        // Nome salvo de cada área (ex.: id "sd" → "Sílabas difíceis"), para o front não mostrar o id cru
+        const evaluationLabels = {};
+        Object.entries(evaluationAreasMap).forEach(([key, data]) => {
+            evaluationLabels[key] = data.label;
+        });
+
         const chartData = {
             dates: uniqueDates,
             metrics: metricsMap,
-            evaluationTypes
+            evaluationTypes,
+            evaluationLabels
         };
 
         res.json(success(chartData));
