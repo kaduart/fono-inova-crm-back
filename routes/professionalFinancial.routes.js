@@ -102,6 +102,34 @@ router.get('/:id/patients-breakdown', auth, authorize(['admin', 'secretary']), a
   }
 });
 
+// Totais e contagens da lista de Profissionais, somados aqui para a tela não recalcular.
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const isClosed = item => item.settlement?.status === 'closed';
+const hasNoRule = item => !(item.commissionRates || []).length;
+const hasIssue = item => ((item.health?.orphanSessions || 0) + (item.health?.orphanPayments || 0)) > 0;
+function rankingTotals(items = []) {
+  const t = { sessions: 0, production: 0, received: 0, receivables: 0, commission: 0, advances: 0, balance: 0 };
+  for (const i of items) {
+    t.sessions += i.sessions?.completed || 0;
+    t.production += i.production?.total || 0;
+    t.received += i.received?.total || 0;
+    t.receivables += i.receivables?.total || 0;
+    t.commission += i.commission || 0;
+    t.advances += i.advances || 0;
+    t.balance += i.balance || 0;
+  }
+  return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, k === 'sessions' ? v : r2(v)]));
+}
+function rankingCounts(items = []) {
+  return {
+    todos: items.length,
+    a_fechar: items.filter(i => !isClosed(i) && !hasNoRule(i)).length,
+    fechados: items.filter(isClosed).length,
+    sem_regra: items.filter(hasNoRule).length,
+    com_pendencia: items.filter(hasIssue).length,
+  };
+}
+
 /**
  * GET /api/v2/professionals/ranking
  */
@@ -109,7 +137,7 @@ router.get('/ranking', auth, authorize(['admin', 'secretary']), async (req, res)
   try {
     const { startDate, endDate } = parseQuery(req);
     const result = await getProfessionalRanking({ startDate, endDate });
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: result, totals: rankingTotals(result), counts: rankingCounts(result) });
   } catch (error) {
     handleError(res, error);
   }
