@@ -5,7 +5,7 @@ Implementação por regras locais, sem rede, banco, modelos de IA ou efeitos de 
 ## Publicação e configuração pendentes
 
 1. Desativar o cenário atual até substituir a IA e validar. Não executar Run once no fluxo antigo.
-2. Publicar a alteração do backend pelo procedimento habitual. Este trabalho não fez commit, push ou deploy.
+2. Publicar a alteração do backend pelo procedimento habitual. Commit ou push não comprovam deploy: conferir o endpoint após a publicação e só ativar o cenário após configurar o segredo e validar o HTTP.
 3. Configurar GMB_REVIEW_REPLY_TOKEN no backend: segredo aleatório exclusivo, mínimo 32 caracteres. Não usar JWT de usuário. Sem segredo, endpoint retorna 503. Não colocar segredo na URL, código ou relatórios.
 4. No Make, substituir Make AI Toolkit por HTTP > Make a request, entre Watch Reviews e Create/Update a Review Reply.
 5. POST https://fono-inova-crm-back.onrender.com/api/gmb/reviews/reply. Content-Type application/json. Header x-gmb-review-token com o segredo em conexão segura do Make.

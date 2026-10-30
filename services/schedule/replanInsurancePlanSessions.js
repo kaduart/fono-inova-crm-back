@@ -1,3 +1,4 @@
+import { isManualHistoricalCancellation, historicalCancellationDate } from '../../domain/appointment/historicalCancellationRules.js';
 // services/schedule/replanInsurancePlanSessions.js
 // Replaneja a agenda de um plano de convênio IN-PLACE — reaproveita
 // Appointment/Session/Payment existentes em vez de apagar e recriar.
@@ -132,7 +133,7 @@ export async function replanInsurancePlanSessions({
   mongoSession,
   user,
   reason = 'plan_frequency_changed',
-  allowPastGeneration = false
+  allowPastGeneration = false, preserveCanceled = false
 }) {
   const plan = await InsurancePlan.findById(planId).session(mongoSession).lean();
   if (!plan) throw new Error('PLAN_NOT_FOUND');
@@ -173,7 +174,8 @@ export async function replanInsurancePlanSessions({
   const completedAppts = allAppointments.filter(a => a.operationalStatus === 'completed');
   const frozenAppts = allAppointments.filter(a => FROZEN_STATUSES.includes(a.operationalStatus));
   const repositionablePool = allAppointments.filter(a => REPOSITIONABLE_STATUSES.includes(a.operationalStatus));
-  const canceledPool = allAppointments.filter(a => CANCELED_STATUSES.includes(a.operationalStatus));
+  const protectedHistorical = allAppointments.filter(a => isManualHistoricalCancellation(a) || (preserveCanceled && CANCELED_STATUSES.includes(a.operationalStatus)));
+  const canceledPool = allAppointments.filter(a => CANCELED_STATUSES.includes(a.operationalStatus) && !isManualHistoricalCancellation(a));
 
   // ── 2. Capacidade mutável = total autorizado - já consumido - congelado ──
   // completed já está embutido em guide.usedSessions; confirmed/missed ocupam
@@ -196,6 +198,7 @@ export async function replanInsurancePlanSessions({
   // ── 4. Série cronológica exata esperada (pula datas já ocupadas por
   // completed/frozen — ver comentário de buildExpectedSeries) ────────────
   const occupiedKeys = new Set([
+    ...protectedHistorical.map(a => slotKeyOf(historicalCancellationDate(a), a.time)),
     ...evaluations.map(a => slotKeyOf(dateStrOf(a.date), a.time)),
     ...completedAppts.map(a => slotKeyOf(dateStrOf(a.date), a.time)),
     ...frozenAppts.map(a => slotKeyOf(dateStrOf(a.date), a.time))
@@ -224,7 +227,7 @@ export async function replanInsurancePlanSessions({
     const reversible = payments.every(isPaymentFinanciallyReversible);
     return { appt, payments, reversible };
   }));
-  const reversibleCanceled = canceledWithPayment.filter(c => c.reversible);
+  const reversibleCanceled = canceledWithPayment.filter(c => c.reversible && !preserveCanceled);
   const nonReversibleCanceled = canceledWithPayment.filter(c => !c.reversible);
 
   // ── 6. Matching: série esperada × registros existentes (DUAS PASSADAS) ──

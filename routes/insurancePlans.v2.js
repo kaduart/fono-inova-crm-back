@@ -1,3 +1,4 @@
+import { registerCanceledInsuranceAppointments } from '../services/appointment/commands/registerCanceledInsuranceAppointmentsCommand.js';
 /**
  * Insurance Plans V2
  * Rotas para criar planos de atendimento de convênio
@@ -22,6 +23,17 @@ import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
 const router = express.Router();
+
+router.post('/:id/historical-cancellations', auth, async (req, res) => {
+  try {
+    const result = await registerCanceledInsuranceAppointments({ planId: req.params.id,
+      cancellations: req.body?.cancellations, dryRun: req.body?.dryRun, user: req.user });
+    return res.status(result.conflicts.length && !result.dryRun ? 409 : 200).json(result);
+  } catch (error) {
+    return sendApiError(res, new AppError(error.code || 'INSURANCE_HISTORY_FAILED',
+      error.statusCode ? error.message : 'Falha ao registrar cancelamentos da guia.', { status: error.statusCode || 500 }), req);
+  }
+});
 
 // Lock em memória para evitar execuções simultâneas de generate-sessions no mesmo plano.
 // O frontend também desabilita o botão, mas o lock protege contra double-click races
@@ -1056,6 +1068,9 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
   // 🆕 Sinal explícito do usuário (ex: editou o início da guia pra uma data passada e
   // confirmou o backfill retroativo) — default false preserva o comportamento padrão.
   const allowPastGeneration = req.body?.allowPastGeneration === true;
+  const dryRun = req.body?.dryRun === true;
+  const cancellations = req.body?.cancellations || [];
+  let cancellationResult = null;
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return sendApiError(res, new AppError('INVALID_ID', 'ID inválido', { status: 400 }), req);
   }
@@ -1104,6 +1119,16 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       );
     }
 
+    if (req.body?.startDate && req.body.startDate !== new Date(plan.startDate).toISOString().slice(0, 10)) {
+      const parsed = new Date(req.body.startDate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.startDate) || Number.isNaN(+parsed) || parsed.toISOString().slice(0, 10) !== req.body.startDate) throw Object.assign(new Error('Data de início inválida.'), { statusCode: 400 });
+      await InsurancePlan.updateOne({ _id: plan._id }, { $set: { startDate: parsed, needsSessionRegeneration: true } }, { session });
+      plan.startDate = parsed; plan.needsSessionRegeneration = true;
+    }
+    if (cancellations.length) {
+      cancellationResult = await registerCanceledInsuranceAppointments({ planId: id, cancellations, dryRun: false, user: req.user, mongoSession: session });
+      if (cancellationResult.conflicts.length) throw Object.assign(new Error('Confira os cancelamentos antes de gerar.'), { statusCode: 409, conflicts: cancellationResult.conflicts });
+    }
     const today = new Date().toISOString().split('T')[0];
 
     // Busca appointments futuros pendentes pela fonte de verdade (relacionamento),
@@ -1163,7 +1188,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       mongoSession: session,
       user: req.user,
       reason: 'plan_slots_mismatch',
-      allowPastGeneration
+      allowPastGeneration, preserveCanceled: Object.hasOwn(req.body || {}, 'cancellations')
     });
     console.log('[InsurancePlansV2][generate-sessions] Replanejamento executado', {
       appointmentsCanceled: replanResult.appointmentsCanceled,
@@ -1183,7 +1208,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       sessionValue: plan.sessionValue || 0,
       mongoSession: session,
       skipHolidays: true,
-      allowPastGeneration
+      allowPastGeneration, preserveCanceled: Object.hasOwn(req.body || {}, 'cancellations')
     });
 
     // Após aplicar o plano na agenda (replan ou geração normal), a flag de
@@ -1194,7 +1219,7 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       { session }
     );
 
-    await session.commitTransaction();
+    if (dryRun) await session.abortTransaction(); else await session.commitTransaction();
 
     // 🚨 FIX (2026-08-20): antes, sessões retroativas (allowPastGeneration=true)
     // eram completadas AUTOMATICAMENTE aqui, em massa, sem nenhuma confirmação
@@ -1217,13 +1242,15 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
       data: {
         appointmentsGenerated: (replanResult?.appointmentsGenerated || 0) + (result?.count || 0),
         remaining,
+        dryRun, cancellations: cancellationResult,
         replanned: needsReplan,
         appointmentsCanceled: replanResult?.appointmentsCanceled || 0,
         pastAppointmentsPending: pastAppointmentsCount
       }
     });
   } catch (error) {
-    await session.abortTransaction();
+    if (session.inTransaction()) await session.abortTransaction();
+    if (error.statusCode && error.code !== 'APPOINTMENT_SLOT_CONFLICT') return sendApiError(res, new AppError(error.code || 'GENERATION_VALIDATION', error.message, { status: error.statusCode, extra: { conflicts: error.conflicts || [] } }), req);
     console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
 
     if (error.code === 'APPOINTMENT_SLOT_CONFLICT') {

@@ -1,3 +1,4 @@
+import { historicalCancellationDate } from '../../domain/appointment/historicalCancellationRules.js';
 // services/schedule/generateInsurancePlanSessions.js
 // Gera appointments + payments pendentes para plano de convênio.
 // Padrão igual generateLiminarSessions: semana a semana, pula feriados, bulkWrite upsert.
@@ -237,6 +238,11 @@ export async function generateInsurancePlanSessions({
     }
   }
 
+  const historicalCancellations = await Appointment.find({ patient: plan.patient, insuranceGuide: guide._id,
+    operationalStatus: { $in: ['canceled', 'cancelled', 'force_cancelled'] }, 'history.details.historicalCancellation': true
+  }).session(mongoSession).select('date time history').lean();
+  const canceledDates = new Set(historicalCancellations.map(a => `${historicalCancellationDate(a)}T${a.time}`));
+
   // ── 4. Gera slots semana a semana ──────────────────────────────
   const slots = [];
   let sessionsCreated = 0;
@@ -273,6 +279,7 @@ export async function generateInsurancePlanSessions({
 
       // Pula feriados
       if (holidays.has(dateStr)) continue;
+      if (canceledDates.has(`${dateStr}T${slot.time}`)) continue;
       if (evaluationSlots.has(`${dateStr}T${slot.time}`)) continue;
 
       slots.push({
