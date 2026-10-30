@@ -746,7 +746,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
 
             const esp = doctor?.specialty || appt?.specialty || 'Outra';
             if (!porEspecialidade[esp]) {
-                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
+                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0, convenio: 0 };
             }
             porEspecialidade[esp].total += valor;
             porEspecialidade[esp].quantidade += 1;
@@ -757,8 +757,9 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             const categoria = isConvenio ? 'convenio' : isLiminar ? 'liminar' : (foiPago ? 'recebido' : 'a_receber');
 
             if (isConvenio) {
-                // Convênio conta como produção realizada mas não entra em recebido/pendente de caixa
-                porEspecialidade[esp].recebido += valor;
+                // Convênio conta como produção realizada mas não é dinheiro recebido: vai numa
+                // conta própria (antes somava em "recebido" e a barra mentia para convênio).
+                porEspecialidade[esp].convenio += valor;
             } else if (!foiPago) {
                 aReceber += valor;
                 porEspecialidade[esp].pendente += valor;
@@ -822,11 +823,11 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 appt.serviceType === 'convenio_session' ? 'Sessão Convênio' :
                 appt.serviceType === 'package_session' ? 'Sessão de Pacote' : 'Sessão';
             if (!porEspecialidade[esp]) {
-                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0 };
+                porEspecialidade[esp] = { total: 0, quantidade: 0, recebido: 0, pendente: 0, convenio: 0 };
             }
             porEspecialidade[esp].total += valor;
             porEspecialidade[esp].quantidade += 1;
-            porEspecialidade[esp].recebido += valor;
+            porEspecialidade[esp].convenio += valor;
             transacoesProducao.push({
                 id: appt._id,
                 paciente: patientName,
@@ -903,6 +904,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             quantidade: dados.quantidade,
             recebido: dados.recebido,
             pendente: dados.pendente,
+            convenio: dados.convenio || 0,
             ticketMedio: dados.quantidade > 0 ? (dados.total / dados.quantidade).toFixed(2) : 0
         })).sort((a, b) => b.total - a.total);
 

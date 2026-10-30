@@ -21,8 +21,11 @@ const TIMEZONE = 'America/Sao_Paulo';
  * Critério: appointment.completed hoje + sem appointment futuro para o mesmo paciente.
  */
 router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (req, res) => {
-  const todayStart = moment.tz(TIMEZONE).startOf('day').toDate();
-  const todayEnd = moment.tz(TIMEZONE).endOf('day').toDate();
+  // ?date=YYYY-MM-DD respeita o dia escolhido no Caixa (antes era sempre hoje).
+  const dateParam = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
+  const ref = dateParam ? moment.tz(dateParam, TIMEZONE) : moment.tz(TIMEZONE);
+  const todayStart = ref.clone().startOf('day').toDate();
+  const todayEnd = ref.clone().endOf('day').toDate();
 
   // 1. Buscar appointments completados hoje
   const todayAppointments = await Appointment.find({
@@ -52,7 +55,9 @@ router.get('/patients-without-next-session', flexibleAuth, asyncHandler(async (r
   // 3. Buscar quais pacientes TÊM appointment futuro
   const futureAppointments = await Appointment.find({
     patient: { $in: patientIds },
-    date: { $gt: todayEnd }
+    date: { $gt: todayEnd },
+    // Agendamento cancelado não é "próxima sessão".
+    operationalStatus: { $nin: ['canceled', 'cancelado'] }
   }).select('patient').lean();
 
   const patientsWithFuture = new Set(futureAppointments.map(a => a.patient?.toString()));
