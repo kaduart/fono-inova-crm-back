@@ -246,12 +246,16 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
       { $group: { _id: '$lead', direction: { $first: '$direction' }, timestamp: { $first: '$timestamp' }, content: { $first: '$content' } } },
     ]);
     const msgMap = Object.fromEntries(lastMsgs.map(m => [m._id.toString(), m]));
+    // "Respondido" marcado na fila conta como resposta (a equipe pode ter respondido por fora do ERP)
+    const replied = await lastContacts(leads.map(l => l._id), 'lead_reply');
 
     const limitMs = hours * 3_600_000;
     const items = leads
       .map(l => {
         const msg = msgMap[l._id.toString()];
         const since = waitingSince({ createdAt: l.createdAt, lastMessage: msg, lastInteraction: l.interactions?.[0] });
+        const repliedAt = replied[l._id.toString()];
+        if (repliedAt && since && new Date(repliedAt) >= since) return null;
         return since && now - since >= limitMs ? {
           leadId: l._id.toString(),
           name: l.name || 'Lead sem nome',

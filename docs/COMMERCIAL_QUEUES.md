@@ -33,7 +33,8 @@ O acesso é só para `admin` e `secretary`.
   - entram leads abertos que chegaram nos últimos 3 dias;
   - a espera começa na última mensagem do WhatsApp do próprio lead (inbound);
   - se a clínica falou por último (Amanda ou humano), o lead não está esperando;
-  - sem mensagens, vale a última interação; sem interação, vale `createdAt`.
+  - sem mensagens, vale a última interação; sem interação, vale `createdAt`;
+  - "Respondido" marcado na fila (contato `lead_reply` depois do início da espera) tira o lead da fila, porque a equipe pode ter respondido por fora do ERP.
 - **Área do lead:** `Lead.therapyArea` é texto livre, então `normalizeArea()` converte para a especialidade do Doctor (por exemplo, "fono" vira `fonoaudiologia` e "Terapia Ocupacional" vira `terapia_ocupacional`).
 - **Contato registrado:**
   - um contato registrado nos últimos 7 dias manda o item para o fim da fila sem escondê-lo;
