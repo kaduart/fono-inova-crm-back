@@ -148,6 +148,7 @@ import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
 import landingPageRoutes from './routes/landingPage.routes.js';
 import gmbRoutes from './routes/gmb.routes.js';
+import gmbReviewRepliesRoutes from './routes/gmbReviewReplies.routes.js';
 import instagramRoutes from './routes/instagram.routes.js';
 import facebookRoutes from './routes/facebook.routes.js';
 import videoRoutes from './routes/video.routes.js';
@@ -622,6 +623,7 @@ app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/landing-pages', landingPageRoutes);
+app.use('/api/gmb/reviews', gmbReviewRepliesRoutes);
 app.use('/api/gmb', gmbRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api/facebook', facebookRoutes);
