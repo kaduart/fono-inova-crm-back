@@ -2,6 +2,7 @@
 // Lista de INTERESSE em convênios (GEAP/IPASGO/Bradesco) — cadastro público vindo do site + gestão pelo CRM.
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import moment from 'moment-timezone';
 import {
     CONVENIO_LABELS,
     CONVENIOS_WAITLIST,
@@ -158,7 +159,35 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 total += count;
             });
 
-            return res.json({ total, porConvenio });
+            // Vendas & Marketing: quanto tempo as famílias ativas estão esperando e quantas já agendaram no mês
+            const now = Date.now();
+            const monthStart = moment().tz('America/Sao_Paulo').startOf('month').toDate();
+            const ageRows = await ConvenioWaitlist.aggregate([
+                { $match: { $or: [{ status: { $in: WAITLIST_ACTIVE_STATUS } }, { status: 'agendado', updatedAt: { $gte: monthStart } }] } },
+                { $group: {
+                    _id: '$convenio',
+                    active: { $sum: { $cond: [{ $in: ['$status', WAITLIST_ACTIVE_STATUS] }, 1, 0] } },
+                    aged30: { $sum: { $cond: [{ $and: [{ $in: ['$status', WAITLIST_ACTIVE_STATUS] }, { $lte: ['$createdAt', new Date(now - 30 * 864e5)] }] }, 1, 0] } },
+                    waitMsSum: { $sum: { $cond: [{ $in: ['$status', WAITLIST_ACTIVE_STATUS] }, { $subtract: [new Date(now), '$createdAt'] }, 0] } },
+                    scheduledMonth: { $sum: { $cond: [{ $eq: ['$status', 'agendado'] }, 1, 0] } },
+                } },
+            ]);
+            const insights = { active: 0, aged30: 0, scheduledMonth: 0, avgDays: 0, potentialMonthly: 0, porConvenio: {} };
+            let waitMs = 0;
+            ageRows.forEach((r) => {
+                if (!porConvenio[r._id]) return;
+                insights.porConvenio[r._id] = {
+                    active: r.active, aged30: r.aged30, scheduledMonth: r.scheduledMonth,
+                    avgDays: r.active ? Math.round(r.waitMsSum / r.active / 864e5) : 0,
+                };
+                insights.active += r.active; insights.aged30 += r.aged30; insights.scheduledMonth += r.scheduledMonth;
+                waitMs += r.waitMsSum;
+            });
+            insights.avgDays = insights.active ? Math.round(waitMs / insights.active / 864e5) : 0;
+            // Pacote 1x/semana: R$ 180/sessão (~R$ 720/mês) por família
+            insights.potentialMonthly = insights.active * 720;
+
+            return res.json({ total, porConvenio, insights });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro no resumo:', err);
             return sendApiError(

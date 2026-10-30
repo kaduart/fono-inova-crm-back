@@ -191,25 +191,53 @@ async function fetchCompletedSessions(start, end, doctorId = null) {
     .lean();
 }
 
-async function fetchPaidPayments(start, end, doctorId = null) {
-  const match = {
-    status: 'paid',
-    amount: { $gt: 0 },
-    kind: { $ne: 'package_consumed' },
-    $or: [
-      { financialDate: { $gte: start, $lte: end } },
-      { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-      { financialDate: null, paymentDate: { $gte: start, $lte: end } },
-      { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
-      { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
-    ]
-  };
-  if (doctorId) match.doctor = new mongoose.Types.ObjectId(doctorId);
+const PAID_IN_PERIOD = (start, end) => ({
+  status: 'paid',
+  amount: { $gt: 0 },
+  kind: { $ne: 'package_consumed' },
+  $or: [
+    { financialDate: { $gte: start, $lte: end } },
+    { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
+    { financialDate: null, paymentDate: { $gte: start, $lte: end } },
+    { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
+    { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
+  ]
+});
 
-  return Payment.find(match)
+/**
+ * Pagamentos pagos no período, cada um com o profissional resolvido pela sessão
+ * (ADR-015 / INVARIANTE 16): Payment → Session → Session.doctor; sem `session`,
+ * a sessão do agendamento (Session.appointmentId). `Payment.doctor` é só snapshot
+ * de criação e não decide de quem é a receita: antes o filtro era por ele e
+ * pagamento sem `doctor` (ou com o de outra pessoa) caía no profissional errado.
+ * Pagamento sem sessão nenhuma (ex.: venda de pacote) fica sem profissional.
+ */
+async function fetchPaidPaymentsAttributed(start, end) {
+  const payments = await Payment.find(PAID_IN_PERIOD(start, end))
+    .select('doctor amount session appointment patient billingType paymentMethod kind serviceType package')
     .populate('patient', 'fullName')
-    .populate('doctor', 'fullName specialty')
     .lean();
+  const sessionIds = [...new Set(payments.map(p => p.session && String(p.session)).filter(Boolean))];
+  const apptIds = [...new Set(payments.filter(p => !p.session && p.appointment).map(p => String(p.appointment)))];
+  const [byId, byAppt] = await Promise.all([
+    sessionIds.length ? Session.find({ _id: { $in: sessionIds } }).select('doctor').lean() : [],
+    apptIds.length ? Session.find({ appointmentId: { $in: apptIds } }).select('doctor appointmentId').lean() : []
+  ]);
+  const doctorBySession = new Map(byId.map(x => [String(x._id), x.doctor ? String(x.doctor) : null]));
+  const doctorByAppt = new Map(byAppt.map(x => [String(x.appointmentId), x.doctor ? String(x.doctor) : null]));
+  for (const p of payments) {
+    p.paymentDoctorSnapshot = p.doctor || null;
+    const resolved = (p.session && doctorBySession.get(String(p.session)))
+      || (!p.session && p.appointment && doctorByAppt.get(String(p.appointment)))
+      || null;
+    p.doctor = resolved;
+  }
+  return payments;
+}
+
+async function fetchPaidPayments(start, end, doctorId = null) {
+  const payments = await fetchPaidPaymentsAttributed(start, end);
+  return doctorId ? payments.filter(p => p.doctor === String(doctorId)) : payments.filter(p => p.doctor);
 }
 
 async function getDoctorAdvanceBalanceInternal(doctorId, asOfDate) {
@@ -300,8 +328,9 @@ export async function getProfessionalSummary({ doctorId, startDate, endDate }) {
 
     const isPaid = paidSessionIds.has(session._id.toString());
     if (!isPaid) {
-      receivables.total += value;
       const pendingType = classifyPendingSession(session);
+      // Pacote pré-pago não é dívida (o dinheiro entrou na venda): fica só em packageConsumed.
+      if (pendingType !== 'package') receivables.total += value;
       if (pendingType === 'package') {
         receivables.packageConsumed += value;
         packageCount += 1;
@@ -632,29 +661,21 @@ export async function getProfessionalRanking({ startDate, endDate }) {
   const doctorsCacheKey = 'doctors:active';
   let doctors = cacheGet(doctorsCacheKey, 600_000);
   if (!doctors) {
-    doctors = await Doctor.find({ active: true }).select('fullName specialty commissionRules').lean();
+    // Mesmo critério do dashboard: só sai quem foi desativado explicitamente.
+    doctors = await Doctor.find({ active: { $ne: false } }).select('fullName specialty commissionRules').lean();
     cacheSet(doctorsCacheKey, doctors);
   }
   const doctorIds = doctors.map(d => d._id.toString());
 
   const [sessions, payments, advances, patientCountsMap] = await Promise.all([
     Session.find({ date: { $gte: start, $lte: end }, status: 'completed', doctor: { $in: doctorIds } })
-      .select('doctor patient sessionValue paymentMethod paymentOrigin paymentStatus package insuranceGuide sessionType serviceType')
+      // professionalPaymentStatus: sem ele a comissão do ranking pagava sessões "sem repasse"
+      // (non_payable) e ficava maior que a do Resultado do mesmo profissional.
+      .select('doctor patient date sessionValue paymentMethod paymentOrigin paymentStatus professionalPaymentStatus billingType package insuranceGuide sessionType serviceType')
       .lean(),
-    Payment.find({
-      status: 'paid',
-      amount: { $gt: 0 },
-      kind: { $ne: 'package_consumed' },
-      doctor: { $in: doctorIds },
-      $or: [
-        { financialDate: { $gte: start, $lte: end } },
-        { financialDate: { $exists: false }, paymentDate: { $gte: start, $lte: end } },
-        { financialDate: null, paymentDate: { $gte: start, $lte: end } },
-        { financialDate: { $exists: false }, paymentDate: { $exists: false }, createdAt: { $gte: start, $lte: end } },
-        { financialDate: null, paymentDate: null, createdAt: { $gte: start, $lte: end } }
-      ]
-    }).select('doctor amount session appointment patient billingType paymentMethod').lean(),
-    ProfessionalAdvance.find({ doctor: { $in: doctorIds }, status: 'active', date: { $lte: end } }).select('doctor amount type').lean(),
+    fetchPaidPayments(start, end),
+    // Adiantamentos DO PERÍODO (antes: tudo desde sempre até o fim do mês, com o cartão dizendo "no período").
+    ProfessionalAdvance.find({ doctor: { $in: doctorIds }, status: 'active', date: { $gte: start, $lte: end } }).select('doctor amount type').lean(),
     (async () => {
       const counts = await Patient.aggregate([
         { $match: { doctor: { $in: doctorIds.map(id => new mongoose.Types.ObjectId(id)) } } },
@@ -680,7 +701,9 @@ export async function getProfessionalRanking({ startDate, endDate }) {
     (async () => {
       const packageIds = [...new Set(sessions.map(s => s.package).filter(Boolean))];
       if (packageIds.length === 0) return {};
-      const pkgs = await Package.find({ _id: { $in: packageIds } }).select('sessionType totalSessions insuranceProvider').lean();
+      // Mesmos campos do populate do Resultado (fetchCompletedSessions): a base da comissão
+      // de pacote usa sessionValue/totalValue.
+      const pkgs = await Package.find({ _id: { $in: packageIds } }).select('sessionValue totalValue sessionType totalSessions insuranceProvider').lean();
       const map = {};
       for (const p of pkgs) map[p._id.toString()] = p;
       return map;
@@ -758,8 +781,9 @@ export async function getProfessionalRanking({ startDate, endDate }) {
       production[type] += value;
 
       if (!paidSessionIds.has(session._id.toString())) {
-        receivables.total += value;
         const pendingType = classifyPendingSession(session);
+        // Sessão de pacote já foi paga na venda: é consumo, não dívida. Fica só informativa.
+        if (pendingType !== 'package') receivables.total += value;
         if (pendingType === 'package') receivables.packageConsumed += value;
         else if (pendingType === 'insurance') receivables.insurance += value;
         else if (pendingType === 'liminar') receivables.liminar += value;

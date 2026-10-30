@@ -3,6 +3,7 @@ import express from 'express';
 import { auth, authorize } from '../middleware/auth.js';
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
+import { getAnnualPlanning } from '../services/planningAnnual.js';
 import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
@@ -72,9 +73,9 @@ router.get('/', auth, async (req, res) => {
       const start = `${y}-${String(m).padStart(2, '0')}-01`;
       const lastDay = new Date(y, m, 0).getDate();
       const end = `${y}-${String(m).padStart(2, '0')}-${lastDay}`;
-      // Filtra planejamentos que começam no dia 1 e terminam no último dia do mês
-      filters['period.start'] = start;
-      filters['period.end'] = end;
+      // Tudo que começa dentro do mês: a meta mensal e as semanais/diárias dele.
+      // (Antes exigia início no dia 1 e fim no último dia, e as semanas nunca apareciam.)
+      filters['period.start'] = { $gte: start, $lte: end };
     } else if (startDate && endDate) {
       filters['period.start'] = { $gte: startDate };
       filters['period.end'] = { $lte: endDate };
@@ -131,6 +132,23 @@ router.get('/', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao listar planejamentos:', error);
+    sendApiError(res, error, req);
+  }
+});
+
+/**
+ * @route   GET /api/planning/annual?year=2026
+ * @desc    Metas do ano: meta e realizado (regra da Meta Realizada) de cada mês, com totais do ano
+ */
+router.get('/annual', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
+    if (year !== undefined && (!Number.isInteger(year) || year < 2020 || year > 2100)) {
+      throw new AppError('BAD_REQUEST', 'Ano inválido', { status: 400 });
+    }
+    res.json({ success: true, data: await getAnnualPlanning(year) });
+  } catch (error) {
+    console.error('Erro ao montar metas do ano:', error);
     sendApiError(res, error, req);
   }
 });

@@ -251,8 +251,17 @@ describe('Contratos JSON dos endpoints fiscais (MVP)', () => {
     expect(res.body.error).toBe('DANFSE_NOT_AVAILABLE');
   });
 
+  it('POST /nfse/:id/cancel exige motivo com 15+ caracteres', async () => {
+    const req = { params: { id: emittedInvoiceId.toString() }, headers: {}, body: { reason: 'curto' } };
+    const res = createRes();
+    await cancelFiscalInvoice(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
+
   it('POST /nfse/:id/cancel retorna success/data', async () => {
-    const req = { params: { id: emittedInvoiceId.toString() }, headers: {} };
+    const req = { params: { id: emittedInvoiceId.toString() }, headers: {}, body: { reason: 'Valor lançado errado na nota' } };
     const res = createRes();
     await cancelFiscalInvoice(req, res);
 

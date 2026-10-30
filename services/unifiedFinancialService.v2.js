@@ -147,14 +147,12 @@ export function invalidateUFSCacheForDates(dates) {
 // cada, dos quais `insurance`/`integrityMetadata`/`notes` são a maior parte e não são lidos ali).
 // O filtro de pacientes de teste continua igual (usa `patient.fullName` via populate) e o agregado
 // (`total`, `byMethod`, ...) não é afetado — só o array `payments` devolvido.
-export async function calculateCash(start, end, { skipPayments = false, includeDetails = true, detailSelect = null } = {}) {
-    const startedAt = Date.now();
-    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails, detailSelect });
-    const cached = _getUfsCached(cacheKey);
-    if (cached) return cached;
-    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
-    // NÃO usar filtragem manual. NÃO usar heurística de texto.
-    const match = {
+/**
+ * Filtro canônico de CAIXA (SSOT). Exportado para leituras que precisam do mesmo
+ * critério restrito a um subconjunto (ex.: caixa dos pacientes novos em Vendas & Marketing).
+ */
+export function buildCashMatch(start, end) {
+    return {
         status: 'paid',
         amount: { $gt: 0 },
         kind: { $nin: CASH_NON_COUNTABLE_KINDS },
@@ -182,6 +180,16 @@ export async function calculateCash(start, end, { skipPayments = false, includeD
             }
         ]
     };
+}
+
+export async function calculateCash(start, end, { skipPayments = false, includeDetails = true, detailSelect = null } = {}) {
+    const startedAt = Date.now();
+    const cacheKey = _ufsCacheKey('calculateCash', start, end, { skipPayments, includeDetails, detailSelect });
+    const cached = _getUfsCached(cacheKey);
+    if (cached) return cached;
+    // 🎯 FONTE ÚNICA DE VERDADE — Aggregation direta no MongoDB
+    // NÃO usar filtragem manual. NÃO usar heurística de texto.
+    const match = buildCashMatch(start, end);
 
     // 🚀 PERF (2026-09-18): a query de detalhes (item 4, mais abaixo) não depende do
     // resultado deste aggregate — usa o mesmo `match`, mas nenhum valor calculado a
@@ -559,6 +567,59 @@ const pkgLookupStages = [
  * 🚨 NÃO filtra por appointment deletado/cancelado — produção é execução clínica.
  * 🚨 NÃO filtra por paciente deletado — a sessão foi realizada.
  */
+/**
+ * Sessões particulares realizadas no período e ainda sem pagamento ("a cobrar").
+ * Mesma regra do particularPendente de calculateProduction: os dois usam estes estágios,
+ * então o total do cartão e a lista da tela "Pagamentos" sempre batem.
+ */
+function particularPendenteStages(start, end) {
+    return [
+            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
+            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
+            { $unwind: '$appt' },
+            { $match: {
+                'appt.billingType': { $nin: ['convenio', 'liminar'] },
+                'appt.operationalStatus': 'completed'
+            }},
+            // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
+            { $match: {
+                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
+                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
+            }},
+            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
+            { $match: { $or: [
+                { 'appt.package': { $exists: false } },
+                { 'appt.package': null },
+                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
+                { 'pkg.model': 'per_session' },
+                { pkg: { $size: 0 } }
+            ]}},
+            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
+            { $match: { $or: [
+                { payment: { $size: 0 } },
+                { 'payment.status': { $ne: 'paid' } }
+            ]}},
+    ];
+}
+
+export async function listParticularPendente(start, end) {
+    const rows = await Session.aggregate([
+        ...particularPendenteStages(start, end),
+        { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'pat' } },
+        { $lookup: { from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doc' } },
+        { $project: {
+            date: 1, time: 1, sessionValue: 1, specialty: 1,
+            appointmentId: 1,
+            apptDate: '$appt.date', apptTime: '$appt.time', serviceType: '$appt.serviceType',
+            patient: { _id: { $arrayElemAt: ['$pat._id', 0] }, fullName: { $arrayElemAt: ['$pat.fullName', 0] }, phone: { $arrayElemAt: ['$pat.phone', 0] } },
+            doctor: { _id: { $arrayElemAt: ['$doc._id', 0] }, fullName: { $arrayElemAt: ['$doc.fullName', 0] }, specialty: { $arrayElemAt: ['$doc.specialty', 0] } },
+            isPackage: { $gt: [{ $size: { $ifNull: ['$pkg', []] } }, 0] }
+        } },
+        { $sort: { date: -1 } }
+    ]);
+    return rows;
+}
+
 export async function calculateProduction(start, end, { skipPendente = false, includeDetails = true } = {}) {
     const startedAt = Date.now();
     const cacheKey = _ufsCacheKey('calculateProduction', start, end, { skipPendente, includeDetails });
@@ -602,31 +663,7 @@ export async function calculateProduction(start, end, { skipPendente = false, in
     let _particularPendenteAggMs = 0;
     const particularPendentePromise = _silence(!skipPendente
         ? Session.aggregate([
-            { $match: { date: { $gte: start, $lte: end }, status: 'completed' } },
-            { $lookup: { from: 'appointments', localField: 'appointmentId', foreignField: '_id', as: 'appt' } },
-            { $unwind: '$appt' },
-            { $match: {
-                'appt.billingType': { $nin: ['convenio', 'liminar'] },
-                'appt.operationalStatus': 'completed'
-            }},
-            // appointment.billingType pode ser stale; session.paymentMethod é o SSOT — evita dupla contagem com convenioAReceber
-            { $match: {
-                paymentMethod: { $nin: ['convenio', 'liminar_credit'] },
-                paymentOrigin: { $nin: ['convenio', 'liminar', 'liminar_credit'] }
-            }},
-            { $lookup: { from: 'packages', localField: 'appt.package', foreignField: '_id', as: 'pkg' } },
-            { $match: { $or: [
-                { 'appt.package': { $exists: false } },
-                { 'appt.package': null },
-                { 'pkg.paymentType': { $in: ['per_session', 'session'] } },
-                { 'pkg.model': 'per_session' },
-                { pkg: { $size: 0 } }
-            ]}},
-            { $lookup: { from: 'payments', localField: 'appt.payment', foreignField: '_id', as: 'payment' } },
-            { $match: { $or: [
-                { payment: { $size: 0 } },
-                { 'payment.status': { $ne: 'paid' } }
-            ]}},
+            ...particularPendenteStages(start, end),
             { $group: { _id: null, total: { $sum: '$sessionValue' }, count: { $sum: 1 } } }
         ]).then(r => {
             _particularPendenteAggMs = Date.now() - _particularPendenteStartedAt;

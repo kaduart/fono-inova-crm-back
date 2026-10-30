@@ -267,9 +267,11 @@ export function composeGuideAggregates(classifiedSessions) {
  */
 export function composePendingCompetenceBreakdown(classifiedSessions, referenceDate = new Date()) {
   const reference = new Date(referenceDate);
-  // Preserva a semântica antiga: "mês atual" é o calendário local do
-  // servidor, não o mês UTC (importante na virada do mês em São Paulo).
-  const referenceMonth = `${reference.getFullYear()}-${String(reference.getMonth() + 1).padStart(2, '0')}`;
+  // "Mês atual" é o calendário de São Paulo, não o do servidor (o Render roda em
+  // UTC: entre 21h e meia-noite do último dia, o mês do servidor já virou).
+  // Session.date fica gravada às 12:00 UTC, então a competência da sessão pode
+  // continuar vindo de toISOString().
+  const referenceMonth = reference.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).slice(0, 7);
   let currentValue = 0;
   let currentSessions = 0;
   let previousValue = 0;
@@ -336,7 +338,7 @@ const PAYMENT_FIELDS = '_id session amount status insurance.status insurance.gro
 // 1º lote padrão do Mongo = 101 docs: guias/sessões/payments passavam disso e cada um pagava um getMore extra em série.
 const READ_OPTIONS = { batchSize: 5000 };
 
-const ORPHAN_MATCH = {
+export const ORPHAN_MATCH = {
   status: 'completed',
   $or: [{ paymentMethod: 'convenio' }, { billingType: 'convenio' }],
   $and: [{ $or: [{ insuranceGuide: { $exists: false } }, { insuranceGuide: null }] }]

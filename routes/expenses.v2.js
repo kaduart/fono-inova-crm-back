@@ -37,8 +37,8 @@ export async function invalidateExpenseCache() {
  * Gera chave de cache baseada nos filtros
  */
 function generateCacheKey(filters, version) {
-    const { month, year, doctorId, category, status, origin, page, limit } = filters;
-    return `expenses_v2:${version}:${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${origin || 'all'}_${page}_${limit}`;
+    const { month, year, doctorId, category, subcategory, status, origin, startDate, endDate, excludeCanceled, page, limit } = filters;
+    return `expenses_v2:${version}:${month}_${year}_${startDate || ''}_${endDate || ''}_${doctorId || 'all'}_${category || 'all'}_${subcategory || 'all'}_${status || 'all'}_${excludeCanceled ? 'semcanc' : 'todas'}_${origin || 'all'}_${page}_${limit}`;
 }
 
 // Origem da despesa: 'fixed' (ocorrência de despesa fixa), 'commission' ou 'manual' (avulsa).
@@ -123,10 +123,12 @@ router.get('/', auth, async (req, res) => {
             origin,
             startDate,
             endDate,
+            excludeCanceled,
             page = 1,
             limit = 50,
             nocache = false
         } = req.query;
+        const semCanceladas = excludeCanceled === 'true' || excludeCanceled === true;
 
         const filters = {};
 
@@ -145,7 +147,24 @@ router.get('/', auth, async (req, res) => {
         if (doctorId) filters.relatedDoctor = toObjectIdIfValid(doctorId);
         if (category) filters.category = category;
         if (subcategory) filters.subcategory = subcategory;
-        if (status) filters.status = status;
+        // Chips da tela: 'open' (pendente + agendada) e 'overdue' (em aberto com data já passada, dia de SP).
+        const hoje = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const OPEN = ['pending', 'scheduled'];
+        const dateFilter = filters.date;
+        if (status === 'open') filters.status = { $in: OPEN };
+        else if (status === 'overdue') {
+            filters.status = { $in: OPEN };
+            filters.date = { ...(filters.date || {}), $lt: hoje };
+        }
+        else if (status) filters.status = status;
+        // Sem status escolhido, a aba pede para não trazer canceladas. Antes elas ocupavam vaga
+        // na página de 50 e eram tiradas na tela, e a página aparecia com menos linhas.
+        else if (semCanceladas) filters.status = { $nin: ['canceled', 'cancelado'] };
+
+        // Contagem dos chips de status: respeita os demais filtros (inclusive origem), ignora o de status.
+        const statusBase = { ...filters };
+        delete statusBase.status;
+        if (dateFilter) statusBase.date = dateFilter; else delete statusBase.date;
 
         // Totais por origem ignoram o filtro `origin` (os cards mostram o quadro completo
         // mesmo com uma origem selecionada), mas respeitam os demais filtros.
@@ -155,8 +174,10 @@ router.get('/', auth, async (req, res) => {
             filters.$and = [ORIGIN_CONDITIONS[origin]];
         }
 
+        if (origin && ORIGIN_CONDITIONS[origin]) statusBase.$and = [ORIGIN_CONDITIONS[origin]];
+
         const cacheVersion = await getCacheVersion();
-        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, origin, page, limit }, cacheVersion);
+        const cacheKey = generateCacheKey({ month, year, doctorId, category, subcategory, status, origin, startDate, endDate, excludeCanceled: semCanceladas, page, limit }, cacheVersion);
 
         // Verifica cache (se não forçar refresh)
         if (!nocache) {
@@ -182,10 +203,12 @@ router.get('/', auth, async (req, res) => {
             Expense.countDocuments(filters)
         ]);
 
-        // Totais (pago/pendente) + quebra por origem (fixa/comissão/avulsa)
-        const [totals, originRows] = await Promise.all([
+        // Totais (pago/pendente) + quebra por origem (fixa/comissão/avulsa).
+        // Os totais seguem o mês e a origem, não o chip de status: o resumo do topo não zera
+        // "Pago" quando o filtro é "A pagar".
+        const [totals, originRows, statusRows] = await Promise.all([
             Expense.aggregate([
-                { $match: filters },
+                { $match: statusBase },
                 {
                     $group: {
                         _id: null,
@@ -210,8 +233,30 @@ router.get('/', auth, async (req, res) => {
                         count: { $sum: 1 }
                     }
                 }
+            ]),
+            Expense.aggregate([
+                { $match: statusBase },
+                {
+                    $group: {
+                        _id: null,
+                        todas: { $sum: { $cond: [{ $in: ['$status', ['canceled', 'cancelado']] }, 0, 1] } },
+                        open: { $sum: { $cond: [{ $in: ['$status', OPEN] }, 1, 0] } },
+                        overdue: { $sum: { $cond: [{ $and: [{ $in: ['$status', OPEN] }, { $lt: ['$date', hoje] }] }, 1, 0] } },
+                        overdueTotal: { $sum: { $cond: [{ $and: [{ $in: ['$status', OPEN] }, { $lt: ['$date', hoje] }] }, '$amount', 0] } },
+                        paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
+                        canceled: { $sum: { $cond: [{ $in: ['$status', ['canceled', 'cancelado']] }, 1, 0] } }
+                    }
+                }
             ])
         ]);
+        const sc = statusRows[0] || {};
+        const statusCounts = {
+            todas: sc.todas || 0,
+            open: sc.open || 0,
+            overdue: sc.overdue || 0,
+            paid: sc.paid || 0,
+            canceled: sc.canceled || 0
+        };
 
         const byOrigin = { fixed: { total: 0, count: 0 }, commission: { total: 0, count: 0 }, manual: { total: 0, count: 0 } };
         for (const r of originRows) if (byOrigin[r._id]) byOrigin[r._id] = { total: r.total, count: r.count };
@@ -224,12 +269,17 @@ router.get('/', auth, async (req, res) => {
                 total,
                 pages: Math.ceil(total / limit)
             },
-            totals: totals[0] || {
-                totalPaid: 0,
-                totalPending: 0,
-                countPaid: 0,
-                countPending: 0
-            },
+            totals: (() => {
+                const t = totals[0] || { totalPaid: 0, totalPending: 0, countPaid: 0, countPending: 0 };
+                const { _id, ...rest } = t;
+                return {
+                    ...rest,
+                    // Total do mês e vencidas calculados aqui para a tela não somar nada.
+                    grandTotal: Math.round(((rest.totalPaid || 0) + (rest.totalPending || 0)) * 100) / 100,
+                    overdueTotal: Math.round((sc.overdueTotal || 0) * 100) / 100
+                };
+            })(),
+            statusCounts,
             byOrigin
         };
 
@@ -399,7 +449,36 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => {
     try {
         const { id } = req.params;
-        const updates = req.body;
+
+        // Só campos editáveis pela tela. Antes o PATCH aceitava qualquer campo do corpo
+        // (categoria, vínculo com fixa, profissional...), inclusive em comissão já paga.
+        const EDITABLE = ['description', 'category', 'subcategory', 'amount', 'date', 'paymentMethod', 'status', 'notes', 'attachment'];
+        const updates = Object.fromEntries(
+            Object.entries(req.body || {}).filter(([k]) => EDITABLE.includes(k))
+        );
+
+        const current = await Expense.findById(id).select('status category').lean();
+        if (!current) {
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
+        }
+        const conflict = (msg) => sendApiError(res, new AppError('CONFLICT', msg, { status: 409 }), req);
+        if (['canceled', 'cancelado'].includes(current.status)) {
+            return conflict('Despesa cancelada não pode ser editada');
+        }
+        const isCommission = current.category === 'commission';
+        if (updates.category && (updates.category === 'commission') !== isCommission) {
+            return conflict('Comissão é gerada pelo fechamento; não dá para trocar a categoria de ou para comissão');
+        }
+        if (isCommission) {
+            if (current.status === 'paid') {
+                return conflict('Comissão já paga não pode ser alterada');
+            }
+            // Comissão pendente: só registrar o pagamento (status e forma). Valor vem do cálculo.
+            const blocked = Object.keys(updates).filter(k => !['status', 'paymentMethod'].includes(k));
+            if (blocked.length) {
+                return conflict('Comissão é calculada pelo sistema; para mudar o valor, regenere as comissões do mês');
+            }
+        }
 
         const expense = await Expense.findByIdAndUpdate(
             id,

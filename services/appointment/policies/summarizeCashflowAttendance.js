@@ -1,3 +1,5 @@
+import { resolveSessionFinancialValue } from '../../../utils/resolveSessionFinancialValue.js';
+
 // 🐛 FIX (2026-09-16): faltava 'pre_agendado' — invariante do domínio (CLAUDE.md/
 // DOMAIN_INVARIANTS.md, ADR-006) exige que TODO filtro de agendamentos ativos
 // inclua 'pre_agendado' além de scheduled/confirmed. Sem isso, agendamentos ainda
@@ -22,4 +24,22 @@ export function summarizeCashflowAttendance(appointments) {
         }
     }
     return { ...summary, total: summary.realizados + summary.faltantes };
+}
+
+// Valor previsto da agenda do período (valuation oficial: docs/FINANCIAL_CONTRACT.md §3): soma do valor da sessão de tudo que foi
+// atendido ou ainda vai acontecer (inclui pre_agendado). Faltas e cancelamentos
+// ficam de fora do previsto e entram em `perdido`.
+export function summarizeCashflowAgendaValue(appointments) {
+    const out = { previsto: 0, sessoes: 0, perdido: 0, faltasOuCancelados: 0 };
+    for (const appointment of appointments) {
+        const missed = appointment.missed === true || appointment.clinicalStatus === 'missed';
+        if (appointment.operationalStatus === 'canceled' || (missed && appointment.operationalStatus !== 'completed')) {
+            out.perdido += resolveSessionFinancialValue(appointment);
+            out.faltasOuCancelados++;
+        } else if (appointment.operationalStatus === 'completed' || remainingStatuses.has(appointment.operationalStatus)) {
+            out.previsto += resolveSessionFinancialValue(appointment);
+            out.sessoes++;
+        }
+    }
+    return out;
 }

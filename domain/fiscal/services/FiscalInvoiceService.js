@@ -128,7 +128,7 @@ export async function attachAttachment(fiscalInvoiceId, attachmentData) {
  * tipo Cancelamento. Nunca dispara estorno financeiro (CancellationPolicy.triggersFinancialReversal
  * é sempre false — decisão manual e separada do usuário no Financeiro).
  */
-export async function requestCancellation(fiscalInvoiceId, { correlationId } = {}) {
+export async function requestCancellation(fiscalInvoiceId, { correlationId, reason, requestedBy } = {}) {
   const fiscalInvoice = await fiscalInvoiceRepository.findById(fiscalInvoiceId);
   if (!fiscalInvoice) throw new Error('FISCAL_INVOICE_NAO_ENCONTRADA');
 
@@ -142,7 +142,12 @@ export async function requestCancellation(fiscalInvoiceId, { correlationId } = {
   return runTransactionWithRetry(async (session) => {
     const result = await FiscalStateMachineService.applyOfficialFiscalEvent(
       fiscalInvoiceId,
-      { tipoEvento: TipoEvento.CANCELAMENTO, source: 'crm', correlationId },
+      {
+        tipoEvento: TipoEvento.CANCELAMENTO,
+        source: 'crm',
+        correlationId,
+        payload: { motivo: reason || null, requestedBy: requestedBy || null }
+      },
       { session }
     );
 
