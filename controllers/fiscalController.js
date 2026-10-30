@@ -683,10 +683,41 @@ export async function retryFiscalInvoice(req, res) {
 export async function cancelFiscalInvoice(req, res) {
   try {
     const { id: fiscalInvoiceId } = req.params;
-    const result = await FiscalInvoiceService.requestCancellation(fiscalInvoiceId, { correlationId: req.headers['x-correlation-id'] });
+    const reason = String(req.body?.reason || '').trim();
+    // A NFS-e exige justificativa no cancelamento (mínimo de 15 caracteres no padrão nacional).
+    if (reason.length < 15) {
+      return sendApiError(
+        res,
+        new AppError('VALIDATION_ERROR', 'Informe o motivo do cancelamento (mínimo de 15 caracteres)', {
+          status: 400,
+          legacyError: 'CANCEL_REASON_REQUIRED',
+        }),
+        req
+      );
+    }
+    const result = await FiscalInvoiceService.requestCancellation(fiscalInvoiceId, {
+      correlationId: req.headers['x-correlation-id'],
+      reason,
+      requestedBy: req.user?.id || req.user?._id || null,
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('[FiscalController] cancelFiscalInvoice error:', error);
+    const msg = String(error?.message || '');
+    if (msg.startsWith('FISCAL_INVOICE_NAO_ENCONTRADA')) {
+      return sendApiError(res, new AppError('NOT_FOUND', 'Nota fiscal não encontrada', { status: 404 }), req);
+    }
+    if (msg.startsWith('FISCAL_INVOICE_CANCELLATION_NOT_ELIGIBLE') || msg.startsWith('FISCAL_EVENT_TRANSITION_REJECTED')) {
+      return sendApiError(
+        res,
+        new AppError('CONFLICT', 'Esta nota não pode ser cancelada na situação atual', {
+          status: 409,
+          legacyError: 'NFSE_CANCEL_NOT_ALLOWED',
+          details: { reasons: error.reasons || [error.code].filter(Boolean) },
+        }),
+        req
+      );
+    }
     sendApiError(
       res,
       new AppError('INTERNAL_ERROR', error.message, {

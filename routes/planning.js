@@ -72,9 +72,9 @@ router.get('/', auth, async (req, res) => {
       const start = `${y}-${String(m).padStart(2, '0')}-01`;
       const lastDay = new Date(y, m, 0).getDate();
       const end = `${y}-${String(m).padStart(2, '0')}-${lastDay}`;
-      // Filtra planejamentos que começam no dia 1 e terminam no último dia do mês
-      filters['period.start'] = start;
-      filters['period.end'] = end;
+      // Tudo que começa dentro do mês: a meta mensal e as semanais/diárias dele.
+      // (Antes exigia início no dia 1 e fim no último dia, e as semanas nunca apareciam.)
+      filters['period.start'] = { $gte: start, $lte: end };
     } else if (startDate && endDate) {
       filters['period.start'] = { $gte: startDate };
       filters['period.end'] = { $lte: endDate };

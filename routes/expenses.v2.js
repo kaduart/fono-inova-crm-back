@@ -37,8 +37,8 @@ export async function invalidateExpenseCache() {
  * Gera chave de cache baseada nos filtros
  */
 function generateCacheKey(filters, version) {
-    const { month, year, doctorId, category, status, origin, page, limit } = filters;
-    return `expenses_v2:${version}:${month}_${year}_${doctorId || 'all'}_${category || 'all'}_${status || 'all'}_${origin || 'all'}_${page}_${limit}`;
+    const { month, year, doctorId, category, subcategory, status, origin, startDate, endDate, excludeCanceled, page, limit } = filters;
+    return `expenses_v2:${version}:${month}_${year}_${startDate || ''}_${endDate || ''}_${doctorId || 'all'}_${category || 'all'}_${subcategory || 'all'}_${status || 'all'}_${excludeCanceled ? 'semcanc' : 'todas'}_${origin || 'all'}_${page}_${limit}`;
 }
 
 // Origem da despesa: 'fixed' (ocorrência de despesa fixa), 'commission' ou 'manual' (avulsa).
@@ -123,10 +123,12 @@ router.get('/', auth, async (req, res) => {
             origin,
             startDate,
             endDate,
+            excludeCanceled,
             page = 1,
             limit = 50,
             nocache = false
         } = req.query;
+        const semCanceladas = excludeCanceled === 'true' || excludeCanceled === true;
 
         const filters = {};
 
@@ -146,6 +148,9 @@ router.get('/', auth, async (req, res) => {
         if (category) filters.category = category;
         if (subcategory) filters.subcategory = subcategory;
         if (status) filters.status = status;
+        // Sem status escolhido, a aba pede para não trazer canceladas. Antes elas ocupavam vaga
+        // na página de 50 e eram tiradas na tela, e a página aparecia com menos linhas.
+        else if (semCanceladas) filters.status = { $nin: ['canceled', 'cancelado'] };
 
         // Totais por origem ignoram o filtro `origin` (os cards mostram o quadro completo
         // mesmo com uma origem selecionada), mas respeitam os demais filtros.
@@ -156,7 +161,7 @@ router.get('/', auth, async (req, res) => {
         }
 
         const cacheVersion = await getCacheVersion();
-        const cacheKey = generateCacheKey({ month, year, doctorId, category, status, origin, page, limit }, cacheVersion);
+        const cacheKey = generateCacheKey({ month, year, doctorId, category, subcategory, status, origin, startDate, endDate, excludeCanceled: semCanceladas, page, limit }, cacheVersion);
 
         // Verifica cache (se não forçar refresh)
         if (!nocache) {
@@ -399,7 +404,36 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
 router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => {
     try {
         const { id } = req.params;
-        const updates = req.body;
+
+        // Só campos editáveis pela tela. Antes o PATCH aceitava qualquer campo do corpo
+        // (categoria, vínculo com fixa, profissional...), inclusive em comissão já paga.
+        const EDITABLE = ['description', 'category', 'subcategory', 'amount', 'date', 'paymentMethod', 'status', 'notes', 'attachment'];
+        const updates = Object.fromEntries(
+            Object.entries(req.body || {}).filter(([k]) => EDITABLE.includes(k))
+        );
+
+        const current = await Expense.findById(id).select('status category').lean();
+        if (!current) {
+            return sendApiError(res, new AppError('NOT_FOUND', 'Despesa não encontrada', { status: 404 }), req);
+        }
+        const conflict = (msg) => sendApiError(res, new AppError('CONFLICT', msg, { status: 409 }), req);
+        if (['canceled', 'cancelado'].includes(current.status)) {
+            return conflict('Despesa cancelada não pode ser editada');
+        }
+        const isCommission = current.category === 'commission';
+        if (updates.category && (updates.category === 'commission') !== isCommission) {
+            return conflict('Comissão é gerada pelo fechamento; não dá para trocar a categoria de ou para comissão');
+        }
+        if (isCommission) {
+            if (current.status === 'paid') {
+                return conflict('Comissão já paga não pode ser alterada');
+            }
+            // Comissão pendente: só registrar o pagamento (status e forma). Valor vem do cálculo.
+            const blocked = Object.keys(updates).filter(k => !['status', 'paymentMethod'].includes(k));
+            if (blocked.length) {
+                return conflict('Comissão é calculada pelo sistema; para mudar o valor, regenere as comissões do mês');
+            }
+        }
 
         const expense = await Expense.findByIdAndUpdate(
             id,

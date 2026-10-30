@@ -350,7 +350,9 @@ router.get('/', auth, async (req, res) => {
                 pendentes,
                 expenses: {
                     total: despesas.total,
-                    count: despesas.count
+                    count: despesas.count,
+                    // A tela de Indicadores lê expenses.breakdown (comissões e detalhe por profissional).
+                    breakdown: despesas.breakdown
                 },
                 balance: data.saldo,
                 resultadoEconomico: data.resultadoEconomico,
@@ -1687,10 +1689,19 @@ async function calculateDespesas(year, month) {
         status: { $nin: ['canceled', 'cancelado'] }
     }).lean();
 
-    const expenseTotal = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-
     // 💰 Calcular comissões de todos os profissionais ativos no mês
     const doctors = await Doctor.find({ active: { $ne: false } }).select('_id fullName commissionRules.rules').lean();
+
+    // A comissão de quem tem regra já entra recalculada abaixo. A despesa 'commission' que o job
+    // mensal grava para essa pessoa é o mesmo dinheiro: somar as duas contava a comissão duas vezes.
+    // Comissão lançada para quem NÃO tem regra continua contando como despesa normal.
+    const withRules = new Set(
+        doctors.filter(d => (d.commissionRules?.rules?.length ?? 0) > 0).map(d => d._id.toString())
+    );
+    const isRecalculatedCommission = (e) =>
+        e.category === 'commission' && e.relatedDoctor && withRules.has(e.relatedDoctor.toString());
+    const countedExpenses = expenses.filter(e => !isRecalculatedCommission(e));
+    const expenseTotal = countedExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
     const commissionResults = await Promise.all(
         doctors.map(async (d) => {
             const hasRules = (d.commissionRules?.rules?.length ?? 0) > 0;
@@ -1720,7 +1731,7 @@ async function calculateDespesas(year, month) {
 
     return {
         total: parseFloat((expenseTotal + commissionTotal).toFixed(2)),
-        count: expenses.length,
+        count: countedExpenses.length,
         breakdown: {
             expenses: parseFloat(expenseTotal.toFixed(2)),
             comissoes: parseFloat(commissionTotal.toFixed(2)),
