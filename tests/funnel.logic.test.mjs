@@ -71,7 +71,7 @@ console.log('\n#Entrega — ACEITA COMPROVADA (resposta API) vs ENVIADO HISTÓRI
 const now = new Date();
 const docs = [
   // sent COM prova (events_received>=1 / trace) = aceita comprovada
-  { meta: { status: 'sent', sentAt: new Date(now - 3600e3), eventsReceived: 1, trace: 'fb1' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'sent', sentAt: now, trace: 'req1' } },
+  { meta: { status: 'sent', sentAt: new Date(now - 3600e3), eventsReceived: 1, trace: 'fb1' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'sent', sentAt: now, code: 0, trace: 'req1' } },
   // sent SEM prova (gravação antiga) = enviado histórico
   { meta: { status: 'sent', sentAt: now }, google: { status: 'sent', sentAt: now }, tiktok: { status: 'sent', sentAt: new Date(now - 7200e3) } },
   { meta: { status: 'failed', reason: 'meta_events_received_0' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'skipped', reason: 'fora_janela_7d_tiktok' } },
@@ -87,9 +87,9 @@ t('Meta: 1 aceita (events_received>=1) + 1 histórico (sent sem prova), 1 falha,
   assert.equal(d.meta.reasons['sem_telefone'], 1);
   assert.equal(d.meta.lastSentAt, now.toISOString());
 });
-t('TikTok: 1 aceita (tem trace) + 1 histórico (sent sem trace); 1 ignorada', () => {
-  assert.equal(d.tiktok.accepted, 1);   // a com request_id (trace)
-  assert.equal(d.tiktok.sentLegacy, 1); // sent sem trace = histórico
+t('TikTok: aceita SÓ com code:0; sent com request_id mas sem code = histórico', () => {
+  assert.equal(d.tiktok.accepted, 1);   // a com code:0
+  assert.equal(d.tiktok.sentLegacy, 1); // sent sem code (mesmo com/sem trace) = histórico
   assert.equal(d.tiktok.ignored, 1);
   assert.equal(d.tiktok.reasons['fora_janela_7d_tiktok'], 1);
 });

@@ -61,13 +61,13 @@ export const PLATFORMS = ['meta', 'google', 'tiktok'];
 // docs: AdConversion[] com subdocs meta/google/tiktok { status, reason, sentAt }.
 // Aceita = status 'sent' (a API ACEITOU o recebimento). ATENÇÃO: aceita != atribuída
 // ao anúncio nem usada na otimização — o front deve deixar isso explícito.
-// "Aceita (resposta da API)" exige PROVA na resposta: Meta events_received>=1; TikTok
-// request_id (trace); Google confirma o upload no sucesso. Um 'sent' sem essa prova é
+// "Aceita (resposta da API)" exige PROVA DOCUMENTADA na resposta: Meta events_received>=1;
+// TikTok code:0 (request_id isolado não comprova); Google confirma o upload no sucesso. Um 'sent' sem essa prova é
 // "Enviado (histórico)" — gravações antigas marcadas sent sem resposta comprovada.
 function hasApiProof(platform, pf) {
-  if (platform === 'meta') return Number(pf.eventsReceived) >= 1;
-  if (platform === 'tiktok') return !!pf.trace;
-  if (platform === 'google') return true; // sucesso do upload confirmado pela API do Google
+  if (platform === 'meta') return Number(pf.eventsReceived) >= 1;       // resposta: events_received>=1
+  if (platform === 'tiktok') return Number(pf.code) === 0;              // resposta documentada: code:0 (request_id sozinho NÃO comprova)
+  if (platform === 'google') return true;                              // sucesso do upload confirmado pela API do Google
   return false;
 }
 export function summarizeDelivery(docs = []) {
