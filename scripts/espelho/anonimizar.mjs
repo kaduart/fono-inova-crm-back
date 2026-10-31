@@ -2,7 +2,9 @@
  * 🕶️ Anonimiza dados pessoais de pacientes/leads NA CÓPIA do espelho (LGPD).
  * Mantém valores, datas, status e ids — só troca quem é a pessoa.
  * Determinístico: o mesmo telefone/nome vira sempre o mesmo falso (joins e buscas continuam batendo).
- * Equipe (users, admins, doctors) NÃO é tocada, para o login no espelho continuar funcionando.
+ * Equipe (users, admins, doctors): por padrão não é tocada (login do espelho local continua igual).
+ * Com { equipe: true } (cópia na nuvem): nome da equipe também vira falso; e-mail/senha são
+ * trocados por contas de teste no espelhoSync. Com { credenciais: true }: zera tokens/segredos.
  */
 import crypto from 'crypto';
 
@@ -22,6 +24,8 @@ const fakePhone = (v) => { const d = String(v).replace(/\D/g, ''); if (d.length 
 
 const isPhoneKey = (k) => /(phone|telefone|celular|whatsapp)(?!.*(click|enabled|sent|status|id$))/i.test(k);
 const isNameKey = (k) => /^(fullname|patientname|responsiblename|leadname|contactname|originalpatientname|normalizedname|nomecompleto|nome|guardianname|mothername|fathername)$/i.test(k);
+const isCredKey = (k) => /(token|secret|apikey|api_key|privatekey|private_key|ciphertext|refresh|pfx|certificado(base64|senha)?$|certificatedata|senha|clientsecret|webhookurl)/i.test(k) && !/(count|type|expires|at$|status)/i.test(k);
+const isStaffNameKey = (k) => /^(doctorname|professionalname|createdbyname|updatedbyname|therapistname|secretaryname|username)$/i.test(k);
 const isAddressKey = (k) => /^(address|endereco)$/i.test(k);
 
 function anonValue(key, v) {
@@ -36,21 +40,25 @@ function anonValue(key, v) {
 const blank = (v) => (typeof v === 'string' ? 'anonimizado' : Array.isArray(v) ? v.map(blank)
   : v && typeof v === 'object' && v.constructor === Object ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, blank(x)])) : v);
 
-function walk(node, coll, depth, parentKey) {
-  if (Array.isArray(node)) return node.map((x) => walk(x, coll, depth + 1, parentKey));
+function walk(node, coll, depth, parentKey, opt = {}) {
+  if (Array.isArray(node)) return node.map((x) => walk(x, coll, depth + 1, parentKey, opt));
   if (!node || typeof node !== 'object' || node.constructor !== Object) return node;
   const out = {};
   for (const [k, v] of Object.entries(node)) {
-    if (isAddressKey(k)) out[k] = blank(v);
+    if (opt.credenciais && isCredKey(k) && v != null && typeof v !== 'boolean' && typeof v !== 'number') out[k] = null;
+    else if (opt.equipe && isStaffNameKey(k) && typeof v === 'string') out[k] = fakeName(v);
+    else if (opt.equipe && k === 'name' && depth === 0 && STAFF.has(coll) && typeof v === 'string') out[k] = fakeName(v);
+    else if (isAddressKey(k)) out[k] = blank(v);
     else if (CHAT.has(coll) && /^(content|text|body|caption|lastMessage)$/i.test(k) && typeof v === 'string') out[k] = '[mensagem anonimizada]';
     else if (k === 'name' && typeof v === 'string' && ((depth === 0 && PERSON_NAME.has(coll)) || /responsible|guardian|patient|lead|contact|parent/i.test(parentKey || ''))) out[k] = fakeName(v);
     else if (typeof v === 'string') out[k] = anonValue(k, v);
-    else out[k] = walk(v, coll, depth + 1, k);
+    else out[k] = walk(v, coll, depth + 1, k, opt);
   }
   return out;
 }
 
-export function anonimizar(coll, doc) {
-  if (STAFF.has(coll)) return doc;
-  return walk(doc, coll, 0, '');
+export function anonimizar(coll, doc, opt = {}) {
+  if (STAFF.has(coll) && !opt.equipe) return doc;
+  return walk(doc, coll, 0, '', opt);
 }
+export const COLECOES_EQUIPE = STAFF;

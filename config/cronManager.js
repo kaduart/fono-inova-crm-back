@@ -94,7 +94,7 @@ export async function startAllCrons() {
     const { scheduleFixedExpenseGeneration } = await import("../crons/fixedExpenseGeneration.cron.js");
     startCron('fixedExpenseGeneration', () => scheduleFixedExpenseGeneration());
 
-    // Cópia diária produção → DEV na nuvem (18:50). DESLIGADA por padrão: liga com
+    // Cópia produção → DEV na nuvem (seg–sex 20:00). DESLIGADA por padrão: liga com
     // ESPELHO_SYNC_ENABLED=true no Render. Detalhes em crons/espelhoSync.cron.js.
     if (process.env.ESPELHO_SYNC_ENABLED === 'true') {
         const { scheduleEspelhoSync } = await import("../crons/espelhoSync.cron.js");
