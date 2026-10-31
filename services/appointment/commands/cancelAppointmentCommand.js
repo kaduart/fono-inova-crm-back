@@ -46,7 +46,7 @@ import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<Appointment>} Appointment atualizado
  */
-export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt, cancelChannel }, user, session) {
+export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt, cancelChannel, deferSideEffects = false }, user, session) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -155,6 +155,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
       const cancelResult = await PaymentLifecycleService.cancelPayment(pay._id, {
         reason,
         mongoSession: session,
+        deferSideEffects,
       });
       if (cancelResult.canceled || cancelResult.alreadyCanceled) {
         console.log(`[cancelAppointmentCommand] Payment cancelado: ${pay._id}`);

@@ -1127,7 +1127,11 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     }
     if (cancellations.length) {
       cancellationResult = await registerCanceledInsuranceAppointments({ planId: id, cancellations, dryRun: false, user: req.user, mongoSession: session });
-      if (cancellationResult.conflicts.length) throw Object.assign(new Error('Confira os cancelamentos antes de gerar.'), { statusCode: 409, conflicts: cancellationResult.conflicts });
+      if (cancellationResult.conflicts.length) {
+        const completed = cancellationResult.conflicts.find(c => ['COMPLETED_CANCELLATION_BLOCKED', 'CONSUMED_SESSION_CANCELLATION_BLOCKED'].includes(c.code));
+        const message = completed ? `${completed.date.split('-').reverse().join('/')}: ${completed.message}` : 'Confira os cancelamentos antes de gerar.';
+        throw Object.assign(new Error(message), { statusCode: 409, conflicts: cancellationResult.conflicts });
+      }
     }
     const today = new Date().toISOString().split('T')[0];
 
