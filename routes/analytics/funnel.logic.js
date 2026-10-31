@@ -84,14 +84,16 @@ function hasApiProof(platform, pf) {
   return false;
 }
 export function summarizeDelivery(docs = []) {
-  const base = () => ({ pending: 0, accepted: 0, sentLegacy: 0, ignored: 0, failed: 0, lastSentAt: null, reasons: {} });
+  const base = () => ({ pending: 0, inconsistent: 0, accepted: 0, sentLegacy: 0, ignored: 0, failed: 0, lastSentAt: null, reasons: {} });
   const out = { meta: base(), google: base(), tiktok: base() };
   for (const d of docs) {
+    const settled = !!(d && d.done); // registro já finalizado (done)
     for (const p of PLATFORMS) {
       const pf = d && d[p];
       if (!pf || !pf.status) continue;
       const o = out[p];
-      if (pf.status === 'pending') o.pending += 1;
+      // #pending em registro done = INCONSISTÊNCIA (não é envio ativo); histórico preservado.
+      if (pf.status === 'pending') { if (settled) o.inconsistent += 1; else o.pending += 1; }
       else if (pf.status === 'sent') {
         if (hasApiProof(p, pf)) o.accepted += 1; else o.sentLegacy += 1; // comprovada vs histórico
         const ts = pf.sentAt ? new Date(pf.sentAt).getTime() : null;

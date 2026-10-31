@@ -316,7 +316,7 @@ router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => 
 router.get('/delivery-status', flexibleAuth, asyncHandler(async (req, res) => {
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
     const since = new Date(Date.now() - days * 864e5);
-    const docs = await AdConversion.find({ eventTime: { $gte: since } }).select('meta google tiktok').lean();
+    const docs = await AdConversion.find({ eventTime: { $gte: since } }).select('meta google tiktok done').lean();
     res.json({
         success: true,
         days,

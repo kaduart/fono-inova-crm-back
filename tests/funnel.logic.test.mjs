@@ -85,6 +85,7 @@ const docs = [
   { meta: { status: 'sent', sentAt: now }, google: { status: 'sent', sentAt: now }, tiktok: { status: 'sent', sentAt: new Date(now - 7200e3) } },
   { meta: { status: 'failed', reason: 'meta_events_received_0' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'skipped', reason: 'fora_janela_7d_tiktok' } },
   { meta: { status: 'skipped', reason: 'sem_telefone' } },
+  { done: true, tiktok: { status: 'pending', reason: null } }, // pending em registro done = inconsistência
 ];
 const d = summarizeDelivery(docs);
 t('Meta: 1 aceita (events_received>=1) + 1 histórico (sent sem prova), 1 falha, 1 ignorada', () => {
@@ -101,6 +102,11 @@ t('TikTok: aceita SÓ com code:0; sent com request_id mas sem code = histórico'
   assert.equal(d.tiktok.sentLegacy, 1); // sent sem code (mesmo com/sem trace) = histórico
   assert.equal(d.tiktok.ignored, 1);
   assert.equal(d.tiktok.reasons['fora_janela_7d_tiktok'], 1);
+});
+t('pending em registro done conta como INCONSISTÊNCIA, não como pendência ativa', () => {
+  // o doc extra tem tiktok pending + done:true
+  assert.equal(d.tiktok.inconsistent, 1); // doc com done:true + tiktok pending
+  assert.equal(d.tiktok.pending, 0);      // nenhum pending ATIVO (done:false) no cenário
 });
 t('Google: sucesso de upload conta como aceito (API confirma); ignoradas por sem_gclid', () => {
   assert.equal(d.google.accepted, 1);   // google sent = confirmado pela API

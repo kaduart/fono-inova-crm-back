@@ -24,7 +24,7 @@ const fakeName = (v) => { const b = h(v); return `${NOMES[b[0] % NOMES.length]} 
 const fakePhone = (v) => { const d = String(v).replace(/\D/g, ''); if (d.length < 8) return v; return d.length >= 12 ? `55629${digits(d, d.length - 5)}` : `629${digits(d, d.length - 3)}`; };
 
 // texto livre de conversa em qualquer coleção
-const isFreeTextKey = (k) => /^(conversationsummary|lastmessagepreview|lastmessage|messagepreview|transcript|notes?_?whatsapp|rawtext|usermessage|originalmessage)$/i.test(k);
+const isFreeTextKey = (k) => /^(conversationsummary|lastsummary|summarytext|lastmessagepreview|lastmessage|messagepreview|transcript|notes?_?whatsapp|rawtext|usermessage|originalmessage)$/i.test(k);
 // reforço: e-mail, telefone e CPF soltos dentro de qualquer texto
 const scrub = (t) => t
   .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, 'email@espelho.local')
