@@ -224,7 +224,7 @@ Dados financeiros permaneciam ativos sem a entidade principal, inflando dashboar
 
 Origem: auditoria do Dashboard admin, achado B1.
 
-- **Só admin humano:** `DELETE /api/v2/patients/:id` responde 403 para secretária, terapeuta e token de serviço. `DELETE /api/patients/:id` usa `authorize(['admin'])`.
+- **Só admin humano:** `DELETE /api/v2/patients/:id` responde 403 para secretária, terapeuta e token de serviço. A única exceção é o rollback do `ScheduleAppointmentModal`: admin ou secretária podem apagar um paciente criado há menos de 15 min, sem agendamentos nem pagamentos, desde que o `reason` comece com `rollback_`. `DELETE /api/patients/:id` usa `authorize(['admin'])`.
 - **Arquivo integral antes de apagar:** `deletePatientCommand` grava em `deletedpatientarchives` (model `DeletedPatientArchive`, sem TTL) o paciente, os pagamentos, as sessões, os agendamentos, os pacotes, o saldo e a view, junto com `deletedBy`, `deletedByRole` e `reason`. A gravação é feita na mesma transação: se o arquivo falhar, nada é apagado.
 - **Agendamentos dentro da transação:** o `deleteMany` cru em `appointments` recebe a session. Antes ficava fora dela, e os agendamentos sumiam mesmo quando o resto era desfeito.
 - Para restaurar um paciente, leia o documento do arquivo e reinsira cada lista na sua collection. Ainda não existe rota para isso.

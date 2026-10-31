@@ -64,7 +64,8 @@ router.get('/', flexibleAuth, async (req, res) => {
             query['patientInfo.phone'] = { $regex: phone.replace(/\D/g, ''), $options: 'i' };
         }
         // Filtra por data da consulta (fuso BRT) — sem filtro usa hoje como padrão
-        const dateFrom = from || new Date().toISOString().split('T')[0];
+        // Hoje no fuso de São Paulo (toISOString é UTC: depois das 21h virava amanhã).
+        const dateFrom = from || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
         query.date = {};
         query.date.$gte = new Date(dateFrom + 'T00:00:00-03:00');
         if (to) query.date.$lte = new Date(to + 'T23:59:59-03:00');

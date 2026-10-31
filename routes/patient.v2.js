@@ -534,8 +534,27 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
 
   // Exclusão em cascata é definitiva: só admin humano (token de serviço e
   // secretária/terapeuta não). Auditoria do Dashboard admin, 31/10/2026 (B1).
-  if (req.user?.role !== 'admin' || req.user?.isService) {
-    return res.status(403).json(formatError('Apenas administradores podem excluir pacientes', 403));
+  // Exceção: o rollback do ScheduleAppointmentModal (secretária cria o paciente e o
+  // agendamento falha) pode apagar o paciente que ACABOU de criar, sem nenhum vínculo.
+  const isHumanAdmin = req.user?.role === 'admin' && !req.user?.isService;
+  if (!isHumanAdmin) {
+    const reason = String(req.body?.reason || '');
+    const isStaff = ['admin', 'secretary'].includes(req.user?.role) && !req.user?.isService;
+    let allowedRollback = false;
+    if (isStaff && reason.startsWith('rollback_') && mongoose.Types.ObjectId.isValid(id)) {
+      const fresh = await Patient.findById(id, { createdAt: 1 }).lean();
+      const isNew = fresh?.createdAt && (Date.now() - new Date(fresh.createdAt).getTime()) < 15 * 60 * 1000;
+      if (isNew) {
+        const [appts, pays] = await Promise.all([
+          mongoose.connection.db.collection('appointments').countDocuments({ patient: new mongoose.Types.ObjectId(id) }),
+          mongoose.connection.db.collection('payments').countDocuments({ patient: new mongoose.Types.ObjectId(id) }),
+        ]);
+        allowedRollback = appts === 0 && pays === 0;
+      }
+    }
+    if (!allowedRollback) {
+      return res.status(403).json(formatError('Apenas administradores podem excluir pacientes', 403));
+    }
   }
 
   try {
