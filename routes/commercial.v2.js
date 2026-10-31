@@ -7,9 +7,13 @@
  * GET  /api/v2/commercial/reactivation                             → sem próxima sessão
  * GET  /api/v2/commercial/leads-waiting?hours=2                    → lead novo sem resposta
  * POST /api/v2/commercial/contacts                                 → registra o contato feito
+ * GET  /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30 → avaliou e não fechou pacote
+ * GET  /api/v2/commercial/unconfirmed-next-day[?date=YYYY-MM-DD]    → próximo dia útil sem confirmação
+ * POST /api/v2/commercial/confirmation-reminders { date }           → lembrete em lote (fila whatsapp-send)
  *
- * Só leitura em Appointment/Patient/Package/Lead/Message. A única escrita é em
- * CommercialContact (coleção própria).
+ * Só leitura em Appointment/Patient/Package/Lead/Message. As escritas são em
+ * CommercialContact (coleção própria) e, no lembrete em lote, o mesmo
+ * attendanceConfirmation.queuedAt que o envio de confirmação já grava.
  */
 
 import express from 'express';
@@ -26,6 +30,9 @@ import CommercialContact from '../models/CommercialContact.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { leadsSummary, roiSummary, idleSlotsBySpecialty } from '../services/commercial/salesSummary.js';
 import { AppError } from '../errors/AppError.js';
+import { whatsappSendQueue } from '../config/bullConfig.js';
+import { markAttendanceConfirmationQueued } from '../services/appointment/attendanceConfirmation.service.js';
+import { evaluationsWithoutPackage, unconfirmedNextDay, confirmationReminderText } from '../services/commercial/evaluationConfirmationQueues.js';
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince,
   sortFitLeads, packagesEnding, sortByRecentContact, daysBetween,
@@ -308,11 +315,72 @@ router.get('/idle-slots', ...staff, async (req, res) => {
   }
 });
 
+// Avaliou e não fechou pacote (Precisa de você hoje) — regra em services/commercial/evaluationConfirmationQueues.js
+router.get('/evaluation-no-package', ...staff, async (req, res) => {
+  try {
+    const minDays = clampInt(req.query.minDays, 3, 0, 30);
+    const maxDays = clampInt(req.query.maxDays, 30, minDays, 90);
+    const data = await evaluationsWithoutPackage({ minDays, maxDays });
+    res.json({ success: true, data: { minDays, maxDays, ...data, items: sortByRecentContact(data.items) } });
+  } catch (err) {
+    console.error('[commercial.v2] /evaluation-no-package error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Próximo dia útil (com agenda) sem confirmação
+router.get('/unconfirmed-next-day', ...staff, async (req, res) => {
+  try {
+    res.json({ success: true, data: await unconfirmedNextDay({ date: req.query.date }) });
+  } catch (err) {
+    console.error('[commercial.v2] /unconfirmed-next-day error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Lembrete em lote. Idempotente: só quem ainda não recebeu (state not_sent), no máximo
+// 1 por sessão (jobId fixo por agendamento) e pelo mesmo envio de confirmação que já
+// existe (enquete "Confirmar presença"). Amanda não é acionada.
+router.post('/confirmation-reminders', ...staff, async (req, res) => {
+  try {
+    const date = String(req.body?.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Informe a data (AAAA-MM-DD).', { status: 400 }), req);
+    }
+    const { items } = await unconfirmedNextDay({ date });
+    const targets = items.filter(i => i.state === 'not_sent');
+    const paused = await whatsappSendQueue.isPaused().catch(() => false);
+    let queued = 0;
+    const failed = [];
+    for (const it of targets) {
+      try {
+        const job = await whatsappSendQueue.add('send-message', {
+          phone: it.phone,
+          message: confirmationReminderText({ name: it.name, date, time: it.time, doctorName: it.doctorName }),
+          appointmentId: it.appointmentId,
+          purpose: 'attendance_confirmation',
+        }, { jobId: `attconf-${it.appointmentId}`, attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 500, removeOnFail: 500 });
+        const marked = await markAttendanceConfirmationQueued(it.appointmentId);
+        if (!marked) { await job.remove().catch(() => {}); failed.push(it.appointmentId); continue; }
+        queued++;
+      } catch (e) {
+        console.error(`[commercial.v2] lembrete ${it.appointmentId} falhou:`, e.message);
+        failed.push(it.appointmentId);
+      }
+    }
+    console.log(`[commercial.v2] lembretes ${date}: ${queued} enfileirados, ${items.length - targets.length} já enviados/sem telefone, ${failed.length} falhas, user=${req.user?.id}`);
+    res.json({ success: true, data: { date, queued, skipped: items.length - targets.length, failed: failed.length, queuePaused: paused } });
+  } catch (err) {
+    console.error('[commercial.v2] /confirmation-reminders error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
 router.post('/contacts', ...staff, async (req, res) => {
   try {
     const { targetType, targetId, kind, channel = 'whatsapp', note = '' } = req.body || {};
     if (!['patient', 'lead'].includes(targetType) || !mongoose.isValidObjectId(targetId)
-      || !['reactivation', 'renewal', 'fit', 'lead_reply'].includes(kind)) {
+      || !['reactivation', 'renewal', 'fit', 'lead_reply', 'evaluation', 'evaluation_lost'].includes(kind)) {
       return sendApiError(res, new AppError('BAD_REQUEST', 'Contato inválido.', { status: 400 }), req);
     }
     const userId = req.user?._id || req.user?.id || null;

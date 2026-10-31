@@ -7,7 +7,7 @@ import mongoose from 'mongoose';
 const commercialContactSchema = new mongoose.Schema({
   targetType: { type: String, enum: ['patient', 'lead'], required: true },
   target: { type: mongoose.Schema.Types.ObjectId, required: true },
-  kind: { type: String, enum: ['reactivation', 'renewal', 'fit', 'lead_reply'], required: true },
+  kind: { type: String, enum: ['reactivation', 'renewal', 'fit', 'lead_reply', 'evaluation', 'evaluation_lost'], required: true },
   channel: { type: String, enum: ['whatsapp', 'telefone', 'presencial'], default: 'whatsapp' },
   note: { type: String, default: '', maxlength: 500 },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
