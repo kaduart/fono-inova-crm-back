@@ -45,25 +45,6 @@ jobs:
     name: Testes unitários (vitest + Mongo + Redis)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    services:
-      mongo:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)'"
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 12
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     env:
       NODE_ENV: test
       ENABLE_WORKERS: 'false'
@@ -89,6 +70,18 @@ jobs:
           path: ~/.cache/mongodb-binaries
           key: mongoms-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci --no-audit --no-fund
+      # Mongo e Redis sobem por docker run (e não como services) para os logs
+      # deles não encherem o fim do log do job, onde fica o resultado da catraca.
+      - name: Subir MongoDB e Redis descartáveis
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7.0 >/dev/null
+          docker run -d --name redis -p 6379:6379 redis:7-alpine >/dev/null
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1 \
+              && docker exec redis redis-cli ping >/dev/null 2>&1 && { echo "Mongo e Redis prontos"; exit 0; }
+            sleep 2
+          done
+          echo "::error::Mongo/Redis não subiram a tempo"; exit 1
       - name: Rodar testes unitários
         run: npx vitest run tests/unit services utils domains --reporter=default --reporter=json --outputFile=vitest-report.json || true
       - name: Catraca dos testes
