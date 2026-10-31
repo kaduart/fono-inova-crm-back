@@ -42,22 +42,25 @@ const CONTAS_TESTE = [['admins', 'admin@espelho.local'], ['doctors', 'terapeuta@
 const mb = (b) => Math.round((b / 1048576) * 10) / 10;
 const hostOf = (uri) => { try { return new URL(uri.replace(/^mongodb(\+srv)?:\/\//, 'http://')).hostname.toLowerCase(); } catch { return ''; } };
 
-export function validarConfig(env = process.env) {
+export function validarConfig(env = process.env, { soMedir = false } = {}) {
   const src = env.PROD_URI_READONLY, dst = env.ESPELHO_SYNC_TARGET_URI;
   const dbName = env.ESPELHO_SYNC_TARGET_DB || 'fono_dev_espelho';
   if (!src) throw new Error('PROD_URI_READONLY ausente');
+  if (soMedir && !dst) return { src, dst: null, dbName, limiteMb: Number(env.ESPELHO_SYNC_LIMITE_MB || M0_MB) };
   if (!dst) throw new Error('ESPELHO_SYNC_TARGET_URI ausente');
   if (/prod/i.test(dbName)) throw new Error(`banco de destino "${dbName}" parece produção`);
   const proibidos = [src, env.MONGO_URI, env.MONGODB_URI].filter(Boolean).map(hostOf);
   if (proibidos.includes(hostOf(dst))) throw new Error('destino está no mesmo cluster da produção');
-  if (!env.ESPELHO_SYNC_TEST_PASSWORD || env.ESPELHO_SYNC_TEST_PASSWORD.length < 8) throw new Error('ESPELHO_SYNC_TEST_PASSWORD ausente (mín. 8 caracteres)');
+  if (!soMedir && (!env.ESPELHO_SYNC_TEST_PASSWORD || env.ESPELHO_SYNC_TEST_PASSWORD.length < 8)) throw new Error('ESPELHO_SYNC_TEST_PASSWORD ausente (mín. 8 caracteres)');
   return { src, dst, dbName, senhaTeste: env.ESPELHO_SYNC_TEST_PASSWORD, limiteMb: Number(env.ESPELHO_SYNC_LIMITE_MB || M0_MB), pausadoEnv: env.ESPELHO_SYNC_PAUSED === 'true' };
 }
 
 async function conectar(cfg) {
   const src = new MongoClient(cfg.src, { maxPoolSize: 2, readPreference: 'secondaryPreferred' });
+  await src.connect();
+  if (!cfg.dst) return { src, S: src.db(), T: null };
   const dst = new MongoClient(cfg.dst, { maxPoolSize: 2 });
-  await src.connect(); await dst.connect();
+  await dst.connect();
   return { src, dst, S: src.db(), T: dst.db(cfg.dbName) };
 }
 const fechar = async (c) => { await c?.src?.close().catch(() => {}); await c?.dst?.close().catch(() => {}); };
@@ -130,7 +133,7 @@ async function trocar(T, nome) {
  * Retorna o relatório e grava em _espelho_execucoes (no destino).
  */
 export async function runEspelhoSync(opts = {}) {
-  const cfg = validarConfig();
+  const cfg = validarConfig(process.env, { soMedir: !!opts.medirSomente });
   const dono = `${os.hostname()}:${process.pid}:${Date.now()}`;
   const t0 = Date.now();
   const rel = { inicio: new Date(), dono, origem: 'produção (somente leitura)', destino: cfg.dbName, status: 'iniciado' };
