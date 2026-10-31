@@ -178,6 +178,7 @@ export async function runEspelhoSync(opts = {}) {
       const idx = (await S.collection(name).listIndexes().toArray()).filter((x) => x.name !== '_id_').map(({ v, ns, ...rest }) => rest);
       for (const i of idx) await T.collection(PREFIXO + name).createIndexes([i]).catch((e) => avisosIndice.push(`${name}.${i.name}: ${e.message.slice(0, 120)}`));
       contagens[name] = { producao: antes, copiados: n, indices: idx.length + 1 };
+      console.log(`${TAG} ${Object.keys(contagens).length}/${fonte.length} ${name}: ${n} docs`);
     }
 
     // neutraliza disparos na cópia (antes da troca, para nunca existir janela com pendências reais)
