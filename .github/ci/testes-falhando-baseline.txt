@@ -1,0 +1,3 @@
+# Arquivos de teste que JÁ falhavam quando o CI foi criado (31/10/2026).
+# O CI roda todos eles; só fica vermelho se um arquivo FORA desta lista falhar.
+# Ao consertar um teste, remova a linha dele daqui no mesmo PR.

@@ -1,0 +1,95 @@
+# CI do back do CRM: roda a cada push e PR. Não faz deploy (o deploy segue no Render).
+#
+# O repo já tinha arquivos com erro de sintaxe e testes falhando quando o CI foi criado.
+# Por isso sintaxe e testes usam uma "catraca" (.github/ci/ratchet.mjs): tudo roda,
+# e o CI só fica vermelho se a mudança PIORAR o que já existia.
+#
+# Os testes usam MongoDB e Redis descartáveis do próprio job (nada de produção).
+# Nenhum segredo é usado aqui: as variáveis abaixo são valores falsos só para teste.
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: America/Sao_Paulo
+  NODE_VERSION: 22
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  sintaxe:
+    name: Sintaxe (node --check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Conferir sintaxe de todos os .js/.mjs/.cjs
+        run: |
+          git ls-files '*.js' '*.mjs' '*.cjs' | grep -v -E '^(coverage|logs|logs-archive)/' > arquivos-js.txt
+          node .github/ci/ratchet.mjs syntax arquivos-js.txt .github/ci/sintaxe-falhando-baseline.txt
+
+  testes:
+    name: Testes unitários (vitest + Mongo + Redis)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)'"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      ENABLE_WORKERS: 'false'
+      ENABLE_CRONS: 'false'
+      ENABLE_PROJECTIONS: 'false'
+      MONGO_URI: mongodb://127.0.0.1:27017/crm_ci_test
+      MONGODB_URI: mongodb://127.0.0.1:27017/crm_ci_test
+      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      JWT_SECRET: ci-somente-teste-nao-e-segredo
+      # mongodb-memory-server: binário compatível com o runner
+      MONGOMS_DISTRO: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Cache do binário do mongodb-memory-server
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongoms-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci --no-audit --no-fund
+      - name: Rodar testes unitários
+        run: npx vitest run tests/unit services utils domains --reporter=default --reporter=json --outputFile=vitest-report.json || true
+      - name: Catraca dos testes
+        run: node .github/ci/ratchet.mjs tests vitest-report.json .github/ci/testes-falhando-baseline.txt

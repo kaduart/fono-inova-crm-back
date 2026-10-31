@@ -1,0 +1,11 @@
+# Arquivos .js que JÁ não passavam no `node --check` quando o CI foi criado (31/10/2026).
+# A maioria tem sintaxe de TypeScript dentro de arquivo .js, ou variável declarada duas vezes.
+# O CI confere todos; só fica vermelho se um arquivo FORA desta lista quebrar.
+# Ao consertar um arquivo, remova a linha dele daqui no mesmo PR.
+services/brandImageService.js
+services/contactService.js
+services/notificationService.js
+tests-amanda-ouro/scripts/prompts-gerar-reltorios.js
+tests/billing/load-test.js
+tests/realWorldConversationTest.js
+tests/regression/realWorldConversationTest.js
