@@ -532,6 +532,12 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
   const { id } = req.params;
   const correlationId = `pat_del_${Date.now()}`;
 
+  // Exclusão em cascata é definitiva: só admin humano (token de serviço e
+  // secretária/terapeuta não). Auditoria do Dashboard admin, 31/10/2026 (B1).
+  if (req.user?.role !== 'admin' || req.user?.isService) {
+    return res.status(403).json(formatError('Apenas administradores podem excluir pacientes', 403));
+  }
+
   try {
     // Resolve o patientId real (pode vir o _id da PatientsView)
     let patientId = id;

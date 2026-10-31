@@ -1,5 +1,5 @@
 import express from 'express';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import Appointment from '../models/Appointment.js';
 import { mapAppointmentDTO } from '../utils/appointmentDto.js';
@@ -573,7 +573,8 @@ import { execute as deletePatientCommand } from '../domains/patient/commands/del
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
-router.delete('/:id', validateId, auth, async (req, res) => {
+// Exclusão em cascata é definitiva: só admin humano (auditoria 31/10/2026, B1).
+router.delete('/:id', validateId, auth, authorize(['admin']), async (req, res) => {
   try {
     const result = await deletePatientCommand(req.params.id, {
       user: req.user,

@@ -23,61 +23,72 @@ class AdminDashboardCacheService {
    * - Usuário nunca espera
    */
   async getOrSet(key, fetchFn, ttl = CACHE_TTL) {
+    // 🐛 FIX (auditoria 31/10/2026, B4): arrays (blocos doctors/upcoming) perdiam o
+    // `_cachedAt` no JSON.stringify — todo HIT virava "rebuild=true" e as queries
+    // rodavam a cada acesso. Agora arrays vão embrulhados em { __array, _cachedAt }.
+    const pack = (value) => (Array.isArray(value)
+      ? { __array: value, _cachedAt: new Date().toISOString() }
+      : Object.assign(value ?? {}, { _cachedAt: new Date().toISOString() }));
+    const unpack = (stored) => (stored && Array.isArray(stored.__array) ? stored.__array : stored);
+
+    let cachedRaw = null;
     try {
-      // Tenta buscar do cache
-      const cached = await this.get(key);
-      
-      if (cached) {
-        const data = JSON.parse(cached);
-
-        // 🔥 VERIFICA SE PRECISA REBUILD (TTL/2 = 2.5min)
-        const shouldRebuild = !data._cachedAt ||
-          (Date.now() - new Date(data._cachedAt).getTime() > (ttl * 1000 / 2));
-
-        const ageMs = data._cachedAt ? Date.now() - new Date(data._cachedAt).getTime() : null;
-        console.log(`[DashboardCache] HIT ${key} age=${ageMs != null ? Math.round(ageMs/1000)+'s' : '?'} rebuild=${shouldRebuild}`);
-
-        if (shouldRebuild && !this.revalidating.has(key)) {
-          // 🔥 ANTI-STAMPEDE: Só 1 rebuild por vez por chave
-          this.revalidating.add(key);
-          
-          // REBUILD ASSÍNCRONO (não bloqueia)
-          setImmediate(async () => {
-            try {
-              const fresh = await fetchFn();
-              fresh._cachedAt = new Date().toISOString();
-              await this.set(key, fresh, ttl);
-            } catch (err) {
-              console.error(`[DashboardCache] ⚠️ Rebuild erro: ${err.message}`);
-            } finally {
-              this.revalidating.delete(key);
-            }
-          });
-        }
-        
-        return data;
-      }
-      
-      // 🔥 MISS: Executa mas com timeout de segurança
-      console.log(`[DashboardCache] MISS ${key} — executando builder...`);
-      const t0 = Date.now();
-      const data = await this._fetchWithTimeout(fetchFn, 5000); // max 5s
-      console.log(`[DashboardCache] MISS ${key} resolvido em ${Date.now() - t0}ms`);
-      data._cachedAt = new Date().toISOString();
-      
-      // Salva no cache (não bloqueia)
-      this.set(key, data, ttl).catch(err => 
-        console.error(`[DashboardCache] Erro ao salvar cache: ${err.message}`)
-      );
-      
-      return data;
-    } catch (error) {
-      console.error(`[DashboardCache] Erro: ${error.message}`);
-      // Fallback: executa sem cache
-      return fetchFn();
+      cachedRaw = await this.get(key);
+    } catch (err) {
+      console.error(`[DashboardCache] Erro ao ler ${key}: ${err.message}`);
     }
+
+    if (cachedRaw) {
+      const stored = JSON.parse(cachedRaw);
+      const ageMs = stored?._cachedAt ? Date.now() - new Date(stored._cachedAt).getTime() : null;
+      const shouldRebuild = ageMs == null || ageMs > (ttl * 1000 / 2);
+      console.log(`[DashboardCache] HIT ${key} age=${ageMs != null ? Math.round(ageMs / 1000) + 's' : '?'} rebuild=${shouldRebuild}`);
+
+      if (shouldRebuild && !this.revalidating.has(key)) {
+        this.revalidating.add(key);
+        setImmediate(async () => {
+          try {
+            const fresh = await fetchFn();
+            await this.set(key, pack(fresh), ttl);
+          } catch (err) {
+            console.error(`[DashboardCache] ⚠️ Rebuild erro: ${err.message}`);
+          } finally {
+            this.revalidating.delete(key);
+          }
+        });
+      }
+      return unpack(stored);
+    }
+
+    // MISS: uma única execução do builder. 🐛 FIX (B5): antes, se passasse de 5s, o
+    // catch chamava fetchFn() DE NOVO com a primeira ainda rodando (carga em dobro
+    // justo quando o Mongo está lento). Agora o timeout só gera log e esperamos a
+    // MESMA promise; MISS simultâneos da mesma chave também compartilham a promise.
+    if (!this.inFlight) this.inFlight = new Map();
+    if (this.inFlight.has(key)) return this.inFlight.get(key);
+
+    console.log(`[DashboardCache] MISS ${key} — executando builder...`);
+    const t0 = Date.now();
+    const slowTimer = setTimeout(() => {
+      console.warn(`[DashboardCache] ⏳ ${key} passou de 5s (aguardando a mesma execução)`);
+    }, 5000);
+    const promise = (async () => {
+      try {
+        const data = await fetchFn();
+        console.log(`[DashboardCache] MISS ${key} resolvido em ${Date.now() - t0}ms`);
+        this.set(key, pack(data), ttl).catch(err =>
+          console.error(`[DashboardCache] Erro ao salvar cache: ${err.message}`)
+        );
+        return unpack(data);
+      } finally {
+        clearTimeout(slowTimer);
+        this.inFlight.delete(key);
+      }
+    })();
+    this.inFlight.set(key, promise);
+    return promise;
   }
-  
+
   /**
    * 🔥 Fetch com timeout para evitar espera infinita
    */

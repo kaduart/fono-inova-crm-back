@@ -6,7 +6,12 @@
 
 import express from 'express';
 import moment from 'moment-timezone';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
+
+// Só a gestão (admin/secretária): terapeuta não lê caixa nem dados da clínica.
+// Auditoria do Dashboard admin, 31/10/2026 (B2).
+const staff = [auth, authorize(['admin', 'secretary'])];
+const adminOnly = [auth, authorize(['admin'])];
 import Planning from '../models/Planning.js';
 import { updatePlanningProgress } from '../services/planningService.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
@@ -17,7 +22,7 @@ const TIMEZONE = 'America/Sao_Paulo';
 /**
  * GET /api/v2/goals - Buscar meta atual
  */
-router.get('/', auth, async (req, res) => {
+router.get('/', ...staff, async (req, res) => {
     try {
         const { month, year, type = 'monthly' } = req.query;
         
@@ -88,7 +93,7 @@ router.get('/', auth, async (req, res) => {
 /**
  * POST /api/v2/goals - Criar ou atualizar meta
  */
-router.post('/', auth, async (req, res) => {
+router.post('/', ...adminOnly, async (req, res) => {
     try {
         const { month, year, type = 'monthly', startDate, endDate, expectedRevenue, totalSessions, workHours, notes } = req.body;
         
@@ -171,7 +176,7 @@ router.post('/', auth, async (req, res) => {
 /**
  * DELETE /api/v2/goals/:id - Remover meta
  */
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', ...adminOnly, async (req, res) => {
     try {
         await Planning.findByIdAndDelete(req.params.id);
         res.json({ success: true, message: 'Meta removida' });

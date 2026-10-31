@@ -217,3 +217,14 @@ Dados financeiros permaneciam ativos sem a entidade principal, inflando dashboar
    - patientsViews = 0
    - patient = 0
 ```
+
+---
+
+## Proteções da exclusão de paciente (31/10/2026)
+
+Origem: auditoria do Dashboard admin, achado B1.
+
+- **Só admin humano:** `DELETE /api/v2/patients/:id` responde 403 para secretária, terapeuta e token de serviço. `DELETE /api/patients/:id` usa `authorize(['admin'])`.
+- **Arquivo integral antes de apagar:** `deletePatientCommand` grava em `deletedpatientarchives` (model `DeletedPatientArchive`, sem TTL) o paciente, os pagamentos, as sessões, os agendamentos, os pacotes, o saldo e a view, junto com `deletedBy`, `deletedByRole` e `reason`. A gravação é feita na mesma transação: se o arquivo falhar, nada é apagado.
+- **Agendamentos dentro da transação:** o `deleteMany` cru em `appointments` recebe a session. Antes ficava fora dela, e os agendamentos sumiam mesmo quando o resto era desfeito.
+- Para restaurar um paciente, leia o documento do arquivo e reinsira cada lista na sua collection. Ainda não existe rota para isso.

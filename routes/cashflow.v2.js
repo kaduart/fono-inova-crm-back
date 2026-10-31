@@ -1,7 +1,11 @@
 // routes/cashflow.v2.js - CAIXA REAL FECHADO PARA PRODUÇÃO (V2 PURA)
 import express from 'express';
 import moment from 'moment-timezone';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
+
+// Só a gestão (admin/secretária): terapeuta não lê caixa nem dados da clínica.
+// Auditoria do Dashboard admin, 31/10/2026 (B2).
+const staff = [auth, authorize(['admin', 'secretary'])];
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
@@ -131,7 +135,7 @@ function _fetchWithTimeout(fetchFn, timeoutMs) {
 }
 
 // GET /api/v2/cashflow?date=2026-04-10 OU ?startDate=2026-04-10&endDate=2026-04-16
-router.get('/', auth, async (req, res) => {
+router.get('/', ...staff, async (req, res) => {
     const startedAt = Date.now();
     const _timers = {};
     const _tick = (label) => {
@@ -1066,7 +1070,7 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
 
 // GET /api/v2/cashflow/month?month=2026-04
 // Retorna resumo diário do mês inteiro em UMA requisição (substitui 30 chamadas diárias)
-router.get('/month', auth, async (req, res) => {
+router.get('/month', ...staff, async (req, res) => {
     const startedAt = Date.now();
     try {
         const { month } = req.query;
