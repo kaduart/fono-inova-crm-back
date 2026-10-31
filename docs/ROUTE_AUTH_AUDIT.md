@@ -28,3 +28,4 @@ Teste: `tests/unit/routeAuthGuards.test.js`.
 - `POST/DELETE /api/v2/doctors` exigem staff ou agenda (terapeuta não cria/apaga profissional).
 - `agendaAuth` não loga mais o token esperado.
 - O token antigo (`AGENDA_EXPORT_TOKEN`) continua aceito até a agenda nova estar no ar; depois, trocar o valor no Render e apagar `VITE_API_TOKEN` da Vercel.
+| `PUT /api/v2/doctors/:id` | qualquer JWT | staff/agenda edita tudo; terapeuta só o próprio cadastro (nome, telefone, registro, disponibilidade) |

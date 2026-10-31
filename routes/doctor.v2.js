@@ -340,7 +340,26 @@ router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
 /**
  * PUT /api/v2/doctors/:id - Atualizar médico (síncrono)
  */
-router.put('/:id', flexibleAuth, async (req, res) => {
+// Admin, secretária e Agenda editam qualquer profissional. O terapeuta edita só o
+// próprio cadastro e só os dados pessoais (repasse, status, perfil, e-mail e
+// especialidade continuam com a gestão). Auditoria 31/10/2026.
+const DOCTOR_SELF_EDITABLE = ['fullName', 'phoneNumber', 'licenseNumber', 'weeklyAvailability'];
+export function canUpdateDoctor(req, res, next) {
+  const role = req.user?.role;
+  if (['admin', 'secretary', 'agenda_service'].includes(role)) return next();
+  if (role === 'doctor' && String(req.user?.id) === String(req.params.id)) {
+    const body = req.body || {};
+    const blocked = Object.keys(body).filter(k => !DOCTOR_SELF_EDITABLE.includes(k));
+    if (blocked.length) {
+      console.warn('[DOCTOR_SELF_EDIT] campos ignorados:', blocked.join(','), '| doctor:', req.params.id);
+    }
+    req.body = Object.fromEntries(Object.entries(body).filter(([k]) => DOCTOR_SELF_EDITABLE.includes(k)));
+    return next();
+  }
+  return res.status(403).json(formatError(403, 'Você só pode editar o seu próprio cadastro'));
+}
+
+router.put('/:id', flexibleAuth, canUpdateDoctor, async (req, res) => {
   const correlationId = `doc_upd_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
