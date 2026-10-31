@@ -20,17 +20,6 @@ jobs:
   backup:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # MongoDB descartável só para o teste de restauração (some ao fim do job)
-    services:
-      mongo:
-        image: mongo:8.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)'"
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 12
     steps:
       - name: Instalar MongoDB Database Tools
         run: |
@@ -62,11 +51,34 @@ jobs:
           gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" \
               -o "mongo-prod-$STAMP.archive.gz.gpg" dump.archive.gz
 
+      - name: Subir MongoDB descartável (só para o teste de restauração)
+        id: mongo
+        if: ${{ steps.dump.outcome == 'success' }}
+        run: |
+          set -uo pipefail
+          # Não é service container: se o MongoDB não subir no runner (ex.: mongo:8.0 x kernel 6.19,
+          # SERVER-121912, que derrubou o job em 29–31/10), o dump já está feito e é guardado como "unverified".
+          for IMG in mongo:8.2 mongo:7.0 mongo:8.0; do
+            docker rm -f mongo-restore >/dev/null 2>&1 || true
+            docker run -d --name mongo-restore -p 27017:27017 "$IMG" >/dev/null || continue
+            for i in $(seq 1 30); do
+              if docker exec mongo-restore mongosh --quiet --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)' >/dev/null 2>&1; then
+                echo "MongoDB descartável pronto: $IMG"
+                echo "MONGO_CONTAINER_ID=mongo-restore" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "::warning::$IMG não subiu"; docker logs mongo-restore 2>&1 | tail -3
+          done
+          echo "::error::Nenhuma imagem do MongoDB subiu; backup será guardado sem teste de restauração"
+          exit 1
+
       - name: Teste real de restauração (MongoDB descartável do job)
         id: restore
+        if: ${{ steps.mongo.outcome == 'success' }}
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          MONGO_CONTAINER_ID: ${{ job.services.mongo.id }}
         run: |
           set -euo pipefail
           # Restaura o arquivo JÁ CRIPTOGRAFADO (o mesmo que será guardado) e confere a contagem
