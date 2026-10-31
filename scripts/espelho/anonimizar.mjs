@@ -28,8 +28,11 @@ const isCredKey = (k) => /(token|secret|apikey|api_key|privatekey|private_key|ci
 const isStaffNameKey = (k) => /^(doctorname|professionalname|createdbyname|updatedbyname|therapistname|secretaryname|username)$/i.test(k);
 const isAddressKey = (k) => /^(address|endereco)$/i.test(k);
 
+const PHONE_LIKE = /^(\+?55)?\(?\d{2}\)?\s?9?\d{4}-?\d{4}(@[a-z.]+)?$/i;
 function anonValue(key, v) {
   if (typeof v !== 'string' || !v) return v;
+  if (/^wa(message)?id$|^wamid$|^msgid$|^messageid$/i.test(key) && v.length > 8) return `wamid.espelho${digits(v, 16)}`;
+  if (PHONE_LIKE.test(v.trim())) { const [num, suf] = v.trim().split('@'); return fakePhone(num) + (suf ? `@${suf}` : ''); }
   if (/cpf/i.test(key)) return digits(v, 11);
   if (/^rg$/i.test(key)) return digits(v, 9);
   if (/email/i.test(key) && v.includes('@')) return `p${digits(v, 8)}@espelho.local`;

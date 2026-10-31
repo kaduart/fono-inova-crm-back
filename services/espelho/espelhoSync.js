@@ -37,7 +37,8 @@ const VINCULOS = [
   ['packages', 'patient', 'patients'], ['packages', 'doctor', 'doctors'],
   ['sessions', 'patient', 'patients'], ['sessions', 'doctor', 'doctors'],
 ];
-const CONTAS_TESTE = [['admins', 'admin@espelho.local'], ['doctors', 'terapeuta@espelho.local'], ['users', 'secretaria@espelho.local', { role: 'secretary' }]];
+// secretárias moram em admins (role 'secretary'), conferido na 1ª cópia real
+const CONTAS_TESTE = [['admins', 'admin@espelho.local', { role: 'admin' }], ['admins', 'secretaria@espelho.local', { role: 'secretary' }], ['doctors', 'terapeuta@espelho.local']];
 
 const mb = (b) => Math.round((b / 1048576) * 10) / 10;
 const hostOf = (uri) => { try { return new URL(uri.replace(/^mongodb(\+srv)?:\/\//, 'http://')).hostname.toLowerCase(); } catch { return ''; } };
