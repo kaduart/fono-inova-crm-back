@@ -312,6 +312,7 @@ async function processPending() {
           status: res.status,
           sentAt: res.status === 'sent' ? new Date() : null,
           reason: res.reason || null,
+          code: res.code ?? null,
           trace: res.trace || null,
           pixel: res.pixel || null,
         };

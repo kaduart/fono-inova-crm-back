@@ -64,8 +64,8 @@ export function interpretMetaResponse(r, { pixel, event, actionSource } = {}) {
 export function interpretTiktokResponse(r, { pixel } = {}) {
   const base = { pixel: pixel || null };
   if (r == null) return { ...base, status: 'skipped', reason: 'tiktok_events_nao_configurado', trace: null };
-  if (Number(r.code) === 0) return { ...base, status: 'sent', trace: r.request_id || null, reason: null };
-  return { ...base, status: 'failed', trace: r.request_id || null, reason: `tiktok_code_${r.code}`, retryable: true };
+  if (Number(r.code) === 0) return { ...base, status: 'sent', code: 0, trace: r.request_id || null, reason: null };
+  return { ...base, status: 'failed', code: Number(r.code), trace: r.request_id || null, reason: `tiktok_code_${r.code}`, retryable: true };
 }
 
 // Decide os destinos de plataforma no enqueue (puro, idempotente).

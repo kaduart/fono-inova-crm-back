@@ -10,6 +10,7 @@ const platformSchema = new mongoose.Schema({
   // #4 Resposta efetiva da plataforma (aditivo). Nunca grava dado clínico/PII.
   eventsReceived: { type: Number, default: null }, // Meta: events_received da resposta
   trace: { type: String, default: null },          // Meta fbtrace_id / TikTok request_id
+  code: { type: Number, default: null },           // TikTok Events API code (0 = sucesso documentado)
   pixel: { type: String, default: null },          // dataset/pixel de destino efetivo
   event: { type: String, default: null },          // nome do evento enviado (ex.: Purchase)
   actionSource: { type: String, default: null },   // action_source usado (ex.: physical_store)
