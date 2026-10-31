@@ -28,13 +28,21 @@ export function normalizeCancellations(input) {
       reason: r.reason.trim(), cancelRequester: r.cancelRequester, cancelRequestedAt: requestedAt };
   });
 }
-export function classifyExistingCancellation(row, documents, scopeId, scopeField = 'liminarContract') {
+export function classifyExistingCancellation(row, documents, scopeId, scopeField = 'liminarContract', { allowPending = false } = {}) {
   if (!documents.length) return { action: 'create' };
   if (documents.length === 1) {
     const doc = documents[0];
-    if (CANCELED.has(doc.operationalStatus) && String(doc[scopeField]) === String(scopeId)
-      && doc.specialty === row.specialty && String(doc.doctor) === row.doctorId) {
-      return { action: 'preserve', appointmentId: String(doc._id) };
+    const sameScope = String(doc[scopeField]) === String(scopeId)
+      && doc.specialty === row.specialty && String(doc.doctor) === row.doctorId;
+    if (sameScope) {
+      if (CANCELED.has(doc.operationalStatus)) return { action: 'preserve', appointmentId: String(doc._id) };
+      if (doc.operationalStatus === 'completed' || doc.clinicalStatus === 'completed') {
+        return { action: 'conflict', code: 'COMPLETED_CANCELLATION_BLOCKED', appointmentId: String(doc._id),
+          message: 'Não é possível cancelar este atendimento: a sessão já foi concluída ou consumida. Solicite a correção administrativa antes de registrar o cancelamento.' };
+      }
+      if (allowPending && ['scheduled', 'pre_agendado', 'confirmed', 'pending'].includes(doc.operationalStatus)) {
+        return { action: 'cancel', appointmentId: String(doc._id), message: 'O atendimento pendente existente será cancelado, preservando seus vínculos.' };
+      }
     }
   }
   return { action: 'conflict', message: 'Já existe atendimento nesse horário. Nenhum status ou vínculo será alterado automaticamente.' };

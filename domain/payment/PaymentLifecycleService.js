@@ -31,6 +31,7 @@ export async function cancelPayment(paymentId, options = {}) {
     reason = 'manual',
     userId,
     mongoSession,
+    deferSideEffects = false,
   } = options;
 
   if (!paymentId) {
@@ -66,6 +67,9 @@ export async function cancelPayment(paymentId, options = {}) {
   const saveOptions = mongoSession ? { session: mongoSession } : {};
   await updatedPayment.save(saveOptions);
 
+  // Dentro da geração transacional, só o Outbox já salvo pode disparar efeitos
+  // após commit. Uma prévia pode abortar a transação inteira.
+  if (!deferSideEffects) {
   // 🔄 Atualiza PaymentsView (read-model)
   try {
     await handlePaymentEvent({
@@ -89,6 +93,7 @@ export async function cancelPayment(paymentId, options = {}) {
     console.warn('[PaymentLifecycleService] Falha ao invalidar cache do dashboard:', cacheErr.message);
   }
 
+  }
   console.log(`[PaymentLifecycleService] Payment ${paymentId} cancelado`, { reason });
 
   return {
