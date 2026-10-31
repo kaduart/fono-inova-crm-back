@@ -40,6 +40,7 @@
     "test:regra5": "node tests/complete.js --regra5",
     "test:vitest": "vitest run",
     "test:amanda": "vitest run --config vitest.config.amanda.js",
+    "test:agent": "node --test tests/agent/*.test.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
     "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",
     "test:e2e:bugfixes:watch": "vitest --config vitest.config.bugfixes-e2e.js --watch",
