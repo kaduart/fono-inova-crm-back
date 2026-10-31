@@ -293,3 +293,23 @@ test('prompt informa quais especialidades têm agenda online', () => {
   const sys = buildSystem(LEAD, { especialidadesComAgenda: ['fonoaudiologia', 'psicologia'] });
   assert.match(sys[2].text, /agenda online agora: fonoaudiologia, psicologia/);
 });
+
+test('Haiku: não envia o parâmetro de fallback', async () => {
+  process.env.AMANDA_AGENT_MODEL = 'claude-haiku-5-5';
+  process.env.AMANDA_AGENT_FALLBACKS = 'on';
+  const seen = [];
+  const client = {
+    messages: { create: async (p) => (seen.push(['messages', p]), { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Oi!' }] }) },
+    beta: { messages: { create: async (p) => (seen.push(['beta', p]), { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Oi!' }] }) } },
+  };
+  try {
+    const r = await runAmandaAgent(LEAD, 'oi', {}, { client, history: [], toolDeps: fakeDeps() });
+    assert.equal(r.payload.text, 'Oi!');
+    assert.equal(seen[0][0], 'messages');
+    assert.equal(seen[0][1].model, 'claude-haiku-5-5');
+    assert.equal(seen[0][1].fallbacks, undefined);
+  } finally {
+    delete process.env.AMANDA_AGENT_MODEL;
+    process.env.AMANDA_AGENT_FALLBACKS = 'off';
+  }
+});

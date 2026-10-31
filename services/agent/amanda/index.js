@@ -144,7 +144,9 @@ export async function runAmandaAgent(lead, userText, context = {}, opts = {}) {
     });
     const system = buildSystem(lead, { ...context, especialidadesComAgenda });
 
-    const useFallbacks = String(process.env.AMANDA_AGENT_FALLBACKS || 'on').toLowerCase() !== 'off';
+    // fallback automático de recusa existe para Opus/Sonnet/Fable; o Haiku não aceita o parâmetro
+    const useFallbacks =
+      String(process.env.AMANDA_AGENT_FALLBACKS || 'on').toLowerCase() !== 'off' && !/haiku/i.test(model);
 
     let finalText = '';
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {

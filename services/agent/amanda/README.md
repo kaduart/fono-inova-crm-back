@@ -24,10 +24,10 @@ webhook → whatsappAutoReplyWorker → runOrchestrator ─┬─ FSM atual (Wha
 | `AMANDA_AGENT_MODE` | `off` | `off`, `shadow` (Claude roda sem enviar nem gravar) ou `on` |
 | `AMANDA_AGENT_PHONES` | vazio | Lista de telefones separados por vírgula. Com `on`/`shadow`, só esses números entram |
 | `AMANDA_AGENT_AUTOBOOK` | `false` | `true` = cria o agendamento de verdade via `autoBookAppointment`. `false` = pré-reserva e a equipe confirma |
-| `AMANDA_AGENT_MODEL` | `claude-opus-5-5` | Modelo |
+| `AMANDA_AGENT_MODEL` | `claude-opus-5-5` | Modelo. `claude-haiku-5-5` é a opção de custo mínimo; `claude-sonnet-5-5` fica no meio |
 | `AMANDA_AGENT_EFFORT` | `medium` | `low`, `medium`, `high` (mais alto = pensa mais, mais lento e mais caro) |
 | `AMANDA_AGENT_TIMEOUT_MS` | `45000` | Tempo máximo por chamada à API |
-| `AMANDA_AGENT_FALLBACKS` | `on` | `off` desliga o fallback automático de modelo em caso de recusa |
+| `AMANDA_AGENT_FALLBACKS` | `on` | `off` desliga o fallback automático de modelo em caso de recusa (já fica desligado no Haiku, que não suporta) |
 
 ## Como ligar com segurança
 
