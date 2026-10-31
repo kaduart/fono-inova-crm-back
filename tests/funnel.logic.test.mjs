@@ -55,46 +55,49 @@ t('totais batem com os contatos usados (5 contatos, 3 agend, 1 pré)', () => {
   assert.equal(totals.conversao, +(3 / 5).toFixed(4));
 });
 
-console.log('\n#mergeContacts — dedup por telefone, atribuído vence nao_identificado');
-t('atribuído prevalece sobre lead sem canal; dedup por telefone', () => {
+console.log('\n#mergeContacts — contatos vêm dos LEADS; atribuição só dá o canal');
+t('base = leads (inclui sem atribuição); atribuição enriquece o canal; dedup por telefone', () => {
   const merged = mergeContacts({
-    attributed: [{ phone: '55A', channel: 'meta_ads' }],
-    leads: [{ phone: '55A' }, { phone: '55B' }],
+    attributed: [{ phone: '55A', channel: 'meta_ads' }, { phone: '55C', channel: 'tiktok_ads' }],
+    leads: [{ phone: '55A' }, { phone: '55B' }, { phone: '55A' }],
   });
-  assert.equal(merged.length, 2);
+  assert.equal(merged.length, 2); // 55A (dedup) + 55B; 55C NÃO entra (não é lead)
   assert.equal(merged.find((m) => m.phone === '55A').channel, 'meta_ads');
-  assert.equal(merged.find((m) => m.phone === '55B').channel, null); // -> nao_identificado no funil
+  assert.equal(merged.find((m) => m.phone === '55B').channel, null); // -> nao_identificado
+  assert.equal(merged.find((m) => m.phone === '55C'), undefined); // atribuído-only não conta como contato
 });
 
-console.log('\n#Entrega — pendente/aceita/ignorada(motivos)/falha/último envio');
+console.log('\n#Entrega — ACEITA COMPROVADA (resposta API) vs ENVIADO HISTÓRICO (sem prova)');
 const now = new Date();
 const docs = [
-  { meta: { status: 'sent', sentAt: new Date(now - 3600e3) }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'skipped', reason: 'sem_identificador' } },
-  { meta: { status: 'sent', sentAt: now }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'pending' } },
+  // sent COM prova (events_received>=1 / trace) = aceita comprovada
+  { meta: { status: 'sent', sentAt: new Date(now - 3600e3), eventsReceived: 1, trace: 'fb1' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'sent', sentAt: now, trace: 'req1' } },
+  // sent SEM prova (gravação antiga) = enviado histórico
+  { meta: { status: 'sent', sentAt: now }, google: { status: 'sent', sentAt: now }, tiktok: { status: 'sent', sentAt: new Date(now - 7200e3) } },
   { meta: { status: 'failed', reason: 'meta_events_received_0' }, google: { status: 'skipped', reason: 'sem_gclid' }, tiktok: { status: 'skipped', reason: 'fora_janela_7d_tiktok' } },
   { meta: { status: 'skipped', reason: 'sem_telefone' } },
 ];
 const d = summarizeDelivery(docs);
-t('Meta: 2 aceitas, 1 falha (events_received:0), 1 ignorada (sem_telefone), último envio = agora', () => {
-  assert.equal(d.meta.accepted, 2);
+t('Meta: 1 aceita (events_received>=1) + 1 histórico (sent sem prova), 1 falha, 1 ignorada', () => {
+  assert.equal(d.meta.accepted, 1);     // só a com events_received>=1
+  assert.equal(d.meta.sentLegacy, 1);   // a sent sem prova = histórico
   assert.equal(d.meta.failed, 1);
   assert.equal(d.meta.ignored, 1);
   assert.equal(d.meta.reasons['meta_events_received_0'], 1);
   assert.equal(d.meta.reasons['sem_telefone'], 1);
   assert.equal(d.meta.lastSentAt, now.toISOString());
 });
-t('Google: 3 ignoradas por sem_gclid', () => {
-  assert.equal(d.google.ignored, 3);
-  assert.equal(d.google.reasons['sem_gclid'], 3);
-  assert.equal(d.google.accepted, 0);
-});
-t('TikTok: 1 pendente + ignoradas com motivos distintos; nenhuma aceita', () => {
-  assert.equal(d.tiktok.pending, 1);
-  assert.equal(d.tiktok.ignored, 2);
-  assert.equal(d.tiktok.reasons['sem_identificador'], 1);
+t('TikTok: 1 aceita (tem trace) + 1 histórico (sent sem trace); 1 ignorada', () => {
+  assert.equal(d.tiktok.accepted, 1);   // a com request_id (trace)
+  assert.equal(d.tiktok.sentLegacy, 1); // sent sem trace = histórico
+  assert.equal(d.tiktok.ignored, 1);
   assert.equal(d.tiktok.reasons['fora_janela_7d_tiktok'], 1);
-  assert.equal(d.tiktok.accepted, 0);
-  assert.equal(d.tiktok.lastSentAt, null);
+});
+t('Google: sucesso de upload conta como aceito (API confirma); ignoradas por sem_gclid', () => {
+  assert.equal(d.google.accepted, 1);   // google sent = confirmado pela API
+  assert.equal(d.google.sentLegacy, 0);
+  assert.equal(d.google.ignored, 2);
+  assert.equal(d.google.reasons['sem_gclid'], 2);
 });
 
 console.log(`\n==== ${pass} passaram, ${fail} falharam ====`);

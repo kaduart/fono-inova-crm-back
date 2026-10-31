@@ -38,13 +38,22 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {
   return { rows, totals };
 }
 
-// Combina contatos atribuídos (LeadAttribution) + leads (sem atribuição), dedup por
-// telefone, preferindo SEMPRE o canal atribuído sobre "nao_identificado". Não inventa canal.
+// Contatos recebidos vêm da FONTE que registra contatos (Leads) — INCLUI os sem atribuição.
+// LeadAttribution serve só para IDENTIFICAR o canal, nunca para contar os contatos.
+// Dedup por telefone; canal = atribuição quando houver, senão null (-> "nao_identificado").
+// A coorte do período é definida por estes contatos (leads que entraram na janela); a
+// conversão acompanha ESTE mesmo grupo.
 export function mergeContacts({ attributed = [], leads = [] } = {}) {
-  const map = new Map(); // phone -> channel
-  for (const l of leads) { if (l.phone && !map.has(l.phone)) map.set(l.phone, null); }
-  for (const a of attributed) { if (a.phone && a.channel) map.set(a.phone, a.channel); } // atribuído vence
-  return [...map.entries()].map(([phone, channel]) => ({ phone, channel: channel || null }));
+  const channelByPhone = new Map();
+  for (const a of attributed) { if (a.phone && a.channel) channelByPhone.set(a.phone, a.channel); }
+  const seen = new Set();
+  const out = [];
+  for (const l of leads) {
+    if (!l.phone || seen.has(l.phone)) continue; // dedup por telefone
+    seen.add(l.phone);
+    out.push({ phone: l.phone, channel: channelByPhone.get(l.phone) || null });
+  }
+  return out;
 }
 
 // ── (2) Entrega às plataformas ────────────────────────────────────────────────
@@ -52,8 +61,17 @@ export const PLATFORMS = ['meta', 'google', 'tiktok'];
 // docs: AdConversion[] com subdocs meta/google/tiktok { status, reason, sentAt }.
 // Aceita = status 'sent' (a API ACEITOU o recebimento). ATENÇÃO: aceita != atribuída
 // ao anúncio nem usada na otimização — o front deve deixar isso explícito.
+// "Aceita (resposta da API)" exige PROVA na resposta: Meta events_received>=1; TikTok
+// request_id (trace); Google confirma o upload no sucesso. Um 'sent' sem essa prova é
+// "Enviado (histórico)" — gravações antigas marcadas sent sem resposta comprovada.
+function hasApiProof(platform, pf) {
+  if (platform === 'meta') return Number(pf.eventsReceived) >= 1;
+  if (platform === 'tiktok') return !!pf.trace;
+  if (platform === 'google') return true; // sucesso do upload confirmado pela API do Google
+  return false;
+}
 export function summarizeDelivery(docs = []) {
-  const base = () => ({ pending: 0, accepted: 0, ignored: 0, failed: 0, lastSentAt: null, reasons: {} });
+  const base = () => ({ pending: 0, accepted: 0, sentLegacy: 0, ignored: 0, failed: 0, lastSentAt: null, reasons: {} });
   const out = { meta: base(), google: base(), tiktok: base() };
   for (const d of docs) {
     for (const p of PLATFORMS) {
@@ -62,7 +80,7 @@ export function summarizeDelivery(docs = []) {
       const o = out[p];
       if (pf.status === 'pending') o.pending += 1;
       else if (pf.status === 'sent') {
-        o.accepted += 1;
+        if (hasApiProof(p, pf)) o.accepted += 1; else o.sentLegacy += 1; // comprovada vs histórico
         const ts = pf.sentAt ? new Date(pf.sentAt).getTime() : null;
         if (ts && (!o.lastSentAt || ts > o.lastSentAt)) o.lastSentAt = ts;
       } else if (pf.status === 'skipped') {
