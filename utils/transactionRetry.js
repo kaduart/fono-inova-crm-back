@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { enableAfterCommit, discardAfterCommit, flushAfterCommit } from './afterCommit.js';
 
 export async function runTransactionWithRetry(transactionOperation, maxRetries = 3) {
     let retryCount = 0;
@@ -9,14 +10,17 @@ export async function runTransactionWithRetry(transactionOperation, maxRetries =
 
         try {
             await session.startTransaction();
+            enableAfterCommit(session);
 
             // Executar a operação dentro da transação
             const result = await transactionOperation(session);
 
             await session.commitTransaction();
+            flushAfterCommit(session);
             return result;
 
         } catch (error) {
+            discardAfterCommit(session);
             await session.abortTransaction();
             lastError = error;
 

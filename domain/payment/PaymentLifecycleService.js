@@ -15,6 +15,7 @@ import { transitionPaymentStatus } from '../../services/paymentStatusService.js'
 import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
 import { invalidateDashboardCache } from '../../routes/financialDashboard.v2.js';
 import { handlePaymentEvent } from '../../projections/paymentsProjection.js';
+import { registerAfterCommit } from '../../utils/afterCommit.js';
 
 /**
  * Cancela um Payment de forma centralizada.
@@ -69,31 +70,37 @@ export async function cancelPayment(paymentId, options = {}) {
 
   // Dentro da geração transacional, só o Outbox já salvo pode disparar efeitos
   // após commit. Uma prévia pode abortar a transação inteira.
-  if (!deferSideEffects) {
-  // 🔄 Atualiza PaymentsView (read-model)
-  try {
-    await handlePaymentEvent({
-      type: 'PAYMENT_CANCELLED',
-      payload: { paymentId: updatedPayment._id.toString() },
-      timestamp: new Date().toISOString()
-    });
-  } catch (viewErr) {
-    console.warn('[PaymentLifecycleService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+  // Fora disso: read-model + caches só depois do commit quando há transação
+  // gerenciada por runTransactionWithRetry (ver utils/afterCommit.js); senão,
+  // inline como antes.
+  const runSideEffects = async () => {
+    // 🔄 Atualiza PaymentsView (read-model)
+    try {
+      await handlePaymentEvent({
+        type: 'PAYMENT_CANCELLED',
+        payload: { paymentId: updatedPayment._id.toString() },
+        timestamp: new Date().toISOString()
+      });
+    } catch (viewErr) {
+      console.warn('[PaymentLifecycleService] Falha ao atualizar PaymentsView (non-fatal):', viewErr.message);
+    }
+
+    try {
+      await invalidateCacheForPayment(updatedPayment);
+    } catch (cacheErr) {
+      console.warn('[PaymentLifecycleService] Falha ao invalidar cache de caixa:', cacheErr.message);
+    }
+
+    try {
+      invalidateDashboardCache();
+    } catch (cacheErr) {
+      console.warn('[PaymentLifecycleService] Falha ao invalidar cache do dashboard:', cacheErr.message);
+    }
+  };
+  if (!deferSideEffects && !registerAfterCommit(mongoSession, runSideEffects)) {
+    await runSideEffects();
   }
 
-  try {
-    await invalidateCacheForPayment(updatedPayment);
-  } catch (cacheErr) {
-    console.warn('[PaymentLifecycleService] Falha ao invalidar cache de caixa:', cacheErr.message);
-  }
-
-  try {
-    invalidateDashboardCache();
-  } catch (cacheErr) {
-    console.warn('[PaymentLifecycleService] Falha ao invalidar cache do dashboard:', cacheErr.message);
-  }
-
-  }
   console.log(`[PaymentLifecycleService] Payment ${paymentId} cancelado`, { reason });
 
   return {

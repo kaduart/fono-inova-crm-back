@@ -46,7 +46,26 @@ const ALREADY_CANCELED_STATUSES = ['canceled', 'cancelled'];
  * @param {Object} [params.user] - usuário que disparou a inativação (audit)
  * @returns {Promise<{ appointmentsCanceled: number, planCanceled: boolean, packageCanceled: boolean, wasAlreadyCancelled: boolean }>}
  */
-export async function cancelInsuranceGuideCascade(guideId, { user } = {}) {
+// Inativações em andamento por guia (processo único da API no Render).
+// Achado real (2026-10-30, guia 15809471): 3 pedidos concorrentes da mesma guia
+// (clique repetido + timeout de 15s do front) abriam 3 transações sobre os
+// mesmos documentos → WriteConflict, retries e pool Mongo saturado (15/15).
+// Um pedido repetido agora aguarda o resultado do que já está em execução.
+const inFlightByGuide = new Map();
+
+export async function cancelInsuranceGuideCascade(guideId, options = {}) {
+  const key = String(guideId);
+  const running = inFlightByGuide.get(key);
+  if (running) {
+    console.log('[cancelInsuranceGuideCascade] Inativação já em andamento — aguardando o mesmo resultado', { guideId: key });
+    return running;
+  }
+  const promise = runCascade(guideId, options).finally(() => inFlightByGuide.delete(key));
+  inFlightByGuide.set(key, promise);
+  return promise;
+}
+
+async function runCascade(guideId, { user } = {}) {
   // A cascata inteira roda em UMA transação e é retentada em conflito
   // transiente (WriteConflict / TransientTransactionError) — mesmo padrão de
   // package.v2.js. Sem isso, duas inativações concorrentes da mesma guia
@@ -89,24 +108,39 @@ export async function cancelInsuranceGuideCascade(guideId, { user } = {}) {
     // Une os três vínculos possíveis de Payment (appointment/session/appt.payment
     // legado) — mesmo critério do replan in-place — e bloqueia a cascata
     // inteira se qualquer appointment tiver Payment com financeiro avançado.
+    // Uma consulta só para todos os appointments (antes: uma por appointment).
     const blockedByFinance = [];
-    for (const appt of appointmentsToCancel) {
+    if (appointmentsToCancel.length > 0) {
+      const apptIds = appointmentsToCancel.map(a => a._id);
+      const sessionIds = appointmentsToCancel.map(a => a.session).filter(Boolean);
+      const legacyPaymentIds = appointmentsToCancel.map(a => a.payment).filter(Boolean);
       const payments = await Payment.find({
         $or: [
-          { appointment: appt._id },
-          ...(appt.session ? [{ session: appt.session }] : []),
-          ...(appt.payment ? [{ _id: appt.payment }] : [])
+          { appointment: { $in: apptIds } },
+          ...(sessionIds.length ? [{ session: { $in: sessionIds } }] : []),
+          ...(legacyPaymentIds.length ? [{ _id: { $in: legacyPaymentIds } }] : [])
         ]
       }).session(mongoSession).lean();
-      const advanced = payments.filter(p => !isPaymentFinanciallyReversible(p));
-      if (advanced.length > 0) {
-        blockedByFinance.push({
-          appointmentId: appt._id,
-          date: appt.date,
-          time: appt.time,
-          operationalStatus: appt.operationalStatus,
-          payments: advanced.map(p => ({ id: p._id, status: p.status, insuranceStatus: p.insurance?.status }))
-        });
+      const advancedPayments = payments.filter(p => !isPaymentFinanciallyReversible(p));
+
+      for (const appt of appointmentsToCancel) {
+        const apptId = String(appt._id);
+        const sessionId = appt.session ? String(appt.session) : null;
+        const legacyId = appt.payment ? String(appt.payment) : null;
+        const advanced = advancedPayments.filter(p =>
+          String(p.appointment) === apptId ||
+          (sessionId && String(p.session) === sessionId) ||
+          (legacyId && String(p._id) === legacyId)
+        );
+        if (advanced.length > 0) {
+          blockedByFinance.push({
+            appointmentId: appt._id,
+            date: appt.date,
+            time: appt.time,
+            operationalStatus: appt.operationalStatus,
+            payments: advanced.map(p => ({ id: p._id, status: p.status, insuranceStatus: p.insurance?.status }))
+          });
+        }
       }
     }
     if (blockedByFinance.length > 0) {
