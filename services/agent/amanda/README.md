@@ -52,3 +52,13 @@ webhook → whatsappAutoReplyWorker → runOrchestrator ─┬─ FSM atual (Wha
 ```bash
 npm run test:agent
 ```
+
+## Conversas-teste (com a API real, sem escrever nada)
+
+```bash
+ANTHROPIC_API_KEY=... npm run agent:cenarios                       # agenda simulada
+ANTHROPIC_API_KEY=... MONGO_URI=<espelho-dev> npm run agent:cenarios   # agenda real, dryRun
+npm run agent:cenarios -- preco decidido                           # só alguns cenários
+```
+
+Gera `amanda-cenarios.md` com cada conversa, as tools chamadas, tokens e alertas automáticos (preço fora da tabela, "agendado" sem reserva, horário sem consultar agenda, markdown, mais de um 💚, possível diagnóstico).
