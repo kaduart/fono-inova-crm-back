@@ -10,6 +10,7 @@ São as KPIs das abas de Vendas & Marketing do admin: Leads & Follow-up, Interes
 | `GET /api/v2/commercial/roi-summary?start=&end=` | ROI (tela única), cards de Social e Site |
 | `GET /api/convenio-waitlist/summary` → campo `insights` | Interesse em Convênios |
 | `GET /api/followups/stats` | Métricas do Funil (follow-ups automáticos) |
+| `GET /api/v2/commercial/idle-slots` | Social Media, "Sugestões da semana" |
 
 O acesso é só para `admin` e `secretary`.
 
@@ -26,6 +27,7 @@ O acesso é só para `admin` e `secretary`.
 - **Investimento:** soma do `AdSpend` no período. O `adKey` é ligado ao canal pelo `adId`/`campaign` da atribuição. O que não for ligado vira "Anúncios (sem canal)".
 - **Paciente no ROI** é quem fechou pacote. O custo por paciente só aparece quando há investimento.
 - **Convênios:** ativos são `aguardando` e `contatado`. "30+ dias" conta desde `createdAt`. O potencial mensal é ativos × R$ 720, que é o pacote 1x/semana a R$ 180.
+- **Vaga ociosa:** usa o mesmo conceito de "buraco" da Grade (`retention.v2 /slots`). É o slot (profissional × dia da semana × horário) que teve sessão concluída entre 30 e 90 dias atrás e nenhuma sessão ativa nos últimos 30 dias nem marcada para a frente. O resultado é agrupado por especialidade e mostra o período (manhã/tarde) e o dia que mais se repetem.
 - **Somente leitura:** nenhum desses endpoints grava nada. O cache em memória dura 60s.
 
 ## Para mexer sem quebrar

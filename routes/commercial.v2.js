@@ -24,7 +24,7 @@ import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
 import CommercialContact from '../models/CommercialContact.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
-import { leadsSummary, roiSummary } from '../services/commercial/salesSummary.js';
+import { leadsSummary, roiSummary, idleSlotsBySpecialty } from '../services/commercial/salesSummary.js';
 import { AppError } from '../errors/AppError.js';
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince,
@@ -294,6 +294,16 @@ router.get('/roi-summary', ...staff, async (req, res) => {
     res.json({ success: true, data: await roiSummary(req.query.start, req.query.end) });
   } catch (err) {
     console.error('[commercial.v2] /roi-summary error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Social Media: especialidades com vaga ociosa (base das "Sugestões da semana")
+router.get('/idle-slots', ...staff, async (req, res) => {
+  try {
+    res.json({ success: true, data: { items: await idleSlotsBySpecialty() } });
+  } catch (err) {
+    console.error('[commercial.v2] /idle-slots error:', err);
     sendApiError(res, err, req);
   }
 });

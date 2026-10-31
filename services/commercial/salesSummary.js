@@ -173,3 +173,46 @@ export function roiSummary(startStr, endStr) {
     };
   });
 }
+
+// Vagas ociosas por especialidade → sugestão de conteúdo para Social Media.
+// Mesmo conceito de "buraco" da Grade (retention.v2 /slots): slot (doutor × dia da semana × horário)
+// com sessão concluída nos 30–90 dias anteriores e nenhuma sessão ativa nos últimos 30 nem marcada à frente.
+export function idleSlotsBySpecialty() {
+  return cached('idle-slots', async () => {
+    const now = Date.now();
+    const recentStart = new Date(now - 30 * 864e5);
+    const historyStart = new Date(now - 90 * 864e5);
+    const ACTIVE = ['completed', 'scheduled', 'confirmed', 'pre_agendado'];
+    const rows = await Appointment.aggregate([
+      { $match: { date: { $gte: historyStart }, isDeleted: { $ne: true }, operationalStatus: { $in: ACTIVE }, time: { $exists: true, $ne: '' }, specialty: { $exists: true, $ne: null } } },
+      { $addFields: { weekday: { $dayOfWeek: { date: '$date', timezone: 'America/Sao_Paulo' } }, recent: { $gte: ['$date', recentStart] } } },
+      { $match: { weekday: { $gte: 2, $lte: 6 } } },
+      { $group: {
+        _id: { doctor: '$doctor', weekday: '$weekday', time: '$time' },
+        specialty: { $first: '$specialty' },
+        old: { $sum: { $cond: [{ $and: [{ $not: ['$recent'] }, { $eq: ['$operationalStatus', 'completed'] }] }, 1, 0] } },
+        recent: { $sum: { $cond: ['$recent', 1, 0] } },
+      } },
+      { $match: { old: { $gt: 0 }, recent: 0 } },
+      { $group: {
+        _id: '$specialty',
+        idle: { $sum: 1 },
+        morning: { $sum: { $cond: [{ $lt: ['$_id.time', '12:00'] }, 1, 0] } },
+        weekdays: { $push: '$_id.weekday' },
+      } },
+      { $sort: { idle: -1 } },
+      { $limit: 5 },
+    ]);
+    const DAY = ['', 'domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+    return rows.map((r) => {
+      const freq = r.weekdays.reduce((m, d) => ({ ...m, [d]: (m[d] || 0) + 1 }), {});
+      const topDay = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] || 0);
+      return {
+        specialty: r._id,
+        idleSlots: r.idle,
+        period: r.morning * 2 >= r.idle ? 'manhã' : 'tarde',
+        weekday: DAY[topDay] || null,
+      };
+    });
+  });
+}
