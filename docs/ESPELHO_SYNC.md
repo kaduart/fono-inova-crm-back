@@ -24,7 +24,7 @@
 - **Sem simultâneas:** trava em `_espelho_controle {_id:'trava'}` (expira em 2h).
 - **Pausa** (preserva testes em andamento): `npm run espelho:nuvem -- pausar "motivo"` / `retomar`.
 - **Anonimização:** nome/telefone/CPF/RG/e-mail/endereço de pacientes, leads e equipe; texto de mensagens; tokens/segredos/certificados zerados. Ids, vínculos, tipos, valores, datas e status preservados.
-- **Contas de teste** (senha = `ESPELHO_SYNC_TEST_PASSWORD`): `admin@espelho.local`, `terapeuta@espelho.local`, `secretaria@espelho.local`. Demais membros: `<colecao>.<id>@espelho.local`.
+- **Contas de teste** (senha = `ESPELHO_SYNC_TEST_PASSWORD`, que também é o sal secreto da anonimização): `admin@espelho.local`, `secretaria@espelho.local` (secretárias ficam em `admins`, role `secretary`), `terapeuta@espelho.local`. Demais membros: `<colecao>.<id>@espelho.local`.
 - **Nada dispara:** não copia `outboxes`/sessão do WhatsApp; cancela lembretes pendentes e follow-ups agendados; zera recuperação da Amanda. Quem usa o banco DEV deve rodar com `ENABLE_WORKERS=false`, `ENABLE_CRONS=false` e sem credenciais reais (WhatsApp, Sicoob, Meta/Google/TikTok) — o espelho local já faz isso (`scripts/espelho/environment.mjs`).
 
 ## Registro
@@ -34,3 +34,6 @@
 
 ## Comandos
 `npm run espelho:nuvem -- medir | executar | pausar "motivo" | retomar | status` (lê `back/.env` ou `--env-file=`).
+
+## Validação (31/10/2026)
+1ª cópia controlada: 96 s, 62,7 MB, 107 coleções / 54.748 docs / 593 índices, contagens 100% iguais, vínculos idênticos à produção (órfãos só os já existentes lá). 2ª cópia (troca com cópia existente): 116 s, pico 118 MB, 3 contas de teste. Conferência no dev: mensagens 100% anonimizadas, nenhum telefone real em messages/leads, texto livre de leads zerado.
