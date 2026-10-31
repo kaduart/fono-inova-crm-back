@@ -140,10 +140,38 @@ async function loadDeps() {
   return _deps;
 }
 
+// findAvailableSlots espera o dia da semana em inglês (weekdayIndex)
 const DIAS = {
-  domingo: 'domingo', segunda: 'segunda-feira', terca: 'terça-feira', 'terça': 'terça-feira',
-  quarta: 'quarta-feira', quinta: 'quinta-feira', sexta: 'sexta-feira', sabado: 'sábado', 'sábado': 'sábado',
+  domingo: 'sunday', segunda: 'monday', terca: 'tuesday', 'terça': 'tuesday',
+  quarta: 'wednesday', quinta: 'thursday', sexta: 'friday', sabado: 'saturday', 'sábado': 'saturday',
 };
+
+// Subespecialidades atendidas por profissionais cadastrados em outra área
+// (ex.: psicóloga com specialties: ['psicopedagogia', 'neuropsicologia']).
+const AREA_PAI = { psicopedagogia: 'psicologia', neuropsicologia: 'psicologia' };
+
+let _agendaCache = { at: 0, areas: null };
+/** Especialidades que têm profissional ativo com agenda configurada (cache de 10 min). */
+export async function especialidadesComAgenda(deps, now = Date.now()) {
+  if (_agendaCache.areas && now - _agendaCache.at < 10 * 60 * 1000) return _agendaCache.areas;
+  const docs = await deps.Doctor.find({ active: true, 'weeklyAvailability.0': { $exists: true } })
+    .select('specialty specialties')
+    .lean();
+  const set = new Set();
+  for (const d of docs) {
+    const areas = [d.specialty, ...(d.specialties || [])].map((a) => (a === 'neuroped' ? 'neuropediatria' : a));
+    for (const a of areas) if (ESPECIALIDADES.includes(a)) set.add(a);
+  }
+  _agendaCache = { at: now, areas: [...set].sort() };
+  return _agendaCache.areas;
+}
+/** Igual a especialidadesComAgenda, carregando as dependências reais quando não injetadas. */
+export async function listarEspecialidadesComAgenda(deps) {
+  return especialidadesComAgenda(deps || (await loadDeps()));
+}
+export function _resetAgendaCache() {
+  _agendaCache = { at: 0, areas: null };
+}
 
 export function formatSlotPtBr(slot) {
   if (!slot?.date) return '';
@@ -213,15 +241,20 @@ export async function executeTool(name, input, ctx) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(d)) preferredDate = d;
         else preferredDay = DIAS[d.split(/[\s-]/)[0]] || null;
       }
-      const result = await deps.findAvailableSlots({
-        therapyArea: input.especialidade,
-        preferredPeriod: periodo,
-        preferredDay,
-        preferredDate,
-        daysAhead: 21,
-        maxOptions: 3,
-      });
-      const opcoes = await pickOptions(result, input.especialidade, deps);
+      const base = { preferredPeriod: periodo, preferredDay, preferredDate, daysAhead: 21, maxOptions: 3 };
+      let opcoes = await pickOptions(
+        await deps.findAvailableSlots({ ...base, therapyArea: input.especialidade }),
+        input.especialidade,
+        deps,
+      );
+      if (!opcoes.length && AREA_PAI[input.especialidade]) {
+        // ex.: psicopedagogia atendida por psicóloga com essa subespecialidade
+        opcoes = await pickOptions(
+          await deps.findAvailableSlots({ ...base, therapyArea: AREA_PAI[input.especialidade], specialties: [input.especialidade] }),
+          input.especialidade,
+          deps,
+        );
+      }
       ctx.state.opcoes = opcoes;
 
       if (!ctx.dryRun && leadId) {
@@ -231,6 +264,13 @@ export async function executeTool(name, input, ctx) {
         );
       }
       if (!opcoes.length) {
+        const comAgenda = await especialidadesComAgenda(deps).catch(() => null);
+        if (comAgenda && !comAgenda.includes(input.especialidade)) {
+          return {
+            horarios: [],
+            observacao: 'Essa especialidade não tem agenda online no momento. Não ofereça horário; diga que a equipe vai verificar a disponibilidade e use transferir_para_equipe.',
+          };
+        }
         return { horarios: [], observacao: 'Nenhum horário livre encontrado nas próximas 3 semanas para esse filtro. Ofereça outro período ou a equipe.' };
       }
       return {

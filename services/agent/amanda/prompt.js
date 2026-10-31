@@ -163,6 +163,11 @@ export function buildContactText(lead = {}, context = {}) {
   }
   add('Resumo de conversas anteriores', lead.conversationSummary);
   add('Origem do contato', context.lpContext || context.origin);
+  if (Array.isArray(context.especialidadesComAgenda)) {
+    linhas.push(
+      `- Especialidades com agenda online agora: ${context.especialidadesComAgenda.join(', ') || 'nenhuma'}. Para as demais, não ofereça horário: a equipe verifica a disponibilidade (transferir_para_equipe).`,
+    );
+  }
 
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',

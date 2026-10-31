@@ -12,7 +12,7 @@
  */
 
 import { buildSystem } from './prompt.js';
-import { TOOL_DEFINITIONS, executeTool } from './tools.js';
+import { TOOL_DEFINITIONS, executeTool, listarEspecialidadesComAgenda } from './tools.js';
 const logger = {
   info: (event, data = {}) => console.log(`[amandaAgent] ${event}`, JSON.stringify(data)),
   error: (event, data = {}) => console.error(`[amandaAgent] ${event}`, JSON.stringify(data)),
@@ -138,7 +138,11 @@ export async function runAmandaAgent(lead, userText, context = {}, opts = {}) {
     if (!messages.length) return { command: 'NO_REPLY', meta: { reason: 'EMPTY_INPUT' } };
 
     const heartAlreadyUsed = historyDocs.some((m) => m.direction === 'outbound' && /💚/.test(m.content || ''));
-    const system = buildSystem(lead, context);
+    const especialidadesComAgenda = await listarEspecialidadesComAgenda(opts.toolDeps).catch((err) => {
+      logger.error('agenda_areas_error', { err: err.message, correlationId });
+      return null;
+    });
+    const system = buildSystem(lead, { ...context, especialidadesComAgenda });
 
     const useFallbacks = String(process.env.AMANDA_AGENT_FALLBACKS || 'on').toLowerCase() !== 'off';
 

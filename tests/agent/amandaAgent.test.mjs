@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runAmandaAgent, toConversation, sanitizeReply, FALLBACK_TEXT } from '../../services/agent/amanda/index.js';
-import { executeTool, pickOptions, TOOL_DEFINITIONS } from '../../services/agent/amanda/tools.js';
+import { executeTool, pickOptions, TOOL_DEFINITIONS, especialidadesComAgenda, _resetAgendaCache } from '../../services/agent/amanda/tools.js';
 import { buildPricingText, buildSystem } from '../../services/agent/amanda/prompt.js';
 import { decideRoute, phoneAllowed } from '../../services/agent/amanda/router.js';
 import { THERAPY_PRICING, formatPrice } from '../../config/pricing.js';
@@ -21,15 +21,17 @@ function fakeDeps(over = {}) {
     Doctor: {
       find: (q) => ({
         select: () => ({
-          lean: async () =>
-            [
-              { _id: 'd-fono', specialty: 'fonoaudiologia', fullName: 'Dra. Ana' },
-              { _id: 'd-psi', specialty: 'psicologia', fullName: 'Dr. Beto' },
-            ].filter((d) => q._id.$in.includes(d._id)),
+          lean: async () => {
+            const all = [
+              { _id: 'd-fono', specialty: 'fonoaudiologia', specialties: [], fullName: 'Dra. Ana' },
+              { _id: 'd-psi', specialty: 'psicologia', specialties: ['psicopedagogia'], fullName: 'Dr. Beto' },
+            ];
+            return q._id ? all.filter((d) => q._id.$in.includes(d._id)) : all;
+          },
         }),
       }),
     },
-    findAvailableSlots: async () => ({
+    findAvailableSlots: async (args) => (calls.slotArgs = [...(calls.slotArgs || []), args], {
       primary: { doctorId: 'd-fono', doctorName: 'Dra. Ana', date: '2026-11-04', time: '14:00' },
       alternativesSamePeriod: [{ doctorId: 'd-psi', doctorName: 'Dr. Beto', date: '2026-11-04', time: '15:00' }],
       alternativesOtherPeriod: [{ doctorId: 'd-fono', doctorName: 'Dra. Ana', date: '2026-11-05', time: '09:00' }],
@@ -254,4 +256,40 @@ test('runAmandaAgent: recusa sem texto também cai no fallback', async () => {
   const client = fakeClient([{ stop_reason: 'refusal', content: [], stop_details: { category: 'x' } }]);
   const r = await runAmandaAgent(LEAD, 'oi', {}, { client, history: [], toolDeps: deps });
   assert.equal(r.payload.text, FALLBACK_TEXT);
+});
+
+test('buscar_horarios manda o dia da semana no formato que a agenda entende', async () => {
+  const deps = fakeDeps();
+  await executeTool('buscar_horarios', { especialidade: 'fonoaudiologia', periodo: 'manha', dia_preferido: 'quinta' }, ctx(deps));
+  assert.equal(deps.calls.slotArgs[0].preferredDay, 'thursday');
+  assert.equal(deps.calls.slotArgs[0].preferredPeriod, 'manha');
+});
+
+test('psicopedagogia procura psicóloga com essa subespecialidade', async () => {
+  const deps = fakeDeps({
+    findAvailableSlots: async (args) => {
+      deps.calls.slotArgs = [...(deps.calls.slotArgs || []), args];
+      return args.therapyArea === 'psicologia'
+        ? { primary: { doctorId: 'd-psi', doctorName: 'Dr. Beto', date: '2026-11-06', time: '10:00' } }
+        : { primary: { doctorId: 'd-fono', doctorName: 'Dra. Ana', date: '2026-11-04', time: '14:00' } };
+    },
+  });
+  const r = await executeTool('buscar_horarios', { especialidade: 'psicopedagogia', periodo: 'qualquer' }, ctx(deps));
+  assert.equal(r.horarios.length, 1);
+  assert.equal(r.horarios[0].profissional, 'Dr. Beto');
+  assert.deepEqual(deps.calls.slotArgs[1].specialties, ['psicopedagogia']);
+});
+
+test('especialidade sem agenda online orienta a chamar a equipe', async () => {
+  _resetAgendaCache();
+  const deps = fakeDeps({ findAvailableSlots: async () => null });
+  const r = await executeTool('buscar_horarios', { especialidade: 'musicoterapia', periodo: 'tarde' }, ctx(deps));
+  assert.equal(r.horarios.length, 0);
+  assert.match(r.observacao, /transferir_para_equipe/);
+  assert.deepEqual(await especialidadesComAgenda(deps), ['fonoaudiologia', 'psicologia', 'psicopedagogia']);
+});
+
+test('prompt informa quais especialidades têm agenda online', () => {
+  const sys = buildSystem(LEAD, { especialidadesComAgenda: ['fonoaudiologia', 'psicologia'] });
+  assert.match(sys[2].text, /agenda online agora: fonoaudiologia, psicologia/);
 });
