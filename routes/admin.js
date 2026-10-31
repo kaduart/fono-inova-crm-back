@@ -66,10 +66,61 @@ router.get('/secretaries', auth, async (req, res) => {
 
   try {
     const secretaries = await Admin.find({ role: 'secretary' })
-      .select('_id fullName email role')
+      .select('_id fullName email role active')
       .sort({ fullName: 1 })
       .lean();
+
     return res.json({ success: true, data: secretaries });
+  } catch (error) {
+    return res.status(500).send({ error: error.message });
+  }
+});
+
+// Ativar/desativar uma secretária (admin). Conta desativada não entra no ERP nem
+// na agenda externa; a sessão aberta cai em até ~30s (cache de usuário do auth).
+router.patch('/secretaries/:id/active', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).send({ error: 'Não autorizado' });
+  }
+  const { active } = req.body;
+  if (typeof active !== 'boolean') {
+    return res.status(400).send({ error: 'Informe active (true/false)' });
+  }
+  if (String(req.params.id) === String(req.user.id)) {
+    return res.status(400).send({ error: 'Você não pode desativar a sua própria conta' });
+  }
+  try {
+    const secretary = await Admin.findOneAndUpdate(
+      { _id: req.params.id, role: 'secretary' },
+      { $set: { active } },
+      { new: true }
+    ).select('_id fullName email role active');
+    if (!secretary) {
+      return res.status(404).send({ error: 'Secretária não encontrada' });
+    }
+    return res.json({ success: true, data: secretary });
+  } catch (error) {
+    return res.status(500).send({ error: error.message });
+  }
+});
+
+// Redefinir a senha de uma secretária (admin). O hash é feito pelo pre-save do model.
+router.patch('/secretaries/:id/reset-password', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).send({ error: 'Não autorizado' });
+  }
+  const { password } = req.body;
+  if (typeof password !== 'string' || password.trim().length < 6) {
+    return res.status(400).send({ error: 'A senha precisa ter ao menos 6 caracteres' });
+  }
+  try {
+    const secretary = await Admin.findOne({ _id: req.params.id, role: 'secretary' }).select('+password');
+    if (!secretary) {
+      return res.status(404).send({ error: 'Secretária não encontrada' });
+    }
+    secretary.password = password.trim();
+    await secretary.save();
+    return res.json({ success: true, message: 'Senha redefinida' });
   } catch (error) {
     return res.status(500).send({ error: error.message });
   }

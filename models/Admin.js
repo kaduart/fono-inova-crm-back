@@ -6,6 +6,7 @@ const adminSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, default: 'admin' },
+  active: { type: Boolean, default: true },
 
   passwordResetToken: { type: String, index: true, select: false },
   passwordResetExpires: { type: Date, select: false },

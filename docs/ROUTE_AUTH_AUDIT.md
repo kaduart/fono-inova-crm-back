@@ -29,3 +29,9 @@ Teste: `tests/unit/routeAuthGuards.test.js`.
 - `agendaAuth` não loga mais o token esperado.
 - O token antigo (`AGENDA_EXPORT_TOKEN`) continua aceito até a agenda nova estar no ar; depois, trocar o valor no Render e apagar `VITE_API_TOKEN` da Vercel.
 | `PUT /api/v2/doctors/:id` | qualquer JWT | staff/agenda edita tudo; terapeuta só o próprio cadastro (nome, telefone, registro, disponibilidade) |
+
+## Secretárias: desativar e redefinir senha (31/10/2026)
+
+- `Admin.active` (default true). Login de admin/secretária recusa conta desativada (403).
+- `auth` checa `active:{$ne:false}` no exists: a sessão de uma conta desativada cai em até ~30s (TTL do cache de usuário). Vale para Admin e Doctor.
+- `PATCH /api/admin/secretaries/:id/active` e `.../reset-password` — só admin. Admin não desativa a própria conta.
