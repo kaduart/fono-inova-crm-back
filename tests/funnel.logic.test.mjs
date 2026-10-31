@@ -115,5 +115,29 @@ t('Google: sucesso de upload conta como aceito (API confirma); ignoradas por sem
   assert.equal(d.google.reasons['sem_gclid'], 2);
 });
 
+
+console.log('\n#Detalhe por canal (clicar/abrir) — nome, telefone, status');
+t('withDetails: linha ganha detalhes [nome, telefone, status] ordenados (agendou>pre>contato)', () => {
+  const c = [
+    { phone: '5562990000001', channel: 'meta_ads', name: 'Ana' },
+    { phone: '5562990000002', channel: 'meta_ads', name: 'Bruno' },
+    { phone: '5562990000003', channel: 'meta_ads', name: null },
+  ];
+  const st = { '5562990000001': { booked: true, pre: false }, '5562990000002': { booked: false, pre: true } };
+  const { rows: rr } = buildChannelFunnel({ contacts: c, apptStatusByPhone: st, nameByPhone: { '5562990000001': 'Ana Paula' }, withDetails: true });
+  const m = rr.find((r) => r.channel === 'meta_ads');
+  assert.equal(m.detalhes.length, 3);
+  assert.equal(m.detalhes[0].status, 'agendou');
+  assert.equal(m.detalhes[0].nome, 'Ana');            // nome do Lead > nameByPhone
+  assert.equal(m.detalhes[1].status, 'pre');
+  assert.equal(m.detalhes[2].status, 'contato');
+  assert.equal(m.detalhes[2].nome, null);
+});
+t('sem withDetails: linhas NÃO expõem detalhes (payload leve padrão)', () => {
+  const { rows: rr, semVinculo: sv } = buildChannelFunnel({ contacts: [{ phone: '5562990000777', channel: 'tiktok' }], apptStatusByPhone: {} });
+  assert.equal(rr[0].detalhes, undefined);
+  assert.equal(sv.detalhes, undefined);
+});
+
 console.log(`\n==== ${pass} passaram, ${fail} falharam ====`);
 process.exit(fail ? 1 : 0);

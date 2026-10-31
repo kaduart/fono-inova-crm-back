@@ -24,6 +24,24 @@ const router = express.Router();
 const _cache = new Map(); // key → { data, summary, expiresAt }
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
+// Janela de data da aba Inteligência de Conversão. Aceita presets via `days`
+// (hoje/ontem/semana/quinzena/30/90) OU intervalo explícito `from`/`to` (YYYY-MM-DD,
+// fuso America/Sao_Paulo, -03:00). from/to têm prioridade sobre days.
+function resolveWindow(q = {}) {
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  // Convenção da app: startDate/endDate (YYYY-MM-DD). from/to aceitos como alias.
+  const okd = (v) => (typeof v === 'string' && re.test(v) ? v : null);
+  const from = okd(q.startDate) || okd(q.from);
+  const to   = okd(q.endDate)   || okd(q.to);
+  if (from || to) {
+    const since = from ? new Date(from + 'T00:00:00.000-03:00') : new Date(0);
+    const until = to   ? new Date(to   + 'T23:59:59.999-03:00') : new Date();
+    return { since, until, days: null, from, to, label: from && to ? `${from} a ${to}` : from ? `desde ${from}` : `até ${to}` };
+  }
+  const days = Math.min(Math.max(Number(q.days) || 30, 1), 365);
+  return { since: new Date(Date.now() - days * 864e5), until: null, days, from: null, to: null, label: `ultimos ${days} dias` };
+}
+
 /**
  * GET /api/v2/analytics/roi-by-source
  *
@@ -210,16 +228,16 @@ router.get('/roi-by-source', flexibleAuth, asyncHandler(async (req, res) => {
  * conversas iniciadas → 1º agendamento → receita → enviado às plataformas.
  */
 router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const since = new Date(Date.now() - days * 864e5);
+    const { since, until, days } = resolveWindow(req.query);
+    const upper = until ? { $lte: until } : {};
 
     const [convs, appts] = await Promise.all([
         LeadAttribution.aggregate([
-            { $match: { firstMessageAt: { $gte: since } } },
+            { $match: { firstMessageAt: { $gte: since, ...upper } } },
             { $group: { _id: '$source', conversations: { $sum: 1 } } },
         ]),
         AdConversion.aggregate([
-            { $match: { eventTime: { $gte: since }, 'meta.reason': { $ne: 'nao_e_primeiro_agendamento' } } },
+            { $match: { eventTime: { $gte: since, ...upper }, 'meta.reason': { $ne: 'nao_e_primeiro_agendamento' } } },
             { $group: {
                 _id: '$source',
                 firstAppointments: { $sum: 1 },
@@ -243,7 +261,7 @@ router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
         .sort((x, y) => y.firstAppointments - x.firstAppointments || y.conversations - x.conversations);
 
     const sentOpenAI = await OpenAIAdConversion.countDocuments({
-        status: 'sent', eventTime: { $gte: since },
+        status: 'sent', eventTime: { $gte: since, ...upper },
     });
     const totals = data.reduce((t, r) => ({
         conversations: t.conversations + (r.conversations || 0),
@@ -264,42 +282,47 @@ router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
  * Taxa = agendamentos/contatos do MESMO canal. Independe da fila do pixel/cron.
  */
 router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => {
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const since = new Date(Date.now() - days * 864e5);
+    const { since, until, days, label } = resolveWindow(req.query);
+    const withDetails = ['1', 'true', 'yes'].includes(String(req.query.details || '').toLowerCase());
+    const win = (field) => (until ? { [field]: { $gte: since, $lte: until } } : { [field]: { $gte: since } });
     const BOOKED = ['scheduled', 'confirmed', 'paid', 'completed'];
     const CANCELED = ['canceled', 'cancelado', 'cancelada', 'force_cancelled'];
     const norm = (ph) => normalizeE164BR(ph) || null;
 
     const [attrRows, leadRows, apptRows] = await Promise.all([
-        LeadAttribution.find({ firstMessageAt: { $gte: since } }).select('phone source').lean(),
-        Lead.find({ createdAt: { $gte: since }, 'contact.phone': { $ne: null } }).select('contact.phone').lean(),
-        Appointment.find({ createdAt: { $gte: since }, operationalStatus: { $nin: CANCELED } })
-            .select('operationalStatus patientInfo.phone patient').lean(),
+        LeadAttribution.find(win('firstMessageAt')).select('phone source').lean(),
+        Lead.find({ ...win('createdAt'), 'contact.phone': { $ne: null } }).select('name contact.phone').lean(),
+        Appointment.find({ ...win('createdAt'), operationalStatus: { $nin: CANCELED } })
+            .select('operationalStatus patientInfo.phone patientInfo.fullName patient').lean(),
     ]);
 
     const attributed = attrRows.map((a) => ({ phone: norm(a.phone), channel: a.source || null })).filter((a) => a.phone);
-    const leads = leadRows.map((l) => ({ phone: norm(l.contact?.phone) })).filter((l) => l.phone);
+    const leads = leadRows.map((l) => ({ phone: norm(l.contact?.phone), name: l.name || null })).filter((l) => l.phone);
     const contacts = mergeContacts({ attributed, leads });
 
     // Telefone do atendimento: patientInfo.phone; se faltar, resolve via Patient.phone.
     const needPatient = apptRows.filter((a) => !a.patientInfo?.phone && a.patient).map((a) => a.patient);
-    const patients = needPatient.length ? await Patient.find({ _id: { $in: needPatient } }).select('phone').lean() : [];
-    const patPhone = new Map(patients.map((p) => [String(p._id), norm(p.phone)]));
+    const patients = needPatient.length ? await Patient.find({ _id: { $in: needPatient } }).select('phone name').lean() : [];
+    const patById = new Map(patients.map((p) => [String(p._id), { phone: norm(p.phone), name: p.name || null }]));
 
     const apptStatusByPhone = {};
+    const nameByPhone = {};
     for (const a of apptRows) {
-        const phone = norm(a.patientInfo?.phone) || (a.patient ? patPhone.get(String(a.patient)) : null);
+        const pat = a.patient ? patById.get(String(a.patient)) : null;
+        const phone = norm(a.patientInfo?.phone) || (pat ? pat.phone : null);
         if (!phone) continue;
+        const nm = a.patientInfo?.fullName || (pat ? pat.name : null);
+        if (nm && !nameByPhone[phone]) nameByPhone[phone] = nm;
         const cur = apptStatusByPhone[phone] || { booked: false, pre: false };
         if (BOOKED.includes(a.operationalStatus)) cur.booked = true;
         if (a.operationalStatus === 'pre_agendado') cur.pre = true;
         apptStatusByPhone[phone] = cur;
     }
 
-    const { rows, totals, semVinculo } = buildChannelFunnel({ contacts, apptStatusByPhone });
+    const { rows, totals, semVinculo } = buildChannelFunnel({ contacts, apptStatusByPhone, nameByPhone, withDetails });
     res.json({
         success: true,
-        meta: { days, unidade: 'contato (telefone distinto)', periodo: `ultimos ${days} dias (por createdAt/firstMessageAt)` },
+        meta: { days, startDate: req.query.startDate || req.query.from || null, endDate: req.query.endDate || req.query.to || null, unidade: 'contato (telefone distinto)', periodo: `${label} (por createdAt/firstMessageAt)`, details: withDetails },
         data: rows,
         totals,
         semVinculo, // agendamentos/pré cujo telefone não tem Lead vinculado — à parte, fora da conversão
@@ -314,12 +337,13 @@ router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => 
  * usada na otimização. Indicadores de ENVIO — separados dos números comerciais acima.
  */
 router.get('/delivery-status', flexibleAuth, asyncHandler(async (req, res) => {
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const since = new Date(Date.now() - days * 864e5);
-    const docs = await AdConversion.find({ eventTime: { $gte: since } }).select('meta google tiktok done').lean();
+    const { since, until, days, label } = resolveWindow(req.query);
+    const evWin = until ? { eventTime: { $gte: since, $lte: until } } : { eventTime: { $gte: since } };
+    const docs = await AdConversion.find(evWin).select('meta google tiktok done').lean();
     res.json({
         success: true,
         days,
+        periodo: label,
         total: docs.length,
         nota: 'Aceita = a API recebeu o evento. Aceita != atribuida ao anuncio nem usada na otimizacao.',
         platforms: summarizeDelivery(docs),
@@ -333,25 +357,25 @@ router.get('/delivery-status', flexibleAuth, asyncHandler(async (req, res) => {
  * Quando o link do site passar o ID do anúncio no campo de campanha, separa sozinho por anúncio.
  */
 router.get('/acquisition-by-ad', flexibleAuth, asyncHandler(async (req, res) => {
-    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
-    const since = new Date(Date.now() - days * 864e5);
+    const { since, until, days } = resolveWindow(req.query);
+    const upper = until ? { $lte: until } : {};
     const key = { $ifNull: [{ $cond: [{ $in: ['$adId', [null, '']] }, null, '$adId'] }, { $cond: [{ $in: ['$campaign', [null, '']] }, null, '$campaign'] }] };
 
     const [convs, appts, spends] = await Promise.all([
         LeadAttribution.aggregate([
-            { $match: { firstMessageAt: { $gte: since } } },
+            { $match: { firstMessageAt: { $gte: since, ...upper } } },
             { $addFields: { adKey: key } },
             { $match: { adKey: { $ne: null } } },
             { $group: { _id: '$adKey', conversations: { $sum: 1 }, source: { $max: '$source' }, adTitle: { $max: '$adTitle' }, isCtwa: { $max: { $cond: [{ $eq: ['$method', 'ctwa'] }, 1, 0] } }, isToken: { $max: { $cond: [{ $eq: ['$method', 'token'] }, 1, 0] } }, lastAt: { $max: '$firstMessageAt' } } },
         ]),
         AdConversion.aggregate([
-            { $match: { eventTime: { $gte: since }, 'meta.reason': { $ne: 'nao_e_primeiro_agendamento' } } },
+            { $match: { eventTime: { $gte: since, ...upper }, 'meta.reason': { $ne: 'nao_e_primeiro_agendamento' } } },
             { $addFields: { adKey: key } },
             { $match: { adKey: { $ne: null } } },
             { $group: { _id: '$adKey', firstAppointments: { $sum: 1 }, revenue: { $sum: '$value' } } },
         ]),
         AdSpend.aggregate([
-            { $match: { date: { $gte: since } } },
+            { $match: { date: { $gte: since, ...upper } } },
             { $group: { _id: '$adKey', spend: { $sum: '$amount' } } },
         ]),
     ]);
