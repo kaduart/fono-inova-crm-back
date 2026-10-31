@@ -94,6 +94,13 @@ export async function startAllCrons() {
     const { scheduleFixedExpenseGeneration } = await import("../crons/fixedExpenseGeneration.cron.js");
     startCron('fixedExpenseGeneration', () => scheduleFixedExpenseGeneration());
 
+    // Cópia diária produção → DEV na nuvem (18:50). DESLIGADA por padrão: liga com
+    // ESPELHO_SYNC_ENABLED=true no Render. Detalhes em crons/espelhoSync.cron.js.
+    if (process.env.ESPELHO_SYNC_ENABLED === 'true') {
+        const { scheduleEspelhoSync } = await import("../crons/espelhoSync.cron.js");
+        startCron('espelhoSync', () => scheduleEspelhoSync());
+    }
+
     // OpenAI: API server-side, only the explicitly authorized minimal event.
     if (process.env.OPENAI_ADS_CONVERSIONS_API_KEY?.trim()) {
         const { initOpenAIAdsConversionCron } = await import("../crons/openaiAdsConversion.cron.js");
