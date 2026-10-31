@@ -23,6 +23,8 @@ import { applyFinancialProtection } from "../services/appointment/policies/appoi
 import { findActiveBatchLink } from "../services/insuranceBatch/insuranceBatchGuard.js";
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { requireAdmin } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -1699,7 +1701,7 @@ router.get("/import-from-agenda/diagnostico/:patientName", async (req, res) => {
  * POST /api/import-from-agenda/limpar-henre
  * Deleta pré-agendamentos duplicados do Henre, mantém só o mais recente
  */
-router.post("/import-from-agenda/limpar-henre", async (req, res) => {
+router.post("/import-from-agenda/limpar-henre", flexibleAuth, requireAdmin, async (req, res) => {
   try {
     const preAgendamentos = await Appointment.find({
       'patientInfo.fullName': { $regex: /Henre/i },
@@ -1736,7 +1738,7 @@ router.post("/import-from-agenda/limpar-henre", async (req, res) => {
  * POST /api/import-from-agenda/limpar-duplicados-paciente
  * Remove pré-agendamentos duplicados quando já existe appointment para o paciente
  */
-router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) => {
+router.post("/import-from-agenda/limpar-duplicados-paciente", flexibleAuth, requireAdmin, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 

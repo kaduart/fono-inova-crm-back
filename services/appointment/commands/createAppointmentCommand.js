@@ -26,6 +26,7 @@ import Leads from '../../../models/Leads.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 import { recordAudit } from '../../auditLogService.js';
 import { pickAppointmentClientFields } from '../contracts/appointmentClientFields.js';
+import { isAgendaChannel } from '../../../middleware/amandaAuth.js';
 
 function isInsuranceAppointment(body) {
   return (
@@ -54,7 +55,7 @@ function buildError(message, status = 500, code = 'INTERNAL_ERROR') {
 export async function execute(payload, user, res = null) {
   // 🔹 Convênio: delega para BillingOrchestrator
   if (isInsuranceAppointment(payload)) {
-    const isAgendaService = user?.isService === true && user?.id === 'agenda-service';
+    const isAgendaService = isAgendaChannel(user);
     const billingResult = await billingOrchestrator.handleBilling({
       ...payload,
       createdBy: user?._id,
@@ -115,7 +116,7 @@ async function createWithHybridService(payload, user) {
   } = payload;
 
   // Identidade do service token da Agenda Externa (ver middleware/amandaAuth.js:22)
-  const isAgendaService = user?.isService === true && user?.id === 'agenda-service';
+  const isAgendaService = isAgendaChannel(user);
 
   const amount = parseFloat(payload.paymentAmount) || parseFloat(payload.sessionValue) || 0;
   const isPackageSession = serviceType === 'package_session';

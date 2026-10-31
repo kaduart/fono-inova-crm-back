@@ -41,6 +41,7 @@ import { rebuildPackageFromSource, auditPackage } from '../domain/package/rebuil
 import { createPackageV2, listPackagesV2, getPackageV2, settlePackagePayments } from '../controllers/packageController.v2.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { requireStaff } from '../middleware/requireRole.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageV2');
@@ -70,7 +71,7 @@ function parseQueryOptions(req) {
 // Cria novo pacote com agenda completa (SÍNCRONO)
 // ============================================
 
-router.post('/', flexibleAuth, createPackageV2);
+router.post('/', flexibleAuth, requireStaff, createPackageV2);
 
 // ============================================
 // GET /api/v2/packages
@@ -362,7 +363,7 @@ router.get('/:id/debug', flexibleAuth, async (req, res) => {
 // Atualiza pacote via Command + Outbox
 // ============================================
 
-router.put('/:id', flexibleAuth, async (req, res) => {
+router.put('/:id', flexibleAuth, requireStaff, async (req, res) => {
   const startTime = Date.now();
   const correlationId = `pkg_update_${Date.now()}`;
   const { id } = req.params;
@@ -453,7 +454,7 @@ router.post('/:id/transfer/preview', flexibleAuth, async (req, res) => {
   }
 });
 
-router.post('/:id/transfer', flexibleAuth, async (req, res) => {
+router.post('/:id/transfer', flexibleAuth, requireStaff, async (req, res) => {
   const correlationId = `pkg_transfer_${Date.now()}`;
   try {
     const view = await PackagesView.findOne({ $or: [{ packageId: req.params.id }, { _id: req.params.id }] }).lean();
@@ -514,7 +515,7 @@ router.post('/:id/transfer', flexibleAuth, async (req, res) => {
 // POST /api/v2/packages/:id/inactivate
 // Inativa pacote: cancela pendências, mantém histórico
 // ============================================
-router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
+router.post('/:id/inactivate', flexibleAuth, requireStaff, async (req, res) => {
   const correlationId = `pkg_inactivate_${Date.now()}`;
   const { id } = req.params;
 
@@ -658,7 +659,7 @@ router.post('/:id/inactivate', flexibleAuth, async (req, res) => {
 // Body: { doctorId?, time? } — ao menos um obrigatório.
 // ============================================
 
-router.patch('/:id/appointments/bulk', flexibleAuth, asyncHandler(async (req, res) => {
+router.patch('/:id/appointments/bulk', flexibleAuth, requireStaff, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { doctorId, time, dayOfWeek } = req.body;
 
@@ -1041,7 +1042,7 @@ router.use('/health', healthRoutes);
 // Força rebuild manual da PackagesView
 // ============================================
 
-router.post('/:id/rebuild', flexibleAuth, asyncHandler(async (req, res) => {
+router.post('/:id/rebuild', flexibleAuth, requireStaff, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const correlationId = `pkg_rebuild_${Date.now()}`;
   
@@ -1074,7 +1075,7 @@ router.post('/:id/rebuild', flexibleAuth, asyncHandler(async (req, res) => {
 // ============================================================
 // 💰 QUITAR DÉBITOS V2 EM PACOTE EXISTENTE
 // ============================================================
-router.post('/:packageId/settle-payments', flexibleAuth, asyncHandler(async (req, res) => {
+router.post('/:packageId/settle-payments', flexibleAuth, requireStaff, asyncHandler(async (req, res) => {
   await settlePackagePayments(req, res);
 }));
 

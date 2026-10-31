@@ -35,7 +35,8 @@ export async function buildCharts() {
   const todayYmd = today.format('YYYY-MM-DD');
   const apptRange = (fromYmd) => ({ $gte: utcDay(fromYmd), $lte: utcDay(todayYmd, true) });
   // mesmo critério do card "Sessões hoje" (statsBuilder)
-  const NOT_COUNTED = ['canceled', 'pre_agendado'];
+  // pre_agendado conta (decisão do Kadu, 31/10/2026 — DOMAIN_INVARIANTS ADR-006).
+  const NOT_COUNTED = ['canceled'];
 
   const [
     appointmentsByDay,

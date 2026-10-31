@@ -1,0 +1,28 @@
+# Arquivos de teste que JÁ falhavam quando o CI foi criado (31/10/2026).
+# O CI roda todos eles; só fica vermelho se um arquivo FORA desta lista falhar.
+# Ao consertar um teste, remova a linha dele daqui no mesmo PR.
+tests/unit/appointment-client-fields-contract.test.js
+tests/unit/completeWorker.safety.test.js
+tests/unit/context-enrichment.test.js
+tests/unit/eventDrivenArchitecture.test.js
+tests/unit/evolution-v2-api-contract.test.js
+tests/unit/financialFeatureFlag.test.js
+tests/unit/flagsDetector.p1-p4.test.js
+tests/unit/fsm-production-bugs.test.js
+tests/unit/gmbReviewReplies.test.mjs
+tests/unit/guideLifecycle/insuranceGuidesApi.test.js
+tests/unit/orchestrator-v8.test.js
+tests/unit/orchestrator.neuro.test.js
+tests/unit/packageTransferCanonicalRules.test.js
+tests/unit/patientBalance.test.js
+tests/unit/paymentArchitecture.v4.test.js
+tests/unit/production-fixes.test.js
+tests/unit/safeAgeUpdate.test.js
+tests/unit/settle.guard.test.js
+tests/unit/taxaCartao.test.js
+tests/unit/therapyAreaMapping.test.js
+tests/unit/therapyDetector.test.js
+tests/unit/updatePackageCommand.test.js
+tests/unit/validate-services.test.js
+tests/validate-services.test.js
+utils/resolveSessionFinancialValue.test.js

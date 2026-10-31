@@ -8,7 +8,11 @@
  */
 
 import express from 'express';
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
+
+// Só a gestão (admin/secretária): terapeuta não lê caixa nem dados da clínica.
+// Auditoria do Dashboard admin, 31/10/2026 (B2).
+const staff = [auth, authorize(['admin', 'secretary'])];
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { buildDashboardOverview, invalidateDashboardBlocks } from '../services/adminDashboard/index.js';
 import Payment from '../models/Payment.js';
@@ -22,7 +26,7 @@ const router = express.Router();
  * Retorna resumo dos pagamentos (não a lista completa)
  * Muito mais rápido que /api/payments
  */
-router.get('/payments-summary', auth, async (req, res) => {
+router.get('/payments-summary', ...staff, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
@@ -84,7 +88,7 @@ router.get('/payments-summary', auth, async (req, res) => {
  * Overview completo do dashboard V2 (builders separados + cache granular)
  * Query: ?include=stats,charts,doctors,upcoming
  */
-router.get('/overview', auth, async (req, res) => {
+router.get('/overview', ...staff, async (req, res) => {
   try {
     const includeParam = req.query.include;
     const forceRefresh = req.query.refresh === 'true';
@@ -107,7 +111,7 @@ router.get('/overview', auth, async (req, res) => {
  * 
  * Invalida cache granular do dashboard V2
  */
-router.post('/invalidate-cache', auth, async (req, res) => {
+router.post('/invalidate-cache', ...staff, async (req, res) => {
   try {
     const { blocks } = req.body || {};
     await invalidateDashboardBlocks(blocks);
@@ -123,7 +127,7 @@ router.post('/invalidate-cache', auth, async (req, res) => {
  * 
  * Stats rápidas para cards do dashboard
  */
-router.get('/quick-stats', auth, async (req, res) => {
+router.get('/quick-stats', ...staff, async (req, res) => {
   try {
     const cacheKey = 'quick-stats';
     

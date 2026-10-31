@@ -12,6 +12,7 @@ import Patient from '../../models/Patient.js';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
+import { buildUpcomingCounts } from './upcomingBuilder.js';
 import unifiedFinancialService, { calculateCashTotal } from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -82,17 +83,18 @@ export async function buildStats() {
     todayRevenueAgg,
     monthLeads,
     leadsByStatus,
-    recurring
+    recurring,
+    upcomingCounts
   ] = await Promise.all([
     timeit('doctors.count',        Doctor.countDocuments({ active: true })),
     timeit('patients.estimated',   Patient.estimatedDocumentCount()),
     timeit('appointments.today',   Appointment.countDocuments({
       date: { $gte: today.toDate(), $lte: todayEnd.toDate() },
-      operationalStatus: { $nin: ['canceled', 'pre_agendado'] }
+      operationalStatus: { $nin: ['canceled'] }
     })),
     timeit('appointments.week',    Appointment.countDocuments({
       date: { $gte: startOfWeek.toDate(), $lte: todayEnd.toDate() },
-      operationalStatus: { $nin: ['canceled', 'pre_agendado'] }
+      operationalStatus: { $nin: ['canceled'] }
     })),
     timeit('payments.pending',     Payment.countDocuments({
       status: { $in: ['pending', 'partial'] }
@@ -115,7 +117,8 @@ export async function buildStats() {
         }
       }
     ])),
-    timeit('patients.recurring',   buildRecurringPatients())
+    timeit('patients.recurring',   buildRecurringPatients()),
+    timeit('upcoming.counts',      buildUpcomingCounts())
   ]);
 
   // Mapear leads por status
@@ -131,6 +134,7 @@ export async function buildStats() {
     totalPatients,
     activePatients: totalPatients,
     recurring,
+    upcomingCounts,
     todayAppointments,
     weekAppointments,
     todayRevenue: todayRevenueAgg?.total || 0,

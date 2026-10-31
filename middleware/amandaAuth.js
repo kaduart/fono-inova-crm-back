@@ -27,6 +27,12 @@ const AGENDA_SERVICE_RULES = [
     // Lembretes exibidos e atualizados pela Agenda.
     { methods: ['GET', 'POST'], path: /^\/api\/reminders$/ },
     { methods: ['GET', 'PATCH'], path: /^\/api\/reminders\/[^/]+$/ },
+
+    // WhatsApp da clínica (status, envio e reconexão pela Agenda).
+    { methods: ['GET'], path: /^\/api\/whatsapp-(?:web|vps)\/status$/ },
+    { methods: ['POST'], path: /^\/api\/whatsapp-(?:web|vps)\/send$/ },
+    { methods: ['POST'], path: /^\/api\/whatsapp-web\/reconnect$/ },
+    { methods: ['POST'], path: /^\/api\/whatsapp\/(?:send-text|send-media)$/ },
 ];
 
 function requestPath(req) {
@@ -83,8 +89,19 @@ export const flexibleAuth = (req, res, next) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
+        // Agenda Externa com login próprio (admin/secretária): marca o canal para
+        // manter as regras de origem (pré-agendamento, canal do cancelamento).
+        if (String(req.headers['x-client'] || '').toLowerCase() === 'agenda-externa'
+            && ['admin', 'secretary'].includes(decoded?.role)) {
+            req.user.channel = 'agenda';
+        }
         return next();
     } catch (err) {
         return sendApiError(res, new AppError('UNAUTHORIZED', "Token inválido", { status: 401 }), req);
     }
 };
+
+/** Requisição feita pela Agenda Externa (token de serviço antigo ou login próprio). */
+export function isAgendaChannel(user) {
+    return (user?.isService === true && user?.id === 'agenda-service') || user?.channel === 'agenda';
+}

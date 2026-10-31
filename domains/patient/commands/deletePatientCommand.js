@@ -6,6 +6,7 @@ import Appointment from '../../../models/Appointment.js';
 import Session from '../../../models/Session.js';
 import Package from '../../../models/Package.js';
 import PatientBalance from '../../../models/PatientBalance.js';
+import DeletedPatientArchive from '../../../models/DeletedPatientArchive.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
 
 /**
@@ -15,14 +16,16 @@ import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
  * garantindo integridade referencial e evitando payments/sessions órfãos.
  *
  * 🔒 Regras:
- * - Executa dentro de transação MongoDB.
+ * - Executa dentro de transação MongoDB (TODAS as deleções usam a mesma session).
+ * - Antes de apagar, grava a cópia integral em DeletedPatientArchive (mesma transação):
+ *   se o arquivo falhar, nada é apagado.
  * - Deleta em ordem segura: filhos primeiro, pai por último.
  * - Retorna contagem do que foi removido.
  * - Não deleta notas fiscais emitidas (fiscal permanece por obrigação legal).
  *
  * @param {string|ObjectId} patientId
  * @param {Object} options
- * @param {Object} options.user - usuário que solicitou (para auditoria futura)
+ * @param {Object|string} options.user - usuário que solicitou (req.user ou id), gravado no arquivo
  * @param {string} options.reason - motivo da exclusão
  * @param {ClientSession} options.mongoSession - sessão externa (opcional)
  * @returns {Promise<{patientId: string, deleted: boolean, counts: Object}>}
@@ -37,6 +40,32 @@ async function _deleteAll(session, patientId, options) {
     error.code = 'PATIENT_NOT_FOUND';
     throw error;
   }
+
+  // 0. Arquivo integral ANTES de apagar (mesma transação). Agendamentos lidos pela
+  //    collection crua, igual à deleção abaixo, para não passar por hooks.
+  const db = mongoose.connection.db;
+  const [payments, sessions, appointments, packages, patientBalances, patientsView] = await Promise.all([
+    Payment.find({ patient: pid }).session(session).lean(),
+    Session.find({ patient: pid }).session(session).lean(),
+    db.collection('appointments').find({ patient: pid }, { session }).toArray(),
+    Package.find({ patient: pid }).session(session).lean(),
+    PatientBalance.find({ patient: pid }).session(session).lean(),
+    PatientsView.find({ patientId: pid }).session(session).lean(),
+  ]);
+  const user = options.user;
+  await DeletedPatientArchive.create([{
+    patientId: pid,
+    patientName: patient.fullName || null,
+    deletedAt: new Date(),
+    deletedBy: user ? String(user.id || user._id || user) : null,
+    deletedByRole: user?.role || null,
+    reason: options.reason || null,
+    counts: {
+      payments: payments.length, sessions: sessions.length, appointments: appointments.length,
+      packages: packages.length, patientBalances: patientBalances.length, patientsView: patientsView.length,
+    },
+    data: { patient, payments, sessions, appointments, packages, patientBalances, patientsView },
+  }], { session });
 
   const counts = {
     payments: 0,
@@ -58,8 +87,8 @@ async function _deleteAll(session, patientId, options) {
   counts.sessions = sessionsResult.deletedCount;
 
   // 3. Deleta Appointments vinculados ao paciente usando collection para bypassar hooks
-  const db = mongoose.connection.db;
-  const appointmentsResult = await db.collection('appointments').deleteMany({ patient: pid });
+  //    (dentro da session: antes ficava fora da transação e sumia mesmo com abort)
+  const appointmentsResult = await db.collection('appointments').deleteMany({ patient: pid }, { session });
   counts.appointments = appointmentsResult.deletedCount;
 
   // 4. Deleta Packages vinculados ao paciente

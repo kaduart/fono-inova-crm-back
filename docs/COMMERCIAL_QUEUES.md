@@ -10,6 +10,8 @@ São quatro filas que ajudam a secretária a vender e a reter pacientes. Elas ap
 | Pacote acabando | `GET /api/v2/commercial/package-ending?threshold=2` | Dashboard, "Precisa de você" |
 | Reativação | `GET /api/v2/commercial/reactivation?minDays=7` | Dashboard e Acompanhamento |
 | Lead sem resposta | `GET /api/v2/commercial/leads-waiting?hours=2` | Topo do Dashboard, com cronômetro |
+| Avaliou e não fechou | `GET /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30` | Dashboard, "Precisa de você" |
+| Próximo dia útil sem confirmação | `GET /api/v2/commercial/unconfirmed-next-day` e `POST /api/v2/commercial/confirmation-reminders` | Dashboard, "Precisa de você" |
 | Registro do contato | `POST /api/v2/commercial/contacts` | Botão "Marcar como contatado" das filas |
 
 O acesso é só para `admin` e `secretary`.
@@ -46,3 +48,24 @@ O acesso é só para `admin` e `secretary`.
 - As regras puras ficam em `services/commercial/commercialRules.js`, com teste em `tests/unit/commercialRules.test.js`.
 - Se mudar o critério de "próxima sessão", mude também em `routes/retention.v2.js`, para a Agenda e o Dashboard mostrarem os mesmos números.
 - O front consome isso em `src/services/commercialService.ts`.
+
+
+## Avaliou e não fechou / Próximo dia útil sem confirmação (31/10/2026)
+
+As duas filas foram aprovadas pelo Kadu a partir do mock https://claude.ai/artifact/CxuQNs2oT4a6x6LNs5BqdD. As regras ficam em `services/commercial/evaluationConfirmationQueues.js`, com testes em `tests/unit/evaluationConfirmationQueues.test.js`.
+
+- **Avaliou e não fechou:**
+  - Entra a avaliação `completed` (`serviceType` `evaluation` ou `neuropsych_evaluation`, particular) feita de 3 a 30 dias atrás.
+  - Sai quem tem um pacote `therapy` ativo, criado depois da avaliação ou na véspera dela (a data de criação vem do `_id`), quem tem sessão futura ativa e quem foi marcado como "Não vai fechar" (`kind: evaluation_lost`, com o motivo em `note`).
+  - O contato registrado usa `kind: evaluation`.
+  - O potencial mensal é o número de pessoas × R$ 720. Ele é calculado no back.
+- **Próximo dia útil sem confirmação:**
+  - O dia é o primeiro, entre os próximos 7, que tem sessão ativa (`pre_agendado`, `scheduled` ou `confirmed`).
+  - A sessão é "não confirmada" quando o `operationalStatus` não é `confirmed` e o `attendanceConfirmation.status` também não é `confirmed`.
+  - Estados: `not_sent`, `no_reply`, `change_requested`, `review_required` e `no_phone`.
+- **Lembrete em lote:**
+  - Só vai para quem está em `not_sent`, pela fila `whatsapp-send` com `purpose: attendance_confirmation`. A enquete "Confirmar presença" é a mesma da Agenda Externa.
+  - Usa o `jobId` fixo `attconf-<appointmentId>`, então é no máximo 1 lembrete por sessão, mesmo com duplo clique.
+  - Grava `attendanceConfirmation.queuedAt`.
+  - Se a fila estiver pausada pelo kill switch, a resposta traz `queuePaused: true`.
+  - A Amanda não é acionada.

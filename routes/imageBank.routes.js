@@ -8,8 +8,13 @@ import ImageBank from '../models/ImageBank.js';
 import * as imageBankService from '../services/imageBankService.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { requireStaff, requireStaffOrAgenda, requireAdmin } from '../middleware/requireRole.js';
 
 const router = express.Router();
+
+// Sem login antes da auditoria de 31/10/2026. Agora: login + perfil admin/secretária.
+router.use(flexibleAuth, requireStaff);
 
 /**
  * 🔍 GET /api/imagebank/search

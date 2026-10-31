@@ -188,7 +188,7 @@ async function loadGoal(year, month, clinicId = 'default') {
 }
 
 // GET /v2/financial/dashboard
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     // 🐛 FIX (2026-09-21): estas variáveis eram declaradas DENTRO do `try`/bloco e usadas no `catch`
     // → ReferenceError no catch: a resposta nunca era enviada e a promise de _dashPending do mês
     // nunca resolvia, então todas as requisições seguintes do mesmo mês ficavam penduradas em
@@ -425,7 +425,7 @@ router.get('/', auth, async (req, res) => {
  * Reprocessa Payments e Sessions para reconstruir snapshots de um período.
  * Útil para correções pontuais ou backfill manual.
  */
-router.post('/rebuild-snapshot', auth, async (req, res) => {
+router.post('/rebuild-snapshot', auth, authorize(['admin']), async (req, res) => {
     try {
         const { startDate, endDate, clearFirst = true, clinicId } = req.body;
         if (!startDate || !endDate) {
@@ -523,7 +523,7 @@ router.post('/rebuild-snapshot', auth, async (req, res) => {
  * Auditoria detalhada do caixa: lista cada pagamento e sessão paga, dia a dia.
  * Responde à pergunta: "de onde vem o valor do caixa deste mês?"
  */
-router.get('/audit', auth, async (req, res) => {
+router.get('/audit', auth, authorize(['admin', 'secretary']), async (req, res) => {
     try {
         const { month, year } = req.query;
         const m = parseInt(month || new Date().getMonth() + 1);
@@ -2504,7 +2504,7 @@ async function fetchPendingPaymentsPreviousCompetence(start, startStr) {
 
 // GET /v2/financial/dashboard/sanity-check
 // Retorna o resultado do sanity check financeiro para o mês solicitado
-router.get('/sanity-check', auth, async (req, res) => {
+router.get('/sanity-check', auth, authorize(['admin', 'secretary']), async (req, res) => {
     try {
         const { month, year } = req.query;
         const targetYear = year ? parseInt(year) : moment().year();
@@ -2562,7 +2562,7 @@ router.get('/sanity-check', auth, async (req, res) => {
  */
 import { rebuildSnapshotRange } from '../workers/financialSnapshotWorker.v2.js';
 
-router.post('/rebuild-snapshot', auth, async (req, res) => {
+router.post('/rebuild-snapshot', auth, authorize(['admin']), async (req, res) => {
     try {
         const { startDate, endDate } = req.body;
 
@@ -2606,7 +2606,7 @@ import { validateSnapshotVsRealtime, validateSnapshotRange } from '../workers/fi
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
-router.post('/validate-snapshot', auth, async (req, res) => {
+router.post('/validate-snapshot', auth, authorize(['admin']), async (req, res) => {
     try {
         const { startDate, endDate, date } = req.body;
 

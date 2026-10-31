@@ -141,3 +141,5 @@ backups-*/
 # QR code de pareamento do WhatsApp e PID local
 qr-code.png
 *.pid
+vitest-report.json
+arquivos-js.txt

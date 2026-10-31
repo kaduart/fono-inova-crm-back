@@ -22,6 +22,7 @@ import Appointment from '../models/Appointment.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import { v4 as uuidv4 } from 'uuid';
+import { requireStaffOrAgenda } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -280,7 +281,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
 /**
  * POST /api/v2/doctors - Criar médico (síncrono)
  */
-router.post('/', flexibleAuth, async (req, res) => {
+router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   const correlationId = `doc_create_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
@@ -403,7 +404,7 @@ router.put('/:id', flexibleAuth, async (req, res) => {
 /**
  * DELETE /api/v2/doctors/:id - Deletar médico (síncrono)
  */
-router.delete('/:id', flexibleAuth, async (req, res) => {
+router.delete('/:id', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   const correlationId = `doc_del_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {

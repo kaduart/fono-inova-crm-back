@@ -41,6 +41,7 @@ import logger from '../utils/logger.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { requireStaff } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -139,7 +140,7 @@ const mapPaymentMethodToAppointment = (method) => {
 // POST /api/v2/payments/request
 // Inicia pagamento de forma assíncrona - BLINDADO
 // ============================================
-router.post('/request', auth, async (req, res) => {
+router.post('/request', auth, requireStaff, async (req, res) => {
     const {
         appointmentId,
         patientId,
@@ -460,7 +461,7 @@ router.post('/request', auth, async (req, res) => {
 // POST /api/v2/payments/balance/:patientId/multi
 // Payment-multi assíncrono (para saldo/débitos)
 // ============================================
-router.post('/balance/:patientId/multi', auth, async (req, res) => {
+router.post('/balance/:patientId/multi', auth, requireStaff, async (req, res) => {
     const { patientId } = req.params;
     const { payments, debitIds, totalAmount } = req.body;
 
@@ -674,7 +675,7 @@ router.get('/status/:eventId', auth, async (req, res) => {
 //   → aparecia como orphan_payment na reconciliação (ver reconciliation.service.js).
 // A partir de 2026-06-15: appointmentId obrigatório quando é registro de appointment.
 // ============================================
-router.post('/create-sync', auth, async (req, res) => {
+router.post('/create-sync', auth, requireStaff, async (req, res) => {
     const {
         patientId,
         doctorId,
@@ -1047,7 +1048,7 @@ router.get('/queue/status', auth, async (req, res) => {
 // PATCH /api/v2/payments/:id
 // Atualiza pagamento existente - BLINDADO
 // ============================================
-router.patch('/:id', auth, async (req, res) => {
+router.patch('/:id', auth, requireStaff, async (req, res) => {
     const { id } = req.params;
     const { amount, paymentMethod, status, serviceType, specialty, paymentDate, notes, doctor, splitMethods, financialDate: financialDateBody } = req.body;
 
@@ -1386,7 +1387,7 @@ router.patch('/:id', auth, async (req, res) => {
 // Não recria/duplica o Payment — reaproveita o existente (caso Isis 2026-07-17:
 // refazer o complete pra marcar débito criava um segundo Payment e duplicava o caixa).
 // ============================================
-router.patch('/:id/register-debit', auth, async (req, res) => {
+router.patch('/:id/register-debit', auth, requireStaff, async (req, res) => {
     const { id } = req.params;
 
     if (!isValidObjectId(id)) {
@@ -1595,7 +1596,7 @@ router.patch('/:id/register-debit', auth, async (req, res) => {
 // POST /api/v2/payments/bulk-settle
 // Fecha sessoes pos-pagas: originais viram caixa e um recibo agregado preserva auditoria
 // ============================================
-router.post('/bulk-settle', auth, async (req, res) => {
+router.post('/bulk-settle', auth, requireStaff, async (req, res) => {
     const { paymentIds, paymentMethod, totalAmount, notes, splitMethods } = req.body;
 
     if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
@@ -2021,7 +2022,7 @@ router.post('/bulk-settle', auth, async (req, res) => {
 // DELETE /api/v2/payments/:paymentId — ADMIN ONLY
 // Remove payment com cascade: limpa appointment.payment + session.isPaid
 // ============================================
-router.delete('/:paymentId', auth, async (req, res) => {
+router.delete('/:paymentId', auth, requireStaff, async (req, res) => {
     const { paymentId } = req.params;
 
     if (req.user?.role !== 'admin') {

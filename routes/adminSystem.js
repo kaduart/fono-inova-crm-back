@@ -8,7 +8,11 @@ import { Router } from 'express';
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
-import { auth } from '../middleware/auth.js';
+import { auth, authorize } from '../middleware/auth.js';
+
+// Só a gestão (admin/secretária): terapeuta não lê caixa nem dados da clínica.
+// Auditoria do Dashboard admin, 31/10/2026 (B2).
+const staff = [auth, authorize(['admin', 'secretary'])];
 import { redisConnection } from '../config/redisConnection.js';
 import mongoose from 'mongoose';
 
@@ -77,7 +81,7 @@ createBullBoard({
 // ==========================
 // 2. SYSTEM MONITOR API
 // ==========================
-router.get("/system-monitor", auth, async (req, res) => {
+router.get("/system-monitor", ...staff, async (req, res) => {
   try {
     const queueStats = [];
 
