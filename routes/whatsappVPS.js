@@ -8,8 +8,20 @@ import express from 'express';
 import { sendViaVPS, checkVPSStatus } from '../services/whatsappVPSService.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { requireStaff, requireStaffOrAgenda, requireAdmin } from '../middleware/requireRole.js';
 
 const router = express.Router();
+
+// Envio pelo número da clínica: exige login (admin/secretária) ou o token da
+// Agenda Externa. Emergência: WHATSAPP_WEB_AUTH_MODE=log só registra e libera.
+const whatsappGuard = process.env.WHATSAPP_WEB_AUTH_MODE === 'log'
+    ? (req, _res, next) => {
+        if (!req.headers.authorization) console.warn('[WHATSAPP_UNAUTH_LOG]', req.method, req.originalUrl, req.ip);
+        next();
+    }
+    : [flexibleAuth, requireStaffOrAgenda];
+router.use(whatsappGuard);
 
 /**
  * POST /api/whatsapp-vps/send

@@ -70,6 +70,7 @@ import {
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { emitSocket } from '../services/appointment/helpers/socketHelper.js';
+import { requireStaff, requireStaffOrAgenda } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -200,6 +201,7 @@ router.patch(
   '/:id/admin-edit',
   validateId,
   flexibleAuth,
+  requireStaffOrAgenda,
   checkPackageAvailability,
   checkAppointmentConflicts,
   async (req, res) => {
@@ -309,6 +311,7 @@ router.patch(
   '/:id/reschedule',
   validateId,
   flexibleAuth,
+  requireStaffOrAgenda,
   injectRescheduleContext,
   checkAppointmentConflicts,
   async (req, res) => {
@@ -334,6 +337,7 @@ router.put(
   '/:id',
   validateId,
   flexibleAuth,
+  requireStaffOrAgenda,
   checkPackageAvailability,
   checkAppointmentConflicts,
   async (req, res) => {
@@ -354,7 +358,7 @@ router.put(
 );
 
 // Cancelar agendamento
-router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
+router.patch('/:id/cancel', validateId, flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   try {
     const { reason, confirmedAbsence = false } = req.body;
     // Cancelamento manual: o solicitante é obrigatório (relatório de compromisso).
@@ -396,7 +400,7 @@ router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
 });
 
 // Reenviar/enviar o aviso de cancelamento (sem cancelar de novo). Idempotente por cancelamento.
-router.post('/:id/cancel/notify-patient', validateId, flexibleAuth, async (req, res) => {
+router.post('/:id/cancel/notify-patient', validateId, flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   try {
     const notification = await requestCancellationNotification(req.params.id);
     return res.json({ success: notification.status !== 'failed', notification });
@@ -406,7 +410,7 @@ router.post('/:id/cancel/notify-patient', validateId, flexibleAuth, async (req, 
 });
 
 // Confirmar agendamento
-router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
+router.patch('/:id/confirm', validateId, flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   try {
     const result = await confirmAppointment(req.params.id, req.user);
     return res.json({
@@ -454,7 +458,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
 });
 
 // Registrar envio pós-atendimento
-router.patch('/:id/post-appointment', validateId, flexibleAuth, async (req, res) => {
+router.patch('/:id/post-appointment', validateId, flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   try {
     const { step } = req.body;
     const result = await postAppointment(req.params.id, step);
@@ -471,7 +475,7 @@ router.patch('/:id/post-appointment', validateId, flexibleAuth, async (req, res)
 });
 
 // Deletar agendamento
-router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
+router.delete('/:id', validateId, flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   try {
     const result = await deleteAppointment(req.params.id, req.user);
     return res.json({
@@ -490,7 +494,7 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 // COMPLETAR AGENDAMENTO
 // ======================================================================
 
-router.patch('/:id/complete', auth, async (req, res) => {
+router.patch('/:id/complete', auth, requireStaff, async (req, res) => {
     const startTime = Date.now();
     const requestId = req.id || req.headers['x-correlation-id'] || `complete_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -669,7 +673,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
 // ALTERAR STATUS DE REMUNERAÇÃO DO PROFISSIONAL
 // ======================================================================
 
-router.patch('/:id/professional-payment-status', validateId, auth, async (req, res) => {
+router.patch('/:id/professional-payment-status', validateId, auth, requireStaff, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, reason } = req.body;

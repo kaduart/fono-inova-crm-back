@@ -4,7 +4,9 @@ import User from '../models/User.js';
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { fullName, email, password, role } = req.body;
+  // Perfil nunca vem do corpo: cadastro público é sempre paciente.
+  const { fullName, email, password } = req.body;
+  const role = 'patient';
 
   try {
     const user = new User({ fullName, email, password, role });

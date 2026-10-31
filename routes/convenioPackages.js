@@ -8,8 +8,13 @@ import {
   addConvenioSession,
   markConvenioSessionsAsPaid
 } from '../controllers/convenioPackageController.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { requireStaff, requireStaffOrAgenda, requireAdmin } from '../middleware/requireRole.js';
 
 const router = express.Router();
+
+// Sem login antes da auditoria de 31/10/2026. Agora: login + perfil admin/secretária.
+router.use(flexibleAuth, requireStaff);
 
 /**
  * @route   POST /api/convenio-packages

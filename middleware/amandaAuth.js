@@ -27,6 +27,11 @@ const AGENDA_SERVICE_RULES = [
     // Lembretes exibidos e atualizados pela Agenda.
     { methods: ['GET', 'POST'], path: /^\/api\/reminders$/ },
     { methods: ['GET', 'PATCH'], path: /^\/api\/reminders\/[^/]+$/ },
+
+    // WhatsApp da clínica (status, envio e reconexão pela Agenda).
+    { methods: ['GET'], path: /^\/api\/whatsapp-(?:web|vps)\/status$/ },
+    { methods: ['POST'], path: /^\/api\/whatsapp-(?:web|vps)\/send$/ },
+    { methods: ['POST'], path: /^\/api\/whatsapp-web\/reconnect$/ },
 ];
 
 function requestPath(req) {

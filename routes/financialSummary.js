@@ -389,7 +389,7 @@ async function buildPatientFinancialSummary(patientId, packageId) {
  *
  * Retorna resumo financeiro REAL do paciente baseado em Payment records.
  */
-router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
+router.get('/patient/:patientId/summary', auth, asyncHandler(async (req, res) => {
     const { patientId } = req.params;
     const { packageId } = req.query; // opcional: filtrar por package específico
 
@@ -414,7 +414,7 @@ router.get('/patient/:patientId/summary', asyncHandler(async (req, res) => {
  * no lugar do resumo, pro frontend decidir como tratar (achado real: um
  * pacote com dado inconsistente não deve travar o carregamento dos outros 10).
  */
-router.get('/patient/:patientId/summary/batch', asyncHandler(async (req, res) => {
+router.get('/patient/:patientId/summary/batch', auth, asyncHandler(async (req, res) => {
     const { patientId } = req.params;
     const { packageIds } = req.query;
 
@@ -531,7 +531,7 @@ router.get('/patient/:patientId/pending-payments', auth, authorize(['admin', 'se
  *
  * Lista todos os Payment paid do paciente (fonte de verdade para recebidos).
  */
-router.get('/patient/:patientId/paid-payments', asyncHandler(async (req, res) => {
+router.get('/patient/:patientId/paid-payments', auth, asyncHandler(async (req, res) => {
     const { patientId } = req.params;
 
     const patientOid = mongoose.Types.ObjectId.isValid(patientId)
@@ -763,7 +763,7 @@ router.get('/aging', asyncHandler(async (req, res) => {
  * (double-click, retry de rede) — reaproveita o campo Payment.bulkSettlementKey
  * (mesmo padrão de idempotência do bulk-settle em payment.v2.js).
  */
-router.post('/receive', auth, asyncHandler(async (req, res) => {
+router.post('/receive', auth, authorize(['admin', 'secretary']), asyncHandler(async (req, res) => {
     const { patientId, amount, method, paymentMethod, mode = 'auto', notes, metadata } = req.body || {};
 
     if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {

@@ -16,6 +16,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import { getPatientPendingPayments } from '../services/financialEngine.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { requireStaff } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -124,7 +125,7 @@ router.get('/:patientId', auth, async (req, res) => {
 // ======================================================
 // POST /v2/balance/:patientId/debit - Adiciona débito (event-driven, otimizado)
 // ======================================================
-router.post('/:patientId/debit', auth, async (req, res) => {
+router.post('/:patientId/debit', auth, requireStaff, async (req, res) => {
     try {
         const { patientId } = req.params;
         const { amount, description, sessionId, appointmentId } = req.body;
@@ -262,7 +263,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
 // ======================================================
 // POST /v2/balance/:patientId/credit - Adiciona crédito (event-driven)
 // ======================================================
-router.post('/:patientId/credit', auth, async (req, res) => {
+router.post('/:patientId/credit', auth, requireStaff, async (req, res) => {
     try {
         const { patientId } = req.params;
         const { amount, description } = req.body;
