@@ -10,7 +10,9 @@
  *   ANTHROPIC_API_KEY=... MONGO_URI=<espelho-dev> node scripts/amanda-agent-cenarios.mjs   # agenda real
  *   ... node scripts/amanda-agent-cenarios.mjs preco decidido                            # só alguns cenários
  *
- * Sem MONGO_URI a agenda é simulada (2 horários de fono/psico na próxima semana).
+ * Sem MONGO_URI, ou com AMANDA_AGENDA=simulada, a agenda é simulada.
+ * (No PowerShell use $env:AMANDA_AGENDA='simulada'; $env:MONGO_URI='' apaga a
+ *  variável e o dotenv volta a preenchê-la a partir do .env.)
  */
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
@@ -107,7 +109,8 @@ async function main() {
     process.exit(1);
   }
   let toolDeps;
-  if (process.env.MONGO_URI) {
+  const usarMongo = process.env.MONGO_URI && String(process.env.AMANDA_AGENDA || '').toLowerCase() !== 'simulada';
+  if (usarMongo) {
     const { default: mongoose } = await import('mongoose');
     await mongoose.connect(process.env.MONGO_URI);
     console.error('Agenda: Mongo real (dryRun, sem escrita)');
