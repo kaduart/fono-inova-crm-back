@@ -12,7 +12,7 @@ const SALT = process.env.ESPELHO_ANON_SALT || 'fono-espelho';
 const STAFF = new Set(['users', 'admins', 'doctors', 'secretaries']);
 // coleções em que o campo "name" de topo é uma pessoa (em outras, "name" é pacote, especialidade...)
 const PERSON_NAME = new Set(['patients', 'patients_view', 'leads', 'contacts', 'commercialcontacts', 'deletedpatientarchives', 'convenio_waitlists', 'conveniowaitlists']);
-const CHAT = new Set(['messages', 'chat_projections']);
+const CHAT = new Set(['messages', 'chat_projections', 'chatcontexts', 'followups', 'detector_feedbacks', 'learninginsights', 'conversationfeedbacks', 'failedmessages', 'auditlogs']);
 
 const NOMES = ['Ana', 'Bruno', 'Carla', 'Davi', 'Elisa', 'Felipe', 'Gabriela', 'Heitor', 'Isabela', 'João', 'Laura', 'Miguel', 'Nina', 'Otávio', 'Paula', 'Rafael', 'Sofia', 'Theo', 'Valentina', 'Lucas'];
 const SOBRENOMES = ['Silva', 'Souza', 'Oliveira', 'Lima', 'Costa', 'Rocha', 'Alves', 'Pereira', 'Gomes', 'Ribeiro', 'Martins', 'Barbosa', 'Teixeira', 'Moura', 'Cardoso'];
@@ -49,7 +49,7 @@ function walk(node, coll, depth, parentKey, opt = {}) {
     else if (opt.equipe && isStaffNameKey(k) && typeof v === 'string') out[k] = fakeName(v);
     else if (opt.equipe && k === 'name' && depth === 0 && STAFF.has(coll) && typeof v === 'string') out[k] = fakeName(v);
     else if (isAddressKey(k)) out[k] = blank(v);
-    else if (CHAT.has(coll) && /^(content|text|body|caption|lastMessage)$/i.test(k) && typeof v === 'string') out[k] = '[mensagem anonimizada]';
+    else if (CHAT.has(coll) && /^(content|text|body|caption|lastmessage|message|messages|transcript|summary|originalmessage|usermessage|response|reply|history)$/i.test(k) && (typeof v === 'string' || Array.isArray(v))) out[k] = typeof v === 'string' ? '[mensagem anonimizada]' : [];
     else if (k === 'name' && typeof v === 'string' && ((depth === 0 && PERSON_NAME.has(coll)) || /responsible|guardian|patient|lead|contact|parent/i.test(parentKey || ''))) out[k] = fakeName(v);
     else if (typeof v === 'string') out[k] = anonValue(k, v);
     else out[k] = walk(v, coll, depth + 1, k, opt);
