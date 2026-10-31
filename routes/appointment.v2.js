@@ -11,7 +11,7 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
-import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { flexibleAuth, isAgendaChannel } from '../middleware/amandaAuth.js';
 import { auth } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import { checkPackageAvailability } from '../middleware/checkPackageAvailability.js';
@@ -365,12 +365,12 @@ router.patch('/:id/cancel', validateId, flexibleAuth, requireStaffOrAgenda, asyn
     // Exceção: token de serviço (agenda-service externa/Amanda) — esses clientes ainda
     // não enviam o campo; exigir derrubaria o cancelamento por lá. Se enviarem, é
     // validado e gravado; senão fica "Não informado". Remover a exceção quando migrarem.
-    const parsed = parseCancelRequester(req.body, { required: !req.user?.isService });
+    const parsed = parseCancelRequester(req.body, { required: !req.user?.isService && !isAgendaChannel(req.user) });
     const { cancelRequester, cancelRequestedAt } = parsed;
     // Sem solicitante: registra o CANAL (visível no relatório), nunca um solicitante inferido.
     const cancelChannel = cancelRequester ? null
       : (parsed.cancelChannel
-        || (req.user?.id === 'amanda-service' ? 'amanda' : req.user?.id === 'agenda-service' ? 'agenda_service' : null));
+        || (req.user?.id === 'amanda-service' ? 'amanda' : isAgendaChannel(req.user) ? 'agenda_service' : null));
     const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel,
       requestContext: { method: req.method, path: req.originalUrl,
         correlationId: req.correlationId || req.get('x-correlation-id') || null }

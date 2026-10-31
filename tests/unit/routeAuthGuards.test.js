@@ -62,3 +62,17 @@ describe('requireStaff / requireStaffOrAgenda', () => {
     expect(isAgendaServiceRequestAllowed(req('POST', '/api/amanda/send'))).toBe(false);
   });
 });
+
+describe('canal da Agenda com login próprio', () => {
+  it('secretária logada na agenda (X-Client) é tratada como canal agenda', async () => {
+    const { isAgendaChannel } = await import('../../middleware/amandaAuth.js');
+    const app = express();
+    app.get('/x', flexibleAuth, (req, res) => res.json({ agenda: isAgendaChannel(req.user) }));
+    const withHeader = await request(app).get('/x').set('Authorization', `Bearer ${tok('secretary')}`).set('X-Client', 'agenda-externa');
+    expect(withHeader.body.agenda).toBe(true);
+    const erp = await request(app).get('/x').set('Authorization', `Bearer ${tok('secretary')}`);
+    expect(erp.body.agenda).toBe(false);
+    const doctor = await request(app).get('/x').set('Authorization', `Bearer ${tok('doctor')}`).set('X-Client', 'agenda-externa');
+    expect(doctor.body.agenda).toBe(false);
+  });
+});

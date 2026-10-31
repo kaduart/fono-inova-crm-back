@@ -19,3 +19,12 @@ Perfis: `middleware/requireRole.js` (`requireStaff` = admin/secretária + servi�
 
 Terapeuta continua criando agendamento (`POST /api/v2/appointments`), evolução, laudos e status clínico.
 Teste: `tests/unit/routeAuthGuards.test.js`.
+
+## Agenda Externa com login próprio (31/10/2026)
+
+- A agenda entra com a conta do ERP (`POST /api/login`, perfil admin ou secretária) e manda o JWT + header `X-Client: agenda-externa`.
+- `flexibleAuth` marca `req.user.channel = 'agenda'` para admin/secretária com esse header; `isAgendaChannel(user)` mantém as regras de origem (criação vira `pre_agendado`, cancelamento sem solicitante grava canal `agenda_service`).
+- `/api/whatsapp/*` (envio Meta, contatos, Amanda pausar/retomar, debug) agora exige staff ou agenda; só `GET/POST /webhook` e `GET /health` ficam públicos.
+- `POST/DELETE /api/v2/doctors` exigem staff ou agenda (terapeuta não cria/apaga profissional).
+- `agendaAuth` não loga mais o token esperado.
+- O token antigo (`AGENDA_EXPORT_TOKEN`) continua aceito até a agenda nova estar no ar; depois, trocar o valor no Render e apagar `VITE_API_TOKEN` da Vercel.

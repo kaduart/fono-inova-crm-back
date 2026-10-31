@@ -5,6 +5,8 @@ import { whatsappController } from '../controllers/whatsappController.js';
 import { whatsappGuard, healthCheck, getGuardStats } from '../middleware/whatsappGuard.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { requireStaffOrAgenda } from '../middleware/requireRole.js';
 
 const router = express.Router();
 
@@ -19,6 +21,16 @@ router.use((req, res, next) => {
         });
     }
     next();
+});
+
+// Só o webhook da Meta e o health ficam públicos. O resto (enviar, apagar
+// mensagem, contatos, Amanda pausar/retomar, debug) exige login de
+// admin/secretária ou o token da Agenda Externa. Auditoria 31/10/2026.
+const PUBLIC_WHATSAPP = new Set(['GET /webhook', 'POST /webhook', 'GET /health']);
+router.use((req, res, next) => {
+    const key = `${req.method} ${req.path.replace(/\/+$/, '') || '/'}`;
+    if (req.method === 'OPTIONS' || PUBLIC_WHATSAPP.has(key)) return next();
+    return flexibleAuth(req, res, () => requireStaffOrAgenda(req, res, next));
 });
 
 // Configuração do multer para upload de arquivos

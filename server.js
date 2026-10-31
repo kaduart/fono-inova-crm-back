@@ -399,7 +399,7 @@ const corsOptions = {
   origin: true, // ← Permite TODAS as origens (temporário!)
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id", "x-client-request-id", "Cache-Control", "Pragma"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id", "x-client-request-id", "Cache-Control", "Pragma", "X-Client"],
 };
 
 app.use(
