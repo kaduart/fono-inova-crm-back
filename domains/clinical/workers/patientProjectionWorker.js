@@ -12,7 +12,7 @@
 import { Worker } from 'bullmq';
 import { redisConnection, getQueue } from '../../../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../../../utils/logger.js';
-import { buildPatientView } from '../services/patientProjectionService.js';
+import { buildPatientView as buildPatientViewRaw } from '../services/patientProjectionService.js';
 import PatientsView from '../../../models/PatientsView.js';
 import Appointment from '../../../models/Appointment.js';
 import Payment from '../../../models/Payment.js';
@@ -33,6 +33,57 @@ const RETRY_CONFIG = {
 };
 
 const dlqManager = new DLQManager(redisConnection);
+
+// ============================================
+// COALESCÊNCIA DE REBUILD POR PACIENTE
+// ============================================
+// Achado real (2026-10-30, guia 15809471): inativar uma guia com 20
+// agendamentos gerava 40 eventos (APPOINTMENT_CANCELLED + PAYMENT_STATUS_CHANGED)
+// do MESMO paciente e 40 rebuilds completos da PatientsView, 2 em paralelo —
+// pool Mongo saturado e RSS a 92% no Render free.
+//
+// Regra (segura porque o rebuild é completo e idempotente): se já existe um
+// build rodando para o paciente, o pedido novo NÃO roda outro em paralelo —
+// entra num único build "seguinte", que começa depois do atual terminar e
+// portanto enxerga tudo que estava gravado quando o pedido chegou. Todos os
+// pedidos que chegam durante o build atual compartilham esse mesmo seguinte.
+// `force` (rebuild manual) nunca é coalescido.
+const patientBuilds = new Map(); // patientId -> { running, next }
+
+function startPatientBuild(key, state, options) {
+  const promise = buildPatientViewRaw(key, options).finally(() => {
+    if (state.running === promise) {
+      state.running = null;
+      if (!state.next) patientBuilds.delete(key);
+    }
+  });
+  state.running = promise;
+  return promise;
+}
+
+function buildPatientView(patientId, options = {}) {
+  if (options.force) return buildPatientViewRaw(patientId, options);
+
+  const key = String(patientId);
+  let state = patientBuilds.get(key);
+  if (!state) {
+    state = { running: null, next: null };
+    patientBuilds.set(key, state);
+  }
+  if (!state.running) return startPatientBuild(key, state, options);
+
+  if (!state.next) {
+    state.next = state.running
+      .catch(() => {})
+      .then(() => {
+        state.next = null;
+        return startPatientBuild(key, state, options);
+      });
+  } else {
+    logger.info(`[${options.correlationId}] 🔗 Rebuild coalescido com o próximo build do paciente`, { patientId: key });
+  }
+  return state.next;
+}
 
 // ============================================
 // WORKER

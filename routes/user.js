@@ -17,6 +17,10 @@ router.get('/me', auth, async (req, res) => {
         // Busca o usuário no modelo correspondente
         switch (role) {
             case 'admin':
+            // Secretária fica no model Admin (role='secretary') — ver routes/login.js.
+            // Sem este case o /me respondia 400 "Tipo de usuário inválido" e o
+            // AuthContext do front deslogava a secretária.
+            case 'secretary':
                 user = await Admin.findById(req.user.id).select('-password');
                 break;
             case 'doctor':
