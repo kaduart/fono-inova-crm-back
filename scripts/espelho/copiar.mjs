@@ -7,11 +7,13 @@
  * - Desliga, NA CÓPIA, tudo que dispararia ação real: outbox, lembretes, follow-ups
  *   agendados, recuperação da Amanda e sessão do WhatsApp.
  *
- *   npm run espelho:copiar
+ *   npm run espelho:copiar                 → cópia crua
+ *   npm run espelho:copiar -- --anonimizar → troca nome/telefone/CPF/e-mail/endereço de pacientes e leads
  */
 import { createRequire } from 'module';
 import { MongoClient } from 'mongodb';
 import { URI, DB_NAME, BACK_DIR, isLocalUri } from './config.mjs';
+import { anonimizar } from './anonimizar.mjs';
 
 const require = createRequire(import.meta.url);
 require('dotenv').config({ path: `${BACK_DIR}/.env` });
@@ -23,6 +25,7 @@ if (!isLocalUri(URI)) { console.error(`${TAG} ❌ destino não é local — abor
 
 const SKIP = new Set(['outboxes', 'whatsappwebstates', 'baileyssessions']);
 const BATCH = 1000;
+const ANON = process.argv.includes('--anonimizar') || process.env.ESPELHO_ANONIMIZAR === '1';
 
 const src = new MongoClient(PROD, { maxPoolSize: 4 });
 const dst = new MongoClient(URI, { serverSelectionTimeoutMS: 10_000 });
@@ -31,7 +34,7 @@ try {
   await dst.connect().catch(() => { throw new Error('MongoDB do espelho não está rodando — abra outra janela e rode: npm run espelho:mongo'); });
   await src.connect();
   const S = src.db(), T = dst.db(DB_NAME);
-  console.log(`${TAG} produção (${S.databaseName}, somente leitura) → espelho local (${DB_NAME})`);
+  console.log(`${TAG} produção (${S.databaseName}, somente leitura) → espelho local (${DB_NAME})${ANON ? ' — ANONIMIZADO' : ''}`);
   await T.dropDatabase();
 
   let total = 0;
@@ -40,7 +43,7 @@ try {
     const cursor = S.collection(name).find({});
     let buf = [], n = 0;
     for await (const doc of cursor) {
-      buf.push(doc);
+      buf.push(ANON ? anonimizar(name, doc) : doc);
       if (buf.length === BATCH) { await T.collection(name).insertMany(buf, { ordered: false }); n += buf.length; buf = []; }
     }
     if (buf.length) { await T.collection(name).insertMany(buf, { ordered: false }); n += buf.length; }

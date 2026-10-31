@@ -12,6 +12,7 @@
     "espelho": "node scripts/espelho/tudo.mjs",
     "espelho:mongo": "node scripts/espelho/mongo-local.mjs",
     "espelho:copiar": "node scripts/espelho/copiar.mjs",
+    "espelho:diario": "node scripts/espelho/diario.mjs",
     "dev:espelho": "node scripts/espelho/dev.mjs",
     "espelho:test": "node --test scripts/espelho/security.test.mjs",
     "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
