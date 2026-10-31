@@ -55,7 +55,7 @@ function checar(texto, meta) {
   const frases = texto.split(/[.!?]+\s/).filter((f) => f.trim()).length;
   if (frases > 4) alertas.push(`${frases} frases (meta: até 3)`);
   if ((texto.match(/💚/g) || []).length > 1) alertas.push('mais de um 💚');
-  for (const m of texto.match(/R\$\s?[\d.,]+/g) || []) {
+  for (const m of texto.match(/R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?/g) || []) {
     const norm = m.replace(/\s/g, '');
     const comCentavos = /,\d{2}$/.test(norm) ? norm : `${norm},00`;
     if (!PRECOS_VALIDOS.has(comCentavos)) alertas.push(`preço fora da tabela: ${m}`);
@@ -70,9 +70,11 @@ function checar(texto, meta) {
 
 // ── agenda ───────────────────────────────────────────────────────────────────
 function agendaSimulada() {
-  const d = (n) => {
+  // próxima ocorrência do dia da semana (2 = terça, 3 = quarta), a partir de amanhã
+  const prox = (dow) => {
     const x = new Date();
-    x.setDate(x.getDate() + n);
+    x.setDate(x.getDate() + 1);
+    while (x.getDay() !== dow) x.setDate(x.getDate() + 1);
     return x.toISOString().slice(0, 10);
   };
   return {
@@ -91,11 +93,17 @@ function agendaSimulada() {
         }),
       }),
     },
-    findAvailableSlots: async ({ therapyArea, preferredPeriod }) => {
+    findAvailableSlots: async ({ therapyArea, preferredPeriod, preferredDay }) => {
       const id = { fonoaudiologia: 'fono1', psicologia: 'psi1', terapia_ocupacional: 'to1' }[therapyArea];
       if (!id) return null;
       const t = preferredPeriod === 'manha' ? ['09:00', '10:00'] : ['14:00', '15:30'];
-      return { primary: { doctorId: id, doctorName: 'Teste', date: d(3), time: t[0] }, alternativesSamePeriod: [{ doctorId: id, doctorName: 'Teste', date: d(4), time: t[1] }] };
+      // agenda simulada: só tem vaga terça e quarta; respeita o dia pedido quando existe
+      const dias = { tuesday: prox(2), wednesday: prox(3) };
+      const datas = preferredDay ? (dias[preferredDay] ? [dias[preferredDay], dias[preferredDay]] : [prox(2), prox(3)]) : [prox(2), prox(3)];
+      return {
+        primary: { doctorId: id, doctorName: 'Teste', date: datas[0], time: t[0] },
+        alternativesSamePeriod: [{ doctorId: id, doctorName: 'Teste', date: datas[1], time: t[1] }],
+      };
     },
     validateSlotStillAvailable: async () => ({ isValid: true }),
     autoBookAppointment: async () => ({ success: true }),

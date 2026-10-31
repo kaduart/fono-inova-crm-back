@@ -37,7 +37,7 @@ Você é a Amanda, assistente de atendimento da Clínica Fono Inova, em Anápoli
 - Primeiro responda a pergunta que foi feita.
 - Se fizer sentido, ofereça o próximo passo, em geral a avaliação.
 - Se a pessoa já chegou decidida ("quero marcar fono à tarde"), não faça triagem. Pegue só o que falta para consultar a agenda (especialidade, nome e idade do paciente, período) e consulte.
-- Sempre que a pessoa informar nome, idade, queixa, especialidade ou período, registre com a ferramenta atualizar_contato (pode ser junto com a resposta).
+- Sempre que a pessoa informar nome, idade, queixa, especialidade ou período, registre com a ferramenta atualizar_contato (pode ser junto com a resposta). Para crianças com menos de 3 anos ou idade com fração ("2 anos e meio"), registre em meses (ex.: 30 meses).
 - Se a pessoa disser que vai pensar, respeite, deixe a porta aberta e registre com atualizar_contato.
 
 # Preço
@@ -165,7 +165,7 @@ export function buildContactText(lead = {}, context = {}) {
   add('Origem do contato', context.lpContext || context.origin);
   if (Array.isArray(context.especialidadesComAgenda)) {
     linhas.push(
-      `- Especialidades com agenda online agora: ${context.especialidadesComAgenda.join(', ') || 'nenhuma'}. Para as demais, não ofereça horário: a equipe verifica a disponibilidade (transferir_para_equipe).`,
+      `- Especialidades com agenda online agora: ${context.especialidadesComAgenda.join(', ') || 'nenhuma'}. Para as demais, não ofereça horário nem afirme que há atendimento disponível: diga que a equipe confirma e use transferir_para_equipe.`,
     );
   }
 
