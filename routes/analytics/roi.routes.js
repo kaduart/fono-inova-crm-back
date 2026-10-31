@@ -19,6 +19,7 @@ import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
 
+
 // Cache simples em memória — evita aggregation pesada a cada request
 const _cache = new Map(); // key → { data, summary, expiresAt }
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
@@ -295,12 +296,13 @@ router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => 
         apptStatusByPhone[phone] = cur;
     }
 
-    const { rows, totals } = buildChannelFunnel({ contacts, apptStatusByPhone });
+    const { rows, totals, semVinculo } = buildChannelFunnel({ contacts, apptStatusByPhone });
     res.json({
         success: true,
         meta: { days, unidade: 'contato (telefone distinto)', periodo: `ultimos ${days} dias (por createdAt/firstMessageAt)` },
         data: rows,
         totals,
+        semVinculo, // agendamentos/pré cujo telefone não tem Lead vinculado — à parte, fora da conversão
     });
 }));
 

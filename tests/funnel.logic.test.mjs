@@ -21,6 +21,8 @@ const apptStatusByPhone = {
   // 003 sem entrada (contato sem agendamento)
   '5562990000004': { booked: true, pre: true }, // tinha pré e virou real (remarcação) -> conta como agendamento, não pré
   '5562990000005': { booked: true, pre: false },
+  '5562990000099': { booked: true, pre: false }, // ÓRFÃO: agendamento sem Lead/contato vinculado
+  '5562990000098': { booked: false, pre: true }, // ÓRFÃO: pré-agendamento sem Lead
 };
 const { rows, totals } = buildChannelFunnel({ contacts, apptStatusByPhone });
 const row = (ch) => rows.find((r) => r.channel === ch);
@@ -53,6 +55,13 @@ t('totais batem com os contatos usados (5 contatos, 3 agend, 1 pré)', () => {
   assert.equal(totals.agendamentos, 3);   // p1, p4, p5
   assert.equal(totals.preAgendamentos, 1); // p2
   assert.equal(totals.conversao, +(3 / 5).toFixed(4));
+});
+t('agendamento SEM Lead vinculado aparece em semVinculo, NÃO na conversão', () => {
+  const { semVinculo } = buildChannelFunnel({ contacts, apptStatusByPhone });
+  assert.equal(semVinculo.agendamentos, 1);     // telefone 099
+  assert.equal(semVinculo.preAgendamentos, 1);  // telefone 098
+  // órfãos não entram em contatos nem na taxa de conversão
+  assert.equal(totals.contatos, 5);
 });
 
 console.log('\n#mergeContacts — contatos vêm dos LEADS; atribuição só dá o canal');

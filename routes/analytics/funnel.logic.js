@@ -14,6 +14,7 @@
 // MESMO grupo (contatos do canal), nunca cruzando grupos diferentes.
 export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {}) {
   const get = (p) => (apptStatusByPhone instanceof Map ? apptStatusByPhone.get(p) : apptStatusByPhone[p]) || null;
+  const contactPhones = new Set(contacts.map((c) => c.phone));
   const byChannel = new Map();
   for (const c of contacts) {
     const ch = c.channel || 'nao_identificado';
@@ -26,6 +27,18 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {
     if (booked) row.agendamentos += 1;
     byChannel.set(ch, row);
   }
+
+  // Agendamentos SEM vínculo com contato: telefone tem agendamento mas NÃO é um Lead/contato.
+  // Mostrados à parte — NUNCA entram numa taxa de conversão (não há contato no denominador).
+  const allPhones = apptStatusByPhone instanceof Map ? [...apptStatusByPhone.keys()] : Object.keys(apptStatusByPhone);
+  const semVinculo = { agendamentos: 0, preAgendamentos: 0 };
+  for (const ph of allPhones) {
+    if (contactPhones.has(ph)) continue;
+    const st = get(ph) || {};
+    if (st.booked) semVinculo.agendamentos += 1;
+    else if (st.pre) semVinculo.preAgendamentos += 1;
+  }
+
   const rows = [...byChannel.values()]
     .map((r) => ({ ...r, conversao: r.contatos ? +(r.agendamentos / r.contatos).toFixed(4) : null }))
     .sort((a, b) => b.agendamentos - a.agendamentos || b.contatos - a.contatos);
@@ -35,7 +48,7 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {
     agendamentos: t.agendamentos + r.agendamentos,
   }), { contatos: 0, preAgendamentos: 0, agendamentos: 0 });
   totals.conversao = totals.contatos ? +(totals.agendamentos / totals.contatos).toFixed(4) : null;
-  return { rows, totals };
+  return { rows, totals, semVinculo };
 }
 
 // Contatos recebidos vêm da FONTE que registra contatos (Leads) — INCLUI os sem atribuição.
