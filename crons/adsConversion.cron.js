@@ -23,14 +23,17 @@ import { getAttributionByPhone } from '../services/leadAttributionService.js';
 import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
 import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
+import {
+  BOOKED_STATUSES, resolveMainPhone, decidePlatforms,
+  interpretMetaResponse, interpretTiktokResponse, buildFbc,
+  resolveConversionTime, shouldAcquire, eventIdFor, buildPendingClaim,
+} from './adsConversion.logic.js';
 
 const TAG = '[AdsConversion]';
 const INTERVAL_MS = 10 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
 const MIN_AGE_MS = 15 * 60 * 1000;          // espera 15 min (evita agendamento criado e desfeito)
 const MAX_ATTEMPTS = 5;
-// pre_agendado = todo agendamento nasce assim e já é o momento em que o contato entra na base
-const CONFIRMED_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'paid', 'completed'];
 
 let isRunning = false;
 let intervalId = null;
@@ -38,39 +41,54 @@ let intervalId = null;
 const isDryRun = () => process.env.ADS_CONVERSION_DRY_RUN === 'true';
 const defaultValue = () => Number(process.env.ADS_CONVERSION_DEFAULT_VALUE || 220);
 
-// fbc no formato que a Meta exige: fb.1.<ms do clique>.<fbclid>
-const buildFbc = (attr) => (attr?.fbclid
-  ? `fb.1.${new Date(attr.firstMessageAt || Date.now()).getTime()}.${attr.fbclid}`
-  : null);
-
-async function isFirstAppointment(appt) {
-  // NÃO confiar em appt.isFirstAppointment / patientJourneyType: marcam a 1ª sessão de um PACOTE novo,
-  // não a 1ª vez do paciente (paciente antigo com pacote novo era contado como "novo" e enviado à Meta).
-  if (!appt.patient) return true; // pré-cadastro sem paciente = paciente novo
-  const earlier = await Appointment.exists({
+// #1 A aquisição NÃO depende de o agendamento original continuar elegível:
+//   - já há aquisição registrada p/ o paciente            -> não
+//   - algum agendamento ANTERIOR já tem conversão (legado) -> não (não duplica)
+//   - algum anterior AINDA elegível (booked)               -> ele é a âncora; este defere
+//   - anteriores inelegíveis (ex.: cancelado) e sem conversão -> este agendamento é a aquisição
+async function isAcquisitionAppointment(appt) {
+  if (!appt.patient) return true; // pré-cadastro sem paciente
+  const alreadyAcquired = !!(await AdConversion.exists({ patient: appt.patient, isAcquisition: true }));
+  if (alreadyAcquired) return false;
+  const earlier = await Appointment.find({
     patient: appt.patient,
     _id: { $ne: appt._id },
     createdAt: { $lt: appt.createdAt },
-  });
-  return !earlier;
+  }).select('_id operationalStatus').lean();
+  if (!earlier.length) return true;
+  const earlierConverted = !!(await AdConversion.exists({ appointment: { $in: earlier.map(e => e._id) } }));
+  const earlierEligibleExists = earlier.some(e => BOOKED_STATUSES.includes(e.operationalStatus));
+  return shouldAcquire({ hasPatient: true, alreadyAcquired: false, earlierConverted, earlierEligibleExists });
 }
 
 async function resolvePhone(appt) {
+  // #1 Contato PRINCIPAL do atendimento: patientInfo.phone (capturado no atendimento) tem
+  // prioridade; Patient.phone é fallback. resolveMainPhone valida (E.164 BR) e devolve o
+  // primeiro válido — nunca usa contato de emergência e não bloqueia quando diferem.
+  let patientPhone = null;
   if (appt.patient) {
     const p = await Patient.findById(appt.patient).select('phone').lean();
-    if (p?.phone) return p.phone;
+    patientPhone = p?.phone || null;
   }
-  return appt.patientInfo?.phone || null;
+  return resolveMainPhone({ patientInfoPhone: appt.patientInfo?.phone, patientPhone });
 }
 
 // ─── Etapa 1: registra agendamentos novos na fila (AdConversion) ─────────────
 async function enqueueNew() {
   const now = Date.now();
+  const windowStart = new Date(now - LOOKBACK_DAYS * 864e5);
   const candidates = await Appointment.find({
-    createdAt: { $gte: new Date(now - LOOKBACK_DAYS * 864e5), $lte: new Date(now - MIN_AGE_MS) },
-    operationalStatus: { $in: CONFIRMED_STATUSES },
+    operationalStatus: { $in: BOOKED_STATUSES }, // #2 só agendamento real (exclui pre_agendado/projeção)
+    createdAt: { $lte: new Date(now - MIN_AGE_MS) }, // espera 15 min mesmo em confirmação tardia
+    // #5 Confirmação tardia: um pre_agendado antigo que vira scheduled DEPOIS de 30 dias tem
+    // createdAt fora da janela, mas updatedAt recente. Aceitar createdAt OU updatedAt impede
+    // que ele desapareça do processamento (o envio ainda respeita a janela de 7d por plataforma).
+    $or: [
+      { createdAt: { $gte: windowStart } },
+      { updatedAt: { $gte: windowStart } },
+    ],
   })
-    .select('_id patient patientInfo.phone createdAt sessionValue isFirstAppointment patientJourneyType')
+    .select('_id patient patientInfo.phone createdAt updatedAt history sessionValue isFirstAppointment patientJourneyType')
     .sort({ createdAt: -1 })
     .limit(300)
     .lean();
@@ -84,45 +102,34 @@ async function enqueueNew() {
   for (const appt of candidates) {
     if (knownSet.has(String(appt._id))) continue;
     try {
-      const first = await isFirstAppointment(appt);
+      const first = await isAcquisitionAppointment(appt);
       const phone = first ? await resolvePhone(appt) : null;
       const attr = phone ? await getAttributionByPhone(phone) : null;
       const value = Number(appt.sessionValue) > 0 ? Number(appt.sessionValue) : defaultValue();
 
+      // #2 event_time = data COMPROVADA em que o agendamento virou conversão (transição no
+      // histórico p/ status booked); sem evidência, cai para createdAt. Nunca updatedAt genérico.
+      const eventTime = resolveConversionTime(appt);
+      const d = decidePlatforms({ first, phone, attr, eventTimeMs: eventTime.getTime() });
       const doc = {
         appointment: appt._id,
+        patient: appt.patient || null,   // #3 dedupe por paciente (índice parcial único no DB)
+        isAcquisition: d.isAcquisition,  // #1/#3 marca a aquisição
         phone,
         source: attr?.source || 'unknown',
         attributionMethod: attr?.method || null,
         adId: attr?.adId || null,
         campaign: attr?.campaign || null,
         value,
-        eventTime: appt.createdAt,
+        eventTime,
+        gclid: d.gclid,
+        fbc: d.fbc,
+        ttclid: d.ttclid,
+        meta: d.meta,
+        google: d.google,
+        tiktok: d.tiktok,
+        done: d.done,
       };
-
-      if (!first) {
-        Object.assign(doc, {
-          done: true,
-          meta: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
-          google: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
-          tiktok: { status: 'skipped', reason: 'nao_e_primeiro_agendamento' },
-        });
-      } else {
-        const withinMetaWindow = Date.now() - new Date(appt.createdAt).getTime() < 6.5 * 864e5; // Meta: até 7 dias
-        doc.meta = !phone ? { status: 'skipped', reason: 'sem_telefone' }
-          : !withinMetaWindow ? { status: 'skipped', reason: 'fora_janela_7d_meta' }
-          : { status: 'pending' };
-        doc.google = attr?.gclid ? { status: 'pending' } : { status: 'skipped', reason: 'sem_gclid' };
-        doc.gclid = attr?.gclid || null;
-        doc.fbc = buildFbc(attr);
-        // TikTok: ttclid tem janela de atribuição de 7 dias (igual à Meta)
-        const withinTikTokWindow = Date.now() - new Date(appt.createdAt).getTime() < 6.5 * 864e5;
-        doc.ttclid = attr?.ttclid || null;
-        doc.tiktok = !attr?.ttclid ? { status: 'skipped', reason: 'sem_ttclid' }
-          : !withinTikTokWindow ? { status: 'skipped', reason: 'fora_janela_7d_tiktok' }
-          : { status: 'pending' };
-        if (doc.meta.status !== 'pending' && doc.google.status !== 'pending' && doc.tiktok.status !== 'pending') doc.done = true;
-      }
 
       if (isDryRun()) {
         console.log(`${TAG} [DRY] ${appt._id} first=${first} source=${doc.source} value=${value} meta=${doc.meta.status} google=${doc.google.status} tiktok=${doc.tiktok.status}`);
@@ -178,7 +185,7 @@ async function refreshUnknownSources() {
           {
             _id: u._id,
             'tiktok.status': 'skipped',
-            'tiktok.reason': 'sem_ttclid',
+            'tiktok.reason': { $in: ['sem_ttclid', 'sem_identificador'] },
             eventTime: { $gte: new Date(Date.now() - 6.5 * 864e5) },
           },
           { $set: { 'tiktok.status': 'pending', done: false, nextAttemptAt: new Date() } }
@@ -191,13 +198,60 @@ async function refreshUnknownSources() {
   return updated;
 }
 
+// ─── Recupera aquisições sem telefone: o número pode aparecer DEPOIS do enqueue ──────
+// #3 Atualiza o MESMO documento (nunca insere) — por isso o índice único por paciente
+// jamais bloqueia a recuperação de uma aquisição pendente/falha.
+async function recoverMissingPhone() {
+  const since = new Date(Date.now() - LOOKBACK_DAYS * 864e5);
+  const stuck = await AdConversion.find({
+    phone: null,
+    isAcquisition: true,
+    'meta.reason': 'sem_telefone',
+    createdAt: { $gte: since },
+  }).limit(100);
+
+  let recovered = 0;
+  for (const conv of stuck) {
+    try {
+      const appt = await Appointment.findById(conv.appointment)
+        .select('patient patientInfo.phone createdAt').lean();
+      if (!appt) continue;
+      const phone = await resolvePhone(appt);
+      if (!phone) continue; // ainda sem telefone válido: segue aguardando, sem bloquear nada
+
+      const attr = await getAttributionByPhone(phone);
+      const within = Date.now() - new Date(conv.eventTime).getTime() < 6.5 * 864e5;
+      conv.phone = phone;
+      if (attr?.source) { conv.source = attr.source; conv.attributionMethod = attr.method || null; conv.adId = attr.adId || null; conv.campaign = attr.campaign || null; }
+      if (attr?.gclid) conv.gclid = attr.gclid;
+      if (attr?.fbclid) conv.fbc = buildFbc(attr);
+      if (attr?.ttclid) conv.ttclid = attr.ttclid;
+      conv.meta = within ? { status: 'pending' } : { status: 'skipped', reason: 'fora_janela_7d_meta' };
+      if (conv.tiktok?.reason === 'sem_identificador') {
+        conv.tiktok = within ? { status: 'pending' } : { status: 'skipped', reason: 'fora_janela_7d_tiktok' };
+      }
+      conv.done = false;
+      conv.nextAttemptAt = new Date();
+      await conv.save();
+      recovered++;
+    } catch (err) {
+      console.error(`${TAG} ❌ recover ${conv._id}:`, err.message);
+    }
+  }
+  return recovered;
+}
+
 // ─── Etapa 2: envia pendentes com retry/backoff ─────────────────────────────
 async function processPending() {
-  const pending = await AdConversion.find({ done: false, nextAttemptAt: { $lte: new Date() } })
-    .sort({ createdAt: 1 }).limit(50);
-  let sent = 0;
-
-  for (const conv of pending) {
+  // #3 Reserva ATÔMICA: cada iteração reivindica 1 pendente via findOneAndUpdate (lease que
+  // empurra nextAttemptAt p/ frente). Dois workers concorrentes nunca pegam/postam o mesmo doc;
+  // se um cair após reservar, o lease expira e outro reprocessa (recuperação após falha).
+  let sent = 0, processed = 0;
+  while (processed < 50) {
+    const claim = buildPendingClaim();
+    const conv = await AdConversion.findOneAndUpdate(claim.filter, claim.update, claim.options);
+    if (!conv) break;
+    processed++;
     let retry = false;
 
     if (conv.meta?.status === 'pending' || conv.meta?.status === 'failed') {
@@ -207,13 +261,25 @@ async function processPending() {
           phone: conv.phone,
           fbc: conv.fbc,
           value: conv.value,
-          eventId: `appt_${conv.appointment}`,
+          eventId: eventIdFor(conv.appointment),
           eventTime,
-          actionSource: 'physical_store', // atendimento na clínica; 'system_generated' era aceito (events_received:1) mas não entrava nas estatísticas
+          actionSource: 'physical_store', // atendimento na clínica
           customData: { lead_source: conv.source },
         });
-        conv.meta = r ? { status: 'sent', sentAt: new Date() } : { status: 'skipped', reason: 'meta_capi_nao_configurado' };
-        if (r) sent++;
+        // #4 Interpreta a resposta: events_received>=1 = aceito; 0/ausente = recusado (NÃO sucesso).
+        const res = interpretMetaResponse(r, { pixel: process.env.META_PIXEL_ID || null, event: 'Purchase', actionSource: 'physical_store' });
+        conv.meta = {
+          status: res.status,
+          sentAt: res.status === 'sent' ? new Date() : null,
+          reason: res.reason || null,
+          eventsReceived: res.eventsReceived ?? null,
+          trace: res.trace || null,
+          pixel: res.pixel || null,
+          event: res.event || null,
+          actionSource: res.actionSource || null,
+        };
+        if (res.status === 'sent') sent++;
+        if (res.status === 'failed' && res.retryable) retry = true;
       } catch (err) {
         conv.meta = { status: 'failed', reason: String(err?.response?.data?.error?.message || err.message).slice(0, 300) };
         retry = true;
@@ -236,12 +302,22 @@ async function processPending() {
           phone: conv.phone,
           ttclid: conv.ttclid,
           value: conv.value,
-          eventId: `appt_${conv.appointment}`,
+          eventId: eventIdFor(conv.appointment),
           eventTime: conv.eventTime,
           customData: { content_name: conv.source },
         });
-        conv.tiktok = r ? { status: 'sent', sentAt: new Date() } : { status: 'skipped', reason: 'tiktok_events_nao_configurado' };
-        if (r) sent++;
+        // #4/#5 code:0 = aceito; null = não configurado/sem id. code!=0 lança (tratado no catch).
+        const res = interpretTiktokResponse(r, { pixel: process.env.TIKTOK_PIXEL_ID || null });
+        conv.tiktok = {
+          status: res.status,
+          sentAt: res.status === 'sent' ? new Date() : null,
+          reason: res.reason || null,
+          code: res.code ?? null,
+          trace: res.trace || null,
+          pixel: res.pixel || null,
+        };
+        if (res.status === 'sent') sent++;
+        if (res.status === 'failed' && res.retryable) retry = true;
       } catch (err) {
         conv.tiktok = { status: 'failed', reason: String(err?.response?.data?.message || err.message).slice(0, 300) };
         retry = true;
@@ -266,9 +342,10 @@ async function runOnce() {
   const t0 = Date.now();
   try {
     const queued = await enqueueNew();
+    const recovered = isDryRun() ? 0 : await recoverMissingPhone();
     const reclassified = isDryRun() ? 0 : await refreshUnknownSources();
     const sent = isDryRun() ? 0 : await processPending();
-    if (queued || sent || reclassified) console.log(`${TAG} ✅ novos=${queued} reclassificados=${reclassified} enviados=${sent} em ${Date.now() - t0}ms`);
+    if (queued || sent || reclassified || recovered) console.log(`${TAG} ✅ novos=${queued} recuperados=${recovered} reclassificados=${reclassified} enviados=${sent} em ${Date.now() - t0}ms`);
   } catch (err) {
     console.error(`${TAG} ❌ Erro:`, err.message);
   } finally {
@@ -284,5 +361,5 @@ export function initAdsConversionCron() {
   return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
 }
 
-export { runOnce as runAdsConversionOnce };
+export { runOnce as runAdsConversionOnce, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, isAcquisitionAppointment, resolvePhone };
 export default { initAdsConversionCron };

@@ -7,10 +7,22 @@ const platformSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'sent', 'skipped', 'failed'], default: 'pending' },
   sentAt: { type: Date, default: null },
   reason: { type: String, default: null },   // motivo do skip/falha (sem dados clínicos)
+  // #4 Resposta efetiva da plataforma (aditivo). Nunca grava dado clínico/PII.
+  eventsReceived: { type: Number, default: null }, // Meta: events_received da resposta
+  trace: { type: String, default: null },          // Meta fbtrace_id / TikTok request_id
+  code: { type: Number, default: null },           // TikTok Events API code (0 = sucesso documentado)
+  pixel: { type: String, default: null },          // dataset/pixel de destino efetivo
+  event: { type: String, default: null },          // nome do evento enviado (ex.: Purchase)
+  actionSource: { type: String, default: null },   // action_source usado (ex.: physical_store)
 }, { _id: false });
 
 const adConversionSchema = new mongoose.Schema({
   appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: true, unique: true },
+  // #3 Dedupe por PACIENTE (além de por agendamento): o índice parcial único abaixo
+  // garante no nível do banco uma única linha de AQUISIÇÃO por paciente, mesmo sob
+  // execução concorrente ou remarcação (novo agendamento do mesmo paciente).
+  patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', default: null },
+  isAcquisition: { type: Boolean, default: false }, // true = linha que representa a 1ª vez do paciente
   phone: { type: String, default: null },
   source: { type: String, default: 'unknown' },
   attributionMethod: { type: String, default: null },
@@ -29,5 +41,17 @@ const adConversionSchema = new mongoose.Schema({
   nextAttemptAt: { type: Date, default: Date.now, index: true },
   done: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
+
+// #3 Unicidade no nível do banco: no máximo UMA aquisição por paciente.
+// Parcial: só vale quando patient é ObjectId E isAcquisition=true — assim documentos
+// legados (sem patient), linhas de não-aquisição e múltiplos patient=null não colidem.
+adConversionSchema.index(
+  { patient: 1 },
+  {
+    unique: true,
+    name: 'uniq_acquisition_per_patient',
+    partialFilterExpression: { patient: { $type: 'objectId' }, isAcquisition: true },
+  }
+);
 
 export default mongoose.models.AdConversion || mongoose.model('AdConversion', adConversionSchema);

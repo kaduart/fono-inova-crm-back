@@ -41,6 +41,12 @@ router.post('/', async (req, res) => {
       return res.status(400).send({ error: 'Invalid email or role' });
     }
 
+    // Conta administrativa desativada não entra (ERP nem agenda externa).
+    if ((role === 'admin' || role === 'secretary') && user.active === false) {
+      console.log(`[LOGIN_TIMING] ${email} | INACTIVE | role=${role}`);
+      return res.status(403).send({ error: 'Conta desativada. Fale com um administrador.' });
+    }
+
     const t2 = Date.now();
     const isMatch = await bcrypt.compare(password.trim(), user.password);
     timing.bcrypt = Date.now() - t2;

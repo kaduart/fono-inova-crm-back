@@ -8,12 +8,17 @@ import LeadAttribution from '../../models/LeadAttribution.js';
 import AdConversion from '../../models/AdConversion.js';
 import OpenAIAdConversion from '../../models/OpenAIAdConversion.js';
 import AdSpend from '../../models/AdSpend.js';
+import Appointment from '../../models/Appointment.js';
+import Patient from '../../models/Patient.js';
+import { normalizeE164BR } from '../../utils/phone.js';
+import { buildChannelFunnel, mergeContacts, summarizeDelivery } from './funnel.logic.js';
 import { flexibleAuth } from '../../middleware/amandaAuth.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
 import { AppError } from '../../errors/AppError.js';
 
 const router = express.Router();
+
 
 // Cache simples em memória — evita aggregation pesada a cada request
 const _cache = new Map(); // key → { data, summary, expiresAt }
@@ -247,6 +252,78 @@ router.get('/acquisition', flexibleAuth, asyncHandler(async (req, res) => {
     }), { conversations: 0, firstAppointments: 0, revenue: 0 });
 
     res.json({ success: true, days, data, totals: { ...totals, sentOpenAI } });
+}));
+
+/**
+ * GET /api/v2/analytics/roi/funnel-by-channel?days=30
+ * Funil COMERCIAL por CANAL DE MARKETING (vem da ATRIBUIÇÃO — LeadAttribution.source —,
+ * nunca da origem técnica do agendamento como insurance_plan/insurance_guide/reschedule).
+ * Colunas: Contatos recebidos | Pré-agendamentos pendentes | Agendamentos reais | Conversão.
+ * Unidade = CONTATO (telefone distinto, normalizado E.164). Remarcações/sessões recorrentes
+ * colapsam por telefone. "Não identificado" quando não há atribuição (não inventa canal).
+ * Taxa = agendamentos/contatos do MESMO canal. Independe da fila do pixel/cron.
+ */
+router.get('/funnel-by-channel', flexibleAuth, asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 864e5);
+    const BOOKED = ['scheduled', 'confirmed', 'paid', 'completed'];
+    const CANCELED = ['canceled', 'cancelado', 'cancelada', 'force_cancelled'];
+    const norm = (ph) => normalizeE164BR(ph) || null;
+
+    const [attrRows, leadRows, apptRows] = await Promise.all([
+        LeadAttribution.find({ firstMessageAt: { $gte: since } }).select('phone source').lean(),
+        Lead.find({ createdAt: { $gte: since }, 'contact.phone': { $ne: null } }).select('contact.phone').lean(),
+        Appointment.find({ createdAt: { $gte: since }, operationalStatus: { $nin: CANCELED } })
+            .select('operationalStatus patientInfo.phone patient').lean(),
+    ]);
+
+    const attributed = attrRows.map((a) => ({ phone: norm(a.phone), channel: a.source || null })).filter((a) => a.phone);
+    const leads = leadRows.map((l) => ({ phone: norm(l.contact?.phone) })).filter((l) => l.phone);
+    const contacts = mergeContacts({ attributed, leads });
+
+    // Telefone do atendimento: patientInfo.phone; se faltar, resolve via Patient.phone.
+    const needPatient = apptRows.filter((a) => !a.patientInfo?.phone && a.patient).map((a) => a.patient);
+    const patients = needPatient.length ? await Patient.find({ _id: { $in: needPatient } }).select('phone').lean() : [];
+    const patPhone = new Map(patients.map((p) => [String(p._id), norm(p.phone)]));
+
+    const apptStatusByPhone = {};
+    for (const a of apptRows) {
+        const phone = norm(a.patientInfo?.phone) || (a.patient ? patPhone.get(String(a.patient)) : null);
+        if (!phone) continue;
+        const cur = apptStatusByPhone[phone] || { booked: false, pre: false };
+        if (BOOKED.includes(a.operationalStatus)) cur.booked = true;
+        if (a.operationalStatus === 'pre_agendado') cur.pre = true;
+        apptStatusByPhone[phone] = cur;
+    }
+
+    const { rows, totals, semVinculo } = buildChannelFunnel({ contacts, apptStatusByPhone });
+    res.json({
+        success: true,
+        meta: { days, unidade: 'contato (telefone distinto)', periodo: `ultimos ${days} dias (por createdAt/firstMessageAt)` },
+        data: rows,
+        totals,
+        semVinculo, // agendamentos/pré cujo telefone não tem Lead vinculado — à parte, fora da conversão
+    });
+}));
+
+/**
+ * GET /api/v2/analytics/roi/delivery-status?days=30
+ * Fila REAL de entrega às plataformas (lido do AdConversion), por Meta/TikTok/Google:
+ * pendentes, aceitas pela API, ignoradas (com motivos), falhas e último envio.
+ * ATENÇÃO: "aceita" = a API recebeu o evento; NÃO significa atribuída ao anúncio nem
+ * usada na otimização. Indicadores de ENVIO — separados dos números comerciais acima.
+ */
+router.get('/delivery-status', flexibleAuth, asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const since = new Date(Date.now() - days * 864e5);
+    const docs = await AdConversion.find({ eventTime: { $gte: since } }).select('meta google tiktok done').lean();
+    res.json({
+        success: true,
+        days,
+        total: docs.length,
+        nota: 'Aceita = a API recebeu o evento. Aceita != atribuida ao anuncio nem usada na otimizacao.',
+        platforms: summarizeDelivery(docs),
+    });
 }));
 
 /**

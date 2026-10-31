@@ -76,7 +76,8 @@ export const auth = async (req, res, next) => {
             userExists = cached.exists;
         } else {
             const userModel = mongoose.model(modelName);
-            userExists = !!(await userModel.exists({ _id: decoded.id }));
+            // active:{$ne:false} derruba conta desativada dentro do TTL do cache.
+            userExists = !!(await userModel.exists({ _id: decoded.id, active: { $ne: false } }));
             _setUserExistsCached(cacheKey, userExists);
         }
 
