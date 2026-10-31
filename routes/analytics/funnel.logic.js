@@ -6,14 +6,19 @@
 //   (2) Resumo de ENTREGA às plataformas (lido do AdConversion = fila real do pixel).
 
 // ── (1) Funil por canal ───────────────────────────────────────────────────────
-// contacts: [{ phone (normalizado), channel|null }] JÁ deduplicado por telefone
-//           (1 contato por pessoa; channel=null => "nao_identificado").
+// contacts: [{ phone (normalizado), channel|null, name|null }] JÁ deduplicado por
+//           telefone (1 contato por pessoa; channel=null => "nao_identificado").
 // apptStatusByPhone: Map/obj phone -> { booked:boolean, pre:boolean } JÁ colapsado
 //           por telefone (remarcação/sessões recorrentes contam 1 vez).
+// nameByPhone: Map/obj phone -> nome do atendimento (fallback quando o Lead não tem nome).
+// withDetails: quando true, cada linha ganha `detalhes` [{ nome, telefone, status }]
+//           para o comercial clicar e abrir (status: agendou | pre | contato).
 // Unidade contada = CONTATO (telefone distinto). Taxa = agendamentos/contatos do
 // MESMO grupo (contatos do canal), nunca cruzando grupos diferentes.
-export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {}) {
+const STATUS_RANK = { agendou: 0, pre: 1, contato: 2 };
+export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {}, nameByPhone = {}, withDetails = false } = {}) {
   const get = (p) => (apptStatusByPhone instanceof Map ? apptStatusByPhone.get(p) : apptStatusByPhone[p]) || null;
+  const nm = (p) => (nameByPhone instanceof Map ? nameByPhone.get(p) : nameByPhone[p]) || null;
   const contactPhones = new Set(contacts.map((c) => c.phone));
   const byChannel = new Map();
   for (const c of contacts) {
@@ -21,26 +26,34 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {
     const st = get(c.phone) || {};
     const booked = !!st.booked;
     const prePending = !!st.pre && !booked; // pré-agendamento PENDENTE = ainda não virou real
-    const row = byChannel.get(ch) || { channel: ch, contatos: 0, preAgendamentos: 0, agendamentos: 0 };
+    const row = byChannel.get(ch) || { channel: ch, contatos: 0, preAgendamentos: 0, agendamentos: 0, detalhes: [] };
     row.contatos += 1;
     if (prePending) row.preAgendamentos += 1;
     if (booked) row.agendamentos += 1;
+    if (withDetails) {
+      const status = booked ? 'agendou' : prePending ? 'pre' : 'contato';
+      row.detalhes.push({ nome: c.name || nm(c.phone) || null, telefone: c.phone, status });
+    }
     byChannel.set(ch, row);
   }
 
   // Agendamentos SEM vínculo com contato: telefone tem agendamento mas NÃO é um Lead/contato.
   // Mostrados à parte — NUNCA entram numa taxa de conversão (não há contato no denominador).
   const allPhones = apptStatusByPhone instanceof Map ? [...apptStatusByPhone.keys()] : Object.keys(apptStatusByPhone);
-  const semVinculo = { agendamentos: 0, preAgendamentos: 0 };
+  const semVinculo = { agendamentos: 0, preAgendamentos: 0, detalhes: [] };
   for (const ph of allPhones) {
     if (contactPhones.has(ph)) continue;
     const st = get(ph) || {};
-    if (st.booked) semVinculo.agendamentos += 1;
-    else if (st.pre) semVinculo.preAgendamentos += 1;
+    if (st.booked) { semVinculo.agendamentos += 1; if (withDetails) semVinculo.detalhes.push({ nome: nm(ph) || null, telefone: ph, status: 'agendou' }); }
+    else if (st.pre) { semVinculo.preAgendamentos += 1; if (withDetails) semVinculo.detalhes.push({ nome: nm(ph) || null, telefone: ph, status: 'pre' }); }
   }
 
   const rows = [...byChannel.values()]
-    .map((r) => ({ ...r, conversao: r.contatos ? +(r.agendamentos / r.contatos).toFixed(4) : null }))
+    .map((r) => {
+      if (withDetails) r.detalhes.sort((a, b) => (STATUS_RANK[a.status] - STATUS_RANK[b.status]) || String(a.nome || a.telefone).localeCompare(String(b.nome || b.telefone)));
+      else delete r.detalhes;
+      return { ...r, conversao: r.contatos ? +(r.agendamentos / r.contatos).toFixed(4) : null };
+    })
     .sort((a, b) => b.agendamentos - a.agendamentos || b.contatos - a.contatos);
   const totals = rows.reduce((t, r) => ({
     contatos: t.contatos + r.contatos,
@@ -48,12 +61,14 @@ export function buildChannelFunnel({ contacts = [], apptStatusByPhone = {} } = {
     agendamentos: t.agendamentos + r.agendamentos,
   }), { contatos: 0, preAgendamentos: 0, agendamentos: 0 });
   totals.conversao = totals.contatos ? +(totals.agendamentos / totals.contatos).toFixed(4) : null;
+  if (!withDetails) delete semVinculo.detalhes;
   return { rows, totals, semVinculo };
 }
 
 // Contatos recebidos vêm da FONTE que registra contatos (Leads) — INCLUI os sem atribuição.
 // LeadAttribution serve só para IDENTIFICAR o canal, nunca para contar os contatos.
 // Dedup por telefone; canal = atribuição quando houver, senão null (-> "nao_identificado").
+// Mantém o nome do Lead (quando houver) para o detalhe do comercial.
 // A coorte do período é definida por estes contatos (leads que entraram na janela); a
 // conversão acompanha ESTE mesmo grupo.
 export function mergeContacts({ attributed = [], leads = [] } = {}) {
@@ -64,7 +79,7 @@ export function mergeContacts({ attributed = [], leads = [] } = {}) {
   for (const l of leads) {
     if (!l.phone || seen.has(l.phone)) continue; // dedup por telefone
     seen.add(l.phone);
-    out.push({ phone: l.phone, channel: channelByPhone.get(l.phone) || null });
+    out.push({ phone: l.phone, channel: channelByPhone.get(l.phone) || null, name: l.name || null });
   }
   return out;
 }
