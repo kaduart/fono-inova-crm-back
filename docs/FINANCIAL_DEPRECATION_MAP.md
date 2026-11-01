@@ -99,3 +99,16 @@
 5. **Appointment** não pode ser usado como base financeira.
 6. Não criar novos cálculos financeiros paralelos.
 7. Não criar novos snapshots/projeções sem aprovação explícita.
+
+---
+
+## Removidos em 01/11/2026 (pacote liminar)
+
+Todo liminar novo usa `LiminarContract` (`/api/v2/liminar-contracts`) e o `LiminarHandler` no complete. No espelho da produção, os 6 `Package` com `type='liminar'` estavam `superseded` e todos migrados para contrato (`idempotencyKey` `migrate_package_*`); os agendamentos abertos ligados a eles já têm `liminarContract`. Saiu só código sem caminho de execução:
+
+- `domain/liminar/recognizeRevenue.js` e o export em `domain/index.js` (nenhum import; fazia débito duplo).
+- `addLiminarCredit` e `cancelLiminarPackage` em `controllers/packageController.v2.js` (sem rota).
+- `case 'liminar'` em `updatePackageOnComplete` (`completeSessionService.v2.js`): a função só roda com `billingType === 'convenio'`.
+- Bloco `type === 'liminar'` em `therapyPackageController.js` depois do bloqueio que já lança erro.
+
+Continuam de propósito: o enum `'liminar'` e os campos `liminar*` no `Package` (os 6 documentos históricos precisam validar), o fallback `packageData.type === 'liminar'` em `resolveBillingType` e as projeções que mostram o histórico.

@@ -4,7 +4,8 @@
  * Existe porque `paymentType === 'full'` sozinho NÃO define comportamento —
  * pacotes liminar também usam paymentType='full', mas seguem uma regra
  * financeira totalmente diferente (pagamento judicial periódico +
- * reconhecimento de receita por sessão, via domain/liminar/recognizeRevenue.js).
+ * reconhecimento de receita por sessão; hoje o liminar vive no LiminarContract e
+ * o antigo domain/liminar/recognizeRevenue.js foi removido em 01/11/2026).
  * Um script de auditoria que tratou liminar como prepaid gerou 17 falsos
  * positivos de "cobrança duplicada" num único paciente (ver investigação
  * do paciente 69bbf5d42d22a57a538ed310, 2026-07-07).

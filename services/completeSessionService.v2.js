@@ -1199,18 +1199,10 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
             // Não altera balance imediatamente
             break;
             
-        case 'liminar':
-            // Liminar: consome crédito (com proteção contra negativo)
-            if (sessionValue > 0) {
-                const currentBalance = packageDoc.liminarCreditBalance || 0;
-                if (currentBalance < sessionValue) {
-                    throw new Error(`LIMINAR_NO_CREDIT: Crédito insuficiente. Disponível: ${currentBalance}, Necessário: ${sessionValue}`);
-                }
-                updateOps.$inc.liminarCreditBalance = -sessionValue;
-                // Revenue recognition (opcional, depende da RN)
-            }
-            break;
-            
+        // 'liminar' saiu daqui (01/11/2026): esta função só é chamada com
+        // billingType === 'convenio' (ver o if antes do shadow mode), e o crédito
+        // liminar é debitado do LiminarContract pelo LiminarHandler.
+
         case 'prepaid':
             // Prepaid: recalcula balance = totalValue - (sessionsDone * sessionValue)
             // Mostra crédito restante (negativo = crédito disponível)
