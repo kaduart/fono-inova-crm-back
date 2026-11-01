@@ -31,6 +31,34 @@ router.use(async (req, res, next) => {
     next();
 });
 
+// Editar ou excluir relatório: só o autor ou a equipe (admin/secretária).
+// Antes qualquer usuário logado alterava ou apagava o relatório de outro profissional.
+const REPORT_MODELS = { medical: 'MedicalReport', anamnesis: 'AnamnesisReport', school: 'SchoolReport' };
+router.use(async (req, res, next) => {
+    if (req.method !== 'PUT' && req.method !== 'DELETE') return next();
+    const [, kind, id, extra] = req.path.split('/');
+    const modelName = REPORT_MODELS[kind];
+    if (!modelName || !id || extra !== undefined || !mongoose.isValidObjectId(id)) return next();
+    try {
+        const doc = await mongoose.model(modelName).findById(id).select('createdBy').lean();
+        if (!doc) return next(); // a rota responde 404
+        const isStaff = ['admin', 'secretary'].includes(req.user?.role);
+        const isAuthor = doc.createdBy && String(doc.createdBy) === String(req.user?.id);
+        if (!isStaff && !isAuthor) {
+            return res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Só quem escreveu o relatório (ou a equipe da clínica) pode alterar ou excluir.' });
+        }
+        if (req.method === 'PUT' && req.body) {
+            // Autor não muda na edição.
+            delete req.body.createdBy;
+            delete req.body.createdByName;
+        }
+        next();
+    } catch (err) {
+        console.error('[reports] falha ao checar autor:', err.message);
+        return res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Não foi possível verificar a permissão do relatório.' });
+    }
+});
+
 // Usar as rotas específicas
 router.use('/medical', medicalReports);
 router.use('/anamnesis', anamnesisReports);
