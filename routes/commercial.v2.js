@@ -3,8 +3,9 @@
  * Filas comerciais V2 (Dashboard "Precisa de você" e Agenda). Ver docs/COMMERCIAL_QUEUES.md.
  *
  * GET  /api/v2/commercial/fit-candidates?specialty=fonoaudiologia  → encaixe de horário livre
- * GET  /api/v2/commercial/package-ending?threshold=2               → pacote acabando
+ * GET  /api/v2/commercial/package-ending[?threshold=auto|0..5]     → pacote acabando (auto = 20%, piso 1)
  * GET  /api/v2/commercial/reactivation                             → sem próxima sessão
+ * GET  /api/v2/commercial/churn-risk                               → risco de evasão (14/21 dias, com exceções)
  * GET  /api/v2/commercial/leads-waiting?hours=2                    → lead novo sem resposta
  * POST /api/v2/commercial/contacts                                 → registra o contato feito
  * GET  /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30 → avaliou e não fechou pacote
@@ -26,7 +27,7 @@ import Package from '../models/Package.js';
 import Doctor from '../models/Doctor.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
-import CommercialContact from '../models/CommercialContact.js';
+import CommercialContact, { CONTACT_KINDS } from '../models/CommercialContact.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { leadsSummary, roiSummary, idleSlotsBySpecialty } from '../services/commercial/salesSummary.js';
 import { AppError } from '../errors/AppError.js';
@@ -36,6 +37,7 @@ import { evaluationsWithoutPackage, unconfirmedNextDay, confirmationReminderText
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince,
   sortFitLeads, packagesEnding, sortByRecentContact, daysBetween,
+  renewalStage, churnRisk, churnMessage, CHURN_DAYS, CHURN_JUSTIFIED_WINDOW_DAYS, CHURN_MAX_PAUSE_DAYS,
 } from '../services/commercial/commercialRules.js';
 
 const router = express.Router();
@@ -168,7 +170,9 @@ router.get('/fit-candidates', ...staff, async (req, res) => {
 
 router.get('/package-ending', ...staff, async (req, res) => {
   try {
-    const threshold = clampInt(req.query.threshold, 2, 0, 5);
+    // Sem parâmetro (ou ?threshold=auto) vale a regra dos 80%; número mantém o limite fixo antigo.
+    const raw = req.query.threshold;
+    const threshold = raw === undefined || raw === '' || raw === 'auto' ? 'auto' : clampInt(raw, 2, 0, 5);
     // Convênio e liminar não renovam pacote (legado em Package, ver comentário no model)
     const active = await Package.find(
       { status: 'active', type: { $nin: ['convenio', 'liminar'] } },
@@ -211,6 +215,8 @@ router.get('/package-ending', ...staff, async (req, res) => {
           doctorName: e.pkg.doctor ? dMap[e.pkg.doctor.toString()] || null : null,
           remaining: e.remaining,
           totalSessions: e.pkg.totalSessions || 0,
+          sessionsDone: e.pkg.sessionsDone || 0,
+          stage: renewalStage(e.remaining, e.pkg.totalSessions),
           nextSessionAt: next ? next.date : null,
           nextSessionTime: next?.time || null,
           lastContactAt: contacts[pid] || null,
@@ -228,10 +234,69 @@ router.get('/package-ending', ...staff, async (req, res) => {
 router.get('/reactivation', ...staff, async (req, res) => {
   try {
     const minDays = clampInt(req.query.minDays, 7, 0, 90);
-    const items = await patientsWithoutNext({ lookbackDays: 120, minDays, limit: clampInt(req.query.limit, 50, 1, 200) });
+    const all = await patientsWithoutNext({ lookbackDays: 120, minDays, limit: clampInt(req.query.limit, 50, 1, 200) });
+    // Pausa combinada com a família (churn_pause vigente) também tira da reativação
+    const paused = all.length ? new Set((await CommercialContact.distinct('target', {
+      target: { $in: all.map(i => oid(i.patientId)) }, kind: 'churn_pause', until: { $gt: new Date() },
+    })).map(String)) : new Set();
+    const items = all.filter(i => !paused.has(i.patientId));
     res.json({ success: true, data: { minDays, items: sortByRecentContact(items) } });
   } catch (err) {
     console.error('[commercial.v2] /reactivation error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Risco de evasão: paciente ativo, atendido nos últimos 90 dias, sem sessão futura há
+// 14 dias (21 se o pacote ativo é quinzenal). Fica de fora quem avisou que ia faltar
+// (cancelamento pedido pelo paciente nos últimos 30 dias) e quem tem pausa vigente
+// (contato churn_pause com `until` no futuro). Calculado na leitura: sem cron, sem cópia.
+router.get('/churn-risk', ...staff, async (req, res) => {
+  try {
+    const candidates = await patientsWithoutNext({
+      lookbackDays: 90, minDays: CHURN_DAYS.weekly, limit: 500,
+    });
+    if (!candidates.length) return res.json({ success: true, data: { items: [] } });
+
+    const now = moment().tz(TIMEZONE);
+    const pids = candidates.map(c => oid(c.patientId));
+    const [active, packages, justifiedIds, pauses, contacts] = await Promise.all([
+      Patient.find({ _id: { $in: pids }, status: 'active' }, { _id: 1 }).lean(),
+      Package.find(
+        { patient: { $in: pids }, status: { $in: ['active', 'in-progress'] } },
+        { patient: 1, frequencyInterval: 1 },
+      ).lean(),
+      Appointment.distinct('patient', {
+        patient: { $in: pids },
+        isDeleted: { $ne: true },
+        operationalStatus: 'canceled',
+        cancelRequester: 'patient',
+        date: { $gte: now.clone().subtract(CHURN_JUSTIFIED_WINDOW_DAYS, 'days').startOf('day').toDate() },
+      }),
+      CommercialContact.distinct('target', {
+        target: { $in: pids }, kind: 'churn_pause', until: { $gt: now.toDate() },
+      }),
+      lastContacts(pids, 'churn'),
+    ]);
+
+    const frequencyByPatient = {};
+    for (const p of packages) {
+      const k = p.patient.toString();
+      // Se houver pacote semanal e quinzenal ativos, vale o semanal (alerta mais cedo)
+      if (frequencyByPatient[k] !== 'weekly') frequencyByPatient[k] = p.frequencyInterval || 'weekly';
+    }
+
+    const items = churnRisk(candidates, {
+      activePatients: new Set(active.map(p => p._id.toString())),
+      frequencyByPatient,
+      justified: new Set(justifiedIds.map(String)),
+      paused: new Set(pauses.map(String)),
+    }).map(c => ({ ...c, lastContactAt: contacts[c.patientId] || null, message: churnMessage(c.name) }));
+
+    console.log(`[commercial.v2] churn-risk: ${candidates.length} candidatos, ${items.length} em risco`);
+    res.json({ success: true, data: { items: sortByRecentContact(items) } });
+  } catch (err) {
+    console.error('[commercial.v2] /churn-risk error:', err);
     sendApiError(res, err, req);
   }
 });
@@ -378,10 +443,20 @@ router.post('/confirmation-reminders', ...staff, async (req, res) => {
 
 router.post('/contacts', ...staff, async (req, res) => {
   try {
-    const { targetType, targetId, kind, channel = 'whatsapp', note = '' } = req.body || {};
+    const { targetType, targetId, kind, channel = 'whatsapp', note = '', until = null } = req.body || {};
     if (!['patient', 'lead'].includes(targetType) || !mongoose.isValidObjectId(targetId)
-      || !['reactivation', 'renewal', 'fit', 'lead_reply', 'evaluation', 'evaluation_lost'].includes(kind)) {
+      || !CONTACT_KINDS.includes(kind)) {
       return sendApiError(res, new AppError('BAD_REQUEST', 'Contato inválido.', { status: 400 }), req);
+    }
+    // Pausa do alerta de evasão: só para paciente, com fim entre amanhã e 90 dias
+    let untilDate = null;
+    if (kind === 'churn_pause') {
+      untilDate = until ? new Date(until) : null;
+      const max = Date.now() + CHURN_MAX_PAUSE_DAYS * 86_400_000;
+      if (targetType !== 'patient' || !untilDate || Number.isNaN(untilDate.getTime())
+        || untilDate.getTime() <= Date.now() || untilDate.getTime() > max) {
+        return sendApiError(res, new AppError('BAD_REQUEST', `Pausa precisa de uma data de fim nos próximos ${CHURN_MAX_PAUSE_DAYS} dias.`, { status: 400 }), req);
+      }
     }
     const userId = req.user?._id || req.user?.id || null;
 
@@ -394,6 +469,7 @@ router.post('/contacts', ...staff, async (req, res) => {
 
     const created = await CommercialContact.create({
       targetType, target: oid(targetId), kind, channel, note: String(note).slice(0, 500), user: userId,
+      ...(untilDate && { until: untilDate }),
     });
     console.log(`[commercial.v2] contato ${kind} registrado para ${targetType} ${targetId}`);
     res.status(201).json({ success: true, data: created });
