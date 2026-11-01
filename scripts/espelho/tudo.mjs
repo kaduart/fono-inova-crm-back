@@ -46,6 +46,28 @@ async function waitMongoReady() {
   throw new Error(`MongoDB local não ficou pronto em 90s na porta ${PORT}.\nÚltimas linhas de ${MONGO_LOG}:\n${tail}`);
 }
 
+// 01/11 (Kadu): só ele usa o localhost. Com ESPELHO_MEU_EMAIL no .env, a conta de teste
+// admin@espelho.local passa a usar esse e-mail (a senha continua a de teste,
+// ESPELHO_SYNC_TEST_PASSWORD). Idempotente; roda a cada subida, só no Mongo local.
+async function loginDoDono() {
+  let email = process.env.ESPELHO_MEU_EMAIL || '';
+  if (!email) { // lê só esta chave do .env (não carrega as credenciais no processo)
+    try { email = (fs.readFileSync(path.join(BACK_DIR, '.env'), 'utf8').match(/^ESPELHO_MEU_EMAIL=(.*)$/m) || [])[1] || ''; } catch {}
+  }
+  email = email.replace(/^["']|["']\s*$/g, '').trim().toLowerCase();
+  if (!email) return;
+  const { MongoClient } = await import('mongodb');
+  const { URI } = await import('./config.mjs');
+  const c = new MongoClient(URI, { serverSelectionTimeoutMS: 5000 });
+  try {
+    await c.connect();
+    const admins = c.db().collection('admins');
+    if (await admins.findOne({ email })) { console.log(`[espelho] login do dono: ${email}`); return; }
+    const r = await admins.updateOne({ email: 'admin@espelho.local' }, { $set: { email } });
+    console.log(r.modifiedCount ? `[espelho] login do dono: ${email} (senha de teste)` : '[espelho] ⚠️ conta admin@espelho.local não achada na cópia');
+  } finally { await c.close(); }
+}
+
 const REDIS_PORT = 6381; // o mesmo de environment.mjs
 const MARKER = path.join(BACK_DIR, '.local', 'mongo-espelho', 'ultima-copia.txt');
 const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -89,6 +111,7 @@ try {
   } else {
     console.log(`[espelho] usando a cópia de ${ultima || '(desconhecida)'}${nunca ? ' (--sem-copia)' : ' (já copiada hoje)'}`);
   }
+  await loginDoDono();
   await run('dev.mjs');
 } catch (err) {
   console.error('[espelho] ❌', err.message);
