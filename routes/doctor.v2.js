@@ -450,7 +450,7 @@ router.delete('/:id', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
 /**
  * PATCH /api/v2/doctors/:id/deactivate - Inativar médico (síncrono)
  */
-router.patch('/:id/deactivate', flexibleAuth, async (req, res) => {
+router.patch('/:id/deactivate', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   const correlationId = `doc_deact_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
@@ -483,7 +483,7 @@ router.patch('/:id/deactivate', flexibleAuth, async (req, res) => {
 /**
  * PATCH /api/v2/doctors/:id/reactivate - Reativar médico (síncrono)
  */
-router.patch('/:id/reactivate', flexibleAuth, async (req, res) => {
+router.patch('/:id/reactivate', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   const correlationId = `doc_react_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {

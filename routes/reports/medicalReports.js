@@ -136,6 +136,8 @@ router.post('/', async (req, res) => {
             date,
             content,
             createdBy,
+            createdByName,
+            title,
             status = 'completed'
         } = req.body;
 
@@ -151,13 +153,15 @@ router.post('/', async (req, res) => {
         }
 
         const newReport = new MedicalReport({
+            title: title || `Relatório - ${patientName}`,
             type,
             patientId,
             patientName,
             patientAge: patientAge ? parseInt(patientAge) : undefined,
             date,
             content: content || {},
-            createdBy: createdBy || 'Sistema',
+            createdBy,
+            createdByName,
             status,
             createdAt: new Date(),
             updatedAt: new Date()

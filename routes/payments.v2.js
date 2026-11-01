@@ -99,6 +99,18 @@ router.get('/', auth, async (req, res) => {
             filter.$text = { $search: search.trim() };
         }
         
+        // Escopo por profissional: terapeuta só vê os próprios pagamentos (antes
+        // via a clínica inteira); staff pode filtrar por ?doctorId=.
+        let doctorScope = null;
+        if (req.user?.role === 'doctor') {
+            doctorScope = req.user.id;
+        } else if (req.query.doctorId && mongoose.Types.ObjectId.isValid(req.query.doctorId)) {
+            doctorScope = req.query.doctorId;
+        }
+        if (doctorScope) {
+            filter['doctor.id'] = new mongoose.Types.ObjectId(String(doctorScope));
+        }
+
         // Paginação
         const pageNum = Math.max(1, parseInt(page) || 1);
         const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 50));
@@ -162,7 +174,8 @@ router.get('/', auth, async (req, res) => {
         
         // 🚀 V2 PURO: stats via snapshot (zero aggregate)
         let stats;
-        if (USE_SNAPSHOT) {
+        // Snapshot é da clínica inteira: com filtro por profissional, soma no filtro.
+        if (USE_SNAPSHOT && !doctorScope) {
             const snapshots = await getSnapshotsForRange(snapshotStart, snapshotEnd, clinicId);
             stats = reducePaymentStats(snapshots);
 

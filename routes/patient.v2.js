@@ -349,6 +349,11 @@ router.get('/dashboard/stats', flexibleAuth, async (req, res) => {
  * 202 Accepted → evento → worker → PatientsView
  */
 router.post('/', flexibleAuth, async (req, res) => {
+  // Decisão do Kadu (01/11/2026): o cadastro é da recepção. Terapeuta não cria
+  // paciente; staff, Amanda e Agenda Externa seguem podendo.
+  if (req.user?.role === 'doctor') {
+    return sendApiError(res, new AppError('FORBIDDEN', 'O cadastro de paciente é feito pela recepção', { status: 403 }), req);
+  }
   const correlationId = `pat_create_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   try {
@@ -492,8 +497,19 @@ router.put('/:id', flexibleAuth, async (req, res) => {
       'birthCertificate', 'legalGuardian', 'imageAuthorization'
     ];
 
+    // Terapeuta só altera a parte clínica; dados cadastrais e de convênio são da
+    // recepção e são ignorados se vierem no body (decisão do Kadu, 01/11/2026).
+    const CLINICAL_FIELDS = ['mainComplaint', 'clinicalHistory', 'medications', 'allergies', 'familyHistory'];
+    const fieldsForRole = req.user?.role === 'doctor'
+      ? allowedFields.filter((f) => CLINICAL_FIELDS.includes(f))
+      : allowedFields;
+    if (req.user?.role === 'doctor') {
+      const ignored = allowedFields.filter((f) => !CLINICAL_FIELDS.includes(f) && req.body[f] !== undefined);
+      if (ignored.length) logger.warn(`[${correlationId}] campos cadastrais ignorados para terapeuta`, { patientId, ignored });
+    }
+
     const updates = {};
-    for (const field of allowedFields) {
+    for (const field of fieldsForRole) {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
       }
