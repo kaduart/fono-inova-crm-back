@@ -28,6 +28,24 @@ const run = (file, opts = {}) => new Promise((resolve, reject) => {
 });
 const portOpen = (port = PORT) => new Promise((r) => { const s = net.connect(port, '127.0.0.1'); s.on('connect', () => { s.destroy(); r(true); }); s.on('error', () => r(false)); });
 
+const MONGO_LOG = path.join(BACK_DIR, '.local', 'mongo-espelho.log');
+// 01/11: esperar o replica set aceitar escrita de verdade (porta aberta não basta:
+// o mongod abre a porta e ainda pode cair na recuperação ou estar sem primário).
+async function waitMongoReady() {
+  const { MongoClient } = await import('mongodb');
+  for (let i = 0; i < 90; i++) {
+    const c = new MongoClient(`mongodb://127.0.0.1:${PORT}/?directConnection=true`, { serverSelectionTimeoutMS: 1500 });
+    try {
+      await c.connect();
+      if ((await c.db('admin').command({ hello: 1 })).isWritablePrimary) return;
+    } catch { /* ainda subindo */ } finally { await c.close().catch(() => {}); }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  let tail = '';
+  try { tail = fs.readFileSync(MONGO_LOG, 'utf8').split(/\r?\n/).slice(-15).join('\n'); } catch {}
+  throw new Error(`MongoDB local não ficou pronto em 90s na porta ${PORT}.\nÚltimas linhas de ${MONGO_LOG}:\n${tail}`);
+}
+
 const REDIS_PORT = 6381; // o mesmo de environment.mjs
 const MARKER = path.join(BACK_DIR, '.local', 'mongo-espelho', 'ultima-copia.txt');
 const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -52,11 +70,13 @@ async function ensureRedis() {
 
 try {
   if (!(await portOpen())) {
-    console.log('[espelho] subindo o MongoDB local em segundo plano...');
-    await run('mongo-local.mjs', { detached: true, stdio: 'ignore' });
-    for (let i = 0; i < 60 && !(await portOpen()); i++) await new Promise((r) => setTimeout(r, 1000));
-    await new Promise((r) => setTimeout(r, 4000)); // replica set elegendo primário
+    console.log(`[espelho] subindo o MongoDB local em segundo plano (log: ${MONGO_LOG})...`);
+    fs.mkdirSync(path.dirname(MONGO_LOG), { recursive: true });
+    const out = fs.openSync(MONGO_LOG, 'a');
+    await run('mongo-local.mjs', { detached: true, windowsHide: true, stdio: ['ignore', out, out] });
+    fs.closeSync(out);
   }
+  await waitMongoReady();
   await ensureRedis();
   const forcar = process.argv.includes('--copiar');
   const nunca = process.argv.includes('--sem-copia');
