@@ -17,7 +17,7 @@ if (!fs.existsSync(MONGOD_PATH)) {
 }
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const mongod = spawn(MONGOD_PATH, ['--dbpath', DATA_DIR, '--port', String(PORT), '--bind_ip', '127.0.0.1', '--replSet', REPLSET, '--quiet'], { stdio: ['ignore', 'inherit', 'inherit'] }); // 01/11: saída vai para o log do tudo.mjs
+const mongod = spawn(MONGOD_PATH, ['--dbpath', DATA_DIR, '--port', String(PORT), '--bind_ip', '127.0.0.1', '--replSet', REPLSET, '--quiet'], { stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true }); // 01/11: sem janela própria (fechar a janela derrubava o Mongo); saída vai para o log do tudo.mjs
 mongod.on('exit', (code) => { console.log(`${TAG} mongod saiu (código ${code})`); process.exit(code ?? 0); });
 process.on('SIGINT', () => mongod.kill('SIGINT'));
 

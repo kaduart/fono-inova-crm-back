@@ -112,6 +112,7 @@ try {
     console.log(`[espelho] usando a cópia de ${ultima || '(desconhecida)'}${nunca ? ' (--sem-copia)' : ' (já copiada hoje)'}`);
   }
   await loginDoDono();
+  console.log('[espelho] Mongo local roda escondido em segundo plano; para desligar: npm run espelho:parar');
   await run('dev.mjs');
 } catch (err) {
   console.error('[espelho] ❌', err.message);

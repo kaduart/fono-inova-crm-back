@@ -12,6 +12,7 @@
     "dev:atlas": "node scripts/dev-local.js",
     "espelho": "node scripts/espelho/tudo.mjs",
     "espelho:mongo": "node scripts/espelho/mongo-local.mjs",
+    "espelho:parar": "node scripts/espelho/parar.mjs",
     "espelho:copiar": "node scripts/espelho/copiar.mjs",
     "espelho:diario": "node scripts/espelho/diario.mjs",
     "espelho:nuvem": "node scripts/espelho/sync-nuvem.mjs",
