@@ -7,6 +7,15 @@ import Session from '../models/Session.js';
 import TherapySession from '../models/TherapySession.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+
+// Profissional alvo do painel: terapeuta sempre o próprio; admin/secretária
+// podem escolher com ?doctorId= (seletor "Ver painel de", decisão do Kadu 01/11/2026).
+const resolveDoctorId = (req) => {
+  const q = req.query?.doctorId;
+  if (['admin', 'secretary'].includes(req.user?.role) && q && mongoose.Types.ObjectId.isValid(q)) return String(q);
+  return String(req.user?.doctorId || req.user?._id || req.user?.id);
+};
+
 const ObjectId = mongoose.Types.ObjectId;
 
 const toObjectId = (id) => {
@@ -333,7 +342,7 @@ export const doctorOperations = {
 // controllers/doctorController.js
 export const getCalendarAppointments = async (req, res) => {
   try {
-    const doctorId = req.user.id;
+    const doctorId = resolveDoctorId(req);
 
     // Validar se o ID do médico é válido
     if (!mongoose.Types.ObjectId.isValid(doctorId)) {
@@ -475,7 +484,7 @@ const INACTIVE_AFTER_DAYS = 60;
 
 export const getDoctorPatients = async (req, res) => {
   try {
-    const doctorId = req.user?.id;
+    const doctorId = resolveDoctorId(req);
     const { page = '1', limit = '50', search = '', care = '', sort = 'next', ids = '' } = req.query;
 
     if (!doctorId) {
@@ -619,7 +628,7 @@ export const getDoctorPatients = async (req, res) => {
 
 export const getTodaysAppointments = async (req, res) => {
   try {
-    const doctorId = req.user.doctorId || req.user._id || req.user.id;
+    const doctorId = resolveDoctorId(req);
     
     // Criar range para o dia de HOJE (início e fim do dia)
     const today = new Date();
@@ -657,7 +666,7 @@ export const getTodaysAppointments = async (req, res) => {
 // backend/controllers/doctorController.js
 export const getDoctorTherapySessions = async (req, res) => {
   try {
-    const doctor = new ObjectId(req.user.id);
+    const doctor = new ObjectId(resolveDoctorId(req));
     const sessions = await TherapySession.find({ doctor: doctor })
       .populate('patient', 'fullName')
       .populate('appointment', 'date time')
@@ -673,7 +682,7 @@ export const getDoctorTherapySessions = async (req, res) => {
 
 export const getDoctorStats = async (req, res) => {
   try {
-    const doctor = new ObjectId(req.user.id);
+    const doctor = new ObjectId(resolveDoctorId(req));
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0));
     const endOfToday = new Date(today.setHours(23, 59, 59, 999));
@@ -807,7 +816,7 @@ export const getFutureAppointments = async (req, res) => {
       return sendApiError(res, new AppError('UNAUTHORIZED', 'Não autenticado', { status: 401 }), req);
     }
 
-    const doctorId = req.user.id;
+    const doctorId = resolveDoctorId(req);
     const now = new Date();
     
     console.log('[GET_FUTURE_APPOINTMENTS] doctorId:', doctorId);
