@@ -1,6 +1,9 @@
 // controllers/doctorController.js
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
+// Registram os modelos usados no populate da agenda de hoje (pacote e guia).
+import '../models/Package.js';
+import '../models/InsuranceGuide.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
@@ -649,9 +652,31 @@ export const getTodaysAppointments = async (req, res) => {
     const appointments = await Appointment.find(filter)
       .populate('patient', 'fullName phone dateOfBirth')
       .populate('payment', 'status')
-      .select('_id date time duration operationalStatus clinicalStatus patient payment billingType insuranceProvider serviceType sessionType specialty patientJourneyType liminarContract package reason')
+      // Sinais da linha da agenda (só leitura): "última sessão do pacote", "guia vence em N dias".
+      .populate('package', 'totalSessions sessionsDone status')
+      .populate('insuranceGuide', 'expiresAt totalSessions usedSessions status')
+      .select('_id date time duration operationalStatus clinicalStatus patient payment billingType insuranceProvider serviceType sessionType specialty patientJourneyType liminarContract package insuranceGuide reason')
       .sort({ time: 1 })
       .lean();
+
+    // Sinal "faltou na última": status da sessão anterior de cada paciente com este profissional.
+    try {
+      const patientIds = [...new Set(appointments.map(a => a.patient?._id).filter(Boolean).map(String))];
+      if (patientIds.length) {
+        const last = await Appointment.aggregate([
+          { $match: { doctor: new ObjectId(doctorId), patient: { $in: patientIds.map(id => new ObjectId(id)) }, date: { $lt: startOfDay } } },
+          { $sort: { date: -1, time: -1 } },
+          { $group: { _id: '$patient', status: { $first: '$operationalStatus' }, date: { $first: '$date' } } },
+        ]);
+        const byPatient = new Map(last.map(l => [String(l._id), l]));
+        for (const a of appointments) {
+          const l = a.patient?._id && byPatient.get(String(a.patient._id));
+          if (l) a.previousSession = { status: l.status, date: l.date };
+        }
+      }
+    } catch (sigErr) {
+      console.warn('[GET_TODAYS_APPOINTMENTS] sinais da sessão anterior indisponíveis:', sigErr.message);
+    }
 
     console.log('[GET_TODAYS_APPOINTMENTS] encontrados:', appointments.length);
 
