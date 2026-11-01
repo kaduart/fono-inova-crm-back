@@ -7,7 +7,8 @@ São quatro filas que ajudam a secretária a vender e a reter pacientes. Elas ap
 | Fila | Endpoint | Onde aparece |
 |---|---|---|
 | Encaixe inteligente | `GET /api/v2/commercial/fit-candidates?specialty=` | Horário livre na Agenda (dia por profissional) e na Recorrência |
-| Pacote acabando | `GET /api/v2/commercial/package-ending?threshold=2` | Dashboard, "Precisa de você" |
+| Pacote acabando | `GET /api/v2/commercial/package-ending` (padrão `auto`; `?threshold=0..5` mantém limite fixo) | Dashboard, "Precisa de você" |
+| Risco de evasão | `GET /api/v2/commercial/churn-risk` | Próximas Ações da secretária (card crítico) |
 | Reativação | `GET /api/v2/commercial/reactivation?minDays=7` | Dashboard e Acompanhamento |
 | Lead sem resposta | `GET /api/v2/commercial/leads-waiting?hours=2` | Topo do Dashboard, com cronômetro |
 | Avaliou e não fechou | `GET /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30` | Dashboard, "Precisa de você" |
@@ -69,3 +70,20 @@ As duas filas foram aprovadas pelo Kadu a partir do mock https://claude.ai/artif
   - Grava `attendanceConfirmation.queuedAt`.
   - Se a fila estiver pausada pelo kill switch, a resposta traz `queuePaused: true`.
   - A Amanda não é acionada.
+
+
+## Pacote a 80% e Risco de evasão (01/11/2026)
+
+Aprovados pelo Kadu no plano de Inteligência Operacional. Evoluem as filas acima em vez de criar uma coleção nova, para a secretária não ver o mesmo paciente em dois cards. Regras puras em `services/commercial/commercialRules.js`, testes em `tests/unit/renewalChurnRules.test.js`.
+
+- **Pacote a 80%:**
+  - `threshold=auto` (padrão quando o parâmetro não vem): entra quando faltam até `max(1, floor(totalSessions × 0,2))` sessões. Pacote de 12 entra em 10/12; pacote mensal de 4 entra em 3/4.
+  - Cada item traz `stage`: `renovar` (amarelo, gerar a cobrança do próximo mês) ou `ultima` (laranja, falta 1 sessão ou já acabou). `ok` só aparece fora da fila.
+  - Quem já renovou na mesma especialidade continua saindo da fila (vale o pacote com mais sessões sobrando).
+  - O evento `SESSION_COMPLETED` do outbox já leva `packageId`. Quando o app Conecta tiver vínculo com o CRM, o push "seu ciclo está terminando" assina esse evento; nada muda no `completeSessionService.v2` agora.
+- **Risco de evasão (churn):**
+  - Entra paciente `status: 'active'` com sessão `completed` nos últimos 90 dias e nenhuma sessão futura (`FUTURE_STATUSES`) há 14 dias ou mais. Se o pacote ativo é quinzenal (`frequencyInterval: 'biweekly'`), são 21 dias.
+  - Sai quem tem **falta justificada**: cancelamento com `cancelRequester: 'patient'` nos últimos 30 dias (a família avisou).
+  - Sai quem tem **pausa vigente**: contato `kind: churn_pause` com `until` no futuro (máximo 90 dias). A pausa é registrada por `POST /contacts` com `{ kind: 'churn_pause', until }`, sem escrever no Patient.
+  - Cada item traz `severity: 'critical'`, `title` ("Risco de evasão: Nome está sem agendamento há N dias") e `message`, o texto pronto do WhatsApp. O front abre o WhatsApp e registra `kind: churn`; o back não envia mensagem.
+  - É calculado na leitura, sem cron. O índice `{ patient: 1, date: 1 }` de Appointment já cobre as consultas por paciente.
