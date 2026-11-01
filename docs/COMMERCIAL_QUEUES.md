@@ -86,4 +86,5 @@ Aprovados pelo Kadu no plano de Inteligência Operacional. Evoluem as filas acim
   - Sai quem tem **falta justificada**: cancelamento com `cancelRequester: 'patient'` nos últimos 30 dias (a família avisou).
   - Sai quem tem **pausa vigente**: contato `kind: churn_pause` com `until` no futuro (máximo 90 dias). A pausa é registrada por `POST /contacts` com `{ kind: 'churn_pause', until }`, sem escrever no Patient.
   - Cada item traz `severity: 'critical'`, `title` ("Risco de evasão: Nome está sem agendamento há N dias") e `message`, o texto pronto do WhatsApp. O front abre o WhatsApp e registra `kind: churn`; o back não envia mensagem.
+  - A pausa vigente também tira o paciente da fila "Sem próxima sessão" (reativação). No Dashboard, quem está no risco de evasão não aparece de novo na reativação (o front remove a duplicata).
   - É calculado na leitura, sem cron. O índice `{ patient: 1, date: 1 }` de Appointment já cobre as consultas por paciente.

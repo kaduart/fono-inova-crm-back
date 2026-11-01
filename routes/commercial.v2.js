@@ -234,7 +234,12 @@ router.get('/package-ending', ...staff, async (req, res) => {
 router.get('/reactivation', ...staff, async (req, res) => {
   try {
     const minDays = clampInt(req.query.minDays, 7, 0, 90);
-    const items = await patientsWithoutNext({ lookbackDays: 120, minDays, limit: clampInt(req.query.limit, 50, 1, 200) });
+    const all = await patientsWithoutNext({ lookbackDays: 120, minDays, limit: clampInt(req.query.limit, 50, 1, 200) });
+    // Pausa combinada com a família (churn_pause vigente) também tira da reativação
+    const paused = all.length ? new Set((await CommercialContact.distinct('target', {
+      target: { $in: all.map(i => oid(i.patientId)) }, kind: 'churn_pause', until: { $gt: new Date() },
+    })).map(String)) : new Set();
+    const items = all.filter(i => !paused.has(i.patientId));
     res.json({ success: true, data: { minDays, items: sortByRecentContact(items) } });
   } catch (err) {
     console.error('[commercial.v2] /reactivation error:', err);
