@@ -5,6 +5,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import '../models/InsuranceGuide.js';
 import AnamnesisReport from '../models/AnamnesisReport.js';
+import Evolution from '../models/Evolution.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
@@ -609,11 +610,18 @@ export const getDoctorPatients = async (req, res) => {
     try {
       const pageIds = enriched.map(p => p._id).filter(Boolean);
       if (pageIds.length) {
-        const [withAnamnesis, pkgs] = await Promise.all([
+        const [withAnamnesis, pkgs, plans] = await Promise.all([
           AnamnesisReport.distinct('patientId', { patientId: { $in: pageIds } }),
           Package.find({ patient: { $in: pageIds }, doctor: new ObjectId(doctorId), status: { $in: ['active', 'in-progress'] } })
             .select('patient totalSessions sessionsDone createdAt').sort({ createdAt: -1 }).lean(),
+          // Data de revisão do plano terapêutico da evolução mais recente deste profissional (só leitura).
+          Evolution.aggregate([
+            { $match: { patient: { $in: pageIds }, doctor: new ObjectId(doctorId) } },
+            { $sort: { date: -1 } },
+            { $group: { _id: '$patient', reviewDate: { $first: '$therapeuticPlan.reviewDate' } } },
+          ]),
         ]);
+        const reviewByPatient = new Map(plans.filter(x => x.reviewDate).map(x => [String(x._id), x.reviewDate]));
         const hasAnamnesis = new Set(withAnamnesis.map(String));
         const pkgByPatient = new Map();
         for (const pk of pkgs) if (!pkgByPatient.has(String(pk.patient))) pkgByPatient.set(String(pk.patient), pk);
@@ -621,10 +629,12 @@ export const getDoctorPatients = async (req, res) => {
           p.hasAnamnesis = hasAnamnesis.has(String(p._id));
           const pk = pkgByPatient.get(String(p._id));
           if (pk) p.activePackage = { totalSessions: pk.totalSessions, sessionsDone: pk.sessionsDone || 0 };
+          const rv = reviewByPatient.get(String(p._id));
+          if (rv) p.planReviewDate = rv;
         }
       }
     } catch (sigErr) {
-      console.warn('[getDoctorPatients] anamnese/pacote indisponíveis:', sigErr.message);
+      console.warn('[getDoctorPatients] anamnese/pacote/plano indisponíveis:', sigErr.message);
     }
 
     return res.json({
