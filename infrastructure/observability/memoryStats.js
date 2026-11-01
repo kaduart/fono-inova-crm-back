@@ -132,7 +132,8 @@ export function logMemoryLimits(prefix = '[Memory]') {
     `${prefix} rss limit=${RSS_LIMIT_MB}MB (fonte: ${RSS_LIMIT_SOURCE}) ` +
     `warn>=${RSS_WARN_MB}MB crit>=${RSS_CRIT_MB}MB | heap limit=${toMB(HEAP_LIMIT_BYTES)}MB`
   );
-  if (RSS_LIMIT_SOURCE.startsWith('os.totalmem')) {
+  // 01/11: o aviso só vale em container (Render define RENDER=true); no PC local é ruído.
+  if (RSS_LIMIT_SOURCE.startsWith('os.totalmem') && process.env.RENDER) {
     console.warn(
       `${prefix} ⚠️  Limite de RSS não detectado por cgroup. Em container (Render), ` +
       `defina MEMORY_LIMIT_MB com a cota do plano (Starter = 512) ou os alertas não vão disparar.`
