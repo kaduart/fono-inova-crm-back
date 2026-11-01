@@ -33,6 +33,8 @@ const toMB = (v) => Math.round(v / 1024 / 1024);
 // ============================================
 
 let lastMemory = null;
+let lastLoggedStatus = null;
+let lastLoggedAt = 0;
 
 function startMemoryMonitor() {
   setInterval(() => {
@@ -44,6 +46,13 @@ function startMemoryMonitor() {
 
     // Log enxuto — fácil de grep no Render/Logtail.
     // rss = vs cota do container (causa OOM kill); heap = vs heap_size_limit do V8.
+    // 01/11: só loga quando muda de faixa (🟢/🟡/🔴), quando não está 🟢, ou 1x a cada
+    // 5 min como sinal de vida. Antes saía a cada 10 s e enchia o terminal/log.
+    const now = Date.now();
+    const show = process.env.LOG_VERBOSE === 'true' || snap.status !== 'ok' ||
+      snap.status !== lastLoggedStatus || now - lastLoggedAt >= 5 * 60_000;
+    if (!show) return;
+    lastLoggedStatus = snap.status; lastLoggedAt = now;
     console.log(
       `${icon} [MEMORY] rss=${snap.rssMB}/${snap.rssLimitMB}MB (${snap.rssPercent}%) ` +
       `heap=${snap.heapUsedMB}/${snap.heapLimitMB}MB (${snap.heapPercent}%)`

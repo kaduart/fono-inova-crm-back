@@ -14,7 +14,7 @@ import { sendTemplateMessage, sendTextMessage } from "../services/whatsappServic
 
 import { withLeadLock } from '../services/LockManager.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
-import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
+import { maskPhone, normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
 import { extractTrackingFromMessage } from '../utils/trackingExtractor.js';
 import { extractMessageContent } from '../utils/whatsappMediaExtractor.js';
@@ -107,7 +107,7 @@ export const whatsappController = {
             // 🔧 PRÉ-VALIDAÇÃO: Sanitiza número antes de enviar
             const sanitized = sanitizePhoneBeforeSend(phone);
             if (!sanitized.success) {
-                console.error('❌ [SANITIZE] Número inválido:', sanitized.error, phone);
+                console.error('❌ [SANITIZE] Número inválido:', sanitized.error, maskPhone(phone));
                 return sendApiError(
                   res,
                   new AppError('BAD_REQUEST', `Número de telefone inválido: ${sanitized.error}`, {
@@ -119,7 +119,7 @@ export const whatsappController = {
             }
             
             const to = sanitized.phone;
-            console.log('📞 [SANITIZE] Número sanitizado:', { original: phone, sanitized: to });
+            if (process.env.LOG_VERBOSE === 'true') console.log('📞 [SANITIZE] Número sanitizado:', { original: maskPhone(phone), sanitized: maskPhone(to) });
 
             // 🔎 Tenta achar Contact pelo telefone (tenta vários formatos)
             let contact = await Contacts.findOne({ phone: to }).lean();
