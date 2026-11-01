@@ -19,8 +19,19 @@ const require = createRequire(import.meta.url);
 require('dotenv').config({ path: `${BACK_DIR}/.env` });
 
 const TAG = '[espelho:copiar]';
-const PROD = process.env.PROD_URI_READONLY;
-if (!PROD) { console.error(`${TAG} ❌ PROD_URI_READONLY não definido no back/.env`); process.exit(1); }
+// 01/11 (Kadu): fonte preferida = espelho da NUVEM (fono-dev, já anonimizado e atualizado
+// seg–sex 20h pelo EspelhoSync). Assim o PC não precisa de credencial de produção.
+// Ordem: ESPELHO_FONTE_URI → ESPELHO_SYNC_TARGET_URI + ESPELHO_SYNC_TARGET_DB → PROD_URI_READONLY.
+function withDb(uri, db) {
+  try { const u = new URL(uri); u.pathname = `/${db}`; return u.toString(); } catch { return uri; }
+}
+const NUVEM = process.env.ESPELHO_SYNC_TARGET_URI
+  ? withDb(process.env.ESPELHO_SYNC_TARGET_URI, process.env.ESPELHO_SYNC_TARGET_DB || 'fono_dev_espelho')
+  : '';
+const PROD = process.env.ESPELHO_FONTE_URI || NUVEM || process.env.PROD_URI_READONLY;
+const FONTE = process.env.ESPELHO_FONTE_URI ? 'ESPELHO_FONTE_URI' : NUVEM ? 'espelho da nuvem (fono-dev)' : 'produção (só leitura)';
+if (!PROD) { console.error(`${TAG} ❌ defina ESPELHO_SYNC_TARGET_URI (espelho da nuvem) ou PROD_URI_READONLY no back/.env`); process.exit(1); }
+console.log(`${TAG} fonte: ${FONTE}`);
 if (!isLocalUri(URI)) { console.error(`${TAG} ❌ destino não é local — abortando`); process.exit(1); }
 
 const SKIP = new Set(['outboxes', 'whatsappwebstates', 'baileyssessions']);
