@@ -277,6 +277,13 @@ const leadSchema = new mongoose.Schema({
   pendingChosenSlot: { type: mongoose.Schema.Types.Mixed, default: null },
   pendingPatientInfoStep: { type: String, default: null },
 
+  // 🤖 Amanda com Claude (services/agent/amanda) — handoff, última reserva e observações
+  amandaAgent: {
+    handoff: { type: mongoose.Schema.Types.Mixed, default: null },     // { motivo, resumo, at }
+    lastBooking: { type: mongoose.Schema.Types.Mixed, default: null }, // slot agendado de fato
+    lastNote: { type: String, default: null },                         // ex.: "vai conversar com o marido"
+  },
+
   // 🎯 META ADS TRACKING (Fase 1 - MVP)
   metaTracking: {
     source: {
