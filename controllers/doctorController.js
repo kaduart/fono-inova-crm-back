@@ -870,6 +870,15 @@ export const getFutureAppointments = async (req, res) => {
           preserveNullAndEmptyArrays: true
         }
       },
+      // Pacote (só contagem de sessões) para "Renovações à vista" no painel do terapeuta.
+      {
+        $lookup: {
+          from: 'packages',
+          localField: 'package',
+          foreignField: '_id',
+          as: 'package'
+        }
+      },
       {
         $project: {
           _id: 1,
@@ -878,6 +887,18 @@ export const getFutureAppointments = async (req, res) => {
           status: 1,
           clinicalStatus: 1,
           operationalStatus: 1,
+          package: {
+            $cond: {
+              if: { $gt: [{ $size: '$package' }, 0] },
+              then: {
+                _id: { $arrayElemAt: ['$package._id', 0] },
+                totalSessions: { $arrayElemAt: ['$package.totalSessions', 0] },
+                sessionsDone: { $arrayElemAt: ['$package.sessionsDone', 0] },
+                status: { $arrayElemAt: ['$package.status', 0] },
+              },
+              else: null
+            }
+          },
           patient: {
             $cond: {
               if: { $eq: ["$patient", null] },
