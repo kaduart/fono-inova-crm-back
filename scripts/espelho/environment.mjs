@@ -14,8 +14,8 @@ export function buildMirrorEnvironment(parent, mongoUri) {
     REDIS_URL: 'redis://127.0.0.1:6381/0', REDIS_HOST: '127.0.0.1', REDIS_PORT: '6381', REDIS_PASSWORD: '',
     ENABLE_WORKERS: 'false', ENABLE_CRONS: 'false', ENABLE_PROJECTIONS: 'false',
     ENABLE_WHATSAPP_REALTIME: 'false', ENABLE_ADS_CONVERSION: 'false',
-    PORT: '5501', FRONTEND_URL: 'http://localhost:5173',
-    INTERNAL_BASE_URL: 'http://127.0.0.1:5501',
+    PORT: '5000', FRONTEND_URL: 'http://localhost:5173',
+    INTERNAL_BASE_URL: 'http://127.0.0.1:5000',
     JWT_SECRET: 'espelho-local-sem-validade-em-producao',
     SESSION_SECRET: 'sessao-local-sem-validade-em-producao',
     // SDKs instanciados durante imports exigem uma string; nunca usar credencial real.

@@ -478,6 +478,11 @@ router.get('/', flexibleAuth, async (req, res) => {
         if (doctorId && doctorId !== 'all' && mongoose.Types.ObjectId.isValid(doctorId)) {
             filter.doctor = new mongoose.Types.ObjectId(doctorId);
         }
+        // Terapeuta: agenda geral só dele. Com paciente escolhido (ficha clínica),
+        // vê o histórico do paciente com todos os profissionais.
+        if (req.user?.role === 'doctor' && !filter.patient) {
+            filter.doctor = new mongoose.Types.ObjectId(String(req.user.id));
+        }
 
         // 'suspended' = agendamento pausado por troca de guia de convênio
         // (replaceInsuranceGuideService) — não é falta/cancelamento do paciente,

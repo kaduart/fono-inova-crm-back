@@ -334,16 +334,6 @@ export const packageOperations = {
                 throw new Error('Convênio deve ser criado via /api/v2/insurance-guides. O fluxo Package type=convenio está descontinuado.');
             }
 
-            // ⚠️ LEGADO — LIMINAR NÃO USA MAIS PACKAGE
-            // Esse log NUNCA mais executa (bloqueio acima). Mantido para referência.
-            if (type === 'liminar') {
-                console.log('⚠️ LEGADO — Criando pacote LIMINAR (nunca deve executar):', {
-                    processo: liminarProcessNumber || 'Não informado',
-                    vara: liminarCourt || 'Não informada',
-                    modo: liminarMode
-                });
-            }
-
             // ==========================================================
             // 2️⃣ CONVERSÃO / REAPROVEITAMENTO DO PRIMEIRO SLOT EXISTENTE
             //     - Funciona com appointmentId explícito OU detecta automaticamente
@@ -467,20 +457,6 @@ export const packageOperations = {
                 calculationMode,
                 type
             };
-
-            // ⚖️ Adicionar campos específicos do liminar
-            if (type === 'liminar') {
-                packageData.liminarProcessNumber = liminarProcessNumber;
-                packageData.liminarCourt = liminarCourt;
-                packageData.liminarExpirationDate = liminarExpirationDate || null;
-                packageData.liminarMode = liminarMode;
-                packageData.liminarAuthorized = liminarAuthorized;
-                packageData.liminarTotalCredit = totalValue;
-                packageData.liminarCreditBalance = totalValue;
-                packageData.recognizedRevenue = 0;
-                // Para liminar, o financialStatus inicia como 'unpaid' até reconhecer a receita
-                packageData.financialStatus = 'unpaid';
-            }
 
             const newPackage = new Package(packageData);
 

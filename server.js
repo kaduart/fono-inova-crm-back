@@ -985,8 +985,10 @@ server.listen(PORT, process.env.ESPELHO === 'true' ? '127.0.0.1' : '0.0.0.0', ()
 
     // Registrar Webhook PIX no Sicoob
     try {
-      if (process.env.ESPELHO !== 'true') await registerWebhook();
-      console.log("🔗 Webhook PIX registrado com sucesso");
+      // 01/11: só diz "registrado" quando registrou de fato (antes logava sucesso
+      // mesmo com PIX desligado por falta de certificado ou no espelho).
+      const pix = process.env.ESPELHO !== 'true' ? await registerWebhook() : { disabled: true };
+      if (!pix?.disabled) console.log("🔗 Webhook PIX registrado com sucesso");
     } catch (err) {
       console.warn("⚠️ Falha ao registrar webhook PIX:", err.message);
     }

@@ -126,4 +126,18 @@ router.put('/:id', async (req, res) => {
     }
 });
 
+// DELETE /:id - Excluir (autor ou equipe; checado em routes/reports/index.js)
+router.delete('/:id', async (req, res) => {
+    try {
+        const deleted = await SchoolReport.findByIdAndDelete(req.params.id);
+        if (!deleted) {
+            return sendApiError(res, new AppError('NOT_FOUND', 'Relatório não encontrado', { status: 404 }), req);
+        }
+        res.json({ success: true, message: 'Relatório escolar excluído' });
+    } catch (error) {
+        console.error('Erro ao excluir relatório:', error.message);
+        sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
+    }
+});
+
 export default router;

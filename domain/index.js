@@ -17,4 +17,3 @@ export {
 } from './package/consumePackageSession.js';
 
 // Liminar
-export { recognizeLiminarRevenue } from './liminar/recognizeRevenue.js';

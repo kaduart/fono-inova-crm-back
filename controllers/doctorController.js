@@ -1,12 +1,26 @@
 // controllers/doctorController.js
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
+// Pacote e guia: populate da agenda de hoje; anamnese: selo na lista "Meus pacientes".
+import Package from '../models/Package.js';
+import '../models/InsuranceGuide.js';
+import AnamnesisReport from '../models/AnamnesisReport.js';
+import Evolution from '../models/Evolution.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
 import Session from '../models/Session.js';
 import TherapySession from '../models/TherapySession.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+
+// Profissional alvo do painel: terapeuta sempre o próprio; admin/secretária
+// podem escolher com ?doctorId= (seletor "Ver painel de", decisão do Kadu 01/11/2026).
+const resolveDoctorId = (req) => {
+  const q = req.query?.doctorId;
+  if (['admin', 'secretary'].includes(req.user?.role) && q && mongoose.Types.ObjectId.isValid(q)) return String(q);
+  return String(req.user?.doctorId || req.user?._id || req.user?.id);
+};
+
 const ObjectId = mongoose.Types.ObjectId;
 
 const toObjectId = (id) => {
@@ -333,7 +347,7 @@ export const doctorOperations = {
 // controllers/doctorController.js
 export const getCalendarAppointments = async (req, res) => {
   try {
-    const doctorId = req.user.id;
+    const doctorId = resolveDoctorId(req);
 
     // Validar se o ID do médico é válido
     if (!mongoose.Types.ObjectId.isValid(doctorId)) {
@@ -475,7 +489,7 @@ const INACTIVE_AFTER_DAYS = 60;
 
 export const getDoctorPatients = async (req, res) => {
   try {
-    const doctorId = req.user?.id;
+    const doctorId = resolveDoctorId(req);
     const { page = '1', limit = '50', search = '', care = '', sort = 'next', ids = '' } = req.query;
 
     if (!doctorId) {
@@ -592,6 +606,37 @@ export const getDoctorPatients = async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
     const enriched = list.slice(skip, skip + limitNum);
 
+    // Só da página atual (até 20): tem anamnese? pacote ativo deste profissional (ex.: 7/12)?
+    try {
+      const pageIds = enriched.map(p => p._id).filter(Boolean);
+      if (pageIds.length) {
+        const [withAnamnesis, pkgs, plans] = await Promise.all([
+          AnamnesisReport.distinct('patientId', { patientId: { $in: pageIds } }),
+          Package.find({ patient: { $in: pageIds }, doctor: new ObjectId(doctorId), status: { $in: ['active', 'in-progress'] } })
+            .select('patient totalSessions sessionsDone createdAt').sort({ createdAt: -1 }).lean(),
+          // Data de revisão do plano terapêutico da evolução mais recente deste profissional (só leitura).
+          Evolution.aggregate([
+            { $match: { patient: { $in: pageIds }, doctor: new ObjectId(doctorId) } },
+            { $sort: { date: -1 } },
+            { $group: { _id: '$patient', reviewDate: { $first: '$therapeuticPlan.reviewDate' } } },
+          ]),
+        ]);
+        const reviewByPatient = new Map(plans.filter(x => x.reviewDate).map(x => [String(x._id), x.reviewDate]));
+        const hasAnamnesis = new Set(withAnamnesis.map(String));
+        const pkgByPatient = new Map();
+        for (const pk of pkgs) if (!pkgByPatient.has(String(pk.patient))) pkgByPatient.set(String(pk.patient), pk);
+        for (const p of enriched) {
+          p.hasAnamnesis = hasAnamnesis.has(String(p._id));
+          const pk = pkgByPatient.get(String(p._id));
+          if (pk) p.activePackage = { totalSessions: pk.totalSessions, sessionsDone: pk.sessionsDone || 0 };
+          const rv = reviewByPatient.get(String(p._id));
+          if (rv) p.planReviewDate = rv;
+        }
+      }
+    } catch (sigErr) {
+      console.warn('[getDoctorPatients] anamnese/pacote/plano indisponíveis:', sigErr.message);
+    }
+
     return res.json({
       success: true,
       data: enriched,
@@ -619,7 +664,7 @@ export const getDoctorPatients = async (req, res) => {
 
 export const getTodaysAppointments = async (req, res) => {
   try {
-    const doctorId = req.user.doctorId || req.user._id || req.user.id;
+    const doctorId = resolveDoctorId(req);
     
     // Criar range para o dia de HOJE (início e fim do dia)
     const today = new Date();
@@ -640,9 +685,31 @@ export const getTodaysAppointments = async (req, res) => {
     const appointments = await Appointment.find(filter)
       .populate('patient', 'fullName phone dateOfBirth')
       .populate('payment', 'status')
-      .select('_id date time duration operationalStatus clinicalStatus patient payment billingType insuranceProvider serviceType sessionType specialty patientJourneyType liminarContract package reason')
+      // Sinais da linha da agenda (só leitura): "última sessão do pacote", "guia vence em N dias".
+      .populate('package', 'totalSessions sessionsDone status')
+      .populate('insuranceGuide', 'expiresAt totalSessions usedSessions status')
+      .select('_id date time duration operationalStatus clinicalStatus patient payment billingType insuranceProvider serviceType sessionType specialty patientJourneyType liminarContract package insuranceGuide reason')
       .sort({ time: 1 })
       .lean();
+
+    // Sinal "faltou na última": status da sessão anterior de cada paciente com este profissional.
+    try {
+      const patientIds = [...new Set(appointments.map(a => a.patient?._id).filter(Boolean).map(String))];
+      if (patientIds.length) {
+        const last = await Appointment.aggregate([
+          { $match: { doctor: new ObjectId(doctorId), patient: { $in: patientIds.map(id => new ObjectId(id)) }, date: { $lt: startOfDay } } },
+          { $sort: { date: -1, time: -1 } },
+          { $group: { _id: '$patient', status: { $first: '$operationalStatus' }, date: { $first: '$date' } } },
+        ]);
+        const byPatient = new Map(last.map(l => [String(l._id), l]));
+        for (const a of appointments) {
+          const l = a.patient?._id && byPatient.get(String(a.patient._id));
+          if (l) a.previousSession = { status: l.status, date: l.date };
+        }
+      }
+    } catch (sigErr) {
+      console.warn('[GET_TODAYS_APPOINTMENTS] sinais da sessão anterior indisponíveis:', sigErr.message);
+    }
 
     console.log('[GET_TODAYS_APPOINTMENTS] encontrados:', appointments.length);
 
@@ -657,7 +724,7 @@ export const getTodaysAppointments = async (req, res) => {
 // backend/controllers/doctorController.js
 export const getDoctorTherapySessions = async (req, res) => {
   try {
-    const doctor = new ObjectId(req.user.id);
+    const doctor = new ObjectId(resolveDoctorId(req));
     const sessions = await TherapySession.find({ doctor: doctor })
       .populate('patient', 'fullName')
       .populate('appointment', 'date time')
@@ -673,7 +740,7 @@ export const getDoctorTherapySessions = async (req, res) => {
 
 export const getDoctorStats = async (req, res) => {
   try {
-    const doctor = new ObjectId(req.user.id);
+    const doctor = new ObjectId(resolveDoctorId(req));
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0));
     const endOfToday = new Date(today.setHours(23, 59, 59, 999));
@@ -807,7 +874,7 @@ export const getFutureAppointments = async (req, res) => {
       return sendApiError(res, new AppError('UNAUTHORIZED', 'Não autenticado', { status: 401 }), req);
     }
 
-    const doctorId = req.user.id;
+    const doctorId = resolveDoctorId(req);
     const now = new Date();
     
     console.log('[GET_FUTURE_APPOINTMENTS] doctorId:', doctorId);
@@ -836,6 +903,15 @@ export const getFutureAppointments = async (req, res) => {
           preserveNullAndEmptyArrays: true
         }
       },
+      // Pacote (só contagem de sessões) para "Renovações à vista" no painel do terapeuta.
+      {
+        $lookup: {
+          from: 'packages',
+          localField: 'package',
+          foreignField: '_id',
+          as: 'package'
+        }
+      },
       {
         $project: {
           _id: 1,
@@ -844,6 +920,18 @@ export const getFutureAppointments = async (req, res) => {
           status: 1,
           clinicalStatus: 1,
           operationalStatus: 1,
+          package: {
+            $cond: {
+              if: { $gt: [{ $size: '$package' }, 0] },
+              then: {
+                _id: { $arrayElemAt: ['$package._id', 0] },
+                totalSessions: { $arrayElemAt: ['$package.totalSessions', 0] },
+                sessionsDone: { $arrayElemAt: ['$package.sessionsDone', 0] },
+                status: { $arrayElemAt: ['$package.status', 0] },
+              },
+              else: null
+            }
+          },
           patient: {
             $cond: {
               if: { $eq: ["$patient", null] },

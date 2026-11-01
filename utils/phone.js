@@ -184,6 +184,12 @@ export const validateE164 = (phone) => {
  * - Valida tamanho final
  * - Retorna { success, phone, error }
  */
+// 01/11: logs de telefone mascarados (só os 4 últimos dígitos) e só com LOG_VERBOSE=true.
+// Antes gravava o número completo do paciente no log de produção a cada envio.
+const maskPhone = (v) => { const d = String(v || '').replace(/\D/g, ''); return d.length > 4 ? `${'*'.repeat(d.length - 4)}${d.slice(-4)}` : '****'; };
+const sanitizeLog = (msg) => { if (process.env.LOG_VERBOSE === 'true') console.log(msg); };
+export { maskPhone };
+
 export const sanitizePhoneBeforeSend = (phone) => {
     if (!phone) {
         return { success: false, phone: null, error: "Número vazio" };
@@ -195,7 +201,7 @@ export const sanitizePhoneBeforeSend = (phone) => {
     let digits = original.replace(/\D/g, "");
     
     // Log para debug
-    console.log(`📞 [SANITIZE] Original: "${original}" → Dígitos: "${digits}"`);
+    sanitizeLog(`📞 [SANITIZE] Original: ${maskPhone(original)}`);
     
     // Se começar com 55, mantém. Se não, adiciona
     if (!digits.startsWith("55")) {
@@ -224,7 +230,7 @@ export const sanitizePhoneBeforeSend = (phone) => {
         if (resto.startsWith("99") && resto.length === 10) {
             // Remove o 9 extra
             digits = "55" + ddd + "9" + resto.substring(2);
-            console.log(`📞 [SANITIZE] 9 duplicado corrigido: ${digits}`);
+            sanitizeLog(`📞 [SANITIZE] 9 duplicado corrigido: ${maskPhone(digits)}`);
         }
     }
     
@@ -243,7 +249,7 @@ export const sanitizePhoneBeforeSend = (phone) => {
         return { success: false, phone: digits, error: `DDD inválido: ${ddd}` };
     }
     
-    console.log(`📞 [SANITIZE] Sucesso: ${original} → ${digits}`);
+    sanitizeLog(`📞 [SANITIZE] Sucesso: ${maskPhone(original)} → ${maskPhone(digits)}`);
     return { success: true, phone: digits, error: null };
 };
 
