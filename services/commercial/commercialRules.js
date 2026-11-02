@@ -56,7 +56,10 @@ export function sortFitLeads(leads) {
 
 // Um paciente pode ter mais de um pacote ativo na mesma especialidade (renovação já feita):
 // vale o que tem mais sessões sobrando. Fica na fila quem tem `threshold` ou menos.
+// threshold numérico = limite fixo de sessões restantes (comportamento antigo).
+// threshold 'auto' = limite proporcional por pacote (renewalThreshold), aprovado em 01/11/2026.
 export function packagesEnding(packages, threshold = 2) {
+  const limitFor = p => (threshold === 'auto' ? renewalThreshold(p.totalSessions) : threshold);
   const best = new Map();
   for (const p of packages) {
     const pid = p.patient?.toString();
@@ -66,7 +69,7 @@ export function packagesEnding(packages, threshold = 2) {
     const cur = best.get(key);
     if (!cur || remaining > cur.remaining) best.set(key, { pkg: p, remaining });
   }
-  return [...best.values()].filter(e => e.remaining <= threshold);
+  return [...best.values()].filter(e => e.remaining <= limitFor(e.pkg));
 }
 
 // Contato registrado recentemente manda o item para o fim da fila, sem esconder
@@ -79,4 +82,64 @@ export function sortByRecentContact(items, now = new Date(), coolDays = 7) {
 export function daysBetween(from, to = new Date()) {
   if (!from) return null;
   return Math.floor((new Date(to) - new Date(from)) / 86_400_000);
+}
+
+// ─── Pacote a 80% (aprovado em 01/11/2026) ───────────────────────────────────
+// Gatilho quando faltam até 20% das sessões, com piso de 1. Num pacote de 12 dispara
+// em 10/12; num pacote mensal de 4 (1x/semana) dispara em 3/4, porque 80% puro só
+// chegaria em 4/4, sem tempo para renovar.
+export function renewalThreshold(totalSessions) {
+  return Math.max(1, Math.floor((Number(totalSessions) || 0) * 0.2));
+}
+
+// Estágio do chip no painel comercial: ok (verde) → renovar (amarelo) → ultima (laranja).
+export function renewalStage(remaining, totalSessions) {
+  if (remaining <= 1) return 'ultima';
+  if (remaining <= renewalThreshold(totalSessions)) return 'renovar';
+  return 'ok';
+}
+
+// ─── Risco de evasão / churn (aprovado em 01/11/2026) ────────────────────────
+// Dias sem sessão futura para entrar no alerta, pela frequência do pacote ativo.
+export const CHURN_DAYS = { weekly: 14, biweekly: 21 };
+// Janela da "falta justificada": cancelamento pedido pelo paciente (cancelRequester
+// 'patient') nos últimos 30 dias tira do alerta. Quem avisou tende a voltar.
+export const CHURN_JUSTIFIED_WINDOW_DAYS = 30;
+// Pausa registrada pela secretária vale no máximo 90 dias.
+export const CHURN_MAX_PAUSE_DAYS = 90;
+
+/**
+ * Filtra candidatos (pacientes sem sessão futura) para o alerta de evasão.
+ * @param {Array<{patientId:string, daysSince:number}>} candidates
+ * @param {object} ctx
+ * @param {Set<string>} ctx.activePatients  pacientes com status 'active'
+ * @param {Record<string,'weekly'|'biweekly'>} ctx.frequencyByPatient  frequência do pacote ativo
+ * @param {Set<string>} ctx.justified  com falta justificada na janela
+ * @param {Set<string>} ctx.paused     com pausa vigente
+ */
+export function churnRisk(candidates, { activePatients, frequencyByPatient = {}, justified, paused }) {
+  return candidates
+    .filter(c => activePatients.has(c.patientId))
+    .filter(c => !justified.has(c.patientId) && !paused.has(c.patientId))
+    .map(c => {
+      const minDays = CHURN_DAYS[frequencyByPatient[c.patientId]] || CHURN_DAYS.weekly;
+      return { ...c, minDays };
+    })
+    .filter(c => c.daysSince >= c.minDays)
+    .map(c => ({
+      ...c,
+      severity: 'critical',
+      title: `Risco de evasão: ${c.name} está sem agendamento há ${c.daysSince} dias`,
+    }))
+    .sort((a, b) => b.daysSince - a.daysSince);
+}
+
+// Texto pronto do WhatsApp de reengajamento (o front abre o WhatsApp; o back não envia).
+// Valor antes de qualquer pedido, horário genérico, sem dado clínico.
+export function churnMessage(name) {
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const who = first ? `de ${first}` : 'de vocês';
+  return `Oi! Aqui é da Clínica Fono Inova. Sentimos falta ${who} por aqui. `
+    + 'A constância das sessões é o que mantém a evolução, e queremos ajudar a retomar. '
+    + 'Podemos ver um horário para esta semana, de manhã ou à tarde? 💚';
 }

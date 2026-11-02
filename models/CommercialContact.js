@@ -4,12 +4,17 @@
 // Appointment nem Package. Ver docs/COMMERCIAL_QUEUES.md.
 import mongoose from 'mongoose';
 
+// churn = contato de reengajamento do alerta de evasão; churn_pause = pausa combinada
+// com a família (férias, saúde), com fim em `until`. Ver docs/COMMERCIAL_QUEUES.md.
+export const CONTACT_KINDS = ['reactivation', 'renewal', 'fit', 'lead_reply', 'evaluation', 'evaluation_lost', 'churn', 'churn_pause'];
+
 const commercialContactSchema = new mongoose.Schema({
   targetType: { type: String, enum: ['patient', 'lead'], required: true },
   target: { type: mongoose.Schema.Types.ObjectId, required: true },
-  kind: { type: String, enum: ['reactivation', 'renewal', 'fit', 'lead_reply', 'evaluation', 'evaluation_lost'], required: true },
+  kind: { type: String, enum: CONTACT_KINDS, required: true },
   channel: { type: String, enum: ['whatsapp', 'telefone', 'presencial'], default: 'whatsapp' },
   note: { type: String, default: '', maxlength: 500 },
+  until: { type: Date, default: null }, // só em churn_pause
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
