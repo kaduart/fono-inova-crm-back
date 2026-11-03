@@ -16,6 +16,7 @@ export function extractWebsiteLeadPersonalData(body) {
             nome: structured.nome,
             telefone: structured.telefone,
             email: structured.email || null,
+            faixaEtaria: structured.faixaEtaria || data.faixaEtaria || data.ageGroup || null,
             format: 'dadosPessoais',
         };
     }
@@ -25,6 +26,7 @@ export function extractWebsiteLeadPersonalData(body) {
             nome: data.nome,
             telefone: data.telefone,
             email: data.email || null,
+            faixaEtaria: data.faixaEtaria || data.ageGroup || null,
             format: 'flat',
         };
     }
