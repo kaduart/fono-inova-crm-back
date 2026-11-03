@@ -24,7 +24,7 @@ import { getProjectionWorkerStatus, getProjectionMetrics } from '../domains/clin
 import patientV2DebugRoutes from './patient.v2.debug.js';
 import { createContextLogger } from '../utils/logger.js';
 import { execute as deletePatientCommand } from '../domains/patient/commands/deletePatientCommand.js';
-import { isLikelySameName } from '../utils/patientDuplicateCheck.js';
+import { findPossibleDuplicates, toDuplicateCandidateDTO } from '../utils/patientDuplicateCheck.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 
@@ -383,25 +383,27 @@ router.post('/', flexibleAuth, async (req, res) => {
       }
     }
 
-    // Duplicata por nome (tolerante a erro de digitação) + telefone
-    // Comparar por igualdade EXATA de string deixava passar duplicidades como
-    // "Isaac Moreira Ribeiro" vs "Issac Moreira Ribeiro" mesmo com telefone
-    // idêntico — ~1 ano de histórico ficou dividido em dois cadastros até ser
-    // pego manualmente. Ver utils/patientDuplicateCheck.js.
-    if (req.body.phone) {
-      const normalizedPhone = req.body.phone.replace(/\D/g, '');
-      const samePhonePatients = await Patient.find({ phone: normalizedPhone }).select('fullName').lean();
-      const namePhoneDup = samePhonePatients.find(p => isLikelySameName(p.fullName, fullName));
-      if (namePhoneDup) {
-        return sendApiError(
-          res,
-          new AppError('CONFLICT', `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`, {
-            status: 409,
-            extra: { existingId: namePhoneDup._id.toString() },
-          }),
-          req
-        );
-      }
+    // Possível duplicado (03/11/2026): nome sem acento/caixa (até 1 letra de diferença)
+    // cruzado com nascimento/telefone. Antes só conferia se viesse telefone — o
+    // "BENJAMIN MARCAL BALDEZ" sem telefone passou direto. O usuário pode confirmar
+    // "é outra pessoa" reenviando com confirmNotDuplicate=true (fica registrado).
+    const duplicates = await findPossibleDuplicates(Patient, {
+      fullName, dateOfBirth, phone: req.body.phone, cpf: req.body.cpf,
+    });
+    const confirmedDistinct = req.body.confirmNotDuplicate === true;
+    if (duplicates.length && !confirmedDistinct) {
+      const first = duplicates[0];
+      return sendApiError(
+        res,
+        new AppError('POSSIBLE_DUPLICATE', `Já existe um cadastro parecido: "${first.fullName}". Confira se não é a mesma pessoa antes de criar um novo.`, {
+          status: 409,
+          extra: {
+            existingId: first._id.toString(),
+            candidates: duplicates.map(toDuplicateCandidateDTO),
+          },
+        }),
+        req
+      );
     }
 
     // Gera ID provisório
@@ -427,7 +429,12 @@ router.post('/', flexibleAuth, async (req, res) => {
       healthPlan: req.body.healthPlan,
       mainComplaint: req.body.mainComplaint,
       emergencyContact: req.body.emergencyContact,
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
+      source: req.body.source || 'erp',
+      ...(duplicates.length ? {
+        possibleDuplicateOf: duplicates.map(d => d._id),
+        duplicateReview: { confirmedDistinct: true, confirmedBy: req.user?.id || null, confirmedAt: new Date() },
+      } : {}),
     });
 
     logger.info(`[${correlationId}] ✅ Patient created`, { patientId: patient._id.toString() });

@@ -1,5 +1,6 @@
 // controllers/leadController.js - VERSÃO COMPLETA (Planilha + Anúncios)
 import { followupQueue } from "../config/bullConfig.js";
+import { findPossibleDuplicates, pickReusableDuplicate } from '../utils/patientDuplicateCheck.js';
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Patient from '../models/Patient.js';
@@ -616,7 +617,17 @@ export const convertLeadToPatient = async (req, res) => {
             }
         };
 
-        const patient = await Patient.create(patientData);
+        // Possível duplicado (03/11/2026): lead que já é paciente (mesmo nome + telefone)
+        // é vinculado ao cadastro existente em vez de criar outro.
+        const duplicates = await findPossibleDuplicates(Patient, { fullName: lead.name, phone: lead.contact?.phone });
+        const reuse = pickReusableDuplicate(duplicates);
+        const patient = reuse
+            ? await Patient.findById(reuse._id)
+            : await Patient.create({
+                ...patientData,
+                source: 'lead',
+                ...(duplicates.length ? { possibleDuplicateOf: duplicates.map(d => d._id) } : {}),
+            });
 
         // Atualizar lead
         lead.status = 'virou_paciente';

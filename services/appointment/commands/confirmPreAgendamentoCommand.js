@@ -17,6 +17,7 @@
 
 import Appointment from '../../../models/Appointment.js';
 import Patient from '../../../models/Patient.js';
+import { findPossibleDuplicates, pickReusableDuplicate } from '../../../utils/patientDuplicateCheck.js';
 import Payment from '../../../models/Payment.js';
 import Session from '../../../models/Session.js';
 import { runTransactionWithRetry } from '../../../utils/transactionRetry.js';
@@ -82,16 +83,29 @@ export async function execute(id, payload, user) {
         throw buildError('Profissional não encontrado', 400, 'DOCTOR_NOT_FOUND');
       }
 
-      // Resolve paciente: já vinculado -> busca por telefone -> cria novo (exige birthDate)
+      // Resolve paciente: já vinculado -> cadastro parecido -> cria novo (exige birthDate)
+      // 03/11/2026: antes reaproveitava QUALQUER paciente com o mesmo telefone — irmãos
+      // com o telefone da mãe caíam no cadastro errado — e sem telefone criava sempre.
+      // Agora usa a trava única (utils/patientDuplicateCheck.js): reaproveita só se houver
+      // exatamente um cadastro forte (nome parecido + nascimento/telefone ou CPF).
       let patientId = pre.patient;
-      if (!patientId && pre.patientInfo?.phone) {
+      let duplicates = [];
+      if (!patientId && pre.patientInfo?.fullName) {
+        duplicates = await findPossibleDuplicates(Patient, {
+          fullName: pre.patientInfo.fullName,
+          dateOfBirth: pre.patientInfo.birthDate,
+          phone: pre.patientInfo.phone,
+        }, { session: mongoSession });
+        const reuse = pickReusableDuplicate(duplicates);
+        if (reuse) patientId = reuse._id.toString();
+      } else if (!patientId && pre.patientInfo?.phone) {
+        // Sem nome não há como comparar: mantém o comportamento antigo (só telefone),
+        // mas apenas quando existe UM cadastro com esse número.
         const cleanPhone = pre.patientInfo.phone.replace(/\D/g, '');
-        const existingPatient = await Patient.findOne({
-          phone: { $regex: cleanPhone.slice(-10) }
-        }).session(mongoSession).lean();
-        if (existingPatient) {
-          patientId = existingPatient._id.toString();
-        }
+        const samePhone = cleanPhone.length >= 8
+          ? await Patient.find({ phone: { $regex: cleanPhone.slice(-10) } }).select('_id').limit(2).session(mongoSession).lean()
+          : [];
+        if (samePhone.length === 1) patientId = samePhone[0]._id.toString();
       }
       if (!patientId && pre.patientInfo?.fullName) {
         if (!pre.patientInfo.birthDate) {
@@ -107,6 +121,7 @@ export async function execute(id, payload, user) {
           dateOfBirth: new Date(pre.patientInfo.birthDate),
           email: pre.patientInfo.email || null,
           source: 'agenda_externa_v2',
+          ...(duplicates.length ? { possibleDuplicateOf: duplicates.map(d => d._id) } : {}),
         });
         await newPatient.save({ session: mongoSession });
         patientId = newPatient._id.toString();
