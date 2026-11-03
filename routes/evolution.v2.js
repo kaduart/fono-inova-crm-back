@@ -14,9 +14,13 @@ import Evolution, { FINALIZED_FILTER } from '../models/Evolution.js';
 import Metric from '../models/Metric.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
+import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { generatePdfFromEvolution } from '../services/generatePDF.js';
+import { whatsappSendQueue } from '../config/bullConfig.js';
+import { sanitizePhoneBeforeSend } from '../utils/phone.js';
+import { familySummarySuggestion, validateFamilyText } from '../services/clinical/familyMessages.js';
 
 const router = express.Router();
 
@@ -273,6 +277,83 @@ router.post('/:id/finalize', flexibleAuth, async (req, res) => {
     } catch (error) {
         console.error('[EvolutionV2] Erro ao finalizar:', error.message);
         sendValidationOr500(res, error);
+    }
+});
+
+// ─── RESUMO PARA A FAMÍLIA (item 4) — ver docs/FAMILY_COMMUNICATION.md ───────
+
+const canTouchEvolution = (evolution, user) => isAdmin(user) || String(evolution.doctor) === String(user?.id);
+
+router.get('/:id/family-summary', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
+        const evolution = await Evolution.findById(id).select('doctor patient status evaluationAreas familySummary').lean();
+        if (!evolution) return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        if (!canTouchEvolution(evolution, req.user)) return res.status(403).json(failure('FORBIDDEN', 'Só o profissional da sessão envia o resumo'));
+        const patient = await Patient.findById(evolution.patient).select('fullName phone').lean();
+        const phone = sanitizePhoneBeforeSend(patient?.phone);
+        res.json(success({
+            suggestion: familySummarySuggestion({ patientName: patient?.fullName, areas: evolution.evaluationAreas || [] }),
+            sent: evolution.familySummary?.status === 'queued' ? evolution.familySummary : null,
+            canSend: evolution.status !== 'draft' && phone.success,
+            blockReason: evolution.status === 'draft' ? 'Finalize a evolução antes de enviar o resumo.'
+                : !phone.success ? 'Paciente sem telefone válido no cadastro.' : null,
+            phoneLast4: phone.success ? phone.phone.slice(-4) : null,
+        }));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao montar resumo da família:', error.message);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
+    }
+});
+
+/**
+ * Envia o resumo aprovado pelo terapeuta. Idempotente: uma vez por evolução
+ * (trava atômica em familySummary.status + jobId fixo `famsum-<id>`).
+ */
+router.post('/:id/family-summary/send', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
+        const text = String(req.body?.text || '').trim();
+        const invalid = validateFamilyText(text);
+        if (invalid) return res.status(400).json(failure('INVALID_TEXT', invalid));
+
+        const evolution = await Evolution.findById(id).select('doctor patient status familySummary').lean();
+        if (!evolution) return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        if (!canTouchEvolution(evolution, req.user)) return res.status(403).json(failure('FORBIDDEN', 'Só o profissional da sessão envia o resumo'));
+        if (evolution.status === 'draft') return res.status(409).json(failure('EVOLUTION_NOT_FINALIZED', 'Finalize a evolução antes de enviar o resumo.'));
+        if (evolution.familySummary?.status === 'queued') {
+            return res.status(200).json(success(evolution.familySummary, { idempotent: true }));
+        }
+
+        const patient = await Patient.findById(evolution.patient).select('phone').lean();
+        const phone = sanitizePhoneBeforeSend(patient?.phone);
+        if (!phone.success) return res.status(409).json(failure('NO_PHONE', 'Paciente sem telefone válido no cadastro.'));
+
+        const summary = { text, status: 'queued', queuedAt: new Date(), approvedBy: req.user?.id, phoneLast4: phone.phone.slice(-4) };
+        const claimed = await Evolution.findOneAndUpdate(
+            { _id: id, 'familySummary.status': { $ne: 'queued' } },
+            { $set: { familySummary: summary } },
+            { new: true }
+        ).lean();
+        if (!claimed) {
+            const now = await Evolution.findById(id).select('familySummary').lean();
+            return res.status(200).json(success(now?.familySummary, { idempotent: true }));
+        }
+        try {
+            await whatsappSendQueue.add('send-message', { phone: phone.phone, message: text, purpose: 'family_summary' },
+                { jobId: `famsum-${id}`, attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 500, removeOnFail: 500 });
+        } catch (err) {
+            await Evolution.updateOne({ _id: id }, { $set: { 'familySummary.status': 'failed' } });
+            console.error(`[EvolutionV2] resumo ${id} não entrou na fila:`, err.message);
+            return res.status(503).json(failure('QUEUE_UNAVAILABLE', 'Não foi possível enviar agora. Tente de novo em alguns minutos.'));
+        }
+        console.log(`[EvolutionV2] resumo da família enfileirado evo=${id} user=${req.user?.id}`);
+        res.status(201).json(success(claimed.familySummary));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao enviar resumo da família:', error.message);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 
@@ -768,78 +849,139 @@ router.get('/metrics', flexibleAuth, async (req, res) => {
 const PENDING_WINDOW_DAYS = 90;
 const ymd = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
+/**
+ * Pendências de evolução: paciente atendido (concluído/pago) nos últimos 90 dias sem evolução
+ * FINALIZADA do mesmo profissional depois do último atendimento. Rascunho continua pendente.
+ * doctorFilter: ObjectId de um profissional, ou null para a clínica toda (visão da coordenação).
+ */
+async function computePendingRows(doctorFilter) {
+    const now = new Date();
+    const since = new Date(now.getTime() - PENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const doctorMatch = doctorFilter ? { doctor: doctorFilter } : { doctor: { $ne: null } };
+    const key = (doctor, patient) => `${doctor}:${patient}`;
+
+    const attended = await Appointment.aggregate([
+        {
+            $match: {
+                ...doctorMatch,
+                patient: { $ne: null },
+                operationalStatus: { $in: ['completed', 'paid'] },
+                date: { $gte: since, $lte: now }
+            }
+        },
+        { $sort: { date: -1 } },
+        // O agendamento mais recente vai junto: é nele que o rascunho/evolução fica preso.
+        { $group: { _id: { doctor: '$doctor', patient: '$patient' }, lastCompletedDate: { $first: '$date' }, lastAppointmentId: { $first: '$_id' }, lastCompletedTime: { $first: '$time' } } }
+    ]);
+    if (attended.length === 0) return [];
+
+    const patientIds = [...new Set(attended.map(a => String(a._id.patient)))].map(id => new mongoose.Types.ObjectId(id));
+    const evolutions = await Evolution.aggregate([
+        { $match: { ...doctorMatch, patient: { $in: patientIds }, ...FINALIZED_FILTER } },
+        { $group: { _id: { doctor: '$doctor', patient: '$patient' }, lastEvolutionDate: { $max: '$date' } } }
+    ]);
+    const lastEvo = new Map(evolutions.map(e => [key(e._id.doctor, e._id.patient), e.lastEvolutionDate]));
+
+    const pending = attended.filter(a => {
+        const evo = lastEvo.get(key(a._id.doctor, a._id.patient));
+        return !evo || ymd(evo) < ymd(a.lastCompletedDate);
+    });
+    if (pending.length === 0) return [];
+
+    const pendingPatientIds = [...new Set(pending.map(p => String(p._id.patient)))];
+    const patients = await Patient.find({
+        _id: { $in: pendingPatientIds },
+        status: { $nin: ['inactive', 'lead'] },
+        isLead: { $ne: true }
+    }).select('fullName').lean();
+    const nameById = new Map(patients.map(p => [String(p._id), p.fullName]));
+
+    const drafts = await Evolution.find({ ...doctorMatch, status: 'draft', patient: { $in: pendingPatientIds } })
+        .select('doctor patient appointmentId lastAutosaveAt').sort({ lastAutosaveAt: -1 }).lean();
+    const draftBy = new Map();
+    for (const d of drafts) {
+        const k = key(d.doctor, d.patient);
+        if (!draftBy.has(k)) draftBy.set(k, d);
+    }
+
+    return pending
+        .filter(p => nameById.has(String(p._id.patient)))
+        .map(p => {
+            const k = key(p._id.doctor, p._id.patient);
+            const draft = draftBy.get(k);
+            return {
+                _id: p._id.patient,
+                doctor: p._id.doctor,
+                fullName: nameById.get(String(p._id.patient)),
+                lastCompletedDate: p.lastCompletedDate,
+                lastAppointmentId: p.lastAppointmentId || null,
+                lastCompletedTime: p.lastCompletedTime || null,
+                lastEvolutionDate: lastEvo.get(k) || null,
+                draft: draft ? { evolutionId: draft._id, appointmentId: draft.appointmentId || null, lastAutosaveAt: draft.lastAutosaveAt || null } : null
+            };
+        })
+        .sort((a, b) => new Date(a.lastCompletedDate) - new Date(b.lastCompletedDate));
+}
+
 router.get('/pending', flexibleAuth, async (req, res) => {
     try {
         const doctorIdRaw = isAdmin(req.user) && req.query.doctorId ? req.query.doctorId : req.user?.id;
         if (!doctorIdRaw || !mongoose.Types.ObjectId.isValid(doctorIdRaw)) {
             return res.status(400).json(failure('INVALID_DOCTOR', 'Profissional inválido'));
         }
-        const doctor = new mongoose.Types.ObjectId(doctorIdRaw);
-        const now = new Date();
-        const since = new Date(now.getTime() - PENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-
-        const attended = await Appointment.aggregate([
-            {
-                $match: {
-                    doctor,
-                    patient: { $ne: null },
-                    operationalStatus: { $in: ['completed', 'paid'] },
-                    date: { $gte: since, $lte: now }
-                }
-            },
-            { $sort: { date: -1 } },
-            // O agendamento mais recente vai junto: é nele que o rascunho/evolução fica preso.
-            { $group: { _id: '$patient', lastCompletedDate: { $first: '$date' }, lastAppointmentId: { $first: '$_id' }, lastCompletedTime: { $first: '$time' } } }
-        ]);
-
-        if (attended.length === 0) return res.json(success([], { count: 0 }));
-
-        const evolutions = await Evolution.aggregate([
-            { $match: { doctor, patient: { $in: attended.map(a => a._id) }, ...FINALIZED_FILTER } },
-            { $group: { _id: '$patient', lastEvolutionDate: { $max: '$date' } } }
-        ]);
-        const lastEvoByPatient = new Map(evolutions.map(e => [String(e._id), e.lastEvolutionDate]));
-
-        const pending = attended.filter(a => {
-            const lastEvo = lastEvoByPatient.get(String(a._id));
-            return !lastEvo || ymd(lastEvo) < ymd(a.lastCompletedDate);
-        });
-
-        if (pending.length === 0) return res.json(success([], { count: 0 }));
-
-        const patients = await Patient.find({
-            _id: { $in: pending.map(p => p._id) },
-            status: { $nin: ['inactive', 'lead'] },
-            isLead: { $ne: true }
-        }).select('fullName').lean();
-        const nameById = new Map(patients.map(p => [String(p._id), p.fullName]));
-
-        // Rascunho em andamento continua pendente, mas a tela mostra "Continuar rascunho".
-        const drafts = await Evolution.find({ doctor, status: 'draft', patient: { $in: pending.map(p => p._id) } })
-            .select('patient appointmentId lastAutosaveAt').sort({ lastAutosaveAt: -1 }).lean();
-        const draftByPatient = new Map();
-        for (const d of drafts) if (!draftByPatient.has(String(d.patient))) draftByPatient.set(String(d.patient), d);
-
-        const data = pending
-            .filter(p => nameById.has(String(p._id)))
-            .map(p => ({
-                _id: p._id,
-                fullName: nameById.get(String(p._id)),
-                lastCompletedDate: p.lastCompletedDate,
-                lastAppointmentId: p.lastAppointmentId || null,
-                lastCompletedTime: p.lastCompletedTime || null,
-                lastEvolutionDate: lastEvoByPatient.get(String(p._id)) || null,
-                draft: draftByPatient.has(String(p._id)) ? {
-                    evolutionId: draftByPatient.get(String(p._id))._id,
-                    appointmentId: draftByPatient.get(String(p._id)).appointmentId || null,
-                    lastAutosaveAt: draftByPatient.get(String(p._id)).lastAutosaveAt || null
-                } : null
-            }))
-            .sort((a, b) => new Date(a.lastCompletedDate) - new Date(b.lastCompletedDate));
-
+        const rows = await computePendingRows(new mongoose.Types.ObjectId(doctorIdRaw));
+        const data = rows.map(({ doctor, ...row }) => row);
         res.json(success(data, { count: data.length }));
     } catch (error) {
         console.error('[EvolutionV2] Erro ao buscar pendências:', error);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
+    }
+});
+
+/**
+ * Visão da coordenação (só admin): pendências da clínica agrupadas por profissional ativo.
+ * Só leitura. Ver docs/EVOLUTION_DRAFT.md.
+ */
+router.get('/pending/by-doctor', flexibleAuth, async (req, res) => {
+    try {
+        if (!isAdmin(req.user)) {
+            return res.status(403).json(failure('FORBIDDEN', 'Apenas a coordenação vê as pendências da clínica'));
+        }
+        const rows = await computePendingRows(null);
+        const doctorIds = [...new Set(rows.map(r => String(r.doctor)))];
+        const doctors = doctorIds.length
+            ? await Doctor.find({ _id: { $in: doctorIds }, active: { $ne: false } }).select('fullName specialty phoneNumber').lean()
+            : [];
+        const today = ymd(new Date());
+        const daysLate = (d) => Math.max(0, Math.round((Date.parse(today) - Date.parse(ymd(d))) / 86400000));
+
+        const data = doctors.map(doc => {
+            const items = rows
+                .filter(r => String(r.doctor) === String(doc._id))
+                .map(({ doctor, ...r }) => ({ ...r, daysLate: daysLate(r.lastCompletedDate) }));
+            return {
+                doctorId: doc._id,
+                fullName: doc.fullName,
+                specialty: doc.specialty || null,
+                phoneNumber: doc.phoneNumber || null,
+                pendingCount: items.length,
+                draftCount: items.filter(i => i.draft).length,
+                oldestDaysLate: items.reduce((m, i) => Math.max(m, i.daysLate), 0),
+                items
+            };
+        })
+            .filter(d => d.pendingCount > 0)
+            .sort((a, b) => b.oldestDaysLate - a.oldestDaysLate || b.pendingCount - a.pendingCount);
+
+        const total = data.reduce((s, d) => s + d.pendingCount, 0);
+        res.json(success(data, {
+            total,
+            doctors: data.length,
+            drafts: data.reduce((s, d) => s + d.draftCount, 0),
+            oldestDaysLate: data.reduce((m, d) => Math.max(m, d.oldestDaysLate), 0)
+        }));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao buscar pendências por profissional:', error);
         res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });

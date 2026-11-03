@@ -7,6 +7,31 @@ import SchoolReport from "../../models/SchoolReport.js"; // Modelo específico p
 
 const router = express.Router();
 
+// O modal do front manda o formulário inteiro em `content`. Os campos obrigatórios do schema
+// (ano letivo, escola, série) moram no topo, então copiamos de `content` para o topo;
+// sem isso todo POST falhava na validação.
+const SEMESTERS = ['1º', '2º', '3º', '4º', 'annual'];
+const str = (v) => (v == null ? undefined : String(v).trim() || undefined);
+function hoistFromContent(body = {}) {
+    const c = body.content;
+    if (!c || typeof c !== 'object') return body;
+    const info = c.schoolInfo || {};
+    return {
+        ...body,
+        schoolYear: body.schoolYear ?? str(c.schoolYear),
+        semester: body.semester ?? (SEMESTERS.includes(c.semester) ? c.semester : undefined),
+        schoolInfo: body.schoolInfo ?? {
+            schoolName: str(info.schoolName),
+            grade: str(info.grade),
+            teacher: str(info.teacher),
+            schoolPhone: str(info.schoolPhone),
+            schoolEmail: str(info.schoolEmail),
+        },
+    };
+}
+const isValidation = (e) => e?.name === 'ValidationError' || e?.name === 'CastError';
+const VALIDATION_MSG = 'Preencha ano letivo, escola e série do relatório escolar';
+
 // GET /api/school-reports/patient/:patientId - Buscar relatórios escolares por paciente
 router.get('/patient/:patientId', async (req, res) => {
     try {
@@ -69,7 +94,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const schoolReportData = {
-            ...req.body,
+            ...hoistFromContent(req.body),
             type: 'school',
             createdAt: new Date(),
             updatedAt: new Date()
@@ -87,6 +112,7 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao criar relatório escolar:', error);
+        if (isValidation(error)) return sendApiError(res, new AppError('VALIDATION_ERROR', VALIDATION_MSG, { status: 400 }), req);
         sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });
@@ -99,7 +125,7 @@ router.put('/:id', async (req, res) => {
         const updatedSchoolReport = await SchoolReport.findByIdAndUpdate(
             id,
             {
-                ...req.body,
+                ...hoistFromContent(req.body),
                 updatedAt: new Date()
             },
             { new: true, runValidators: true }
@@ -122,6 +148,7 @@ router.put('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Erro ao atualizar relatório escolar:', error);
+        if (isValidation(error)) return sendApiError(res, new AppError('VALIDATION_ERROR', VALIDATION_MSG, { status: 400 }), req);
         sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro interno do servidor', { status: 500 }), req);
     }
 });

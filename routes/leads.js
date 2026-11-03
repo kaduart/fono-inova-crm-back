@@ -103,7 +103,8 @@ router.post('/from-website', async (req, res) => {
                    `UTM Source: ${origem?.source || 'n/a'}\n` +
                    `UTM Medium: ${origem?.medium || 'n/a'}\n` +
                    `UTM Campaign: ${origem?.campaign || 'n/a'}\n` +
-                   `GA4 Client ID: ${ga4?.clientId || 'n/a'}`,
+                   `GA4 Client ID: ${ga4?.clientId || 'n/a'}` +
+                   (contexto?.serviceInterest ? `\nInteresse: ${String(contexto.serviceInterest).slice(0, 300)}` : ''),
             circuit: 'Circuito Padrão',
             conversionScore: 10, // Lead de site tem score alto
             responded: false,

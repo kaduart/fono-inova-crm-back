@@ -31,6 +31,7 @@ O terapeuta escreve a evolução enquanto o sistema salva sozinho. Até ele clic
 | `POST /:id/finalize` | Finaliza. É idempotente: o segundo clique devolve `meta.alreadyFinalized`. |
 | `GET /patient/:id/last?specialty=` | Última evolução **finalizada**, para pré-preencher o modal. |
 | `GET /pending` | Cada linha traz `lastAppointmentId`, `lastCompletedTime` e `draft` (`evolutionId`, `appointmentId`, `lastAutosaveAt`) quando há rascunho. |
+| `GET /pending/by-doctor` | Só admin (403 para os demais). Pendências da clínica agrupadas por profissional ativo, mais atrasado primeiro: `pendingCount`, `draftCount`, `oldestDaysLate`, `phoneNumber` e `items` (mesma linha do `/pending` + `daysLate`). `meta` traz `total`, `doctors`, `drafts`, `oldestDaysLate`. Só leitura; alimenta "Evoluções em atraso" no Dashboard admin. |
 
 Erros do `PUT /draft`:
 

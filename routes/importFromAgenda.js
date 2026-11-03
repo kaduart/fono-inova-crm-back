@@ -15,6 +15,7 @@ import Appointment from "../models/Appointment.js";
 import Session from "../models/Session.js";
 import Payment from "../models/Payment.js";
 import Patient from "../models/Patient.js";
+import { findPossibleDuplicates, pickReusableDuplicate } from "../utils/patientDuplicateCheck.js";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
 import { transitionPaymentStatus } from "../services/paymentStatusService.js";
@@ -70,12 +71,21 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
     if (patientIdRaw && mongoose.Types.ObjectId.isValid(patientIdRaw)) {
       resolvedPatientId = patientIdRaw;
     } else if (isNewPatient && patientInfo?.fullName) {
+      // Possível duplicado (03/11/2026): reaproveita cadastro forte; senão cria e marca.
+      const duplicates = await findPossibleDuplicates(Patient, {
+        fullName: patientInfo.fullName, dateOfBirth: patientInfo.birthDate, phone: cleanPhone,
+      });
+      const reuse = patientInfo.confirmNotDuplicate === true ? null : pickReusableDuplicate(duplicates);
+      if (reuse) {
+        resolvedPatientId = reuse._id;
+      } else {
       const created = await Patient.create({
         fullName: patientInfo.fullName,
         phone: cleanPhone || undefined,
         email: patientInfo.email || undefined,
         dateOfBirth: patientInfo.birthDate || undefined,
-        source: 'agenda_externa'
+        source: 'agenda_externa',
+        ...(duplicates.length ? { possibleDuplicateOf: duplicates.map(d => d._id) } : {}),
       });
       resolvedPatientId = created._id;
       
@@ -88,6 +98,7 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
         dateOfBirth: created.dateOfBirth,
         source: 'agenda_externa'
       });
+      }
     } else {
       return sendApiError(
         res,
@@ -322,9 +333,20 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
 
     // Resolver paciente: usa existente ou cria novo pelo telefone
     let patientId = pre.patient || null;
+    // 03/11/2026: antes reaproveitava qualquer paciente com o mesmo telefone (irmãos caíam
+    // no cadastro errado). Agora: trava única de duplicado; telefone sozinho só quando há
+    // um único cadastro com o número.
     if (!patientId && pre.patientInfo?.phone) {
       const cleanPhone = pre.patientInfo.phone.replace(/\D/g, '');
-      const existing = await Patient.findOne({ phone: { $regex: cleanPhone.slice(-10) } }).lean();
+      const duplicates = pre.patientInfo?.fullName
+        ? await findPossibleDuplicates(Patient, {
+            fullName: pre.patientInfo.fullName, dateOfBirth: pre.patientInfo.birthDate, phone: cleanPhone,
+          })
+        : [];
+      const samePhone = !pre.patientInfo?.fullName && cleanPhone.length >= 8
+        ? await Patient.find({ phone: { $regex: cleanPhone.slice(-10) } }).select('_id').limit(2).lean()
+        : [];
+      const existing = pickReusableDuplicate(duplicates) || (samePhone.length === 1 ? samePhone[0] : null);
       if (existing) {
         patientId = existing._id;
       } else if (pre.patientInfo?.fullName) {
@@ -333,7 +355,8 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
           phone: cleanPhone || undefined,
           email: pre.patientInfo.email || undefined,
           dateOfBirth: pre.patientInfo.birthDate || undefined,
-          source: 'agenda_externa'
+          source: 'agenda_externa',
+          ...(duplicates.length ? { possibleDuplicateOf: duplicates.map(d => d._id) } : {}),
         });
         patientId = created._id;
         
