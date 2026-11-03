@@ -143,3 +143,6 @@ qr-code.png
 *.pid
 vitest-report.json
 arquivos-js.txt
+
+# Export de contatos (PII) — nunca versionar
+meta-clientes-*.csv
