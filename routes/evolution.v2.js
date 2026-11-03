@@ -18,6 +18,9 @@ import Doctor from '../models/Doctor.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { generatePdfFromEvolution } from '../services/generatePDF.js';
+import { whatsappSendQueue } from '../config/bullConfig.js';
+import { sanitizePhoneBeforeSend } from '../utils/phone.js';
+import { familySummarySuggestion, validateFamilyText } from '../services/clinical/familyMessages.js';
 
 const router = express.Router();
 
@@ -274,6 +277,83 @@ router.post('/:id/finalize', flexibleAuth, async (req, res) => {
     } catch (error) {
         console.error('[EvolutionV2] Erro ao finalizar:', error.message);
         sendValidationOr500(res, error);
+    }
+});
+
+// ─── RESUMO PARA A FAMÍLIA (item 4) — ver docs/FAMILY_COMMUNICATION.md ───────
+
+const canTouchEvolution = (evolution, user) => isAdmin(user) || String(evolution.doctor) === String(user?.id);
+
+router.get('/:id/family-summary', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
+        const evolution = await Evolution.findById(id).select('doctor patient status evaluationAreas familySummary').lean();
+        if (!evolution) return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        if (!canTouchEvolution(evolution, req.user)) return res.status(403).json(failure('FORBIDDEN', 'Só o profissional da sessão envia o resumo'));
+        const patient = await Patient.findById(evolution.patient).select('fullName phone').lean();
+        const phone = sanitizePhoneBeforeSend(patient?.phone);
+        res.json(success({
+            suggestion: familySummarySuggestion({ patientName: patient?.fullName, areas: evolution.evaluationAreas || [] }),
+            sent: evolution.familySummary?.status === 'queued' ? evolution.familySummary : null,
+            canSend: evolution.status !== 'draft' && phone.success,
+            blockReason: evolution.status === 'draft' ? 'Finalize a evolução antes de enviar o resumo.'
+                : !phone.success ? 'Paciente sem telefone válido no cadastro.' : null,
+            phoneLast4: phone.success ? phone.phone.slice(-4) : null,
+        }));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao montar resumo da família:', error.message);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
+    }
+});
+
+/**
+ * Envia o resumo aprovado pelo terapeuta. Idempotente: uma vez por evolução
+ * (trava atômica em familySummary.status + jobId fixo `famsum-<id>`).
+ */
+router.post('/:id/family-summary/send', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json(failure('INVALID_ID', 'ID inválido'));
+        const text = String(req.body?.text || '').trim();
+        const invalid = validateFamilyText(text);
+        if (invalid) return res.status(400).json(failure('INVALID_TEXT', invalid));
+
+        const evolution = await Evolution.findById(id).select('doctor patient status familySummary').lean();
+        if (!evolution) return res.status(404).json(failure('NOT_FOUND', 'Evolução não encontrada'));
+        if (!canTouchEvolution(evolution, req.user)) return res.status(403).json(failure('FORBIDDEN', 'Só o profissional da sessão envia o resumo'));
+        if (evolution.status === 'draft') return res.status(409).json(failure('EVOLUTION_NOT_FINALIZED', 'Finalize a evolução antes de enviar o resumo.'));
+        if (evolution.familySummary?.status === 'queued') {
+            return res.status(200).json(success(evolution.familySummary, { idempotent: true }));
+        }
+
+        const patient = await Patient.findById(evolution.patient).select('phone').lean();
+        const phone = sanitizePhoneBeforeSend(patient?.phone);
+        if (!phone.success) return res.status(409).json(failure('NO_PHONE', 'Paciente sem telefone válido no cadastro.'));
+
+        const summary = { text, status: 'queued', queuedAt: new Date(), approvedBy: req.user?.id, phoneLast4: phone.phone.slice(-4) };
+        const claimed = await Evolution.findOneAndUpdate(
+            { _id: id, 'familySummary.status': { $ne: 'queued' } },
+            { $set: { familySummary: summary } },
+            { new: true }
+        ).lean();
+        if (!claimed) {
+            const now = await Evolution.findById(id).select('familySummary').lean();
+            return res.status(200).json(success(now?.familySummary, { idempotent: true }));
+        }
+        try {
+            await whatsappSendQueue.add('send-message', { phone: phone.phone, message: text, purpose: 'family_summary' },
+                { jobId: `famsum-${id}`, attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 500, removeOnFail: 500 });
+        } catch (err) {
+            await Evolution.updateOne({ _id: id }, { $set: { 'familySummary.status': 'failed' } });
+            console.error(`[EvolutionV2] resumo ${id} não entrou na fila:`, err.message);
+            return res.status(503).json(failure('QUEUE_UNAVAILABLE', 'Não foi possível enviar agora. Tente de novo em alguns minutos.'));
+        }
+        console.log(`[EvolutionV2] resumo da família enfileirado evo=${id} user=${req.user?.id}`);
+        res.status(201).json(success(claimed.familySummary));
+    } catch (error) {
+        console.error('[EvolutionV2] Erro ao enviar resumo da família:', error.message);
+        res.status(500).json(failure('INTERNAL_ERROR', error.message));
     }
 });
 

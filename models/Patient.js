@@ -66,6 +66,20 @@ const patientSchema = new mongoose.Schema({
   birthdayMessageSentYear: { type: Number, default: null },
   birthdayMessageSentAt: { type: Date, default: null },
 
+  // ─── DUPLICIDADE (03/11/2026) ─────────────────────────────
+  // Origem do cadastro (erp, agenda_externa, agenda_v2, lead, ...). Antes era enviado por
+  // alguns fluxos mas descartado pelo schema — não dava para saber de onde vinha o duplicado.
+  source: { type: String, trim: true, default: null },
+  // Cadastros parecidos encontrados no momento da criação (utils/patientDuplicateCheck.js).
+  // Preenchido quando o fluxo não pôde perguntar ao usuário (agenda, lead) ou quando o usuário
+  // confirmou "é outra pessoa" — alimenta o relatório GET /api/patients/duplicates/report.
+  possibleDuplicateOf: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Patient' }],
+  duplicateReview: {
+    confirmedDistinct: { type: Boolean, default: false },
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+    confirmedAt: { type: Date, default: null },
+  },
+
   // ─── FUNIL CRM ─────────────────────────────────────────────
   status: {
     type: String,

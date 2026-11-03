@@ -9,7 +9,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import PatientsView from '../models/PatientsView.js';
-import { isLikelySameName } from '../utils/patientDuplicateCheck.js';
+import { findPossibleDuplicates, toDuplicateCandidateDTO } from '../utils/patientDuplicateCheck.js';
 import { sendBirthdayMessage, summarizeBirthdays } from '../services/birthday/birthdayMessageService.js';
 
 const router = express.Router();
@@ -49,25 +49,20 @@ router.post('/add', flexibleAuth, async (req, res) => {
       );
     }
 
-    // Duplicata por nome (tolerante a erro de digitação) + telefone
-    // Comparar por igualdade EXATA de string deixava passar duplicidades como
-    // "Isaac Moreira Ribeiro" vs "Issac Moreira Ribeiro" mesmo com telefone
-    // idêntico — ~1 ano de histórico ficou dividido em dois cadastros até ser
-    // pego manualmente. Ver utils/patientDuplicateCheck.js.
-    if (phone) {
-      const normalizedPhone = phone.replace(/\D/g, '');
-      const samePhonePatients = await Patient.find({ phone: normalizedPhone }).select('fullName').lean();
-      const namePhoneDup = samePhonePatients.find(p => isLikelySameName(p.fullName, fullName));
-      if (namePhoneDup) {
-        return sendApiError(
-          res,
-          new AppError('CONFLICT', `Já existe um paciente com nome muito parecido ("${namePhoneDup.fullName}") e o mesmo telefone ${normalizedPhone} cadastrado. Confira se não é a mesma pessoa antes de criar um novo cadastro.`, {
-            status: 409,
-            extra: { existingId: namePhoneDup._id },
-          }),
-          req
-        );
-      }
+    // Possível duplicado (03/11/2026) — mesma regra do POST /api/v2/patients.
+    // Ver utils/patientDuplicateCheck.js (findPossibleDuplicates).
+    const duplicates = await findPossibleDuplicates(Patient, { fullName, dateOfBirth, phone, cpf });
+    const nonCpfDuplicates = duplicates.filter(d => !d.reasons.includes('CPF igual') || d.reasons.length > 1);
+    if (nonCpfDuplicates.length && req.body.confirmNotDuplicate !== true) {
+      const first = nonCpfDuplicates[0];
+      return sendApiError(
+        res,
+        new AppError('POSSIBLE_DUPLICATE', `Já existe um cadastro parecido: "${first.fullName}". Confira se não é a mesma pessoa antes de criar um novo.`, {
+          status: 409,
+          extra: { existingId: first._id, candidates: duplicates.map(toDuplicateCandidateDTO) },
+        }),
+        req
+      );
     }
 
     // Duplicata por CPF
@@ -96,7 +91,12 @@ router.post('/add', flexibleAuth, async (req, res) => {
       address,
       healthPlan,
       cpf,
-      responsible
+      responsible,
+      source: req.body.source || 'erp',
+      ...(duplicates.length ? {
+        possibleDuplicateOf: duplicates.map(d => d._id),
+        duplicateReview: { confirmedDistinct: true, confirmedBy: req.user?._id || req.user?.id || null, confirmedAt: new Date() },
+      } : {}),
     });
 
     await newPatient.save();

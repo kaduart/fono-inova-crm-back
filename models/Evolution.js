@@ -179,7 +179,18 @@ const evolutionSchema = new mongoose.Schema({
         enum: ['draft', 'finalized']
     },
     finalizedAt: Date,
-    lastAutosaveAt: Date
+    lastAutosaveAt: Date,
+
+    // ========== RESUMO PARA A FAMÍLIA (item 4, 03/11/2026) ==========
+    // Texto aprovado pelo terapeuta e enviado pela fila whatsapp-send. Uma vez por evolução
+    // (trava atômica em status + jobId fixo). Ver docs/FAMILY_COMMUNICATION.md.
+    familySummary: {
+        text: String,
+        status: { type: String, enum: ['queued', 'failed'] },
+        queuedAt: Date,
+        approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        phoneLast4: String
+    }
 
 }, {
     timestamps: true

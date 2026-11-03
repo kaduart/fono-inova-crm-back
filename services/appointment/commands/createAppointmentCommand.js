@@ -12,6 +12,7 @@
  */
 
 import mongoose from 'mongoose';
+import { findPossibleDuplicates, pickReusableDuplicate } from '../../../utils/patientDuplicateCheck.js';
 import { appointmentHybridService } from '../../appointmentHybridService.js';
 import billingOrchestrator from '../../billing/BillingOrchestrator.js';
 import { handleAdvancePayment } from '../../../helpers/handleAdvancePayment.js';
@@ -128,15 +129,13 @@ async function createWithHybridService(payload, user) {
   if (!effectivePatientId && payload.isNewPatient && payload.patientInfo) {
     const { fullName, phone, birthDate, email } = payload.patientInfo;
     if (fullName && birthDate) {
-      let existingPatient = null;
-      if (phone) {
-        const normalizedPhone = phone.replace(/\D/g, '');
-        const escapedName = fullName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        existingPatient = await Patient.findOne({
-          fullName: { $regex: new RegExp(`^${escapedName}$`, 'i') },
-          phone: normalizedPhone
-        }).lean();
-      }
+      // Possível duplicado (03/11/2026): agenda não pergunta ao usuário — se houver
+      // exatamente um cadastro "forte" (nome parecido + nascimento/telefone, ou CPF),
+      // reaproveita; senão cria e marca possibleDuplicateOf para o relatório.
+      // confirmNotDuplicate=true (usuário disse "é outra pessoa") pula o reaproveitamento.
+      const confirmedDistinct = payload.patientInfo.confirmNotDuplicate === true || payload.confirmNotDuplicate === true;
+      const duplicates = await findPossibleDuplicates(Patient, { fullName, dateOfBirth: birthDate, phone });
+      const existingPatient = confirmedDistinct ? null : pickReusableDuplicate(duplicates);
       if (existingPatient?._id) {
         effectivePatientId = existingPatient._id.toString();
         effectivePatientSnapshot = existingPatient;
@@ -146,7 +145,12 @@ async function createWithHybridService(payload, user) {
           dateOfBirth: birthDate,
           phone: phone?.replace(/\D/g, '') || undefined,
           email: email?.toLowerCase() || undefined,
-          createdBy: user?._id
+          createdBy: user?._id,
+          source: payload.source || 'agenda_v2',
+          ...(duplicates.length ? {
+            possibleDuplicateOf: duplicates.map(d => d._id),
+            ...(confirmedDistinct ? { duplicateReview: { confirmedDistinct: true, confirmedBy: user?._id || null, confirmedAt: new Date() } } : {}),
+          } : {}),
         });
         effectivePatientId = newPatient._id.toString();
         effectivePatientSnapshot = newPatient.toObject();

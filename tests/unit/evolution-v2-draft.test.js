@@ -24,6 +24,8 @@ vi.mock('../../middleware/amandaAuth.js', () => ({
         next();
     },
 }));
+// A rota importa a fila do WhatsApp (resumo para a família); aqui não usamos Redis.
+vi.mock('../../config/bullConfig.js', () => ({ whatsappSendQueue: { add: vi.fn() } }));
 vi.mock('../../services/generatePDF.js', () => ({ generatePdfFromEvolution: vi.fn() }));
 vi.mock('../../models/Metric.js', () => ({ default: { find: vi.fn().mockResolvedValue([]) } }));
 vi.mock('../../models/Patient.js', async () => {
