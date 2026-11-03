@@ -12,6 +12,8 @@
 
 import WhatsAppOrchestrator from '../../orchestrators/WhatsAppOrchestrator.js';
 import { createContextLogger } from '../../utils/logger.js';
+import { runAmandaAgent } from '../agent/amanda/index.js';
+import { decideRoute } from '../agent/amanda/router.js';
 
 const logger = createContextLogger('runOrchestrator');
 
@@ -94,6 +96,13 @@ function selecionarPersona(classificacao) {
 export async function runOrchestrator(lead, userText, context = {}) {
     const leadId = lead?._id;
 
+    // 🤖 Amanda com Claude (flag AMANDA_AGENT_MODE — ver services/agent/amanda/router.js)
+    const route = decideRoute(lead);
+    if (route === 'agent') {
+        logger.info('orchestrator_route', `agent lead=${leadId}`, { correlationId: context.correlationId });
+        return runAmandaAgent(lead, userText, context);
+    }
+
     // Monta classificação inteligente
     const classificacao = {
         dor_principal: mapTherapyToDor(lead.qualificationData?.extractedInfo?.especialidade),
@@ -127,5 +136,34 @@ export async function runOrchestrator(lead, userText, context = {}) {
     });
 
     logger.info('orchestrator_fsm_result', { leadId, command: result?.command });
+
+    if (route === 'shadow') {
+        // não bloqueia a resposta da FSM; erros ficam só no log
+        runShadow(lead, userText, context, result).catch((err) =>
+            console.error('[runOrchestrator] shadow_error', err?.message),
+        );
+    }
+
     return result;
+}
+
+async function runShadow(lead, userText, context, fsmResult) {
+    const agentResult = await runAmandaAgent(lead, userText, context, { dryRun: true });
+    const { default: AmandaAgentShadow } = await import('../../models/AmandaAgentShadow.js');
+    await AmandaAgentShadow.create({
+        lead: lead?._id,
+        phone: lead?.contact?.phone,
+        correlationId: context.correlationId,
+        input: userText,
+        fsmReply: fsmResult?.payload?.text || null,
+        fsmCommand: fsmResult?.command || null,
+        agentReply: agentResult?.payload?.text || null,
+        agentCommand: agentResult?.command || null,
+        toolCalls: agentResult?.meta?.toolCalls || [],
+        handoff: agentResult?.meta?.handoff || null,
+        usage: agentResult?.meta?.usage || null,
+        model: agentResult?.meta?.model,
+        ms: agentResult?.meta?.ms,
+        error: agentResult?.meta?.error || null,
+    });
 }
