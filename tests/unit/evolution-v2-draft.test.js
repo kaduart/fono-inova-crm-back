@@ -207,6 +207,8 @@ describe('Leituras ignoram rascunho', () => {
         const pending = await asA(request(app).get('/v2/evolutions/pending'));
         expect(pending.body.data).toHaveLength(1);
         expect(pending.body.data[0].draft).toBeTruthy();
+        expect(String(pending.body.data[0].lastAppointmentId)).toBe(String(appt._id));
+        expect(pending.body.data[0].lastCompletedTime).toBe('14:00');
         expect(String(pending.body.data[0].draft.appointmentId)).toBe(String(appt._id));
 
         const drafts = await asA(request(app).get('/v2/evolutions/drafts'));

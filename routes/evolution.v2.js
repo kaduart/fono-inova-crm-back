@@ -787,7 +787,9 @@ router.get('/pending', flexibleAuth, async (req, res) => {
                     date: { $gte: since, $lte: now }
                 }
             },
-            { $group: { _id: '$patient', lastCompletedDate: { $max: '$date' } } }
+            { $sort: { date: -1 } },
+            // O agendamento mais recente vai junto: é nele que o rascunho/evolução fica preso.
+            { $group: { _id: '$patient', lastCompletedDate: { $first: '$date' }, lastAppointmentId: { $first: '$_id' }, lastCompletedTime: { $first: '$time' } } }
         ]);
 
         if (attended.length === 0) return res.json(success([], { count: 0 }));
@@ -824,6 +826,8 @@ router.get('/pending', flexibleAuth, async (req, res) => {
                 _id: p._id,
                 fullName: nameById.get(String(p._id)),
                 lastCompletedDate: p.lastCompletedDate,
+                lastAppointmentId: p.lastAppointmentId || null,
+                lastCompletedTime: p.lastCompletedTime || null,
                 lastEvolutionDate: lastEvoByPatient.get(String(p._id)) || null,
                 draft: draftByPatient.has(String(p._id)) ? {
                     evolutionId: draftByPatient.get(String(p._id))._id,

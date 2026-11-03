@@ -30,7 +30,7 @@ O terapeuta escreve a evolução enquanto o sistema salva sozinho. Até ele clic
 | `GET /appointment/:appointmentId` | Evolução do agendamento (rascunho só para o dono e o admin). |
 | `POST /:id/finalize` | Finaliza. É idempotente: o segundo clique devolve `meta.alreadyFinalized`. |
 | `GET /patient/:id/last?specialty=` | Última evolução **finalizada**, para pré-preencher o modal. |
-| `GET /pending` | Agora cada linha traz `draft` (`evolutionId`, `appointmentId`, `lastAutosaveAt`) quando há rascunho. |
+| `GET /pending` | Cada linha traz `lastAppointmentId`, `lastCompletedTime` e `draft` (`evolutionId`, `appointmentId`, `lastAutosaveAt`) quando há rascunho. |
 
 Erros do `PUT /draft`:
 
