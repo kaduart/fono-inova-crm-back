@@ -306,7 +306,8 @@ export const getEvaluationsByPatient = async (req, res) => {
 
     const evaluations = await Evolution.find({
       patient: patientId,
-      ...scope
+      ...scope,
+      status: { $ne: 'draft' }
     })
       .populate("doctor", "fullName specialty")
       .sort({ date: -1 });
@@ -330,6 +331,7 @@ export const getEvaluationChartData = async (req, res) => {
     const evaluations = await Evolution.find({
       patient: patientId,
       ...scope,
+      status: { $ne: 'draft' },
       metrics: { $exists: true, $not: { $size: 0 } }
     }).sort({ date: 1 });
 
@@ -489,6 +491,7 @@ export const getPatientProgress = async (req, res) => {
     const evolutions = await Evolution.find({
       patient: patientId,
       ...scope,
+      status: { $ne: 'draft' },
       'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } }
     })
       .populate('doctor', 'fullName specialty')
@@ -596,7 +599,7 @@ export const getPatientEvolutionHistory = async (req, res) => {
   try {
     const scope = getEvolutionScope(req);
 
-    const evolutions = await Evolution.find({ patient: patientId, ...scope })
+    const evolutions = await Evolution.find({ patient: patientId, ...scope, status: { $ne: 'draft' } })
       .select('_id date')
       .sort({ date: -1 })
       .limit(parseInt(limit));

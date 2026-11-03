@@ -152,7 +152,7 @@ export const getProtocolAnalytics = async (req, res) => {
         }
 
         const protocolUsage = await Evolution.aggregate([
-            { $match: matchStage },
+            { $match: { ...matchStage, status: { $ne: 'draft' } } },
             {
                 $group: {
                     _id: {
@@ -221,7 +221,8 @@ export const getProtocolEffectiveness = async (req, res) => {
         }
 
         const evolutions = await Evolution.find({
-            'therapeuticPlan.protocol.code': code.toUpperCase()
+            'therapeuticPlan.protocol.code': code.toUpperCase(),
+            status: { $ne: 'draft' }
         })
             .populate('patient', 'fullName')
             .sort({ date: 1 });
