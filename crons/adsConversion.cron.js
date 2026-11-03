@@ -263,11 +263,11 @@ async function processPending() {
           value: conv.value,
           eventId: eventIdFor(conv.appointment),
           eventTime,
-          actionSource: 'physical_store', // atendimento na clínica
+          actionSource: 'website', // atendimento na clínica
           customData: { lead_source: conv.source },
         });
         // #4 Interpreta a resposta: events_received>=1 = aceito; 0/ausente = recusado (NÃO sucesso).
-        const res = interpretMetaResponse(r, { pixel: process.env.META_PIXEL_ID || null, event: 'Purchase', actionSource: 'physical_store' });
+        const res = interpretMetaResponse(r, { pixel: process.env.META_PIXEL_ID || null, event: 'Purchase', actionSource: 'website' });
         conv.meta = {
           status: res.status,
           sentAt: res.status === 'sent' ? new Date() : null,
