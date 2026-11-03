@@ -158,6 +158,8 @@ import metaAdsRoutes from './routes/metaAds.js';
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoTriageRoutes from './routes/preAgendamentoTriage.routes.js';
 import evolutionV2Routes from './routes/evolution.v2.js';
+import monthlyReportV2Routes from './routes/monthlyReport.v2.js';
+import peiV2Routes from './routes/pei.v2.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
@@ -584,6 +586,8 @@ function legacyRouteAlert(req, res, next) {
 
 app.use('/api/v2/pre-appointments', preAgendamentoTriageRoutes);  // Triagem comercial sobre Appointment (ver docs/architecture/CANONICAL_FILES.md)
 app.use('/api/v2/evolutions', evolutionV2Routes);  // 🧬 V2: evolution event-driven
+app.use('/api/v2/monthly-reports', monthlyReportV2Routes); // relatório mensal (docs/FAMILY_COMMUNICATION.md)
+app.use('/api/v2/pei', peiV2Routes); // PEI com metas (docs/PEI.md)
 app.use('/api/v2/operational', operationalV2Routes);  // 🏥 NOVO: Painel Operacional V2
 
 // 🗑️ V1 removido: /api/pre-agendamento e /api/v2/pre-agendamento desativados

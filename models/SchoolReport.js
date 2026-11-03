@@ -34,6 +34,13 @@ const schoolReportSchema = new mongoose.Schema({
     },
 
     // Informações Escolares
+    // Formulário completo como o front envia (o modal manda tudo em `content`).
+    // Sem este campo o strict do Mongoose descartava o formulário e o relatório salvava vazio.
+    // Mixed de propósito: o formulário evolui no front sem migração; campos tipados abaixo ficam
+    // para registros antigos.
+    content: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    date: Date,
+
     schoolInfo: {
         schoolName: {
             type: String,

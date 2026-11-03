@@ -24,6 +24,8 @@ vi.mock('../../middleware/amandaAuth.js', () => ({
         next();
     },
 }));
+// A rota importa a fila do WhatsApp (resumo para a família); aqui não usamos Redis.
+vi.mock('../../config/bullConfig.js', () => ({ whatsappSendQueue: { add: vi.fn() } }));
 vi.mock('../../services/generatePDF.js', () => ({ generatePdfFromEvolution: vi.fn() }));
 vi.mock('../../models/Metric.js', () => ({ default: { find: vi.fn().mockResolvedValue([]) } }));
 vi.mock('../../models/Patient.js', async () => {
@@ -40,7 +42,7 @@ vi.mock('../../models/Appointment.js', async () => {
 });
 vi.mock('../../models/Doctor.js', async () => {
     const m = (await import('mongoose')).default;
-    return { default: m.models.Doctor || m.model('Doctor', new m.Schema({ fullName: String, specialty: String })) };
+    return { default: m.models.Doctor || m.model('Doctor', new m.Schema({ fullName: String, specialty: String, phoneNumber: String, active: Boolean })) };
 });
 
 let mongod, app, Evolution, Appointment, Patient;
@@ -222,5 +224,52 @@ describe('Leituras ignoram rascunho', () => {
         expect(mine.body.data.content).toBe('privado');
         const other = await asB(request(app).get(`/v2/evolutions/appointment/${appt._id}`));
         expect(other.body.data).toBeNull();
+    });
+});
+
+describe('GET /pending/by-doctor (coordenação)', () => {
+    const asAdmin = (r) => r.set('x-test-user', `${oid()}:admin`);
+    let Doctor;
+    beforeEach(async () => {
+        Doctor = mongoose.model('Doctor');
+        await Doctor.deleteMany({});
+        await Doctor.create([
+            { _id: DOC_A, fullName: 'Ana Souza', specialty: 'fonoaudiologia', phoneNumber: '62999990000', active: true },
+            { _id: DOC_B, fullName: 'Bruna Reis', specialty: 'psicologia', phoneNumber: '62988880000', active: true },
+        ]);
+    });
+
+    it('terapeuta não acessa (403)', async () => {
+        const res = await asA(request(app).get('/v2/evolutions/pending/by-doctor'));
+        expect(res.status).toBe(403);
+    });
+
+    it('agrupa por profissional, conta rascunhos e some ao finalizar', async () => {
+        const p2 = await Patient.create({ fullName: 'Maria Clara', status: 'active' });
+        const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
+        await Appointment.create({ patient: p2._id, doctor: DOC_B, date: twoDaysAgo, time: '09:00', specialty: 'psicologia', operationalStatus: 'paid' });
+        const draft = await saveDraft({ content: 'rascunho' });
+        expect(draft.status).toBe(200);
+
+        const res = await asAdmin(request(app).get('/v2/evolutions/pending/by-doctor'));
+        expect(res.status).toBe(200);
+        expect(res.body.meta).toMatchObject({ total: 2, doctors: 2, drafts: 1 });
+        // Mais atrasado primeiro
+        expect(res.body.data.map(d => d.fullName)).toEqual(['Bruna Reis', 'Ana Souza']);
+        const bruna = res.body.data[0];
+        expect(bruna.phoneNumber).toBe('62988880000');
+        expect(bruna.items[0]).toMatchObject({ fullName: 'Maria Clara', daysLate: 2, draft: null });
+        expect(res.body.data[1]).toMatchObject({ pendingCount: 1, draftCount: 1 });
+
+        const fin = await asA(request(app).post(`/v2/evolutions/${draft.body.data._id}/finalize`)).send({ content: 'final' });
+        expect(fin.status).toBe(200);
+        const after = await asAdmin(request(app).get('/v2/evolutions/pending/by-doctor'));
+        expect(after.body.data.map(d => d.fullName)).toEqual(['Bruna Reis']);
+    });
+
+    it('profissional inativo fica de fora', async () => {
+        await Doctor.updateOne({ _id: DOC_A }, { active: false });
+        const res = await asAdmin(request(app).get('/v2/evolutions/pending/by-doctor'));
+        expect(res.body.data).toHaveLength(0);
     });
 });
