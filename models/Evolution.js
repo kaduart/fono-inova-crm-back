@@ -169,7 +169,17 @@ const evolutionSchema = new mongoose.Schema({
     // Facilita queries por protocolo
     activeProtocols: [{
         type: String
-    }]
+    }],
+
+    // ========== RASCUNHO (fase 1 da sprint prontuário, 03/11/2026) ==========
+    // Sem default de propósito: evoluções antigas não têm o campo e contam como
+    // finalizadas (ver FINALIZED_FILTER). Só o fluxo de rascunho grava 'draft'.
+    status: {
+        type: String,
+        enum: ['draft', 'finalized']
+    },
+    finalizedAt: Date,
+    lastAutosaveAt: Date
 
 }, {
     timestamps: true
@@ -247,6 +257,15 @@ evolutionSchema.index(
 evolutionSchema.index(
     { patient: 1, date: 1, doctor: 1 },
     { name: 'evolution_per_session' }
+);
+
+// Rascunhos não entram em gráfico, indicador, relatório nem contam como evolução feita.
+// Use em toda leitura clínica: Evolution.find({ ...FINALIZED_FILTER, ... }).
+export const FINALIZED_FILTER = Object.freeze({ status: { $ne: 'draft' } });
+
+evolutionSchema.index(
+    { doctor: 1, lastAutosaveAt: -1 },
+    { name: 'evolution_drafts_by_doctor', partialFilterExpression: { status: 'draft' } }
 );
 
 const Evolution = mongoose.model('Evolution', evolutionSchema);

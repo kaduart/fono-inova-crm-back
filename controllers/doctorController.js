@@ -616,7 +616,7 @@ export const getDoctorPatients = async (req, res) => {
             .select('patient totalSessions sessionsDone createdAt').sort({ createdAt: -1 }).lean(),
           // Data de revisão do plano terapêutico da evolução mais recente deste profissional (só leitura).
           Evolution.aggregate([
-            { $match: { patient: { $in: pageIds }, doctor: new ObjectId(doctorId) } },
+            { $match: { patient: { $in: pageIds }, doctor: new ObjectId(doctorId), status: { $ne: 'draft' } } },
             { $sort: { date: -1 } },
             { $group: { _id: '$patient', reviewDate: { $first: '$therapeuticPlan.reviewDate' } } },
           ]),

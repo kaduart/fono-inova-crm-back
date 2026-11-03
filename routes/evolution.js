@@ -74,7 +74,7 @@ router.get('/search', async (req, res) => {
     if (protocol) filter.activeProtocols = protocol;
 
     try {
-        const evolutions = await Evolution.find(filter)
+        const evolutions = await Evolution.find({ ...filter, status: { $ne: 'draft' } })
             .populate('doctor')
             .sort({ date: -1 });
         res.json(evolutions);
