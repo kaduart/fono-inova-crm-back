@@ -10,6 +10,7 @@ describe('extractWebsiteLeadPersonalData (POST /api/leads/from-website)', () => 
             nome: 'Ana Paula',
             telefone: '(62) 99201-3573',
             email: 'ana@email.com',
+            faixaEtaria: null,
             format: 'dadosPessoais',
         });
     });
@@ -24,6 +25,7 @@ describe('extractWebsiteLeadPersonalData (POST /api/leads/from-website)', () => 
             nome: 'Bruno Lima',
             telefone: '+55 (62) 99201-3573',
             email: 'bruno@email.com',
+            faixaEtaria: null,
             format: 'flat',
         });
     });
@@ -58,5 +60,10 @@ describe('extractWebsiteLeadPersonalData (POST /api/leads/from-website)', () => 
         expect(extractWebsiteLeadPersonalData({})).toBeNull();
         expect(extractWebsiteLeadPersonalData(undefined)).toBeNull();
         expect(extractWebsiteLeadPersonalData('texto')).toBeNull();
+    });
+
+    it('captura a faixa etária quando enviada (dadosPessoais e flat)', () => {
+        expect(extractWebsiteLeadPersonalData({ dadosPessoais: { nome: 'A', telefone: '1', faixaEtaria: '3-4 anos' } }).faixaEtaria).toBe('3-4 anos');
+        expect(extractWebsiteLeadPersonalData({ nome: 'A', telefone: '1', ageGroup: '0-1 ano' }).faixaEtaria).toBe('0-1 ano');
     });
 });

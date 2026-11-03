@@ -114,7 +114,9 @@ router.post('/from-website', async (req, res) => {
                 autoResumeAfter: 360
             },
             appointment: {
-                seekingFor: 'Adulto +18 anos',
+                seekingFor: dadosPessoais.faixaEtaria
+                    ? `Criança (${dadosPessoais.faixaEtaria})`
+                    : 'Infantil - não especificado',
                 modality: 'Online',
                 healthPlan: 'Mensalidade'
             },
