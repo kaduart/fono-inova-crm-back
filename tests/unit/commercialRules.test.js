@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeArea, waitingSince, sortFitLeads, packagesEnding, sortByRecentContact,
+  normalizeArea, waitingSince, sortFitLeads, packagesEnding, sortByRecentContact, isAnonymousVisit,
 } from '../../services/commercial/commercialRules.js';
 
 describe('commercialRules', () => {
@@ -47,5 +47,18 @@ describe('commercialRules', () => {
       { id: 3, lastContactAt: '2026-10-01T12:00:00Z' },
     ], now);
     expect(out.map(i => i.id)).toEqual([2, 3, 1]);
+  });
+});
+
+describe('isAnonymousVisit', () => {
+  it('visita do site sem nome, telefone nem identificação não é lead', () => {
+    expect(isAnonymousVisit({ journeyId: 'jny_1', isIdentified: false, name: null, contact: { phone: null } })).toBe(true);
+    expect(isAnonymousVisit({ journeyId: 'jny_1' })).toBe(true);
+  });
+  it('lead com nome, telefone, identificado ou fora do rastreio continua', () => {
+    expect(isAnonymousVisit({ journeyId: 'jny_1', name: 'Ana' })).toBe(false);
+    expect(isAnonymousVisit({ journeyId: 'jny_1', contact: { phone: '62999999999' } })).toBe(false);
+    expect(isAnonymousVisit({ journeyId: 'jny_1', isIdentified: true })).toBe(false);
+    expect(isAnonymousVisit({ name: null, contact: {} })).toBe(false);
   });
 });

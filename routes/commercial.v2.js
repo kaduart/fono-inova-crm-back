@@ -35,7 +35,7 @@ import { whatsappSendQueue } from '../config/bullConfig.js';
 import { markAttendanceConfirmationQueued } from '../services/appointment/attendanceConfirmation.service.js';
 import { evaluationsWithoutPackage, unconfirmedNextDay, confirmationReminderText } from '../services/commercial/evaluationConfirmationQueues.js';
 import {
-  OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince,
+  OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince, NOT_ANONYMOUS_VISIT,
   sortFitLeads, packagesEnding, sortByRecentContact, daysBetween,
   renewalStage, churnRisk, churnMessage, CHURN_DAYS, CHURN_JUSTIFIED_WINDOW_DAYS, CHURN_MAX_PAUSE_DAYS,
 } from '../services/commercial/commercialRules.js';
@@ -308,7 +308,7 @@ router.get('/leads-waiting', ...staff, async (req, res) => {
     // "Lead novo": entrou nos últimos 3 dias
     const since = moment().tz(TIMEZONE).subtract(3, 'days').toDate();
     const leads = await Lead.find(
-      { status: { $in: OPEN_LEAD_STATUSES }, convertedToPatient: { $in: [null, undefined] }, createdAt: { $gte: since } },
+      { status: { $in: OPEN_LEAD_STATUSES }, convertedToPatient: { $in: [null, undefined] }, createdAt: { $gte: since }, ...NOT_ANONYMOUS_VISIT },
       { name: 1, contact: 1, therapyArea: 1, status: 1, origin: 1, createdAt: 1, interactions: { $slice: -1 } },
     ).lean();
     if (!leads.length) return res.json({ success: true, data: { hours, items: [] } });

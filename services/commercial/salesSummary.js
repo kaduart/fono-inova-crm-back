@@ -3,6 +3,7 @@
 // Funil: Lead criado no período → conversou → agendou → compareceu → fechou pacote.
 // Receita = CAIXA (buildCashMatch, mesma regra do Financeiro) dos pacientes que vieram desses leads.
 import Lead from '../../models/Leads.js';
+import { NOT_ANONYMOUS_VISIT } from './commercialRules.js';
 import Message from '../../models/Message.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
@@ -78,7 +79,7 @@ async function enrichLeads(leads, start, end) {
 }
 
 const leadsIn = (start, end) => Lead.find(
-  { createdAt: { $gte: start, $lte: end }, stage: { $ne: 'parceria_profissional' } },
+  { createdAt: { $gte: start, $lte: end }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT },
   { contact: 1, origin: 1, status: 1, convertedToPatient: 1, createdAt: 1 },
 ).lean();
 
@@ -87,7 +88,7 @@ export function leadsSummary(startStr, endStr) {
   return cached(`leads:${p.start.toISOString()}:${p.end.toISOString()}`, async () => {
     const [leads, prevNewLeads] = await Promise.all([
       leadsIn(p.start, p.end),
-      Lead.countDocuments({ createdAt: { $gte: p.prevStart, $lte: p.prevEnd }, stage: { $ne: 'parceria_profissional' } }),
+      Lead.countDocuments({ createdAt: { $gte: p.prevStart, $lte: p.prevEnd }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT }),
     ]);
     const rows = await enrichLeads(leads, p.start, p.end);
     const f = leadFunnel(rows);

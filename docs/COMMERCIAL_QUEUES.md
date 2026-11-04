@@ -34,6 +34,7 @@ O acesso é só para `admin` e `secretary`.
   - se o paciente já tem outro pacote ativo na mesma especialidade, vale o pacote com mais sessões, então quem já renovou sai da fila.
 - **Lead esperando:**
   - entram leads abertos que chegaram nos últimos 3 dias;
+  - visitas anônimas do site ficam de fora (`ANONYMOUS_VISIT_FILTER`): o rastreio de jornada grava um Lead por visitante, inclusive robôs e previews da Vercel, e sem nome, telefone nem identificação não há a quem responder;
   - a espera começa na última mensagem do WhatsApp do próprio lead (inbound);
   - se a clínica falou por último (Amanda ou humano), o lead não está esperando;
   - sem mensagens, vale a última interação; sem interação, vale `createdAt`;

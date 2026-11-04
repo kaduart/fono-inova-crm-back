@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
+import { NOT_ANONYMOUS_VISIT } from '../commercial/commercialRules.js';
 import unifiedFinancialService from '../../services/unifiedFinancialService.v2.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -65,7 +66,8 @@ export async function buildCharts() {
     Lead.aggregate([
       {
         $match: {
-          createdAt: { $gte: last30Days.toDate() }
+          createdAt: { $gte: last30Days.toDate() },
+          ...NOT_ANONYMOUS_VISIT,
         }
       },
       {

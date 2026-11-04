@@ -12,6 +12,7 @@ import Patient from '../../models/Patient.js';
 import Appointment from '../../models/Appointment.js';
 import Payment from '../../models/Payment.js';
 import Lead from '../../models/Leads.js';
+import { NOT_ANONYMOUS_VISIT } from '../commercial/commercialRules.js';
 import { buildUpcomingCounts } from './upcomingBuilder.js';
 import unifiedFinancialService, { calculateCashTotal } from '../../services/unifiedFinancialService.v2.js';
 
@@ -102,12 +103,14 @@ export async function buildStats() {
     timeit('cash.month',           calculateCashTotal(startOfMonth.toDate(), todayEnd.toDate())),
     timeit('cash.today',           calculateCashTotal(today.toDate(), todayEnd.toDate())),
     timeit('leads.count',          Lead.countDocuments({
-      createdAt: { $gte: startOfMonth.toDate() }
+      createdAt: { $gte: startOfMonth.toDate() },
+      ...NOT_ANONYMOUS_VISIT,
     })),
     timeit('leads.byStatus',       Lead.aggregate([
       {
         $match: {
-          createdAt: { $gte: startOfMonth.toDate() }
+          createdAt: { $gte: startOfMonth.toDate() },
+          ...NOT_ANONYMOUS_VISIT,
         }
       },
       {

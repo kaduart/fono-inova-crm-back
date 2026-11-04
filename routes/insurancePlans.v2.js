@@ -1324,12 +1324,25 @@ router.post('/:id/confirm-past-sessions', auth, async (req, res) => {
       return sendApiError(res, new AppError('NOT_FOUND', 'Plano não encontrado', { status: 404 }), req);
     }
 
+    // 🆕 (2026-11-04, caso Ícaro Lima): o modal confirmava TODAS as retroativas de uma vez,
+    // sem deixar desmarcar a data em que o paciente faltou — e convênio concluído não pode
+    // mais ser cancelado. Agora o front manda só os ids marcados. Sem `appointmentIds`
+    // mantém o comportamento antigo (todas). Ids fora do plano/não retroativos são ignorados
+    // pelo próprio filtro abaixo, então a lista nunca amplia o escopo.
+    const rawIds = req.body?.appointmentIds;
+    if (rawIds !== undefined) {
+      if (!Array.isArray(rawIds) || rawIds.length === 0 || !rawIds.every(v => mongoose.Types.ObjectId.isValid(v))) {
+        return sendApiError(res, new AppError('INVALID_APPOINTMENT_IDS', 'Lista de sessões inválida', { status: 400 }), req);
+      }
+    }
+
     const today = new Date().toISOString().split('T')[0];
     const pastAppointments = await Appointment.find({
       insurancePlan: plan._id,
       serviceType: { $ne: 'evaluation' },
       date: { $lt: today },
-      operationalStatus: { $in: ['pre_agendado', 'scheduled'] }
+      operationalStatus: { $in: ['pre_agendado', 'scheduled'] },
+      ...(rawIds ? { _id: { $in: rawIds } } : {})
     }).select('_id').lean();
 
     let confirmed = 0;

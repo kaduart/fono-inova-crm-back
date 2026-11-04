@@ -3,6 +3,7 @@ import { followupQueue } from "../config/bullConfig.js";
 import { findPossibleDuplicates, pickReusableDuplicate } from '../utils/patientDuplicateCheck.js';
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
+import { NOT_ANONYMOUS_VISIT } from '../services/commercial/commercialRules.js';
 import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
@@ -494,7 +495,7 @@ export const getSheetMetrics = async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
 
-        const matchStage = {};
+        const matchStage = { ...NOT_ANONYMOUS_VISIT };
         if (startDate || endDate) {
             matchStage.createdAt = {};
             if (startDate) matchStage.createdAt.$gte = new Date(startDate);
@@ -661,6 +662,7 @@ export const getWeeklyMetrics = async (req, res) => {
         const { year, month } = req.query;
 
         const weeklyData = await Lead.aggregate([
+            { $match: NOT_ANONYMOUS_VISIT },
             {
                 $match: {
                     createdAt: {
@@ -754,7 +756,7 @@ export const getAllLeads = async (req, res) => {
         } = req.query;
 
         // Filtros
-        const query = {};
+        const query = { ...NOT_ANONYMOUS_VISIT };
         if (status) query.status = status;
         if (origin) query.origin = origin;
 
