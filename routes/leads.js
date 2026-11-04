@@ -19,6 +19,7 @@ import {
 import { auth, authorize } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import Lead from '../models/Leads.js';
+import { NOT_ANONYMOUS_VISIT } from '../services/commercial/commercialRules.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { extractWebsiteLeadPersonalData } from '../utils/websiteLeadPayload.js';
@@ -223,7 +224,8 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
             search
         } = req.query;
 
-        const filters = {};
+        // Visitas anônimas do site não são leads (ver commercialRules.js)
+        const filters = { ...NOT_ANONYMOUS_VISIT };
 
         if (status) filters.status = status;
         if (origin) filters.origin = origin;
@@ -598,6 +600,7 @@ router.get('/report/summary',
     async (req, res) => {
         try {
             const summary = await Lead.aggregate([
+                { $match: NOT_ANONYMOUS_VISIT },
                 {
                     $facet: {
                         byStatus: [
@@ -669,6 +672,7 @@ router.get('/dashboard-metrics',
 
             // 🚀 UMA QUERY SÓ com facet
             const metrics = await Lead.aggregate([
+                { $match: NOT_ANONYMOUS_VISIT },
                 {
                     $facet: {
                         // Leads de hoje
