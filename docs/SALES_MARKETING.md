@@ -17,7 +17,7 @@ O acesso é só para `admin` e `secretary`.
 ## Regras
 
 - **Período:** o dia inteiro em São Paulo. Sem datas, vale o mês corrente. O "período anterior" tem o mesmo tamanho e serve para comparar os leads novos.
-- **Funil**, para leads criados no período (menos `parceria_profissional`):
+- **Funil**, para leads criados no período (menos `parceria_profissional` e as visitas anônimas do site, `NOT_ANONYMOUS_VISIT`):
   - **Conversou:** tem mensagem inbound e outbound no WhatsApp.
   - **Agendou:** o paciente convertido tem um agendamento que não foi cancelado (`pre_agendado` conta), ou o status do lead é `agendado`, `virou_paciente` ou `convertido`.
   - **Compareceu:** o paciente tem agendamento `completed`.

@@ -8,6 +8,24 @@ export const OPEN_LEAD_STATUSES = [
   'lead_quente', 'lead_frio', 'pendencia_documentacao',
 ];
 
+// Visita anônima do site: o rastreio de jornada (/api/journey/track, leadJourneyService)
+// grava um documento em Lead para cada visitante, inclusive robôs e previews da Vercel,
+// antes de a pessoa se identificar. Sem nome, sem telefone e sem identificação, não é
+// um lead que a equipe possa responder, então fica fora das filas e do funil.
+export const ANONYMOUS_VISIT_FILTER = {
+  journeyId: { $nin: [null, ''] },
+  isIdentified: { $ne: true },
+  name: { $in: [null, ''] },
+  'contact.phone': { $in: [null, ''] },
+};
+export const NOT_ANONYMOUS_VISIT = { $nor: [ANONYMOUS_VISIT_FILTER] };
+
+// Mesma regra do filtro acima, em JS (para testes e uso em memória).
+const blank = v => v === null || v === undefined || v === '';
+export function isAnonymousVisit(lead) {
+  return !blank(lead?.journeyId) && lead?.isIdentified !== true && blank(lead?.name) && blank(lead?.contact?.phone);
+}
+
 // Mesmo critério da Retenção V2: pré-agendado conta como próxima sessão (DOMAIN_INVARIANTS)
 export const FUTURE_STATUSES = ['scheduled', 'confirmed', 'pre_agendado'];
 
