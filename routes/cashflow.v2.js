@@ -342,7 +342,12 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 : new Map(),
             (async () => {
                 const _tDoctors = Date.now();
-                const doctorIds = Array.from(new Set(production.sessions.map(s => s.doctor?.toString()).filter(Boolean)));
+                // Inclui o profissional gravado no próprio Payment (ex.: venda de pacote, que
+                // não tem sessão no dia) — sem isso a linha saía "- / Outra" (caso André 04/11).
+                const doctorIds = Array.from(new Set([
+                    ...production.sessions.map(s => s.doctor?.toString()),
+                    ...(cash.payments || []).map(p => (p.doctor?._id || p.doctor)?.toString()),
+                ].filter(Boolean)));
                 if (doctorIds.length === 0) return new Map();
                 const docs = await (await import('../models/Doctor.js')).default.find({ _id: { $in: doctorIds } }).select('_id fullName specialty').lean();
                 console.log(`[cashflow.v2] doctorsMap = ${Date.now() - _tDoctors}ms (${docs.length} docs)`);
@@ -643,7 +648,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
             }
 
             // 🎯 Fonte de verdade: Appointment > Payment (specialty/sessionType) > 'Outra'
-            const esp = appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra';
+            const payDoctor = p.doctor ? doctorsMap.get((p.doctor._id || p.doctor).toString()) : null;
+            const esp = appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || payDoctor?.specialty || 'Outra';
             if (!porEspecialidadeCaixa[esp]) porEspecialidadeCaixa[esp] = 0;
             porEspecialidadeCaixa[esp] += p.amount;
 
@@ -669,8 +675,8 @@ async function buildCashflowResponse({ start, end, targetDate, startDate, endDat
                 metodo,
                 tipo,
                 servico,
-                especialidade: appt?.doctor?.specialty || appt?.specialty || appt?.sessionType || p.specialty || p.sessionType || 'Outra',
-                profissional: appt?.doctor?.fullName || appt?.professionalName || (p.doctor ? doctorsMap.get(p.doctor.toString())?.fullName : null) || '-',
+                especialidade: esp,
+                profissional: appt?.doctor?.fullName || appt?.professionalName || payDoctor?.fullName || '-',
                 hora: isLiminar
                     ? moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')
                     : (appt?.time || moment(p.createdAt || p.financialDate).tz('America/Sao_Paulo').format('HH:mm')),
