@@ -1292,9 +1292,14 @@ router.patch('/:id', auth, requireStaff, async (req, res) => {
         // do dia antigo no /api/v2/cashflow).
         if (amount !== undefined || financialDateBody !== undefined) {
             const oldDate = payment.financialDate || payment.paymentDate || payment.createdAt;
-            if (oldDate) clearCashflowCache(moment.tz(oldDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
             const newDate = updateData.financialDate;
-            if (newDate) clearCashflowCache(moment.tz(newDate, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+            const affectedDates = [oldDate, newDate]
+                .filter(Boolean)
+                .map(d => moment.tz(d, 'America/Sao_Paulo').format('YYYY-MM-DD'));
+            // Cache interno do calculateCash (30s) também: sem isso o rebuild logo
+            // após a edição recalculava o caixa com o resultado antigo.
+            invalidateUFSCacheForDates(affectedDates);
+            await clearCashflowCacheForDates(affectedDates);
         }
 
         // 5a.1 Sync appointment.paymentStatus/isPaid quando Payment foi cancelado/refunded

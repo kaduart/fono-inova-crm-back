@@ -67,9 +67,18 @@ function _redisKey(date, startDate, endDate, month = '') {
     return `${REDIS_CACHE_PREFIX}${_cacheKey(date, startDate, endDate, month)}`;
 }
 
+// A chave lógica (`_cacheKey`) vira chave Redis com o prefixo `cashflow:v2:`.
+// Antes o get/set usava a chave SEM prefixo e o clearCashflowCache apagava a
+// chave COM prefixo — a invalidação nunca acertava nada e a tela só se corrigia
+// quando o TTL vencia (2 min hoje, 1 h outros dias). Caso André Cunha Ferraz
+// 04/11/2026: data do pagamento editada e o Recebimentos não mudava.
+const _toRedisKey = (key) => (key.startsWith(REDIS_CACHE_PREFIX) ? key : `${REDIS_CACHE_PREFIX}${key}`);
+// Exportado só para teste: a chave Redis real usada por get/set do cache do dia.
+export const __cashflowRedisKeyForDate = (date) => _toRedisKey(_cacheKey(date));
+
 async function _getRedisCached(key, ttl, staleTtl) {
     try {
-        const raw = await safeRedis.get(key);
+        const raw = await safeRedis.get(_toRedisKey(key));
         if (!raw) return null;
         const entry = JSON.parse(raw);
         if (!entry || !entry._cachedAt) return null;
@@ -90,7 +99,7 @@ async function _getRedisCached(key, ttl, staleTtl) {
 async function _setRedisCached(key, data, ttl) {
     try {
         data._cachedAt = new Date().toISOString();
-        await safeRedis.set(key, JSON.stringify(data), 'EX', ttl);
+        await safeRedis.set(_toRedisKey(key), JSON.stringify(data), 'EX', ttl);
         console.log(`[cashflow.v2] REDIS SET ${key} ttl=${ttl}s`);
     } catch (e) {
         console.warn('[cashflow.v2] Redis cache write failed:', e.message);
@@ -1227,7 +1236,12 @@ export async function clearCashflowCache(date, { throwOnError = false } = {}) {
     const keysToDelete = [
         _redisKey(date),
         _redisKey(undefined, date, date),
-        _redisKey(undefined, undefined, undefined, month)
+        _redisKey(undefined, undefined, undefined, month),
+        // Legado: chaves gravadas sem prefixo antes do fix de 04/11/2026 (expiram
+        // sozinhas em até 1 h; apagar aqui evita servir dado velho na transição).
+        _cacheKey(date),
+        _cacheKey(undefined, date, date),
+        _cacheKey(undefined, undefined, undefined, month)
     ];
     try {
         await Promise.all(keysToDelete.map(k => safeRedis.del(k)));
