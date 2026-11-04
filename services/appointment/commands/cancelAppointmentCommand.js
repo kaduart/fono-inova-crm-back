@@ -32,6 +32,8 @@ import { isInsuranceAppointment } from '../../../utils/appointmentMapper.js';
 import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
 import InsuranceBatch from '../../../models/InsuranceBatch.js';
 import { releaseGuideConsumption } from '../../../domain/guide/releaseGuideConsumption.js';
+import FinancialLedger from '../../../models/FinancialLedger.js';
+import { recordSessionCancellationReversal } from '../../financialLedgerService.js';
 
 const REVERT_COMPLETED_ROLES = ['admin', 'superadmin']; // 04/11: Kadu: desfazer só admin (secretária só edita data/hora/terapeuta)
 
@@ -222,6 +224,20 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
           appointmentId: appointment._id.toString(), sessionId: sessionDoc._id.toString(), ...release,
         });
         sessionDoc.guideConsumed = false;
+
+        // A conclusão lançou revenue_recognition no ledger; desfazer precisa estornar
+        // (mesmo helper da auditoria de consistência). correlationId fixo = idempotente.
+        const [credit, reversed] = await Promise.all([
+          FinancialLedger.exists({ session: sessionDoc._id, type: 'revenue_recognition' }).session(session),
+          FinancialLedger.exists({ session: sessionDoc._id, type: 'reversal' }).session(session),
+        ]);
+        if (credit && !reversed) {
+          await recordSessionCancellationReversal(sessionDoc, {
+            userId: (user?._id || user?.id),
+            correlationId: `revert_completed_${sessionDoc._id}`,
+            reason: reason || 'Desfazer: foi falta',
+          }, session);
+        }
       }
 
       sessionDoc.status = 'canceled';
@@ -234,7 +250,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
       if (!sessionDoc.history) sessionDoc.history = [];
       sessionDoc.history.push({
         action: 'cancelamento_via_agendamento',
-        changedBy: user?._id,
+        changedBy: (user?._id || user?.id),
         timestamp: new Date(),
         details: { reason, confirmedAbsence, hadPayment: wasSessionPaid, ...(revertingCompletedConvenio ? { revertedCompletion: true } : {}) },
       });
@@ -286,7 +302,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
           ? { cancelRequester, cancelRequestedAt: cancelRequestedAt || new Date() }
           : cancelChannel ? { cancelChannel } : {}),
         canceledAt: new Date(),
-        canceledBy: user?._id,
+        canceledBy: (user?._id || user?.id),
         confirmedAbsence,
         updatedAt: new Date(),
         _fromCancelService: true,
@@ -295,7 +311,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         history: {
           action: 'cancelamento',
           newStatus: 'canceled',
-          changedBy: user?._id,
+          changedBy: (user?._id || user?.id),
           timestamp: new Date(),
           context: 'operacional',
           details: { reason, confirmedAbsence, cancelSource, cancelRequester, cancelRequestedAt, ...(revertingCompletedConvenio ? { revertedCompletion: true, previousStatus: 'completed' } : {}) },
@@ -330,7 +346,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         confirmedAbsence,
         cancelRequester: cancelRequester || null,
         cancelledAt: new Date(),
-        cancelledBy: user?._id?.toString()
+        cancelledBy: (user?._id || user?.id)?.toString()
       },
       correlationId: appointment.correlationId || `cancel_${Date.now()}`
     }, session);

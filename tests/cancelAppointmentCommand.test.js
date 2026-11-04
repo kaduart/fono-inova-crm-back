@@ -23,6 +23,8 @@ import { restorePackageOnCancel } from '../domain/package/restorePackageOnCancel
 import { executeWithSession } from '../services/appointment/commands/cancelAppointmentCommand.js';
 import InsuranceBatch from '../models/InsuranceBatch.js';
 import { releaseGuideConsumption } from '../domain/guide/releaseGuideConsumption.js';
+import FinancialLedger from '../models/FinancialLedger.js';
+import { recordSessionCancellationReversal } from '../services/financialLedgerService.js';
 
 vi.mock('../models/Appointment.js', () => ({
   default: { findById: vi.fn(), findByIdAndUpdate: vi.fn() },
@@ -48,6 +50,16 @@ vi.mock('../models/InsuranceBatch.js', () => ({
 vi.mock('../domain/guide/releaseGuideConsumption.js', () => ({
   releaseGuideConsumption: vi.fn().mockResolvedValue({ released: true, usedSessions: 11 }),
 }));
+
+vi.mock('../models/FinancialLedger.js', () => ({
+  default: { exists: vi.fn() },
+}));
+vi.mock('../services/financialLedgerService.js', () => ({
+  recordSessionCancellationReversal: vi.fn().mockResolvedValue({}),
+}));
+const ledgerExists = (credit, reversed) => FinancialLedger.exists
+  .mockReturnValueOnce({ session: vi.fn().mockResolvedValue(credit) })
+  .mockReturnValueOnce({ session: vi.fn().mockResolvedValue(reversed) });
 
 const fakeMongoSession = {}; // apenas repassado adiante, não usado diretamente pelos mocks
 
@@ -343,8 +355,13 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
         Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(sessionDoc) });
         mockPaymentFind([{ _id: 'pay-1', status: 'pending', insurance: { status: 'pending_billing' } }]);
         const paymentDoc = mockPaymentFindById({ _id: 'pay-1', status: 'pending' });
+        ledgerExists({ _id: 'cred' }, null);
 
-        const result = await executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'admin' }, fakeMongoSession);
+        const result = await executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { id: 'u', role: 'admin' }, fakeMongoSession);
+
+        expect(recordSessionCancellationReversal).toHaveBeenCalledWith(sessionDoc,
+          expect.objectContaining({ userId: 'u', correlationId: `revert_completed_${sessionDoc._id}` }), fakeMongoSession);
+        expect(Appointment.findByIdAndUpdate.mock.calls[0][1].$set.canceledBy).toBe('u');
 
         expect(result.operationalStatus).toBe('canceled');
         expect(paymentDoc.status).toBe('canceled');
