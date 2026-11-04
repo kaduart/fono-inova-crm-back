@@ -21,6 +21,8 @@ import Package from '../models/Package.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { restorePackageOnCancel } from '../domain/package/restorePackageOnCancel.js';
 import { executeWithSession } from '../services/appointment/commands/cancelAppointmentCommand.js';
+import InsuranceBatch from '../models/InsuranceBatch.js';
+import { releaseGuideConsumption } from '../domain/guide/releaseGuideConsumption.js';
 
 vi.mock('../models/Appointment.js', () => ({
   default: { findById: vi.fn(), findByIdAndUpdate: vi.fn() },
@@ -39,6 +41,12 @@ vi.mock('../infrastructure/outbox/outboxPattern.js', () => ({
 }));
 vi.mock('../domain/package/restorePackageOnCancel.js', () => ({
   restorePackageOnCancel: vi.fn().mockResolvedValue({ restored: true }),
+}));
+vi.mock('../models/InsuranceBatch.js', () => ({
+  default: { findOne: vi.fn() },
+}));
+vi.mock('../domain/guide/releaseGuideConsumption.js', () => ({
+  releaseGuideConsumption: vi.fn().mockResolvedValue({ released: true, usedSessions: 11 }),
 }));
 
 const fakeMongoSession = {}; // apenas repassado adiante, não usado diretamente pelos mocks
@@ -286,6 +294,73 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
 
       expect(result.operationalStatus).toBe('canceled');
       expect(paymentDoc.status).toBe('canceled');
+    });
+
+    // 🆕 (2026-11-04, caso Ícaro Lima) "Desfazer: foi falta" — admin cancela convênio concluído
+    describe('desfazer convênio concluído (revertCompletedConvenio)', () => {
+      function mockBatch(found) {
+        InsuranceBatch.findOne.mockReturnValue({
+          select: vi.fn().mockReturnValue({ session: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue(found) }) }),
+        });
+      }
+      const completedConvenio = () => makeAppointment({
+        billingType: 'convenio', operationalStatus: 'completed', serviceType: 'session', package: null, payment: 'pay-1',
+      });
+
+      it('não-admin: 403 CONVENIO_REVERT_FORBIDDEN, zero mutação', async () => {
+        mockAppointmentFindById(completedConvenio());
+        await expect(
+          executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'secretary' }, fakeMongoSession)
+        ).rejects.toMatchObject({ code: 'CONVENIO_REVERT_FORBIDDEN', status: 403 });
+        expect(Session.findById).not.toHaveBeenCalled();
+        expect(Appointment.findByIdAndUpdate).not.toHaveBeenCalled();
+      });
+
+      it('admin com sessão em lote ativo: 409 CONVENIO_REVERT_BLOCKED_IN_BATCH, zero mutação', async () => {
+        mockAppointmentFindById(completedConvenio());
+        mockBatch({ _id: 'batch-1' });
+        await expect(
+          executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'admin' }, fakeMongoSession)
+        ).rejects.toMatchObject({ code: 'CONVENIO_REVERT_BLOCKED_IN_BATCH', status: 409 });
+        expect(Session.findById).not.toHaveBeenCalled();
+        expect(releaseGuideConsumption).not.toHaveBeenCalled();
+      });
+
+      it('admin com Payment faturado: continua bloqueado (guarda financeira vale também aqui)', async () => {
+        mockAppointmentFindById(completedConvenio());
+        mockBatch(null);
+        mockPaymentFind([{ _id: 'pay-1', status: 'pending', insurance: { status: 'billed', billedAt: new Date() } }]);
+        await expect(
+          executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'admin' }, fakeMongoSession)
+        ).rejects.toMatchObject({ code: 'CONVENIO_CANCEL_BLOCKED_NON_REVERSIBLE_PAYMENT', status: 409 });
+        expect(releaseGuideConsumption).not.toHaveBeenCalled();
+      });
+
+      it('admin, fora de lote e Payment pendente: cancela, devolve a guia e marca guideConsumed=false', async () => {
+        mockAppointmentFindById(completedConvenio());
+        mockBatch(null);
+        const sessionDoc = makeSessionDoc({ status: 'completed', guideConsumed: true, insuranceGuide: 'guide-1' });
+        Session.findById.mockReturnValue({ session: vi.fn().mockResolvedValue(sessionDoc) });
+        mockPaymentFind([{ _id: 'pay-1', status: 'pending', insurance: { status: 'pending_billing' } }]);
+        const paymentDoc = mockPaymentFindById({ _id: 'pay-1', status: 'pending' });
+
+        const result = await executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'admin' }, fakeMongoSession);
+
+        expect(result.operationalStatus).toBe('canceled');
+        expect(paymentDoc.status).toBe('canceled');
+        expect(releaseGuideConsumption).toHaveBeenCalledWith(sessionDoc, { mongoSession: fakeMongoSession });
+        expect(sessionDoc.guideConsumed).toBe(false);
+        expect(sessionDoc.status).toBe('canceled');
+        const histCall = Appointment.findByIdAndUpdate.mock.calls[0][1];
+        expect(histCall.$push.history.details).toMatchObject({ revertedCompletion: true, previousStatus: 'completed' });
+      });
+
+      it('sem a flag, admin continua bloqueado em convênio concluído (comportamento antigo)', async () => {
+        mockAppointmentFindById(completedConvenio());
+        await expect(
+          executeWithSession('appt-1', { reason: 'falta' }, { _id: 'u', role: 'admin' }, fakeMongoSession)
+        ).rejects.toMatchObject({ code: 'CONVENIO_CANNOT_CANCEL_COMPLETED' });
+      });
     });
 
     it('convênio LEGADO sem billingType (identificado só por insuranceGuide): guarda de completed ainda bloqueia — isInsuranceAppointment, não billingType===convenio', async () => {

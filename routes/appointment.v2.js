@@ -372,6 +372,7 @@ router.patch('/:id/cancel', validateId, flexibleAuth, requireStaffOrAgenda, asyn
       : (parsed.cancelChannel
         || (req.user?.id === 'amanda-service' ? 'amanda' : isAgendaChannel(req.user) ? 'agenda_service' : null));
     const result = await cancelAppointment(req.params.id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel,
+      revertCompletedConvenio: req.body?.revertCompletedConvenio === true,
       requestContext: { method: req.method, path: req.originalUrl,
         correlationId: req.correlationId || req.get('x-correlation-id') || null }
     }, req.user);

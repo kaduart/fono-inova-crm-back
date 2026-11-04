@@ -30,6 +30,10 @@ import PaymentLifecycleService from '../../../domain/payment/PaymentLifecycleSer
 import { isPaymentFinanciallyReversible } from '../../../domain/payment/isPaymentFinanciallyReversible.js';
 import { isInsuranceAppointment } from '../../../utils/appointmentMapper.js';
 import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
+import InsuranceBatch from '../../../models/InsuranceBatch.js';
+import { releaseGuideConsumption } from '../../../domain/guide/releaseGuideConsumption.js';
+
+const REVERT_COMPLETED_ROLES = ['admin', 'superadmin'];
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -46,7 +50,7 @@ import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
  * @param {mongoose.ClientSession} session - Session MongoDB ativa
  * @returns {Promise<Appointment>} Appointment atualizado
  */
-export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt, cancelChannel, deferSideEffects = false }, user, session) {
+export async function executeWithSession(id, { reason, confirmedAbsence = false, cancelSource, cancelRequester, cancelRequestedAt, cancelChannel, deferSideEffects = false, revertCompletedConvenio = false }, user, session) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -94,18 +98,45 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
   // — reaproveitada aqui pra classificar de forma consistente com o resto do
   // sistema, não uma heurística nova.
   const isConvenio = isInsuranceAppointment(appointment);
+  // 🆕 (2026-11-04, caso Ícaro Lima): "Desfazer: foi falta". Admin pode cancelar uma
+  // sessão de convênio JÁ concluída, desde que nada financeiro tenha avançado
+  // (Payment reversível — guard 2 abaixo — e fora de qualquer lote ativo). A sessão
+  // consumida volta para a guia (releaseGuideConsumption) dentro desta transação.
+  const revertingCompletedConvenio = isConvenio
+    && appointment.operationalStatus === 'completed'
+    && revertCompletedConvenio === true;
   if (isConvenio) {
     // 1) completed é terminal pro convênio — já disparou consumo da guia
     // (InsuranceGuide.usedSessions) e liquidação de Payment via completeSessionV2,
     // sem contrapartida simétrica de reversão. Cancelar por aqui deixaria a guia
     // com sessão consumida mas o Appointment/Session/Payment como cancelado —
     // divergência permanente entre InsuranceGuide.usedSessions e a agenda real.
-    if (appointment.operationalStatus === 'completed') {
+    if (appointment.operationalStatus === 'completed' && !revertingCompletedConvenio) {
       throw buildError(
         'Sessão de convênio já concluída não pode ser cancelada. Consumo da guia e faturamento já foram processados.',
         409,
         'CONVENIO_CANNOT_CANCEL_COMPLETED'
       );
+    }
+    if (revertingCompletedConvenio) {
+      if (!REVERT_COMPLETED_ROLES.includes(String(user?.role || '').toLowerCase())) {
+        throw buildError('Só administrador pode desfazer uma sessão de convênio já concluída.', 403, 'CONVENIO_REVERT_FORBIDDEN');
+      }
+      const sessionRefId = appointment.session?._id || appointment.session;
+      const paymentRefId = appointment.payment?._id || appointment.payment;
+      const inBatch = await InsuranceBatch.findOne({
+        status: { $nin: ['canceled', 'cancelled'] },
+        $or: [
+          { 'sessions.appointment': appointment._id },
+          ...(sessionRefId ? [{ 'sessions.session': sessionRefId }] : []),
+          ...(paymentRefId ? [{ 'sessions.payment': paymentRefId }] : []),
+        ],
+      }).select('_id').session(session).lean();
+      if (inBatch) {
+        const err = buildError('Esta sessão já está num lote de faturamento. Tire-a do lote antes de desfazer.', 409, 'CONVENIO_REVERT_BLOCKED_IN_BATCH');
+        err.blockedBy = [{ batchId: inBatch._id }];
+        throw err;
+      }
     }
 
     // 2) Payment com financeiro avançado (faturado/pago/parcial/recebido) —
@@ -185,6 +216,14 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         sessionDoc.originalIsPaid = sessionDoc.isPaid;
       }
 
+      if (revertingCompletedConvenio) {
+        const release = await releaseGuideConsumption(sessionDoc, { mongoSession: session });
+        console.log('[cancelAppointmentCommand] Desfazer convênio concluído — guia', {
+          appointmentId: appointment._id.toString(), sessionId: sessionDoc._id.toString(), ...release,
+        });
+        sessionDoc.guideConsumed = false;
+      }
+
       sessionDoc.status = 'canceled';
       sessionDoc.paymentStatus = 'canceled';
       sessionDoc.visualFlag = 'blocked';
@@ -197,7 +236,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
         action: 'cancelamento_via_agendamento',
         changedBy: user?._id,
         timestamp: new Date(),
-        details: { reason, confirmedAbsence, hadPayment: wasSessionPaid },
+        details: { reason, confirmedAbsence, hadPayment: wasSessionPaid, ...(revertingCompletedConvenio ? { revertedCompletion: true } : {}) },
       });
 
       await sessionDoc.save({ session, validateBeforeSave: false });
@@ -259,7 +298,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
           changedBy: user?._id,
           timestamp: new Date(),
           context: 'operacional',
-          details: { reason, confirmedAbsence, cancelSource, cancelRequester, cancelRequestedAt },
+          details: { reason, confirmedAbsence, cancelSource, cancelRequester, cancelRequestedAt, ...(revertingCompletedConvenio ? { revertedCompletion: true, previousStatus: 'completed' } : {}) },
         },
       },
     },
@@ -303,7 +342,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
   return updated;
 }
 
-export async function execute(id, { reason, confirmedAbsence = false, cancelRequester, cancelRequestedAt, cancelChannel, requestContext }, user) {
+export async function execute(id, { reason, confirmedAbsence = false, cancelRequester, cancelRequestedAt, cancelChannel, requestContext, revertCompletedConvenio = false }, user) {
   if (!reason) {
     throw buildError('O motivo do cancelamento é obrigatório', 400, 'MISSING_CANCEL_REASON');
   }
@@ -320,7 +359,7 @@ export async function execute(id, { reason, confirmedAbsence = false, cancelRequ
   const beforeSnapshot = alreadyCanceled;
 
   const result = await runTransactionWithRetry(async (session) => {
-    return executeWithSession(id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel }, user, session);
+    return executeWithSession(id, { reason, confirmedAbsence, cancelRequester, cancelRequestedAt, cancelChannel, revertCompletedConvenio }, user, session);
   });
 
   // Projeções, auditoria e socket são independentes após o commit. Mantemos
@@ -343,7 +382,7 @@ export async function execute(id, { reason, confirmedAbsence = false, cancelRequ
       after: result,
       source: 'appointment_command:cancelAppointmentCommand',
       correlationId: requestContext?.correlationId || result.correlationId,
-      metadata: { reason, confirmedAbsence, cancelRequester: cancelRequester || null, ...(requestContext ? { requestContext } : {}) },
+      metadata: { reason, confirmedAbsence, cancelRequester: cancelRequester || null, ...(revertCompletedConvenio ? { revertCompletedConvenio: true } : {}), ...(requestContext ? { requestContext } : {}) },
     }),
     emitSocket('appointmentCanceled', {
       _id: result._id,
