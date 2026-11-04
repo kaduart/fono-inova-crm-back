@@ -32,7 +32,7 @@ Campos novos em `Patient`: `source`, `possibleDuplicateOf[]`, `duplicateReview {
 ## Rotas (`routes/patients/duplicates.js`)
 
 - `GET /api/patients/check-duplicate?fullName=&dateOfBirth=&phone=&cpf=&excludeId=` — para o aviso enquanto digita (admin/secretária).
-- `GET /api/patients/duplicates/report` — grupos por mesmo nome, mesmo CPF ou marcados na criação; traz nº de agendamentos e `sugestaoPrincipal` (admin). Não quebra mais com data de nascimento inválida.
+- `GET /api/patients/duplicates/report` — grupos por mesmo nome, mesmo CPF ou marcados na criação; traz nº de agendamentos e `sugestaoPrincipal` (admin/secretária). Não quebra mais com data de nascimento inválida.
 - `POST /api/patients/duplicates/confirm-distinct { ids }` — "são pessoas diferentes".
 - `POST /api/patients/duplicates/merge { primaryId, duplicateId, dryRun }` — prévia por padrão. Execução real: `dryRun: false`, `confirm: "MESCLAR"` e `PATIENT_MERGE_ENABLED=true` no ambiente.
 
