@@ -72,7 +72,7 @@ router.get('/check-duplicate', auth, authorize(['admin', 'secretary']), async (r
  *          vêm com confirmedDistinct=true (não somem — a decisão pode ser revista).
  * @access  Admin
  */
-router.get('/duplicates/report', auth, authorize(['admin']), async (req, res) => {
+router.get('/duplicates/report', auth, authorize(['admin', 'secretary']), async (req, res) => {
   try {
     const pacientes = await Patient.find({})
       .select('fullName dateOfBirth cpf email phone healthPlan source createdAt possibleDuplicateOf duplicateReview')
@@ -228,7 +228,7 @@ router.post('/duplicates/confirm-distinct', auth, authorize(['admin', 'secretary
  * @body    { primaryId, duplicateId, dryRun?: boolean, confirm?: "MESCLAR" }
  * @access  Admin
  */
-router.post('/duplicates/merge', auth, authorize(['admin']), async (req, res) => {
+router.post('/duplicates/merge', auth, authorize(['admin', 'secretary']), async (req, res) => {
   try {
     const { primaryId, duplicateId } = req.body || {};
     const dryRun = req.body?.dryRun !== false;
