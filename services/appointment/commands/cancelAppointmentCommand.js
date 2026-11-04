@@ -33,7 +33,7 @@ import LiminarGuard from '../../financialGuard/guards/liminar.guard.js';
 import InsuranceBatch from '../../../models/InsuranceBatch.js';
 import { releaseGuideConsumption } from '../../../domain/guide/releaseGuideConsumption.js';
 
-const REVERT_COMPLETED_ROLES = ['admin', 'superadmin'];
+const REVERT_COMPLETED_ROLES = ['admin', 'superadmin', 'secretary']; // 04/11: Kadu liberou para secretária
 
 /**
  * Core do cancelamento executado dentro de uma session MongoDB existente.
@@ -120,7 +120,7 @@ export async function executeWithSession(id, { reason, confirmedAbsence = false,
     }
     if (revertingCompletedConvenio) {
       if (!REVERT_COMPLETED_ROLES.includes(String(user?.role || '').toLowerCase())) {
-        throw buildError('Só administrador pode desfazer uma sessão de convênio já concluída.', 403, 'CONVENIO_REVERT_FORBIDDEN');
+        throw buildError('Só administrador ou secretária pode desfazer uma sessão de convênio já concluída.', 403, 'CONVENIO_REVERT_FORBIDDEN');
       }
       const sessionRefId = appointment.session?._id || appointment.session;
       const paymentRefId = appointment.payment?._id || appointment.payment;

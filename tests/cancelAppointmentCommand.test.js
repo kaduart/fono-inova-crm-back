@@ -307,10 +307,10 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
         billingType: 'convenio', operationalStatus: 'completed', serviceType: 'session', package: null, payment: 'pay-1',
       });
 
-      it('não-admin: 403 CONVENIO_REVERT_FORBIDDEN, zero mutação', async () => {
+      it('terapeuta (nem admin nem secretária): 403 CONVENIO_REVERT_FORBIDDEN, zero mutação', async () => {
         mockAppointmentFindById(completedConvenio());
         await expect(
-          executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'secretary' }, fakeMongoSession)
+          executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'doctor' }, fakeMongoSession)
         ).rejects.toMatchObject({ code: 'CONVENIO_REVERT_FORBIDDEN', status: 403 });
         expect(Session.findById).not.toHaveBeenCalled();
         expect(Appointment.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -344,7 +344,7 @@ describe('cancelAppointmentCommand.executeWithSession', () => {
         mockPaymentFind([{ _id: 'pay-1', status: 'pending', insurance: { status: 'pending_billing' } }]);
         const paymentDoc = mockPaymentFindById({ _id: 'pay-1', status: 'pending' });
 
-        const result = await executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'admin' }, fakeMongoSession);
+        const result = await executeWithSession('appt-1', { reason: 'falta', revertCompletedConvenio: true }, { _id: 'u', role: 'secretary' }, fakeMongoSession);
 
         expect(result.operationalStatus).toBe('canceled');
         expect(paymentDoc.status).toBe('canceled');
