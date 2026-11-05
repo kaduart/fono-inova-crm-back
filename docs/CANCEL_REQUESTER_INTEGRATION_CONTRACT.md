@@ -62,7 +62,7 @@ cancelamento e não pergunta nada.
 
 Contam como automáticos (separados dos manuais sem solicitante) os cancelamentos cujo `cancelSource` está em
 `SYSTEM_CANCEL_SOURCES`. Passaram a ser marcados em 2026-10-16: `liminar_plan_update` (dia da semana removido do plano da
-liminar), `unconfirmed_auto` (job das 18h) e `package_exhausted` (pacote esgotado). **Histórico antes disso não tem a marca
+liminar), `unconfirmed_auto` (job das 18h), `package_exhausted` (pacote esgotado) e `liminar_exhausted` (contrato de liminar zerou; só agendamentos a partir de amanhã). **Histórico antes disso não tem a marca
 e continua como "Não informado"** — não é reclassificado nem inferido pelo texto do motivo.
 
 ## O que cada integração precisa fazer

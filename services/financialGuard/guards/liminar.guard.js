@@ -85,18 +85,21 @@ async function handleComplete({ payload, session }) {
       { session }
     );
 
-    // Cancela appointments futuros vinculados ao contrato via command
-    const appointmentsToCancel = await Appointment.find({
-      liminarContract: liminarContractId,
-      operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] }
-    }).session(session).select('_id');
+    // Cancela SÓ os agendamentos FUTUROS (a partir de amanhã, fuso de São Paulo).
+    // Bug corrigido 05/11/2026: antes cancelava todos os scheduled/pending/pre_agendado
+    // do contrato, inclusive o atendimento que estava sendo concluído agora e
+    // atendimentos passados ainda não concluídos no sistema (que aconteceram e
+    // precisam continuar visíveis para a secretária resolver).
+    const appointmentsToCancel = await Appointment.find(
+      buildExhaustedCancelFilter({ liminarContractId, appointmentId })
+    ).session(session).select('_id');
 
     let canceledCount = 0;
     for (const appt of appointmentsToCancel) {
       try {
         await cancelAppointmentWithSession(
           appt._id,
-          { reason: 'Crédito liminar esgotado' },
+          { reason: 'Crédito liminar esgotado', cancelSource: 'liminar_exhausted' },
           null,
           session
         );
@@ -222,4 +225,31 @@ async function handleCancel({ payload, session }) {
     amountRefunded: sessionValue,
     creditBalance:  result.creditBalance
   };
+}
+
+// ──────────────────────────────────────────────────────────────
+// Esgotamento: quais agendamentos cancelar
+// ──────────────────────────────────────────────────────────────
+
+/** 00:00 de amanhã em São Paulo (UTC-3, sem horário de verão desde 2019). */
+export function startOfTomorrowSaoPaulo(now = new Date()) {
+  const SP_OFFSET_MS = 3 * 60 * 60 * 1000;
+  const sp = new Date(now.getTime() - SP_OFFSET_MS);
+  return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate() + 1) + SP_OFFSET_MS);
+}
+
+/**
+ * Filtro dos agendamentos cancelados quando o contrato zera:
+ * - nunca o atendimento que está sendo concluído;
+ * - nunca passado/hoje (pode ter acontecido e ainda não foi concluído no sistema);
+ * - só ativos (scheduled/pending/pre_agendado) a partir de amanhã.
+ */
+export function buildExhaustedCancelFilter({ liminarContractId, appointmentId, now = new Date() }) {
+  const filter = {
+    liminarContract: liminarContractId,
+    operationalStatus: { $in: ['scheduled', 'pending', 'pre_agendado'] },
+    date: { $gte: startOfTomorrowSaoPaulo(now) }
+  };
+  if (appointmentId) filter._id = { $ne: appointmentId };
+  return filter;
 }
