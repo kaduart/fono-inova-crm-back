@@ -246,8 +246,10 @@ describe('GET /pending/by-doctor (coordenação)', () => {
 
     it('agrupa por profissional, conta rascunhos e some ao finalizar', async () => {
         const p2 = await Patient.create({ fullName: 'Maria Clara', status: 'active' });
-        const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
-        await Appointment.create({ patient: p2._id, doctor: DOC_B, date: twoDaysAgo, time: '09:00', specialty: 'psicologia', operationalStatus: 'paid' });
+        // 2 dias antes do agendamento fixo da Ana (03/11): sem empate de atraso em qualquer dia
+        // (com "2 dias atrás" empatava em 05/11 e a ordem ficava aleatória).
+        const twoDaysBefore = new Date('2026-11-01T00:00:00Z');
+        await Appointment.create({ patient: p2._id, doctor: DOC_B, date: twoDaysBefore, time: '09:00', specialty: 'psicologia', operationalStatus: 'paid' });
         const draft = await saveDraft({ content: 'rascunho' });
         expect(draft.status).toBe(200);
 
@@ -258,8 +260,9 @@ describe('GET /pending/by-doctor (coordenação)', () => {
         expect(res.body.data.map(d => d.fullName)).toEqual(['Bruna Reis', 'Ana Souza']);
         const bruna = res.body.data[0];
         expect(bruna.phoneNumber).toBe('62988880000');
-        expect(bruna.items[0]).toMatchObject({ fullName: 'Maria Clara', daysLate: 2, draft: null });
+        expect(bruna.items[0]).toMatchObject({ fullName: 'Maria Clara', draft: null });
         expect(res.body.data[1]).toMatchObject({ pendingCount: 1, draftCount: 1 });
+        expect(bruna.items[0].daysLate).toBe(res.body.data[1].items[0].daysLate + 2);
 
         const fin = await asA(request(app).post(`/v2/evolutions/${draft.body.data._id}/finalize`)).send({ content: 'final' });
         expect(fin.status).toBe(200);
