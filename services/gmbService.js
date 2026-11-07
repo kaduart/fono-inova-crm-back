@@ -1464,6 +1464,19 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         existingImages = await findImg(especialidade.id, '', { limit: 10, maxUsage: IMAGE_BANK_MAX_REUSE });
       }
 
+      // 🔑 Fallback aterrado: o calendário usa IDs específicos (ex.: *_anapolis / *_infantil),
+      // mas o banco guarda por chave BASE. Mapeia e tenta a base — corrige o mismatch que
+      // deixava o post sem imagem (regressão do commit "imagens só reais" de 13/10).
+      if (!existingImages) {
+        const { especialidadeBaseParaBanco } = await import('./gmbImageBankMap.js');
+        const base = especialidadeBaseParaBanco(especialidade.id);
+        if (base && base !== especialidade.id) {
+          console.log(`🔄 [ImageBank] Tentando chave base do banco: ${base}`);
+          existingImages = await findImg(base, tema, { limit: 10, maxUsage: IMAGE_BANK_MAX_REUSE })
+            || await findImg(base, '', { limit: 10, maxUsage: IMAGE_BANK_MAX_REUSE });
+        }
+      }
+
       if (existingImages) {
         console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImages.reuseCount}x)`);
         // Usa URL direta do ImageBank — makeService.ensureGmbCompatibleUrl já remove transforms on-demand antes de enviar
@@ -2244,6 +2257,11 @@ export async function createDailyPost(options = {}) {
       }
     }
 
+    // Sem imagem elegível quando ela era obrigatória: NÃO vai pra 'scheduled' (ficaria preso,
+    // pois o enviador só publica post com imagem). Vai pra 'needs_review' com motivo explícito —
+    // sem descarte silencioso, sem foto incoerente, respeitando GMB_ALLOW_AI_IMAGES.
+    const semImagemObrigatoria = options.generateImage !== false && !mediaUrl;
+
     const scheduledAt = options.scheduledAt || getNextHorarioEstrategico();
 
     const post = new GmbPost({
@@ -2270,7 +2288,10 @@ export async function createDailyPost(options = {}) {
         isHighConversion: !!generated.angulo,
         isNeuropedBoost: isNeuroped && funnelStage === 'bottom'
       },
-      status: 'scheduled',
+      status: semImagemObrigatoria ? 'needs_review' : 'scheduled',
+      error: semImagemObrigatoria
+        ? 'Sem imagem elegível no ImageBank para esta especialidade — revisar (não publicar sem imagem).'
+        : undefined,
       scheduledAt,
       createdBy: options.userId,
       publishedBy: options.publishedBy || null

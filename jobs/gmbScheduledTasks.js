@@ -197,6 +197,14 @@ export const scheduleGmbCron = () => {
                 return;
             }
 
+            // ⏸️ Envio automático é OPT-IN: DESLIGADO por padrão. Só publica com GMB_AUTO_PUBLISH=true
+            // explícito. Posts continuam sendo criados/recuperados; nada é publicado sem a flag.
+            // (Protege o primeiro ciclo pós-deploy e a validação por 1 publicação controlada.)
+            if (process.env.GMB_AUTO_PUBLISH !== 'true') {
+                console.warn('⏸️ [GMB] Envio automático DESLIGADO (defina GMB_AUTO_PUBLISH=true para habilitar).');
+                return;
+            }
+
             // Publishing_retry sem confirmação do Make: NÃO reenviar automaticamente.
             // O scenario do Make ("Integration Webhooks": Webhook → Create a Post) não
             // tem um módulo de callback pra /webhook/make-callback — Make PUBLICA de
@@ -229,8 +237,13 @@ export const scheduleGmbCron = () => {
             }
 
             // ── Recuperação de imagem: gera imagem para posts que ficaram sem ela ──
+            // Só recupera imagem de posts RECENTES (últimos 2 dias). Protege o backlog:
+            // posts antigos sem imagem (regressão) NÃO são revividos automaticamente —
+            // ficam para revisão/recuperação controlada manual.
+            const corteRecuperacao = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
             const noImagePosts = await GmbPost.find({
                 status: 'scheduled',
+                createdAt: { $gte: corteRecuperacao },
                 $or: [{ mediaUrl: null }, { mediaUrl: { $exists: false } }],
             }).sort({ createdAt: 1 }).limit(3).lean();
 
@@ -243,7 +256,8 @@ export const scheduleGmbCron = () => {
                             console.warn(`⚠️ [GMB] Especialidade desconhecida para post ${noImgPost._id} (theme=${noImgPost.theme}) — pulando`);
                             continue;
                         }
-                        const imgResult = await gmbService.generateImageForEspecialidade(esp, noImgPost.content || '', false, 'auto', { forceNew: true, postId: noImgPost._id });
+                        // Sem forceNew: reutiliza o ImageBank (foto existente) antes de qualquer geração.
+                        const imgResult = await gmbService.generateImageForEspecialidade(esp, noImgPost.content || '', false, 'auto', { postId: noImgPost._id });
                         if (imgResult?.url) {
                             await GmbPost.updateOne({ _id: noImgPost._id }, { $set: { mediaUrl: imgResult.url, mediaType: 'image' } });
                             console.log(`✅ [GMB] Imagem recuperada para: ${noImgPost.title?.substring(0, 40)}`);

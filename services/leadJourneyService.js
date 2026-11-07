@@ -306,6 +306,11 @@ function calculateFunnel(timeline) {
 export function journeyTrackingMiddleware() {
   return async (req, res, next) => {
     try {
+      // Ignorar bots/crawlers - nao criar jornada/lead para robos
+      const __ua = (req.headers['user-agent'] || '');
+      if (/bot|crawler|spider|slurp|AdsBot|GoogleOther|Googlebot|HeadlessChrome|facebookexternalhit|facebookcatalog|preview|lighthouse|monitor|pingdom|curl|wget|python-requests|axios|PetalBot|bingbot/i.test(__ua)) {
+        return next();
+      }
       // Iniciar jornada
       const journey = await initLeadJourney(req, res);
       
