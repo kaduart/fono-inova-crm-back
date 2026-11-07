@@ -27,7 +27,7 @@ const gmbPostSchema = new mongoose.Schema({
   // Status do post (assistido)
   status: {
     type: String,
-    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'unconfirmed', 'cancelled', 'processing', 'publishing_retry'],
+    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'unconfirmed', 'cancelled', 'processing', 'publishing_retry', 'needs_review'],
     default: 'draft',
     index: true
   },
@@ -279,6 +279,9 @@ gmbPostSchema.statics.findScheduledForPublish = function(limit = 10) {
   return this.find({
     status: 'scheduled',
     scheduledAt: { $lte: now },
+    // Só publica post COM imagem: destrava os novos e PROTEGE o backlog —
+    // posts sem imagem (regressão) não entopem a fila nem são reenviados.
+    mediaUrl: { $type: 'string', $ne: '' },
     $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: now } }],
   })
   .sort({ scheduledAt: 1 })
