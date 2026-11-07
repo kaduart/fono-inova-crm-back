@@ -1,6 +1,7 @@
 // Investiga por que pacientes PARARAM o atendimento (SOMENTE LEITURA, não grava nada).
 // Uso (na pasta back):  node scripts/_diag-pararam-jun-jul-2026.js
 // Opcional:            node scripts/_diag-pararam-jun-jul-2026.js 2026-06-01 2026-07-31
+// Produção (só leitura, usa PROD_URI_AJUSTES do .env):  node scripts/_diag-pararam-jun-jul-2026.js --prod
 //
 // "Parou" = teve pelo menos 1 sessão de terapia realizada, a ÚLTIMA sessão realizada
 // caiu no período e não tem nada agendado para frente.
@@ -9,8 +10,10 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const INICIO = new Date(`${process.argv[2] || '2026-06-01'}T00:00:00-03:00`);
-const FIM = new Date(`${process.argv[3] || '2026-07-31'}T23:59:59-03:00`);
+const USE_PROD = process.argv.includes('--prod');
+const ARGS = process.argv.slice(2).filter(a => a !== '--prod');
+const INICIO = new Date(`${ARGS[0] || '2026-06-01'}T00:00:00-03:00`);
+const FIM = new Date(`${ARGS[1] || '2026-07-31'}T23:59:59-03:00`);
 const DONE = ['completed', 'paid'];
 const CANCEL = ['canceled', 'force_cancelled'];
 const AVAL = ['evaluation', 'neuropsych_evaluation', 'tongue_tie_test'];
@@ -24,7 +27,10 @@ const imprime = (titulo, obj, n) => {
 };
 
 async function main() {
-  await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
+  const uri = USE_PROD ? process.env.PROD_URI_AJUSTES : (process.env.MONGODB_URI || process.env.MONGO_URI);
+  if (!uri) throw new Error(USE_PROD ? 'PROD_URI_AJUSTES não está no .env' : 'MONGODB_URI não está no .env');
+  await mongoose.connect(uri);
+  console.log(`Banco: ${USE_PROD ? 'PRODUÇÃO (PROD_URI_AJUSTES)' : 'padrão do .env (MONGODB_URI)'} · ${mongoose.connection.name}`);
   const db = mongoose.connection.db;
   const agora = new Date();
 
