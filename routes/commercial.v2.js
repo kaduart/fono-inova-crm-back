@@ -6,6 +6,7 @@
  * GET  /api/v2/commercial/package-ending[?threshold=auto|0..5]     → pacote acabando (auto = 20%, piso 1)
  * GET  /api/v2/commercial/reactivation                             → sem próxima sessão
  * GET  /api/v2/commercial/churn-risk                               → risco de evasão (14/21 dias, com exceções)
+ * GET  /api/v2/commercial/stopped-trend?months=6                    → quantos pararam por mês + alerta de pico
  * GET  /api/v2/commercial/leads-waiting?hours=2                    → lead novo sem resposta
  * POST /api/v2/commercial/contacts                                 → registra o contato feito
  * GET  /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30 → avaliou e não fechou pacote
@@ -37,7 +38,7 @@ import { evaluationsWithoutPackage, unconfirmedNextDay, confirmationReminderText
 import {
   OPEN_LEAD_STATUSES, FUTURE_STATUSES, normalizeArea, waitingSince, NOT_ANONYMOUS_VISIT,
   sortFitLeads, packagesEnding, sortByRecentContact, daysBetween,
-  renewalStage, churnRisk, churnMessage, CHURN_DAYS, CHURN_JUSTIFIED_WINDOW_DAYS, CHURN_MAX_PAUSE_DAYS,
+  renewalStage, churnRisk, churnMessage, stoppedTrend, STOPPED_SPIKE, CHURN_DAYS, CHURN_JUSTIFIED_WINDOW_DAYS, CHURN_MAX_PAUSE_DAYS,
 } from '../services/commercial/commercialRules.js';
 
 const router = express.Router();
@@ -297,6 +298,58 @@ router.get('/churn-risk', ...staff, async (req, res) => {
     res.json({ success: true, data: { items: sortByRecentContact(items) } });
   } catch (err) {
     console.error('[commercial.v2] /churn-risk error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+// Evasão mês a mês: por paciente, a última sessão realizada e se há algo agendado
+// depois. Só conta quem fez ao menos 1 terapia (avaliação sozinha é outra fila).
+// Sem nome de paciente na resposta: é um indicador, a lista nominal fica nas filas.
+const STOPPED_DONE = ['completed', 'paid'];
+const STOPPED_EVAL = ['evaluation', 'neuropsych_evaluation', 'tongue_tie_test'];
+router.get('/stopped-trend', ...staff, async (req, res) => {
+  try {
+    const months = clampInt(req.query.months, 6, 3, 12);
+    const now = moment().tz(TIMEZONE);
+    const since = now.clone().subtract(months + STOPPED_SPIKE.baselineMonths, 'months').startOf('month').toDate();
+    const todayStart = now.clone().startOf('day').toDate();
+
+    const last = await Appointment.aggregate([
+      // Quem tem a última sessão depois de `since` necessariamente tem sessões nessa
+      // janela, então dá para cortar por data antes de agrupar (usa o índice de date).
+      { $match: { date: { $gte: since }, patient: { $ne: null }, isDeleted: { $ne: true }, operationalStatus: { $in: STOPPED_DONE } } },
+      { $sort: { date: -1 } },
+      { $group: {
+          _id: '$patient',
+          lastSessionAt: { $first: '$date' },
+          doctor: { $first: '$doctor' },
+          specialty: { $first: '$specialty' },
+          therapies: { $sum: { $cond: [{ $in: ['$serviceType', STOPPED_EVAL] }, 0, 1] } },
+      } },
+      { $match: { lastSessionAt: { $gte: since, $lt: todayStart }, therapies: { $gte: 1 } } },
+    ], { allowDiskUse: true });
+
+    let rows = [];
+    if (last.length) {
+      const ids = last.map(r => r._id);
+      const [withFuture, doctors] = await Promise.all([
+        Appointment.distinct('patient', {
+          patient: { $in: ids }, isDeleted: { $ne: true },
+          date: { $gte: todayStart }, operationalStatus: { $in: FUTURE_STATUSES },
+        }),
+        Doctor.find({ _id: { $in: last.map(r => r.doctor).filter(Boolean) } }, { fullName: 1 }).lean(),
+      ]);
+      const future = new Set(withFuture.map(String));
+      const dMap = Object.fromEntries(doctors.map(d => [d._id.toString(), d.fullName]));
+      rows = last
+        .filter(r => !future.has(r._id.toString()))
+        .map(r => ({ lastSessionAt: r.lastSessionAt, specialty: r.specialty, doctorName: r.doctor ? dMap[r.doctor.toString()] : null }));
+    }
+
+    const data = stoppedTrend(rows, { now: now.toDate(), months, tz: TIMEZONE });
+    res.json({ success: true, data: { ...data, rule: STOPPED_SPIKE } });
+  } catch (err) {
+    console.error('[commercial.v2] /stopped-trend error:', err);
     sendApiError(res, err, req);
   }
 });
