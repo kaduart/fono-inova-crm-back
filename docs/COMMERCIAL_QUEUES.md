@@ -89,3 +89,18 @@ Aprovados pelo Kadu no plano de Inteligência Operacional. Evoluem as filas acim
   - Cada item traz `severity: 'critical'`, `title` ("Risco de evasão: Nome está sem agendamento há N dias") e `message`, o texto pronto do WhatsApp. O front abre o WhatsApp e registra `kind: churn`; o back não envia mensagem.
   - A pausa vigente também tira o paciente da fila "Sem próxima sessão" (reativação). No Dashboard, quem está no risco de evasão não aparece de novo na reativação (o front remove a duplicata).
   - É calculado na leitura, sem cron. O índice `{ patient: 1, date: 1 }` de Appointment já cobre as consultas por paciente.
+
+## Pacientes que pararam (`GET /api/v2/commercial/stopped-trend?months=6`)
+
+Indicador mensal, não é fila nominal. Para cada paciente, pega a última sessão realizada
+(`completed` ou `paid`) e conta no mês dela se não houver nada agendado depois
+(`scheduled`, `confirmed`, `pre_agendado`). Só entra quem fez pelo menos 1 terapia no período
+(avaliação sozinha fica na fila "avaliou e não fechou").
+
+- Mês atual fica de fora (ainda não fechou).
+- `baseline` = média dos 3 meses anteriores (busca 3 meses extras antes da janela).
+- `spike` = `count >= 5` e `count >= 1,5 × baseline` (`STOPPED_SPIKE` em `commercialRules.js`).
+- `alert` = pico mais recente entre os 3 últimos meses fechados; o dashboard mostra o aviso quando existe.
+- Resposta traz top 3 especialidades e profissionais do mês, sem nome de paciente.
+
+Investigação detalhada (só leitura, roda local): `node scripts/_diag-pararam-jun-jul-2026.js [inicio] [fim]`.

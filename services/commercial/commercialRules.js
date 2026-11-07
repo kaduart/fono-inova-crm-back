@@ -161,3 +161,49 @@ export function churnMessage(name) {
     + 'A constância das sessões é o que mantém a evolução, e queremos ajudar a retomar. '
     + 'Podemos ver um horário para esta semana, de manhã ou à tarde? 💚';
 }
+
+// ─── Pacientes que pararam, mês a mês (alerta de evasão em alta) ───────────────
+// "Parou no mês M" = a última sessão realizada do paciente caiu em M e não existe
+// nada agendado depois. O mês atual fica de fora da comparação: ainda não fechou
+// e quem foi atendido há poucos dias ainda não "parou".
+export const STOPPED_SPIKE = { ratio: 1.5, minCount: 5, baselineMonths: 3 };
+
+/**
+ * @param {Array<{lastSessionAt: Date, specialty?: string, doctorName?: string}>} rows  um por paciente que parou
+ * @param {{ now: Date, months?: number, tz?: string }} opts
+ * @returns {{ months: Array<{month, count, baseline, spike, bySpecialty, byDoctor}>, alert: object|null }}
+ */
+export function stoppedTrend(rows, { now, months = 6, tz = 'America/Sao_Paulo' }) {
+  const ym = d => new Date(d).toLocaleDateString('sv-SE', { timeZone: tz }).slice(0, 7);
+  const current = ym(now);
+  const keys = [];
+  const [y, m] = current.split('-').map(Number);
+  // Busca meses extras antes da janela só para calcular a média dos primeiros meses
+  const total = months + STOPPED_SPIKE.baselineMonths;
+  for (let i = total; i >= 1; i -= 1) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 15));
+    keys.push(d.toISOString().slice(0, 7));
+  }
+  const bucket = Object.fromEntries(keys.map(k => [k, { count: 0, spec: {}, doc: {} }]));
+  for (const r of rows) {
+    const b = bucket[ym(r.lastSessionAt)];
+    if (!b) continue;
+    b.count += 1;
+    const s = r.specialty || 'sem especialidade';
+    const dn = r.doctorName || 'sem profissional';
+    b.spec[s] = (b.spec[s] || 0) + 1;
+    b.doc[dn] = (b.doc[dn] || 0) + 1;
+  }
+  const topN = obj => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, value]) => ({ label, value }));
+  const all = keys.map((k, i) => {
+    const prev = keys.slice(Math.max(0, i - STOPPED_SPIKE.baselineMonths), i).map(p => bucket[p].count);
+    const baseline = prev.length ? Math.round((prev.reduce((a, b) => a + b, 0) / prev.length) * 10) / 10 : null;
+    const { count } = bucket[k];
+    const spike = baseline !== null && count >= STOPPED_SPIKE.minCount && count >= baseline * STOPPED_SPIKE.ratio;
+    return { month: k, count, baseline, spike, bySpecialty: topN(bucket[k].spec), byDoctor: topN(bucket[k].doc) };
+  });
+  const out = all.slice(-months);
+  // Alerta = o pico mais recente dos últimos 3 meses fechados
+  const recentSpike = [...out].slice(-3).reverse().find(x => x.spike) || null;
+  return { months: out, alert: recentSpike };
+}
