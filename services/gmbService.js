@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
 import { ensureLocalHashtags } from './socialLocalHashtags.js';
+import { limparConteudoGmb, extrairUrl } from './gmbContentSanitizer.js';
 
 
 // OpenAI - GPT-3.5
@@ -2262,6 +2263,12 @@ export async function createDailyPost(options = {}) {
     // sem descarte silencioso, sem foto incoerente, respeitando GMB_ALLOW_AI_IMAGES.
     const semImagemObrigatoria = options.generateImage !== false && !mediaUrl;
 
+    // 🧼 Higieniza o corpo p/ publicação pública: tira telefone/URL/"Palavras-chave" do texto
+    // e a claim "avaliação gratuita". A URL do corpo (se houver) vai para o BOTÃO (ctaUrl).
+    // Fonte única em gmbContentSanitizer — mesmo tratamento do script de correção.
+    const _urlCorpo = extrairUrl(generated.content);
+    generated.content = limparConteudoGmb(generated.content);
+
     const scheduledAt = options.scheduledAt || getNextHorarioEstrategico();
 
     const post = new GmbPost({
@@ -2273,7 +2280,7 @@ export async function createDailyPost(options = {}) {
       mediaType: mediaUrl ? 'image' : null,
       imageProvider,  // 🖼️ Qual IA gerou a imagem
       ctaType: generated.whatsappLink ? 'BOOK' : 'LEARN_MORE', // fundo de funil = botão "Agendar" direto no WhatsApp (mantém [ctx] p/ atribuição)
-      ctaUrl: generated.whatsappLink || especialidade.url,
+      ctaUrl: generated.whatsappLink || _urlCorpo || especialidade.url, // link do corpo (removido do texto) vai p/ o botão
       aiGenerated: !generated.isFallback,
       // 🎯 HÍBRIDO: Identifica qual modelo gerou
       aiModel: generated.isFallback ? 'template' : (generated.angulo ? 'high-conversion-' + generated.angulo : 'gpt-4o-mini'),
