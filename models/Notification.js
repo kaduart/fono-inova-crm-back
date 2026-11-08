@@ -22,7 +22,7 @@ const notificationSchema = new mongoose.Schema({
   refId: {
     type: mongoose.Schema.Types.ObjectId,
     refPath: 'refModel',
-    required: true
+    required: false // opcional: notificações de sistema (ex.: healthcheck do GMB) não referenciam Appointment
   },
   refModel: {
     type: String,
@@ -107,6 +107,28 @@ notificationSchema.statics.createFromPreAgendamento = async function(preAgendame
     data,
     priority,
     isBroadcast: true // Todas as secretárias veem
+  });
+};
+
+// Método estático: Criar alerta de SISTEMA (ex.: healthcheck do GMB) — sem paciente/agendamento
+notificationSchema.statics.createSystemAlert = async function({ title, priority = 'high', dedupeKey = null }) {
+  // Dedupe: evita duplicar o mesmo alerta de sistema no mesmo dia
+  if (dedupeKey) {
+    const inicioDia = new Date();
+    inicioDia.setHours(0, 0, 0, 0);
+    const jaExiste = await this.findOne({
+      type: 'sistema',
+      'data.source': dedupeKey,
+      createdAt: { $gte: inicioDia }
+    });
+    if (jaExiste) return jaExiste;
+  }
+
+  return this.create({
+    type: 'sistema',
+    data: { patientName: title, source: dedupeKey || 'sistema' },
+    priority,
+    isBroadcast: true // todos os admins/secretárias veem no sininho
   });
 };
 
