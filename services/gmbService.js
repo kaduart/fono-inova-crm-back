@@ -8,6 +8,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
 import { ensureLocalHashtags } from './socialLocalHashtags.js';
 import { limparConteudoGmb, extrairUrl } from './gmbContentSanitizer.js';
+import { gerarTextoIA } from './aiText.js';
 
 
 // OpenAI - GPT-3.5
@@ -1117,14 +1118,11 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
       }
     ];
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: messages,
-      max_tokens: 450,
-      temperature: 0.8
-    });
+    // Texto via Claude (Anthropic). Usa o crédito da API; se faltar chave/crédito/modelo,
+    // o catch abaixo cai no template de fallback (publicação não quebra).
+    const texto = await gerarTextoIA(messages, { maxTokens: 450, temperature: 0.8 });
 
-    const content = ensureLocalHashtags(response.choices[0].message.content, especialidade, Infinity, customTheme || keywordSEO);
+    const content = ensureLocalHashtags(texto, especialidade, Infinity, customTheme || keywordSEO);
     
     // Extrai título do hook (primeiras 80 chars da primeira linha não vazia)
     const linhas = content.split('\n').filter(l => l.trim());
@@ -1145,7 +1143,7 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
     };
 
   } catch (error) {
-    console.error('❌ Erro OpenAI:', error.message, error.stack);
+    console.error('❌ Erro geração de texto (Claude) — usando template:', error.message);
     return generateFallbackPost(especialidade, customTheme || primaryKeyword);
   }
 }
@@ -2244,7 +2242,7 @@ export async function createDailyPost(options = {}) {
       // 🧠 TOP/MIDDLE = GPT (foco em alcance e variedade)
       console.log('🧠 Modo: GPT (foco em alcance/SEO)');
       generated = await generatePostForEspecialidade(especialidade, options.customTheme, funnelStage, 'emotional', options.primaryKeyword);
-      console.log(generated.isFallback ? '📝 Post template' : '✅ Texto GPT gerado');
+      console.log(generated.isFallback ? '📝 Post template' : '✅ Texto gerado (Claude)');
     }
 
     let mediaUrl = null;
