@@ -3,7 +3,6 @@
  * Modo: Geração de conteúdo + Make (Integromat) para publicação automática
  */
 
-import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
 import { ensureLocalHashtags } from './socialLocalHashtags.js';
@@ -11,10 +10,7 @@ import { limparConteudoGmb, extrairUrl } from './gmbContentSanitizer.js';
 import { gerarTextoIA } from './aiText.js';
 
 
-// OpenAI - GPT-3.5
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Texto do GMB migrado para Claude (Anthropic) via services/aiText.js — OpenAI removido deste módulo.
 
 // Cloudinary config
 const cloudinaryConfig = {
@@ -2595,14 +2591,9 @@ OUTPUT: Apenas a legenda pronta para copiar e colar.`
       }
     ];
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages,
-      max_tokens: 400,
-      temperature: 0.8
-    });
+    const texto = await gerarTextoIA(messages, { maxTokens: 400, temperature: 0.8 });
 
-    const caption = ensureLocalHashtags(response.choices[0].message.content, especialidade, Infinity, customTheme || keywordSEO);
+    const caption = ensureLocalHashtags(texto, especialidade, Infinity, customTheme || keywordSEO);
     
     // Calcula densidade da keyword
     const wordCount = caption.split(/\s+/).length;
@@ -2689,14 +2680,7 @@ Teste ângulos psicológicos distintos.`
       }
     ];
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages,
-      max_tokens: 800,
-      temperature: 0.9
-    });
-
-    const hooksText = response.choices[0].message.content.trim();
+    const hooksText = (await gerarTextoIA(messages, { maxTokens: 800, temperature: 0.9 })).trim();
     
     // Parseia os ganchos
     const hooks = hooksText.split('\n')
@@ -2739,9 +2723,7 @@ export async function generateContentVariations(especialidade, customTheme = nul
     };
     const gatilhos = (estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top).gatilhos;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const text = (await gerarTextoIA([
         {
           role: 'system',
           content: `Você cria variações de abertura para posts de saúde infantil.
@@ -2766,15 +2748,10 @@ FORMATO OBRIGATÓRIO (JSON):
 ]
 Responda SOMENTE o JSON, sem markdown.`
         }
-      ],
-      max_tokens: 500,
-      temperature: 0.9
-    });
-
-    const text = response.choices[0].message.content.trim();
+      ], { maxTokens: 500, temperature: 0.9 })).trim();
     let variations;
     try {
-      variations = JSON.parse(text);
+      variations = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
     } catch {
       // Fallback: extrai manualmente se o JSON vier malformado
       variations = [
@@ -2797,9 +2774,7 @@ Responda SOMENTE o JSON, sem markdown.`
  */
 export async function scorePostQuality(content, funnelStage = 'top') {
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
+    const text = (await gerarTextoIA([
         {
           role: 'system',
           content: `Você é avaliador de conteúdo para redes sociais de saúde infantil.
@@ -2822,14 +2797,9 @@ JSON:
   "sugestao": "<uma frase com a principal melhoria possível>"
 }`
         }
-      ],
-      max_tokens: 250,
-      temperature: 0.3
-    });
-
-    const text = response.choices[0].message.content.trim();
+      ], { maxTokens: 250, temperature: 0.3 })).trim();
     try {
-      return JSON.parse(text);
+      return JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
     } catch {
       return { clareza: 7, impacto_emocional: 7, cta: 7, score_geral: 7, ponto_forte: 'Conteúdo relevante', sugestao: 'Adicione um CTA mais específico' };
     }
