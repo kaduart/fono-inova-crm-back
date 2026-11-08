@@ -6,6 +6,7 @@ import * as gmbCalendarService from '../services/gmbCalendarService.js';
 import * as makeService from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
 import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
+import { healthcheckGmb } from '../services/gmbHealthcheck.js';
 
 /**
  * 🕐 Agenda tarefas do GMB no servidor principal
@@ -141,6 +142,19 @@ export const scheduleGmbCron = () => {
         }
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
     
+    // ═══════════════════════════════════════════════════════════════
+    // HEALTHCHECK DIÁRIO — "o post de hoje saiu?" (Fase 1: nunca parar em silêncio)
+    // ═══════════════════════════════════════════════════════════════
+    // 12:00 → verifica se o post das 08:10 foi criado E enviado ao Make.
+    // Se não, cria alerta no sininho do admin (Notification de sistema).
+    cron.schedule('0 12 * * *', async () => {
+        try {
+            await healthcheckGmb();
+        } catch (error) {
+            console.error('❌ [GMB Healthcheck] erro:', error.message);
+        }
+    }, { scheduled: true, timezone: 'America/Sao_Paulo' });
+
     // ═══════════════════════════════════════════════════════════════
     // CRIAÇÃO DE POSTS EM HORÁRIOS ESTRATÉGICOS (backup/extras)
     // ═══════════════════════════════════════════════════════════════
