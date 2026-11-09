@@ -149,6 +149,34 @@ describe('whatsappWebJsService — produção', () => {
     }
   });
 
+  it('frame destacado após o init: abre aba nova no mesmo perfil e reinjeta', async () => {
+    vi.useFakeTimers();
+    try {
+      const oldPage = { evaluate: vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'X'.")), on: vi.fn(), close: vi.fn().mockResolvedValue(undefined), url: () => 'about:blank' };
+      const newPage = { evaluate: vi.fn(), on: vi.fn(), setUserAgent: vi.fn(), goto: vi.fn().mockResolvedValue(undefined), url: () => 'https://web.whatsapp.com/' };
+      let inst;
+      ClientMock.mockImplementationOnce(function () {
+        inst = this;
+        this.destroy = vi.fn().mockResolvedValue(undefined);
+        this.initialize = vi.fn().mockResolvedValue(undefined);
+        this.on = vi.fn();
+        this.options = { userAgent: 'UA' };
+        this.pupPage = oldPage;
+        this.pupBrowser = { pages: vi.fn().mockResolvedValue([oldPage]), newPage: vi.fn().mockResolvedValue(newPage) };
+        this.inject = vi.fn().mockResolvedValue(undefined);
+      });
+      const { initWhatsAppClient } = await import('../../services/whatsappWebJsService.js');
+      await initWhatsAppClient();
+      await vi.advanceTimersByTimeAsync(5_500);
+      expect(oldPage.close).toHaveBeenCalled();
+      expect(newPage.goto).toHaveBeenCalledWith('https://web.whatsapp.com/', expect.any(Object));
+      expect(inst.pupPage).toBe(newPage);
+      expect(inst.inject).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('deve chamar client.destroy() no graceful shutdown', async () => {
     const { initWhatsAppClient, gracefulShutdownWhatsApp } = await import('../../services/whatsappWebJsService.js');
     await initWhatsAppClient();
