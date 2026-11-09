@@ -1,6 +1,5 @@
 // routes/google-auth.js
 import express from 'express';
-import { google } from 'googleapis';
 
 import dotenv from 'dotenv';
 import path from 'path';
@@ -21,23 +20,35 @@ const redirectUri = process.env.NODE_ENV === 'production'
     ? 'https://fono-inova-crm-back.onrender.com/api/google-ads/auth/oauth2callback'
     : 'http://localhost:5000/api/google-ads/auth/oauth2callback';
 
-if (!process.env.GOOGLE_ADS_CLIENT_ID || !process.env.GOOGLE_ADS_CLIENT_SECRET) {
-    throw new Error('❌ GOOGLE_ADS_CLIENT_ID ou CLIENT_SECRET não estão definidos!');
+// 09/11/2026 (incidente RSS 93% na API): 'googleapis' custa ~56 MB de heap / ~100 MB
+// de RSS no import. Este fluxo OAuth é raro (só para gerar refresh token), então a lib
+// e o cliente só são criados na 1ª chamada.
+let oauth2ClientPromise = null;
+
+function getOAuth2Client() {
+    if (oauth2ClientPromise) return oauth2ClientPromise;
+    if (!process.env.GOOGLE_ADS_CLIENT_ID || !process.env.GOOGLE_ADS_CLIENT_SECRET) {
+        return Promise.reject(new Error('❌ GOOGLE_ADS_CLIENT_ID ou CLIENT_SECRET não estão definidos!'));
+    }
+    oauth2ClientPromise = import('googleapis')
+        .then(({ google }) => new google.auth.OAuth2(
+            process.env.GOOGLE_ADS_CLIENT_ID,
+            process.env.GOOGLE_ADS_CLIENT_SECRET,
+            redirectUri
+        ))
+        .catch((err) => {
+            oauth2ClientPromise = null;
+            throw err;
+        });
+    return oauth2ClientPromise;
 }
-
-
-// Cria OAuth2Client
-const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_ADS_CLIENT_ID,
-    process.env.GOOGLE_ADS_CLIENT_SECRET,
-    redirectUri
-);
 
 // ============================
 // 1️⃣ Gerar URL de autorização
 // ============================
-router.get('/auth-url', (req, res) => {
+router.get('/auth-url', async (req, res) => {
     try {
+        const oauth2Client = await getOAuth2Client();
         const authUrl = oauth2Client.generateAuthUrl({
             access_type: 'offline', // necessário para refresh token
             prompt: 'consent',      // garante que refresh token seja enviado
@@ -64,6 +75,8 @@ router.get('/oauth2callback', async (req, res) => {
     try {
         const { code } = req.query;
         if (!code) return res.status(400).send('Código não fornecido');
+
+        const oauth2Client = await getOAuth2Client();
 
         // 🔹 Passe explicitamente o redirect_uri
         const { tokens } = await oauth2Client.getToken({
@@ -102,6 +115,7 @@ router.get('/oauth2callback', async (req, res) => {
 // ============================
 export const getAccessToken = async (refreshToken) => {
     try {
+        const oauth2Client = await getOAuth2Client();
         oauth2Client.setCredentials({ refresh_token: refreshToken });
         const { token } = await oauth2Client.getAccessToken();
         return token; // string com access_token válido

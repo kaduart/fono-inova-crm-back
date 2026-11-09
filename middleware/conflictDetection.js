@@ -533,8 +533,13 @@ function generateDefaultSlots() {
 // 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
 // Retorna: [{ time, available, reason?, label? }]
 // ======================================================
+// 09/11/2026: estes logs saíam a cada consulta de horários (inclusive o array inteiro
+// de slots com nome de paciente) e pesavam no log e no event loop da API em produção.
+// Só aparecem com LOG_VERBOSE=true. Erros continuam sempre em console.error.
+const slotLog = (...args) => { if (process.env.LOG_VERBOSE === 'true') console.log(...args); };
+
 export async function calculateAvailableSlots(doctorId, date) {
-  console.log(`[calculateAvailableSlots] doctorId=${doctorId}, date=${date}`);
+  slotLog(`[calculateAvailableSlots] doctorId=${doctorId}, date=${date}`);
   
   const doctor = await Doctor.findById(doctorId).lean();
   if (!doctor) {
@@ -542,8 +547,8 @@ export async function calculateAvailableSlots(doctorId, date) {
   }
 
   const dayKey = getDayKeyFromYMD(date);
-  console.log(`[calculateAvailableSlots] dayKey=${dayKey}, doctorName=${doctor.fullName}`);
-  console.log(`[calculateAvailableSlots] weeklyAvailability=`, JSON.stringify(doctor.weeklyAvailability));
+  slotLog(`[calculateAvailableSlots] dayKey=${dayKey}, doctorName=${doctor.fullName}`);
+  slotLog(`[calculateAvailableSlots] weeklyAvailability=`, JSON.stringify(doctor.weeklyAvailability));
 
   // 🗓️ VERIFICAÇÃO DE FERIADO (prioridade máxima)
   // Verifica feriado por horário (suporta feriados parciais como Quarta-feira de Cinzas)
@@ -554,10 +559,10 @@ export async function calculateAvailableSlots(doctorId, date) {
   const dailyAvailability = doctor.weeklyAvailability?.find((d) => d.day === dayKey);
   const rawTimes = dailyAvailability?.times || [];
   
-  console.log(`[calculateAvailableSlots] rawTimes=`, rawTimes);
+  slotLog(`[calculateAvailableSlots] rawTimes=`, rawTimes);
 
   if (!rawTimes.length) {
-    console.log(`[calculateAvailableSlots] Sem horários configurados para ${dayKey}`);
+    slotLog(`[calculateAvailableSlots] Sem horários configurados para ${dayKey}`);
     return generateDefaultSlots();
   }
 
@@ -572,11 +577,11 @@ export async function calculateAvailableSlots(doctorId, date) {
   ).sort();
 
   if (!normalizedTimes.length) {
-    console.log(`[calculateAvailableSlots] Sem horários normalizados válidos`);
+    slotLog(`[calculateAvailableSlots] Sem horários normalizados válidos`);
     return generateDefaultSlots();
   }
   
-  console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
+  slotLog(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
   // 🟢 SINGLE SOURCE OF TRUTH: busca ocupação do dia uma única vez
   const occupancyData = await fetchOccupancyData(doctorId, date);
@@ -605,7 +610,7 @@ export async function calculateAvailableSlots(doctorId, date) {
     const occupancy = getSlotOccupancy({ time: slotTime, duration: 40, date, occupancyData });
 
     if (occupancy.occupied) {
-      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por ${occupancy.reason}`);
+      slotLog(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por ${occupancy.reason}`);
       if (occupancy.reason === 'shadow_lock') {
         return {
           time: slotTime,
@@ -650,8 +655,8 @@ export async function calculateAvailableSlots(doctorId, date) {
   });
   
   const totalAppointments = occupancyData.intervals.length;
-  console.log(`[calculateAvailableSlots] totalOccupancyIntervals=${totalAppointments}`);
-  console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
+  slotLog(`[calculateAvailableSlots] totalOccupancyIntervals=${totalAppointments}`);
+  slotLog(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
   return slotsWithMetadata;
 }
