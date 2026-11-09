@@ -18,6 +18,7 @@
 | **A Receber** | `ReconciliationService` | Backend | `/api/internal/financial/reconciliation/issues` |
 | **Comissão por sessão** | `commissionRule.service.js` | Backend | Motor oficial de cálculo por sessão |
 | **Comissão Mensal** | `commissionService.js` | Backend | Gera `Expense` de comissão mensal |
+| **Faturamento x custo por profissional** | `commissionService.js` → `buildProfessionalPerformance()` | Backend | `GET /api/expenses/commissions/performance?month&year` (somente leitura; custo = `Doctor.compensation` fixo ou comissão) |
 | **Simulação de Comissão** | `commissionRule.service.js` | Backend | `/api/v2/professionals/:id/commission-simulation` |
 | **Resultado do Profissional** | `ProfessionalFinancialService` | Backend | `/api/v2/professionals/:id/summary` |
 | **Ranking de Profissionais** | `ProfessionalFinancialService` | Backend | `/api/v2/professionals/ranking` |
@@ -363,3 +364,14 @@ para o backfill (`paymentRole='standard'` em todo Payment legado) e troca de
 - `caixa.total` e `comparativos.ontem` seguem a regra do banco (`calculateCash`): a mesma base da meta, da visão do mês (`/v2/cashflow/month`) e da aba Pagamentos.
 - A rota não tira mais pagamentos do caixa por heurística (texto "pacote", pacote pré-pago com sessão não concluída). Esses itens continuam na lista com `foraNaRegraAntiga: true`, e os totais antigos ficam em `caixa.totalRegraAntiga` e `comparativos.ontemRegraAntiga`, só para auditoria.
 - `agenda` = `{ previsto, sessoes, perdido, faltasOuCancelados }`. O valor usa `resolveSessionFinancialValue` (FINANCIAL_CONTRACT §3), e `pre_agendado` entra no previsto (ADR-006).
+
+
+---
+
+## Salário fixo x comissão (09/11/2026)
+
+- `Doctor.compensation = { model: 'commission' | 'fixed_monthly', fixedMonthlyAmount }`. Padrão `commission`.
+- `fixed_monthly` (valor > 0): o "Gerar comissões" **não** cria repasse por sessão para o profissional; cria uma despesa `category: 'payroll'`, `subcategory: 'salary'`, descrição `"{Nome} - {Mês/Ano} (salário fixo)"`, com `workPeriod.revenueGenerated` e `notes` (faturamento por origem, pacientes, quanto custaria por comissão, resultado).
+- Se já houver outra despesa `payroll` do mesmo profissional no mês (lançada à mão), o fixo **não** é criado (evita pagar 2x). Fixa paga nunca é recriada.
+- `Expense.workPeriod.revenueGenerated` passa a ser gravado também nas comissões (produção das sessões completadas, mesma base de `resolveSessionFinancialValue`).
+- "Quanto custaria por comissão" de quem é fixo e não tem regra própria usa a regra mais comum da equipe (particular/pacote 65, convênio 50, liminar 65) só como simulação.

@@ -9,6 +9,7 @@ import { getEventStatus } from '../../infrastructure/events/eventStoreService.js
 import EventStore from '../../models/EventStore.js';
 import { sendApiError } from '../../errors/buildErrorResponse.js';
 import { AppError } from '../../errors/AppError.js';
+import { buildProfessionalPerformance } from '../../services/commissionService.js';
 
 const router = express.Router();
 
@@ -362,6 +363,28 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
     } catch (error) {
         console.error('Erro ao cancelar despesa:', error);
         sendApiError(res, error, req);
+    }
+});
+
+// GET /api/expenses/commissions/performance?month=10&year=2026
+// Faturamento x custo por profissional no mês (somente leitura). Inclui quem é
+// salário fixo (Doctor.compensation) — base para decidir comissão x fixo.
+router.get('/commissions/performance', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const m = Number(req.query.month);
+        const y = Number(req.query.year);
+        if (!m || !y || m < 1 || m > 12 || y < 2000 || y > 2100) {
+            return sendApiError(
+              res,
+              new AppError('BAD_REQUEST', 'Mês e ano são obrigatórios e devem ser válidos', { status: 400 }),
+              req
+            );
+        }
+        const data = await buildProfessionalPerformance(m, y);
+        return res.json({ success: true, data });
+    } catch (error) {
+        console.error('[GET /commissions/performance] Erro:', error);
+        return sendApiError(res, error, req);
     }
 });
 
