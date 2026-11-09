@@ -19,6 +19,7 @@ import { moveLiminarAppointmentSpecialty } from '../services/liminar/moveLiminar
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { recordHistoricalCancellations } from '../services/liminar/recordHistoricalCancellations.js';
 import { AppError } from '../errors/AppError.js';
+import { describeCancellationConflicts } from '../services/appointment/describeCancellationConflicts.js';
 
 const logger = createContextLogger('LiminarContract');
 
@@ -450,11 +451,15 @@ export async function generateSessions(req, res) {
     });
   } catch (error) {
     if (error.statusCode === 409) {
+      // Cancelamentos que batem com atendimento existente: mesmo texto detalhado do convênio.
+      const isCancellation = error.patientId && error.conflictSlots?.length && error.conflictSlots[0]?.action === 'conflict';
+      const described = isCancellation ? await describeCancellationConflicts(error.conflictSlots, error.patientId) : null;
       return sendApiError(
         res,
-        new AppError(error.code, error.message, {
+        new AppError(error.code, described?.message || error.message, {
           status: 409,
-          extra: { conflictSlots: error.conflictSlots || [] },
+          ...(described ? { title: described.title, action: described.action, items: described.items } : {}),
+          extra: { conflictSlots: error.conflictSlots || [], ...(described ? { conflicts: error.conflictSlots } : {}) },
         }),
         req
       );

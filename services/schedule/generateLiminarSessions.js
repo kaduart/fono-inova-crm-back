@@ -71,7 +71,7 @@ export async function generateLiminarSessions({
       if (cancellations.length) {
         if (!['admin', 'superadmin', 'secretary'].includes(String(user?.role).toLowerCase())) throw Object.assign(new Error('Sem permissão para registrar cancelamentos.'), { statusCode: 403 });
         cancellationResult = await recordHistoricalCancellations({ contractId: String(contract._id), planId, cancellations, dryRun: false, user, mongoSession });
-        if (cancellationResult.conflicts.length) throw conflictError('Confira os cancelamentos antes de gerar.', cancellationResult.conflicts);
+        if (cancellationResult.conflicts.length) throw Object.assign(conflictError('Confira os cancelamentos antes de gerar.', cancellationResult.conflicts), { patientId: contract.patient });
       }
       if (contract.status !== 'active') {
         const error = new Error(`LIMINAR_CONTRACT_NOT_ACTIVE: status=${contract.status}`);
