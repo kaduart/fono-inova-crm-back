@@ -231,6 +231,9 @@ function spawnWhatsAppChild() {
         }
         if (msg.type === 'whatsapp_ready') {
             console.log('[PARENT] ✅ WhatsApp READY recebido do child!');
+            // Conectou: zera o contador. Sem isto, 20 reinícios ao longo de dias
+            // (watchdogs, quedas) paravam o WhatsApp de vez ('max_restarts').
+            childRestartCount = 0;
             childReady = true;
             childStatus = 'ready';
             stateSnapshot.ready = true;

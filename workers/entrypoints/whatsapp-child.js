@@ -150,21 +150,8 @@ async function main() {
         }
     });
 
-    // Inicializa WhatsApp
-    await initWhatsAppClient();
-    console.log('[CHILD] 🟢 WhatsApp inicializado');
-
-    // Remove booting flag quando ficar ready
-    const bootingCheck = setInterval(async () => {
-        try {
-            const status = await getStatus();
-            if (status.ready) {
-                fs.rmSync(BOOTING_FLAG, { force: true });
-                clearInterval(bootingCheck);
-            }
-        } catch {}
-    }, 5000);
-
+    // Heartbeat ANTES do init: se client.initialize() travar, o botão "Gerar novo QR"
+    // (sinal no MongoDB) ainda é ouvido. Antes ficava depois do await e nunca rodava.
     // Heartbeat: envia status para o pai a cada 5s + detecta sinal externo de reconexão
     setInterval(async () => {
         try {
@@ -180,6 +167,21 @@ async function main() {
             }
             // Detecta se o backend solicitou reconexão via MongoDB (clearSession)
             await checkExternalReconnectSignal();
+        } catch {}
+    }, 5000);
+
+    // Inicializa WhatsApp
+    await initWhatsAppClient();
+    console.log('[CHILD] 🟢 WhatsApp inicializado');
+
+    // Remove booting flag quando ficar ready
+    const bootingCheck = setInterval(async () => {
+        try {
+            const status = await getStatus();
+            if (status.ready) {
+                fs.rmSync(BOOTING_FLAG, { force: true });
+                clearInterval(bootingCheck);
+            }
         } catch {}
     }, 5000);
 

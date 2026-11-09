@@ -354,13 +354,13 @@ router.post('/debug/simulate-event', flexibleAuth, requireAdmin, async (req, res
   logger.info(`[${correlationId}] 🎮 Simulating event`, { patientId, eventType });
   
   try {
-    // Importa worker dinamicamente
-    const { patientProjectionWorker } = await import('../domains/clinical/workers/patientProjectionWorker.js');
+    // Processa sem criar Worker BullMQ na API (ver patientProjectionWorker.js, 09/11/2026)
+    const { processPatientProjectionJob } = await import('../domains/clinical/workers/patientProjectionWorker.js');
     
     const beforeView = await PatientsView.findOne({ patientId }).lean();
     
     // Processa evento simulado
-    const result = await patientProjectionWorker.processJob({
+    const result = await processPatientProjectionJob({
       data: {
         eventType,
         payload: { patientId, ...payload },

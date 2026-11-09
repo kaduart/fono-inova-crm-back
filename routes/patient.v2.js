@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import Patient from '../models/Patient.js';
+import Appointment from '../models/Appointment.js';
 import PatientsView from '../models/PatientsView.js';
 import { buildPatientView } from '../domains/clinical/services/patientProjectionService.js';
 import { getPatientPendingSnapshot, getPatientPendingSnapshots } from '../services/patientPendingSnapshot.js';
@@ -27,6 +28,7 @@ import { execute as deletePatientCommand } from '../domains/patient/commands/del
 import { findPossibleDuplicates, toDuplicateCandidateDTO } from '../utils/patientDuplicateCheck.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { buildPatientStatusUpdate } from '../domain/patient/buildPatientStatusUpdate.js';
 
 const router = express.Router();
 const logger = createContextLogger('PatientV2Routes');
@@ -66,7 +68,9 @@ router.get('/', flexibleAuth, async (req, res) => {
       status = null,
       sortBy = null,
       hasDebt = 'false', // 'true' => somente pacientes com saldo devedor particular
-      includeStale = 'false' // se 'true', inclui views stale
+      includeStale = 'false', // se 'true', inclui views stale
+      patientStatus = null, // 'inactive' = inativados pela recepção
+      inactiveReason = null // motivo da inativação
     } = req.query;
 
     // 🚀 Query otimizada no PatientsView
@@ -76,6 +80,8 @@ router.get('/', flexibleAuth, async (req, res) => {
       doctorId,
       status,
       hasDebt: hasDebt === 'true',
+      patientStatus: ['active', 'inactive', 'lead'].includes(patientStatus) ? patientStatus : null,
+      inactiveReason: typeof inactiveReason === 'string' && /^[a-z_]{2,30}$/.test(inactiveReason) ? inactiveReason : null,
       ...(sortBy ? { sortBy } : {})
     });
     
@@ -544,6 +550,59 @@ router.put('/:id', flexibleAuth, async (req, res) => {
     
   } catch (error) {
     logger.error(`[${correlationId}] Update error`, { error: error.message });
+    return res.status(500).json(formatError(error.message, 500));
+  }
+});
+
+/**
+ * PATCH /api/v2/patients/:id/status
+ * Inativar (com motivo da lista) ou reativar o paciente. Só recepção e admin.
+ * Body: { status: 'inactive'|'active', reason?, note? }
+ * Não cancela agendamentos: a resposta traz quantos futuros existem.
+ */
+router.patch('/:id/status', flexibleAuth, async (req, res) => {
+  const { id } = req.params;
+  const correlationId = `pat_status_${Date.now()}`;
+  try {
+    const isStaff = ['admin', 'secretary'].includes(req.user?.role) && !req.user?.isService;
+    if (!isStaff) {
+      throw new AppError('PATIENT_STATUS_FORBIDDEN', 'Só a recepção ou o admin inativa paciente.', {
+        status: 403,
+        title: 'Sem permissão',
+        action: 'Peça para a recepção fazer a inativação.',
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('PATIENT_NOT_FOUND', 'Paciente não encontrado.', { status: 404, title: 'Paciente não encontrado' });
+    }
+    let patient = await Patient.findById(id).select('status').lean();
+    if (!patient) {
+      const view = await PatientsView.findOne({ $or: [{ _id: id }, { patientId: id }] }).select('patientId').lean();
+      if (view?.patientId) patient = await Patient.findById(view.patientId).select('status').lean();
+    }
+    if (!patient) {
+      throw new AppError('PATIENT_NOT_FOUND', 'Paciente não encontrado.', { status: 404, title: 'Paciente não encontrado' });
+    }
+
+    const { status, reason, note } = req.body || {};
+    const set = buildPatientStatusUpdate({ status, reason, note, user: req.user, current: patient });
+    await Patient.updateOne({ _id: patient._id }, { $set: set });
+
+    const futureAppointments = await Appointment.countDocuments({
+      patient: patient._id,
+      date: { $gte: new Date() },
+      operationalStatus: { $in: ['scheduled', 'confirmed', 'pre_agendado'] },
+    }).catch(() => null);
+
+    logger.info(`[${correlationId}] status do paciente`, { patientId: String(patient._id), status, reason: reason || null, futureAppointments });
+
+    const view = await buildPatientView(String(patient._id), { correlationId, force: true });
+    return res.json(formatSuccess({ status, futureAppointments, patientView: view }, {
+      message: status === 'inactive' ? 'Paciente inativado' : 'Paciente reativado',
+    }));
+  } catch (error) {
+    if (error?.isAppError) return sendApiError(res, error, req);
+    logger.error(`[${correlationId}] erro ao mudar status`, { error: error.message });
     return res.status(500).json(formatError(error.message, 500));
   }
 });

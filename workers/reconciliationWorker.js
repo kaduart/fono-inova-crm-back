@@ -65,9 +65,11 @@ export function startReconciliationWorker() {
             
             // Se tem inconsistências graves, apenas loga alerta
             if (results.manualReview.length > 0) {
+                // Só o resumo vai para o log (contagem por tipo/severidade + poucos IDs
+                // de exemplo). A lista completa continua no retorno do job (results).
                 console.warn(`[ReconciliationWorker] ⚠️ ${results.manualReview.length} inconsistências requerem revisão manual`, {
                     severity: results.manualReview.length > 5 ? 'high' : 'medium',
-                    issues: results.manualReview,
+                    issues: summarizeManualReview(results.manualReview),
                     summary: {
                         checked: results.checked,
                         inconsistencies: results.inconsistencies,
@@ -516,6 +518,30 @@ async function reconcilePatientBalance(results) {
 
 // Exposto só para teste de integração real do redesenho (não é API pública
 // do worker) — ver tests/unit/reconciliationWorker.redesign.test.js.
-export const __testables = { reconcilePaymentNetCredit, reconcileOrphanLedgerEntries, reportMonthlyLedgerNetMovement };
+const MANUAL_REVIEW_SAMPLE_SIZE = 3;
+
+/**
+ * Resume a lista de revisão manual para log: por tipo, total, contagem por
+ * severidade, soma de valores (netCredit/amount) e até 3 paymentIds de exemplo.
+ * Evita despejar centenas de objetos no log do Render a cada 5 min.
+ */
+function summarizeManualReview(items = []) {
+    const byType = {};
+    for (const item of items) {
+        const type = item?.type || 'unknown';
+        const bucket = byType[type] || (byType[type] = { count: 0, bySeverity: {}, totalAmount: 0, sampleIds: [] });
+        bucket.count++;
+        const sev = item?.severity || 'unknown';
+        bucket.bySeverity[sev] = (bucket.bySeverity[sev] || 0) + 1;
+        const amount = Number(item?.netCredit ?? item?.amount ?? 0);
+        if (Number.isFinite(amount)) bucket.totalAmount += amount;
+        const id = item?.paymentId ?? item?.ledgerEntryId ?? item?.patientId;
+        if (id && bucket.sampleIds.length < MANUAL_REVIEW_SAMPLE_SIZE) bucket.sampleIds.push(String(id));
+    }
+    for (const bucket of Object.values(byType)) bucket.totalAmount = Math.round(bucket.totalAmount * 100) / 100;
+    return byType;
+}
+
+export const __testables = { reconcilePaymentNetCredit, reconcileOrphanLedgerEntries, reportMonthlyLedgerNetMovement, summarizeManualReview };
 
 export default { startReconciliationWorker };

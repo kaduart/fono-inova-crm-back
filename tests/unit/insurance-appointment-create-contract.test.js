@@ -56,3 +56,14 @@ describe('criação de Appointment de convênio', () => {
     expect(document).not.toHaveProperty('sessionType');
   });
 });
+
+describe('Payment do agendamento de convênio pela agenda', () => {
+  it('sempre tem paymentDate (obrigatório no model) e guarda a data do atendimento em serviceDate', async () => {
+    const { buildInsuranceAppointmentPaymentData } = await import('../../services/billing/insuranceBilling.js');
+    const now = new Date('2026-11-09T15:00:00Z');
+    const data = buildInsuranceAppointmentPaymentData({ patientId: 'p', doctorId: 'd', sessionId: 's', appointmentId: 'a', guide, date: '2026-10-05', now });
+    expect(data.paymentDate).toEqual(now);
+    expect(data.serviceDate).toBe('2026-10-05');
+    expect(data).toMatchObject({ amount: 0, billingType: 'convenio', status: 'pending', insurance: { authorizationCode: 'GUIA-OFICIAL', status: 'pending_billing' } });
+  });
+});

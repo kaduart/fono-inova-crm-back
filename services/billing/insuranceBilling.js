@@ -14,6 +14,36 @@ import { GuideLifecycleService } from '../guideLifecycle/GuideLifecycleService.j
 import { buildAppointmentClientFieldsForModel } from '../appointment/contracts/appointmentClientFields.js';
 import { resolveInitialAppointmentStatus } from '../appointment/contracts/appointmentInitialStatus.js';
 
+/**
+ * Payment pendente de faturamento do agendamento de convênio criado pela agenda.
+ * paymentDate é obrigatório no model Payment; sem ele a criação avulsa de convênio (inclusive
+ * retroativa) falhava com "Path `paymentDate` is required" (ensaio das fichas de outubro, 09/11/2026).
+ * Mesmo critério do gerador de sessões do plano (generateInsurancePlanSessions): data de criação —
+ * o valor é 0 e não entra no caixa; a data do atendimento fica em serviceDate.
+ */
+export function buildInsuranceAppointmentPaymentData({ patientId, doctorId, sessionId, appointmentId, guide, date, now = new Date() }) {
+  return {
+    patient: patientId,
+    doctor: doctorId,
+    session: sessionId,
+    appointment: appointmentId,
+    serviceType: 'session',
+    amount: 0, // Valor será definido no faturamento
+    paymentMethod: 'convenio',
+    status: 'pending', // Status inicial
+    billingType: 'convenio',
+    paymentDate: now,
+    insurance: {
+      provider: guide.insurance,
+      authorizationCode: guide.number,
+      status: 'pending_billing',
+      grossAmount: 0
+    },
+    serviceDate: date,
+    notes: `Aguardando faturamento - Guia ${guide.number}`
+  };
+}
+
 export function buildInsuranceAppointmentDocument(appointmentData, guide, sessionId) {
   const clientFields = buildAppointmentClientFieldsForModel(appointmentData, Appointment);
   const initialStatus = resolveInitialAppointmentStatus(appointmentData.operationalStatus);
@@ -178,25 +208,7 @@ class InsuranceBillingService {
         sessionId: newSession._id,
         appointmentId: newAppointment._id,
         patientId,
-        paymentData: {
-          patient: patientId,
-          doctor: doctorId,
-          session: newSession._id,
-          appointment: newAppointment._id,
-          serviceType: 'session',
-          amount: 0, // Valor será definido no faturamento
-          paymentMethod: 'convenio',
-          status: 'pending', // Status inicial
-          billingType: 'convenio',
-          insurance: {
-            provider: guide.insurance,
-            authorizationCode: guide.number,
-            status: 'pending_billing',
-            grossAmount: 0
-          },
-          serviceDate: date,
-          notes: `Aguardando faturamento - Guia ${guide.number}`
-        },
+        paymentData: buildInsuranceAppointmentPaymentData({ patientId, doctorId, sessionId: newSession._id, appointmentId: newAppointment._id, guide, date }),
         mongoSession: session
       });
 

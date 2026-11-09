@@ -55,6 +55,36 @@ let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
+// Watchdog da fase "initializing": client.initialize() pode ficar pendurado para
+// sempre (Chrome/WhatsApp Web não carrega) sem disparar qr/loading_screen/erro.
+// Em 09/11/2026 ficou 1h48 em "Inicializando..." em produção até reiniciar na mão.
+let initWatchdog = null;
+const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 * 1000;
+
+function clearInitWatchdog() {
+  if (initWatchdog) { clearTimeout(initWatchdog); initWatchdog = null; }
+}
+
+// Reinício de recuperação PRESERVANDO a sessão no disco (LocalAuth): o próximo
+// boot reconecta sozinho, sem QR, se a sessão ainda for válida.
+// No child (process.send): sai e o parent respawna com Chrome novo em 10s.
+async function restartForRecovery(reason) {
+  console.error(`[WhatsAppWeb] ♻️ Reinício de recuperação — ${reason}`);
+  clearInitWatchdog();
+  isReady = false;
+  connectionStatus = 'restarting';
+  whatsappState.lastDisconnectReason = reason;
+  try { await saveState(); } catch {}
+  if (process.send) {
+    process.exit(2);
+    return;
+  }
+  // Fora do child (dev): destrói e tenta de novo no mesmo processo
+  isInitializing = false;
+  await safeDestroyClient();
+  if (retryTimeout) clearTimeout(retryTimeout);
+  retryTimeout = setTimeout(() => initWhatsAppClient(), 10_000);
+}
 let readyPollInterval = null;
 let stateSaveInterval = null;
 let attendancePollSyncInterval = null;
@@ -186,6 +216,112 @@ function startReadyPoll(newClient) {
       // ainda não está pronto — ignora
     }
   }, 10_000);
+}
+
+// ─── Sessão já sincronizada sem 'ready' (09/11/2026) ─────────────────────────
+// O whatsapp-web.js só emite authenticated/ready no evento 'change:hasSynced'
+// do Socket. Reaproveitando a sessão do disco, o sync pode terminar ANTES do
+// listener existir: initialize() resolve, nenhum evento vem e o painel fica em
+// "Inicializando..." para sempre (sem QR, porque a sessão é válida).
+// Aqui olhamos o Socket e, se já sincronizou, chamamos o próprio handler da lib
+// (window.onAppStateHasSyncedEvent), que injeta os utilitários e emite ready.
+let syncedKickInterval = null;
+function startSyncedSessionKick(activeClient) {
+  if (syncedKickInterval) clearInterval(syncedKickInterval);
+  let checks = 0;
+  let kicked = 0;
+  let recoveries = 0;
+  let busy = false;
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try { await tickInner(); } finally { busy = false; }
+  };
+  const tickInner = async () => {
+    if (isReady || client !== activeClient || !activeClient?.pupPage) {
+      clearInterval(syncedKickInterval); syncedKickInterval = null;
+      return;
+    }
+    checks++;
+    try {
+      const sock = await activeClient.pupPage.evaluate(() => {
+        try {
+          const S = window.require('WAWebSocketModel').Socket;
+          return { state: S.state, hasSynced: !!S.hasSynced, handler: typeof window.onAppStateHasSyncedEvent };
+        } catch (e) {
+          return { error: String(e?.message || e) };
+        }
+      });
+      if (checks <= 3 || checks % 6 === 0) {
+        console.log(`[WhatsAppWeb] 🔎 pós-init: socket=${JSON.stringify(sock)} status=${connectionStatus}`);
+      }
+      // Já tem evento de vida (qr/loading/authenticated): a lib está andando sozinha
+      if (connectionStatus !== 'initializing') return;
+      if (sock?.hasSynced && sock.handler === 'function' && kicked < 3) {
+        kicked++;
+        console.log(`[WhatsAppWeb] 🩹 Sessão já sincronizada sem 'ready' — disparando handler da lib (tentativa ${kicked}).`);
+        await activeClient.pupPage.evaluate(() => window.onAppStateHasSyncedEvent());
+      }
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.warn('[WhatsAppWeb] pós-init: falha ao ler socket:', msg);
+      // Log de prod 09/11 13:46: "Attempted to use detached Frame" 5s após o init.
+      // O WhatsApp Web recarrega a página e o Puppeteer perde o frame; a lib
+      // fica surda (nenhum evento) para sempre. Abre uma aba nova no MESMO
+      // perfil (sessão do LocalAuth preservada) e reinjeta.
+      if (/detached|Target closed|Session closed/i.test(msg) && recoveries < 2) {
+        recoveries++;
+        await recoverDetachedPage(activeClient, recoveries);
+      }
+    }
+  };
+  setTimeout(tick, 5_000);
+  syncedKickInterval = setInterval(tick, 15_000);
+}
+
+// 09/11/2026 (log de prod 14:31–14:36): "detached Frame" + "Connection closed" ao
+// listar abas = o PROCESSO do Chrome morreu logo depois de abrir o WhatsApp Web.
+// A lib não ouve o browser cair, então ficávamos 240s surdos até o watchdog.
+// Aqui logamos como o Chrome saiu (código/sinal) e reiniciamos na hora.
+function watchBrowserProcess(activeClient) {
+  const browser = activeClient?.pupBrowser;
+  if (!browser || typeof browser.on !== 'function') return;
+  const proc = typeof browser.process === 'function' ? browser.process() : null;
+  if (proc && typeof proc.once === 'function') {
+    proc.once('exit', (code, signal) => {
+      console.error(`[WhatsAppWeb] 💥 Processo do Chrome saiu: code=${code} signal=${signal} status=${connectionStatus} ready=${isReady}`);
+    });
+  }
+  browser.once('disconnected', () => {
+    if (client !== activeClient) return; // já trocamos de client (destroy/restart nosso)
+    console.error(`[WhatsAppWeb] 💥 Conexão com o Chrome perdida (status=${connectionStatus}, ready=${isReady}).`);
+    if (!isReady) restartForRecovery('Chrome caiu durante a inicialização');
+  });
+}
+
+async function recoverDetachedPage(activeClient, attempt) {
+  const browser = activeClient?.pupBrowser;
+  if (!browser) return;
+  try {
+    const pages = await browser.pages();
+    console.log(`[WhatsAppWeb] 🛠️ Frame destacado — recuperando página (tentativa ${attempt}). Abas: ${pages.map((p) => { try { return p.url(); } catch { return '?'; } }).join(' | ')}`);
+    const oldPage = activeClient.pupPage;
+    const page = await browser.newPage();
+    const ua = activeClient.options?.userAgent;
+    if (ua) await page.setUserAgent(ua);
+    activeClient.pupPage = page;
+    // Fecha a aba velha ANTES de abrir o WhatsApp na nova: duas abas no mesmo perfil dão conflito
+    if (oldPage && oldPage !== page) { try { await oldPage.close(); } catch { /* já morta */ } }
+    await page.goto('https://web.whatsapp.com/', { waitUntil: 'load', timeout: 120_000, referer: 'https://whatsapp.com/' });
+    await activeClient.inject();
+    // A lib só registra este listener na página original
+    page.on('framenavigated', () => {
+      activeClient.inject().catch((err) => console.warn('[WhatsAppWeb] reinject após navegação falhou:', err?.message || err));
+    });
+    console.log('[WhatsAppWeb] 🛠️ Página nova injetada — aguardando qr/ready.');
+  } catch (err) {
+    console.warn('[WhatsAppWeb] 🛠️ Recuperação da página falhou:', err?.message || err);
+  }
 }
 
 // ─── Resolve caminho do Chrome ───────────────────────────────────────────────
@@ -393,6 +529,10 @@ function createClient() {
 
   const puppeteerOpts = {
     headless: 'new',
+    // 09/11/2026: o Chrome morre ~5s depois de carregar o WhatsApp Web
+    // ("Connection closed" ao listar abas) e a lib fica surda. Sem o stderr do
+    // Chrome no log não dá para saber por quê. Desligue com WHATSAPP_CHROME_DUMPIO=false.
+    dumpio: process.env.WHATSAPP_CHROME_DUMPIO !== 'false',
     protocolTimeout: 120_000,
     handleSIGINT: false,
     handleSIGTERM: false,
@@ -414,6 +554,11 @@ function createClient() {
         '--disable-renderer-backgrounding',
         '--disable-sync',
         '--disable-extensions',
+        // 09/11/2026: o WhatsApp Web troca de processo ao recarregar e o Puppeteer
+        // fica com o frame "detached" (lib surda, preso em Inicializando). Sem
+        // isolamento por site a página fica no mesmo processo.
+        '--disable-site-isolation-trials',
+        '--disable-features=IsolateOrigins,site-per-process',
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
@@ -451,6 +596,7 @@ function createClient() {
   newClient.on('qr', async (qr) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 📡 qr gerado — escaneie com o celular`);
+    clearInitWatchdog();
     connectionStatus = 'qr';
     whatsappState.qrCount++;
     if (whatsappState.qrCount > 10) {
@@ -477,6 +623,7 @@ function createClient() {
   newClient.on('authenticated', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
+    clearInitWatchdog();
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     whatsappState.authenticated = true;
     whatsappState.lastAuthenticatedAt = new Date().toISOString();
@@ -502,6 +649,7 @@ function createClient() {
   newClient.on('ready', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ✅ ready — WhatsApp conectado!`);
+    clearInitWatchdog();
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
     isReady = true;
@@ -528,6 +676,7 @@ function createClient() {
   newClient.on('loading_screen', async (percent, message) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ⏳ loading_screen ${percent}% — ${message}`);
+    clearInitWatchdog();
     connectionStatus = 'connecting';
     await saveState();
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
@@ -950,9 +1099,23 @@ export async function initWhatsAppClient() {
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
+  clearInitWatchdog();
+  initWatchdog = setTimeout(() => {
+    initWatchdog = null;
+    // Ainda sem qr/loading/authenticated/ready: o Chrome travou na abertura do WhatsApp Web
+    if (!isReady && connectionStatus === 'initializing') {
+      restartForRecovery(`init travado: sem QR nem conexão em ${Math.round(INIT_TIMEOUT_MS / 1000)}s`);
+    }
+  }, INIT_TIMEOUT_MS);
   try {
     await client.initialize();
+    watchBrowserProcess(client);
+    // initialize() resolveu = sessão reconhecida como pareada (senão teria saído QR).
+    // Se 'ready' não vier, é a corrida do whatsapp-web.js: o hasSynced já estava
+    // true antes do listener 'change:hasSynced' ser registrado. Ver kickSyncedSession.
+    startSyncedSessionKick(client);
   } catch (err) {
+    clearInitWatchdog();
     const msg = err?.message || String(err);
     console.error('[WhatsAppWeb] Falha na inicialização:', msg);
     console.error('[WhatsAppWeb][DIAG] Stack completo:', err?.stack || 'sem stack');
@@ -1173,40 +1336,19 @@ export async function clearSession() {
 }
 
 // ─── Reconectar manual (botão "Gerar novo QR") ───────────────────────────────
+// Reinicia o Chrome PRESERVANDO a sessão: se ela ainda vale, reconecta sozinho
+// (sem QR); se o WhatsApp a rejeitar, o próprio whatsapp-web.js mostra QR novo.
+// Antes chamava initWhatsAppClient(), que não fazia nada enquanto o init
+// anterior estivesse travado (isInitializing) — o botão ficava sem efeito.
 export async function reconnect() {
-  console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão local...');
-  isReady = false;
+  console.log('[WhatsAppWeb] 🔄 Reconnect manual — reiniciando Chrome (sessão preservada)...');
   qrCodeDataUrl = null;
-  connectionStatus = 'initializing';
   initAttempts = 0;
   whatsappState.ready = false;
-  whatsappState.authenticated = false;
   whatsappState.qrCode = null;
   whatsappState.qrCount = 0;
-  if (retryTimeout) {
-    clearTimeout(retryTimeout);
-    retryTimeout = null;
-  }
-
-  if (client) {
-    try { await client.destroy(); } catch {}
-    client = null;
-  }
-
-  // Remove sessão local para forçar novo QR
-  try {
-    const localAuthDir = path.join(authPath, '.wwebjs_auth');
-    if (fs.existsSync(localAuthDir)) {
-      fs.rmSync(localAuthDir, { recursive: true, force: true });
-      console.log('[WhatsAppWeb] Sessão local removida — próximo boot gerará novo QR.');
-    }
-  } catch (e) {
-    console.warn('[WhatsAppWeb] Erro ao remover sessão local:', e.message);
-  }
-
-  await saveState();
-  await initWhatsAppClient();
-  return { success: true, message: 'Reconectando... Escaneie o novo QR.' };
+  await restartForRecovery('reconexão manual (botão Gerar novo QR)');
+  return { success: true, message: 'Reconectando... se pedir, escaneie o novo QR.' };
 }
 
 // ─── Sinal externo de reconexão (backend → worker via MongoDB) ───────────────
@@ -1215,7 +1357,8 @@ export async function reconnect() {
 let _lastReconnectSignal = null;
 
 export async function checkExternalReconnectSignal() {
-  if (isReady || isInitializing) return;
+  // Não bloqueia em isInitializing: é justamente quando o init trava que o botão precisa agir.
+  if (isReady) return;
   try {
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).select('reconnectSignal').lean();
     if (!state?.reconnectSignal) return;

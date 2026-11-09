@@ -14,7 +14,7 @@ import PatientsView from '../models/PatientsView.js';
 import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';
 import { buildPatientView } from '../domains/clinical/services/patientProjectionService.js';
-import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
+import { processPatientProjectionJob } from '../domains/clinical/workers/patientProjectionWorker.js';
 
 const logger = createContextLogger('ConsistencyTest');
 
@@ -131,7 +131,7 @@ async function testPatientLifecycle() {
   });
   
   // Simula evento PATIENT_CREATED
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'PATIENT_CREATED',
       payload: { patientId: patient._id.toString() },
@@ -172,7 +172,7 @@ async function testPatientLifecycle() {
   
   // Simula eventos APPOINTMENT_SCHEDULED
   for (const apt of appointments) {
-    await patientProjectionWorker.processJob({
+    await processPatientProjectionJob({
       data: {
         eventType: 'APPOINTMENT_SCHEDULED',
         payload: { patientId: patient._id.toString(), appointmentId: apt._id.toString() },
@@ -187,7 +187,7 @@ async function testPatientLifecycle() {
     clinicalStatus: 'completed'
   });
   
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'APPOINTMENT_COMPLETED',
       payload: { patientId: patient._id.toString(), appointmentId: appointments[2]._id.toString() },
@@ -205,7 +205,7 @@ async function testPatientLifecycle() {
     paidAt: new Date()
   });
   
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'PAYMENT_COMPLETED',
       payload: { patientId: patient._id.toString(), amount: 150.00 },
@@ -272,7 +272,7 @@ async function testEventOrderResilience() {
   });
   
   // 🔥 Processa PAYMENT ANTES do APPOINTMENT (ordem errada)
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'PAYMENT_COMPLETED',
       payload: { patientId, amount: 200.00 },
@@ -281,7 +281,7 @@ async function testEventOrderResilience() {
   });
   
   // Depois processa APPOINTMENT
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'APPOINTMENT_COMPLETED',
       payload: { patientId, appointmentId: appointment._id.toString() },
@@ -316,7 +316,7 @@ async function testIdempotency() {
   
   // Processa PATIENT_CREATED 2x
   for (let i = 0; i < 2; i++) {
-    await patientProjectionWorker.processJob({
+    await processPatientProjectionJob({
       data: {
         eventType: 'PATIENT_CREATED',
         payload: { patientId },
@@ -337,7 +337,7 @@ async function testIdempotency() {
   
   // Processa APPOINTMENT_COMPLETED 3x
   for (let i = 0; i < 3; i++) {
-    await patientProjectionWorker.processJob({
+    await processPatientProjectionJob({
       data: {
         eventType: 'APPOINTMENT_COMPLETED',
         payload: { patientId, appointmentId: appointment._id.toString() },
@@ -442,7 +442,7 @@ async function testDeletion() {
   assert(view, 'View deve existir antes da deleção');
   
   // Processa deleção
-  await patientProjectionWorker.processJob({
+  await processPatientProjectionJob({
     data: {
       eventType: 'PATIENT_DELETED',
       payload: { patientId },

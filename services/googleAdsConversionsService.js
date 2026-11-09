@@ -2,11 +2,11 @@
 // Upload de conversões OFFLINE (por gclid) para o Google Ads.
 // Separado de services/google-ads.js de propósito: aquele lança erro no import se faltar env.
 // Aqui o cliente é lazy e, sem configuração, retorna { skipped } sem quebrar nada.
-import { GoogleAdsApi } from 'google-ads-api';
+// 09/11/2026: a lib 'google-ads-api' (~100 MB de heap) também é carregada só no 1º envio.
 
 let cached = null;
 
-function getCustomer() {
+async function getCustomer() {
   if (cached) return cached;
   const {
     GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN,
@@ -15,6 +15,7 @@ function getCustomer() {
   if (!GOOGLE_ADS_CLIENT_ID || !GOOGLE_ADS_CLIENT_SECRET || !GOOGLE_ADS_DEVELOPER_TOKEN
     || !GOOGLE_ADS_REFRESH_TOKEN || !GOOGLE_ADS_CUSTOMER_ID) return null;
 
+  const { GoogleAdsApi } = await import('google-ads-api');
   const client = new GoogleAdsApi({
     client_id: GOOGLE_ADS_CLIENT_ID,
     client_secret: GOOGLE_ADS_CLIENT_SECRET,
@@ -46,7 +47,7 @@ export async function uploadOfflineConversion({ gclid, value, currency = 'BRL', 
   if (!gclid) return { status: 'skipped', reason: 'sem_gclid' };
   const actionId = process.env.GOOGLE_ADS_CONVERSION_ACTION_ID;
   if (!actionId) return { status: 'skipped', reason: 'GOOGLE_ADS_CONVERSION_ACTION_ID ausente' };
-  const ctx = getCustomer();
+  const ctx = await getCustomer();
   if (!ctx) return { status: 'skipped', reason: 'google_ads_nao_configurado' };
 
   try {
