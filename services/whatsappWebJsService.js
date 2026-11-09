@@ -279,6 +279,26 @@ function startSyncedSessionKick(activeClient) {
   syncedKickInterval = setInterval(tick, 15_000);
 }
 
+// 09/11/2026 (log de prod 14:31–14:36): "detached Frame" + "Connection closed" ao
+// listar abas = o PROCESSO do Chrome morreu logo depois de abrir o WhatsApp Web.
+// A lib não ouve o browser cair, então ficávamos 240s surdos até o watchdog.
+// Aqui logamos como o Chrome saiu (código/sinal) e reiniciamos na hora.
+function watchBrowserProcess(activeClient) {
+  const browser = activeClient?.pupBrowser;
+  if (!browser || typeof browser.on !== 'function') return;
+  const proc = typeof browser.process === 'function' ? browser.process() : null;
+  if (proc && typeof proc.once === 'function') {
+    proc.once('exit', (code, signal) => {
+      console.error(`[WhatsAppWeb] 💥 Processo do Chrome saiu: code=${code} signal=${signal} status=${connectionStatus} ready=${isReady}`);
+    });
+  }
+  browser.once('disconnected', () => {
+    if (client !== activeClient) return; // já trocamos de client (destroy/restart nosso)
+    console.error(`[WhatsAppWeb] 💥 Conexão com o Chrome perdida (status=${connectionStatus}, ready=${isReady}).`);
+    if (!isReady) restartForRecovery('Chrome caiu durante a inicialização');
+  });
+}
+
 async function recoverDetachedPage(activeClient, attempt) {
   const browser = activeClient?.pupBrowser;
   if (!browser) return;
@@ -509,6 +529,10 @@ function createClient() {
 
   const puppeteerOpts = {
     headless: 'new',
+    // 09/11/2026: o Chrome morre ~5s depois de carregar o WhatsApp Web
+    // ("Connection closed" ao listar abas) e a lib fica surda. Sem o stderr do
+    // Chrome no log não dá para saber por quê. Desligue com WHATSAPP_CHROME_DUMPIO=false.
+    dumpio: process.env.WHATSAPP_CHROME_DUMPIO !== 'false',
     protocolTimeout: 120_000,
     handleSIGINT: false,
     handleSIGTERM: false,
@@ -1085,6 +1109,7 @@ export async function initWhatsAppClient() {
   }, INIT_TIMEOUT_MS);
   try {
     await client.initialize();
+    watchBrowserProcess(client);
     // initialize() resolveu = sessão reconhecida como pareada (senão teria saído QR).
     // Se 'ready' não vier, é a corrida do whatsapp-web.js: o hasSynced já estava
     // true antes do listener 'change:hasSynced' ser registrado. Ver kickSyncedSession.
