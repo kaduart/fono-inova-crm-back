@@ -230,7 +230,14 @@ function startSyncedSessionKick(activeClient) {
   if (syncedKickInterval) clearInterval(syncedKickInterval);
   let checks = 0;
   let kicked = 0;
+  let recoveries = 0;
+  let busy = false;
   const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try { await tickInner(); } finally { busy = false; }
+  };
+  const tickInner = async () => {
     if (isReady || client !== activeClient || !activeClient?.pupPage) {
       clearInterval(syncedKickInterval); syncedKickInterval = null;
       return;
@@ -256,11 +263,45 @@ function startSyncedSessionKick(activeClient) {
         await activeClient.pupPage.evaluate(() => window.onAppStateHasSyncedEvent());
       }
     } catch (e) {
-      console.warn('[WhatsAppWeb] pós-init: falha ao ler socket:', e?.message || e);
+      const msg = e?.message || String(e);
+      console.warn('[WhatsAppWeb] pós-init: falha ao ler socket:', msg);
+      // Log de prod 09/11 13:46: "Attempted to use detached Frame" 5s após o init.
+      // O WhatsApp Web recarrega a página e o Puppeteer perde o frame; a lib
+      // fica surda (nenhum evento) para sempre. Abre uma aba nova no MESMO
+      // perfil (sessão do LocalAuth preservada) e reinjeta.
+      if (/detached|Target closed|Session closed/i.test(msg) && recoveries < 2) {
+        recoveries++;
+        await recoverDetachedPage(activeClient, recoveries);
+      }
     }
   };
   setTimeout(tick, 5_000);
   syncedKickInterval = setInterval(tick, 15_000);
+}
+
+async function recoverDetachedPage(activeClient, attempt) {
+  const browser = activeClient?.pupBrowser;
+  if (!browser) return;
+  try {
+    const pages = await browser.pages();
+    console.log(`[WhatsAppWeb] 🛠️ Frame destacado — recuperando página (tentativa ${attempt}). Abas: ${pages.map((p) => { try { return p.url(); } catch { return '?'; } }).join(' | ')}`);
+    const oldPage = activeClient.pupPage;
+    const page = await browser.newPage();
+    const ua = activeClient.options?.userAgent;
+    if (ua) await page.setUserAgent(ua);
+    activeClient.pupPage = page;
+    // Fecha a aba velha ANTES de abrir o WhatsApp na nova: duas abas no mesmo perfil dão conflito
+    if (oldPage && oldPage !== page) { try { await oldPage.close(); } catch { /* já morta */ } }
+    await page.goto('https://web.whatsapp.com/', { waitUntil: 'load', timeout: 120_000, referer: 'https://whatsapp.com/' });
+    await activeClient.inject();
+    // A lib só registra este listener na página original
+    page.on('framenavigated', () => {
+      activeClient.inject().catch((err) => console.warn('[WhatsAppWeb] reinject após navegação falhou:', err?.message || err));
+    });
+    console.log('[WhatsAppWeb] 🛠️ Página nova injetada — aguardando qr/ready.');
+  } catch (err) {
+    console.warn('[WhatsAppWeb] 🛠️ Recuperação da página falhou:', err?.message || err);
+  }
 }
 
 // ─── Resolve caminho do Chrome ───────────────────────────────────────────────
@@ -489,6 +530,11 @@ function createClient() {
         '--disable-renderer-backgrounding',
         '--disable-sync',
         '--disable-extensions',
+        // 09/11/2026: o WhatsApp Web troca de processo ao recarregar e o Puppeteer
+        // fica com o frame "detached" (lib surda, preso em Inicializando). Sem
+        // isolamento por site a página fica no mesmo processo.
+        '--disable-site-isolation-trials',
+        '--disable-features=IsolateOrigins,site-per-process',
       ],
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
   };
