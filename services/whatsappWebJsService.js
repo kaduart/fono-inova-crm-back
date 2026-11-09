@@ -55,6 +55,36 @@ let retryTimeout = null;
 let initAttempts = 0;
 const MAX_INIT_ATTEMPTS = 10;
 let loadingWatchdog = null;
+// Watchdog da fase "initializing": client.initialize() pode ficar pendurado para
+// sempre (Chrome/WhatsApp Web não carrega) sem disparar qr/loading_screen/erro.
+// Em 09/11/2026 ficou 1h48 em "Inicializando..." em produção até reiniciar na mão.
+let initWatchdog = null;
+const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 * 1000;
+
+function clearInitWatchdog() {
+  if (initWatchdog) { clearTimeout(initWatchdog); initWatchdog = null; }
+}
+
+// Reinício de recuperação PRESERVANDO a sessão no disco (LocalAuth): o próximo
+// boot reconecta sozinho, sem QR, se a sessão ainda for válida.
+// No child (process.send): sai e o parent respawna com Chrome novo em 10s.
+async function restartForRecovery(reason) {
+  console.error(`[WhatsAppWeb] ♻️ Reinício de recuperação — ${reason}`);
+  clearInitWatchdog();
+  isReady = false;
+  connectionStatus = 'restarting';
+  whatsappState.lastDisconnectReason = reason;
+  try { await saveState(); } catch {}
+  if (process.send) {
+    process.exit(2);
+    return;
+  }
+  // Fora do child (dev): destrói e tenta de novo no mesmo processo
+  isInitializing = false;
+  await safeDestroyClient();
+  if (retryTimeout) clearTimeout(retryTimeout);
+  retryTimeout = setTimeout(() => initWhatsAppClient(), 10_000);
+}
 let readyPollInterval = null;
 let stateSaveInterval = null;
 let attendancePollSyncInterval = null;
@@ -451,6 +481,7 @@ function createClient() {
   newClient.on('qr', async (qr) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 📡 qr gerado — escaneie com o celular`);
+    clearInitWatchdog();
     connectionStatus = 'qr';
     whatsappState.qrCount++;
     if (whatsappState.qrCount > 10) {
@@ -477,6 +508,7 @@ function createClient() {
   newClient.on('authenticated', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
+    clearInitWatchdog();
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     whatsappState.authenticated = true;
     whatsappState.lastAuthenticatedAt = new Date().toISOString();
@@ -502,6 +534,7 @@ function createClient() {
   newClient.on('ready', async () => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ✅ ready — WhatsApp conectado!`);
+    clearInitWatchdog();
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     if (readyPollInterval) { clearInterval(readyPollInterval); readyPollInterval = null; }
     isReady = true;
@@ -528,6 +561,7 @@ function createClient() {
   newClient.on('loading_screen', async (percent, message) => {
     const ts = new Date().toISOString();
     console.log(`[WhatsAppWeb][${ts}] ⏳ loading_screen ${percent}% — ${message}`);
+    clearInitWatchdog();
     connectionStatus = 'connecting';
     await saveState();
     if (loadingWatchdog) clearTimeout(loadingWatchdog);
@@ -950,9 +984,18 @@ export async function initWhatsAppClient() {
   connectionStatus = 'initializing';
   await saveState();
   client = createClient();
+  clearInitWatchdog();
+  initWatchdog = setTimeout(() => {
+    initWatchdog = null;
+    // Ainda sem qr/loading/authenticated/ready: o Chrome travou na abertura do WhatsApp Web
+    if (!isReady && connectionStatus === 'initializing') {
+      restartForRecovery(`init travado: sem QR nem conexão em ${Math.round(INIT_TIMEOUT_MS / 1000)}s`);
+    }
+  }, INIT_TIMEOUT_MS);
   try {
     await client.initialize();
   } catch (err) {
+    clearInitWatchdog();
     const msg = err?.message || String(err);
     console.error('[WhatsAppWeb] Falha na inicialização:', msg);
     console.error('[WhatsAppWeb][DIAG] Stack completo:', err?.stack || 'sem stack');
@@ -1173,40 +1216,19 @@ export async function clearSession() {
 }
 
 // ─── Reconectar manual (botão "Gerar novo QR") ───────────────────────────────
+// Reinicia o Chrome PRESERVANDO a sessão: se ela ainda vale, reconecta sozinho
+// (sem QR); se o WhatsApp a rejeitar, o próprio whatsapp-web.js mostra QR novo.
+// Antes chamava initWhatsAppClient(), que não fazia nada enquanto o init
+// anterior estivesse travado (isInitializing) — o botão ficava sem efeito.
 export async function reconnect() {
-  console.log('[WhatsAppWeb] 🔄 Reconnect manual — limpando sessão local...');
-  isReady = false;
+  console.log('[WhatsAppWeb] 🔄 Reconnect manual — reiniciando Chrome (sessão preservada)...');
   qrCodeDataUrl = null;
-  connectionStatus = 'initializing';
   initAttempts = 0;
   whatsappState.ready = false;
-  whatsappState.authenticated = false;
   whatsappState.qrCode = null;
   whatsappState.qrCount = 0;
-  if (retryTimeout) {
-    clearTimeout(retryTimeout);
-    retryTimeout = null;
-  }
-
-  if (client) {
-    try { await client.destroy(); } catch {}
-    client = null;
-  }
-
-  // Remove sessão local para forçar novo QR
-  try {
-    const localAuthDir = path.join(authPath, '.wwebjs_auth');
-    if (fs.existsSync(localAuthDir)) {
-      fs.rmSync(localAuthDir, { recursive: true, force: true });
-      console.log('[WhatsAppWeb] Sessão local removida — próximo boot gerará novo QR.');
-    }
-  } catch (e) {
-    console.warn('[WhatsAppWeb] Erro ao remover sessão local:', e.message);
-  }
-
-  await saveState();
-  await initWhatsAppClient();
-  return { success: true, message: 'Reconectando... Escaneie o novo QR.' };
+  await restartForRecovery('reconexão manual (botão Gerar novo QR)');
+  return { success: true, message: 'Reconectando... se pedir, escaneie o novo QR.' };
 }
 
 // ─── Sinal externo de reconexão (backend → worker via MongoDB) ───────────────
@@ -1215,7 +1237,8 @@ export async function reconnect() {
 let _lastReconnectSignal = null;
 
 export async function checkExternalReconnectSignal() {
-  if (isReady || isInitializing) return;
+  // Não bloqueia em isInitializing: é justamente quando o init trava que o botão precisa agir.
+  if (isReady) return;
   try {
     const state = await WhatsAppWebState.findOne({ instanceId: 'main' }).select('reconnectSignal').lean();
     if (!state?.reconnectSignal) return;
