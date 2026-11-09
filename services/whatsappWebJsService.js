@@ -218,6 +218,51 @@ function startReadyPoll(newClient) {
   }, 10_000);
 }
 
+// ─── Sessão já sincronizada sem 'ready' (09/11/2026) ─────────────────────────
+// O whatsapp-web.js só emite authenticated/ready no evento 'change:hasSynced'
+// do Socket. Reaproveitando a sessão do disco, o sync pode terminar ANTES do
+// listener existir: initialize() resolve, nenhum evento vem e o painel fica em
+// "Inicializando..." para sempre (sem QR, porque a sessão é válida).
+// Aqui olhamos o Socket e, se já sincronizou, chamamos o próprio handler da lib
+// (window.onAppStateHasSyncedEvent), que injeta os utilitários e emite ready.
+let syncedKickInterval = null;
+function startSyncedSessionKick(activeClient) {
+  if (syncedKickInterval) clearInterval(syncedKickInterval);
+  let checks = 0;
+  let kicked = 0;
+  const tick = async () => {
+    if (isReady || client !== activeClient || !activeClient?.pupPage) {
+      clearInterval(syncedKickInterval); syncedKickInterval = null;
+      return;
+    }
+    checks++;
+    try {
+      const sock = await activeClient.pupPage.evaluate(() => {
+        try {
+          const S = window.require('WAWebSocketModel').Socket;
+          return { state: S.state, hasSynced: !!S.hasSynced, handler: typeof window.onAppStateHasSyncedEvent };
+        } catch (e) {
+          return { error: String(e?.message || e) };
+        }
+      });
+      if (checks <= 3 || checks % 6 === 0) {
+        console.log(`[WhatsAppWeb] 🔎 pós-init: socket=${JSON.stringify(sock)} status=${connectionStatus}`);
+      }
+      // Já tem evento de vida (qr/loading/authenticated): a lib está andando sozinha
+      if (connectionStatus !== 'initializing') return;
+      if (sock?.hasSynced && sock.handler === 'function' && kicked < 3) {
+        kicked++;
+        console.log(`[WhatsAppWeb] 🩹 Sessão já sincronizada sem 'ready' — disparando handler da lib (tentativa ${kicked}).`);
+        await activeClient.pupPage.evaluate(() => window.onAppStateHasSyncedEvent());
+      }
+    } catch (e) {
+      console.warn('[WhatsAppWeb] pós-init: falha ao ler socket:', e?.message || e);
+    }
+  };
+  setTimeout(tick, 5_000);
+  syncedKickInterval = setInterval(tick, 15_000);
+}
+
 // ─── Resolve caminho do Chrome ───────────────────────────────────────────────
 function resolveChromePath() {
   // 1. Variável de ambiente explícita
@@ -994,6 +1039,10 @@ export async function initWhatsAppClient() {
   }, INIT_TIMEOUT_MS);
   try {
     await client.initialize();
+    // initialize() resolveu = sessão reconhecida como pareada (senão teria saído QR).
+    // Se 'ready' não vier, é a corrida do whatsapp-web.js: o hasSynced já estava
+    // true antes do listener 'change:hasSynced' ser registrado. Ver kickSyncedSession.
+    startSyncedSessionKick(client);
   } catch (err) {
     clearInitWatchdog();
     const msg = err?.message || String(err);

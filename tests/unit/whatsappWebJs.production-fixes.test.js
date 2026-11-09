@@ -127,6 +127,28 @@ describe('whatsappWebJsService — produção', () => {
     }
   });
 
+  it('sessão já sincronizada sem ready: dispara o handler da lib (onAppStateHasSyncedEvent)', async () => {
+    vi.useFakeTimers();
+    try {
+      const evaluate = vi.fn()
+        .mockResolvedValueOnce({ state: 'CONNECTED', hasSynced: true, handler: 'function' })
+        .mockResolvedValue(undefined);
+      ClientMock.mockImplementationOnce(function () {
+        this.destroy = vi.fn().mockResolvedValue(undefined);
+        this.initialize = vi.fn().mockResolvedValue(undefined);
+        this.on = vi.fn();
+        this.pupPage = { evaluate, on: vi.fn() };
+      });
+      const { initWhatsAppClient } = await import('../../services/whatsappWebJsService.js');
+      await initWhatsAppClient();
+      await vi.advanceTimersByTimeAsync(5_500);
+      expect(evaluate).toHaveBeenCalledTimes(2); // leitura do socket + kick
+      expect(String(evaluate.mock.calls[1][0])).toContain('onAppStateHasSyncedEvent');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('deve chamar client.destroy() no graceful shutdown', async () => {
     const { initWhatsAppClient, gracefulShutdownWhatsApp } = await import('../../services/whatsappWebJsService.js');
     await initWhatsAppClient();
