@@ -146,6 +146,16 @@ const patientsViewSchema = new mongoose.Schema({
     index: true
   },
   
+  // Status do cadastro (Patient.status) e inativação manual com motivo (09/11/2026)
+  patientStatus: { type: String, default: 'active' },
+  inactivation: {
+    reason: { type: String, default: null },
+    note: { type: String, default: null },
+    at: { type: Date, default: null },
+    byName: { type: String, default: null },
+    reactivatedAt: { type: Date, default: null },
+  },
+
   // 🔄 Metadados do snapshot
   snapshot: {
     version: { type: Number, default: 1 },

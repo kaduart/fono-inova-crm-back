@@ -321,7 +321,16 @@ export async function buildPatientView(patientId, options = {}) {
       },
       
       // Status
-      status: determinePatientStatus(appointments, stats),
+      // Inativação manual (recepção, com motivo) vence o cálculo por frequência.
+      status: patient.status === 'inactive' ? 'inactive' : determinePatientStatus(appointments, stats),
+      patientStatus: patient.status || 'active',
+      inactivation: patient.inactivation?.at ? {
+        reason: patient.inactivation.reason || null,
+        note: patient.inactivation.note || null,
+        at: patient.inactivation.at,
+        byName: patient.inactivation.byName || null,
+        reactivatedAt: patient.inactivation.reactivatedAt || null,
+      } : null,
       tags: generateTags(patient, appointments, stats),
       
       // Snapshot metadata

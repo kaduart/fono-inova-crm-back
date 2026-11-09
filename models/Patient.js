@@ -86,6 +86,17 @@ const patientSchema = new mongoose.Schema({
     enum: ['lead', 'active', 'inactive'],
     default: 'active'
   },
+  // Inativação manual pela recepção, com motivo, para campanhas de retorno
+  // (Kadu, 09/11/2026). Ver PATCH /api/v2/patients/:id/status.
+  inactivation: {
+    reason: { type: String, default: null },
+    note: { type: String, default: null },
+    at: { type: Date, default: null },
+    by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    byName: { type: String, default: null },
+    reactivatedAt: { type: Date, default: null },
+    reactivatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  },
   isLead: {
     type: Boolean,
     default: false
