@@ -184,19 +184,11 @@ export const scheduleGmbCron = () => {
     // RESET MENSAL — dia 1 às 00:05 → apaga todos os posts e reinicia
     // ═══════════════════════════════════════════════════════════════
     cron.schedule('5 0 1 * *', async () => {
-        try {
-            console.log('🗑️ [GMB] Reset mensal — apagando todos os posts...');
-            const result = await GmbPost.deleteMany({});
-            console.log(`✅ [GMB] Reset mensal: ${result.deletedCount} posts removidos. Novo ciclo iniciado.`);
-
-            // Recria posts do dia logo em seguida (só no modo lote)
-            if (GMB_BATCH_ALL) {
-                await gmbService.createPostsForAllEspecialidades();
-                console.log('✅ [GMB] Posts do novo mês criados.');
-            }
-        } catch (error) {
-            console.error('❌ [GMB] Erro no reset mensal:', error.message);
-        }
+        // ⚠️ RESET MENSAL DESATIVADO. O comportamento antigo rodava GmbPost.deleteMany({}) —
+        // exclusão em massa no PROD, destrutiva e proibida. Posts antigos somem sozinhos da
+        // vitrine do Google; não há necessidade de apagar o banco. Se um dia precisar de
+        // limpeza, fazer com filtro cravado (status/idade) e confirmação — nunca deleteMany({}).
+        console.log('ℹ️ [GMB] Reset mensal desativado (sem exclusão em massa). Nada a fazer.');
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
 
     // ═══════════════════════════════════════════════════════════════
@@ -283,6 +275,21 @@ export const scheduleGmbCron = () => {
                     }
                     await new Promise(r => setTimeout(r, 3000));
                 }
+            }
+
+            // 🚦 TRAVA DE VOLUME (anti-flood/anti-spam no Google): no máximo N publicações/dia.
+            // Mesmo com fila grande de 'scheduled', não dispara dezenas de posts no mesmo dia.
+            // Ajustável via GMB_DAILY_PUBLISH_CAP (default 2). Roda DEPOIS do timeout/recuperação,
+            // então a limpeza de status continua acontecendo — só o ENVIO é limitado.
+            const capDia = Number(process.env.GMB_DAILY_PUBLISH_CAP) || 2;
+            const inicioDiaCap = new Date(); inicioDiaCap.setHours(0, 0, 0, 0);
+            const publicadosHoje = await GmbPost.countDocuments({
+                status: { $in: ['published', 'publishing_retry', 'unconfirmed'] },
+                updatedAt: { $gte: inicioDiaCap },
+            });
+            if (publicadosHoje >= capDia) {
+                console.log(`🚦 [GMB] Cap diário atingido (${publicadosHoje}/${capDia}) — não publica mais hoje.`);
+                return;
             }
 
             console.log('🔗 [GMB] Enviando posts agendados ao Make...');

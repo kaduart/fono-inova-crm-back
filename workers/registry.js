@@ -24,7 +24,7 @@ import { startNotificationOrchestratorWorker } from './notificationOrchestratorW
 import { startPlanningRefreshWorker } from './planningRefreshWorker.js';
 
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
-import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
+import { startPatientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
 
 import { packageProjectionWorker } from '../domains/billing/workers/packageProjectionWorker.js';
 import { packageProcessingWorker } from '../domains/billing/workers/packageProcessingWorker.js';
@@ -120,7 +120,7 @@ const GROUPS = {
   clinical: async (workers) => {
     if (isEnabled('ENABLE_CLINICAL_EVOLUTION')) workers.push(startEvolutionWorker());
     if (isEnabled('ENABLE_CLINICAL_PATIENT')) workers.push(patientWorker);
-    if (isEnabled('ENABLE_CLINICAL_PATIENT_PROJECTION')) workers.push(patientProjectionWorker);
+    if (isEnabled('ENABLE_CLINICAL_PATIENT_PROJECTION')) workers.push(startPatientProjectionWorker());
     if (isEnabled('ENABLE_CLINICAL_ORCHESTRATOR')) workers.push(startClinicalOrchestratorWorker());
     if (isEnabled('ENABLE_CLINICAL_SESSION')) workers.push(startSessionWorker());
     if (isEnabled('ENABLE_CLINICAL_SYNC')) workers.push(startSyncWorker());

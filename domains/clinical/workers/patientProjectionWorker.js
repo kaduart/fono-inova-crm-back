@@ -89,9 +89,24 @@ function buildPatientView(patientId, options = {}) {
 // WORKER
 // ============================================
 
-export const patientProjectionWorker = new Worker(
-  'patient-projection',
-  async (job) => {
+// 09/11/2026 (incidente RSS 93% na API): o Worker era criado no IMPORT deste
+// arquivo. Como routes/patient.v2.js importa getProjectionWorkerStatus daqui, a API
+// web virava um 2º consumidor da fila 'patient-projection' (além do crm-worker),
+// rodando rebuilds completos da PatientsView no mesmo processo que atende o front.
+// Agora o Worker só nasce quando o registry (crm-worker) chama
+// startPatientProjectionWorker(). Status/métricas leem a fila, sem Worker.
+const QUEUE_NAME = 'patient-projection';
+const WORKER_OPTIONS = {
+  connection: redisConnection,
+  concurrency: 2,
+  limiter: { max: 10, duration: 1000 },
+  stalledInterval: 30000,
+  lockDuration: 30000,
+  removeOnComplete: { age: 3600, count: 100 },  // 🧹 limpa jobs antigos
+  removeOnFail: { age: 3600 * 6 }
+};
+
+async function processPatientProjectionJobInternal(job) {
     const { eventType, payload, correlationId, timestamp } = job.data;
     const startTime = Date.now();
     
@@ -138,17 +153,27 @@ export const patientProjectionWorker = new Worker(
       
       throw error; // BullMQ vai fazer retry
     }
-  },
-  {
-    connection: redisConnection,
-    concurrency: 2,
-    limiter: { max: 10, duration: 1000 },
-    stalledInterval: 30000,
-    lockDuration: 30000,
-    removeOnComplete: { age: 3600, count: 100 },  // 🧹 limpa jobs antigos
-    removeOnFail: { age: 3600 * 6 }
-  }
-);
+}
+
+let patientProjectionWorker = null;
+
+/**
+ * Cria (uma vez) o Worker da fila 'patient-projection'.
+ * Só o registry de workers (crm-worker) deve chamar. A API web não chama.
+ */
+export function startPatientProjectionWorker() {
+  if (patientProjectionWorker) return patientProjectionWorker;
+  patientProjectionWorker = new Worker(QUEUE_NAME, processPatientProjectionJobInternal, WORKER_OPTIONS);
+  attachWorkerListeners(patientProjectionWorker);
+  return patientProjectionWorker;
+}
+
+/**
+ * Processa um job fora do BullMQ (testes e rota de debug), sem criar Worker.
+ */
+export function processPatientProjectionJob(job) {
+  return processPatientProjectionJobInternal({ id: 'manual', attemptsMade: 0, ...job });
+}
 
 // ============================================
 // PROCESSAMENTO DE EVENTOS
@@ -664,7 +689,8 @@ async function handleManualRebuild(patientId, reason, correlationId) {
 // EVENT LISTENERS (observabilidade)
 // ============================================
 
-patientProjectionWorker.on('completed', (job, result) => {
+function attachWorkerListeners(worker) {
+worker.on('completed', (job, result) => {
   logger.info(`✅ Job ${job.id} completed`, {
     eventType: job.data.eventType,
     patientId: job.data.payload?.patientId,
@@ -673,7 +699,7 @@ patientProjectionWorker.on('completed', (job, result) => {
   });
 });
 
-patientProjectionWorker.on('failed', (job, err) => {
+worker.on('failed', (job, err) => {
   const attempts = job.attemptsMade;
   const maxAttempts = RETRY_CONFIG.maxRetries;
   
@@ -700,20 +726,22 @@ patientProjectionWorker.on('failed', (job, err) => {
   }
 });
 
-patientProjectionWorker.on('stalled', (jobId) => {
+worker.on('stalled', (jobId) => {
   logger.warn(`⚠️ Job ${jobId} stalled`);
 });
 
-patientProjectionWorker.on('error', (error) => {
-  logger.error('💥 Worker error', { error: error.message });
+worker.on('error', (error) => {
+  // error pode não ser Error (ex.: objeto do ioredis) — antes saía "[object Object] {}".
+  logger.error('💥 Worker error', { error: error?.message || String(error), code: error?.code });
 });
+}
 
 // ============================================
 // HEALTH CHECK & MONITORING
 // ============================================
 
 export async function getProjectionWorkerStatus() {
-  const queue = patientProjectionWorker.queue;
+  const queue = getQueue(QUEUE_NAME);
   
   const [
     waiting,
@@ -730,7 +758,8 @@ export async function getProjectionWorkerStatus() {
   ]);
   
   return {
-    status: patientProjectionWorker.isRunning() ? 'running' : 'stopped',
+    // 'running' só no processo que roda o Worker (crm-worker); na API é 'remote'.
+    status: patientProjectionWorker ? (patientProjectionWorker.isRunning() ? 'running' : 'stopped') : 'remote',
     isPaused: await queue.isPaused(),
     queue: {
       waiting,
@@ -745,10 +774,11 @@ export async function getProjectionWorkerStatus() {
 
 // Métricas para dashboard
 export async function getProjectionMetrics(timeWindow = 3600000) { // 1h default
-  const queue = patientProjectionWorker.queue;
-  const since = new Date(Date.now() - timeWindow);
+  const queue = getQueue(QUEUE_NAME);
+  const since = Date.now() - timeWindow;
   
-  const completed = await queue.getCompleted(0, 1000);
+  // removeOnComplete guarda no máximo 100 — buscar 1000 só pesava a memória.
+  const completed = await queue.getCompleted(0, 100);
   const failed = await queue.getFailed(0, 100);
   
   const recentCompleted = completed.filter(j => j.finishedOn > since);
@@ -768,4 +798,4 @@ export async function getProjectionMetrics(timeWindow = 3600000) { // 1h default
   };
 }
 
-export default patientProjectionWorker;
+export default { startPatientProjectionWorker, processPatientProjectionJob };
