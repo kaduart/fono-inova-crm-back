@@ -146,6 +146,16 @@ const patientsViewSchema = new mongoose.Schema({
     index: true
   },
   
+  // Status do cadastro (Patient.status) e inativação manual com motivo (09/11/2026)
+  patientStatus: { type: String, default: 'active' },
+  inactivation: {
+    reason: { type: String, default: null },
+    note: { type: String, default: null },
+    at: { type: Date, default: null },
+    byName: { type: String, default: null },
+    reactivatedAt: { type: Date, default: null },
+  },
+
   // 🔄 Metadados do snapshot
   snapshot: {
     version: { type: Number, default: 1 },
@@ -193,7 +203,9 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
     doctorId = null,
     status = null,
     sortBy = null,
-    hasDebt = false // filtra pacientes com saldo devedor particular (stats.totalPendingParticular > 0)
+    hasDebt = false, // filtra pacientes com saldo devedor particular (stats.totalPendingParticular > 0)
+    patientStatus = null, // status do cadastro (inativação manual pela recepção)
+    inactiveReason = null // motivo da inativação (campanhas de retorno)
   } = options;
 
   let query = {};
@@ -221,6 +233,11 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
   if (doctorId) query.doctorId = doctorId;
   if (status) query.status = status;
   if (hasDebt) query['stats.totalPendingParticular'] = { $gt: 0 };
+  if (patientStatus) query.patientStatus = patientStatus;
+  if (inactiveReason) {
+    query.patientStatus = 'inactive';
+    query['inactivation.reason'] = inactiveReason;
+  }
 
   const sortCriteria = sortBy
     ? { [sortBy]: -1 }
