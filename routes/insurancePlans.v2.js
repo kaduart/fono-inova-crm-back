@@ -21,6 +21,7 @@ import { GuideLifecycleService } from '../services/guideLifecycle/GuideLifecycle
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import { describeCancellationConflicts } from '../services/appointment/describeCancellationConflicts.js';
 
 const router = express.Router();
 
@@ -1128,9 +1129,8 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     if (cancellations.length) {
       cancellationResult = await registerCanceledInsuranceAppointments({ planId: id, cancellations, dryRun: false, user: req.user, mongoSession: session });
       if (cancellationResult.conflicts.length) {
-        const completed = cancellationResult.conflicts.find(c => ['COMPLETED_CANCELLATION_BLOCKED', 'CONSUMED_SESSION_CANCELLATION_BLOCKED'].includes(c.code));
-        const message = completed ? `${completed.date.split('-').reverse().join('/')}: ${completed.message}` : 'Confira os cancelamentos antes de gerar.';
-        throw Object.assign(new Error(message), { statusCode: 409, conflicts: cancellationResult.conflicts });
+        // Texto detalhado (data + o que já está lançado) é montado no catch, fora da transação.
+        throw Object.assign(new Error('Confira os cancelamentos antes de gerar.'), { statusCode: 409, code: 'GENERATION_VALIDATION', conflicts: cancellationResult.conflicts, patientId: plan.patient });
       }
     }
     const today = new Date().toISOString().split('T')[0];
@@ -1254,6 +1254,14 @@ router.post('/:id/generate-sessions', auth, async (req, res) => {
     });
   } catch (error) {
     if (session.inTransaction()) await session.abortTransaction();
+    if (error.statusCode && error.conflicts?.length) {
+      // MENSAGERIA_PADRAO: dizer qual data bate com o quê (profissional, guia, status) e o que fazer.
+      const described = await describeCancellationConflicts(error.conflicts, error.patientId);
+      return sendApiError(res, new AppError(error.code || 'GENERATION_VALIDATION', described.message, {
+        status: error.statusCode, title: described.title, action: described.action, items: described.items,
+        extra: { conflicts: error.conflicts },
+      }), req);
+    }
     if (error.statusCode && error.code !== 'APPOINTMENT_SLOT_CONFLICT') return sendApiError(res, new AppError(error.code || 'GENERATION_VALIDATION', error.message, { status: error.statusCode, extra: { conflicts: error.conflicts || [] } }), req);
     console.error('[InsurancePlansV2] Erro ao gerar sessões:', error);
 
