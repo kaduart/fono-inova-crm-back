@@ -265,6 +265,10 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         neuropsychEvaluation: doctor.commissionRules?.neuropsychEvaluation ?? 1200,
         neuropsychCommissionType: doctor.commissionRules?.neuropsychCommissionType ?? 'fixed'
       },
+      compensation: {
+        model: doctor.compensation?.model || 'commission',
+        fixedMonthlyAmount: doctor.compensation?.fixedMonthlyAmount || 0
+      },
       createdAt: doctor.createdAt,
       updatedAt: doctor.updatedAt
     }));
@@ -285,7 +289,7 @@ router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
   const correlationId = `doc_create_${Date.now()}_${uuidv4().slice(0, 8)}`;
 
   try {
-    const { fullName, email, password, specialty, licenseNumber, phoneNumber, active, weeklyAvailability, commissionRules } = req.body;
+    const { fullName, email, password, specialty, licenseNumber, phoneNumber, active, weeklyAvailability, commissionRules, compensation } = req.body;
 
     if (!fullName || !email || !specialty) {
       return res.status(400).json(formatError(400, 'Nome, e-mail e especialidade são obrigatórios'));
@@ -299,6 +303,8 @@ router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
          commissionRules.neuropsychEvaluation < 0 || commissionRules.neuropsychEvaluation > 100)) {
       return res.status(400).json(formatError(400, 'Informe um percentual entre 0 e 100 para a avaliação neuropsicológica'));
     }
+    const compensationError = validateCompensation(compensation);
+    if (compensationError) return res.status(400).json(formatError(400, compensationError));
 
     const doctor = await Doctor.create({
       fullName: fullName.trim(),
@@ -316,6 +322,7 @@ router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
         neuropsychEvaluation: commissionRules?.neuropsychEvaluation ?? 1200,
         neuropsychCommissionType: commissionRules?.neuropsychCommissionType ?? 'fixed'
       },
+      ...(compensation ? { compensation: normalizeCompensation(compensation) } : {}),
       createdBy: req.user?.id
     });
 
@@ -343,6 +350,26 @@ router.post('/', flexibleAuth, requireStaffOrAgenda, async (req, res) => {
 // Admin, secretária e Agenda editam qualquer profissional. O terapeuta edita só o
 // próprio cadastro e só os dados pessoais (repasse, status, perfil, e-mail e
 // especialidade continuam com a gestão). Auditoria 31/10/2026.
+// Forma de remuneração: comissão por sessão (padrão) ou salário fixo mensal.
+function validateCompensation(c) {
+  if (c === undefined || c === null) return null;
+  if (c.model !== undefined && !['commission', 'fixed_monthly'].includes(c.model)) {
+    return 'Forma de remuneração inválida';
+  }
+  const v = c.fixedMonthlyAmount;
+  if (v !== undefined && v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
+    return 'Informe um salário fixo mensal válido, maior ou igual a zero';
+  }
+  if (c.model === 'fixed_monthly' && !(Number(v) > 0)) {
+    return 'Informe o valor do salário fixo mensal';
+  }
+  return null;
+}
+function normalizeCompensation(c) {
+  const model = c.model === 'fixed_monthly' ? 'fixed_monthly' : 'commission';
+  return { model, fixedMonthlyAmount: model === 'fixed_monthly' ? Number(c.fixedMonthlyAmount) : 0 };
+}
+
 const DOCTOR_SELF_EDITABLE = ['fullName', 'phoneNumber', 'licenseNumber', 'weeklyAvailability'];
 export function canUpdateDoctor(req, res, next) {
   const role = req.user?.role;
@@ -364,6 +391,13 @@ router.put('/:id', flexibleAuth, canUpdateDoctor, async (req, res) => {
 
   try {
     const updatePayload = { ...req.body, updatedAt: new Date(), updatedBy: req.user?.id };
+
+    if (updatePayload.compensation !== undefined) {
+      const compensationError = validateCompensation(updatePayload.compensation);
+      if (compensationError) return res.status(400).json(formatError(400, compensationError));
+      if (updatePayload.compensation) updatePayload.compensation = normalizeCompensation(updatePayload.compensation);
+      else delete updatePayload.compensation;
+    }
 
     // Atualiza somente os campos enviados, preservando o repasse do pacote.
     if (updatePayload.commissionRules) {

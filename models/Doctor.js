@@ -48,6 +48,23 @@ const doctorSchema = new mongoose.Schema({
     min: 1
   },
 
+  // 🆕 Forma de remuneração (09/11/2026). 'commission' = repasse por sessão pelas
+  // commissionRules (padrão). 'fixed_monthly' = salário fixo mensal: o "Gerar comissões"
+  // não cria despesa por sessão para ela (o fixo é lançado como despesa fixa/folha),
+  // mas o painel de faturamento por profissional usa esse valor como custo.
+  compensation: {
+    model: {
+      type: String,
+      enum: ['commission', 'fixed_monthly'],
+      default: 'commission'
+    },
+    fixedMonthlyAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
+
   commissionRules: {
     neuropsychCommissionType: {
       type: String,
