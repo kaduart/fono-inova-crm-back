@@ -68,7 +68,9 @@ router.get('/', flexibleAuth, async (req, res) => {
       status = null,
       sortBy = null,
       hasDebt = 'false', // 'true' => somente pacientes com saldo devedor particular
-      includeStale = 'false' // se 'true', inclui views stale
+      includeStale = 'false', // se 'true', inclui views stale
+      patientStatus = null, // 'inactive' = inativados pela recepção
+      inactiveReason = null // motivo da inativação
     } = req.query;
 
     // 🚀 Query otimizada no PatientsView
@@ -78,6 +80,8 @@ router.get('/', flexibleAuth, async (req, res) => {
       doctorId,
       status,
       hasDebt: hasDebt === 'true',
+      patientStatus: ['active', 'inactive', 'lead'].includes(patientStatus) ? patientStatus : null,
+      inactiveReason: typeof inactiveReason === 'string' && /^[a-z_]{2,30}$/.test(inactiveReason) ? inactiveReason : null,
       ...(sortBy ? { sortBy } : {})
     });
     

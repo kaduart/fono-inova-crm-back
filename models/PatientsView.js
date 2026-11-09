@@ -203,7 +203,9 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
     doctorId = null,
     status = null,
     sortBy = null,
-    hasDebt = false // filtra pacientes com saldo devedor particular (stats.totalPendingParticular > 0)
+    hasDebt = false, // filtra pacientes com saldo devedor particular (stats.totalPendingParticular > 0)
+    patientStatus = null, // status do cadastro (inativação manual pela recepção)
+    inactiveReason = null // motivo da inativação (campanhas de retorno)
   } = options;
 
   let query = {};
@@ -231,6 +233,11 @@ patientsViewSchema.statics.quickSearch = async function(searchTerm, options = {}
   if (doctorId) query.doctorId = doctorId;
   if (status) query.status = status;
   if (hasDebt) query['stats.totalPendingParticular'] = { $gt: 0 };
+  if (patientStatus) query.patientStatus = patientStatus;
+  if (inactiveReason) {
+    query.patientStatus = 'inactive';
+    query['inactivation.reason'] = inactiveReason;
+  }
 
   const sortCriteria = sortBy
     ? { [sortBy]: -1 }
