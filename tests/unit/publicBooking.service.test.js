@@ -60,7 +60,7 @@ const base = {
 describe('publicBookingService', () => {
   it('cria pré-agendamento no primeiro horário livre da manhã', async () => {
     const r = await createHold(base, { now: NOW, env: {} });
-    expect(r.display).toBe('Quinta 12/11 de manhã');
+    expect(r.display).toBe('Quinta 12/11 às 08:00');
     expect(r.code).toMatch(/^FI-/);
 
     const appt = await Appointment.findOne({ 'metadata.origin.bookingCode': r.code }).lean();
@@ -74,7 +74,7 @@ describe('publicBookingService', () => {
     const patient = await Patient.findById(appt.patient).lean();
     expect(patient.source).toBe('link_agendamento');
 
-    expect(await getStatus(r.code)).toEqual({ status: 'reservado', display: 'Quinta 12/11 de manhã' });
+    expect(await getStatus(r.code)).toEqual({ status: 'reservado', display: 'Quinta 12/11 às 08:00' });
   });
 
   it('mesmo telefone + mesma criança devolve a mesma reserva (sem duplicar)', async () => {
@@ -104,15 +104,37 @@ describe('publicBookingService', () => {
     expect(err.extra.alternatives).toEqual([{ date: DATE, period: 'tarde' }]);
   });
 
+  it('família escolhe o horário exato; horário já pego devolve 409 com outros horários', async () => {
+    const r = await createHold({ ...base, time: '14:00', period: 'tarde' }, { now: NOW, env: {} });
+    expect(r.display).toBe('Quinta 12/11 às 14:00');
+    expect((await Appointment.findOne({}).lean()).time).toBe('14:00');
+    const err = await createHold({ ...base, childName: 'Lia Souza', phone: '62977770000', time: '14:00', period: 'tarde' }, { now: NOW, env: {} }).catch((e) => e);
+    expect(err.code).toBe('SLOT_TAKEN');
+    expect(err.extra.alternatives).toEqual([{ date: DATE, time: '08:00' }, { date: DATE, time: '08:40' }]);
+  });
+
+  it('queixa principal vai para a reserva e para o cadastro', async () => {
+    await createHold({ ...base, complaint: 'Fala poucas palavras' }, { now: NOW, env: {} });
+    const appt = await Appointment.findOne({}).lean();
+    expect(appt.notes).toContain('Queixa: Fala poucas palavras');
+    expect(appt.mainComplaint).toBe('Fala poucas palavras');
+    expect((await Patient.findById(appt.patient).lean()).mainComplaint).toBe('Fala poucas palavras');
+  });
+
   it('teto diário de reservas online', async () => {
     await createHold(base, { now: NOW, env: { PUBLIC_BOOKING_DAILY_CAP: '1' } });
     await expect(createHold({ ...base, childName: 'Outra Pessoa', phone: '62988880000' }, { now: NOW, env: { PUBLIC_BOOKING_DAILY_CAP: '1' } }))
       .rejects.toMatchObject({ code: 'DAILY_CAP' });
   });
 
-  it('options mostra só dia + período, sem profissional', async () => {
+  it('options mostra dia e horários livres, sem profissional', async () => {
     const r = await getOptions({ specialty: 'fonoaudiologia', from: DATE, days: 1, now: NOW });
-    expect(r.days).toEqual([{ date: DATE, label: 'Qui 12/11', periods: [{ period: 'manha', available: true }, { period: 'tarde', available: true }] }]);
+    expect(r.days).toEqual([{
+      date: DATE,
+      label: 'Qui 12/11',
+      periods: [{ period: 'manha', available: true }, { period: 'tarde', available: true }],
+      times: ['08:00', '08:40', '14:00'],
+    }]);
     expect(JSON.stringify(r)).not.toContain('Dra Teste');
   });
 });

@@ -60,10 +60,16 @@ export function dayLabel(ymd) {
   return `${DAY_LABELS[d.getUTCDay()]} ${day}/${m}`;
 }
 
-export function displayText(ymd, period) {
+/** "Quinta 12/11 às 08:40" quando há horário exato; senão "Quinta 12/11 de manhã". */
+export function displayText(ymd, period, time) {
   const d = new Date(`${ymd}T12:00:00-03:00`);
   const [, m, day] = ymd.split('-');
-  return `${DAY_NAMES[d.getUTCDay()]} ${day}/${m} ${PERIODS[period]?.label || ''}`.trim();
+  const when = isValidTime(time) ? `às ${time.slice(0, 5)}` : (PERIODS[period]?.label || '');
+  return `${DAY_NAMES[d.getUTCDay()]} ${day}/${m} ${when}`.trim();
+}
+
+export function isValidTime(time) {
+  return typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time.slice(0, 5)) && time.length <= 8;
 }
 
 /** Janela pública: de amanhã até MAX_DAYS dias à frente. */
@@ -98,6 +104,30 @@ export function pickSlotForPeriod(candidates = [], period) {
     .sort((a, b) => b.freeCount - a.freeCount || a.inPeriod[0].localeCompare(b.inPeriod[0]));
   if (!ranked.length) return null;
   return { doctorId: ranked[0].doctorId, time: ranked[0].inPeriod[0], alternatives: ranked.slice(1) };
+}
+
+/** Horários livres do dia (união de todos os profissionais), sem dizer quem atende nem quantas vagas. */
+export function publicTimes(candidates = []) {
+  const set = new Set();
+  for (const c of candidates) for (const s of publicFreeSlots(c.slots)) set.add(s.time.slice(0, 5));
+  return [...set].sort();
+}
+
+/**
+ * Escolhe quem atende num horário exato: entre os profissionais com esse horário livre,
+ * o que tem mais horários livres no dia (menos ocupado).
+ */
+export function pickSlotForTime(candidates = [], time) {
+  const t = String(time || '').slice(0, 5);
+  const ranked = candidates
+    .map((c) => {
+      const free = publicFreeSlots(c.slots);
+      return { doctorId: c.doctorId, freeCount: free.length, has: free.some((s) => s.time.slice(0, 5) === t) };
+    })
+    .filter((c) => c.has)
+    .sort((a, b) => b.freeCount - a.freeCount);
+  if (!ranked.length) return null;
+  return { doctorId: ranked[0].doctorId, time: t };
 }
 
 /** Períodos com vaga de um dia, a partir dos slots de todos os profissionais. */
@@ -144,8 +174,11 @@ export function validateHoldPayload(body = {}, { now = new Date(), env = process
   const date = String(body.date || '');
   if (!isDateInWindow(date, now)) errors.date = 'Escolha um dia da lista.';
 
-  const period = String(body.period || '');
-  if (!PERIODS[period]) errors.period = 'Escolha manhã ou tarde.';
+  // Horário exato (página nova) ou só período (versão antiga da página).
+  const time = isValidTime(body.time) ? String(body.time).slice(0, 5) : null;
+  if (body.time != null && body.time !== '' && !time) errors.time = 'Escolha um horário da lista.';
+  const period = time ? periodOf(time) : String(body.period || '');
+  if (!errors.time && !PERIODS[period]) errors.period = 'Escolha um horário.';
 
   const childName = cleanName(body.child?.fullName);
   if (!childName) errors.childName = 'Informe o nome completo da criança.';
@@ -163,6 +196,9 @@ export function validateHoldPayload(body = {}, { now = new Date(), env = process
   const phone = normalizeBRPhone(body.responsible?.phone);
   if (!phone) errors.phone = 'Informe um WhatsApp com DDD.';
 
+  // Queixa principal (opcional): o que preocupa a família. Já adianta a triagem.
+  const complaint = String(body.complaint || '').replace(/[<>{}$\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+
   if (body.consentLgpd !== true) errors.consentLgpd = 'É preciso aceitar o uso dos dados para o agendamento.';
 
   const utm = {};
@@ -174,7 +210,7 @@ export function validateHoldPayload(body = {}, { now = new Date(), env = process
   return {
     ok: Object.keys(errors).length === 0,
     errors,
-    data: { specialty, date, period, childName, birthDate, responsibleName, phone, utm },
+    data: { specialty, date, period, time, complaint, childName, birthDate, responsibleName, phone, utm },
   };
 }
 

@@ -33,6 +33,7 @@ const buildLimiter = (windowMs, max, label) => rateLimit({
 const MESSAGES = {
   DISABLED: 'O agendamento online está pausado. Fale com a gente no WhatsApp.',
   PERIOD_FULL: 'Esse período acabou de lotar. Escolha outro horário.',
+  SLOT_TAKEN: 'Esse horário acabou de ser reservado. Escolha outro.',
   DAILY_CAP: 'Hoje as reservas online já esgotaram. Fale com a gente no WhatsApp.',
   TOO_MANY_REQUESTS: TOO_MANY.message,
   CAPTCHA: 'Não conseguimos confirmar que você não é um robô. Recarregue a página e tente de novo.',

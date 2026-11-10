@@ -82,7 +82,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         const [preAppointments, total] = await Promise.all([
             Appointment.find(query)
                 .populate('doctor', 'fullName specialty')
-                .populate('patient', 'fullName phone dateOfBirth email')
+                .populate('patient', 'fullName phone dateOfBirth email mainComplaint')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit))
@@ -188,7 +188,7 @@ router.post('/:id/discard', flexibleAuth, async (req, res) => {
             },
             { new: true }
         )
-            .populate('patient', 'fullName phone dateOfBirth email')
+            .populate('patient', 'fullName phone dateOfBirth email mainComplaint')
             .populate('doctor', 'fullName specialty')
             .lean();
 
