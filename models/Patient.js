@@ -117,6 +117,12 @@ const patientSchema = new mongoose.Schema({
   lastSessionAt: {
     type: Date,
     default: null
+  },
+  // Secretaria marca quando a familia JA avaliou no Google (ou pediu p/ nao receber):
+  // a automacao de pedido de avaliacao pos-sessao pula esse paciente.
+  reviewOptOut: {
+    type: Boolean,
+    default: false
   }
 }, {
   toJSON: { virtuals: true },

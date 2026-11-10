@@ -27,6 +27,7 @@ import { clearCashflowCache } from './cashflow.v2.js';
 import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { requestCancellationNotification } from '../services/appointment/cancellationNotification.service.js';
+import { requestReviewNotification } from '../services/appointment/reviewRequestNotification.service.js';
 import {
   markAttendanceConfirmationSent,
   updateAttendanceConfirmationManually,
@@ -597,6 +598,12 @@ router.patch('/:id/complete', auth, requireStaff, async (req, res) => {
                 billingType: populatedAppointment?.billingType || null,
             });
         });
+
+        // 🌟 Pedido de avaliação no Google (pós-sessão). Fire-and-forget: NUNCA quebra a conclusão.
+        // Dispara só em 'completed'; dedupe por paciente (90d), delay (~3h) e link ficam no serviço.
+        requestReviewNotification(id).catch((e) =>
+            console.error('[review] enqueue falhou (não crítico):', e?.message)
+        );
 
         const durationMs = Date.now() - startTime;
         console.log(`[complete] ✅ Completo via serviço oficial`, {

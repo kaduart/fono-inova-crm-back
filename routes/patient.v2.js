@@ -555,6 +555,40 @@ router.put('/:id', flexibleAuth, async (req, res) => {
 });
 
 /**
+ * PATCH /api/v2/patients/:id/review-opt-out
+ * Marca (ou desmarca) que a familia JA avaliou no Google / nao quer receber o pedido.
+ * A automacao de pedido de avaliacao pos-sessao pula pacientes com reviewOptOut=true.
+ * Body: { reviewOptOut?: boolean }  (default true)
+ */
+router.patch('/:id/review-opt-out', flexibleAuth, async (req, res) => {
+  const { id } = req.params;
+  const correlationId = `pat_review_optout_${Date.now()}`;
+  const optOut = req.body?.reviewOptOut === undefined ? true : !!req.body.reviewOptOut;
+
+  try {
+    let patientId = id;
+    const exists = await Patient.exists({ _id: id });
+    if (!exists) {
+      const view = await PatientsView.findOne({ $or: [{ _id: id }, { patientId: id }] }).lean();
+      if (!view) return res.status(404).json(formatError('Paciente nao encontrado', 404));
+      patientId = view.patientId;
+    }
+
+    await Patient.findByIdAndUpdate(patientId, {
+      reviewOptOut: optOut,
+      updatedBy: req.user?.id,
+      updatedAt: new Date()
+    });
+
+    logger.info(`[${correlationId}] review-opt-out atualizado`, { patientId, reviewOptOut: optOut });
+    return res.json(formatSuccess({ status: 'completed', reviewOptOut: optOut }, { message: optOut ? 'Paciente marcado: nao recebera pedido de avaliacao' : 'Paciente volta a receber pedido de avaliacao' }));
+  } catch (error) {
+    logger.error(`[${correlationId}] review-opt-out erro`, { error: error.message });
+    return res.status(500).json(formatError(error.message, 500));
+  }
+});
+
+/**
  * PATCH /api/v2/patients/:id/status
  * Inativar (com motivo da lista) ou reativar o paciente. Só recepção e admin.
  * Body: { status: 'inactive'|'active', reason?, note? }
