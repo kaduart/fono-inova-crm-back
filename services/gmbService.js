@@ -20,7 +20,10 @@ const cloudinaryConfig = {
 };
 
 // Verifica se as credenciais estão configuradas
-if (!cloudinaryConfig.cloud_name || !cloudinaryConfig.api_key || !cloudinaryConfig.api_secret) {
+if ((!cloudinaryConfig.cloud_name || !cloudinaryConfig.api_key || !cloudinaryConfig.api_secret) && process.env.ESPELHO === 'true') {
+  // 10/11: esperado no espelho local — uma linha só.
+  console.log('ℹ️ Cloudinary desligado no espelho (sem credencial, esperado)');
+} else if (!cloudinaryConfig.cloud_name || !cloudinaryConfig.api_key || !cloudinaryConfig.api_secret) {
   console.error('❌ Cloudinary: Credenciais não configuradas! Verifique .env');
   console.error('   CLOUDINARY_CLOUD_NAME:', cloudinaryConfig.cloud_name ? '***' : 'undefined');
   console.error('   CLOUDINARY_API_KEY:', cloudinaryConfig.api_key ? '***' : 'undefined');

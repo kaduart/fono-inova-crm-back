@@ -49,7 +49,9 @@ function startMemoryMonitor() {
     // 01/11: só loga quando muda de faixa (🟢/🟡/🔴), quando não está 🟢, ou 1x a cada
     // 5 min como sinal de vida. Antes saía a cada 10 s e enchia o terminal/log.
     const now = Date.now();
-    const show = process.env.LOG_VERBOSE === 'true' || snap.status !== 'ok' ||
+    // 10/11: o status saudável é 'healthy' (memoryStats.js); comparar com 'ok' deixava o
+    // filtro sempre aberto e o [MEMORY] voltava a sair a cada 10 s.
+    const show = process.env.LOG_VERBOSE === 'true' || snap.status !== 'healthy' ||
       snap.status !== lastLoggedStatus || now - lastLoggedAt >= 5 * 60_000;
     if (!show) return;
     lastLoggedStatus = snap.status; lastLoggedAt = now;
@@ -173,5 +175,5 @@ export function startRuntimeMonitor() {
   );
 
   logMemoryLimits('🔭 [RuntimeMonitor]');
-  console.log('🔭 [RuntimeMonitor] Iniciado — logs a cada 10s (mem) / 15s (filas)');
+  console.log('🔭 [RuntimeMonitor] Iniciado — memória logada só ao mudar de faixa ou 1x a cada 5 min');
 }
