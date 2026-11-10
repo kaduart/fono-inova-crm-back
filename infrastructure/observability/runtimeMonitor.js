@@ -33,7 +33,7 @@ const toMB = (v) => Math.round(v / 1024 / 1024);
 // ============================================
 
 let lastMemory = null;
-let lastLoggedStatus = null;
+let lastLoggedStatus = process.env.NODE_ENV === 'production' ? null : 'healthy'; // no PC: não loga o 🟢 inicial
 let lastLoggedAt = 0;
 
 function startMemoryMonitor() {
@@ -52,7 +52,9 @@ function startMemoryMonitor() {
     // 10/11: o status saudável é 'healthy' (memoryStats.js); comparar com 'ok' deixava o
     // filtro sempre aberto e o [MEMORY] voltava a sair a cada 10 s.
     const show = process.env.LOG_VERBOSE === 'true' || snap.status !== 'healthy' ||
-      snap.status !== lastLoggedStatus || now - lastLoggedAt >= 5 * 60_000;
+      snap.status !== lastLoggedStatus ||
+      // sinal de vida a cada 5 min só em produção (Render); no PC é ruído
+      (process.env.NODE_ENV === 'production' && now - lastLoggedAt >= 5 * 60_000);
     if (!show) return;
     lastLoggedStatus = snap.status; lastLoggedAt = now;
     console.log(
@@ -175,5 +177,5 @@ export function startRuntimeMonitor() {
   );
 
   logMemoryLimits('🔭 [RuntimeMonitor]');
-  console.log('🔭 [RuntimeMonitor] Iniciado — memória logada só ao mudar de faixa ou 1x a cada 5 min');
+  console.log('🔭 [RuntimeMonitor] Iniciado — memória logada só ao mudar de faixa (e 1x a cada 5 min em produção)');
 }
