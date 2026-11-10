@@ -319,7 +319,16 @@ const appointmentSchema = new mongoose.Schema({
         default: 'outro'
       },
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-      convertedAt: Date
+      convertedAt: Date,
+      // Agendamento público (link da bio / página /agendar) — docs/flows/public_booking_flow.md
+      channel: { type: String, default: undefined },
+      bookingCode: { type: String, default: undefined },
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        content: String
+      }
     }
   },
 
@@ -524,6 +533,8 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // ─── ÍNDICES ────────────────────────────────────────────────
+// Agendamento público: busca por código curto e contagem de reservas (sparse: só docs do link)
+appointmentSchema.index({ 'metadata.origin.bookingCode': 1 }, { sparse: true });
 appointmentSchema.index(
   { originalAppointmentId: 1, date: 1, time: 1 },
   { name: 'reschedule_idempotency' }
