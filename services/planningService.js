@@ -9,6 +9,7 @@ import Package from '../models/Package.js';
 import unifiedFinancialService from './unifiedFinancialService.v2.js';
 import { recalculateFutureTargets } from './planningAutoService.js';
 import { isInsuranceAppointment } from '../utils/appointmentMapper.js';
+import { computeSpecialtyActuals } from '../utils/planningSpecialty.js';
 
 /**
  * Atualiza automaticamente o progresso do planejamento
@@ -69,6 +70,11 @@ export const updatePlanningProgress = async (planningId) => {
         planning.actual.actualRevenueParticular = actualRevenueParticular;
         planning.actual.actualRevenueConvenio = actualRevenueConvenio;
         planning.actual.actualRevenueConvenioAReceber = convenioNaoRecebido;
+
+        // Realizado por especialidade (atendimentos concluídos do período)
+        if (planning.bySpecialty?.length) {
+            planning.bySpecialty = computeSpecialtyActuals(planning.bySpecialty, appointments);
+        }
 
         // Marca status de cálculo
         planning.calculationStatus = 'processing';

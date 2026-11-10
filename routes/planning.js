@@ -5,6 +5,7 @@ import Planning from '../models/Planning.js';
 import { updatePlanningProgress, updateAllPlanningsProgress, createWeeklyPlanning, createMonthlyPlanning, calculateDetailedProgress, calculateMonthlyProjection } from '../services/planningService.js';
 import { getAnnualPlanning } from '../services/planningAnnual.js';
 import { generateMonthlyCascade, recalculateFutureTargets } from '../services/planningAutoService.js';
+import { normalizeBySpecialty } from '../utils/planningSpecialty.js';
 import { getQueue } from '../infrastructure/queue/queueConfig.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
@@ -36,7 +37,7 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       period,
       targets,
       byDoctor,
-      bySpecialty,
+      bySpecialty: normalizeBySpecialty(bySpecialty),
       notes,
       createdBy: req.user.id
     });
@@ -400,7 +401,7 @@ router.put('/:id', auth, authorize(['admin', 'secretary']), async (req, res) => 
     if (period) planning.period = { ...planning.period, ...period };
     if (targets) planning.targets = { ...planning.targets, ...targets };
     if (byDoctor) planning.byDoctor = byDoctor;
-    if (bySpecialty) planning.bySpecialty = bySpecialty;
+    if (bySpecialty) planning.bySpecialty = normalizeBySpecialty(bySpecialty, planning.bySpecialty);
     if (notes !== undefined) planning.notes = notes;
     if (actual) planning.actual = { ...planning.actual, ...actual };
 
