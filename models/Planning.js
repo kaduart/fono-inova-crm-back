@@ -1,6 +1,16 @@
 // models/Planning.js
 import mongoose from 'mongoose';
 
+const specialtyTargetSchema = new mongoose.Schema({
+    specialty: { type: String },
+    targetSessions: { type: Number, default: 0 },
+    targetRevenue: { type: Number, default: 0 },
+    completedSessions: { type: Number, default: 0 },
+    actualRevenue: { type: Number, default: 0 }
+}, { _id: false, toJSON: { virtuals: true }, toObject: { virtuals: true }, id: false });
+specialtyTargetSchema.virtual('sessions').get(function () { return this.targetSessions; });
+specialtyTargetSchema.virtual('revenue').get(function () { return this.targetRevenue; });
+
 const planningSchema = new mongoose.Schema({
     type: {
         type: String,
@@ -71,11 +81,9 @@ const planningSchema = new mongoose.Schema({
     }],
 
     // 🔹 Distribuição por especialidade
-    bySpecialty: [{
-        specialty: { type: String },
-        targetSessions: { type: Number, default: 0 },
-        completedSessions: { type: Number, default: 0 }
-    }],
+    // specialty = slug de Appointment.specialty; realizado = atendimentos concluídos (produção).
+    // Virtuais `sessions`/`revenue` mantêm o formato que o front envia e lê.
+    bySpecialty: [specialtyTargetSchema],
 
     notes: { type: String, maxlength: 500 },
 

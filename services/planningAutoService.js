@@ -2,6 +2,7 @@
 // Automação de planejamentos mensal → semanal → diário com base em dias úteis
 
 import Planning from '../models/Planning.js';
+import { normalizeBySpecialty } from '../utils/planningSpecialty.js';
 import { isNationalHoliday } from '../config/feriadosBR.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -79,13 +80,6 @@ const distributeWithRemainder = (total, count, decimals = 2) => {
   return values;
 };
 
-const normalizeBySpecialty = (bySpecialty = []) => {
-  return bySpecialty.map(s => ({
-    specialty: s.specialty,
-    targetSessions: Number(s.sessions || s.targetSessions || 0),
-    completedSessions: 0
-  }));
-};
 
 /**
  * Gera/Substitui planejamento mensal e cria semanais + diários proporcionais aos dias úteis.
@@ -105,10 +99,12 @@ export const generateMonthlyCascade = async (month, year, targets, userId, optio
 
   // Criar ou atualizar planejamento mensal
   let monthly = await Planning.findOne({ type: 'monthly', 'period.start': start, 'period.end': end });
-  if (monthly && !force) {
+  // Já existe mensal do mês: atualiza (antes, com force=true, criava um segundo mensal duplicado).
+  if (monthly) {
+    if (force) console.log(`[Planning Auto] ♻️ Mensal ${start} já existia: atualizando metas em vez de duplicar`);
     monthly.targets = { ...monthlyTargets };
     monthly.notes = notes;
-    monthly.bySpecialty = normalizeBySpecialty(bySpecialty);
+    monthly.bySpecialty = normalizeBySpecialty(bySpecialty, monthly.bySpecialty);
     await monthly.save();
   } else {
     monthly = await Planning.create({
