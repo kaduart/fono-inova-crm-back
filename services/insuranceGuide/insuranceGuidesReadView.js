@@ -473,7 +473,7 @@ export async function getInsuranceGuidesView(filters = {}) {
     .lean();
 
   if (guides.length === 0) {
-    logger.info('getInsuranceGuidesView: nenhuma guia para o filtro', { insurance, patientId, guideStatus });
+    logger.info('guides_view_empty', 'nenhuma guia para o filtro', { insurance, patientId, guideStatus });
     return {
       guides: [],
       orphanSessions: [],
@@ -856,19 +856,10 @@ export async function getInsuranceGuidesView(filters = {}) {
     ? bucketed.slice((page - 1) * limit, page * limit)
     : bucketed;
 
-  // Tempo e volume da leitura (o logger.info abaixo não imprime o objeto): permite medir em produção o
+  // Tempo e volume da leitura: permite medir em produção o
   // efeito de projeções/reordenações — o custo escala com bytes, então o nº de docs acompanha o tempo.
   console.log(`[getInsuranceGuidesView] detail=${detail} phase=${phase} ms=${Date.now() - _startedAt} guides=${guides.length} sessions=${sessions.length} payments=${payments.length}`);
 
-  logger.info('getInsuranceGuidesView done', {
-    guides: totalGuides,
-    sessoes: totals.sessions.total,
-    orfas: orphanSessionsCount,
-    phase,
-    phases: phaseList,
-    from: periodFrom,
-    to: periodTo
-  });
 
   return {
     guides: paged,

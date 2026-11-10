@@ -47,7 +47,11 @@ if (!credentials && process.env.GA4_CLIENT_EMAIL && process.env.GA4_PRIVATE_KEY)
     console.log('✅ GA4: Usando GA4_CLIENT_EMAIL + GA4_PRIVATE_KEY');
 }
 
-if (!credentials) {
+// 10/11: no espelho local o GA4 fica desligado de propósito — uma linha só, sem ❌.
+const IS_ESPELHO = process.env.ESPELHO === 'true';
+if (!credentials && IS_ESPELHO) {
+    console.log('ℹ️ GA4 desligado no espelho (sem credencial, esperado)');
+} else if (!credentials) {
     console.error('❌ Nenhuma credencial GA4 encontrada!');
     console.error('   Configure uma das opções:');
     console.error('   - GA4_KEY_JSON (variável com JSON completo)');
@@ -61,7 +65,7 @@ if (credentials) {
     client = new BetaAnalyticsDataClient({ credentials });
     console.log('✅ GA4 Client inicializado');
 } else {
-    console.warn('⚠️ GA4 Client não inicializado - faltam credenciais');
+    if (!IS_ESPELHO) console.warn('⚠️ GA4 Client não inicializado - faltam credenciais');
     // Client dummy para não quebrar
     client = {
         runReport: async () => {
@@ -72,7 +76,7 @@ if (credentials) {
 
 const propertyId = process.env.GA4_PROPERTY_ID;
 if (!propertyId) {
-    console.warn('⚠️ GA4_PROPERTY_ID não definido');
+    if (!IS_ESPELHO) console.warn('⚠️ GA4_PROPERTY_ID não definido');
 } else {
     console.log('✅ GA4_PROPERTY_ID:', propertyId);
 }

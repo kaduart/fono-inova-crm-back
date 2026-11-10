@@ -28,7 +28,22 @@ if (process.env.LOG_VERBOSE !== 'true') {
         /^\[whatsapp_guard\].*whatsapp_guard_started/,
         /^\[whatsapp_guard\].*whatsapp_critical_pending/,  // repetitivo — ver no alerta
         /^\[conversationStateWorker\]|^\[contextBuilderWorker\]|^\[whatsappAutoReplyWorker\]/,
+        /^\[Server\] (ENABLE_WORKERS|WORKER_GROUP)/,  // debug de env no boot
+        /^\[AppointmentWriteGuard\] Interceptores instalados/,
     ];
+    // 10/11 (Kadu: "log muito poluído"): cronômetros por etapa, cache HIT/SET e contagens
+    // que saem a CADA requisição do dashboard. Escondidos por padrão; LOG_PERF=true mostra.
+    // O resumo "[MongoPool] requisição lenta" continua sempre visível (é o sinal útil).
+    if (process.env.LOG_PERF !== 'true') SUPPRESS_PATTERNS.push(
+        /^\[(realTime|profissionais|pendentes|by-type|buildStats|FinancialDashboard|calculate\w+|unifiedFinancialService|getInsuranceGuidesView|doctorsOverviewBuilder|upcomingBuilder|ANIVERSARIANTES|Calendar|ExpenseV\d|DashboardV\d|commercial\.v\d|analytics\/by-type)\]/,
+        /^\[DashboardCache\] (MISS|HIT|🔥)/,
+        /^\[Planning GET\]/,
+        /^\[GET \/appointments\]/,
+        /^\[MongoPool\] conexão criada/,
+        /^\{"level":"metric"/,
+        /^(Mês: \d+\/\d+ \| Início|Status: (PASSADO|ATUAL|FUTURO)$)/,  // provisionamento
+        /^⚠️ Cliente desconectado \((transport close|ping timeout|client namespace disconnect)\)/,  // aba fechada/HMR
+    );
     const _log = console.log.bind(console);
     const _warn = console.warn.bind(console);
     console.log = (...args) => {
