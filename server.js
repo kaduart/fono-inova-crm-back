@@ -132,6 +132,7 @@ import { scheduleFinancialSnapshotAudit } from './crons/financialSnapshotAudit.c
 import { schedulePatientConsistency } from './crons/patientConsistency.cron.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
+import publicBookingRoutes from './routes/publicBooking.js';  // 🌐 agendamento público (link da bio) — docs/flows/public_booking_flow.md
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import revenueAnalyticsRoutes from './routes/analytics.js';
 import operationalAnalyticsRoutes from './routes/analytics/operational.routes.js';
@@ -455,6 +456,7 @@ app.get('/api/feature-flags', (req, res) => {
 // ======================================================
 
 app.use("/api", proxyMediaRoutes);
+app.use("/api/public/booking", publicBookingRoutes);  // 🌐 sem login, desligado por padrão (PUBLIC_BOOKING_ENABLED)
 app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
 app.use("/api/login", loginRoutes);

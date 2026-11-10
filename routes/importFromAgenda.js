@@ -1686,7 +1686,7 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
  * GET /api/import-from-agenda/diagnostico/:patientName
  * Diagnóstico de agendamentos duplicados
  */
-router.get("/import-from-agenda/diagnostico/:patientName", async (req, res) => {
+router.get("/import-from-agenda/diagnostico/:patientName", flexibleAuth, requireAdmin, async (req, res) => {
   try {
     const { patientName } = req.params;
     const searchRegex = new RegExp(patientName, 'i');
@@ -1825,7 +1825,7 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", flexibleAuth, requ
  * GET /api/import-from-agenda/auditar-unimed
  * Consulta pacientes Unimed Anápolis e seus agendamentos
  */
-router.get("/import-from-agenda/auditar-unimed", async (req, res) => {
+router.get("/import-from-agenda/auditar-unimed", flexibleAuth, requireAdmin, async (req, res) => {
   try {
     const db = mongoose.connection.db;
 
