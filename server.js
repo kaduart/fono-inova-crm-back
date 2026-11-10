@@ -994,7 +994,7 @@ try {
 // 🛑 Graceful shutdown: libera lock de workers embedded
 // ======================================================
 process.on('SIGTERM', async () => {
-  console.log('\n🛑 SIGTERM no server — parando workers embedados...');
+  console.log(process.env.ENABLE_WORKERS === 'true' ? '\n🛑 SIGTERM no server — parando workers embedados...' : '\n🛑 Servidor parado.');
   if (process.env.ENABLE_WORKERS === 'true') {
     try {
       const { stopAllWorkers } = await import('./workers/index.js');
@@ -1007,7 +1007,7 @@ process.on('SIGTERM', async () => {
 });
 
 process.on('SIGINT', async () => {
-  console.log('\n🛑 SIGINT no server — parando workers embedados...');
+  console.log(process.env.ENABLE_WORKERS === 'true' ? '\n🛑 SIGINT no server — parando workers embedados...' : '\n🛑 Servidor parado.');
   if (process.env.ENABLE_WORKERS === 'true') {
     try {
       const { stopAllWorkers } = await import('./workers/index.js');
