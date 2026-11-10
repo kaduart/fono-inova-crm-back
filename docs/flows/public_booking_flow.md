@@ -4,16 +4,16 @@ Criado em 10/11/2026. Pedido do Kadu: "link de agendamento no Instagram direto".
 
 ## O que é
 
-A família abre o link da bio/stories → página `/agendar` do site (fono-inova-web) → escolhe especialidade, **dia e período (manhã/tarde)** → deixa nome e nascimento da criança, nome e WhatsApp do responsável → o ERP cria um **pré-agendamento** (`pre_agendado`) que cai na triagem da secretária (`/api/v2/pre-appointments`). A secretária confirma o horário exato pelo WhatsApp.
+A família abre o link da bio/stories → página `/agendar` do site (fono-inova-web) → escolhe especialidade, **dia e horário exato** → deixa nome e nascimento da criança, nome e WhatsApp do responsável → o ERP cria um **pré-agendamento** (`pre_agendado`) que cai na triagem da secretária (`/api/v2/pre-appointments`). A secretária confirma o horário exato pelo WhatsApp.
 
-Decisão do Kadu (10/11): a página mostra **só dia + período**, nunca o horário exato nem o profissional (regra "só horários genéricos"). O sistema trava por dentro o primeiro horário livre do período.
+Decisão do Kadu (10/11, 19h): a página mostra os **horários livres de verdade** e a família escolhe o horário (evita passar pelo comercial e cansar o lead). Nunca mostra o profissional. Antes era só dia + manhã/tarde; a API ainda aceita `period` sem `time` (página antiga).
 
 ## Rotas (`routes/publicBooking.js`, montado em `/api/public/booking`, SEM login)
 
 | Rota | O que faz |
 |---|---|
-| `GET /options?specialty=&from=&days=` | dias (amanhã até 14 dias) com `periods: [{ period: 'manha'|'tarde', available }]`. Cache 60 s no Redis. |
-| `POST /hold` | cria a reserva. Corpo: `specialty, date, period, child{fullName,birthDate}, responsible{name,phone}, consentLgpd, utm{source,medium,campaign,content}, captchaToken, website` (isca). `201 { code, display }`, `409 PERIOD_FULL { alternatives }`, `400 VALIDATION { fields }`, `429`, `503 DISABLED/DAILY_CAP`. |
+| `GET /options?specialty=&from=&days=` | dias (amanhã até 14 dias) com `times: ['08:00', ...]` (união dos profissionais) e `periods`. Cache 60 s no Redis. |
+| `POST /hold` | cria a reserva. Corpo: `specialty, date, time (HH:MM; ou period sem time), child{fullName,birthDate}, responsible{name,phone}, consentLgpd, utm{source,medium,campaign,content}, captchaToken, website` (isca). `201 { code, display }`, `409 SLOT_TAKEN { alternatives: [{date,time}] }` (ou `PERIOD_FULL` quando veio só período), `400 VALIDATION { fields }`, `429`, `503 DISABLED/DAILY_CAP`. |
 | `GET /:code` | `{ status: reservado|confirmado|encerrado, display }`. Sem dado pessoal. |
 
 ## Variáveis de ambiente (Render, serviço da API)
@@ -29,7 +29,7 @@ No site: `VITE_TURNSTILE_SITE_KEY` (chave pública do Turnstile) e o `VITE_CRM_A
 
 ## Regras
 
-- **Escolha do horário**: só profissionais ativos da especialidade com horário configurado no dia (`weeklyAvailability`; sem configuração não entra). Ignora horário ocupado, feriado e horário "sombra" de paciente recorrente (`signals.isShadow`). Escolhe o profissional com mais horários livres no dia e o primeiro horário do período; revalida com `checkSlotOverlap` e trava 20 s no Redis.
+- **Escolha do horário**: só profissionais ativos da especialidade com horário configurado no dia (`weeklyAvailability`; sem configuração não entra). Ignora horário ocupado, feriado e horário "sombra" de paciente recorrente (`signals.isShadow`). Com `time`: entre os profissionais com aquele horário livre, o que tem mais horários livres no dia. Sem `time`: o menos ocupado e o primeiro horário do período. revalida com `checkSlotOverlap` e trava 20 s no Redis.
 - **Anti-duplicado**: `findPossibleDuplicates` + `pickReusableDuplicate` (docs/PATIENT_DUPLICATES.md). Paciente novo nasce com `source: 'link_agendamento'` e `possibleDuplicateOf` quando houver suspeita. Mesmo telefone + mesma criança com reserva ativa → devolve a mesma reserva.
 - **Limites**: por IP (options 60/10 min, hold 5/h, status 30/10 min), por telefone (2 reservas/24 h) e teto diário.
 - **Sem vazamento**: nenhuma resposta traz ids, profissional, contagem de vagas ou se o paciente já existia. Logs só com os 4 últimos dígitos do telefone.

@@ -3,8 +3,8 @@
  * Doc: docs/flows/public_booking_flow.md
  *
  * O que faz:
- *  - getOptions: dias + períodos (manhã/tarde) com vaga real, sem expor profissional nem contagem.
- *  - createHold: trava o primeiro horário livre do período e cria um Appointment `pre_agendado`
+ *  - getOptions: dias com os horários livres (e períodos manhã/tarde), sem expor profissional.
+ *  - createHold: trava o horário escolhido pela família (ou o primeiro livre do período, versão antiga) e cria um Appointment `pre_agendado`
  *    (mesmo formato do POST /api/agenda-externa/pre-agendar), que cai na triagem da secretária.
  *  - getStatus: status público por código curto, sem dado pessoal.
  *
@@ -30,6 +30,8 @@ import {
   originSourceFromUtm,
   periodsAvailability,
   pickSlotForPeriod,
+  pickSlotForTime,
+  publicTimes,
   publicStatusOf,
   todaySP,
 } from './publicBookingRules.js';
@@ -94,8 +96,9 @@ export async function getOptions({ specialty, from, days = 7, now = new Date() }
     if (!isDateInWindow(ymd, now)) break;
     const candidates = await candidatesForDay(specialty, ymd, cache);
     const periods = periodsAvailability(candidates);
-    if (periods.some((p) => p.available)) {
-      result.push({ date: ymd, label: dayLabel(ymd), periods });
+    const times = publicTimes(candidates);
+    if (times.length) {
+      result.push({ date: ymd, label: dayLabel(ymd), periods, times });
     }
   }
 
@@ -169,14 +172,14 @@ async function lockSlot(doctorId, date, time) {
  * Devolve { code, display, reused }.
  */
 export async function createHold(data, { now = new Date(), env = process.env } = {}) {
-  const { specialty, date, period, childName, birthDate, responsibleName, phone, utm } = data;
+  const { specialty, date, period, time, childName, birthDate, responsibleName, phone, utm } = data;
 
   const existing = await findExistingHold({ phone, childName, now });
   if (existing) {
     const ymd = ymdOfAppointmentDate(existing.date);
     return {
       code: existing.metadata.origin.bookingCode,
-      display: displayText(ymd, existing.time < '12:00' ? 'manha' : 'tarde'),
+      display: displayText(ymd, null, existing.time),
       reused: true,
     };
   }
@@ -191,7 +194,8 @@ export async function createHold(data, { now = new Date(), env = process.env } =
   }
 
   const candidates = await candidatesForDay(specialty, date);
-  let pick = pickSlotForPeriod(candidates, period);
+  const pickFor = (list) => (time ? pickSlotForTime(list, time) : pickSlotForPeriod(list, period));
+  let pick = pickFor(candidates);
 
   // Revalida e trava; se outro pegou o horário no meio, tenta o próximo profissional.
   let chosen = null;
@@ -203,8 +207,14 @@ export async function createHold(data, { now = new Date(), env = process.env } =
     if (!conflict) {
       chosen = pick;
     } else {
-      pick = pickSlotForPeriod(candidates.filter((c) => !tried.includes(c.doctorId)), period);
+      pick = pickFor(candidates.filter((c) => !tried.includes(c.doctorId)));
     }
+  }
+
+  if (!chosen && time) {
+    const alternatives = publicTimes(candidates).filter((t) => t !== time).slice(0, 6).map((t) => ({ date, time: t }));
+    await invalidateOptionsCache(specialty);
+    throw new PublicBookingError('SLOT_TAKEN', 409, { alternatives });
   }
 
   if (!chosen) {
@@ -238,7 +248,7 @@ export async function createHold(data, { now = new Date(), env = process.env } =
     patientType: 'novo',
     responsible: responsibleName,
     secretaryNotes: `Responsável: ${responsibleName}`,
-    notes: `[AGENDADO PELO LINK ${code}] Família pediu ${displayText(date, period)}. Confirmar horário no WhatsApp.`,
+    notes: `[AGENDADO PELO LINK ${code}] Família escolheu ${displayText(date, period, chosen.time)}. Confirmar no WhatsApp.`,
     metadata: {
       origin: {
         source: originSourceFromUtm(utm),
@@ -254,7 +264,7 @@ export async function createHold(data, { now = new Date(), env = process.env } =
     appointmentId: String(appointment._id),
     specialty,
     date,
-    period,
+    time: chosen.time,
     phone: maskPhone(phone),
   });
 
@@ -277,7 +287,7 @@ export async function createHold(data, { now = new Date(), env = process.env } =
   }
 
   await invalidateOptionsCache(specialty);
-  return { code, display: displayText(date, period), reused: false };
+  return { code, display: displayText(date, period, chosen.time), reused: false };
 }
 
 export async function getStatus(code) {
@@ -288,6 +298,6 @@ export async function getStatus(code) {
   const ymd = ymdOfAppointmentDate(appt.date);
   return {
     status: publicStatusOf(appt.operationalStatus),
-    display: displayText(ymd, appt.time < '12:00' ? 'manha' : 'tarde'),
+    display: displayText(ymd, null, appt.time),
   };
 }

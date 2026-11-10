@@ -10,6 +10,8 @@ import {
   periodOf,
   periodsAvailability,
   pickSlotForPeriod,
+  pickSlotForTime,
+  publicTimes,
   publicStatusOf,
   todaySP,
   validateHoldPayload,
@@ -40,6 +42,30 @@ describe('agendamento público — regras', () => {
   it('texto genérico do horário (sem hora exata)', () => {
     expect(displayText('2026-11-12', 'manha')).toBe('Quinta 12/11 de manhã');
     expect(displayText('2026-11-13', 'tarde')).toBe('Sexta 13/11 à tarde');
+    expect(displayText('2026-11-13', null, '14:20')).toBe('Sexta 13/11 às 14:20');
+  });
+
+  it('horários exatos: união sem repetir e quem atende é o menos ocupado', () => {
+    const candidates = [
+      { doctorId: 'a', slots: [{ time: '08:00', available: true }, { time: '09:00', available: true, signals: { isShadow: true } }] },
+      { doctorId: 'b', slots: [{ time: '08:00', available: true }, { time: '14:00', available: true }, { time: '15:00', available: true }] },
+    ];
+    expect(publicTimes(candidates)).toEqual(['08:00', '14:00', '15:00']);
+    expect(pickSlotForTime(candidates, '08:00')).toEqual({ doctorId: 'b', time: '08:00' });
+    expect(pickSlotForTime(candidates, '09:00')).toBeNull();
+  });
+
+  it('pedido com horário exato define o período sozinho', () => {
+    const r = validateHoldPayload({
+      specialty: 'fonoaudiologia', date: '2026-11-12', time: '14:20',
+      child: { fullName: 'Maria Souza', birthDate: '2021-05-10' },
+      responsible: { name: 'Ana Souza', phone: '62 99999-0000' }, consentLgpd: true,
+    }, { now: NOW, env: {} });
+    expect(r.ok).toBe(true);
+    expect(r.data.time).toBe('14:20');
+    expect(r.data.period).toBe('tarde');
+    const bad = validateHoldPayload({ specialty: 'fonoaudiologia', time: '25:00' }, { now: NOW, env: {} });
+    expect(bad.errors.time).toBeTruthy();
   });
 
   it('ignora slot ocupado e slot "sombra" de paciente recorrente', () => {
