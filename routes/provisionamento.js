@@ -526,11 +526,22 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
 
     // Calcular taxa de conversão histórica (últimos 90 dias) — paralelo
     const dataCorte = moment().subtract(90, 'days').format('YYYY-MM-DD');
-    const [totalHistorico, convertidosHistorico] = await Promise.all([
-      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, operationalStatus: { $in: ['confirmed', 'scheduled', 'pre_agendado'] } }),
-      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, clinicalStatus: 'completed' })
+    // Taxa = realizados / (realizados + faltas + cancelados) nos últimos 90 dias.
+    // Antes o denominador contava só quem AINDA estava confirmado/agendado (quem foi
+    // atendido sai desse estado), e a taxa passava de 100% (ex.: 1521%), jogando o
+    // cenário realista acima do otimista. Agora fica sempre entre 0 e 1.
+    const janelaHist = { date: { $gte: dataCorte, $lte: hoje } };
+    const [convertidosHistorico, perdidosHistorico] = await Promise.all([
+      Appointment.countDocuments({ ...janelaHist, $or: [{ clinicalStatus: 'completed' }, { operationalStatus: 'completed' }] }),
+      Appointment.countDocuments({
+        ...janelaHist,
+        clinicalStatus: { $ne: 'completed' },
+        operationalStatus: { $ne: 'completed' },
+        $or: [{ operationalStatus: { $in: ['missed', 'canceled'] } }, { clinicalStatus: { $in: ['missed', 'canceled'] } }]
+      })
     ]);
-    const taxaConversao = totalHistorico > 0 ? convertidosHistorico / totalHistorico : 0.85;
+    const totalHistorico = convertidosHistorico + perdidosHistorico;
+    const taxaConversao = totalHistorico > 0 ? Math.min(1, Math.max(0, convertidosHistorico / totalHistorico)) : 0.85;
 
     // Cenários
     let valorPessimista, valorRealista, valorOtimista;
@@ -618,7 +629,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       resumo: {
         jaFaturado: valorRealizados,
         jaRecebido: valorJaRecebido,
-        aReceber: valorRealizados - valorJaRecebido,
+        aReceber: Math.max(0, valorRealizados - valorJaRecebido),
         atendimentosRealizados: quantidadeRealizados,
         valorProduzido: valorRealizados,
         ticketMedio: quantidadeRealizados > 0 ? valorRealizados / quantidadeRealizados : 0,
