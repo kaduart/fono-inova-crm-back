@@ -966,24 +966,9 @@ server.listen(PORT, process.env.ESPELHO === 'true' ? '127.0.0.1' : '0.0.0.0', ()
 
     // initFollowupWatcher(); // desabilitado temporariamente para diagnóstico de lag
     
-    console.log("✅ Sistema inicializado!");
-    
-    // ======================================================
-    // 🟢 SERVIDOR CONECTADO - READY PARA REQUISIÇÕES
-    // ======================================================
-    console.log("");
-    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("\x1b[32m%s\x1b[0m", "  ✅ SERVER CONECTADO E PRONTO!");
-    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("\x1b[32m%s\x1b[0m", "  📡 Porta: " + PORT);
-    console.log("\x1b[32m%s\x1b[0m", "  🌐 Ambiente: " + (process.env.NODE_ENV || "development"));
-    console.log("\x1b[32m%s\x1b[0m", "  📊 MongoDB: " + (mongoose.connection.readyState === 1 ? "Conectado" : "Desconhecido"));
-    console.log("\x1b[32m%s\x1b[0m", "  🔄 Workers: " + (global.workersAtivos ? "Ativos" : "Inativos"));
-    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("");
-    console.log("\x1b[33m%s\x1b[0m", "  ⏹️  Ctrl+C para parar o servidor");
-    console.log("");
-    
+    // 10/11: banner de 12 linhas virou 1 (Kadu: log poluído).
+    console.log("\x1b[32m%s\x1b[0m", `✅ Back pronto na porta ${PORT} | ${process.env.NODE_ENV || "development"}${process.env.ESPELHO === "true" ? " (espelho)" : ""} | MongoDB ${mongoose.connection.readyState === 1 ? "ok" : "?"} | workers ${global.workersAtivos ? "ativos" : "inativos"} | Ctrl+C para parar`);
+
   } catch (err) {
     console.error("❌ Erro crítico na inicialização:", err);
     process.exit(1);

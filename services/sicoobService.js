@@ -22,7 +22,7 @@ try {
     });
     console.log('✅ Certificado Sicoob carregado');
   } else {
-    console.log('⚠️ Certificado Sicoob não encontrado. PIX desabilitado.');
+    console.log(process.env.ESPELHO === 'true' ? 'ℹ️ PIX desligado no espelho (sem certificado, esperado)' : '⚠️ Certificado Sicoob não encontrado. PIX desabilitado.');
   }
 } catch (error) {
   console.log('⚠️ Erro ao carregar certificado Sicoob:', error.message);

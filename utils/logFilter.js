@@ -28,6 +28,13 @@ if (process.env.LOG_VERBOSE !== 'true') {
         /^\[conversationStateWorker\]|^\[contextBuilderWorker\]|^\[whatsappAutoReplyWorker\]/,
         /^\[Server\] (ENABLE_WORKERS|WORKER_GROUP)/,  // debug de env no boot
         /^\[AppointmentWriteGuard\] Interceptores instalados/,
+        // 10/11: status de boot que só confirma o óbvio — falha continua saindo como erro/aviso.
+        /^🚀 IORedis conectando|^✅ Redis configurado com limite|^✅ Redis (connected|ready) \(|^✅ Redis conectado!$|^🔄 Verificando Redis \(tentativa 1\//,
+        /^\[Planning Routes\]|^📜 Event Contracts registrados|^🔒 Socket\.IO auth mode|^🚫 GMB crons rodam|^🖥️ Bull Board/,
+        /^🚀 Server running on port|^🌐 Environment:|^✅ MongoDB conectado$|^📡 Redis bridge ativo/,
+        /^🔭 \[RuntimeMonitor\] (Iniciado|rss limit)|^\[MongoPool\] diagnóstico ligado|^⏱️ +Event loop monitor iniciado/,
+        /^⏭️ (Workers|Crons) desabilitados|^🟢 WhatsApp Web no worker dedicado/,
+        /^✅ Índices da lista de interesse|^\[DashboardCache\] ✅ Warmup concluído/,
     ];
     // 10/11 (Kadu: "log muito poluído"): cronômetros por etapa, cache HIT/SET e contagens
     // que saem a CADA requisição do dashboard. Escondidos por padrão; LOG_PERF=true mostra.
