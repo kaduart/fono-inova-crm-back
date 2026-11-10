@@ -247,6 +247,8 @@ const appointmentSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
   responsible: { type: String, default: '' },
   secretaryNotes: String,
+  // Queixa principal contada pela família no agendamento (ex.: link /agendar). Adianta a triagem.
+  mainComplaint: { type: String, trim: true, maxlength: 500 },
 
   // ─── ESPECIALIDADE ─────────────────────────────────────────
   specialty: {

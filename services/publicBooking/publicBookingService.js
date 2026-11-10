@@ -137,16 +137,21 @@ function ymdOfAppointmentDate(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
-async function resolvePatient({ childName, birthDate, phone }) {
+async function resolvePatient({ childName, birthDate, phone, complaint }) {
   const duplicates = await findPossibleDuplicates(Patient, { fullName: childName, dateOfBirth: birthDate, phone });
   const reuse = pickReusableDuplicate(duplicates);
-  if (reuse) return reuse._id;
+  if (reuse) {
+    // Só preenche se o cadastro ainda não tem queixa (não sobrescreve o que a clínica anotou).
+    if (complaint) await Patient.updateOne({ _id: reuse._id, mainComplaint: { $in: [null, ''] } }, { $set: { mainComplaint: complaint } });
+    return reuse._id;
+  }
 
   const created = await Patient.create({
     fullName: childName,
     phone,
     dateOfBirth: birthDate,
     source: 'link_agendamento',
+    ...(complaint ? { mainComplaint: complaint } : {}),
     ...(duplicates.length ? { possibleDuplicateOf: duplicates.map((d) => d._id) } : {}),
   });
 
@@ -172,7 +177,7 @@ async function lockSlot(doctorId, date, time) {
  * Devolve { code, display, reused }.
  */
 export async function createHold(data, { now = new Date(), env = process.env } = {}) {
-  const { specialty, date, period, time, childName, birthDate, responsibleName, phone, utm } = data;
+  const { specialty, date, period, time, complaint, childName, birthDate, responsibleName, phone, utm } = data;
 
   const existing = await findExistingHold({ phone, childName, now });
   if (existing) {
@@ -226,7 +231,7 @@ export async function createHold(data, { now = new Date(), env = process.env } =
   }
 
   const doctor = candidates.find((c) => c.doctorId === chosen.doctorId)?.doctor;
-  const patientId = await resolvePatient({ childName, birthDate, phone });
+  const patientId = await resolvePatient({ childName, birthDate, phone, complaint });
   const code = generateBookingCode();
 
   const appointment = await Appointment.create({
@@ -248,7 +253,8 @@ export async function createHold(data, { now = new Date(), env = process.env } =
     patientType: 'novo',
     responsible: responsibleName,
     secretaryNotes: `Responsável: ${responsibleName}`,
-    notes: `[AGENDADO PELO LINK ${code}] Família escolheu ${displayText(date, period, chosen.time)}. Confirmar no WhatsApp.`,
+    ...(complaint ? { mainComplaint: complaint } : {}),
+    notes: `[AGENDADO PELO LINK ${code}] Família escolheu ${displayText(date, period, chosen.time)}. Confirmar no WhatsApp.${complaint ? ` Queixa: ${complaint}` : ''}`,
     metadata: {
       origin: {
         source: originSourceFromUtm(utm),

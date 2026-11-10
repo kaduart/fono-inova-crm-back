@@ -64,6 +64,7 @@ describe('agendamento público — regras', () => {
     expect(r.ok).toBe(true);
     expect(r.data.time).toBe('14:20');
     expect(r.data.period).toBe('tarde');
+    expect(validateHoldPayload({ complaint: '  Não <b>fala</b>  ainda ' }, { now: NOW, env: {} }).data.complaint).toBe('Não bfala/b ainda');
     const bad = validateHoldPayload({ specialty: 'fonoaudiologia', time: '25:00' }, { now: NOW, env: {} });
     expect(bad.errors.time).toBeTruthy();
   });

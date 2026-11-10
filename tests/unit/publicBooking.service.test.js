@@ -113,6 +113,14 @@ describe('publicBookingService', () => {
     expect(err.extra.alternatives).toEqual([{ date: DATE, time: '08:00' }, { date: DATE, time: '08:40' }]);
   });
 
+  it('queixa principal vai para a reserva e para o cadastro', async () => {
+    await createHold({ ...base, complaint: 'Fala poucas palavras' }, { now: NOW, env: {} });
+    const appt = await Appointment.findOne({}).lean();
+    expect(appt.notes).toContain('Queixa: Fala poucas palavras');
+    expect(appt.mainComplaint).toBe('Fala poucas palavras');
+    expect((await Patient.findById(appt.patient).lean()).mainComplaint).toBe('Fala poucas palavras');
+  });
+
   it('teto diário de reservas online', async () => {
     await createHold(base, { now: NOW, env: { PUBLIC_BOOKING_DAILY_CAP: '1' } });
     await expect(createHold({ ...base, childName: 'Outra Pessoa', phone: '62988880000' }, { now: NOW, env: { PUBLIC_BOOKING_DAILY_CAP: '1' } }))

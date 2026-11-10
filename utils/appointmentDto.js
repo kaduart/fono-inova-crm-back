@@ -210,6 +210,7 @@ export function mapAppointmentDTO(appointment, extra = {}) {
         // Textos
         notes: appointment.notes || appointment.observations || '',
         observations: appointment.notes || appointment.observations || '',
+        mainComplaint: appointment.mainComplaint || appointment.patient?.mainComplaint || '',
         // Metadados
         visualFlag: appointment.visualFlag || null,
         createdAt: appointment.createdAt || null,

@@ -13,7 +13,7 @@ Decisão do Kadu (10/11, 19h): a página mostra os **horários livres de verdade
 | Rota | O que faz |
 |---|---|
 | `GET /options?specialty=&from=&days=` | dias (amanhã até 14 dias) com `times: ['08:00', ...]` (união dos profissionais) e `periods`. Cache 60 s no Redis. |
-| `POST /hold` | cria a reserva. Corpo: `specialty, date, time (HH:MM; ou period sem time), child{fullName,birthDate}, responsible{name,phone}, consentLgpd, utm{source,medium,campaign,content}, captchaToken, website` (isca). `201 { code, display }`, `409 SLOT_TAKEN { alternatives: [{date,time}] }` (ou `PERIOD_FULL` quando veio só período), `400 VALIDATION { fields }`, `429`, `503 DISABLED/DAILY_CAP`. |
+| `POST /hold` | cria a reserva. Corpo: `specialty, date, time (HH:MM; ou period sem time), child{fullName,birthDate}, responsible{name,phone}, complaint (queixa principal, opcional, até 500), consentLgpd, utm{source,medium,campaign,content}, captchaToken, website` (isca). `201 { code, display }`, `409 SLOT_TAKEN { alternatives: [{date,time}] }` (ou `PERIOD_FULL` quando veio só período), `400 VALIDATION { fields }`, `429`, `503 DISABLED/DAILY_CAP`. |
 | `GET /:code` | `{ status: reservado|confirmado|encerrado, display }`. Sem dado pessoal. |
 
 ## Variáveis de ambiente (Render, serviço da API)
@@ -30,6 +30,7 @@ No site: `VITE_TURNSTILE_SITE_KEY` (chave pública do Turnstile) e o `VITE_CRM_A
 ## Regras
 
 - **Escolha do horário**: só profissionais ativos da especialidade com horário configurado no dia (`weeklyAvailability`; sem configuração não entra). Ignora horário ocupado, feriado e horário "sombra" de paciente recorrente (`signals.isShadow`). Com `time`: entre os profissionais com aquele horário livre, o que tem mais horários livres no dia. Sem `time`: o menos ocupado e o primeiro horário do período. revalida com `checkSlotOverlap` e trava 20 s no Redis.
+- **Queixa principal**: campo `complaint` da página vai para `Appointment.mainComplaint` (campo novo), para as notas da reserva e para `Patient.mainComplaint` (só se o cadastro ainda não tiver). A triagem (`/api/v2/pre-appointments`) devolve `mainComplaint`.
 - **Anti-duplicado**: `findPossibleDuplicates` + `pickReusableDuplicate` (docs/PATIENT_DUPLICATES.md). Paciente novo nasce com `source: 'link_agendamento'` e `possibleDuplicateOf` quando houver suspeita. Mesmo telefone + mesma criança com reserva ativa → devolve a mesma reserva.
 - **Limites**: por IP (options 60/10 min, hold 5/h, status 30/10 min), por telefone (2 reservas/24 h) e teto diário.
 - **Sem vazamento**: nenhuma resposta traz ids, profissional, contagem de vagas ou se o paciente já existia. Logs só com os 4 últimos dígitos do telefone.

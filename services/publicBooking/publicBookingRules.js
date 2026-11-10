@@ -196,6 +196,9 @@ export function validateHoldPayload(body = {}, { now = new Date(), env = process
   const phone = normalizeBRPhone(body.responsible?.phone);
   if (!phone) errors.phone = 'Informe um WhatsApp com DDD.';
 
+  // Queixa principal (opcional): o que preocupa a família. Já adianta a triagem.
+  const complaint = String(body.complaint || '').replace(/[<>{}$\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+
   if (body.consentLgpd !== true) errors.consentLgpd = 'É preciso aceitar o uso dos dados para o agendamento.';
 
   const utm = {};
@@ -207,7 +210,7 @@ export function validateHoldPayload(body = {}, { now = new Date(), env = process
   return {
     ok: Object.keys(errors).length === 0,
     errors,
-    data: { specialty, date, period, time, childName, birthDate, responsibleName, phone, utm },
+    data: { specialty, date, period, time, complaint, childName, birthDate, responsibleName, phone, utm },
   };
 }
 
