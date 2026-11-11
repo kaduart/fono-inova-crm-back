@@ -95,4 +95,67 @@ export async function getAttributionByPhone(phone) {
   return lead ? { source: null, leadId: lead._id, from: 'lead' } : null;
 }
 
-export default { captureInboundAttribution, getAttributionByPhone };
+// Variantes com e sem o 9 após o DDD (mesma regra de getAttributionByPhone).
+function phoneVariants(normalized) {
+  const variants = [normalized];
+  const m = normalized.match(/^55(\d{2})(9?)(\d{8})$/);
+  if (m) variants.push(m[2] ? `55${m[1]}${m[3]}` : `55${m[1]}9${m[3]}`);
+  return variants;
+}
+
+/**
+ * Versão em LOTE de getAttributionByPhone: 2 consultas no total em vez de 2 por telefone.
+ * Mesmo resultado por telefone (LeadAttribution mais antiga entre as variantes → Lead.metaTracking).
+ * Devolve Map(telefone de entrada → atribuição | null).
+ * 11/11: o cron de conversões chamava getAttributionByPhone 1 a 1 para até 300 docs a cada 10 min.
+ */
+export async function getAttributionsByPhones(phones = []) {
+  const out = new Map();
+  const byInput = new Map(); // entrada → { normalized, variants }
+  for (const p of new Set((phones || []).filter(Boolean))) {
+    const normalized = normalizeE164BR(p);
+    if (!normalized) { out.set(p, null); continue; }
+    byInput.set(p, { normalized, variants: phoneVariants(normalized) });
+  }
+  if (!byInput.size) return out;
+
+  const allVariants = [...new Set([...byInput.values()].flatMap((v) => v.variants))];
+  const allNormalized = [...new Set([...byInput.values()].map((v) => v.normalized))];
+
+  const [attrs, leads] = await Promise.all([
+    LeadAttribution.find({ phone: { $in: allVariants } }).sort({ firstMessageAt: 1 }).lean(),
+    Lead.find({ 'contact.phone': { $in: allNormalized } }).select('_id contact.phone metaTracking origin').lean(),
+  ]);
+
+  const attrByPhone = new Map();
+  for (const a of attrs) if (!attrByPhone.has(a.phone)) attrByPhone.set(a.phone, a); // 1º = mais antigo
+  const leadByPhone = new Map();
+  for (const l of leads) {
+    const ph = l.contact?.phone;
+    // Prefere o lead que já tem origem (findOne pegaria um qualquer)
+    if (!leadByPhone.has(ph) || (!leadByPhone.get(ph).metaTracking?.source && l.metaTracking?.source)) leadByPhone.set(ph, l);
+  }
+
+  for (const [input, { normalized, variants }] of byInput) {
+    const found = variants.map((v) => attrByPhone.get(v)).filter(Boolean)
+      .sort((a, b) => new Date(a.firstMessageAt || 0) - new Date(b.firstMessageAt || 0))[0];
+    if (found) { out.set(input, { ...found, from: 'attribution' }); continue; }
+    const lead = leadByPhone.get(normalized);
+    if (lead?.metaTracking?.source) {
+      out.set(input, {
+        source: lead.metaTracking.source,
+        method: 'lead',
+        gclid: lead.metaTracking.gclid || null,
+        fbclid: lead.metaTracking.fbclid || null,
+        ttclid: lead.metaTracking.ttclid || null,
+        leadId: lead._id,
+        from: 'lead',
+      });
+    } else {
+      out.set(input, lead ? { source: null, leadId: lead._id, from: 'lead' } : null);
+    }
+  }
+  return out;
+}
+
+export default { captureInboundAttribution, getAttributionByPhone, getAttributionsByPhones };

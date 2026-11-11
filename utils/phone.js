@@ -20,6 +20,8 @@ export const digitsOnly = (phone) => {
  * @param {string} phone - Telefone em qualquer formato
  * @returns {string|null} - Telefone normalizado ou null se inválido
  */
+// 11/11: normalizeE164BR roda em toda mensagem, envio e cron. O console.log por chamada
+// enchia o log (cron de conversões: centenas de linhas a cada 10 min). Só o caso inválido loga.
 export const normalizeE164BR = (phone) => {
     if (!phone || String(phone).trim() === "") return null;
 
@@ -60,20 +62,16 @@ export const normalizeE164BR = (phone) => {
         // Nesse caso, apenas adicionamos 55 na frente
         if (numero.startsWith("9")) {
             s = "55" + ddd + numero; // Já tem 9, só adiciona 55
-            console.log(`📞 [PHONE] já tem 9: ${phone} → ${s}`);
         } else if (numero.charAt(0) >= "6" && numero.charAt(0) <= "9") {
             // Começa com 6,7,8 mas não com 9 → adiciona o 9
             s = "55" + ddd + "9" + numero;
-            console.log(`📞 [PHONE] +9 (12→13): ${phone} → ${s}`);
         }
     } else if (s.length === 13) {
         // Já tem 13 dígitos: 55 + DDD + 9 + número = OK
-        console.log(`📞 [PHONE] OK (13): ${phone} → ${s}`);
     } else if (s.length === 11 && !s.startsWith("55")) {
         // Não tem 55 no início, tem 11 dígitos: DDD + 9 + número
         // Adiciona 55 na frente
         s = "55" + s;
-        console.log(`📞 [PHONE] +55: ${phone} → ${s}`);
     } else if (s.length === 10 && !s.startsWith("55")) {
         // Não tem 55 no início, tem 10 dígitos: DDD + número (sem 9)
         const ddd = s.substring(0, 2);
@@ -82,10 +80,8 @@ export const normalizeE164BR = (phone) => {
         
         if (primeiroDigito >= 6 && primeiroDigito <= 9) {
             s = "55" + ddd + "9" + numero;
-            console.log(`📞 [PHONE] +55+9: ${phone} → ${s}`);
         } else {
             s = "55" + s;
-            console.log(`📞 [PHONE] +55 (fixo?): ${phone} → ${s}`);
         }
     }
 
