@@ -36,7 +36,8 @@ import {
   todaySP,
 } from './publicBookingRules.js';
 
-const OPTIONS_CACHE_TTL = 60;
+// 5 min: a reserva revalida o horário no banco (checkSlotOverlap) e limpa este cache.
+const OPTIONS_CACHE_TTL = 300;
 const ACTIVE_STATUSES = ['pre_agendado', 'scheduled', 'confirmed', 'paid'];
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
@@ -64,18 +65,19 @@ async function doctorsForDay(specialty, ymd, cache) {
   return cache.doctors.filter((d) => (d.weeklyAvailability || []).some((w) => w.day === key && (w.times || []).length));
 }
 
+/** Horários de todos os profissionais do dia, em paralelo (antes era um por um: ~21 s para 10 dias). */
 async function candidatesForDay(specialty, ymd, cache = {}) {
   const doctors = await doctorsForDay(specialty, ymd, cache);
-  const out = [];
-  for (const d of doctors) {
+  const results = await Promise.all(doctors.map(async (d) => {
     try {
       const slots = await calculateAvailableSlots(String(d._id), ymd);
-      out.push({ doctorId: String(d._id), doctor: d, slots });
+      return { doctorId: String(d._id), doctor: d, slots };
     } catch (err) {
       console.error('[PUBLIC-BOOKING] erro ao calcular horários', String(d._id), ymd, err.message);
+      return null;
     }
-  }
-  return out;
+  }));
+  return results.filter(Boolean);
 }
 
 export async function getOptions({ specialty, from, days = 7, now = new Date() }) {
@@ -89,18 +91,23 @@ export async function getOptions({ specialty, from, days = 7, now = new Date() }
     try { return JSON.parse(cached); } catch { /* recalcula */ }
   }
 
+  const startedAt = Date.now();
   const cache = {};
-  const result = [];
+  const dates = [];
   for (let i = 0; i < count; i++) {
     const ymd = addDaysYMD(start, i);
     if (!isDateInWindow(ymd, now)) break;
-    const candidates = await candidatesForDay(specialty, ymd, cache);
-    const periods = periodsAvailability(candidates);
-    const times = publicTimes(candidates);
-    if (times.length) {
-      result.push({ date: ymd, label: dayLabel(ymd), periods, times });
-    }
+    dates.push(ymd);
   }
+  // Carrega os profissionais uma vez e calcula todos os dias em paralelo.
+  await doctorsForDay(specialty, start, cache);
+  const perDay = await Promise.all(dates.map(async (ymd) => {
+    const candidates = await candidatesForDay(specialty, ymd, cache);
+    const times = publicTimes(candidates);
+    return times.length ? { date: ymd, label: dayLabel(ymd), periods: periodsAvailability(candidates), times } : null;
+  }));
+  const result = perDay.filter(Boolean);
+  console.log('[PUBLIC-BOOKING] options', { specialty, days: dates.length, ms: Date.now() - startedAt });
 
   const payload = { specialty, days: result, expiresIn: OPTIONS_CACHE_TTL };
   await safeRedis.setex(cacheKey, OPTIONS_CACHE_TTL, JSON.stringify(payload));
