@@ -21,3 +21,7 @@ export const PATIENT_INACTIVATION_REASONS = Object.freeze({
 export function isValidInactivationReason(reason) {
   return typeof reason === 'string' && Object.prototype.hasOwnProperty.call(PATIENT_INACTIVATION_REASONS, reason);
 }
+
+export function getInactivationReasonLabel(reason) {
+  return isValidInactivationReason(reason) ? PATIENT_INACTIVATION_REASONS[reason] : null;
+}

@@ -428,7 +428,9 @@ const appointmentSchema = new mongoose.Schema({
            // 2026-10-16: rotinas automáticas que antes cancelavam SEM marca (não são pedido de ninguém)
            'liminar_plan_update', 'unconfirmed_auto', 'package_exhausted',
            // 2026-11-05: contrato de liminar zerou → agendamentos a partir de amanhã liberados
-           'liminar_exhausted']
+           'liminar_exhausted',
+           // 2026-11-11: paciente inativado → sessões futuras canceladas junto
+           'patient_inactivated']
   },
   // Quem SOLICITOU o cancelamento (2026-10-16). Eixo diferente de cancelSource
   // (rotina do sistema) e de canceledBy (usuário que registrou). null = "Não

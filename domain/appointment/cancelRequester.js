@@ -27,6 +27,7 @@ export const SYSTEM_CANCEL_SOURCES = Object.freeze([
   'unconfirmed_auto',    // job das 18h: não confirmou
   'package_exhausted',   // pacote esgotado: sessões futuras liberadas
   'liminar_exhausted',   // contrato de liminar zerou: agendamentos a partir de amanhã liberados
+  'patient_inactivated', // paciente inativado: sessões futuras canceladas junto (11/11/2026)
 ]);
 
 // Canais SEM solicitante informado, mantidos visíveis no relatório (não é "inferência").
