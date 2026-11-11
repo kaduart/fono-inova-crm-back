@@ -40,13 +40,39 @@ function toGoogleDateTime(date) {
   return `${iso}-03:00`;
 }
 
+// ─── Qual ação de conversão recebe o upload ───────────────────────────────────
+// 11/11/2026: duas ações SEPARADAS no Google Ads, para não contar em dobro.
+//  - 'scheduled'       → "Avaliação agendada" (GOOGLE_ADS_CONVERSION_ACTION_ID). É a MESMA ação que o
+//                        feed google-offline.csv alimenta (routes/adsFeed.js). Cron + CSV usam o mesmo
+//                        order_id `appt_<id>`, então o Google deduplica se os dois estiverem ligados.
+//  - 'evaluation_done' → "Avaliação realizada" (GOOGLE_ADS_EVAL_DONE_ACTION_ID), ao CONCLUIR a avaliação.
+//                        Sem esse env fica DESLIGADO (skipped). NUNCA cai na ação "Avaliação agendada".
+// order_id com prefixo `aval-` (services/appointment/evaluationConversion.service.js) é tratado como
+// 'evaluation_done' mesmo que o chamador não informe `kind` — trava contra contagem em dobro.
+export const CONVERSION_KINDS = Object.freeze({
+  scheduled: 'GOOGLE_ADS_CONVERSION_ACTION_ID',
+  evaluation_done: 'GOOGLE_ADS_EVAL_DONE_ACTION_ID',
+});
+
+export function resolveConversionAction({ kind, orderId } = {}, env = process.env) {
+  const resolvedKind = String(orderId || '').startsWith('aval-') ? 'evaluation_done' : (kind || 'scheduled');
+  const envName = CONVERSION_KINDS[resolvedKind];
+  if (!envName) return { kind: resolvedKind, envName: null, actionId: null };
+  const actionId = String(env[envName] || '').trim() || null;
+  return { kind: resolvedKind, envName, actionId };
+}
+
 /**
+ * @param {{gclid:string, value?:number, currency?:string, eventTime?:Date, orderId?:string,
+ *          kind?:'scheduled'|'evaluation_done'}} params
  * @returns {Promise<{status:'sent'|'skipped'|'failed', reason?:string, retryable?:boolean}>}
  */
-export async function uploadOfflineConversion({ gclid, value, currency = 'BRL', eventTime, orderId }) {
+export async function uploadOfflineConversion({ gclid, value, currency = 'BRL', eventTime, orderId, kind }) {
   if (!gclid) return { status: 'skipped', reason: 'sem_gclid' };
-  const actionId = process.env.GOOGLE_ADS_CONVERSION_ACTION_ID;
-  if (!actionId) return { status: 'skipped', reason: 'GOOGLE_ADS_CONVERSION_ACTION_ID ausente' };
+  const action = resolveConversionAction({ kind, orderId });
+  if (!action.envName) return { status: 'skipped', reason: `tipo_de_conversao_desconhecido:${action.kind}` };
+  if (!action.actionId) return { status: 'skipped', reason: `${action.envName} ausente (${action.kind} desligado)` };
+  const actionId = action.actionId;
   const ctx = await getCustomer();
   if (!ctx) return { status: 'skipped', reason: 'google_ads_nao_configurado' };
 
@@ -78,4 +104,4 @@ export async function uploadOfflineConversion({ gclid, value, currency = 'BRL', 
   }
 }
 
-export default { uploadOfflineConversion };
+export default { uploadOfflineConversion, resolveConversionAction };
