@@ -33,6 +33,17 @@ export function allowedSpecialties(env = process.env) {
   return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
+/** Profissionais fora do link público (ex.: cadastro de teste): IDs ou nomes completos, separados por vírgula. */
+export function excludedDoctorIds(env = process.env) {
+  return new Set(String(env.PUBLIC_BOOKING_EXCLUDED_DOCTORS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+}
+
+export function isDoctorExcluded(doctor, excluded) {
+  if (!excluded.size || !doctor) return false;
+  const name = String(doctor.fullName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return excluded.has(String(doctor._id).toLowerCase()) || (name && excluded.has(name));
+}
+
 export function dailyCap(env = process.env) {
   const n = parseInt(env.PUBLIC_BOOKING_DAILY_CAP, 10);
   return Number.isFinite(n) && n >= 0 ? n : 15;
