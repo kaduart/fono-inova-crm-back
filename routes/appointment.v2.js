@@ -601,13 +601,11 @@ router.patch('/:id/complete', auth, requireStaff, async (req, res) => {
         });
 
         // 🌟 Pedido de avaliação no Google (pós-sessão). Fire-and-forget: NUNCA quebra a conclusão.
-        // Dispara só em 'completed'; dedupe por paciente (90d), delay (~3h) e link ficam no serviço.
-        // ⏸️ DESATIVADO (10/11/2026, a pedido do Kadu): nao disparar pedido de avaliacao
-        // pos-sessao por enquanto. Para religar: descomentar a chamada e definir
-        // GOOGLE_REVIEW_URL no servico fono-inova-crm-back. Servico/endpoint/campo ficam inertes ate la.
-        // requestReviewNotification(id).catch((e) =>
-        //     console.error('[review] enqueue falhou (não crítico):', e?.message)
-        // );
+        // Dispara só em 'completed'; dedupe por paciente (90d), delay (~3h) e link no serviço.
+        // Inerte até GOOGLE_REVIEW_URL estar setado (sem link: retorna no_link, não envia).
+        requestReviewNotification(id).catch((e) =>
+            console.error('[review] enqueue falhou (não crítico):', e?.message)
+        );
 
         // 🎯 Conversão offline no Google Ads quando a AVALIAÇÃO é concluída (por gclid).
         // Fire-and-forget: NUNCA quebra a conclusão. Inerte até os env GOOGLE_ADS_* estarem setados.
