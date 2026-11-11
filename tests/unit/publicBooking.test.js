@@ -15,6 +15,7 @@ import {
   publicStatusOf,
   todaySP,
   validateHoldPayload,
+  excludedDoctorIds,
 } from '../../services/publicBooking/publicBookingRules.js';
 import { verifyTurnstile } from '../../routes/publicBooking.js';
 
@@ -182,5 +183,12 @@ describe('agendamento público — rota', async () => {
     const r = await request(appWith({ PUBLIC_BOOKING_ENABLED: 'true' })).post('/api/public/booking/hold').send({ website: 'spam' });
     expect(r.status).toBe(201);
     expect(r.body.code).toBe('FI-000000');
+  });
+});
+
+describe('excludedDoctorIds', () => {
+  it('lê a lista separada por vírgula e ignora vazio', () => {
+    expect([...excludedDoctorIds({ PUBLIC_BOOKING_EXCLUDED_DOCTORS: ' a1, b2 ,,' })]).toEqual(['a1', 'b2']);
+    expect(excludedDoctorIds({}).size).toBe(0);
   });
 });

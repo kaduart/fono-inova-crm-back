@@ -33,6 +33,11 @@ export function allowedSpecialties(env = process.env) {
   return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
+/** IDs de profissionais que não entram no link público (ex.: cadastro de teste). Vírgula separa. */
+export function excludedDoctorIds(env = process.env) {
+  return new Set(String(env.PUBLIC_BOOKING_EXCLUDED_DOCTORS || '').split(',').map((s) => s.trim()).filter(Boolean));
+}
+
 export function dailyCap(env = process.env) {
   const n = parseInt(env.PUBLIC_BOOKING_DAILY_CAP, 10);
   return Number.isFinite(n) && n >= 0 ? n : 15;

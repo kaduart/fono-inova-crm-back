@@ -34,6 +34,7 @@ import {
   publicTimes,
   publicStatusOf,
   todaySP,
+  excludedDoctorIds,
 } from './publicBookingRules.js';
 
 // 5 min: a reserva revalida o horário no banco (checkSlotOverlap) e limpa este cache.
@@ -62,7 +63,8 @@ async function doctorsForDay(specialty, ymd, cache) {
       .lean();
   }
   const key = dayKeyOf(ymd);
-  return cache.doctors.filter((d) => (d.weeklyAvailability || []).some((w) => w.day === key && (w.times || []).length));
+  const excluded = excludedDoctorIds();
+  return cache.doctors.filter((d) => !excluded.has(String(d._id)) && (d.weeklyAvailability || []).some((w) => w.day === key && (w.times || []).length));
 }
 
 /** Horários de todos os profissionais do dia, em paralelo (antes era um por um: ~21 s para 10 dias). */

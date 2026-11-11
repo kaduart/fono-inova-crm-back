@@ -24,6 +24,7 @@ Decisão do Kadu (10/11, 19h): a página mostra os **horários livres de verdade
 | `TURNSTILE_SECRET_KEY` | vazio | captcha Cloudflare Turnstile. Vazio = sem captcha (valem isca, rate limit e teto). |
 | `PUBLIC_BOOKING_DAILY_CAP` | 15 | máximo de reservas online por dia. |
 | `PUBLIC_BOOKING_SPECIALTIES` | fono, psico, TO, neuropsico, psicopedagogia, fisio | especialidades liberadas (valores do enum de `Doctor.specialty`). |
+| `PUBLIC_BOOKING_EXCLUDED_DOCTORS` | vazio | IDs de profissionais (vírgula) que não aparecem no link, ex.: cadastro de teste. Não mexe no cadastro. |
 
 No site: `VITE_TURNSTILE_SITE_KEY` (chave pública do Turnstile) e o `VITE_CRM_API_URL` que já existe.
 
