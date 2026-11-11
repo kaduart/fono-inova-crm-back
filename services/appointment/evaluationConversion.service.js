@@ -46,7 +46,10 @@ export async function reportEvaluationConversion(appointmentId) {
     gclid,
     value,
     eventTime: appt.date || new Date(),
-    orderId: `aval-${appointmentId}`, // dedupe no lado do Google (1 conversão por avaliação)
+    // Contrato ADS_CONVERSION (PR #54): o prefixo 'aval-' faz o resolveConversionAction rotear
+    // para a ação SEPARADA "Avaliação realizada" (GOOGLE_ADS_EVAL_DONE_ACTION_ID), nunca para a
+    // "Avaliação agendada". Sem esse env => skipped. Não trocar o prefixo. (orderId dedupe no Google.)
+    orderId: `aval-${appointmentId}`,
   });
 }
 
