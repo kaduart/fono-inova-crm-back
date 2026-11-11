@@ -28,6 +28,7 @@ import { completeSessionV2 } from '../services/completeSessionService.v2.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { requestCancellationNotification } from '../services/appointment/cancellationNotification.service.js';
 import { requestReviewNotification } from '../services/appointment/reviewRequestNotification.service.js';
+import { reportEvaluationConversion } from '../services/appointment/evaluationConversion.service.js';
 import {
   markAttendanceConfirmationSent,
   updateAttendanceConfirmationManually,
@@ -607,6 +608,12 @@ router.patch('/:id/complete', auth, requireStaff, async (req, res) => {
         // requestReviewNotification(id).catch((e) =>
         //     console.error('[review] enqueue falhou (não crítico):', e?.message)
         // );
+
+        // 🎯 Conversão offline no Google Ads quando a AVALIAÇÃO é concluída (por gclid).
+        // Fire-and-forget: NUNCA quebra a conclusão. Inerte até os env GOOGLE_ADS_* estarem setados.
+        reportEvaluationConversion(id).catch((e) =>
+            console.error('[ads-conv] upload falhou (não crítico):', e?.message)
+        );
 
         const durationMs = Date.now() - startTime;
         console.log(`[complete] ✅ Completo via serviço oficial`, {
