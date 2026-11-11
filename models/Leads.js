@@ -307,6 +307,7 @@ const leadSchema = new mongoose.Schema({
     utmSource: { type: String, default: null },
     utmCampaign: { type: String, default: null },
     utmMedium: { type: String, default: null },
+    utmContent: { type: String, default: null },   // utm_content = criativo (vsl/flyer1/2/3)
     detectedAt: { type: Date, default: Date.now },
     // Métricas calculadas (denormalizadas para performance)
     leadCost: { type: Number, default: null },        // CPL quando convertido
