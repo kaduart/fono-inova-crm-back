@@ -54,13 +54,26 @@ leadAttribution (por telefone)┘                                              �
 | Plataforma | Evento enviado | Identificador | Janela | Token/ID no `.env` |
 |---|---|---|---|---|
 | Meta (CAPI) | `Purchase` (`action_source: physical_store`) | telefone (SHA-256) + `fbc` | 7 dias | `META_PIXEL_ID`, `META_CONVERSIONS_TOKEN` |
-| Google Ads | offline conversion | `gclid` | 90 dias | `GOOGLE_ADS_*`, `GOOGLE_ADS_CONVERSION_ACTION_ID` |
+| Google Ads | offline conversion "Avaliação agendada" | `gclid` | 90 dias | `GOOGLE_ADS_*`, `GOOGLE_ADS_CONVERSION_ACTION_ID` |
+| Google Ads | offline conversion "Avaliação realizada" (ao concluir a avaliação) | `gclid` | 90 dias | `GOOGLE_ADS_EVAL_DONE_ACTION_ID` (sem ele: desligado) |
 | TikTok (Events API v1.3) | `Schedule` | telefone (SHA-256 E.164) + `ttclid` | 7 dias | `TIKTOK_EVENTS_TOKEN`, `TIKTOK_PIXEL_ID` (default DB3PQARC77UA626EKV60) |
 
 - `event_id = appt_<appointmentId>` em todas → dedupe/idempotência na plataforma.
 - `value = Appointment.sessionValue` ou `ADS_CONVERSION_DEFAULT_VALUE` (220).
 - TikTok Events API: `POST /open_api/v1.3/event/track/`, header `Access-Token`,
   body `{ event_source:'web', event_source_id:<pixel>, data:[{ event, event_time, event_id, user:{phone,ttclid}, properties:{value,currency} }] }`.
+
+### 4.1 Google: duas ações separadas (INVARIANTE desde 11/11/2026)
+
+- **"Avaliação agendada"** recebe o agendamento por DOIS caminhos possíveis: o feed
+  `GET /api/ads-feed/google-offline.csv` (upload programado) e o cron por API (`GOOGLE_ADS_CONVERSION_ACTION_ID`).
+  Os dois usam o mesmo id `appt_<appointmentId>` (`transaction_id`/`order_id`), então o Google deduplica.
+- **"Avaliação realizada"** (avaliação concluída) é uma ação **separada**, só via API,
+  `GOOGLE_ADS_EVAL_DONE_ACTION_ID`, com `order_id = aval-<appointmentId>`. Sem esse env fica **desligada**.
+- `resolveConversionAction` (services/googleAdsConversionsService.js) manda qualquer `order_id` que comece
+  com `aval-` para "Avaliação realizada" e **nunca** para a agendada, mesmo que o chamador esqueça o `kind`.
+- No Google Ads, deixe "Avaliação realizada" como ação **secundária** enquanto a campanha otimiza por
+  "Avaliação agendada", para não somar as duas na coluna Conversões.
 
 ## 5. Privacidade (INVARIANTE — nunca quebrar)
 

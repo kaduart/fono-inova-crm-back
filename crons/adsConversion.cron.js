@@ -11,7 +11,8 @@
 //   ENABLE_ADS_CONVERSION=true        liga o cron (default: desligado)
 //   ADS_CONVERSION_DRY_RUN=true       só loga, não grava nem envia
 //   ADS_CONVERSION_DEFAULT_VALUE=220  valor quando sessionValue = 0 (ex.: convênio)
-//   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (importação)
+//   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (a mesma do feed google-offline.csv)
+//   GOOGLE_ADS_EVAL_DONE_ACTION_ID    id da ação SEPARADA "Avaliação realizada" (sem ele: desligado)
 //   TIKTOK_EVENTS_TOKEN               Access Token da TikTok Events API (envio por ttclid)
 // Nunca envia dado clínico: só telefone (hash), valor, id e origem.
 // Doc: back/docs/ADS_CONVERSION_CONTRACT.md
@@ -304,7 +305,9 @@ async function processPending() {
 
     if (conv.google?.status === 'pending' || conv.google?.status === 'failed') {
       const r = await uploadOfflineConversion({
-        gclid: conv.gclid, value: conv.value, eventTime: conv.eventTime, orderId: conv.appointment,
+        gclid: conv.gclid, value: conv.value, eventTime: conv.eventTime,
+        // Mesmo id do feed CSV (transaction_id = appt_<id>): se API e CSV estiverem ligados, o Google deduplica.
+        orderId: `appt_${conv.appointment}`, kind: 'scheduled',
       });
       conv.google = { status: r.status, sentAt: r.status === 'sent' ? new Date() : null, reason: r.reason || null };
       if (r.status === 'sent') sent++;
