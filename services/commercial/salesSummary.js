@@ -87,7 +87,7 @@ async function enrichLeads(leads, start, end, links = new Map()) {
       { $match: { ...buildCashMatch(start, end), patient: { $in: pids } } },
       { $group: { _id: '$patient', total: { $sum: '$amount' } } },
     ]) : [],
-    phones.length ? LeadAttribution.find({ phone: { $in: phones } }, { phone: 1, source: 1, adId: 1, campaign: 1 }).lean() : [],
+    phones.length ? LeadAttribution.find({ phone: { $in: phones } }, { phone: 1, source: 1, adId: 1, campaign: 1, method: 1 }).lean() : [],
   ]);
 
   const msgMap = new Map(msgs.map(m => [String(m._id), m]));
@@ -106,6 +106,8 @@ async function enrichLeads(leads, start, end, links = new Map()) {
       origin: l.origin || null,
       attributed: !!attr,
       channel: channelOf(attr?.source, l.origin),
+      // Veio pelo site: assinatura do site na 1ª mensagem do WhatsApp ou lead criado pelo site
+      viaSite: attr?.method === 'site_signature' || channelOf(null, l.origin) === 'site',
       // Conversa atribuída do WhatsApp: a pessoa já mandou mensagem para a clínica.
       conversed: l.fromAttribution ? true : !!(m && m.inbound > 0 && m.outbound > 0),
       scheduled: !!(a?.total) || SCHEDULED_LEAD_STATUSES.includes(l.status),
@@ -220,6 +222,13 @@ export function roiSummary(startStr, endStr) {
 
     const tot = channels.reduce((t, c) => ({ spend: t.spend + c.spend, leads: t.leads + c.leads, patients: t.patients + c.patients, revenue: t.revenue + c.revenue }), { spend: 0, leads: 0, patients: 0, revenue: 0 });
     const attributed = rows.filter(r => r.attributed).length;
+    const siteRows = rows.filter(r => r.viaSite);
+    const site = {
+      leads: siteRows.length,
+      patients: siteRows.filter(r => r.pack).length,
+      scheduled: siteRows.filter(r => r.scheduled).length,
+      revenue: Math.round(siteRows.reduce((t, r) => t + (r.revenue || 0), 0) * 100) / 100,
+    };
     const withOrigin = rows.filter(r => r.channel !== 'desconhecido').length;
 
     return {
@@ -227,6 +236,7 @@ export function roiSummary(startStr, endStr) {
       totals: roiTotals(tot),
       coverage: { leads: rows.length, attributed, withOrigin, rate: pct(withOrigin, rows.length) },
       channels,
+      site, // todos os canais que passaram pelo site (Analytics do site)
     };
   });
 }
