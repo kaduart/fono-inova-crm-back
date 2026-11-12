@@ -22,3 +22,21 @@ export const WAITLIST_CONSENT_VERSIONS = ['convenio-interesse-2026-09'];
 
 /** Chave de unicidade do cadastro ativo: garante, via índice único parcial, um ativo por telefone + convênio. */
 export const waitlistActiveKey = (phone, convenio) => `${phone}:${convenio}`;
+
+// Origem do cadastro: formulário do site ou conversa do WhatsApp Web (varredura/captura automática).
+export const WAITLIST_CHANNELS = ['site', 'whatsapp_web'];
+
+// Palavras que indicam interesse no convênio dentro de uma conversa do WhatsApp.
+// O termo vai para a busca nativa do WhatsApp; o regex confirma no texto (evita falso positivo).
+export const WAITLIST_WHATSAPP_KEYWORDS = {
+    geap: { terms: ['geap'], regex: /\bgeap\b/i },
+    ipasgo: { terms: ['ipasgo'], regex: /\bipasgo\b/i },
+    bradesco: { terms: ['bradesco saude', 'bradesco saúde'], regex: /\bbradesco\s+sa[uú]de\b/i },
+};
+
+/** Convênios da lista de interesse citados no texto (ex.: "vocês atendem GEAP?" → ['geap']). */
+export const matchWaitlistConvenios = (text) => {
+    const body = String(text || '');
+    if (!body) return [];
+    return CONVENIOS_WAITLIST.filter((slug) => WAITLIST_WHATSAPP_KEYWORDS[slug]?.regex.test(body));
+};

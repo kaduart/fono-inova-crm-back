@@ -86,6 +86,19 @@ export const doctorEvents = new QueueEvents("doctor-processing", {
     connection: bullMqConnection 
 });
 
+// 🔎 Varredura SÓ LEITURA do histórico do WhatsApp Web (lista de interesse em convênio).
+// Consumidor: workers/entrypoints/whatsapp-child.js (ADR-012). Fora do horário do crm-worker o job
+// fica esperando no Redis; as tentativas cobrem um restart do worker no meio da varredura.
+export const whatsappScanQueue = new Queue("whatsapp-scan", {
+    connection: bullMqConnection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60000 },
+        removeOnComplete: 50,
+        removeOnFail: 50
+    }
+});
+
 // 💬 Fila de envio de mensagens WhatsApp (API web enfileira, worker consome)
 // attempts: 8 + backoff 30s → cobre até ~15 min de deploy/restart do worker
 // 30s → 60s → 120s → 240s → 480s → 960s → 1920s (acumulado ~65 min)

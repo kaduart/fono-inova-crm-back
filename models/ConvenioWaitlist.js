@@ -1,6 +1,6 @@
 // models/ConvenioWaitlist.js
 import mongoose from 'mongoose';
-import { CONVENIOS_WAITLIST, WAITLIST_STATUS } from '../constants/convenioWaitlist.js';
+import { CONVENIOS_WAITLIST, WAITLIST_CHANNELS, WAITLIST_STATUS } from '../constants/convenioWaitlist.js';
 
 const submissionSchema = new mongoose.Schema({
     especialidade: { type: String, default: null },
@@ -37,6 +37,17 @@ const convenioWaitlistSchema = new mongoose.Schema({
     // Cada reenvio (mesmo convênio) atualiza o registro ativo e o histórico fica aqui
     requestCount: { type: Number, default: 1 },
     submissions: { type: [submissionSchema], default: [] },
+
+    // De onde veio: formulário do site ou conversa do WhatsApp Web (docs/flows/convenio_interest_whatsapp.md)
+    channel: { type: String, enum: WAITLIST_CHANNELS, default: 'site' },
+    whatsapp: {
+        firstMentionAt: { type: Date, default: null },
+        lastMentionAt: { type: Date, default: null },
+        snippet: { type: String, default: null },        // trecho da mensagem (prioriza a do contato)
+        snippetFromContact: { type: Boolean, default: false },
+        mentionedBy: { type: [String], default: undefined }, // 'contato' | 'clinica'
+        capturedBy: { type: String, default: null },     // 'scan' | 'live'
+    },
 
     source: {
         pagePath: { type: String, default: null },
