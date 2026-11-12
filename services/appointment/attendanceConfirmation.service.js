@@ -22,6 +22,19 @@ async function emitAttendanceConfirmationUpdated(appointmentId, attendanceConfir
   }
 }
 
+// WhatsApp às vezes entrega o celular no formato antigo (sem o 9 após o DDD) e o cadastro
+// tem o 9, ou o contrário. Compara as duas formas.
+function phoneKey(normalized) {
+  const m = String(normalized || '').match(/^55(\d{2})9?([6-9]\d{7})$/);
+  return m ? `55${m[1]}${m[2]}` : String(normalized || '');
+}
+
+export function isSamePhone(a, b) {
+  const na = normalizeE164BR(a || '');
+  const nb = normalizeE164BR(b || '');
+  return Boolean(na && nb && phoneKey(na) === phoneKey(nb));
+}
+
 function isRealMessageId(value) {
   const v = String(value || '').trim();
   return !!v && !/^(unknown|undefined|null)$/i.test(v);
@@ -54,8 +67,7 @@ async function findPendingConfirmationByPhone(normalizedPhone, respondedAt = new
       .sort({ 'attendanceConfirmation.sentAt': -1, date: 1, time: 1 })
       .lean()
   ).find((candidate) => {
-    const candidatePhone = normalizeE164BR(candidate.patient?.phone || candidate.patientInfo?.phone || '');
-    return candidatePhone && candidatePhone === normalizedPhone;
+    return isSamePhone(candidate.patient?.phone || candidate.patientInfo?.phone || '', normalizedPhone);
   }) || null;
 }
 
@@ -69,8 +81,7 @@ async function findPendingConfirmationById(appointmentId, normalizedPhone) {
     .lean();
 
   if (!candidate) return null;
-  const candidatePhone = normalizeE164BR(candidate.patient?.phone || candidate.patientInfo?.phone || '');
-  return candidatePhone === normalizedPhone ? candidate : null;
+  return isSamePhone(candidate.patient?.phone || candidate.patientInfo?.phone || '', normalizedPhone) ? candidate : null;
 }
 
 function normalizeText(value) {
@@ -237,8 +248,19 @@ export async function recordAttendanceConfirmationPollVote({ phone, pollMessageI
       .populate('patient', 'phone')
       .lean();
 
-    const byMessageIdPhone = normalizeE164BR(byMessageId?.patient?.phone || byMessageId?.patientInfo?.phone || '');
-    if (byMessageId && byMessageIdPhone === normalizedPhone) {
+    // O ID da enquete é único da conversa para onde ela foi enviada: só quem está nessa
+    // conversa consegue votar. Então vale mesmo se o telefone resolvido do votante não bater
+    // com o cadastro (formato sem o 9, @lid resolvido para outro número, responsável com
+    // outro celular). Antes isso descartava o voto e o sync repetia a cada 15 s para sempre.
+    if (byMessageId) {
+      const cadastro = byMessageId.patient?.phone || byMessageId.patientInfo?.phone || '';
+      if (!isSamePhone(cadastro, normalizedPhone)) {
+        console.warn('[AttendanceConfirmation] voto pela enquete com telefone diferente do cadastro — aceito pelo ID da enquete', {
+          appointmentId: String(byMessageId._id),
+          votanteFinal: normalizedPhone.slice(-4),
+          cadastroFinal: normalizeE164BR(cadastro || '')?.slice(-4) || null,
+        });
+      }
       appointment = byMessageId;
     }
   }
