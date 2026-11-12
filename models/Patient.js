@@ -65,6 +65,9 @@ const patientSchema = new mongoose.Schema({
   // das 10h quanto pro botão manual do dashboard, então os dois nunca mandam duas vezes.
   birthdayMessageSentYear: { type: Number, default: null },
   birthdayMessageSentAt: { type: Date, default: null },
+  // Como o parabéns do ano foi resolvido: 'auto' (cron/botão, enfileirado no WhatsApp da clínica)
+  // ou 'manual' (a equipe deu parabéns por fora, ex.: link do WhatsApp de um aniversário que passou).
+  birthdayMessageSentVia: { type: String, enum: ['auto', 'manual', null], default: null },
 
   // ─── DUPLICIDADE (03/11/2026) ─────────────────────────────
   // Origem do cadastro (erp, agenda_externa, agenda_v2, lead, ...). Antes era enviado por
