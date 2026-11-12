@@ -10,6 +10,14 @@ const submissionSchema = new mongoose.Schema({
     at: { type: Date, default: Date.now },
 }, { _id: false });
 
+const bulkSendSchemaDef = () => ({
+    queuedAt: { type: Date, default: null },
+    queuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    sentAt: { type: Date, default: null },
+    messageId: { type: String, default: null },
+    error: { type: String, default: null },
+});
+
 const convenioWaitlistSchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true }, // E.164 BR (ex.: 5562992013573)
@@ -48,6 +56,10 @@ const convenioWaitlistSchema = new mongoose.Schema({
         mentionedBy: { type: [String], default: undefined }, // 'contato' | 'clinica'
         capturedBy: { type: String, default: null },     // 'scan' | 'live'
     },
+
+    // Envios em massa pela tela (services/convenioWaitlistOffer.js): oferta do particular e novidade "credenciado"
+    offer: bulkSendSchemaDef(),
+    announce: bulkSendSchemaDef(),
 
     source: {
         pagePath: { type: String, default: null },

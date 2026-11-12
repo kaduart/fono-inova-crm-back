@@ -246,6 +246,53 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
     });
 
     /**
+     * POST /api/convenio-waitlist/bulk-offer
+     * Body: { kind: 'particular'|'credenciado', convenio?, especialidades?, confirm?: boolean }
+     * Envio em massa pelo WhatsApp. Sem confirm (ou false) = só prévia, não envia nada.
+     * - particular: oferta do particular (aguardando, pula quem tem sessão futura).
+     * - credenciado: "agora atendemos o plano" — exige convênio; vai para aguardando e contatados.
+     * Com confirm=true enfileira o lote de hoje: 1 msg a cada ~90s, teto diário (soma dos dois) e janela 08:00–18:45.
+     */
+    router.post('/bulk-offer', authorize(['admin', 'secretary']), async (req, res) => {
+        try {
+            const kind = req.body?.kind === 'credenciado' ? 'credenciado' : 'particular';
+            const convenio = req.body?.convenio ? String(req.body.convenio) : null;
+            if (convenio && !CONVENIOS_WAITLIST.includes(convenio)) {
+                return sendApiError(res, new AppError('BAD_REQUEST', 'Convênio inválido', { status: 400 }), req);
+            }
+            if (kind === 'credenciado' && !convenio) {
+                return sendApiError(res, new AppError('BAD_REQUEST', 'Escolha qual convênio foi credenciado', { status: 400 }), req);
+            }
+            const especialidades = String(req.body?.especialidades || '').slice(0, 120);
+            const { planBulkOffer, enqueueBulkOffer } = await import('../services/convenioWaitlistOffer.js');
+            const plan = await planBulkOffer({ kind, convenio, especialidades });
+            const preview = {
+                kind,
+                eligible: plan.eligible,
+                willSend: plan.batch.length,
+                skippedWithSession: plan.skippedWithSession,
+                sentToday: plan.sentToday,
+                limitReason: plan.limitReason,
+                sample: plan.sample,
+            };
+            if (req.body?.confirm !== true || !plan.batch.length) return res.json({ preview, queued: 0 });
+
+            const { whatsappSendQueue } = await import('../config/bullConfig.js');
+            const { queued, failed } = await enqueueBulkOffer({
+                kind,
+                batch: plan.batch,
+                queue: whatsappSendQueue,
+                especialidades,
+                userId: req.user?._id || req.user?.id || null,
+            });
+            return res.status(202).json({ preview, queued, failed });
+        } catch (err) {
+            console.error('❌ [WAITLIST] Erro no envio em massa:', err);
+            return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao preparar o envio em massa', { status: 500 }), req);
+        }
+    });
+
+    /**
      * GET /api/convenio-waitlist/whatsapp-scan/latest?convenio=geap | ?deep=true
      * Última varredura (para a tela mostrar "buscando…", o progresso e o resultado).
      */
