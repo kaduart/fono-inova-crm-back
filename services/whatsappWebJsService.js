@@ -549,6 +549,9 @@ function createClient() {
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
         '--mute-audio',
+        // 12/11/2026: só erros FATAIS do Chrome no log (os "dbus/bus.cc" e "vkCreateInstance" eram ruído
+        // de servidor sem barramento de sistema nem GPU; o crash continua aparecendo).
+        '--log-level=3',
         '--disable-background-networking',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
@@ -987,7 +990,9 @@ async function handleInboundConvenioInterest(msg) {
  * SÓ LEITURA no WhatsApp (busca nativa + Store); a escrita é só em convenio_waitlist.
  * Roda no processo do WhatsApp (fila whatsapp-scan, workers/entrypoints/whatsapp-child.js).
  */
-export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize = 100 } = {}) {
+// 12/11/2026: pageSize 100 → 25. A busca rápida da Unimed (muitas mensagens, várias com miniatura de anúncio)
+// estourou a memória do crm-worker em segundos. Páginas menores e só os campos necessários na memória.
+export async function scanConvenioInterest({ convenio, maxPages = 80, pageSize = 25 } = {}) {
   if (!isReady || !client) throw new Error('WhatsApp não está conectado');
   const { WAITLIST_WHATSAPP_KEYWORDS } = await import('../constants/convenioWaitlist.js');
   const kw = WAITLIST_WHATSAPP_KEYWORDS[convenio];
@@ -1009,7 +1014,12 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
           const id = m.id?._serialized || `${m.from}:${m.timestamp}:${m.body?.length}`;
           if (seen.has(id)) continue;
           seen.add(id);
-          found.push(m);
+          if (m.isStatus || !kw.regex.test(m.body || '')) continue;
+          // Guarda só o necessário (o Message traz _data com miniaturas em base64 — pesado).
+          found.push({
+            fromMe: Boolean(m.fromMe), from: m.from, to: m.to, body: String(m.body || '').slice(0, 500),
+            timestamp: m.timestamp, notifyName: m._data?.notifyName || null, msg: String((m.fromMe ? m.to : m.from) || '').endsWith('@lid') ? m : null, // só @lid precisa do objeto para achar o telefone
+          });
         }
         if (msgs.length < pageSize) break;
         await new Promise((r) => setTimeout(r, 300));
@@ -1033,15 +1043,14 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
   };
 
   for (const m of found) {
-    if (m.isStatus || !kw.regex.test(m.body || '')) continue;
     const chatId = m.fromMe ? m.to : m.from;
     if (!isContactChat(chatId)) continue;
-    let phone = chatId.endsWith('@c.us') ? chatId.replace('@c.us', '') : await resolveRealPhoneFromLid(m, chatId);
+    let phone = chatId.endsWith('@c.us') ? chatId.replace('@c.us', '') : (m.msg ? await resolveRealPhoneFromLid(m.msg, chatId) : null);
     if (!phone) { stats.unresolved++; continue; }
     hits.push({
-      phone, convenio, fromMe: Boolean(m.fromMe), body: m.body,
+      phone, convenio, fromMe: m.fromMe, body: m.body,
       at: new Date(Number(m.timestamp || 0) * 1000),
-      name: (!m.fromMe && m._data?.notifyName) || await contactName(chatId),
+      name: (!m.fromMe && m.notifyName) || await contactName(chatId),
     });
   }
 
