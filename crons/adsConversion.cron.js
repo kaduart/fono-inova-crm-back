@@ -11,7 +11,8 @@
 //   ENABLE_ADS_CONVERSION=true        liga o cron (default: desligado)
 //   ADS_CONVERSION_DRY_RUN=true       só loga, não grava nem envia
 //   ADS_CONVERSION_DEFAULT_VALUE=220  valor quando sessionValue = 0 (ex.: convênio)
-//   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (importação)
+//   GOOGLE_ADS_CONVERSION_ACTION_ID   id da ação "Avaliação agendada" (a mesma do feed google-offline.csv)
+//   GOOGLE_ADS_EVAL_DONE_ACTION_ID    id da ação SEPARADA "Avaliação realizada" (sem ele: desligado)
 //   TIKTOK_EVENTS_TOKEN               Access Token da TikTok Events API (envio por ttclid)
 // Nunca envia dado clínico: só telefone (hash), valor, id e origem.
 // Doc: back/docs/ADS_CONVERSION_CONTRACT.md
@@ -19,7 +20,7 @@
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import AdConversion from '../models/AdConversion.js';
-import { getAttributionByPhone } from '../services/leadAttributionService.js';
+import { getAttributionByPhone, getAttributionsByPhones } from '../services/leadAttributionService.js';
 import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
 import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
@@ -136,7 +137,16 @@ async function enqueueNew() {
         continue;
       }
 
-      await AdConversion.create(doc);
+      try {
+        await AdConversion.create(doc);
+      } catch (err) {
+        // 11/11: colisão no índice "1 aquisição por paciente" era engolida em silêncio e o
+        // agendamento voltava a ser processado (com telefone + origem) a cada 10 min, para sempre.
+        // Já existe a aquisição do paciente → grava este como não-aquisição (idempotente por appointment).
+        if (err?.code !== 11000 || !err?.keyPattern?.patient) throw err;
+        const skip = decidePlatforms({ first: false });
+        await AdConversion.create({ ...doc, ...skip, phone: null, gclid: null, fbc: null, ttclid: null });
+      }
       queued++;
     } catch (err) {
       if (err?.code !== 11000) console.error(`${TAG} ❌ enqueue ${appt._id}:`, err.message);
@@ -155,10 +165,17 @@ async function refreshUnknownSources() {
     createdAt: { $gte: since },
   }).select('_id phone').limit(300).lean();
 
+  if (!unknown.length) return 0;
+
+  // 11/11: antes era 1 getAttributionByPhone (2 consultas) por doc, em série, a cada 10 min —
+  // até 300 docs, o mesmo telefone repetido várias vezes, ~1 min de banco ocupado e o log
+  // inundado de "📞 [PHONE]". Agora: 2 consultas no total; só desce para o laço quem ganhou origem.
+  const attrByPhone = await getAttributionsByPhones(unknown.map((u) => u.phone));
+
   let updated = 0;
   for (const u of unknown) {
     try {
-      const attr = await getAttributionByPhone(u.phone);
+      const attr = attrByPhone.get(u.phone);
       if (!attr?.source) continue;
       const res = await AdConversion.updateOne(
         { _id: u._id, source: 'unknown' },
@@ -288,7 +305,9 @@ async function processPending() {
 
     if (conv.google?.status === 'pending' || conv.google?.status === 'failed') {
       const r = await uploadOfflineConversion({
-        gclid: conv.gclid, value: conv.value, eventTime: conv.eventTime, orderId: conv.appointment,
+        gclid: conv.gclid, value: conv.value, eventTime: conv.eventTime,
+        // Mesmo id do feed CSV (transaction_id = appt_<id>): se API e CSV estiverem ligados, o Google deduplica.
+        orderId: `appt_${conv.appointment}`, kind: 'scheduled',
       });
       conv.google = { status: r.status, sentAt: r.status === 'sent' ? new Date() : null, reason: r.reason || null };
       if (r.status === 'sent') sent++;

@@ -247,6 +247,8 @@ const appointmentSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
   responsible: { type: String, default: '' },
   secretaryNotes: String,
+  // Queixa principal contada pela família no agendamento (ex.: link /agendar). Adianta a triagem.
+  mainComplaint: { type: String, trim: true, maxlength: 500 },
 
   // ─── ESPECIALIDADE ─────────────────────────────────────────
   specialty: {
@@ -319,7 +321,16 @@ const appointmentSchema = new mongoose.Schema({
         default: 'outro'
       },
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-      convertedAt: Date
+      convertedAt: Date,
+      // Agendamento público (link da bio / página /agendar) — docs/flows/public_booking_flow.md
+      channel: { type: String, default: undefined },
+      bookingCode: { type: String, default: undefined },
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        content: String
+      }
     }
   },
 
@@ -417,7 +428,9 @@ const appointmentSchema = new mongoose.Schema({
            // 2026-10-16: rotinas automáticas que antes cancelavam SEM marca (não são pedido de ninguém)
            'liminar_plan_update', 'unconfirmed_auto', 'package_exhausted',
            // 2026-11-05: contrato de liminar zerou → agendamentos a partir de amanhã liberados
-           'liminar_exhausted']
+           'liminar_exhausted',
+           // 2026-11-11: paciente inativado → sessões futuras canceladas junto
+           'patient_inactivated']
   },
   // Quem SOLICITOU o cancelamento (2026-10-16). Eixo diferente de cancelSource
   // (rotina do sistema) e de canceledBy (usuário que registrou). null = "Não
@@ -524,6 +537,8 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // ─── ÍNDICES ────────────────────────────────────────────────
+// Agendamento público: busca por código curto e contagem de reservas (sparse: só docs do link)
+appointmentSchema.index({ 'metadata.origin.bookingCode': 1 }, { sparse: true });
 appointmentSchema.index(
   { originalAppointmentId: 1, date: 1, time: 1 },
   { name: 'reschedule_idempotency' }

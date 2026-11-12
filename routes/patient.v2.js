@@ -29,6 +29,11 @@ import { findPossibleDuplicates, toDuplicateCandidateDTO } from '../utils/patien
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { buildPatientStatusUpdate } from '../domain/patient/buildPatientStatusUpdate.js';
+import { getInactivationReasonLabel } from '../domain/patient/inactivationReasons.js';
+import { executeWithSession as bulkCancelAppointments } from '../services/appointment/commands/bulkCancelAppointmentsCommand.js';
+
+// Sessões que ainda vão acontecer (cancelar ao inativar o paciente).
+const FUTURE_ACTIVE_STATUSES = ['scheduled', 'confirmed', 'pre_agendado'];
 
 const router = express.Router();
 const logger = createContextLogger('PatientV2Routes');
@@ -591,8 +596,11 @@ router.patch('/:id/review-opt-out', flexibleAuth, async (req, res) => {
 /**
  * PATCH /api/v2/patients/:id/status
  * Inativar (com motivo da lista) ou reativar o paciente. Só recepção e admin.
- * Body: { status: 'inactive'|'active', reason?, note? }
- * Não cancela agendamentos: a resposta traz quantos futuros existem.
+ * Body: { status: 'inactive'|'active', reason?, note?, cancelFutureAppointments? }
+ * Ao inativar, cancela por padrão as sessões futuras (agendadas, confirmadas e
+ * pré-agendadas) na mesma transação (pedido do Kadu, 11/11/2026: paciente
+ * inativo continuava aparecendo na agenda). cancelFutureAppointments=false
+ * mantém a agenda. Se algum cancelamento falhar, nada é gravado.
  */
 router.patch('/:id/status', flexibleAuth, async (req, res) => {
   const { id } = req.params;
@@ -620,19 +628,54 @@ router.patch('/:id/status', flexibleAuth, async (req, res) => {
 
     const { status, reason, note } = req.body || {};
     const set = buildPatientStatusUpdate({ status, reason, note, user: req.user, current: patient });
-    await Patient.updateOne({ _id: patient._id }, { $set: set });
-
-    const futureAppointments = await Appointment.countDocuments({
+    const shouldCancel = status === 'inactive' && req.body?.cancelFutureAppointments !== false;
+    const futureFilter = {
       patient: patient._id,
       date: { $gte: new Date() },
-      operationalStatus: { $in: ['scheduled', 'confirmed', 'pre_agendado'] },
-    }).catch(() => null);
+      operationalStatus: { $in: FUTURE_ACTIVE_STATUSES },
+    };
 
-    logger.info(`[${correlationId}] status do paciente`, { patientId: String(patient._id), status, reason: reason || null, futureAppointments });
+    let canceledFutureAppointments = 0;
+    if (shouldCancel) {
+      const reasonLabel = getInactivationReasonLabel(set['inactivation.reason']) || 'sem motivo';
+      const mongoSession = await mongoose.startSession();
+      try {
+        await mongoSession.withTransaction(async () => {
+          await Patient.updateOne({ _id: patient._id }, { $set: set }, { session: mongoSession });
+          const ids = (await Appointment.find(futureFilter).select('_id').session(mongoSession).lean()).map(a => a._id);
+          if (ids.length === 0) { canceledFutureAppointments = 0; return; }
+          const result = await bulkCancelAppointments(ids, {
+            reason: `Paciente inativado: ${reasonLabel}`,
+            cancelSource: 'patient_inactivated',
+            cancelRequestedAt: new Date(),
+          }, req.user, mongoSession);
+          if (result.errors?.length) {
+            throw new AppError('PATIENT_INACTIVATION_CANCEL_FAILED',
+              `Não deu para cancelar ${result.errors.length} sessão(ões) futura(s); nada foi alterado.`, {
+                status: 409,
+                title: 'Inativação não concluída',
+                action: 'Cancele essas sessões pela agenda ou inative sem cancelar a agenda.',
+                details: result.errors,
+              });
+          }
+          canceledFutureAppointments = result.canceled;
+        });
+      } finally {
+        await mongoSession.endSession();
+      }
+    } else {
+      await Patient.updateOne({ _id: patient._id }, { $set: set });
+    }
+
+    const futureAppointments = await Appointment.countDocuments(futureFilter).catch(() => null);
+
+    logger.info(`[${correlationId}] status do paciente`, { patientId: String(patient._id), status, reason: reason || null, futureAppointments, canceledFutureAppointments });
 
     const view = await buildPatientView(String(patient._id), { correlationId, force: true });
-    return res.json(formatSuccess({ status, futureAppointments, patientView: view }, {
-      message: status === 'inactive' ? 'Paciente inativado' : 'Paciente reativado',
+    return res.json(formatSuccess({ status, futureAppointments, canceledFutureAppointments, patientView: view }, {
+      message: status === 'inactive'
+        ? (canceledFutureAppointments ? `Paciente inativado e ${canceledFutureAppointments} sessão(ões) futura(s) cancelada(s)` : 'Paciente inativado')
+        : 'Paciente reativado',
     }));
   } catch (error) {
     if (error?.isAppError) return sendApiError(res, error, req);

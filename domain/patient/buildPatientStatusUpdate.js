@@ -8,7 +8,8 @@ import { PATIENT_INACTIVATION_REASONS, isValidInactivationReason } from './inact
  * - Inativar exige um motivo da lista fixa; a observação é opcional.
  * - Reativar mantém o motivo e a data da inativação (histórico para campanhas)
  *   e só acrescenta quando e quem reativou.
- * - Não cancela agendamentos: a recepção decide pela agenda.
+ * - Os agendamentos futuros são cancelados pela rota (PATCH /v2/patients/:id/status),
+ *   não aqui, porque precisam de transação.
  */
 export function buildPatientStatusUpdate({ status, reason, note, user, now = new Date(), current = {} }) {
   if (!['active', 'inactive'].includes(status)) {
