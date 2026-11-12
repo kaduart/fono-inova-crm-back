@@ -194,3 +194,42 @@ export async function patientMatchesByPhone(phones = []) {
     }
     return out;
 }
+
+/**
+ * Última conversa com cada número da lista (clínica → contato e contato → clínica).
+ * Usado pelo envio em massa para NÃO repetir contato com quem a equipe acabou de falar (inclusive na mão).
+ * Idempotente: só avança as datas ($max). Telefones fora da lista não gravam nada.
+ *
+ * @param {Array<{ phone: string, clinicAt?: Date|null, contactAt?: Date|null }>} rows
+ * @returns {Promise<{ matched: number }>}
+ */
+export async function recordChatActivity(rows = []) {
+    const ops = [];
+    for (const r of rows) {
+        const normalized = canonicalPhone(r?.phone);
+        if (!normalized || !isRealBRPhone(normalized)) continue;
+        const max = {};
+        if (r.clinicAt instanceof Date && !Number.isNaN(r.clinicAt.getTime())) max['whatsapp.lastClinicMessageAt'] = r.clinicAt;
+        if (r.contactAt instanceof Date && !Number.isNaN(r.contactAt.getTime())) max['whatsapp.lastContactMessageAt'] = r.contactAt;
+        if (!Object.keys(max).length) continue;
+        ops.push({ updateMany: { filter: { phone: { $in: phoneVariants(normalized) } }, update: { $max: max } } });
+    }
+    if (!ops.length) return { matched: 0 };
+    const res = await ConvenioWaitlist.bulkWrite(ops, { ordered: false, timestamps: false });
+    return { matched: res.matchedCount || 0 };
+}
+
+/**
+ * Confere no WhatsApp Web a última mensagem da clínica com cada pessoa ATIVA da lista e grava (ver recordChatActivity).
+ * Roda no crm-worker (fila whatsapp-scan, kind chat_activity). `readChatActivity` vem do whatsappWebJsService.
+ */
+export async function syncWaitlistChatActivity({ readChatActivity }) {
+    const phones = await ConvenioWaitlist.distinct('phone', { status: { $in: WAITLIST_ACTIVE_STATUS } });
+    const tails = new Set(phones.map((p) => String(p).slice(-8)));
+    if (!tails.size) return { people: 0, chats: 0, withChat: 0, matched: 0 };
+    const res = await readChatActivity({ onlyTails: tails });
+    const { matched } = await recordChatActivity(res.rows);
+    const stats = { people: phones.length, chats: res.chats, withChat: res.rows.length, unresolved: res.unresolved, matched };
+    console.log(`${TAG} 🔎 última conversa conferida:`, JSON.stringify(stats));
+    return stats;
+}

@@ -69,10 +69,26 @@ export function buildAccreditedText({ name, convenio, especialidades = '' }) {
     ].join('\n');
 }
 
+// recentDays: se a clínica mandou QUALQUER mensagem para a pessoa nesse período (na mão, lembrete, outro envio),
+// ela fica de fora do envio em massa. A novidade do credenciamento tem janela menor: é notícia nova.
 export const BULK_KINDS = {
-    particular: { field: 'offer', statuses: ['aguardando'], skipWithSession: true, purpose: 'convenio_offer' },
-    credenciado: { field: 'announce', statuses: ['aguardando', 'contatado'], skipWithSession: false, purpose: 'convenio_announce' },
+    particular: { field: 'offer', statuses: ['aguardando'], skipWithSession: true, purpose: 'convenio_offer', recentDays: Number(process.env.CONVENIO_OFFER_RECENT_DAYS || 30) },
+    credenciado: { field: 'announce', statuses: ['aguardando', 'contatado'], skipWithSession: false, purpose: 'convenio_announce', recentDays: Number(process.env.CONVENIO_ANNOUNCE_RECENT_DAYS || 7) },
 };
+
+const DAY_MS = 24 * 3600 * 1000;
+const RECIPIENTS_MAX = 400; // a tela lista quem vai receber e quem fica de fora
+
+const phoneTail = (p) => String(p || '').slice(-4);
+const personView = (g, extra = {}) => ({
+    id: String(g._id),
+    name: g.name,
+    phoneTail: phoneTail(g.phone),
+    convenio: g.convenio,
+    since: g.whatsapp?.lastMentionAt || g.createdAt || null,
+    lastClinicMessageAt: g.whatsapp?.lastClinicMessageAt || null,
+    ...extra,
+});
 
 const buildText = (kind, g, opts) => (kind === 'credenciado' ? buildAccreditedText({ ...g, ...opts }) : buildPrivateOfferText({ ...g, atendente: opts?.atendente }));
 
@@ -96,47 +112,77 @@ export function offerCapacity({ now = new Date(), sentToday = 0 } = {}) {
 
 /**
  * Quem recebe: status do tipo (particular: aguardando; credenciado: aguardando/contatado), ainda sem esse envio,
- * 1 mensagem por telefone (o cadastro mais antigo). No particular, pula quem já tem sessão futura.
- * O teto diário vale para os dois tipos somados (é o mesmo chip). Mais antigos primeiro.
+ * 1 mensagem por telefone (o cadastro mais antigo). Fica de fora (e a tela mostra o motivo):
+ *  - quem já recebeu esta mensagem (ou está na fila);
+ *  - quem conversou com a clínica nos últimos `recentDays` dias (mensagem da clínica, inclusive manual);
+ *  - no particular, quem já tem sessão futura; e quem a equipe marcou como Contatado.
+ * `excludeIds` = pessoas que a equipe desmarcou na tela. O teto diário vale para os dois tipos somados.
  */
-export async function planBulkOffer({ kind = 'particular', convenio = null, especialidades = '', atendente = '', now = new Date() } = {}) {
+export async function planBulkOffer({ kind = 'particular', convenio = null, especialidades = '', atendente = '', excludeIds = [], now = new Date() } = {}) {
     const cfg = BULK_KINDS[kind];
     if (!cfg) throw new Error(`Tipo de envio inválido: ${kind}`);
-    const filter = { status: { $in: cfg.statuses }, [`${cfg.field}.queuedAt`]: null };
-    if (convenio) filter.convenio = convenio;
-    const rows = await ConvenioWaitlist.find(filter)
-        .select('_id name phone convenio especialidade createdAt')
+    const base = convenio ? { convenio } : {};
+    const rows = await ConvenioWaitlist.find({ ...base, status: { $in: cfg.statuses }, [`${cfg.field}.queuedAt`]: null })
+        .select('_id name phone convenio especialidade createdAt whatsapp.lastMentionAt whatsapp.lastClinicMessageAt')
         .sort({ createdAt: 1 })
         .lean();
 
     const byPhone = new Map();
     for (const r of rows) {
         const g = byPhone.get(r.phone);
-        if (g) g.ids.push(r._id);
-        else byPhone.set(r.phone, { ...r, ids: [r._id] });
+        if (g) {
+            g.ids.push(r._id);
+            const at = r.whatsapp?.lastClinicMessageAt;
+            if (at && (!g.whatsapp?.lastClinicMessageAt || at > g.whatsapp.lastClinicMessageAt)) g.whatsapp = { ...g.whatsapp, lastClinicMessageAt: at };
+        } else byPhone.set(r.phone, { ...r, ids: [r._id] });
     }
-    const withSession = [];
-    const targets = [];
+
+    const recentSince = new Date(now.getTime() - cfg.recentDays * DAY_MS);
+    const excluded = new Set((excludeIds || []).map(String));
     const matches = cfg.skipWithSession ? await patientMatchesByPhone([...byPhone.keys()]) : new Map();
+    const skipped = [];
+    const targets = [];
+    let unchecked = 0;
     for (const g of byPhone.values()) {
-        if (matches.get(g.phone)?.nextAppointmentAt) withSession.push(g);
+        const lastClinic = g.whatsapp?.lastClinicMessageAt ? new Date(g.whatsapp.lastClinicMessageAt) : null;
+        if (matches.get(g.phone)?.nextAppointmentAt) skipped.push(personView(g, { reason: 'sessao_futura' }));
+        else if (lastClinic && lastClinic >= recentSince) skipped.push(personView(g, { reason: 'conversa_recente' }));
+        else if (excluded.has(String(g._id))) { unchecked++; targets.push({ ...g, excluded: true }); }
         else targets.push(g);
     }
 
+    const [alreadySent, markedContatado] = await Promise.all([
+        ConvenioWaitlist.countDocuments({ ...base, [`${cfg.field}.queuedAt`]: { $ne: null } }),
+        cfg.statuses.includes('contatado') ? 0 : ConvenioWaitlist.countDocuments({ ...base, status: 'contatado', [`${cfg.field}.queuedAt`]: null }),
+    ]);
+
     const { dayStartUtc } = spClock(now);
     const sentToday = await ConvenioWaitlist.countDocuments({
-        $or: [{ 'offer.queuedAt': { $gte: dayStartUtc } }, { 'announce.queuedAt': { $gte: dayStartUtc } }],
+        $or: [
+            { 'offer.queuedAt': { $gte: dayStartUtc }, 'offer.skippedAt': null },
+            { 'announce.queuedAt': { $gte: dayStartUtc }, 'announce.skippedAt': null },
+        ],
     });
     const { capacity, reason } = offerCapacity({ now, sentToday });
+    const sendable = targets.filter((g) => !g.excluded);
+    const batch = sendable.slice(0, capacity);
+    const today = new Set(batch.map((g) => String(g._id)));
     return {
         kind,
-        eligible: targets.length,
-        skippedWithSession: withSession.length,
+        eligible: sendable.length,
+        unchecked,
+        skippedWithSession: skipped.filter((p) => p.reason === 'sessao_futura').length,
+        skippedRecentChat: skipped.filter((p) => p.reason === 'conversa_recente').length,
+        alreadySent,
+        markedContatado,
+        recentDays: cfg.recentDays,
         sentToday,
         capacity,
         limitReason: reason,
-        batch: targets.slice(0, capacity),
-        sample: targets[0] ? buildText(kind, targets[0], { especialidades, atendente }) : null,
+        batch,
+        recipients: targets.slice(0, RECIPIENTS_MAX).map((g) => personView(g, { today: today.has(String(g._id)), excluded: Boolean(g.excluded) })),
+        skipped: skipped.slice(0, RECIPIENTS_MAX),
+        sample: sendable[0] ? buildText(kind, sendable[0], { especialidades, atendente }) : null,
     };
 }
 
@@ -164,6 +210,9 @@ export async function enqueueBulkOffer({ kind = 'particular', batch, queue, user
                 message: buildText(kind, g, { especialidades, atendente }),
                 purpose: cfg.purpose,
                 waitlistIds: g.ids.map(String),
+                // O worker confere a conversa no WhatsApp logo antes de mandar: se a clínica falou com a pessoa
+                // nesse período (ex.: a secretária respondeu na mão depois da prévia), não manda.
+                recentDays: cfg.recentDays,
             }, {
                 jobId: `${cfg.purpose.replace('_', '-')}-${g._id}`,
                 delay,
@@ -197,6 +246,28 @@ export async function markOfferSent(waitlistIds = [], { purpose = 'convenio_offe
     );
 }
 
+/** Não enviado de propósito (conversa recente com a clínica): registra o motivo; não conta no teto do dia. */
+export async function markOfferSkipped(waitlistIds = [], { purpose = 'convenio_offer', reason = '', lastClinicAt = null, at = new Date() } = {}) {
+    if (!waitlistIds.length) return;
+    const f = fieldForPurpose(purpose);
+    await ConvenioWaitlist.updateMany(
+        { _id: { $in: waitlistIds } },
+        {
+            $set: { [`${f}.skippedAt`]: at, [`${f}.skipReason`]: String(reason).slice(0, 200) },
+            ...(lastClinicAt ? { $max: { 'whatsapp.lastClinicMessageAt': lastClinicAt } } : {}),
+        },
+    );
+}
+
+/**
+ * Trava do worker, logo antes de mandar: a clínica já falou com a pessoa nos últimos `recentDays` dias?
+ * @param {{ clinicAt: Date|null }} activity resultado de getChatActivity
+ */
+export function isRecentClinicChat(activity, recentDays, now = new Date()) {
+    if (!activity?.clinicAt || !recentDays) return false;
+    return activity.clinicAt.getTime() >= now.getTime() - recentDays * DAY_MS;
+}
+
 /** Falha definitiva (sem WhatsApp, número inválido): registra para a equipe ver. */
 export async function markOfferFailed(waitlistIds = [], error = '', purpose = 'convenio_offer') {
     if (!waitlistIds.length) return;
@@ -220,7 +291,7 @@ export async function sendSingle({ entry, kind = 'particular', message = '', esp
     }, { attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 500, removeOnFail: 500 });
     await ConvenioWaitlist.updateOne(
         { _id: entry._id },
-        { $set: { [`${cfg.field}.queuedAt`]: now, [`${cfg.field}.queuedBy`]: userId, [`${cfg.field}.error`]: null } },
+        { $set: { [`${cfg.field}.queuedAt`]: now, [`${cfg.field}.queuedBy`]: userId, [`${cfg.field}.error`]: null, [`${cfg.field}.skippedAt`]: null, [`${cfg.field}.skipReason`]: null } },
     );
     console.log(`[ConvenioEnvio] 📤 individual ${kind} enfileirado`, { tail: String(entry.phone).slice(-4), jobId: job.id, userId });
     return { jobId: job.id, message: text };

@@ -47,13 +47,21 @@ A **varredura profunda** (`POST /whatsapp-scan {deep:true}`, `scanConvenioIntere
 - Uma profunda por vez (dedupe de 7 dias). Depende do celular estar ligado e online para entregar o histórico antigo; `stats.oldest` mostra até onde chegou.
 - Palavras incluem erros de digitação comuns (ex.: "iapsgo", "ipago", "unimede").
 
-## Envio em massa (botões "Oferecer particular" e "Agora atendemos")
+## Envio em massa (botões "Retomar contato" e "Agora atendemos")
 
 `POST /api/convenio-waitlist/bulk-offer {kind, convenio?, especialidades?, confirm}` (services/convenioWaitlistOffer.js).
 - Sem `confirm: true` é só prévia (nada é enviado). A tela sempre mostra a prévia antes.
 - `particular`: status aguardando, pula quem tem sessão futura. `credenciado`: exige convênio; aguardando + contatado. Campos `offer` / `announce` no cadastro marcam o envio (nunca manda o mesmo tipo duas vezes).
 - Anti-bloqueio do chip: 1 mensagem por telefone, fila `whatsapp-send` com atraso de ~90s ±15s entre mensagens, teto diário `CONVENIO_OFFER_DAILY_CAP` (padrão 40, soma dos dois tipos), só dia útil 08:00–18:45 (SP).
 - O worker marca `sentAt` e passa para `contatado` quando a mensagem sai; falha definitiva grava `error`.
+
+### Não repetir contato (12/11/2026, pedido do Kadu)
+- Toda mensagem que a CLÍNICA manda (ERP, lembrete ou na mão pelo celular/WhatsApp Web) grava `whatsapp.lastClinicMessageAt` no cadastro do mesmo telefone (evento `message_create`, `handleOutboundClinicMessage`).
+- Ao abrir a prévia, o back enfileira na `whatsapp-scan` a conferência `chat_activity` (SÓ LEITURA, no máximo 1 a cada 20 min): lê a última mensagem da clínica e do contato em cada conversa de quem está ativo na lista (`syncWaitlistChatActivity`). A tela recarrega a prévia quando termina.
+- Fica de fora do envio em massa: quem já recebeu aquele tipo (`queuedAt`), quem a clínica falou nos últimos `CONVENIO_OFFER_RECENT_DAYS` (padrão 30, particular) / `CONVENIO_ANNOUNCE_RECENT_DAYS` (padrão 7, credenciado), quem tem sessão marcada (particular) e quem a equipe marcou como Contatado (particular). A prévia devolve `recipients` (quem recebe, `today` = sai hoje) e `skipped` (com `reason`).
+- `excludeIds`: pessoas desmarcadas na tela; o próximo da fila entra no lugar.
+- Trava final no worker: logo antes de cada envio em massa, `getChatActivity(phone)` lê a conversa; se a clínica falou dentro da janela, NÃO envia e grava `skippedAt`/`skipReason` (não conta no teto do dia). Se a leitura falhar, segue o envio (a prévia já filtrou).
+- Envio individual (botão Enviar da linha) não tem trava: é a equipe decidindo.
 
 ## Desligar
 

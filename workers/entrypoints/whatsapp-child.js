@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest, scanConvenioInterestDeep } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest, scanConvenioInterestDeep, readChatActivity, getChatActivity } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
 import { Worker } from 'bullmq';
@@ -205,6 +205,26 @@ async function main() {
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
     const whatsappWorker = new Worker('whatsapp-send', async (job) => {
         const { phone, message, appointmentId, purpose } = job.data;
+        // Envio em massa da lista de convênio: confere a conversa AGORA. Se a clínica falou com a pessoa
+        // nos últimos `recentDays` dias (inclusive na mão, depois da prévia), não manda nada.
+        if (job.data.recentDays && job.data.waitlistIds?.length) {
+            let activity = null;
+            try {
+                activity = await getChatActivity(phone);
+            } catch (err) {
+                console.warn(`[CHILD WORKER] ⚠️ Job ${job.id} — não consegui conferir a conversa (segue o envio):`, err.message);
+            }
+            const { isRecentClinicChat, markOfferSkipped } = await import('../../services/convenioWaitlistOffer.js');
+            if (activity && isRecentClinicChat(activity, job.data.recentDays)) {
+                await markOfferSkipped(job.data.waitlistIds, {
+                    purpose,
+                    reason: `Conversa com a clínica em ${activity.clinicAt.toISOString().slice(0, 10)} — não enviado`,
+                    lastClinicAt: activity.clinicAt,
+                });
+                console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: clínica conversou com ...${String(phone).slice(-4)} há menos de ${job.data.recentDays} dias`);
+                return { skipped: true };
+            }
+        }
         console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
         console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
         const result = await sendMessage(phone, message, {
@@ -235,7 +255,10 @@ async function main() {
         await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'running', startedAt: new Date(), error: null }, $inc: { attempts: 1 } });
         try {
             let stats;
-            if (job.data?.deep) {
+            if (job.data?.activity) {
+                const { syncWaitlistChatActivity } = await import('../../services/convenioWaitlistWhatsapp.js');
+                stats = await syncWaitlistChatActivity({ readChatActivity });
+            } else if (job.data?.deep) {
                 // Profunda: retoma de onde parou (restart do worker às 19h10 ou deploy no meio).
                 const run = await WhatsAppScanRun.findById(runId).select('progress').lean();
                 stats = await scanConvenioInterestDeep({
