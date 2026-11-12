@@ -142,16 +142,14 @@ describe('patientMatchesByPhone', () => {
 describe('rotas da varredura', () => {
     const auth = () => ({ Authorization: `Bearer ${token}` });
 
-    it('enfileira uma varredura e não duplica enquanto está na fila', async () => {
+    it('busca rápida desativada: pedido por convênio vira a Busca completa (incremental)', async () => {
         const r1 = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ convenio: 'geap' });
         expect(r1.status).toBe(202);
-        expect(whatsappScanQueue.add).toHaveBeenCalledTimes(1);
+        expect(r1.body.run.kind).toBe('convenio_interest_deep');
+        expect(whatsappScanQueue.add.mock.calls[0][1]).toMatchObject({ convenio: 'todos', deep: true });
         const r2 = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ convenio: 'geap' });
-        expect(r2.status).toBe(200);
         expect(r2.body.alreadyRunning).toBe(true);
         expect(whatsappScanQueue.add).toHaveBeenCalledTimes(1);
-        const latest = await request(app).get('/api/convenio-waitlist/whatsapp-scan/latest?convenio=geap').set(auth());
-        expect(latest.body.run.status).toBe('queued');
     });
 
     it('varredura profunda: um job para os 4 convênios, sem duplicar', async () => {
@@ -164,11 +162,6 @@ describe('rotas da varredura', () => {
         expect(whatsappScanQueue.add).toHaveBeenCalledTimes(1);
         const latest = await request(app).get('/api/convenio-waitlist/whatsapp-scan/latest?deep=true').set(auth());
         expect(latest.body.run.kind).toBe('convenio_interest_deep');
-    });
-
-    it('recusa convênio inválido', async () => {
-        const r = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ convenio: 'amil' });
-        expect(r.status).toBe(400);
     });
 
     it('lista filtra por canal e traz o cruzamento com paciente', async () => {
