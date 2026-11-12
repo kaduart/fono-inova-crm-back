@@ -134,6 +134,37 @@ describe('resposta do paciente é registrada independente do status operacional'
     expect(saved.attendanceConfirmation.responseMessageId).toBe(messageId);
   });
 
+  it('aceita voto pela enquete enviada mesmo com telefone do votante diferente do cadastro', async () => {
+    const messageId = 'true_5562999999999@c.us_3EB0POLL0001';
+    const appointment = await seedAppointment({
+      attendanceConfirmation: { status: 'pending', sentAt: new Date(), messageId },
+    });
+
+    const result = await recordAttendanceConfirmationPollVote({
+      phone: '5562988887777', // @lid resolvido para outro número / responsável
+      pollMessageId: messageId,
+      optionName: 'Confirmar presença ✅',
+    });
+
+    expect(result.matched).toBe(true);
+    const saved = await Appointment.findById(appointment._id).lean();
+    expect(saved.attendanceConfirmation.status).toBe('confirmed');
+  });
+
+  it('casa o telefone sem o 9 com o cadastro com 9 (voto sem ID confiável)', async () => {
+    const appointment = await seedAppointment();
+
+    const result = await recordAttendanceConfirmationPollVote({
+      phone: '556299999999',
+      pollMessageId: 'unknown',
+      optionName: 'Confirmar presença ✅',
+    });
+
+    expect(result.matched).toBe(true);
+    const saved = await Appointment.findById(appointment._id).lean();
+    expect(saved.attendanceConfirmation.status).toBe('confirmed');
+  });
+
   it('não sobrescreve uma confirmação já respondida', async () => {
     const appointment = await seedAppointment({
       attendanceConfirmation: { status: 'confirmed', sentAt: new Date(), respondedAt: new Date() },
