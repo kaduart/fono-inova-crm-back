@@ -63,6 +63,13 @@ describe('matchWaitlistConvenios', () => {
         expect(matchWaitlistConvenios('plano Bradesco Saúde')).toEqual(['bradesco']);
         expect(matchWaitlistConvenios('Vocês aceitam Unimed ou GEAP?')).toEqual(['geap', 'unimed']);
     });
+
+    it('pega erros de digitação comuns sem pegar palavra parecida', () => {
+        expect(matchWaitlistConvenios('vcs atendem iapsgo?')).toEqual(['ipasgo']);
+        expect(matchWaitlistConvenios('aceita ipago')).toEqual(['ipasgo']);
+        expect(matchWaitlistConvenios('meu plano é unimede')).toEqual(['unimed']);
+        expect(matchWaitlistConvenios('ipasgoiania')).toEqual([]);
+    });
 });
 
 describe('recordWhatsappInterest', () => {
@@ -145,6 +152,18 @@ describe('rotas da varredura', () => {
         expect(whatsappScanQueue.add).toHaveBeenCalledTimes(1);
         const latest = await request(app).get('/api/convenio-waitlist/whatsapp-scan/latest?convenio=geap').set(auth());
         expect(latest.body.run.status).toBe('queued');
+    });
+
+    it('varredura profunda: um job para os 4 convênios, sem duplicar', async () => {
+        const r1 = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ deep: true });
+        expect(r1.status).toBe(202);
+        expect(r1.body.run.kind).toBe('convenio_interest_deep');
+        expect(whatsappScanQueue.add.mock.calls[0][1]).toMatchObject({ convenio: 'todos', deep: true });
+        const r2 = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ deep: true });
+        expect(r2.body.alreadyRunning).toBe(true);
+        expect(whatsappScanQueue.add).toHaveBeenCalledTimes(1);
+        const latest = await request(app).get('/api/convenio-waitlist/whatsapp-scan/latest?deep=true').set(auth());
+        expect(latest.body.run.kind).toBe('convenio_interest_deep');
     });
 
     it('recusa convênio inválido', async () => {

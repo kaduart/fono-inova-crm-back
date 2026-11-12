@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest, scanConvenioInterestDeep } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
 import { Worker } from 'bullmq';
@@ -230,7 +230,17 @@ async function main() {
         console.log(`[CHILD SCAN] 🔎 Job ${job.id} — varrendo "${convenio}" (tentativa ${job.attemptsMade + 1})`);
         await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'running', startedAt: new Date(), error: null }, $inc: { attempts: 1 } });
         try {
-            const stats = await scanConvenioInterest({ convenio });
+            let stats;
+            if (job.data?.deep) {
+                // Profunda: retoma de onde parou (restart do worker às 19h10 ou deploy no meio).
+                const run = await WhatsAppScanRun.findById(runId).select('progress').lean();
+                stats = await scanConvenioInterestDeep({
+                    startIndex: run?.progress?.nextIndex || 0,
+                    onBatch: (p) => WhatsAppScanRun.updateOne({ _id: runId }, { $set: { progress: { nextIndex: p.nextIndex }, stats: p.stats } }),
+                });
+            } else {
+                stats = await scanConvenioInterest({ convenio });
+            }
             await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'done', finishedAt: new Date(), stats } });
             return stats;
         } catch (err) {
@@ -242,6 +252,7 @@ async function main() {
         connection: bullMqConnection,
         concurrency: 1,
         lockDuration: 10 * 60 * 1000, // varredura longa não pode ser dada como travada
+        maxStalledCount: 30, // worker desliga 19h10/deploy: a profunda volta para a fila e retoma do progresso salvo
     });
     scanWorker.on('failed', (job, err) => {
         console.error(`[CHILD SCAN] ❌ Job ${job?.id} falhou:`, err.message);

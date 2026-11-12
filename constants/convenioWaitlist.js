@@ -30,11 +30,15 @@ export const WAITLIST_CHANNELS = ['site', 'whatsapp_web'];
 // Palavras que indicam interesse no convênio dentro de uma conversa do WhatsApp.
 // O termo vai para a busca nativa do WhatsApp; o regex confirma no texto (evita falso positivo).
 export const WAITLIST_WHATSAPP_KEYWORDS = {
-    geap: { terms: ['geap'], regex: /\bgeap\b/i },
-    unimed: { terms: ['unimed'], regex: /\bunimed\b/i },
-    ipasgo: { terms: ['ipasgo'], regex: /\bipasgo\b/i },
+    // Inclui os erros de digitação mais comuns de quem escreve rápido no celular (ex.: "iapsgo", "unimede").
+    geap: { terms: ['geap', 'gaep'], regex: /\b(geap|gaep|geapi)\b/i },
+    unimed: { terms: ['unimed', 'unimede', 'unimedi'], regex: /\b(uni\s?med[ei]?|unimad|unmed)\b/i },
+    ipasgo: {
+        terms: ['ipasgo', 'ipasg', 'iapsgo', 'ipago', 'ipsgo', 'ipasco', 'ipassgo', 'ispasgo'],
+        regex: /\b(ipasgo|ipasg|iapsgo|ipago|ipsgo|ipasco|ipassgo|ispasgo|ipagso|ipasog|ipasgu|ipazgo)\b/i,
+    },
     // "bradesco" sozinho também conta (é como a família pergunta); pode trazer conversa do banco, a equipe descarta.
-    bradesco: { terms: ['bradesco'], regex: /\bbradesco\b/i },
+    bradesco: { terms: ['bradesco', 'bradeco'], regex: /\b(bradesco|bradeco|bradescco|bardesco)\b/i },
 };
 
 /** Convênios da lista de interesse citados no texto (ex.: "vocês atendem GEAP?" → ['geap']). */

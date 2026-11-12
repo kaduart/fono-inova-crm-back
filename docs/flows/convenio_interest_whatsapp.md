@@ -36,9 +36,16 @@ oficial faz isso). Quem perguntou "vocês atendem GEAP?" ficava só no celular. 
 - Uma varredura por convênio por vez: se já há uma `queued`/`running` nas últimas 2h, a rota devolve ela.
 - Fora do horário do crm-worker (ADR-022) o job espera no Redis. 3 tentativas com backoff de 1 min.
 
-## Limite
+## Limite e varredura profunda
 
-O WhatsApp Web só enxerga o histórico que o celular sincronizou com ele. Conversas muito antigas podem não aparecer.
+A busca rápida (`searchMessages`, a lupa do WhatsApp) só enxerga o que já está no navegador: em 12/11/2026 a da GEAP chegou só até 09/09/2026 (~2 meses).
+
+A **varredura profunda** (`POST /whatsapp-scan {deep:true}`, `scanConvenioInterestDeep`) entra em cada conversa individual, puxa do celular as mensagens antigas (`WAWebChatLoadMessages.loadEarlierMsgs`, o "carregar mais") até 3 anos atrás e procura os 4 convênios de uma vez.
+- Lotes de 20 conversas; após cada lote grava os interessados e `progress.nextIndex` no `WhatsAppScanRun` (kind `convenio_interest_deep`, convenio `todos`).
+- Retomável: worker desliga às 19h10/deploy → o job volta para a fila (`maxStalledCount` 30, 10 tentativas) e continua da próxima conversa.
+- Depois de ler cada conversa, tira da memória do navegador as mensagens antigas carregadas (mantém 50) para o Chromium não crescer.
+- Uma profunda por vez (dedupe de 7 dias). Depende do celular estar ligado e online para entregar o histórico antigo; `stats.oldest` mostra até onde chegou.
+- Palavras incluem erros de digitação comuns (ex.: "iapsgo", "ipago", "unimede").
 
 ## Desligar
 

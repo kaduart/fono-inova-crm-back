@@ -1077,6 +1077,108 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
   return result;
 }
 
+/**
+ * Varredura PROFUNDA (só leitura): entra em cada conversa individual, puxa do celular as mensagens
+ * antigas (loadEarlierMsgs, o mesmo "carregar mais" do WhatsApp Web) até a data de corte e procura os
+ * 4 convênios de uma vez. A busca rápida (searchMessages) só enxerga o que já está no navegador (~2 meses).
+ * Retomável: processa em lotes a partir de `startIndex` e chama `onBatch` com o progresso para gravar.
+ *
+ * @param {{ startIndex?: number, since?: Date, batchSize?: number, maxLoadsPerChat?: number,
+ *           onBatch?: (p: object) => Promise<void> }} opts
+ */
+export async function scanConvenioInterestDeep({
+  startIndex = 0,
+  since = new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000),
+  batchSize = 20,
+  maxLoadsPerChat = 80,
+  onBatch,
+} = {}) {
+  if (!isReady || !client) throw new Error('WhatsApp não está conectado');
+  const { WAITLIST_WHATSAPP_KEYWORDS, CONVENIOS_WAITLIST } = await import('../constants/convenioWaitlist.js');
+  const { groupHitsByContact, recordWhatsappInterest } = await import('./convenioWaitlistWhatsapp.js');
+  const patterns = CONVENIOS_WAITLIST.map((c) => [c, WAITLIST_WHATSAPP_KEYWORDS[c].regex.source]);
+
+  // Ordem estável (id) para conseguir retomar do mesmo ponto depois de um restart do worker.
+  const chatIds = await client.pupPage.evaluate(() => (window.Store?.Chat?.getModelsArray?.() || [])
+    .filter((c) => !c.isGroup && ['c.us', 'lid'].includes(c.id?.server))
+    .map((c) => c.id._serialized)
+    .sort());
+  const total = chatIds.length;
+  const stats = { total, done: Math.min(startIndex, total), messages: 0, contacts: 0, created: 0, updated: 0, closed: 0, invalid: 0, unresolved: 0, loadErrors: 0, oldest: null, byConvenio: {} };
+  console.log(`[WhatsAppWeb] 🔎 varredura profunda: ${total} conversas (começando em ${startIndex})`);
+
+  for (let i = startIndex; i < total; i += batchSize) {
+    if (!isReady || !client) throw new Error('WhatsApp desconectou no meio da varredura');
+    const ids = chatIds.slice(i, i + batchSize);
+    const res = await client.pupPage.evaluate(async (ids, patterns, sinceTs, maxLoads) => {
+      const regs = patterns.map(([c, src]) => [c, new RegExp(src, 'i')]);
+      const loader = window.require?.('WAWebChatLoadMessages');
+      const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r('__timeout'), ms))]);
+      const out = { rows: [], unresolved: 0, loadErrors: 0, oldest: null };
+      for (const id of ids) {
+        const chat = window.Store.Chat.get(id);
+        if (!chat) continue;
+        const phone = chat.id.server === 'c.us' ? chat.id.user
+          : (chat.contact?.phoneNumber?.user || window.Store?.Contact?.get?.(id)?.phoneNumber?.user || null);
+        const name = chat.contact?.name || chat.contact?.pushname || chat.formattedTitle || null;
+        // Carrega o histórico antigo até a data de corte (ou até não haver mais).
+        for (let n = 0; n < maxLoads && loader?.loadEarlierMsgs; n++) {
+          const arr = chat.msgs.getModelsArray();
+          if (arr.length && (arr[0].t || 0) < sinceTs) break;
+          let loaded;
+          try { loaded = await withTimeout(loader.loadEarlierMsgs({ chat }), 20000); } catch { out.loadErrors++; break; }
+          if (loaded === '__timeout') { out.loadErrors++; break; }
+          if (!loaded || !loaded.length) break;
+        }
+        const msgs = chat.msgs.getModelsArray();
+        if (msgs.length && (out.oldest === null || msgs[0].t < out.oldest)) out.oldest = msgs[0].t;
+        let hit = false;
+        for (const m of msgs) {
+          if (!m.body || typeof m.body !== 'string' || (m.t || 0) < sinceTs) continue;
+          for (const [c, re] of regs) {
+            if (!re.test(m.body)) continue;
+            hit = true;
+            if (phone) out.rows.push({ phone: String(phone), convenio: c, fromMe: Boolean(m.id?.fromMe), body: m.body.slice(0, 500), t: m.t || 0, name });
+          }
+        }
+        if (hit && !phone) out.unresolved++;
+        // Libera da memória do navegador o que foi carregado (mantém só as recentes).
+        try {
+          const all = chat.msgs.getModelsArray();
+          if (all.length > 60) {
+            chat.msgs.remove(all.slice(0, all.length - 50));
+            if (chat.msgs.msgLoadState) chat.msgs.msgLoadState.noEarlierMsgs = false;
+          }
+        } catch { /* sem limpeza — segue */ }
+      }
+      return out;
+    }, ids, patterns, Math.floor(since.getTime() / 1000), maxLoadsPerChat);
+
+    stats.unresolved += res.unresolved;
+    stats.loadErrors += res.loadErrors;
+    if (res.oldest && (!stats.oldest || res.oldest * 1000 < new Date(stats.oldest).getTime())) stats.oldest = new Date(res.oldest * 1000).toISOString();
+    const hits = res.rows.map((r) => ({ phone: r.phone, convenio: r.convenio, fromMe: r.fromMe, body: r.body, at: new Date(r.t * 1000), name: r.name }));
+    stats.messages += hits.length;
+    for (const c of groupHitsByContact(hits)) {
+      stats.contacts++;
+      stats.byConvenio[c.convenio] = (stats.byConvenio[c.convenio] || 0) + 1;
+      try {
+        const r = await recordWhatsappInterest({ ...c, capturedBy: 'scan' });
+        stats[r.result] = (stats[r.result] || 0) + 1;
+      } catch (err) {
+        stats.invalid++;
+        console.warn('[WhatsAppWeb] ⚠️ falha ao gravar interessado (segue):', err?.message);
+      }
+    }
+    stats.done = Math.min(i + batchSize, total);
+    if (onBatch) await onBatch({ nextIndex: stats.done, stats: { ...stats } });
+    if (stats.done % 200 < batchSize) console.log('[WhatsAppWeb] 🔎 varredura profunda:', JSON.stringify(stats));
+    await new Promise((r) => setTimeout(r, 500)); // folga para envios da fila whatsapp-send
+  }
+  console.log('[WhatsAppWeb] 🔎 varredura profunda concluída:', JSON.stringify(stats));
+  return stats;
+}
+
 async function handleInboundAppointmentConfirmation(msg) {
   if (!msg || msg.fromMe || msg.isStatus) return;
   const from = msg.from || '';
