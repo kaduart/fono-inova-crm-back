@@ -207,7 +207,8 @@ async function main() {
         const { phone, message, appointmentId, purpose } = job.data;
         // Envio em massa da lista de convênio: confere a conversa AGORA. Se a clínica falou com a pessoa
         // nos últimos `recentDays` dias (inclusive na mão, depois da prévia), não manda nada.
-        if (job.data.recentDays && job.data.waitlistIds?.length) {
+        const reengageIds = job.data.reengageEvaluationIds || [];
+        if (job.data.recentDays && (job.data.waitlistIds?.length || reengageIds.length)) {
             let activity = null;
             try {
                 activity = await getChatActivity(phone);
@@ -216,11 +217,17 @@ async function main() {
             }
             const { isRecentClinicChat, markOfferSkipped } = await import('../../services/convenioWaitlistOffer.js');
             if (activity && isRecentClinicChat(activity, job.data.recentDays)) {
-                await markOfferSkipped(job.data.waitlistIds, {
+                const skip = {
                     purpose,
                     reason: `Conversa com a clínica em ${activity.clinicAt.toISOString().slice(0, 10)} — não enviado`,
                     lastClinicAt: activity.clinicAt,
-                });
+                };
+                if (reengageIds.length) {
+                    const { markReengageSkipped } = await import('../../services/commercial/evaluationReengagement.js');
+                    await markReengageSkipped(reengageIds, skip);
+                } else {
+                    await markOfferSkipped(job.data.waitlistIds, skip);
+                }
                 console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: clínica conversou com ...${String(phone).slice(-4)} há menos de ${job.data.recentDays} dias`);
                 return { skipped: true };
             }
@@ -234,6 +241,10 @@ async function main() {
         if ((purpose === 'convenio_offer' || purpose === 'convenio_announce') && job.data.waitlistIds?.length) {
             const { markOfferSent } = await import('../../services/convenioWaitlistOffer.js');
             await markOfferSent(job.data.waitlistIds, { purpose, messageId: result?.messageId || null });
+        }
+        if (purpose === 'evaluation_reengage' && reengageIds.length) {
+            const { markReengageSent } = await import('../../services/commercial/evaluationReengagement.js');
+            await markReengageSent(reengageIds, { messageId: result?.messageId || null });
         }
         if (purpose === 'attendance_confirmation' && appointmentId) {
             const { markAttendanceConfirmationSent } = await import('../../services/appointment/attendanceConfirmation.service.js');
@@ -304,6 +315,11 @@ async function main() {
         if (lastTry && ['convenio_offer', 'convenio_announce'].includes(job.data?.purpose) && job.data.waitlistIds?.length) {
             import('../../services/convenioWaitlistOffer.js')
                 .then(({ markOfferFailed }) => markOfferFailed(job.data.waitlistIds, err.message, job.data.purpose))
+                .catch(() => {});
+        }
+        if (lastTry && job.data?.purpose === 'evaluation_reengage' && job.data.reengageEvaluationIds?.length) {
+            import('../../services/commercial/evaluationReengagement.js')
+                .then(({ markReengageFailed }) => markReengageFailed(job.data.reengageEvaluationIds, err.message))
                 .catch(() => {});
         }
     });

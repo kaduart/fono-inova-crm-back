@@ -10,6 +10,7 @@
  * GET  /api/v2/commercial/leads-waiting?hours=2                    → lead novo sem resposta
  * POST /api/v2/commercial/contacts                                 → registra o contato feito
  * GET  /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30 → avaliou e não fechou pacote
+ * POST /api/v2/commercial/evaluation-reengage { period, confirm }   → retomar contato: avaliou e sumiu (envio em massa)
  * GET  /api/v2/commercial/unconfirmed-next-day[?date=YYYY-MM-DD]    → próximo dia útil sem confirmação
  * POST /api/v2/commercial/confirmation-reminders { date }           → lembrete em lote (fila whatsapp-send)
  *
@@ -442,6 +443,42 @@ router.get('/evaluation-no-package', ...staff, async (req, res) => {
     res.json({ success: true, data: { minDays, maxDays, ...data, items: sortByRecentContact(data.items) } });
   } catch (err) {
     console.error('[commercial.v2] /evaluation-no-package error:', err);
+    sendApiError(res, err, req);
+  }
+});
+
+/**
+ * POST /api/v2/commercial/evaluation-reengage
+ * Body: { period: 'all'|15|30|60, atendente?, excludeIds?: string[], confirm?: boolean }
+ * "Retomar contato" com quem avaliou e não deu continuidade (sem sessão nem pacote depois da avaliação).
+ * Sem confirm = só prévia (quem recebe, quem fica de fora e por quê, plano por dia). Com confirm=true agenda
+ * todos pelo WhatsApp da clínica, no mesmo motor do envio de convênios (40/dia útil somados, 08:00–18:45).
+ * Ver docs/flows/evaluation_reengagement.md.
+ */
+router.post('/evaluation-reengage', ...staff, async (req, res) => {
+  try {
+    const { periodRange, planReengagement, enqueueReengagement } = await import('../services/commercial/evaluationReengagement.js');
+    const rawPeriod = req.body?.period ?? 'all';
+    let period;
+    try { period = periodRange(rawPeriod).period; } catch {
+      return sendApiError(res, new AppError('BAD_REQUEST', 'Período inválido (use all, 15, 30 ou 60)', { status: 400 }), req);
+    }
+    const atendente = String(req.body?.atendente || '').slice(0, 40);
+    const excludeIds = Array.isArray(req.body?.excludeIds) ? req.body.excludeIds.map(String).slice(0, 2000) : [];
+    const plan = await planReengagement({ period, atendente, excludeIds });
+    const { batch, ...rest } = plan;
+    const preview = { ...rest, willSend: batch.length };
+    if (req.body?.confirm !== true || !batch.length) return res.json({ success: true, data: { preview, queued: 0 } });
+
+    const { queued, failed, finishesAt } = await enqueueReengagement({
+      batch,
+      queue: whatsappSendQueue,
+      atendente,
+      userId: req.user?._id || req.user?.id || null,
+    });
+    res.status(202).json({ success: true, data: { preview, queued, failed, finishesAt } });
+  } catch (err) {
+    console.error('[commercial.v2] /evaluation-reengage error:', err);
     sendApiError(res, err, req);
   }
 });

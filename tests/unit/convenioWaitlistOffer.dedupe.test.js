@@ -14,6 +14,10 @@ vi.mock('../../models/ConvenioWaitlist.js', () => ({
         },
     },
 }));
+// O teto diário soma o "Retomar contato" pós-avaliação (mesmo chip): sem nada agendado aqui.
+vi.mock('../../models/EvaluationReengagement.js', () => ({
+    default: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+}));
 vi.mock('../../services/convenioWaitlistWhatsapp.js', () => ({
     patientMatchesByPhone: async (phones) => new Map(phones.filter((p) => p.endsWith('0003')).map((p) => [p, { nextAppointmentAt: new Date() }])),
 }));
