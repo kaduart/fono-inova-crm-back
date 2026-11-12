@@ -21,6 +21,12 @@ const AUTH_BASE = '/var/data/wwebjs_auth';
 const CRASH_LOG = path.join(AUTH_BASE, '.crash-log.json');
 const SESSION_DIR = path.join(AUTH_BASE, '.wwebjs_auth', 'session');
 const BOOTING_FLAG = path.join(AUTH_BASE, '.booting');
+// Memória do container (ver containerBreakdown / checkMemoryRestart no fim do arquivo)
+let lastCgroupMB = null;
+const MEMORY_RESTART_MB = Number(process.env.CHILD_MEMORY_RESTART_MB || 1750);
+let memoryHighReads = 0;
+let memoryRestarting = false;
+const bullWorkers = [];
 
 if (!MONGO_URI) {
     console.error('[CHILD] ❌ MONGODB_URI não configurada');
@@ -200,6 +206,7 @@ async function main() {
             }
         } catch {}
         console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}${containerBreakdown()}`);
+        checkMemoryRestart().catch(() => {});
     }, 30000);
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
@@ -327,10 +334,12 @@ async function main() {
         lockDuration: 10 * 60 * 1000, // varredura longa não pode ser dada como travada
         maxStalledCount: 30, // worker desliga 19h10/deploy: a profunda volta para a fila e retoma do progresso salvo
     });
+    bullWorkers.push(scanWorker);
     scanWorker.on('failed', (job, err) => {
         console.error(`[CHILD SCAN] ❌ Job ${job?.id} falhou:`, err.message);
     });
 
+    bullWorkers.push(whatsappWorker);
     whatsappWorker.on('completed', (job) => {
         console.log(`[CHILD WORKER] ✅ Job ${job.id} completado`);
     });
@@ -357,17 +366,21 @@ async function main() {
 function containerBreakdown() {
     try {
         let cg = '';
+        lastCgroupMB = null;
         try {
             const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf-8'), 10);
             const max = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf-8').trim();
-            cg = ` | cgroup ${Math.round(cur / 1048576)}/${max === 'max' ? 'max' : Math.round(parseInt(max, 10) / 1048576)}MB`;
+            lastCgroupMB = Math.round(cur / 1048576);
+            cg = ` | cgroup ${lastCgroupMB}/${max === 'max' ? 'max' : Math.round(parseInt(max, 10) / 1048576)}MB`;
         } catch {
             try { // cgroup v1
                 const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf-8'), 10);
-                cg = ` | cgroup ${Math.round(cur / 1048576)}MB`;
+                lastCgroupMB = Math.round(cur / 1048576);
+                cg = ` | cgroup ${lastCgroupMB}MB`;
             } catch {}
         }
         const groups = { parent: 0, child: 0, chrome: 0, outros: 0 };
+        const chromeByType = {};
         let chromeProcs = 0;
         for (const pid of fs.readdirSync('/proc')) {
             if (!/^\d+$/.test(pid)) continue;
@@ -376,17 +389,41 @@ function containerBreakdown() {
                 if (!rss) continue;
                 const kb = parseInt(rss[1], 10);
                 const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf-8');
-                if (/chrome/i.test(cmd)) { groups.chrome += kb; chromeProcs += 1; }
+                if (/chrome/i.test(cmd)) {
+                    groups.chrome += kb; chromeProcs += 1;
+                    const type = (cmd.match(/--type=([a-z-]+)/) || [, 'browser'])[1];
+                    chromeByType[type] = (chromeByType[type] || 0) + kb;
+                }
                 else if (Number(pid) === process.pid) groups.child += kb;
                 else if (Number(pid) === process.ppid) groups.parent += kb;
                 else groups.outros += kb;
             } catch {}
         }
         const mb = (kb) => Math.round(kb / 1024);
-        return `${cg} | parent ${mb(groups.parent)}MB · child ${mb(groups.child)}MB · chrome ${mb(groups.chrome)}MB (${chromeProcs} proc) · outros ${mb(groups.outros)}MB`;
+        const types = Object.entries(chromeByType).sort((a, b) => b[1] - a[1]).map(([t, kb]) => `${t} ${mb(kb)}`).join(', ');
+        return `${cg} | parent ${mb(groups.parent)}MB · child ${mb(groups.child)}MB · chrome ${mb(groups.chrome)}MB (${chromeProcs} proc: ${types}) · outros ${mb(groups.outros)}MB`;
     } catch {
         return '';
     }
+}
+
+// 12/11/2026: medido no Render, o Chrome (WhatsApp Web) ocupa 1,1–1,3 GB e o container vive em
+// 1,3–1,6 GB de 2 GB. Um pico mata tudo por OOM (SIGKILL), no meio de um envio, sem shutdown limpo.
+// Reinício controlado: acima do limite em 2 leituras seguidas (1 min), espera o job atual da
+// fila terminar, fecha o Chrome direito e sai. O parent sobe outro child em 10 s, com a sessão salva.
+async function checkMemoryRestart() {
+    if (memoryRestarting || !MEMORY_RESTART_MB || lastCgroupMB == null) return;
+    memoryHighReads = lastCgroupMB >= MEMORY_RESTART_MB ? memoryHighReads + 1 : 0;
+    if (memoryHighReads < 2) return;
+    memoryRestarting = true;
+    console.warn(`[CHILD MEMORY] ♻️ Container em ${lastCgroupMB}MB (limite de reinício ${MEMORY_RESTART_MB}MB) — reinício controlado do WhatsApp`);
+    try {
+        await Promise.race([
+            Promise.allSettled(bullWorkers.map((w) => w.close())),
+            new Promise((r) => setTimeout(r, 90_000)),
+        ]);
+    } catch {}
+    await shutdown('MEMORY');
 }
 
 // Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
