@@ -47,6 +47,14 @@ A **varredura profunda** (`POST /whatsapp-scan {deep:true}`, `scanConvenioIntere
 - Uma profunda por vez (dedupe de 7 dias). Depende do celular estar ligado e online para entregar o histórico antigo; `stats.oldest` mostra até onde chegou.
 - Palavras incluem erros de digitação comuns (ex.: "iapsgo", "ipago", "unimede").
 
+## Envio em massa (botões "Oferecer particular" e "Agora atendemos")
+
+`POST /api/convenio-waitlist/bulk-offer {kind, convenio?, especialidades?, confirm}` (services/convenioWaitlistOffer.js).
+- Sem `confirm: true` é só prévia (nada é enviado). A tela sempre mostra a prévia antes.
+- `particular`: status aguardando, pula quem tem sessão futura. `credenciado`: exige convênio; aguardando + contatado. Campos `offer` / `announce` no cadastro marcam o envio (nunca manda o mesmo tipo duas vezes).
+- Anti-bloqueio do chip: 1 mensagem por telefone, fila `whatsapp-send` com atraso de ~90s ±15s entre mensagens, teto diário `CONVENIO_OFFER_DAILY_CAP` (padrão 40, soma dos dois tipos), só dia útil 08:00–18:45 (SP).
+- O worker marca `sentAt` e passa para `contatado` quando a mensagem sai; falha definitiva grava `error`.
+
 ## Desligar
 
 - Captura ao vivo: `WA_CONVENIO_INTEREST_CAPTURE=false` no crm-worker.

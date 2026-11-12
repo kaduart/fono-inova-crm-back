@@ -211,6 +211,10 @@ async function main() {
             attendanceConfirmation: purpose === 'attendance_confirmation',
             appointmentId,
         });
+        if ((purpose === 'convenio_offer' || purpose === 'convenio_announce') && job.data.waitlistIds?.length) {
+            const { markOfferSent } = await import('../../services/convenioWaitlistOffer.js');
+            await markOfferSent(job.data.waitlistIds, { purpose, messageId: result?.messageId || null });
+        }
         if (purpose === 'attendance_confirmation' && appointmentId) {
             const { markAttendanceConfirmationSent } = await import('../../services/appointment/attendanceConfirmation.service.js');
             await markAttendanceConfirmationSent(appointmentId, { messageId: result?.messageId || null });
@@ -264,6 +268,12 @@ async function main() {
 
     whatsappWorker.on('failed', (job, err) => {
         console.error(`[CHILD WORKER] ❌ Job ${job?.id} falhou:`, err.message);
+        const lastTry = job && job.attemptsMade >= (job.opts?.attempts || 1);
+        if (lastTry && ['convenio_offer', 'convenio_announce'].includes(job.data?.purpose) && job.data.waitlistIds?.length) {
+            import('../../services/convenioWaitlistOffer.js')
+                .then(({ markOfferFailed }) => markOfferFailed(job.data.waitlistIds, err.message, job.data.purpose))
+                .catch(() => {});
+        }
     });
 }
 
