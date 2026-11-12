@@ -18,25 +18,55 @@ const PLACEHOLDER_NAME = 'Contato do WhatsApp';
 const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || '';
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
 
-/** Mesmo texto do botão "Oferecer particular" da tela (valor antes do preço, horário genérico). */
-export function buildPrivateOfferText({ name, convenio, especialidade }) {
-    const esp = especialidade ? ` de ${String(especialidade).toLowerCase()}` : '';
-    const oi = !name || name === PLACEHOLDER_NAME ? 'Oi!' : `Oi, ${capitalize(firstName(name))}!`;
+const greetName = (name) => (!name || name === PLACEHOLDER_NAME ? '' : `, ${capitalize(firstName(name))}`);
+const cleanText = (v, max = 60) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+/**
+ * "Retomar contato" (texto do Kadu, 12/11/2026). Negrito no formato do WhatsApp (*texto*).
+ * Sem atendente → "Aqui é da Clínica"; sem especialidade → "esse acompanhamento".
+ */
+export function buildPrivateOfferText({ name, convenio, especialidade, atendente = '' }) {
     const label = CONVENIO_LABELS[convenio] || convenio;
-    return `${oi} Aqui é da Clínica Fono Inova. O credenciamento com o ${label} ainda está em andamento e não queremos que vocês fiquem esperando. `
-        + `Começar cedo faz diferença no desenvolvimento, então dá para iniciar o atendimento${esp} no particular e passar para o plano quando ele sair. `
-        + 'No pacote de 1x por semana cada sessão sai por R$ 180 (cerca de R$ 720 por mês). Tenho horário quinta de manhã ou amanhã à tarde. Quer que eu reserve? 💚';
+    const quem = cleanText(atendente, 40);
+    const esp = cleanText(especialidade);
+    return [
+        `Oi${greetName(name)}! Tudo bem? 🥰💚`,
+        '',
+        quem ? `Aqui é a ${quem}, da *Clínica Fono Inova!*` : 'Aqui é da *Clínica Fono Inova!*',
+        '',
+        '✨ *Temos novidades por aqui e lembramos de você!*',
+        '',
+        `Há um tempinho, você conversou com a nossa equipe sobre atendimento pelo *${label}*, lembra?`,
+        '',
+        esp
+            ? `Estamos ampliando nossas opções de atendimento e gostaríamos muito de saber se você ainda está procurando acompanhamento em *${esp.toLowerCase()}*. 💚`
+            : 'Estamos ampliando nossas opções de atendimento e gostaríamos muito de saber se você ainda está procurando esse acompanhamento. 💚',
+        '',
+        'Será um prazer ajudar você e sua família!',
+        '',
+        '*Me conta, ainda podemos te ajudar com esse atendimento?* 😊',
+    ].join('\n');
 }
 
-/** Novidade: o convênio foi credenciado. Só as especialidades liberadas, se a equipe informar. */
+/** "Agora atendemos" (texto do Kadu, 12/11/2026). Só depois do credenciamento confirmado. */
 export function buildAccreditedText({ name, convenio, especialidades = '' }) {
-    const oi = !name || name === PLACEHOLDER_NAME ? 'Oi!' : `Oi, ${capitalize(firstName(name))}!`;
     const label = CONVENIO_LABELS[convenio] || convenio;
-    const esp = String(especialidades || '').trim();
-    return `${oi} Aqui é da Clínica Fono Inova. Você tinha procurado a gente pelo ${label} e temos uma boa notícia: `
-        + `agora atendemos pelo ${label}${esp ? ` em ${esp.toLowerCase()}` : ''}! `
-        + 'Assim dá para começar o acompanhamento com a nossa equipe usando o seu plano. '
-        + 'Tenho horário quinta de manhã ou amanhã à tarde. Quer que eu reserve? 💚';
+    const esp = cleanText(especialidades, 120);
+    return [
+        `Oi${greetName(name)}! Tudo bem? 🥰💚`,
+        '',
+        'Aqui é da *Clínica Fono Inova!*',
+        '',
+        '🎉 *Viemos compartilhar uma novidade maravilhosa com você!*',
+        '',
+        `Lembra que você procurou nossa clínica para atendimento pelo *${label}*?`,
+        '',
+        `Pois temos uma ótima notícia: *agora estamos atendendo pelo ${label}${esp ? ` em ${esp.toLowerCase()}` : ''}!* 💚✨`,
+        '',
+        'E como você já havia demonstrado interesse, fizemos questão de entrar em contato!',
+        '',
+        '*Você ainda está procurando esse atendimento?* Será uma alegria receber vocês! 🥰',
+    ].join('\n');
 }
 
 export const BULK_KINDS = {
@@ -44,7 +74,7 @@ export const BULK_KINDS = {
     credenciado: { field: 'announce', statuses: ['aguardando', 'contatado'], skipWithSession: false, purpose: 'convenio_announce' },
 };
 
-const buildText = (kind, g, opts) => (kind === 'credenciado' ? buildAccreditedText({ ...g, ...opts }) : buildPrivateOfferText(g));
+const buildText = (kind, g, opts) => (kind === 'credenciado' ? buildAccreditedText({ ...g, ...opts }) : buildPrivateOfferText({ ...g, atendente: opts?.atendente }));
 
 /** Minutos do dia em São Paulo (sem horário de verão desde 2019) e se é dia útil. */
 function spClock(now) {
@@ -69,7 +99,7 @@ export function offerCapacity({ now = new Date(), sentToday = 0 } = {}) {
  * 1 mensagem por telefone (o cadastro mais antigo). No particular, pula quem já tem sessão futura.
  * O teto diário vale para os dois tipos somados (é o mesmo chip). Mais antigos primeiro.
  */
-export async function planBulkOffer({ kind = 'particular', convenio = null, especialidades = '', now = new Date() } = {}) {
+export async function planBulkOffer({ kind = 'particular', convenio = null, especialidades = '', atendente = '', now = new Date() } = {}) {
     const cfg = BULK_KINDS[kind];
     if (!cfg) throw new Error(`Tipo de envio inválido: ${kind}`);
     const filter = { status: { $in: cfg.statuses }, [`${cfg.field}.queuedAt`]: null };
@@ -106,7 +136,7 @@ export async function planBulkOffer({ kind = 'particular', convenio = null, espe
         capacity,
         limitReason: reason,
         batch: targets.slice(0, capacity),
-        sample: targets[0] ? buildText(kind, targets[0], { especialidades }) : null,
+        sample: targets[0] ? buildText(kind, targets[0], { especialidades, atendente }) : null,
     };
 }
 
@@ -114,7 +144,7 @@ export async function planBulkOffer({ kind = 'particular', convenio = null, espe
  * Enfileira o lote (idempotente: <campo>.queuedAt marcado antes; jobId por cadastro e tipo).
  * @returns {Promise<{ queued: number, failed: number }>}
  */
-export async function enqueueBulkOffer({ kind = 'particular', batch, queue, userId = null, especialidades = '', now = new Date() }) {
+export async function enqueueBulkOffer({ kind = 'particular', batch, queue, userId = null, especialidades = '', atendente = '', now = new Date() }) {
     const cfg = BULK_KINDS[kind];
     if (!cfg) throw new Error(`Tipo de envio inválido: ${kind}`);
     const f = cfg.field;
@@ -131,7 +161,7 @@ export async function enqueueBulkOffer({ kind = 'particular', batch, queue, user
         try {
             await queue.add('send-message', {
                 phone: g.phone,
-                message: buildText(kind, g, { especialidades }),
+                message: buildText(kind, g, { especialidades, atendente }),
                 purpose: cfg.purpose,
                 waitlistIds: g.ids.map(String),
             }, {
@@ -173,3 +203,28 @@ export async function markOfferFailed(waitlistIds = [], error = '', purpose = 'c
     const f = fieldForPurpose(purpose);
     await ConvenioWaitlist.updateMany({ _id: { $in: waitlistIds } }, { $set: { [`${f}.error`]: String(error).slice(0, 200) } });
 }
+
+/**
+ * Envio individual (botões da linha): monta o texto do tipo ou usa o texto editado pela equipe,
+ * enfileira na hora (sem atraso) e marca o campo do tipo. Pode reenviar: é a equipe decidindo.
+ */
+export async function sendSingle({ entry, kind = 'particular', message = '', especialidades = '', atendente = '', queue, userId = null, now = new Date() }) {
+    const cfg = BULK_KINDS[kind];
+    if (!cfg) throw new Error(`Tipo de envio inválido: ${kind}`);
+    const text = String(message || '').trim() || buildText(kind, entry, { especialidades, atendente });
+    const job = await queue.add('send-message', {
+        phone: entry.phone,
+        message: text,
+        purpose: cfg.purpose,
+        waitlistIds: [String(entry._id)],
+    }, { attempts: 3, backoff: { type: 'exponential', delay: 30_000 }, removeOnComplete: 500, removeOnFail: 500 });
+    await ConvenioWaitlist.updateOne(
+        { _id: entry._id },
+        { $set: { [`${cfg.field}.queuedAt`]: now, [`${cfg.field}.queuedBy`]: userId, [`${cfg.field}.error`]: null } },
+    );
+    console.log(`[ConvenioEnvio] 📤 individual ${kind} enfileirado`, { tail: String(entry.phone).slice(-4), jobId: job.id, userId });
+    return { jobId: job.id, message: text };
+}
+
+export const previewSingle = ({ entry, kind = 'particular', especialidades = '', atendente = '' }) =>
+    buildText(kind, entry, { especialidades, atendente });

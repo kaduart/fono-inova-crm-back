@@ -247,7 +247,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
 
     /**
      * POST /api/convenio-waitlist/bulk-offer
-     * Body: { kind: 'particular'|'credenciado', convenio?, especialidades?, confirm?: boolean }
+     * Body: { kind: 'particular'|'credenciado', convenio?, especialidades?, atendente?, confirm?: boolean }
      * Envio em massa pelo WhatsApp. Sem confirm (ou false) = só prévia, não envia nada.
      * - particular: oferta do particular (aguardando, pula quem tem sessão futura).
      * - credenciado: "agora atendemos o plano" — exige convênio; vai para aguardando e contatados.
@@ -264,8 +264,9 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 return sendApiError(res, new AppError('BAD_REQUEST', 'Escolha qual convênio foi credenciado', { status: 400 }), req);
             }
             const especialidades = String(req.body?.especialidades || '').slice(0, 120);
+            const atendente = String(req.body?.atendente || '').slice(0, 40);
             const { planBulkOffer, enqueueBulkOffer } = await import('../services/convenioWaitlistOffer.js');
-            const plan = await planBulkOffer({ kind, convenio, especialidades });
+            const plan = await planBulkOffer({ kind, convenio, especialidades, atendente });
             const preview = {
                 kind,
                 eligible: plan.eligible,
@@ -283,12 +284,40 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 batch: plan.batch,
                 queue: whatsappSendQueue,
                 especialidades,
+                atendente,
                 userId: req.user?._id || req.user?.id || null,
             });
             return res.status(202).json({ preview, queued, failed });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro no envio em massa:', err);
             return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao preparar o envio em massa', { status: 500 }), req);
+        }
+    });
+
+    /**
+     * POST /api/convenio-waitlist/:id/whatsapp
+     * Body: { kind: 'particular'|'credenciado', message?, especialidades?, atendente?, confirm?: boolean }
+     * Envio individual pelo WhatsApp da clínica (fila whatsapp-send), igual à agenda externa: não abre o wa.me.
+     * Sem confirm = devolve só o texto pronto (prévia). Com confirm=true envia `message` (editado) ou o texto pronto.
+     */
+    router.post('/:id/whatsapp', authorize(['admin', 'secretary']), validateId, async (req, res) => {
+        try {
+            const kind = req.body?.kind === 'credenciado' ? 'credenciado' : 'particular';
+            const entry = await ConvenioWaitlist.findById(req.params.id).select('_id name phone convenio especialidade status').lean();
+            if (!entry) return sendApiError(res, new AppError('NOT_FOUND', 'Cadastro não encontrado', { status: 404 }), req);
+            const especialidades = String(req.body?.especialidades || '').slice(0, 120);
+            const atendente = String(req.body?.atendente || '').slice(0, 40);
+            const { previewSingle, sendSingle } = await import('../services/convenioWaitlistOffer.js');
+            if (req.body?.confirm !== true) {
+                return res.json({ message: previewSingle({ entry, kind, especialidades, atendente }), sent: false });
+            }
+            const message = String(req.body?.message || '').slice(0, 2000);
+            const { whatsappSendQueue } = await import('../config/bullConfig.js');
+            const r = await sendSingle({ entry, kind, message, especialidades, atendente, queue: whatsappSendQueue, userId: req.user?._id || req.user?.id || null });
+            return res.status(202).json({ sent: true, jobId: r.jobId });
+        } catch (err) {
+            console.error('❌ [WAITLIST] Erro no envio individual:', err);
+            return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao enviar pelo WhatsApp', { status: 500 }), req);
         }
     });
 
