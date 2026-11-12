@@ -407,7 +407,40 @@ const PAGE_NOISE_PATTERNS = [
   /runtime\.sendMessage/i,
   /runtime\.onMessage/i,
   /\[Report Only\]/i,
+  // 12/11/2026 (Kadu): telemetria interna do próprio WhatsApp Web, marcada por ele como "non-fatal".
+  /ErrorUtils caught an error/i,
+  /Failed to load resource: the server responded with a status of 4\d\d/i,
 ];
+
+// Linhas que o Chrome escreve direto no stderr (dumpio) e não indicam problema. O crash
+// ("Processo do Chrome saiu") e erros FATAL continuam aparecendo.
+const CHROME_STDERR_NOISE = [
+  /^\s*DevTools listening on ws:\/\//,
+  /\[OpenH264\]/,
+];
+
+let chromeStderrFilterInstalled = false;
+/** Tira do log as linhas de ruído do Chrome (dumpio repassa o stderr dele para o nosso). */
+function installChromeStderrFilter() {
+  if (chromeStderrFilterInstalled || process.env.LOG_VERBOSE === 'true') return;
+  chromeStderrFilterInstalled = true;
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => {
+    try {
+      const text = typeof chunk === 'string' ? chunk : Buffer.isBuffer(chunk) ? chunk.toString('utf8') : null;
+      if (text != null) {
+        const lines = text.split('\n');
+        const kept = lines.filter((l) => !CHROME_STDERR_NOISE.some((re) => re.test(l)));
+        if (kept.length !== lines.length) {
+          const out = kept.join('\n');
+          if (!out.trim()) return true;
+          return original(out, ...rest);
+        }
+      }
+    } catch { /* em dúvida, escreve como veio */ }
+    return original(chunk, ...rest);
+  };
+}
 
 function isPageNoise(message) {
   return PAGE_NOISE_PATTERNS.some(re => re.test(message));
@@ -515,6 +548,7 @@ function cleanupChromeCacheIfNeeded() {
 }
 
 function createClient() {
+  installChromeStderrFilter();
   // Garante pasta de persistência
   try {
     if (!fs.existsSync(authPath)) {
@@ -625,7 +659,7 @@ function createClient() {
 
   newClient.on('authenticated', async () => {
     const ts = new Date().toISOString();
-    console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — celular escaneou o QR`);
+    console.log(`[WhatsAppWeb][${ts}] 🔐 authenticated — sessão aceita (salva ou QR lido)`);
     clearInitWatchdog();
     if (loadingWatchdog) { clearTimeout(loadingWatchdog); loadingWatchdog = null; }
     whatsappState.authenticated = true;
