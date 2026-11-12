@@ -857,7 +857,7 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
   try {
     const rows = await client.pupPage.evaluate((since) => {
       const out = [];
-      const chats = window.Store?.Chat?.getModelsArray?.() || [];
+      const chats = ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Chat?.getModelsArray?.() || [];
       for (const c of chats) {
         if (c.isGroup || (c.t || 0) < since) continue;
         const server = c.id?.server;
@@ -913,7 +913,7 @@ async function resolveRealPhoneFromLid(msg, lid) {
   } catch { /* segue */ }
   try {
     const p = await msg.client?.pupPage?.evaluate((id) => {
-      const ct = window.Store?.Contact?.get?.(id);
+      const ct = ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Contact?.get?.(id);
       return ct?.phoneNumber?.user || null;
     }, lid);
     if (p) candidates.push(p);
@@ -1043,7 +1043,7 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
     const rows = await client.pupPage.evaluate((source) => {
       const re = new RegExp(source, 'i');
       const out = [];
-      for (const c of window.Store?.Chat?.getModelsArray?.() || []) {
+      for (const c of ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Chat?.getModelsArray?.() || []) {
         if (c.isGroup) continue;
         const server = c.id?.server;
         const phone = server === 'c.us' ? c.id.user : (c.contact?.phoneNumber?.user || null);
@@ -1099,11 +1099,13 @@ export async function scanConvenioInterestDeep({
   const patterns = CONVENIOS_WAITLIST.map((c) => [c, WAITLIST_WHATSAPP_KEYWORDS[c].regex.source]);
 
   // Ordem estável (id) para conseguir retomar do mesmo ponto depois de um restart do worker.
-  const chatIds = await client.pupPage.evaluate(() => (window.Store?.Chat?.getModelsArray?.() || [])
+  const chatIds = await client.pupPage.evaluate(() => (((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Chat?.getModelsArray?.() || [])
     .filter((c) => !c.isGroup && ['c.us', 'lid'].includes(c.id?.server))
     .map((c) => c.id._serialized)
     .sort());
   const total = chatIds.length;
+  // 0 conversas = não achou a lista (mudança interna do WhatsApp Web); falhar é melhor que dizer "ninguém".
+  if (!total) throw new Error('Não consegui ler a lista de conversas do WhatsApp Web');
   const stats = { total, done: Math.min(startIndex, total), messages: 0, contacts: 0, created: 0, updated: 0, closed: 0, invalid: 0, unresolved: 0, loadErrors: 0, oldest: null, byConvenio: {} };
   console.log(`[WhatsAppWeb] 🔎 varredura profunda: ${total} conversas (começando em ${startIndex})`);
 
@@ -1115,11 +1117,15 @@ export async function scanConvenioInterestDeep({
       const loader = window.require?.('WAWebChatLoadMessages');
       const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r('__timeout'), ms))]);
       const out = { rows: [], unresolved: 0, loadErrors: 0, oldest: null };
+      const cols = ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })());
       for (const id of ids) {
-        const chat = window.Store.Chat.get(id);
+        const chat = cols.Chat?.get?.(id);
         if (!chat) continue;
-        const phone = chat.id.server === 'c.us' ? chat.id.user
-          : (chat.contact?.phoneNumber?.user || window.Store?.Contact?.get?.(id)?.phoneNumber?.user || null);
+        let phone = chat.id.server === 'c.us' ? chat.id.user
+          : (chat.contact?.phoneNumber?.user || cols.Contact?.get?.(id)?.phoneNumber?.user || null);
+        if (!phone && window.WWebJS?.enforceLidAndPnRetrieval) {
+          try { const r = await window.WWebJS.enforceLidAndPnRetrieval(id); phone = r?.phone?.user || null; } catch { /* segue */ }
+        }
         const name = chat.contact?.name || chat.contact?.pushname || chat.formattedTitle || null;
         // Carrega o histórico antigo até a data de corte (ou até não haver mais).
         for (let n = 0; n < maxLoads && loader?.loadEarlierMsgs; n++) {
