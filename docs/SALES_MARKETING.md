@@ -35,3 +35,9 @@ O acesso é só para `admin` e `secretary`.
 - As regras puras ficam em `services/commercial/salesRules.js`, com teste em `tests/unit/salesRules.test.js`. As consultas ficam em `services/commercial/salesSummary.js`.
 - Se mudar o critério de caixa, mude só no `buildCashMatch`.
 - O front consome isso em `src/services/salesMarketingService.ts`.
+
+
+## Pacientes e receita do lead (12/11/2026)
+
+- O ROI e o funil zeravam pacientes/receita porque o lead da "Agenda Direta" nunca ganhava `convertedToPatient`. Agora o paciente do lead vem de `convertedToPatient` OU do agendamento ligado ao lead (`Appointment.lead → patient`), em `resolveLeadPatients` (`services/commercial/salesSummary.js`).
+- Paciente antigo que agenda de novo (paciente criado mais de 1 dia antes do lead, `isReturningPatient` em `salesRules.js`) não conta como lead novo: fica fora do funil, do "Leads novos" (inclusive o do período anterior) e do ROI. No espelho, de 28 leads "Agenda Direta" de nov/2026, 16 eram pacientes antigos.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePeriod, phoneVariants, channelOf, leadFunnel, channelVerdict, roiTotals, pct } from '../../services/commercial/salesRules.js';
+import { parsePeriod, phoneVariants, channelOf, leadFunnel, channelVerdict, roiTotals, pct, isReturningPatient } from '../../services/commercial/salesRules.js';
 
 describe('salesRules', () => {
   it('período usa o dia inteiro em São Paulo e calcula o anterior de mesmo tamanho', () => {
@@ -45,5 +45,18 @@ describe('salesRules', () => {
     expect(roiTotals({ spend: 0, leads: 5, patients: 1, revenue: 720 }).costPerPatient).toBeNull();
     expect(channelVerdict({ spend: 600, leads: 12, patients: 0 }).tone).toBe('red');
     expect(channelVerdict({ spend: 0, leads: 14, patients: 2 }).text).toBe('orgânico forte');
+  });
+});
+
+// 12/11/2026: paciente antigo que agenda de novo pela Agenda Direta não é lead novo
+describe('isReturningPatient', () => {
+  it('paciente criado meses antes do lead = paciente antigo', () => {
+    expect(isReturningPatient(new Date('2026-02-23'), new Date('2026-11-05'))).toBe(true);
+  });
+  it('paciente criado junto com o lead (mesmo agendamento) = lead novo', () => {
+    expect(isReturningPatient(new Date('2026-11-03T11:43:19Z'), new Date('2026-11-03T11:43:20Z'))).toBe(false);
+  });
+  it('sem paciente ou sem data não exclui', () => {
+    expect(isReturningPatient(null, new Date())).toBe(false);
   });
 });

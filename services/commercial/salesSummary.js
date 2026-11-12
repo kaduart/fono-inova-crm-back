@@ -8,11 +8,12 @@ import Message from '../../models/Message.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
 import Payment from '../../models/Payment.js';
+import Patient from '../../models/Patient.js';
 import LeadAttribution from '../../models/LeadAttribution.js';
 import AdSpend from '../../models/AdSpend.js';
 import { buildCashMatch } from '../unifiedFinancialService.v2.js';
 import {
-  parsePeriod, phoneVariants, channelOf, CHANNEL_LABELS, leadFunnel, pct, channelVerdict, roiTotals,
+  parsePeriod, phoneVariants, channelOf, CHANNEL_LABELS, leadFunnel, pct, channelVerdict, roiTotals, isReturningPatient,
 } from './salesRules.js';
 
 const CACHE_TTL_MS = 60_000;
@@ -29,11 +30,38 @@ async function cached(key, fn) {
 const NOT_HAPPENED = ['canceled', 'force_cancelled', 'suspended', 'processing_cancel'];
 const SCHEDULED_LEAD_STATUSES = ['agendado', 'virou_paciente', 'convertido'];
 
+// Paciente de cada lead. 12/11/2026: o lead da "Agenda Direta" nunca ganhava convertedToPatient
+// (o campo que o agendamento gravava não existia no schema), então pacientes e receita saíam zerados.
+// O vínculo confiável é o próprio agendamento (Appointment.lead → patient).
+// `returning` = o paciente já existia antes do lead (mais de 1 dia): é paciente antigo agendando
+// de novo, não lead novo. Fica fora do funil e do ROI.
+async function resolveLeadPatients(leads) {
+  const out = new Map();
+  if (!leads.length) return out;
+  const byAppt = await Appointment.aggregate([
+    { $match: { lead: { $in: leads.map(l => l._id) }, patient: { $ne: null } } },
+    { $sort: { createdAt: 1 } },
+    { $group: { _id: '$lead', patient: { $first: '$patient' } } },
+  ]);
+  const apptMap = new Map(byAppt.map(a => [String(a._id), a.patient]));
+  const pidOf = l => l.convertedToPatient || apptMap.get(String(l._id)) || null;
+  const pids = [...new Set(leads.map(pidOf).filter(Boolean).map(String))];
+  const patients = pids.length ? await Patient.find({ _id: { $in: pids } }, { createdAt: 1 }).lean() : [];
+  const createdMap = new Map(patients.map(p => [String(p._id), p.createdAt]));
+  for (const l of leads) {
+    const pid = pidOf(l);
+    const created = pid ? createdMap.get(String(pid)) : null;
+    out.set(String(l._id), { pid, returning: isReturningPatient(created, l.createdAt) });
+  }
+  return out;
+}
+
 // Lê o que cada lead virou. 5 consultas em paralelo, todas por _id/índice.
-async function enrichLeads(leads, start, end) {
+async function enrichLeads(leads, start, end, links = new Map()) {
   if (!leads.length) return [];
   const ids = leads.map(l => l._id);
-  const pids = leads.map(l => l.convertedToPatient).filter(Boolean);
+  const pidOf = l => links.get(String(l._id))?.pid || l.convertedToPatient || null;
+  const pids = leads.map(pidOf).filter(Boolean);
   const phones = [...new Set(leads.flatMap(l => phoneVariants(l.contact?.phone)))];
 
   const [msgs, appts, packs, cash, attrs] = await Promise.all([
@@ -60,7 +88,7 @@ async function enrichLeads(leads, start, end) {
   const attrMap = new Map(attrs.map(a => [a.phone, a]));
 
   return leads.map((l) => {
-    const pid = l.convertedToPatient ? String(l.convertedToPatient) : null;
+    const pid = pidOf(l) ? String(pidOf(l)) : null;
     const m = msgMap.get(String(l._id));
     const a = pid ? apptMap.get(pid) : null;
     const attr = phoneVariants(l.contact?.phone).map(p => attrMap.get(p)).find(Boolean) || null;
@@ -78,19 +106,22 @@ async function enrichLeads(leads, start, end) {
   });
 }
 
-const leadsIn = (start, end) => Lead.find(
-  { createdAt: { $gte: start, $lte: end }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT },
-  { contact: 1, origin: 1, status: 1, convertedToPatient: 1, createdAt: 1 },
-).lean();
+// Leads novos do período, já sem o paciente antigo que só agendou de novo (ver resolveLeadPatients).
+async function leadsIn(start, end) {
+  const leads = await Lead.find(
+    { createdAt: { $gte: start, $lte: end }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT },
+    { contact: 1, origin: 1, status: 1, convertedToPatient: 1, createdAt: 1 },
+  ).lean();
+  const links = await resolveLeadPatients(leads);
+  return { leads: leads.filter(l => !links.get(String(l._id))?.returning), links };
+}
 
 export function leadsSummary(startStr, endStr) {
   const p = parsePeriod(startStr, endStr);
   return cached(`leads:${p.start.toISOString()}:${p.end.toISOString()}`, async () => {
-    const [leads, prevNewLeads] = await Promise.all([
-      leadsIn(p.start, p.end),
-      Lead.countDocuments({ createdAt: { $gte: p.prevStart, $lte: p.prevEnd }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT }),
-    ]);
-    const rows = await enrichLeads(leads, p.start, p.end);
+    const [{ leads, links }, prev] = await Promise.all([leadsIn(p.start, p.end), leadsIn(p.prevStart, p.prevEnd)]);
+    const prevNewLeads = prev.leads.length;
+    const rows = await enrichLeads(leads, p.start, p.end, links);
     const f = leadFunnel(rows);
     return {
       period: { start: p.start, end: p.end, days: p.days },
@@ -139,8 +170,8 @@ async function spendByChannel(start, end) {
 export function roiSummary(startStr, endStr) {
   const p = parsePeriod(startStr, endStr);
   return cached(`roi:${p.start.toISOString()}:${p.end.toISOString()}`, async () => {
-    const [leads, spendMap] = await Promise.all([leadsIn(p.start, p.end), spendByChannel(p.start, p.end)]);
-    const rows = await enrichLeads(leads, p.start, p.end);
+    const [{ leads, links }, spendMap] = await Promise.all([leadsIn(p.start, p.end), spendByChannel(p.start, p.end)]);
+    const rows = await enrichLeads(leads, p.start, p.end, links);
 
     const byCh = new Map();
     for (const r of rows) {
