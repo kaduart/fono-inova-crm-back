@@ -4,22 +4,32 @@ import { buildAccreditedText, buildPrivateOfferText, offerCapacity, OFFER_DAILY_
 // 12/11/2026 é quinta-feira. Horário de São Paulo = UTC-3.
 const sp = (hh, mm = 0, day = 12) => new Date(Date.UTC(2026, 10, day, hh + 3, mm));
 
-describe('textos do envio em massa', () => {
-    it('particular: primeiro nome, valor antes do preço, horário genérico, 1 coração', () => {
-        const t = buildPrivateOfferText({ name: 'ANA PAULA SILVA', convenio: 'ipasgo', especialidade: 'Fonoaudiologia' });
-        expect(t.startsWith('Oi, Ana!')).toBe(true);
-        expect(t).toContain('IPASGO');
-        expect(t.indexOf('faz diferença')).toBeLessThan(t.indexOf('R$ 180'));
-        expect(t).toContain('quinta de manhã');
-        expect(t.match(/💚/g)).toHaveLength(1);
+describe('textos do envio em massa (texto do Kadu, negrito do WhatsApp)', () => {
+    it('retomar contato: primeiro nome, atendente, convênio e especialidade', () => {
+        const t = buildPrivateOfferText({ name: 'ANA PAULA SILVA', convenio: 'ipasgo', especialidade: 'Fonoaudiologia', atendente: 'Bia' });
+        const lines = t.split('\n');
+        expect(lines[0]).toBe('Oi, Ana! Tudo bem? 🥰💚');
+        expect(lines[1]).toBe('');
+        expect(lines[2]).toBe('Aqui é a Bia, da *Clínica Fono Inova!*');
+        expect(t).toContain('atendimento pelo *IPASGO*, lembra?');
+        expect(t).toContain('acompanhamento em *fonoaudiologia*. 💚');
+        expect(t).not.toContain('**');
+        expect(lines.at(-1)).toBe('*Me conta, ainda podemos te ajudar com esse atendimento?* 😊');
     });
 
-    it('credenciado: avisa que agora atende o plano, sem preço, com especialidades liberadas', () => {
-        const t = buildAccreditedText({ name: 'Contato do WhatsApp', convenio: 'unimed', especialidades: 'Fonoaudiologia e Psicologia' });
-        expect(t.startsWith('Oi!')).toBe(true);
-        expect(t).toContain('agora atendemos pelo Unimed em fonoaudiologia e psicologia');
+    it('retomar contato sem nome, atendente nem especialidade', () => {
+        const t = buildPrivateOfferText({ name: 'Contato do WhatsApp', convenio: 'geap' });
+        expect(t.startsWith('Oi! Tudo bem?')).toBe(true);
+        expect(t).toContain('Aqui é da *Clínica Fono Inova!*');
+        expect(t).toContain('procurando esse acompanhamento. 💚');
+    });
+
+    it('agora atendemos: convênio e especialidades liberadas', () => {
+        const t = buildAccreditedText({ name: 'joão', convenio: 'unimed', especialidades: 'Fonoaudiologia e Psicologia' });
+        expect(t.startsWith('Oi, João! Tudo bem? 🥰💚')).toBe(true);
+        expect(t).toContain('*agora estamos atendendo pelo Unimed em fonoaudiologia e psicologia!* 💚✨');
         expect(t).not.toContain('R$');
-        expect(t.match(/💚/g)).toHaveLength(1);
+        expect(buildAccreditedText({ name: '', convenio: 'ipasgo' })).toContain('*agora estamos atendendo pelo IPASGO!* 💚✨');
     });
 });
 
