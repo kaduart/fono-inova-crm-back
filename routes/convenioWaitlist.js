@@ -219,7 +219,9 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
      */
     router.post('/whatsapp-scan', authorize(['admin', 'secretary']), async (req, res) => {
         try {
-            const deep = req.body?.deep === true;
+            // 12/11/2026: busca rápida desativada (derrubava o worker por memória). Todo pedido vira a
+            // Busca completa, que é incremental (só lê o que é novo desde a última).
+            const deep = true;
             const convenio = deep ? 'todos' : String(req.body?.convenio || '');
             if (!deep && !CONVENIOS_WAITLIST.includes(convenio)) {
                 return sendApiError(res, new AppError('BAD_REQUEST', 'Convênio inválido', { status: 400 }), req);

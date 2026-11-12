@@ -5,6 +5,7 @@
 // Envio pelo WhatsApp Web (chip da clínica) → DEVAGAR para não ser bloqueado: 1 a cada ~90s,
 // no máximo OFFER_DAILY_CAP por dia e só dentro do horário do worker. Ver docs/flows/convenio_interest_whatsapp.md.
 import ConvenioWaitlist from '../models/ConvenioWaitlist.js';
+import EvaluationReengagement from '../models/EvaluationReengagement.js';
 import { CONVENIO_LABELS } from '../constants/convenioWaitlist.js';
 import { patientMatchesByPhone } from './convenioWaitlistWhatsapp.js';
 
@@ -93,7 +94,7 @@ const personView = (g, extra = {}) => ({
 const buildText = (kind, g, opts) => (kind === 'credenciado' ? buildAccreditedText({ ...g, ...opts }) : buildPrivateOfferText({ ...g, atendente: opts?.atendente }));
 
 /** Minutos do dia em São Paulo (sem horário de verão desde 2019) e se é dia útil. */
-function spClock(now) {
+export function spClock(now) {
     const sp = new Date(now.getTime() - 3 * 3600 * 1000);
     return { minutes: sp.getUTCHours() * 60 + sp.getUTCMinutes(), weekday: sp.getUTCDay(), dayStartUtc: new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate()) + 3 * 3600 * 1000) };
 }
@@ -110,7 +111,7 @@ export function offerCapacity({ now = new Date(), sentToday = 0 } = {}) {
     return { capacity: Math.min(left, fits), reason: left <= fits ? 'limite_diario' : 'fim_do_horario' };
 }
 
-const spDayKey = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+export const spDayKey = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 
 /**
  * Horários de envio espalhados em dias úteis (08:00–18:45 SP), ~90s ±15s entre mensagens e no máximo
@@ -147,8 +148,12 @@ export function scheduleSlots({ count, now = new Date(), busy = [], random = Mat
     return slots;
 }
 
-/** Datas já ocupadas (agendadas ou enviadas) de hoje em diante, dos dois tipos (é o mesmo chip). */
-async function busySlots(now) {
+/**
+ * Datas já ocupadas (agendadas ou enviadas) de hoje em diante, de TODO envio em massa pelo chip:
+ * os dois tipos de convênio e o "Retomar contato" pós-avaliação (EvaluationReengagement).
+ * O teto de OFFER_DAILY_CAP por dia vale para a soma.
+ */
+export async function busySlots(now) {
     const { dayStartUtc } = spClock(now);
     const docs = await ConvenioWaitlist.find({
         $or: [
@@ -157,6 +162,14 @@ async function busySlots(now) {
         ],
     }).select('offer.queuedAt offer.scheduledFor offer.skippedAt announce.queuedAt announce.scheduledFor announce.skippedAt').lean();
     const out = [];
+    const reengage = await EvaluationReengagement.find({
+        skippedAt: null,
+        $or: [{ queuedAt: { $gte: dayStartUtc } }, { scheduledFor: { $gte: dayStartUtc } }],
+    }).select('queuedAt scheduledFor').lean();
+    for (const r of reengage) {
+        const at = r.scheduledFor || r.queuedAt;
+        if (at && new Date(at) >= dayStartUtc) out.push(new Date(at));
+    }
     for (const d of docs) {
         for (const f of ['offer', 'announce']) {
             const info = d[f];

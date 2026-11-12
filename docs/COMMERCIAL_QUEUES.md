@@ -12,6 +12,7 @@ São quatro filas que ajudam a secretária a vender e a reter pacientes. Elas ap
 | Reativação | `GET /api/v2/commercial/reactivation?minDays=7` | Dashboard e Acompanhamento |
 | Lead sem resposta | `GET /api/v2/commercial/leads-waiting?hours=2` | Topo do Dashboard, com cronômetro |
 | Avaliou e não fechou | `GET /api/v2/commercial/evaluation-no-package?minDays=3&maxDays=30` | Dashboard, "Precisa de você" |
+| Retomar contato (avaliou e sumiu) | `POST /api/v2/commercial/evaluation-reengage` (envio em massa, ver docs/flows/evaluation_reengagement.md) | Painel "Avaliou e não fechou" |
 | Próximo dia útil sem confirmação | `GET /api/v2/commercial/unconfirmed-next-day` e `POST /api/v2/commercial/confirmation-reminders` | Dashboard, "Precisa de você" |
 | Registro do contato | `POST /api/v2/commercial/contacts` | Botão "Marcar como contatado" das filas |
 
