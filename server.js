@@ -75,8 +75,10 @@ import googleAdsAuthRoutes from "./routes/google-auth.js";
 import leadRoutes from "./routes/leads.js";
 import adsFeedRoutes from "./routes/adsFeed.js";
 import convenioWaitlistRoutes from "./routes/convenioWaitlist.js";
+import neuroReferralRoutes from "./routes/neuroReferrals.js";
 import { configureTrustProxy } from "./config/trustProxy.js";
 import { ensureConvenioWaitlistIndexes } from "./models/ConvenioWaitlist.js";
+import { ensureNeuroReferralIndexes } from "./models/NeuroReferral.js";
 import loginRoutes from "./routes/login.js";
 
 import patientRoutes from "./routes/patient.js";
@@ -531,6 +533,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/ads-feed', adsFeedRoutes);
 app.use('/api/convenio-waitlist', convenioWaitlistRoutes);
+app.use('/api/neuro-referrals', neuroReferralRoutes); // candidatos a neuro (paciente da casa → laudo)
 app.use("/api/ai", aiRoutes);
 app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/protocols', protocolRoutes);
@@ -900,6 +903,10 @@ server.listen(PORT, process.env.ESPELHO === 'true' ? '127.0.0.1' : '0.0.0.0', ()
         ensureConvenioWaitlistIndexes()
           .then(() => console.log("✅ Índices da lista de interesse de convênios garantidos"))
           .catch((idxErr) => console.error("❌ Índices da lista de interesse de convênios:", idxErr.message));
+        // Uma indicação ativa por paciente na lista de candidatos a neuro
+        ensureNeuroReferralIndexes()
+          .then(() => console.log("✅ Índices de candidatos a neuro garantidos"))
+          .catch((idxErr) => console.error("❌ Índices de candidatos a neuro:", idxErr.message));
 
         // Pré-aquece o cache do dashboard em background (elimina cold start de 4s)
         setTimeout(() => warmupDashboardCache(), 2000);
