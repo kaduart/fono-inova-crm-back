@@ -232,6 +232,15 @@ async function main() {
                 return { skipped: true };
             }
         }
+        // Retomar contato: se o paciente agendou ou voltou depois do clique, não manda.
+        if (purpose === 'evaluation_reengage' && reengageIds.length) {
+            const { hasContinuedSince, markReengageSkipped } = await import('../../services/commercial/evaluationReengagement.js');
+            if (await hasContinuedSince(reengageIds)) {
+                await markReengageSkipped(reengageIds, { reason: 'Agendou ou voltou depois do envio ser agendado — não enviado' });
+                console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: paciente ...${String(phone).slice(-4)} já agendou`);
+                return { skipped: true };
+            }
+        }
         console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
         console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
         const result = await sendMessage(phone, message, {
