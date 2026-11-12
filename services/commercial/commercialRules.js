@@ -26,6 +26,32 @@ export function isAnonymousVisit(lead) {
   return !blank(lead?.journeyId) && lead?.isIdentified !== true && blank(lead?.name) && blank(lead?.contact?.phone);
 }
 
+// ─── Fila de leads (aba Leads / card "Leads para retornar") — 12/11/2026 ────
+// Quem já agendou ou virou paciente NÃO é lead para a equipe retornar: sair da fila evita
+// mensagem comercial para quem já marcou. Vale tanto o funil da secretária (operational.pipeline)
+// quanto o status do lead (o agendamento direto grava status 'agendado') e o vínculo com paciente.
+export const CLOSED_PIPELINES = ['virou_paciente', 'nao_fechou', 'agendado'];
+export const SCHEDULED_LEAD_STATUSES = ['agendado', 'virou_paciente', 'convertido'];
+export const OPERATIONAL_QUEUE_FILTER = {
+  'operational.pipeline': { $nin: CLOSED_PIPELINES },
+  status: { $nin: SCHEDULED_LEAD_STATUSES },
+  convertedToPatient: { $in: [null, undefined] },
+};
+
+// Mesma regra do filtro acima, em JS.
+export function isClosedForQueue(lead) {
+  if (!lead) return true;
+  if (CLOSED_PIPELINES.includes(lead.operational?.pipeline)) return true;
+  if (SCHEDULED_LEAD_STATUSES.includes(lead.status)) return true;
+  return !blank(lead.convertedToPatient);
+}
+
+// Só os 8 últimos dígitos: o lead grava 55+DDD+número e o paciente grava com ou sem máscara/55.
+export function phoneTail(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  return d.length >= 8 ? d.slice(-8) : null;
+}
+
 // Mesmo critério da Retenção V2: pré-agendado conta como próxima sessão (DOMAIN_INVARIANTS)
 export const FUTURE_STATUSES = ['scheduled', 'confirmed', 'pre_agendado'];
 

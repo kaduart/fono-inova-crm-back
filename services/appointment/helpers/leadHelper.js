@@ -40,6 +40,7 @@ export async function ensureLeadForAppointment(
       const existingLead = await existingLeadQuery;
       if (existingLead) {
         console.log('[ensureLeadForAppointment] ✅ Lead existente encontrado:', existingLead._id);
+        await markLeadScheduled(existingLead._id, patientId, mongoSession);
         return existingLead._id.toString();
       }
     }
@@ -56,6 +57,9 @@ export async function ensureLeadForAppointment(
         origin: source === 'whatsapp' ? 'WhatsApp' : 'Agenda Direta',
         status: 'agendado',
         stage: 'interessado_agendamento',
+        // Já agendou: fora da Fila de trabalho e do "Leads para retornar" (12/11/2026)
+        operational: { pipeline: 'agendado' },
+        convertedToPatient: patientId,
         circuit: 'Circuito Padrão',
         conversionScore: 50,
         responded: true,
@@ -116,6 +120,36 @@ export async function ensureLeadForAppointment(
 }
 
 /**
+ * O lead agendou: tira da fila de retorno da secretária (operational.pipeline = 'agendado')
+ * e vincula ao paciente. Idempotente e só avança: não mexe em quem já está em
+ * 'agendado', 'virou_paciente' ou 'nao_fechou', nem troca um vínculo de paciente existente.
+ * Não altera `status` (usado pela Amanda e pelo funil). Erro aqui não derruba o agendamento.
+ */
+export async function markLeadScheduled(leadId, patientId = null, mongoSession = null) {
+  if (!leadId) return false;
+  try {
+    const opts = mongoSession ? { session: mongoSession } : {};
+    const res = await Leads.updateOne(
+      { _id: leadId, 'operational.pipeline': { $nin: ['agendado', 'virou_paciente', 'nao_fechou'] } },
+      { $set: { 'operational.pipeline': 'agendado', 'operational.nextActionAt': null } },
+      opts,
+    );
+    if (patientId) {
+      await Leads.updateOne(
+        { _id: leadId, convertedToPatient: { $in: [null, undefined] } },
+        { $set: { convertedToPatient: patientId } },
+        opts,
+      );
+    }
+    if (res.modifiedCount) console.log('[markLeadScheduled] lead saiu da fila de retorno:', String(leadId));
+    return res.modifiedCount > 0;
+  } catch (error) {
+    console.error('[markLeadScheduled] Erro:', error.message);
+    return false;
+  }
+}
+
+/**
  * Monta snapshot imutável do lead para o appointment.
  */
 export async function buildLeadSnapshot(leadId, mongoSession = null) {
@@ -135,5 +169,6 @@ export async function buildLeadSnapshot(leadId, mongoSession = null) {
 
 export default {
   ensureLeadForAppointment,
+  markLeadScheduled,
   buildLeadSnapshot,
 };

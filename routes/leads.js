@@ -19,7 +19,8 @@ import {
 import { auth, authorize } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import Lead from '../models/Leads.js';
-import { NOT_ANONYMOUS_VISIT } from '../services/commercial/commercialRules.js';
+import { NOT_ANONYMOUS_VISIT, OPERATIONAL_QUEUE_FILTER } from '../services/commercial/commercialRules.js';
+import { withoutScheduledLeads } from '../services/commercial/leadQueue.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { extractWebsiteLeadPersonalData } from '../utils/websiteLeadPayload.js';
@@ -223,11 +224,17 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
             to,
             page = 1,
             limit = 20,
-            search
+            search,
+            queue
         } = req.query;
 
         // Visitas anônimas do site não são leads (ver commercialRules.js)
         const filters = { ...NOT_ANONYMOUS_VISIT };
+
+        // ?queue=operational → Fila de trabalho: só quem a equipe ainda precisa retornar.
+        // Quem já agendou ou virou paciente sai (12/11/2026, docs/COMMERCIAL_QUEUES.md).
+        const operationalQueue = queue === 'operational';
+        if (operationalQueue) Object.assign(filters, OPERATIONAL_QUEUE_FILTER);
 
         if (status) filters.status = status;
         if (origin) filters.origin = origin;
@@ -251,12 +258,19 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
         const pageNumber = parseInt(page, 10);
         const limitNumber = parseInt(limit, 10);
 
-        const leads = await Lead.find(filters)
+        let leads = await Lead.find(filters)
             .sort({ createdAt: -1 })
             .skip((pageNumber - 1) * limitNumber)
             .limit(limitNumber);
 
-        const total = await Lead.countDocuments(filters);
+        let total = await Lead.countDocuments(filters);
+
+        if (operationalQueue && leads.length) {
+            // Rede de segurança: o paciente com o mesmo telefone já tem agendamento
+            const kept = await withoutScheduledLeads(leads);
+            total = Math.max(0, total - (leads.length - kept.length));
+            leads = kept;
+        }
 
         res.json({
             data: leads,                 // ✅ aqui já vem phone e displayName como virtual
@@ -322,16 +336,14 @@ router.get('/operational-counts',
             const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
 
-            const [overdue, today] = await Promise.all([
-                Lead.countDocuments({
-                    'operational.nextActionAt': { $lt: startOfToday },
-                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou', 'agendado'] },
-                }),
-                Lead.countDocuments({
-                    'operational.nextActionAt': { $gte: startOfToday, $lte: endOfToday },
-                    'operational.pipeline': { $nin: ['virou_paciente', 'nao_fechou', 'agendado'] },
-                }),
-            ]);
+            // Mesma regra da Fila de trabalho: quem já agendou não conta (12/11/2026)
+            const due = await Lead.find(
+                { ...NOT_ANONYMOUS_VISIT, ...OPERATIONAL_QUEUE_FILTER, 'operational.nextActionAt': { $ne: null, $lte: endOfToday } },
+                { 'operational.nextActionAt': 1, 'operational.phone': 1, 'contact.phone': 1, createdAt: 1 },
+            ).limit(2000).lean();
+            const open = await withoutScheduledLeads(due, now);
+            const overdue = open.filter(l => new Date(l.operational.nextActionAt) < startOfToday).length;
+            const today = open.length - overdue;
 
             res.json({ overdue, today, total: overdue + today });
         } catch (err) {
