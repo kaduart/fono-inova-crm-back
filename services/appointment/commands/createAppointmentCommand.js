@@ -17,7 +17,7 @@ import { appointmentHybridService } from '../../appointmentHybridService.js';
 import billingOrchestrator from '../../billing/BillingOrchestrator.js';
 import { handleAdvancePayment } from '../../../helpers/handleAdvancePayment.js';
 import { claimReusableCredit, buildCreditApplication } from '../../package/packageCreditService.js';
-import { ensureLeadForAppointment, buildLeadSnapshot } from '../helpers/leadHelper.js';
+import { ensureLeadForAppointment, buildLeadSnapshot, markLeadScheduled } from '../helpers/leadHelper.js';
 import { validateDoctorSpecialty } from '../policies/appointmentSpecialtyPolicy.js';
 import { emitSocket } from '../helpers/socketHelper.js';
 import Patient from '../../../models/Patient.js';
@@ -172,6 +172,7 @@ async function createWithHybridService(payload, user) {
 
   if (effectiveLeadId) {
     await Leads.findByIdAndUpdate(effectiveLeadId, { patientJourneyStage: 'ativo' });
+    await markLeadScheduled(effectiveLeadId, effectivePatientId);
   } else {
     effectiveLeadId = await ensureLeadForAppointment(
       effectivePatientId,

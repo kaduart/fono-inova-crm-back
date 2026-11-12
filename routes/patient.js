@@ -10,7 +10,7 @@ import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import PatientsView from '../models/PatientsView.js';
 import { findPossibleDuplicates, toDuplicateCandidateDTO } from '../utils/patientDuplicateCheck.js';
-import { sendBirthdayMessage, summarizeBirthdays } from '../services/birthday/birthdayMessageService.js';
+import { markBirthdayHandled, sendBirthdayMessage, summarizeBirthdays } from '../services/birthday/birthdayMessageService.js';
 
 const router = express.Router();
 
@@ -273,6 +273,27 @@ router.post('/:id/birthday-message', validateId, auth, async (req, res) => {
     res.json({ success: true, sent: true, jobId: result.jobId });
   } catch (err) {
     sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao enviar mensagem de aniversário', { status: 500, details: err.message }), req);
+  }
+});
+
+// "Já dei parabéns": a equipe parabenizou por fora (ex.: aniversário que passou, link do WhatsApp).
+// Só registra (não envia), do dia até 7 dias depois, 1x por ano — mesma trava do cron.
+// Idempotente: já marcado devolve 200 com alreadyMarked.
+router.post('/:id/birthday-message/mark', validateId, auth, async (req, res) => {
+  try {
+    if (!['admin', 'secretary'].includes(req.user.role)) {
+      return sendApiError(res, new AppError('FORBIDDEN', 'Você não está autorizado', { status: 403 }), req);
+    }
+    const result = await markBirthdayHandled(req.params.id);
+    if (result.marked || result.reason === 'already_sent') {
+      return res.json({ success: true, marked: true, alreadyMarked: !result.marked });
+    }
+    if (result.reason === 'not_found') {
+      return sendApiError(res, new AppError('NOT_FOUND', 'Paciente não encontrado', { status: 404 }), req);
+    }
+    return sendApiError(res, new AppError('BAD_REQUEST', 'Só dá para marcar do dia do aniversário até 7 dias depois', { status: 400 }), req);
+  } catch (err) {
+    sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao marcar parabéns', { status: 500, details: err.message }), req);
   }
 });
 

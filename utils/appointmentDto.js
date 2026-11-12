@@ -217,6 +217,8 @@ export function mapAppointmentDTO(appointment, extra = {}) {
         updatedAt: appointment.updatedAt || null,
         importedAt: appointment.importedAt || null,
         source: appointment.metadata?.origin?.source || 'crm',
+        // 'link_agendamento' = família marcou sozinha pelo site/Instagram (/agendar).
+        channel: appointment.metadata?.origin?.channel || null,
 
         // Flags extras (se presentes)
         isFirstVisit: appointment.isFirstVisit ?? null,

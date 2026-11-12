@@ -9,16 +9,17 @@ vi.mock('../../models/Appointment.js', () => ({
         // janela das avaliações (date.$lte) x atendimentos depois dela
         find: (q) => (q.date?.$lte ? { sort: () => ({ lean: async () => db.evals }) } : chain(db.later)),
         distinct: async () => db.future,
+        exists: async () => db.apptExists,
     },
 }));
-vi.mock('../../models/Package.js', () => ({ default: { find: () => chain(db.packages) } }));
+vi.mock('../../models/Package.js', () => ({ default: { find: () => chain(db.packages), exists: async () => db.pkgExists } }));
 vi.mock('../../models/Patient.js', () => ({ default: { find: () => chain(db.patients) } }));
 vi.mock('../../models/Message.js', () => ({ default: { aggregate: async () => db.messages } }));
 vi.mock('../../models/CommercialContact.js', () => ({ default: { distinct: async () => db.lost } }));
 vi.mock('../../models/EvaluationReengagement.js', () => ({ default: { find: (q) => chain(q.evaluation ? db.sent : db.busy) } }));
 vi.mock('../../models/ConvenioWaitlist.js', () => ({ default: { find: () => chain([]) } }));
 
-const { planReengagement } = await import('../../services/commercial/evaluationReengagement.js');
+const { planReengagement, hasContinuedSince } = await import('../../services/commercial/evaluationReengagement.js');
 
 // 12/11/2026 (quinta) 10h em São Paulo
 const now = new Date(Date.UTC(2026, 10, 12, 13, 0));
@@ -71,5 +72,23 @@ describe('planReengagement', () => {
         const plan = await planReengagement({ period: 15, excludeIds: ['a'], now });
         expect(plan.batch.map((t) => t.id)).toEqual(['b']);
         expect(plan.unchecked).toBe(1);
+    });
+});
+
+describe('hasContinuedSince (trava do worker)', () => {
+    beforeEach(() => { for (const k of Object.keys(db)) db[k] = []; db.apptExists = null; db.pkgExists = null; });
+    it('agendou depois do clique: não manda', async () => {
+        db.sent = [{ patient: 'a', evaluatedAt: daysAgo(40) }];
+        db.apptExists = { _id: 'x' };
+        expect(await hasContinuedSince(['ev-a'])).toBe(true);
+    });
+    it('fechou pacote depois: não manda', async () => {
+        db.sent = [{ patient: 'a', evaluatedAt: daysAgo(40) }];
+        db.pkgExists = { _id: 'p' };
+        expect(await hasContinuedSince(['ev-a'])).toBe(true);
+    });
+    it('continua sumido: manda', async () => {
+        db.sent = [{ patient: 'a', evaluatedAt: daysAgo(40) }];
+        expect(await hasContinuedSince(['ev-a'])).toBe(false);
     });
 });

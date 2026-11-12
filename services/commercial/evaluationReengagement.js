@@ -328,6 +328,34 @@ export async function enqueueReengagement({ batch, queue, userId = null, atenden
     return { queued, failed, finishesAt: last };
 }
 
+/**
+ * Trava do worker, logo antes de mandar: o paciente agendou ou voltou depois do clique? (Kadu 12/11: nunca
+ * mandar "retomar contato" para quem já agendou.) Confere sessão/pacote depois da avaliação e sessão futura.
+ * @returns {Promise<boolean>}
+ */
+export async function hasContinuedSince(evaluationIds = []) {
+    if (!evaluationIds.length) return false;
+    const docs = await EvaluationReengagement.find({ evaluation: { $in: evaluationIds } }).select('patient evaluatedAt').lean();
+    if (!docs.length) return false;
+    const todayStart = moment().tz(TIMEZONE).startOf('day').toDate();
+    for (const d of docs) {
+        const since = d.evaluatedAt || new Date(0);
+        const [appt, pkg] = await Promise.all([
+            Appointment.exists({
+                patient: d.patient,
+                isDeleted: { $ne: true },
+                $or: [
+                    { date: { $gt: since }, operationalStatus: { $in: CONTINUITY_STATUSES } },
+                    { date: { $gte: todayStart }, operationalStatus: { $in: FUTURE_STATUSES } },
+                ],
+            }),
+            Package.exists({ patient: d.patient, status: { $ne: 'canceled' }, createdAt: { $gte: new Date(new Date(since).getTime() - DAY_MS) } }),
+        ]);
+        if (appt || pkg) return true;
+    }
+    return false;
+}
+
 /** Worker: mensagem saiu. */
 export async function markReengageSent(evaluationIds = [], { messageId = null, at = new Date() } = {}) {
     if (!evaluationIds.length) return;

@@ -106,3 +106,15 @@ Indicador mensal, não é fila nominal. Para cada paciente, pega a última sess�
 - Resposta traz top 3 especialidades e profissionais do mês, sem nome de paciente.
 
 Investigação detalhada (só leitura, roda local): `node scripts/_diag-pararam-jun-jul-2026.js [inicio] [fim]`.
+
+## Fila de leads (aba Leads → Fila de trabalho e card "Leads para retornar") — 12/11/2026
+
+Pedido do Kadu: quem já agendou tem de sair da fila, para ninguém mandar mensagem comercial para quem já marcou.
+
+- **Causa:** todo agendamento direto cria um Lead "Agenda Direta" com `status: 'agendado'`, mas o funil da secretária (`operational.pipeline`) ficava no padrão `novo_contato`. A fila só olhava o funil. Além disso, a Fila de trabalho era a 1ª página da Base completa (20 leads mais novos), então vivia cheia desses leads.
+- **Regra (`OPERATIONAL_QUEUE_FILTER` / `isClosedForQueue` em `services/commercial/commercialRules.js`):** sai da fila quem tem funil `agendado`, `virou_paciente` ou `nao_fechou`, OU status `agendado`, `virou_paciente` ou `convertido`, OU `convertedToPatient` preenchido.
+- **Rede de segurança pelo telefone (`services/commercial/leadQueue.js`):** sai também o lead cujo paciente com o mesmo telefone (8 últimos dígitos) tem sessão futura ou um agendamento criado depois que o lead entrou. Ex-paciente que volta como lead novo, só com agendamentos antigos, continua na fila. Só leitura.
+- **Endpoints:** `GET /api/leads?queue=operational` (Fila de trabalho, o front pede até 200) e `GET /api/leads/operational-counts` (card do Dashboard e sininho) usam as duas camadas. A Base completa (`GET /api/leads` sem `queue`) continua mostrando todos.
+- **Na escrita:** ao agendar, `markLeadScheduled` (`services/appointment/helpers/leadHelper.js`) põe o funil em `agendado`, limpa o próximo retorno e vincula `convertedToPatient` (só avança; não mexe em `status`, que é da Amanda). Vincular o paciente também para os follow-ups automáticos e a recuperação de lead, que já pulam `convertedToPatient`.
+- **Envio em massa:** o worker (`workers/entrypoints/whatsapp-child.js`) confere a agenda logo antes de cada envio de `convenio_offer` e pula quem já tem sessão marcada (o lote é espalhado por dias úteis, a pessoa pode agendar no meio). O "Retomar contato" (`evaluation_reengage`) já tem a trava `hasContinuedSince`. `convenio_announce` ("Agora atendemos") segue a regra própria do tipo.
+- Testes: `tests/unit/leadQueueRules.test.js`, `tests/unit/leadQueue.test.js`.

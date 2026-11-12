@@ -125,7 +125,7 @@ export async function sendBirthdayMessage(patientId, { delayMs = 0, now = moment
   // Trava atômica: só quem conseguir virar o ano de "não enviado" para "enviado" segue.
   const claimed = await Patient.updateOne(
     { _id: patientId, birthdayMessageSentYear: { $ne: year } },
-    { $set: { birthdayMessageSentYear: year, birthdayMessageSentAt: new Date() } }
+    { $set: { birthdayMessageSentYear: year, birthdayMessageSentAt: new Date(), birthdayMessageSentVia: 'auto' } }
   );
   if (!claimed.modifiedCount) return { sent: false, reason: 'already_sent' };
 
@@ -141,8 +141,44 @@ export async function sendBirthdayMessage(patientId, { delayMs = 0, now = moment
     // Não enfileirou: devolve a trava para poder tentar de novo.
     await Patient.updateOne(
       { _id: patientId, birthdayMessageSentYear: year },
-      { $set: { birthdayMessageSentYear: patient.birthdayMessageSentYear ?? null, birthdayMessageSentAt: null } }
+      { $set: { birthdayMessageSentYear: patient.birthdayMessageSentYear ?? null, birthdayMessageSentAt: null, birthdayMessageSentVia: null } }
     );
     throw err;
   }
+}
+
+/** Quantos dias depois do aniversário a equipe ainda pode marcar "já dei parabéns" (= LATE_DAYS do front). */
+export const BIRTHDAY_MARK_WINDOW_DAYS = 7;
+
+/** Dias desde o aniversário deste ano (0 = hoje, negativo = ainda vai chegar), no fuso da clínica. */
+export function daysSinceBirthday(dateOfBirth, now = moment().tz(BIRTHDAY_TIMEZONE)) {
+  if (!dateOfBirth) return null;
+  const dob = moment.utc(dateOfBirth);
+  if (!dob.isValid()) return null;
+  const today = moment.tz(now.format('YYYY-MM-DD'), BIRTHDAY_TIMEZONE);
+  let bday = moment.tz({ year: today.year(), month: dob.month(), date: dob.date() }, BIRTHDAY_TIMEZONE);
+  // 29/02 em ano não bissexto: conta 28/02 (mesmo critério de isBirthdayToday)
+  if (!bday.isValid()) bday = moment.tz({ year: today.year(), month: 1, date: 28 }, BIRTHDAY_TIMEZONE);
+  return today.diff(bday, 'days');
+}
+
+/**
+ * Registra que a equipe deu parabéns por fora (WhatsApp manual) — não envia nada.
+ * Só vale do dia do aniversário até BIRTHDAY_MARK_WINDOW_DAYS depois, e 1 vez por ano
+ * (mesma trava do envio automático, então o cron não manda de novo).
+ * @returns {{marked: boolean, reason?: string}}
+ */
+export async function markBirthdayHandled(patientId, { now = moment().tz(BIRTHDAY_TIMEZONE) } = {}) {
+  const year = now.year();
+  const patient = await Patient.findById(patientId).select('dateOfBirth birthdayMessageSentYear').lean();
+  if (!patient) return { marked: false, reason: 'not_found' };
+  const since = daysSinceBirthday(patient.dateOfBirth, now);
+  if (since === null || since < 0 || since > BIRTHDAY_MARK_WINDOW_DAYS) return { marked: false, reason: 'out_of_window' };
+  if (patient.birthdayMessageSentYear === year) return { marked: false, reason: 'already_sent' };
+
+  const res = await Patient.updateOne(
+    { _id: patientId, birthdayMessageSentYear: { $ne: year } },
+    { $set: { birthdayMessageSentYear: year, birthdayMessageSentAt: new Date(), birthdayMessageSentVia: 'manual' } }
+  );
+  return res.modifiedCount ? { marked: true } : { marked: false, reason: 'already_sent' };
 }
