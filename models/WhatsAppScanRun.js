@@ -14,6 +14,7 @@ const whatsAppScanRunSchema = new mongoose.Schema({
     finishedAt: { type: Date, default: null },
     attempts: { type: Number, default: 0 },
     stats: { type: mongoose.Schema.Types.Mixed, default: null },
+    since: { type: Date, default: null }, // profunda incremental: lê só mensagens a partir daqui (null = 3 anos)
     progress: { nextIndex: { type: Number, default: 0 } }, // profunda: próxima conversa a varrer
     error: { type: String, default: null },
 }, { timestamps: true });

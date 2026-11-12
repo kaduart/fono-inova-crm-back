@@ -13,6 +13,7 @@ const submissionSchema = new mongoose.Schema({
 const bulkSendSchemaDef = () => ({
     queuedAt: { type: Date, default: null },
     queuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    scheduledFor: { type: Date, default: null }, // envio em massa espalhado em dias úteis: quando sai
     sentAt: { type: Date, default: null },
     messageId: { type: String, default: null },
     error: { type: String, default: null },

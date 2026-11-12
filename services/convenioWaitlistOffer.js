@@ -110,6 +110,64 @@ export function offerCapacity({ now = new Date(), sentToday = 0 } = {}) {
     return { capacity: Math.min(left, fits), reason: left <= fits ? 'limite_diario' : 'fim_do_horario' };
 }
 
+const spDayKey = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+
+/**
+ * Horários de envio espalhados em dias úteis (08:00–18:45 SP), ~90s ±15s entre mensagens e no máximo
+ * OFFER_DAILY_CAP por dia, contando o que já está agendado/enviado em cada dia (`busy`: datas já ocupadas).
+ * Assim um clique manda para todo mundo: 40 hoje, 40 no próximo dia útil e assim por diante.
+ * @returns {Date[]}
+ */
+export function scheduleSlots({ count, now = new Date(), busy = [], random = Math.random }) {
+    const perDay = new Map();
+    let last = 0;
+    for (const d of busy) {
+        const k = spDayKey(d);
+        perDay.set(k, (perDay.get(k) || 0) + 1);
+        if (d.getTime() > last) last = d.getTime();
+    }
+    const slots = [];
+    let t = Math.max(now.getTime(), last + OFFER_SPACING_MS);
+    for (let guard = 0; slots.length < count && guard < 10_000; guard++) {
+        const cur = new Date(t);
+        const { minutes, weekday, dayStartUtc } = spClock(cur);
+        const nextDay8 = dayStartUtc.getTime() + 24 * 3600 * 1000 + WINDOW_START_MIN * 60_000;
+        if (weekday === 0 || weekday === 6 || minutes >= WINDOW_END_MIN || (perDay.get(spDayKey(cur)) || 0) >= OFFER_DAILY_CAP) {
+            t = nextDay8;
+            continue;
+        }
+        if (minutes < WINDOW_START_MIN) {
+            t = dayStartUtc.getTime() + WINDOW_START_MIN * 60_000;
+            continue;
+        }
+        slots.push(cur);
+        perDay.set(spDayKey(cur), (perDay.get(spDayKey(cur)) || 0) + 1);
+        t += OFFER_SPACING_MS + Math.round((random() - 0.5) * OFFER_JITTER_MS);
+    }
+    return slots;
+}
+
+/** Datas já ocupadas (agendadas ou enviadas) de hoje em diante, dos dois tipos (é o mesmo chip). */
+async function busySlots(now) {
+    const { dayStartUtc } = spClock(now);
+    const docs = await ConvenioWaitlist.find({
+        $or: [
+            { 'offer.queuedAt': { $gte: dayStartUtc } }, { 'offer.scheduledFor': { $gte: dayStartUtc } },
+            { 'announce.queuedAt': { $gte: dayStartUtc } }, { 'announce.scheduledFor': { $gte: dayStartUtc } },
+        ],
+    }).select('offer.queuedAt offer.scheduledFor offer.skippedAt announce.queuedAt announce.scheduledFor announce.skippedAt').lean();
+    const out = [];
+    for (const d of docs) {
+        for (const f of ['offer', 'announce']) {
+            const info = d[f];
+            if (!info || info.skippedAt) continue;
+            const at = info.scheduledFor || info.queuedAt;
+            if (at && new Date(at) >= dayStartUtc) out.push(new Date(at));
+        }
+    }
+    return out;
+}
+
 /**
  * Quem recebe: status do tipo (particular: aguardando; credenciado: aguardando/contatado), ainda sem esse envio,
  * 1 mensagem por telefone (o cadastro mais antigo). Fica de fora (e a tela mostra o motivo):
@@ -156,17 +214,17 @@ export async function planBulkOffer({ kind = 'particular', convenio = null, espe
         cfg.statuses.includes('contatado') ? 0 : ConvenioWaitlist.countDocuments({ ...base, status: 'contatado', [`${cfg.field}.queuedAt`]: null }),
     ]);
 
-    const { dayStartUtc } = spClock(now);
-    const sentToday = await ConvenioWaitlist.countDocuments({
-        $or: [
-            { 'offer.queuedAt': { $gte: dayStartUtc }, 'offer.skippedAt': null },
-            { 'announce.queuedAt': { $gte: dayStartUtc }, 'announce.skippedAt': null },
-        ],
-    });
-    const { capacity, reason } = offerCapacity({ now, sentToday });
+    const busy = await busySlots(now);
+    const todayKey = spDayKey(now);
+    const sentToday = busy.filter((d) => spDayKey(d) === todayKey && d <= now).length;
+    const { capacity, reason } = offerCapacity({ now, sentToday: busy.filter((d) => spDayKey(d) === todayKey).length });
     const sendable = targets.filter((g) => !g.excluded);
-    const batch = sendable.slice(0, capacity);
-    const today = new Set(batch.map((g) => String(g._id)));
+    // Um clique manda para todos: o lote inteiro é agendado em dias úteis (teto por dia).
+    const slots = scheduleSlots({ count: sendable.length, now, busy, random: () => 0.5 });
+    const batch = sendable.slice(0, slots.length);
+    const today = new Set(batch.filter((g, i) => spDayKey(slots[i]) === todayKey).map((g) => String(g._id)));
+    const days = new Set(slots.map(spDayKey));
+    const lastSlot = slots.at(-1) || null;
     return {
         kind,
         eligible: sendable.length,
@@ -179,8 +237,14 @@ export async function planBulkOffer({ kind = 'particular', convenio = null, espe
         sentToday,
         capacity,
         limitReason: reason,
+        todayCount: today.size,
+        days: days.size,
+        finishesAt: lastSlot,
         batch,
-        recipients: targets.slice(0, RECIPIENTS_MAX).map((g) => personView(g, { today: today.has(String(g._id)), excluded: Boolean(g.excluded) })),
+        recipients: targets.slice(0, RECIPIENTS_MAX).map((g) => {
+            const i = batch.indexOf(g);
+            return personView(g, { today: today.has(String(g._id)), excluded: Boolean(g.excluded), scheduledFor: i >= 0 ? slots[i] : null });
+        }),
         skipped: skipped.slice(0, RECIPIENTS_MAX),
         sample: sendable[0] ? buildText(kind, sendable[0], { especialidades, atendente }) : null,
     };
@@ -194,14 +258,16 @@ export async function enqueueBulkOffer({ kind = 'particular', batch, queue, user
     const cfg = BULK_KINDS[kind];
     if (!cfg) throw new Error(`Tipo de envio inválido: ${kind}`);
     const f = cfg.field;
+    const slots = scheduleSlots({ count: batch.length, now, busy: await busySlots(now) });
     let queued = 0;
     let failed = 0;
-    let delay = 0;
-    for (const g of batch) {
+    for (let i = 0; i < batch.length && i < slots.length; i++) {
+        const g = batch[i];
+        const at = slots[i];
         // Marca antes de enfileirar: dois cliques simultâneos não mandam duas vezes para a mesma pessoa.
         const claim = await ConvenioWaitlist.updateMany(
             { _id: { $in: g.ids }, [`${f}.queuedAt`]: null },
-            { $set: { [`${f}.queuedAt`]: now, [`${f}.queuedBy`]: userId } },
+            { $set: { [`${f}.queuedAt`]: now, [`${f}.queuedBy`]: userId, [`${f}.scheduledFor`]: at } },
         );
         if (!claim.modifiedCount) continue;
         try {
@@ -215,22 +281,22 @@ export async function enqueueBulkOffer({ kind = 'particular', batch, queue, user
                 recentDays: cfg.recentDays,
             }, {
                 jobId: `${cfg.purpose.replace('_', '-')}-${g._id}`,
-                delay,
+                delay: Math.max(0, at.getTime() - now.getTime()),
                 attempts: 3,
                 backoff: { type: 'exponential', delay: 60_000 },
                 removeOnComplete: 500,
                 removeOnFail: 500,
             });
             queued++;
-            delay += OFFER_SPACING_MS + Math.round((Math.random() - 0.5) * OFFER_JITTER_MS);
         } catch (err) {
             failed++;
-            await ConvenioWaitlist.updateMany({ _id: { $in: g.ids } }, { $set: { [`${f}.queuedAt`]: null, [`${f}.queuedBy`]: null } });
+            await ConvenioWaitlist.updateMany({ _id: { $in: g.ids } }, { $set: { [`${f}.queuedAt`]: null, [`${f}.queuedBy`]: null, [`${f}.scheduledFor`]: null } });
             console.error('[ConvenioEnvio] ❌ falha ao enfileirar', { kind, tail: String(g.phone).slice(-4), err: err.message });
         }
     }
-    console.log(`[ConvenioEnvio] 📤 ${kind}: ${queued} enfileiradas (1 a cada ~${OFFER_SPACING_MS / 1000}s), ${failed} falhas, user=${userId}`);
-    return { queued, failed };
+    const last = slots[Math.min(batch.length, slots.length) - 1];
+    console.log(`[ConvenioEnvio] 📤 ${kind}: ${queued} agendadas (até ${OFFER_DAILY_CAP}/dia útil, último ${last?.toISOString() || '-'}), ${failed} falhas, user=${userId}`);
+    return { queued, failed, finishesAt: last || null };
 }
 
 const fieldForPurpose = (purpose) => Object.values(BULK_KINDS).find((k) => k.purpose === purpose)?.field || 'offer';

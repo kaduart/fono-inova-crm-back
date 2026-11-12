@@ -263,6 +263,7 @@ async function main() {
                 const run = await WhatsAppScanRun.findById(runId).select('progress').lean();
                 stats = await scanConvenioInterestDeep({
                     startIndex: run?.progress?.nextIndex || 0,
+                    ...(job.data.since ? { since: new Date(job.data.since) } : {}),
                     onBatch: (p) => WhatsAppScanRun.updateOne({ _id: runId }, { $set: { progress: { nextIndex: p.nextIndex }, stats: p.stats } }),
                 });
             } else {

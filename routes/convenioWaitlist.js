@@ -212,7 +212,8 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
      * Enfileira a varredura SÓ LEITURA do WhatsApp Web (fila whatsapp-scan, roda no crm-worker).
      * - { convenio }: busca rápida (lupa do WhatsApp, só o que está no navegador, ~2 meses).
      * - { deep: true }: conversa por conversa, puxando o histórico antigo do celular, os 4 convênios
-     *   de uma vez. Demora horas e retoma sozinha se o worker reiniciar.
+     *   de uma vez. Retoma sozinha se o worker reiniciar. Depois da 1ª completa é INCREMENTAL: só lê as
+     *   mensagens a partir da última busca concluída (minutos em vez de horas). { deep: true, full: true } relê tudo.
      * Quem falou do convênio entra na lista como 'aguardando' (channel whatsapp_web). Idempotente:
      * se já há uma varredura do mesmo tipo na fila/rodando, devolve ela em vez de criar outra.
      */
@@ -231,11 +232,19 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             }).sort({ createdAt: -1 }).lean();
             if (pending) return res.status(200).json({ run: pending, alreadyRunning: true });
 
-            const run = await WhatsAppScanRun.create({ kind, convenio, requestedBy: req.user?._id || req.user?.id || null });
+            // Profunda incremental: se já houve uma completa, só lê dali para frente (1 dia de folga).
+            // { full: true } força reler tudo (3 anos).
+            let since = null;
+            if (deep && req.body?.full !== true) {
+                const lastDone = await WhatsAppScanRun.findOne({ kind, convenio, status: 'done' }).sort({ createdAt: -1 }).select('startedAt createdAt').lean();
+                const base = lastDone?.startedAt || lastDone?.createdAt;
+                if (base) since = new Date(new Date(base).getTime() - 24 * 3600 * 1000);
+            }
+            const run = await WhatsAppScanRun.create({ kind, convenio, requestedBy: req.user?._id || req.user?.id || null, since });
             const { whatsappScanQueue } = await import('../config/bullConfig.js');
             await whatsappScanQueue.add(
                 deep ? 'convenio-interest-deep' : 'convenio-interest',
-                { runId: String(run._id), convenio, deep },
+                { runId: String(run._id), convenio, deep, since: since ? since.toISOString() : null },
                 { jobId: `${deep ? 'convenio-interest-deep' : 'convenio-interest'}-${run._id}`, ...(deep ? { attempts: 10 } : {}) },
             );
             console.log(`🔎 [WAITLIST] varredura ${deep ? 'profunda' : 'rápida'} do WhatsApp enfileirada (${deep ? 'todos' : CONVENIO_LABELS[convenio]}): ${run._id}`);
@@ -276,7 +285,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
      * quem tem sessão marcada. O worker confere a conversa de novo logo antes de cada envio.
      * - particular: oferta do particular (aguardando, pula quem tem sessão futura).
      * - credenciado: "agora atendemos o plano" — exige convênio; vai para aguardando e contatados.
-     * Com confirm=true enfileira o lote de hoje: 1 msg a cada ~90s, teto diário (soma dos dois) e janela 08:00–18:45.
+     * Com confirm=true agenda TODOS de uma vez, espalhados em dias úteis: 1 msg a cada ~90s, teto diário (soma dos dois) e janela 08:00–18:45.
      */
     router.post('/bulk-offer', authorize(['admin', 'secretary']), async (req, res) => {
         try {
@@ -307,6 +316,9 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 recentDays: plan.recentDays,
                 sentToday: plan.sentToday,
                 capacity: plan.capacity,
+                todayCount: plan.todayCount,
+                days: plan.days,
+                finishesAt: plan.finishesAt,
                 limitReason: plan.limitReason,
                 sample: plan.sample,
                 recipients: plan.recipients,
@@ -316,7 +328,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
             if (req.body?.confirm !== true || !plan.batch.length) return res.json({ preview, queued: 0 });
 
             const { whatsappSendQueue } = await import('../config/bullConfig.js');
-            const { queued, failed } = await enqueueBulkOffer({
+            const { queued, failed, finishesAt } = await enqueueBulkOffer({
                 kind,
                 batch: plan.batch,
                 queue: whatsappSendQueue,
@@ -324,7 +336,7 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
                 atendente,
                 userId: req.user?._id || req.user?.id || null,
             });
-            return res.status(202).json({ preview, queued, failed });
+            return res.status(202).json({ preview, queued, failed, finishesAt });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro no envio em massa:', err);
             return sendApiError(res, new AppError('INTERNAL_ERROR', 'Erro ao preparar o envio em massa', { status: 500 }), req);
