@@ -321,6 +321,24 @@ export async function getHealth(req, res) {
       ]);
 
     const total = stuckPublished + failed + unconfirmed + noImage + retrying;
+
+    // Recorte dos últimos 7 dias: é o que o sininho do header mostra. Os totais
+    // acima são acumulados de todo o histórico (centenas de posts antigos) e
+    // ficam só no painel de Social Media → GMB. Kadu, 12/11/2026.
+    const [recentFailed, recentUnconfirmed, recentNoImage] = await Promise.all([
+      GmbPost.countDocuments({ status: 'failed', updatedAt: { $gte: sevenDaysAgo } }),
+      GmbPost.countDocuments({ status: 'unconfirmed', updatedAt: { $gte: sevenDaysAgo } }),
+      GmbPost.countDocuments({ ...noImageFilter, createdAt: { $gte: sevenDaysAgo } }),
+    ]);
+    const recent = {
+      failed: recentFailed,
+      unconfirmed: recentUnconfirmed,
+      noImage: recentNoImage,
+      stuckPublished,
+      retrying,
+      total: recentFailed + recentUnconfirmed + recentNoImage + stuckPublished + retrying,
+    };
+
     res.json({
       success: true,
       data: {
@@ -330,6 +348,7 @@ export async function getHealth(req, res) {
         noImage,
         retrying,
         total,
+        recent,
         details: {
           noImageSample,
           retryingSample,
