@@ -21,6 +21,7 @@ import { patientMatchesByPhone } from '../services/convenioWaitlistWhatsapp.js';
 
 // Varredura recente ainda em andamento: não enfileira outra para o mesmo convênio.
 const SCAN_STALE_MS = 2 * 60 * 60 * 1000;
+const SCAN_DEEP_STALE_MS = 7 * 24 * 60 * 60 * 1000; // a profunda pode levar dias (worker só roda em horário comercial)
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isDuplicateKeyError = (err) => err?.code === 11000;
@@ -206,28 +207,37 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
     });
 
     /**
-     * POST /api/convenio-waitlist/whatsapp-scan  Body: { convenio }
+     * POST /api/convenio-waitlist/whatsapp-scan  Body: { convenio } | { deep: true }
      * Enfileira a varredura SÓ LEITURA do WhatsApp Web (fila whatsapp-scan, roda no crm-worker).
+     * - { convenio }: busca rápida (lupa do WhatsApp, só o que está no navegador, ~2 meses).
+     * - { deep: true }: conversa por conversa, puxando o histórico antigo do celular, os 4 convênios
+     *   de uma vez. Demora horas e retoma sozinha se o worker reiniciar.
      * Quem falou do convênio entra na lista como 'aguardando' (channel whatsapp_web). Idempotente:
-     * se já há uma varredura recente na fila/rodando, devolve ela em vez de criar outra.
+     * se já há uma varredura do mesmo tipo na fila/rodando, devolve ela em vez de criar outra.
      */
     router.post('/whatsapp-scan', authorize(['admin', 'secretary']), async (req, res) => {
         try {
-            const convenio = String(req.body?.convenio || '');
-            if (!CONVENIOS_WAITLIST.includes(convenio)) {
+            const deep = req.body?.deep === true;
+            const convenio = deep ? 'todos' : String(req.body?.convenio || '');
+            if (!deep && !CONVENIOS_WAITLIST.includes(convenio)) {
                 return sendApiError(res, new AppError('BAD_REQUEST', 'Convênio inválido', { status: 400 }), req);
             }
+            const kind = deep ? 'convenio_interest_deep' : 'convenio_interest';
             const pending = await WhatsAppScanRun.findOne({
-                kind: 'convenio_interest', convenio,
+                kind, convenio,
                 status: { $in: ['queued', 'running'] },
-                createdAt: { $gte: new Date(Date.now() - SCAN_STALE_MS) },
+                createdAt: { $gte: new Date(Date.now() - (deep ? SCAN_DEEP_STALE_MS : SCAN_STALE_MS)) },
             }).sort({ createdAt: -1 }).lean();
             if (pending) return res.status(200).json({ run: pending, alreadyRunning: true });
 
-            const run = await WhatsAppScanRun.create({ convenio, requestedBy: req.user?._id || req.user?.id || null });
+            const run = await WhatsAppScanRun.create({ kind, convenio, requestedBy: req.user?._id || req.user?.id || null });
             const { whatsappScanQueue } = await import('../config/bullConfig.js');
-            await whatsappScanQueue.add('convenio-interest', { runId: String(run._id), convenio }, { jobId: `convenio-interest-${run._id}` });
-            console.log(`🔎 [WAITLIST] varredura do WhatsApp enfileirada (${CONVENIO_LABELS[convenio]}): ${run._id}`);
+            await whatsappScanQueue.add(
+                deep ? 'convenio-interest-deep' : 'convenio-interest',
+                { runId: String(run._id), convenio, deep },
+                { jobId: `${deep ? 'convenio-interest-deep' : 'convenio-interest'}-${run._id}`, ...(deep ? { attempts: 10 } : {}) },
+            );
+            console.log(`🔎 [WAITLIST] varredura ${deep ? 'profunda' : 'rápida'} do WhatsApp enfileirada (${deep ? 'todos' : CONVENIO_LABELS[convenio]}): ${run._id}`);
             return res.status(202).json({ run: run.toObject(), alreadyRunning: false });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro ao enfileirar varredura:', err);
@@ -236,16 +246,18 @@ export const createConvenioWaitlistRouter = ({ submitLimit = {} } = {}) => {
     });
 
     /**
-     * GET /api/convenio-waitlist/whatsapp-scan/latest?convenio=geap
-     * Última varredura do convênio (para a tela mostrar "buscando…" e o resultado).
+     * GET /api/convenio-waitlist/whatsapp-scan/latest?convenio=geap | ?deep=true
+     * Última varredura (para a tela mostrar "buscando…", o progresso e o resultado).
      */
     router.get('/whatsapp-scan/latest', authorize(['admin', 'secretary']), async (req, res) => {
         try {
-            const convenio = String(req.query.convenio || '');
-            if (!CONVENIOS_WAITLIST.includes(convenio)) {
+            const deep = req.query.deep === 'true';
+            const convenio = deep ? 'todos' : String(req.query.convenio || '');
+            if (!deep && !CONVENIOS_WAITLIST.includes(convenio)) {
                 return sendApiError(res, new AppError('BAD_REQUEST', 'Convênio inválido', { status: 400 }), req);
             }
-            const run = await WhatsAppScanRun.findOne({ kind: 'convenio_interest', convenio }).sort({ createdAt: -1 }).lean();
+            const kind = deep ? 'convenio_interest_deep' : 'convenio_interest';
+            const run = await WhatsAppScanRun.findOne({ kind, convenio }).sort({ createdAt: -1 }).lean();
             return res.json({ run: run || null });
         } catch (err) {
             console.error('❌ [WAITLIST] Erro ao ler varredura:', err);
