@@ -549,6 +549,9 @@ function createClient() {
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
         '--mute-audio',
+        // 12/11/2026: só erros FATAIS do Chrome no log (os "dbus/bus.cc" e "vkCreateInstance" eram ruído
+        // de servidor sem barramento de sistema nem GPU; o crash continua aparecendo).
+        '--log-level=3',
         '--disable-background-networking',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
@@ -784,6 +787,14 @@ function createClient() {
     });
   }
 
+  // Mensagem que a CLÍNICA mandou (pelo ERP ou na mão, no celular/WhatsApp Web): grava a data na lista de
+  // interesse em convênio para o envio em massa não repetir contato com quem a equipe acabou de falar.
+  newClient.on('message_create', (msg) => {
+    handleOutboundClinicMessage(msg).catch((err) =>
+      console.warn('[WhatsAppWeb] ⚠️ registro de mensagem da clínica falhou (ignorado):', err?.message)
+    );
+  });
+
   // As opções clicáveis são enviadas como enquete, recurso suportado pelo WhatsApp Web.
   newClient.on('vote_update', (vote) => {
     console.log('[WhatsAppWeb] 🗳️ vote_update recebido');
@@ -979,7 +990,9 @@ async function handleInboundConvenioInterest(msg) {
  * SÓ LEITURA no WhatsApp (busca nativa + Store); a escrita é só em convenio_waitlist.
  * Roda no processo do WhatsApp (fila whatsapp-scan, workers/entrypoints/whatsapp-child.js).
  */
-export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize = 100 } = {}) {
+// 12/11/2026: pageSize 100 → 25. A busca rápida da Unimed (muitas mensagens, várias com miniatura de anúncio)
+// estourou a memória do crm-worker em segundos. Páginas menores e só os campos necessários na memória.
+export async function scanConvenioInterest({ convenio, maxPages = 80, pageSize = 25 } = {}) {
   if (!isReady || !client) throw new Error('WhatsApp não está conectado');
   const { WAITLIST_WHATSAPP_KEYWORDS } = await import('../constants/convenioWaitlist.js');
   const kw = WAITLIST_WHATSAPP_KEYWORDS[convenio];
@@ -1001,7 +1014,12 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
           const id = m.id?._serialized || `${m.from}:${m.timestamp}:${m.body?.length}`;
           if (seen.has(id)) continue;
           seen.add(id);
-          found.push(m);
+          if (m.isStatus || !kw.regex.test(m.body || '')) continue;
+          // Guarda só o necessário (o Message traz _data com miniaturas em base64 — pesado).
+          found.push({
+            fromMe: Boolean(m.fromMe), from: m.from, to: m.to, body: String(m.body || '').slice(0, 500),
+            timestamp: m.timestamp, notifyName: m._data?.notifyName || null, msg: String((m.fromMe ? m.to : m.from) || '').endsWith('@lid') ? m : null, // só @lid precisa do objeto para achar o telefone
+          });
         }
         if (msgs.length < pageSize) break;
         await new Promise((r) => setTimeout(r, 300));
@@ -1025,15 +1043,14 @@ export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize =
   };
 
   for (const m of found) {
-    if (m.isStatus || !kw.regex.test(m.body || '')) continue;
     const chatId = m.fromMe ? m.to : m.from;
     if (!isContactChat(chatId)) continue;
-    let phone = chatId.endsWith('@c.us') ? chatId.replace('@c.us', '') : await resolveRealPhoneFromLid(m, chatId);
+    let phone = chatId.endsWith('@c.us') ? chatId.replace('@c.us', '') : (m.msg ? await resolveRealPhoneFromLid(m.msg, chatId) : null);
     if (!phone) { stats.unresolved++; continue; }
     hits.push({
-      phone, convenio, fromMe: Boolean(m.fromMe), body: m.body,
+      phone, convenio, fromMe: m.fromMe, body: m.body,
       at: new Date(Number(m.timestamp || 0) * 1000),
-      name: (!m.fromMe && m._data?.notifyName) || await contactName(chatId),
+      name: (!m.fromMe && m.notifyName) || await contactName(chatId),
     });
   }
 
@@ -1183,6 +1200,95 @@ export async function scanConvenioInterestDeep({
   }
   console.log('[WhatsAppWeb] 🔎 varredura profunda concluída:', JSON.stringify(stats));
   return stats;
+}
+
+async function handleOutboundClinicMessage(msg) {
+  if (!msg || !msg.fromMe || msg.isStatus) return;
+  const to = msg.to || '';
+  if (!to || to.endsWith('@g.us') || to.endsWith('@newsletter') || to === 'status@broadcast') return;
+  let phone = to.endsWith('@c.us') ? to.replace('@c.us', '') : null;
+  if (!phone && to.endsWith('@lid')) phone = await resolveRealPhoneFromLid(msg, to);
+  if (!phone) return;
+  const { recordChatActivity } = await import('./convenioWaitlistWhatsapp.js');
+  const at = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
+  await recordChatActivity([{ phone, clinicAt: at }]);
+}
+
+/**
+ * Última mensagem da clínica e do contato em CADA conversa individual (SÓ LEITURA).
+ * Olha as mensagens que o WhatsApp Web já tem carregadas; a conversa sem nenhuma carregada puxa 1 lote.
+ * @param {{ onlyPhones?: Set<string>|null }} opts telefones (últimos 8 dígitos) que interessam — os outros nem carregam
+ * @returns {Promise<{ rows: Array<{ phone: string, clinicAt: Date|null, contactAt: Date|null }>, chats: number, unresolved: number }>}
+ */
+export async function readChatActivity({ onlyTails = null } = {}) {
+  if (!isReady || !client) throw new Error('WhatsApp não está conectado');
+  const res = await client.pupPage.evaluate(async (tails) => {
+    const cols = ((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })());
+    const loader = window.require?.('WAWebChatLoadMessages');
+    const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r('__timeout'), ms))]);
+    const want = tails ? new Set(tails) : null;
+    const chats = (cols.Chat?.getModelsArray?.() || []).filter((c) => !c.isGroup && ['c.us', 'lid'].includes(c.id?.server));
+    const out = { rows: [], chats: chats.length, unresolved: 0 };
+    for (const chat of chats) {
+      const id = chat.id._serialized;
+      let phone = chat.id.server === 'c.us' ? chat.id.user
+        : (chat.contact?.phoneNumber?.user || cols.Contact?.get?.(id)?.phoneNumber?.user || null);
+      if (!phone && window.WWebJS?.enforceLidAndPnRetrieval) {
+        try { const r = await withTimeout(window.WWebJS.enforceLidAndPnRetrieval(id), 3000); phone = r?.phone?.user || null; } catch { /* segue */ }
+      }
+      if (!phone) { out.unresolved++; continue; }
+      if (want && !want.has(String(phone).slice(-8))) continue;
+      let msgs = chat.msgs?.getModelsArray?.() || [];
+      if (!msgs.length && loader?.loadEarlierMsgs) {
+        try { await withTimeout(loader.loadEarlierMsgs({ chat }), 15000); } catch { /* segue */ }
+        msgs = chat.msgs?.getModelsArray?.() || [];
+      }
+      let clinicT = 0;
+      let contactT = 0;
+      for (const m of msgs) {
+        const t = m.t || 0;
+        if (m.id?.fromMe) { if (t > clinicT) clinicT = t; } else if (t > contactT) contactT = t;
+      }
+      out.rows.push({ phone: String(phone), clinicT, contactT });
+    }
+    return out;
+  }, onlyTails ? [...onlyTails] : null);
+  return {
+    chats: res.chats,
+    unresolved: res.unresolved,
+    rows: res.rows.map((r) => ({
+      phone: r.phone,
+      clinicAt: r.clinicT ? new Date(r.clinicT * 1000) : null,
+      contactAt: r.contactT ? new Date(r.contactT * 1000) : null,
+    })),
+  };
+}
+
+/**
+ * Última mensagem da clínica e do contato numa conversa (SÓ LEITURA). Usado pelo worker logo antes de cada
+ * envio em massa. Sem conversa no WhatsApp = nunca falaram ({ clinicAt: null, contactAt: null }).
+ */
+export async function getChatActivity(phone) {
+  if (!isReady || !client) throw new Error('WhatsApp não está conectado');
+  const clean = normalizeE164BR(phone);
+  if (!clean) throw new Error(`Número inválido: ${phone}`);
+  const numberId = await client.getNumberId(clean);
+  if (!numberId) return { clinicAt: null, contactAt: null, exists: false };
+  let chat = null;
+  try { chat = await client.getChatById(numberId._serialized); } catch { chat = null; }
+  if (!chat) return { clinicAt: null, contactAt: null, exists: true };
+  const msgs = await chat.fetchMessages({ limit: 60 });
+  let clinicT = 0;
+  let contactT = 0;
+  for (const m of msgs || []) {
+    const t = Number(m.timestamp) || 0;
+    if (m.fromMe) { if (t > clinicT) clinicT = t; } else if (t > contactT) contactT = t;
+  }
+  return {
+    exists: true,
+    clinicAt: clinicT ? new Date(clinicT * 1000) : null,
+    contactAt: contactT ? new Date(contactT * 1000) : null,
+  };
 }
 
 async function handleInboundAppointmentConfirmation(msg) {

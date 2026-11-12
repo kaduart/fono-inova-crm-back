@@ -13,9 +13,13 @@ const submissionSchema = new mongoose.Schema({
 const bulkSendSchemaDef = () => ({
     queuedAt: { type: Date, default: null },
     queuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    scheduledFor: { type: Date, default: null }, // envio em massa espalhado em dias úteis: quando sai
     sentAt: { type: Date, default: null },
     messageId: { type: String, default: null },
     error: { type: String, default: null },
+    // Não enviado de propósito (ex.: a clínica já conversou com a pessoa há pouco, inclusive na mão)
+    skippedAt: { type: Date, default: null },
+    skipReason: { type: String, default: null },
 });
 
 const convenioWaitlistSchema = new mongoose.Schema({
@@ -55,6 +59,10 @@ const convenioWaitlistSchema = new mongoose.Schema({
         snippetFromContact: { type: Boolean, default: false },
         mentionedBy: { type: [String], default: undefined }, // 'contato' | 'clinica'
         capturedBy: { type: String, default: null },     // 'scan' | 'live'
+        // Última mensagem que a CLÍNICA mandou para esse número (qualquer uma: manual, lembrete, envio em massa).
+        // Serve para o envio em massa não repetir contato com quem a equipe acabou de falar.
+        lastClinicMessageAt: { type: Date, default: null },
+        lastContactMessageAt: { type: Date, default: null },
     },
 
     // Envios em massa pela tela (services/convenioWaitlistOffer.js): oferta do particular e novidade "credenciado"
