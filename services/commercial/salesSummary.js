@@ -3,7 +3,8 @@
 // Funil: Lead criado no período → conversou → agendou → compareceu → fechou pacote.
 // Receita = CAIXA (buildCashMatch, mesma regra do Financeiro) dos pacientes que vieram desses leads.
 import Lead from '../../models/Leads.js';
-import { NOT_ANONYMOUS_VISIT } from './commercialRules.js';
+import { NOT_ANONYMOUS_VISIT, phoneTail } from './commercialRules.js';
+import { patientsByPhoneTail } from './leadQueue.js';
 import Message from '../../models/Message.js';
 import Appointment from '../../models/Appointment.js';
 import Package from '../../models/Package.js';
@@ -44,7 +45,15 @@ async function resolveLeadPatients(leads) {
     { $group: { _id: '$lead', patient: { $first: '$patient' } } },
   ]);
   const apptMap = new Map(byAppt.map(a => [String(a._id), a.patient]));
-  const pidOf = l => l.convertedToPatient || apptMap.get(String(l._id)) || null;
+  // Sem agendamento ligado (ex.: conversa do WhatsApp): procura o paciente pelo telefone.
+  const noLink = leads.filter(l => !l.convertedToPatient && !apptMap.has(String(l._id)) && phoneTail(l.contact?.phone));
+  const byTail = noLink.length ? await patientsByPhoneTail(noLink.map(l => l.contact.phone)) : new Map();
+  const phoneMatch = new Map();
+  for (const l of noLink) {
+    const p = byTail.get(phoneTail(l.contact.phone))?.[0];
+    if (p) phoneMatch.set(String(l._id), p._id);
+  }
+  const pidOf = l => l.convertedToPatient || apptMap.get(String(l._id)) || phoneMatch.get(String(l._id)) || null;
   const pids = [...new Set(leads.map(pidOf).filter(Boolean).map(String))];
   const patients = pids.length ? await Patient.find({ _id: { $in: pids } }, { createdAt: 1 }).lean() : [];
   const createdMap = new Map(patients.map(p => [String(p._id), p.createdAt]));
@@ -97,7 +106,8 @@ async function enrichLeads(leads, start, end, links = new Map()) {
       origin: l.origin || null,
       attributed: !!attr,
       channel: channelOf(attr?.source, l.origin),
-      conversed: !!(m && m.inbound > 0 && m.outbound > 0),
+      // Conversa atribuída do WhatsApp: a pessoa já mandou mensagem para a clínica.
+      conversed: l.fromAttribution ? true : !!(m && m.inbound > 0 && m.outbound > 0),
       scheduled: !!(a?.total) || SCHEDULED_LEAD_STATUSES.includes(l.status),
       attended: !!(a?.completed),
       pack: !!(pid && packSet.has(pid)),
@@ -112,6 +122,21 @@ async function leadsIn(start, end) {
     { createdAt: { $gte: start, $lte: end }, stage: { $ne: 'parceria_profissional' }, ...NOT_ANONYMOUS_VISIT },
     { contact: 1, origin: 1, status: 1, convertedToPatient: 1, createdAt: 1 },
   ).lean();
+  // 12/11/2026: a maioria dos leads reais chega pelo WhatsApp e vira só LeadAttribution
+  // (anúncio do Instagram/Meta, assinatura do site), sem documento Lead. Sem isso o ROI
+  // mostrava só "agenda_direta". Cada conversa atribuída no período conta como lead do
+  // canal dela, a menos que o mesmo telefone já esteja entre os leads acima.
+  const seen = new Set(leads.map(l => phoneTail(l.contact?.phone)).filter(Boolean));
+  const attrs = await LeadAttribution.find(
+    { firstMessageAt: { $gte: start, $lte: end } },
+    { phone: 1, source: 1, firstMessageAt: 1 },
+  ).lean();
+  for (const a of attrs) {
+    const tail = phoneTail(a.phone);
+    if (!tail || seen.has(tail)) continue;
+    seen.add(tail);
+    leads.push({ _id: a._id, contact: { phone: a.phone }, origin: a.source, status: null, createdAt: a.firstMessageAt, fromAttribution: true });
+  }
   const links = await resolveLeadPatients(leads);
   return { leads: leads.filter(l => !links.get(String(l._id))?.returning), links };
 }

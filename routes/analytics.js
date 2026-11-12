@@ -9,11 +9,12 @@
 
 import dotenv from 'dotenv';
 import express from 'express';
-import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, getGA4AnapolisPages, getGA4PagesByPaths, getGA4Realtime, formatEventsWithPeriodDate } from '../services/analytics.js';
+import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, getGA4AnapolisPages, getGA4PagesByPaths, getGA4Realtime, formatEventsWithPeriodDate, normalizePagePath } from '../services/analytics.js';
 import { getInternalAnalytics } from '../services/analyticsInternal.js';
 import { auth } from '../middleware/auth.js';
 import revenueAnalytics from '../services/revenueAnalyticsService.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
+import { NOT_ANONYMOUS_VISIT } from '../services/commercial/commercialRules.js';
 import { AppError } from '../errors/AppError.js';
 
 dotenv.config();
@@ -136,7 +137,7 @@ router.get('/dashboard', async (req, res) => {
 
             // LPs: views da query dedicada GA4 (período filtrado), leads do CRM
             landingPages: (lpData.landingPages || []).map(lp => {
-                const ga4Page = ga4LpPages.find(p => p.path === lp.path);
+                const ga4Page = ga4LpPages.find(p => p.path === normalizePagePath(lp.path));
                 return {
                     ...lp,
                     views: ga4Page?.views ?? 0,     // 0 se sem acesso no período (não inventar)
@@ -294,28 +295,32 @@ async function getLeadsByDay(startDate, endDate) {
 
         // Total no período
         const totalPeriod = await Lead.countDocuments({
-            createdAt: { $gte: start, $lte: end }
+            createdAt: { $gte: start, $lte: end },
+            ...NOT_ANONYMOUS_VISIT, // visita anônima do site não é lead (12/11/2026)
         });
 
         // Hoje
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayCount = await Lead.countDocuments({
-            createdAt: { $gte: today }
+            createdAt: { $gte: today },
+            ...NOT_ANONYMOUS_VISIT, // visita anônima do site não é lead (12/11/2026)
         });
 
         // Esta semana
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         const weekCount = await Lead.countDocuments({
-            createdAt: { $gte: weekAgo }
+            createdAt: { $gte: weekAgo },
+            ...NOT_ANONYMOUS_VISIT, // visita anônima do site não é lead (12/11/2026)
         });
 
         // Este mês
         const monthAgo = new Date();
         monthAgo.setDate(monthAgo.getDate() - 30);
         const monthCount = await Lead.countDocuments({
-            createdAt: { $gte: monthAgo }
+            createdAt: { $gte: monthAgo },
+            ...NOT_ANONYMOUS_VISIT, // visita anônima do site não é lead (12/11/2026)
         });
 
         return {

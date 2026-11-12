@@ -21,6 +21,34 @@ const NOT_COUNT_STATUSES = ['canceled', 'force_cancelled', 'suspended'];
  * @param {Date} now
  * @returns {Promise<Set<string>>} ids dos leads que já têm agendamento
  */
+/**
+ * Pacientes cujo telefone casa (8 últimos dígitos) com algum dos telefones dados.
+ * Telefone do paciente pode ter máscara: pré-filtra pelos 4 últimos dígitos e confirma em memória.
+ * @returns {Promise<Map<string, Array<{ _id: any, phone: string, createdAt?: Date }>>>} tail → pacientes
+ */
+export async function patientsByPhoneTail(phones = []) {
+  const tails = new Set(phones.map(phoneTail).filter(Boolean));
+  const out = new Map();
+  if (!tails.size) return out;
+  const last4 = [...new Set([...tails].map((t) => t.slice(-4)))];
+  const patients = await Patient.find(
+    { phone: { $regex: `(${last4.join('|')})\\D*$` } },
+    { phone: 1, createdAt: 1 },
+  ).lean();
+  for (const p of patients) {
+    const t = phoneTail(p.phone);
+    if (!t || !tails.has(t)) continue;
+    if (!out.has(t)) out.set(t, []);
+    out.get(t).push(p);
+  }
+  return out;
+}
+
+/**
+ * @param {Array<{ _id: any, createdAt?: Date, contact?: { phone?: string }, operational?: { phone?: string } }>} leads
+ * @param {Date} now
+ * @returns {Promise<Set<string>>} ids dos leads que já têm agendamento
+ */
 export async function leadIdsWithAppointment(leads = [], now = new Date()) {
   const out = new Set();
   const byTail = new Map(); // 8 últimos dígitos → leads
@@ -32,12 +60,8 @@ export async function leadIdsWithAppointment(leads = [], now = new Date()) {
   }
   if (!byTail.size) return out;
 
-  // Telefone do paciente pode ter máscara: pré-filtra pelos 4 últimos dígitos e confirma em memória.
-  const last4 = [...new Set([...byTail.keys()].map((t) => t.slice(-4)))];
-  const patients = (await Patient.find(
-    { phone: { $regex: `(${last4.join('|')})\\D*$` } },
-    { phone: 1 },
-  ).lean()).filter((p) => byTail.has(phoneTail(p.phone)));
+  const byPatientTail = await patientsByPhoneTail([...byTail.keys()]);
+  const patients = [...byPatientTail.values()].flat();
   if (!patients.length) return out;
 
   const appts = await Appointment.aggregate([
