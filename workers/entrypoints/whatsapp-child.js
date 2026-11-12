@@ -199,7 +199,7 @@ async function main() {
                 sysMem = ` | Container: ${usedMB}/${totalMB}MB`;
             }
         } catch {}
-        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}`);
+        console.log(`[CHILD MEMORY] RSS: ${Math.round(mem.rss/1024/1024)}MB | Heap: ${Math.round(mem.heapUsed/1024/1024)}MB${sysMem}${containerBreakdown()}`);
     }, 30000);
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
@@ -323,6 +323,44 @@ async function main() {
                 .catch(() => {});
         }
     });
+}
+
+// 12/11/2026: o crm-worker morre por OOM (limite 2 GB do Render) com o child em ~150 MB.
+// /proc/meminfo mostra a máquina inteira (126 GB), não o container. Aqui lemos o cgroup
+// (uso real x limite) e somamos o RSS por processo: parent (workers core), child e Chrome.
+function containerBreakdown() {
+    try {
+        let cg = '';
+        try {
+            const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf-8'), 10);
+            const max = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf-8').trim();
+            cg = ` | cgroup ${Math.round(cur / 1048576)}/${max === 'max' ? 'max' : Math.round(parseInt(max, 10) / 1048576)}MB`;
+        } catch {
+            try { // cgroup v1
+                const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf-8'), 10);
+                cg = ` | cgroup ${Math.round(cur / 1048576)}MB`;
+            } catch {}
+        }
+        const groups = { parent: 0, child: 0, chrome: 0, outros: 0 };
+        let chromeProcs = 0;
+        for (const pid of fs.readdirSync('/proc')) {
+            if (!/^\d+$/.test(pid)) continue;
+            try {
+                const rss = fs.readFileSync(`/proc/${pid}/status`, 'utf-8').match(/VmRSS:\s+(\d+)/);
+                if (!rss) continue;
+                const kb = parseInt(rss[1], 10);
+                const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf-8');
+                if (/chrome/i.test(cmd)) { groups.chrome += kb; chromeProcs += 1; }
+                else if (Number(pid) === process.pid) groups.child += kb;
+                else if (Number(pid) === process.ppid) groups.parent += kb;
+                else groups.outros += kb;
+            } catch {}
+        }
+        const mb = (kb) => Math.round(kb / 1024);
+        return `${cg} | parent ${mb(groups.parent)}MB · child ${mb(groups.child)}MB · chrome ${mb(groups.chrome)}MB (${chromeProcs} proc) · outros ${mb(groups.outros)}MB`;
+    } catch {
+        return '';
+    }
 }
 
 // Graceful shutdown: destrói o client antes de sair para não deixar lock no profile
