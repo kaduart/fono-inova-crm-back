@@ -35,3 +35,16 @@ O acesso é só para `admin` e `secretary`.
 - As regras puras ficam em `services/commercial/salesRules.js`, com teste em `tests/unit/salesRules.test.js`. As consultas ficam em `services/commercial/salesSummary.js`.
 - Se mudar o critério de caixa, mude só no `buildCashMatch`.
 - O front consome isso em `src/services/salesMarketingService.ts`.
+
+
+## Pacientes e receita do lead (12/11/2026)
+
+- O ROI e o funil zeravam pacientes/receita porque o lead da "Agenda Direta" nunca ganhava `convertedToPatient`. Agora o paciente do lead vem de `convertedToPatient` OU do agendamento ligado ao lead (`Appointment.lead → patient`), em `resolveLeadPatients` (`services/commercial/salesSummary.js`).
+- Paciente antigo que agenda de novo (paciente criado mais de 1 dia antes do lead, `isReturningPatient` em `salesRules.js`) não conta como lead novo: fica fora do funil, do "Leads novos" (inclusive o do período anterior) e do ROI. No espelho, de 28 leads "Agenda Direta" de nov/2026, 16 eram pacientes antigos.
+- **Conversas do WhatsApp entram no ROI (12/11/2026):** a maioria dos leads reais chega pelo WhatsApp e só vira `LeadAttribution` (anúncio Instagram/Meta via CTWA, assinatura do site), sem documento `Lead`. Cada atribuição com `firstMessageAt` no período conta como lead do canal dela, se o telefone ainda não estiver entre os leads do período. O paciente vem pelo telefone (8 últimos dígitos, `patientsByPhoneTail`). Essas linhas contam como "conversou". No espelho, nov/2026 tinha 45 conversas atribuídas que não apareciam (Instagram Ads 20, Meta 13, Google 6...).
+
+## Analytics do site (12/11/2026)
+
+- "Leads do site" e os contadores de leads do `/api/analytics/dashboard` ignoram visitas anônimas (`NOT_ANONYMOUS_VISIT`); antes mostravam ~400 "leads" que eram visitas.
+- Views das LPs no GA4: busca por prefixo `/lp/` e casa o caminho normalizado (sem barra final/query, minúsculo), em vez da lista exata.
+- Rastreio de jornada (`services/leadJourneyService.js`): usa o `journeyId` que o site manda no corpo (o cookie da API não volta entre domínios, então cada chamada criava uma jornada nova) e grava a página do site (corpo ou Referer), nunca `/api/journey/track`.

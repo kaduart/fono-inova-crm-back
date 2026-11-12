@@ -432,27 +432,31 @@ export const getGA4PagesByPaths = async (paths, startDate, endDate, timeout = 30
                         { name: 'bounceRate' }
                     ],
                     dateRanges: [{ startDate, endDate }],
-                    dimensionFilter: {
-                        filter: {
-                            fieldName: 'pagePath',
-                            inListFilter: { values: paths }
-                        }
-                    }
+                    // 12/11/2026: lista exata perdia /lp/x/ e variações de caixa; todas as LPs
+                    // ficam sob o mesmo prefixo, então busca por prefixo e casa o caminho normalizado.
+                    dimensionFilter: commonPrefix(paths)
+                        ? { filter: { fieldName: 'pagePath', stringFilter: { matchType: 'BEGINS_WITH', value: commonPrefix(paths), caseSensitive: false } } }
+                        : { filter: { fieldName: 'pagePath', inListFilter: { values: paths } } },
+                    limit: 1000
                 },
                 { timeout }
             )
         );
 
         const rows = response.rows || [];
-        const pages = rows.map(row => ({
-            title: row.dimensionValues?.[0]?.value || '',
-            path: row.dimensionValues?.[1]?.value || '',
-            views: parseInt(row.metricValues?.[0]?.value || 0),
-            users: parseInt(row.metricValues?.[1]?.value || 0),
-            avgEngagementTime: parseFloat(row.metricValues?.[2]?.value || 0),
-            bounceRate: parseFloat(row.metricValues?.[3]?.value || 0) * 100,
-        }));
-
+        const wanted = new Set(paths.map(normalizePagePath));
+        const byPath = new Map();
+        for (const row of rows) {
+            const path = normalizePagePath(row.dimensionValues?.[1]?.value || '');
+            if (!wanted.has(path)) continue;
+            const cur = byPath.get(path) || { title: row.dimensionValues?.[0]?.value || '', path, views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 };
+            cur.views += parseInt(row.metricValues?.[0]?.value || 0);
+            cur.users += parseInt(row.metricValues?.[1]?.value || 0);
+            cur.avgEngagementTime += parseFloat(row.metricValues?.[2]?.value || 0);
+            cur.bounceRate = Math.max(cur.bounceRate, parseFloat(row.metricValues?.[3]?.value || 0) * 100);
+            byPath.set(path, cur);
+        }
+        const pages = [...byPath.values()];
         analyticsCache.set(cacheKey, pages);
         return pages;
     } catch (err) {
@@ -460,6 +464,18 @@ export const getGA4PagesByPaths = async (paths, startDate, endDate, timeout = 30
         return [];
     }
 };
+
+// Caminho da página sem barra final, sem query e em minúsculas (GA4 grava variações).
+export function normalizePagePath(p) {
+    const clean = String(p || '').split(/[?#]/)[0].toLowerCase();
+    return clean.length > 1 ? clean.replace(/\/+$/, '') : clean;
+}
+
+// Prefixo comum de pastas ("/lp/") quando todos os caminhos estão na mesma pasta.
+function commonPrefix(paths) {
+    const dirs = [...new Set(paths.map(p => String(p).split('/').slice(0, -1).join('/') + '/'))];
+    return dirs.length === 1 && dirs[0].length > 1 ? dirs[0] : null;
+}
 
 // --- Buscar dados em tempo real (GA4 Realtime API) ---
 export const getGA4Realtime = async (timeout = 15000) => {

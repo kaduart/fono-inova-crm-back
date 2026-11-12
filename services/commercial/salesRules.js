@@ -57,6 +57,12 @@ export function channelOf(attributionSource, leadOrigin) {
   return 'desconhecido';
 }
 
+// Paciente que já existia mais de 1 dia antes do lead = paciente antigo agendando de novo, não lead novo.
+export function isReturningPatient(patientCreatedAt, leadCreatedAt) {
+  if (!patientCreatedAt || !leadCreatedAt) return false;
+  return new Date(leadCreatedAt).getTime() - new Date(patientCreatedAt).getTime() > 86_400_000;
+}
+
 export const pct = (part, total) => (total ? Math.round((part / total) * 1000) / 10 : 0);
 const r2 = (n) => Math.round(n * 100) / 100;
 

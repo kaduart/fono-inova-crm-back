@@ -17,8 +17,10 @@ const COOKIE_EXPIRY_DAYS = 90;
  */
 export async function initLeadJourney(req, res) {
   // 1. Verificar cookies existentes
-  let journeyId = req.cookies?.[JOURNEY_COOKIE_NAME];
-  let sessionId = req.cookies?.[SESSION_COOKIE_NAME];
+  // O site roda em outro domínio: o cookie httpOnly da API não volta, então cada chamada criava
+  // uma "jornada" nova (centenas de leads anônimos). O site já manda o journeyId no corpo (12/11/2026).
+  let journeyId = req.cookies?.[JOURNEY_COOKIE_NAME] || validJourneyId(req.body?.journeyId);
+  let sessionId = req.cookies?.[SESSION_COOKIE_NAME] || (typeof req.body?.sessionId === 'string' ? req.body.sessionId.slice(0, 80) : undefined);
   
   // 2. Se não tem journeyId, criar novo
   if (!journeyId) {
@@ -41,7 +43,7 @@ export async function initLeadJourney(req, res) {
   return {
     journeyId,
     sessionId,
-    isNew: !req.cookies?.[JOURNEY_COOKIE_NAME],
+    isNew: !req.cookies?.[JOURNEY_COOKIE_NAME] && !validJourneyId(req.body?.journeyId),
     journey
   };
 }
@@ -172,6 +174,22 @@ export async function getJourneyByIdentifier(identifier) {
 
 // ============ HELPERS ============
 
+// Aceita só os formatos de id de jornada (site: jny_<timestamp>_<base36>; API: jny_<16 hex>).
+function validJourneyId(v) {
+  return typeof v === 'string' && /^jny_[a-z0-9_]{8,40}$/i.test(v) ? v : undefined;
+}
+
+// Página do site onde a pessoa está: vem no corpo (page/path) ou no Referer. Nunca a URL da API.
+export function sitePageFrom(req) {
+  const fromBody = req.body?.page || req.body?.path || req.body?.landingPage;
+  if (typeof fromBody === 'string' && fromBody.startsWith('/')) return fromBody.split(/[?#]/)[0].slice(0, 300);
+  const ref = req.headers?.referer || req.headers?.referrer;
+  if (ref) {
+    try { return new URL(ref).pathname.slice(0, 300); } catch { /* referer inválido */ }
+  }
+  return null;
+}
+
 function generateJourneyId() {
   return `jny_${uuidv4().replace(/-/g, '').substring(0, 16)}`;
 }
@@ -223,7 +241,7 @@ function extractJourneyData(req) {
     term: query.utm_term || query.term,
     
     // Página atual
-    landingPage: req.originalUrl || req.url,
+    landingPage: sitePageFrom(req),
     referrer: headers.referer || headers.referrer,
     userAgent: headers['user-agent'],
     
@@ -321,7 +339,7 @@ export function journeyTrackingMiddleware() {
       if (journey?.journeyId) {
         await trackInteraction(journey.journeyId, {
           type: 'page_view',
-          page: req.originalUrl || req.url,
+          page: sitePageFrom(req),
           metadata: {
             referrer: req.headers.referer,
             userAgent: req.headers['user-agent']
