@@ -53,7 +53,7 @@ async function markIdempotency(requestId) {
 // ======================================================
 router.get('/', flexibleAuth, async (req, res) => {
     try {
-        const { limit = 50, page = 1, status, phone, from, to, doctorId, specialty } = req.query;
+        const { limit = 50, page = 1, status, phone, from, to, doctorId, specialty, channel } = req.query;
 
         const query = { operationalStatus: 'pre_agendado' };
 
@@ -75,6 +75,13 @@ router.get('/', flexibleAuth, async (req, res) => {
         }
         if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
             query.doctor = doctorId;
+        }
+        // ?channel=link_agendamento → só o que a família marcou sozinha pelo site.
+        // ?channel=comercial → o resto (agenda externa / secretaria).
+        if (channel === 'comercial') {
+            query['metadata.origin.channel'] = { $ne: 'link_agendamento' };
+        } else if (channel) {
+            query['metadata.origin.channel'] = String(channel);
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);

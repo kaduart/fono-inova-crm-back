@@ -48,3 +48,8 @@ No site: `VITE_TURNSTILE_SITE_KEY` (chave pública do Turnstile) e o `VITE_CRM_A
 ## Também neste PR
 
 `GET /api/import-from-agenda/diagnostico/:patientName` e `GET /api/import-from-agenda/auditar-unimed` estavam sem login e devolviam dados de pacientes. Agora exigem `flexibleAuth + requireAdmin`.
+
+## Aviso ao comercial (12/11/2026)
+- O DTO de agendamento expõe `channel` (`metadata.origin.channel`); reserva do link = `link_agendamento`.
+- `GET /api/v2/pre-appointments?channel=link_agendamento` lista só as reservas do site; `?channel=comercial` lista o resto.
+- O sininho do header admin tem as abas "Pelo site" e "Comercial". Só as do site acendem o número vermelho e geram um aviso na tela (socket `preagendamento:new` com `source: 'link_agendamento'`).
