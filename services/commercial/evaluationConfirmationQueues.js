@@ -28,6 +28,50 @@ export const MONTHLY_PACKAGE_VALUE = 720;
 const NOT_CHILD = { $or: [{ appointmentId: { $exists: false } }, { appointmentId: null }] };
 
 const idStr = v => (v ? String(v) : '');
+const DONE_STATUSES = ['completed', 'paid'];
+// Teste da linguinha também é avaliação.
+const EVALUATION_LIKE_TYPES = [...EVALUATION_TYPES, 'tongue_tie_test'];
+
+/**
+ * Avaliações realizadas (a mais recente de cada paciente) com data em [from, to].
+ *
+ * 12/11/2026: desde jul/2026 quase nenhuma avaliação é lançada como `serviceType: evaluation` (a agenda
+ * grava como sessão avulsa ou consulta), e a fila "Avaliou e não fechou" ficou vazia. Agora conta como
+ * avaliação: (1) agendamento do tipo avaliação realizado, ou (2) o PRIMEIRO atendimento realizado do
+ * paciente, de qualquer tipo (`firstVisit: true`). Só leitura.
+ *
+ * @returns {Promise<Array<{ _id, patient, date, specialty, doctor, billingType, firstVisit: boolean }>>}
+ */
+export async function findEvaluationLike({ from = null, to, extraMatch = {} }) {
+  const date = { $lte: to };
+  if (from) date.$gte = from;
+  const rows = await Appointment.find(
+    { ...extraMatch, operationalStatus: { $in: DONE_STATUSES }, isDeleted: { $ne: true }, patient: { $exists: true, $ne: null }, date },
+    { patient: 1, date: 1, specialty: 1, doctor: 1, billingType: 1, serviceType: 1 },
+  ).sort({ date: -1 }).lean();
+  if (!rows.length) return [];
+
+  const others = [...new Set(rows.filter(r => !EVALUATION_LIKE_TYPES.includes(r.serviceType)).map(r => idStr(r.patient)))];
+  const firstDone = new Map();
+  if (others.length) {
+    const firsts = await Appointment.aggregate([
+      { $match: { patient: { $in: rows.filter(r => others.includes(idStr(r.patient))).map(r => r.patient) }, operationalStatus: { $in: DONE_STATUSES }, isDeleted: { $ne: true } } },
+      { $sort: { date: 1 } },
+      { $group: { _id: '$patient', apptId: { $first: '$_id' } } },
+    ]);
+    for (const f of firsts) firstDone.set(idStr(f._id), idStr(f.apptId));
+  }
+
+  const byPatient = new Map();
+  for (const r of rows) {
+    const pid = idStr(r.patient);
+    if (byPatient.has(pid)) continue; // já tem a mais recente (rows em ordem decrescente)
+    const typed = EVALUATION_LIKE_TYPES.includes(r.serviceType);
+    const firstVisit = !typed && firstDone.get(pid) === idStr(r._id);
+    if (typed || firstVisit) byPatient.set(pid, { _id: r._id, patient: r.patient, date: r.date, specialty: r.specialty, doctor: r.doctor, billingType: r.billingType, firstVisit });
+  }
+  return [...byPatient.values()];
+}
 
 /** Regra pura (testável): avaliações sem fechamento depois delas. */
 export function pickEvaluationsWithoutPackage(evaluations, { packages = [], futurePatientIds = new Set(), lostPatientIds = new Set() }) {
@@ -54,31 +98,30 @@ export async function evaluationsWithoutPackage({ minDays = 3, maxDays = 30, lim
   const from = now.clone().subtract(maxDays, 'days').startOf('day').toDate();
   const to = now.clone().subtract(minDays, 'days').endOf('day').toDate();
 
-  const evals = await Appointment.aggregate([
-    {
-      $match: {
-        serviceType: { $in: EVALUATION_TYPES },
-        operationalStatus: 'completed',
-        isDeleted: { $ne: true },
-        patient: { $exists: true, $ne: null },
-        billingType: { $nin: ['convenio', 'liminar'] },
-        date: { $gte: from, $lte: to },
-      },
-    },
-    { $sort: { date: -1 } },
-    { $group: { _id: '$patient', patient: { $first: '$patient' }, date: { $first: '$date' }, doctor: { $first: '$doctor' }, specialty: { $first: '$specialty' }, appointmentId: { $first: '$_id' } } },
-  ]);
+  const evals = (await findEvaluationLike({ from, to, extraMatch: { billingType: { $nin: ['convenio', 'liminar'] } } }))
+    .map(e => ({ ...e, appointmentId: e._id }));
   if (!evals.length) return { items: [], total: 0, potentialMonthly: 0 };
 
   const pids = evals.map(e => e.patient);
   const todayStart = now.clone().startOf('day').toDate();
+  // Primeiro atendimento que já teve outro atendimento depois (avulsas) não é "avaliou e parou".
+  const firstVisitPids = evals.filter(e => e.firstVisit).map(e => e.patient);
+  const continued = new Set();
+  if (firstVisitPids.length) {
+    const later = await Appointment.find(
+      { patient: { $in: firstVisitPids }, isDeleted: { $ne: true }, date: { $gt: from }, operationalStatus: { $in: [...DONE_STATUSES, ...FUTURE_STATUSES] } },
+      { patient: 1, date: 1 },
+    ).lean();
+    const evDate = new Map(evals.map(e => [idStr(e.patient), new Date(e.date).getTime()]));
+    for (const a of later) if (new Date(a.date).getTime() > evDate.get(idStr(a.patient))) continued.add(idStr(a.patient));
+  }
   const [packages, future, lost] = await Promise.all([
     Package.find({ patient: { $in: pids }, type: { $nin: ['convenio', 'liminar'] }, status: { $ne: 'canceled' } }, { patient: 1, status: 1 }).lean(),
     Appointment.distinct('patient', { patient: { $in: pids }, isDeleted: { $ne: true }, date: { $gte: todayStart }, operationalStatus: { $in: FUTURE_STATUSES } }),
     CommercialContact.distinct('target', { target: { $in: pids }, kind: 'evaluation_lost', createdAt: { $gte: from } }),
   ]);
 
-  const open = pickEvaluationsWithoutPackage(evals, {
+  const open = pickEvaluationsWithoutPackage(evals.filter(e => !continued.has(idStr(e.patient))), {
     packages,
     futurePatientIds: new Set(future.map(String)),
     lostPatientIds: new Set(lost.map(String)),

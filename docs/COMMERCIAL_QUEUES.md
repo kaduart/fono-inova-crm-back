@@ -59,6 +59,7 @@ As duas filas foram aprovadas pelo Kadu a partir do mock https://claude.ai/artif
 
 - **Avaliou e não fechou:**
   - Entra a avaliação `completed` (`serviceType` `evaluation` ou `neuropsych_evaluation`, particular) feita de 3 a 30 dias atrás.
+  - 12/11/2026: também conta como avaliação o PRIMEIRO atendimento realizado do paciente, de qualquer tipo (desde jul/2026 a agenda lança a avaliação como sessão avulsa ou consulta, e a fila tinha ficado vazia). Teste da linguinha também conta. Se depois desse primeiro atendimento houve outro (realizado ou marcado), sai da fila. Regra em `findEvaluationLike` (`tests/unit/evaluationLike.test.js`).
   - Sai quem tem um pacote `therapy` ativo, criado depois da avaliação ou na véspera dela (a data de criação vem do `_id`), quem tem sessão futura ativa e quem foi marcado como "Não vai fechar" (`kind: evaluation_lost`, com o motivo em `note`).
   - O contato registrado usa `kind: evaluation`.
   - O potencial mensal é o número de pessoas × R$ 720. Ele é calculado no back.

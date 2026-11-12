@@ -5,8 +5,9 @@ const db = { evals: [], later: [], packages: [], future: [], patients: [], lost:
 const chain = (v) => ({ lean: async () => v, select: () => ({ lean: async () => v }) });
 vi.mock('../../models/Appointment.js', () => ({
     default: {
-        aggregate: async () => db.evals,
-        find: () => chain(db.later),
+        aggregate: async () => [],
+        // janela das avaliações (date.$lte) x atendimentos depois dela
+        find: (q) => (q.date?.$lte ? { sort: () => ({ lean: async () => db.evals }) } : chain(db.later)),
         distinct: async () => db.future,
     },
 }));
@@ -22,7 +23,7 @@ const { planReengagement } = await import('../../services/commercial/evaluationR
 // 12/11/2026 (quinta) 10h em São Paulo
 const now = new Date(Date.UTC(2026, 10, 12, 13, 0));
 const daysAgo = (d) => new Date(now.getTime() - d * 24 * 3600 * 1000);
-const evalRow = (pid, days, specialty = 'fonoaudiologia') => ({ _id: pid, apptId: `ev-${pid}`, date: daysAgo(days), specialty });
+const evalRow = (pid, days, specialty = 'fonoaudiologia') => ({ _id: `ev-${pid}`, patient: pid, date: daysAgo(days), specialty, serviceType: 'evaluation' });
 const patient = (id, phone, extra = {}) => ({ _id: id, fullName: `Paciente ${id}`, phone, status: 'active', ...extra });
 
 describe('planReengagement', () => {

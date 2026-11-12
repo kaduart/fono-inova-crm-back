@@ -45,3 +45,4 @@ describe('confirmationReminderText', () => {
     expect(t).toContain('de Arthur na segunda-feira, 02/11, às 08:00, com Dra. Luana');
   });
 });
+
