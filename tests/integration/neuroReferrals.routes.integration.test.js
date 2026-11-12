@@ -173,6 +173,10 @@ describe('fluxo terapeuta → recepção → agenda', () => {
         await request(app).post('/api/neuro-referrals/scan').set(as('admin'));
         const mine = await request(app).get('/api/neuro-referrals').set(as('doctor'));
         expect(mine.body.data.map(d => d.patient.fullName)).toEqual(['Ana']);
+        const byPatient = await request(app).get(`/api/neuro-referrals?status=all&patientId=${ids.bia}`).set(as('secretary'));
+        expect(byPatient.body.data.map(d => d.patient.fullName)).toEqual(['Bia']);
+        const notMine = await request(app).get(`/api/neuro-referrals?status=all&patientId=${ids.bia}`).set(as('doctor'));
+        expect(notMine.body.data).toEqual([]);
 
         const ana = await NeuroReferral.findOne({ patient: ids.ana });
         await request(app).patch(`/api/neuro-referrals/${ana._id}`).set(as('doctor')).send({ status: 'indicado' });

@@ -65,6 +65,12 @@ export const createNeuroReferralsRouter = () => {
             if (statuses.length) filter.status = { $in: statuses };
             else if (req.query.status !== 'all') filter.status = { $in: NEURO_REFERRAL_ACTIVE_STATUS };
             if (req.user.role === 'doctor') filter.patient = { $in: await patientIdsOfDoctor(req.user.id) };
+            if (req.query.patientId) {
+                if (!mongoose.Types.ObjectId.isValid(req.query.patientId)) throw badRequest('patientId inválido');
+                const pid = String(req.query.patientId);
+                const allowed = !filter.patient || filter.patient.$in.some(id => String(id) === pid);
+                filter.patient = allowed ? new mongoose.Types.ObjectId(pid) : { $in: [] };
+            }
 
             const limit = Math.min(Number(req.query.limit) || 200, 500);
             const items = await NeuroReferral.find(filter)
