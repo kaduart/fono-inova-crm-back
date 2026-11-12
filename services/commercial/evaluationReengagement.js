@@ -2,8 +2,8 @@
 /**
  * "Retomar contato" com quem fez avaliação e não deu continuidade (Kadu, 12/11/2026).
  *
- * Quem entra: avaliação realizada (completed/paid, `evaluation` ou `neuropsych_evaluation`, qualquer forma de
- * pagamento) e, DEPOIS dela, nenhuma sessão (realizada ou marcada) e nenhum pacote. Período:
+ * Quem entra: avaliação realizada (tipo avaliação OU o primeiro atendimento realizado do paciente, qualquer forma
+ * de pagamento; ver findEvaluationLike) e, DEPOIS dela, nenhuma sessão (realizada ou marcada) e nenhum pacote. Período:
  *  - 'all': todo o histórico (primeiro envio), só não pega avaliação dos últimos ALL_MIN_DAYS dias;
  *  - 15 | 30 | 60: avaliou há mais de N dias.
  *
@@ -24,7 +24,7 @@ import CommercialContact from '../../models/CommercialContact.js';
 import EvaluationReengagement from '../../models/EvaluationReengagement.js';
 import { canonicalPhone, isRealBRPhone, phoneVariants } from '../convenioWaitlistWhatsapp.js';
 import { scheduleSlots, busySlots, offerCapacity, spDayKey, OFFER_DAILY_CAP } from '../convenioWaitlistOffer.js';
-import { EVALUATION_TYPES } from './evaluationConfirmationQueues.js';
+import { findEvaluationLike } from './evaluationConfirmationQueues.js';
 import { FUTURE_STATUSES } from './commercialRules.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -34,7 +34,6 @@ export const PERIODS = ['all', 15, 30, 60];
 export const ALL_MIN_DAYS = 3; // igual ao início da fila "Avaliou e não fechou"
 export const RECENT_DAYS = Number(process.env.EVALUATION_REENGAGE_RECENT_DAYS || 30);
 const RECIPIENTS_MAX = 600;
-const DONE_STATUSES = ['completed', 'paid'];
 // Depois da avaliação, isto conta como "deu continuidade" (realizada, marcada ou em processamento).
 // Cancelada, falta e suspensa não contam: quem só desmarcou também sumiu.
 const CONTINUITY_STATUSES = ['completed', 'paid', 'scheduled', 'confirmed', 'pre_agendado', 'pending', 'processing_create', 'processing_complete'];
@@ -131,22 +130,10 @@ export async function findWithoutContinuity({ minDays, maxDays = null, now = new
     const dateFilter = { $lte: to };
     if (maxDays) dateFilter.$gte = nowSp.clone().subtract(maxDays, 'days').startOf('day').toDate();
 
-    // A avaliação mais recente de cada paciente; se ela é mais nova que o período, o paciente não entra.
-    const latest = await Appointment.aggregate([
-        {
-            $match: {
-                serviceType: { $in: EVALUATION_TYPES },
-                operationalStatus: { $in: DONE_STATUSES },
-                isDeleted: { $ne: true },
-                patient: { $exists: true, $ne: null },
-            },
-        },
-        { $sort: { date: -1 } },
-        { $group: { _id: '$patient', apptId: { $first: '$_id' }, date: { $first: '$date' }, specialty: { $first: '$specialty' }, billingType: { $first: '$billingType' } } },
-        { $match: { date: dateFilter } },
-    ]);
-    if (!latest.length) return [];
-    const evals = latest.map((e) => ({ _id: e.apptId, patient: e._id, date: e.date, specialty: e.specialty, billingType: e.billingType }));
+    // Avaliação = tipo avaliação realizada OU primeiro atendimento realizado do paciente (ver findEvaluationLike).
+    // Se depois dela houve outro atendimento (inclusive avaliação nova), o paciente não entra (continuidade).
+    const evals = await findEvaluationLike({ from: dateFilter.$gte || null, to: dateFilter.$lte });
+    if (!evals.length) return [];
     const pids = evals.map((e) => e.patient);
     const minEval = new Date(Math.min(...evals.map((e) => new Date(e.date).getTime())));
     const todayStart = nowSp.clone().startOf('day').toDate();

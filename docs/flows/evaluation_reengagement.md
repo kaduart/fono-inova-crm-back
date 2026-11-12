@@ -16,8 +16,10 @@ Quem avaliou há meses e não voltou não aparecia em lugar nenhum.
 
 ## Quem entra
 
-- A avaliação MAIS RECENTE do paciente (`serviceType` `evaluation` ou `neuropsych_evaluation`,
-  `operationalStatus` `completed` ou `paid`, qualquer forma de pagamento, inclusive convênio).
+- A avaliação MAIS RECENTE do paciente, `operationalStatus` `completed` ou `paid`, qualquer forma de pagamento
+  (inclusive convênio). Avaliação = `serviceType` `evaluation`, `neuropsych_evaluation` ou `tongue_tie_test`,
+  OU o primeiro atendimento realizado do paciente (desde jul/2026 a agenda lança a avaliação como sessão avulsa
+  ou consulta). Regra em `findEvaluationLike` (services/commercial/evaluationConfirmationQueues.js).
 - Período (`period`): `all` = todo o histórico (primeiro envio; só deixa de fora avaliação dos últimos 3 dias),
   `15`, `30` ou `60` = avaliou há mais de N dias.
 - Sai quem, DEPOIS da avaliação, tem agendamento `completed`, `paid`, `scheduled`, `confirmed`, `pre_agendado`,
