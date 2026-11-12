@@ -231,10 +231,10 @@ async function main() {
                 console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: clínica conversou com ...${String(phone).slice(-4)} há menos de ${job.data.recentDays} dias`);
                 return { skipped: true };
             }
-            // Agendou entre a prévia e o envio (o lote é espalhado por dias úteis): não manda
-            // mensagem comercial para quem já tem sessão marcada (12/11/2026). O anúncio de
-            // convênio credenciado (convenio_announce) segue a regra própria do tipo.
-            if (purpose === 'convenio_offer' || purpose === 'evaluation_reengage') {
+            // Lista de convênio (particular): agendou entre a prévia e o envio (o lote é espalhado
+            // por dias úteis)? Não manda mensagem comercial para quem já tem sessão marcada (12/11/2026).
+            // O "Retomar contato" tem trava própria logo abaixo; "Agora atendemos" segue a regra do tipo.
+            if (purpose === 'convenio_offer') {
                 let nextAt = null;
                 try {
                     const { patientMatchesByPhone } = await import('../../services/convenioWaitlistWhatsapp.js');
@@ -243,13 +243,7 @@ async function main() {
                     console.warn(`[CHILD WORKER] ⚠️ Job ${job.id} — não consegui conferir a agenda (segue o envio):`, err.message);
                 }
                 if (nextAt) {
-                    const skip = { purpose, reason: `Já tem sessão marcada em ${new Date(nextAt).toISOString().slice(0, 10)} — não enviado` };
-                    if (reengageIds.length) {
-                        const { markReengageSkipped } = await import('../../services/commercial/evaluationReengagement.js');
-                        await markReengageSkipped(reengageIds, skip);
-                    } else {
-                        await markOfferSkipped(job.data.waitlistIds, skip);
-                    }
+                    await markOfferSkipped(job.data.waitlistIds, { purpose, reason: `Já tem sessão marcada em ${new Date(nextAt).toISOString().slice(0, 10)} — não enviado` });
                     console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: ...${String(phone).slice(-4)} já tem sessão marcada`);
                     return { skipped: true };
                 }
