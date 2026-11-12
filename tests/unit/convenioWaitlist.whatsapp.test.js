@@ -60,8 +60,8 @@ describe('matchWaitlistConvenios', () => {
         expect(matchWaitlistConvenios('Boa tarde, vocês atendem pelo Geap?')).toEqual(['geap']);
         expect(matchWaitlistConvenios('GEAP saúde')).toEqual(['geap']);
         expect(matchWaitlistConvenios('geaparecido')).toEqual([]);
-        expect(matchWaitlistConvenios('banco bradesco')).toEqual([]);
         expect(matchWaitlistConvenios('plano Bradesco Saúde')).toEqual(['bradesco']);
+        expect(matchWaitlistConvenios('Vocês aceitam Unimed ou GEAP?')).toEqual(['geap', 'unimed']);
     });
 });
 
@@ -148,7 +148,7 @@ describe('rotas da varredura', () => {
     });
 
     it('recusa convênio inválido', async () => {
-        const r = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ convenio: 'unimed' });
+        const r = await request(app).post('/api/convenio-waitlist/whatsapp-scan').set(auth()).send({ convenio: 'amil' });
         expect(r.status).toBe(400);
     });
 

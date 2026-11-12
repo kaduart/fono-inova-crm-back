@@ -1,12 +1,13 @@
 // constants/convenioWaitlist.js
-// Lista de INTERESSE em convênios (GEAP, IPASGO, Bradesco...) enquanto o credenciamento está em andamento.
+// Lista de INTERESSE em convênios (GEAP, Unimed, IPASGO, Bradesco...) enquanto o credenciamento está em andamento.
 // (Nome técnico "waitlist" mantido na API/coleção; na interface o termo é "lista de interesse".)
 // Não confundir com `autoBookingContext.waitlist*` / status 'lista_espera' do Lead, que é a fila de horários da Amanda.
 
-export const CONVENIOS_WAITLIST = ['geap', 'ipasgo', 'bradesco'];
+export const CONVENIOS_WAITLIST = ['geap', 'unimed', 'ipasgo', 'bradesco'];
 
 export const CONVENIO_LABELS = {
     geap: 'GEAP',
+    unimed: 'Unimed',
     ipasgo: 'IPASGO',
     bradesco: 'Bradesco Saúde',
 };
@@ -30,8 +31,10 @@ export const WAITLIST_CHANNELS = ['site', 'whatsapp_web'];
 // O termo vai para a busca nativa do WhatsApp; o regex confirma no texto (evita falso positivo).
 export const WAITLIST_WHATSAPP_KEYWORDS = {
     geap: { terms: ['geap'], regex: /\bgeap\b/i },
+    unimed: { terms: ['unimed'], regex: /\bunimed\b/i },
     ipasgo: { terms: ['ipasgo'], regex: /\bipasgo\b/i },
-    bradesco: { terms: ['bradesco saude', 'bradesco saúde'], regex: /\bbradesco\s+sa[uú]de\b/i },
+    // "bradesco" sozinho também conta (é como a família pergunta); pode trazer conversa do banco, a equipe descarta.
+    bradesco: { terms: ['bradesco'], regex: /\bbradesco\b/i },
 };
 
 /** Convênios da lista de interesse citados no texto (ex.: "vocês atendem GEAP?" → ['geap']). */

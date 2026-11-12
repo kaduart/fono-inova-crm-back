@@ -3,7 +3,7 @@
 ## O que é
 
 A lista de interesse em convênios (`convenio_waitlist`, tela "Interesse em convênios") recebia só o
-formulário do site. Agora também recebe quem falou do convênio (GEAP, IPASGO, Bradesco Saúde) no
+formulário do site. Agora também recebe quem falou do convênio (GEAP, Unimed, IPASGO, Bradesco; "bradesco" sozinho também conta e pode trazer conversa do banco, que a equipe descarta) no
 WhatsApp Web da clínica. O comercial trabalha uma lista só.
 
 Duas entradas:

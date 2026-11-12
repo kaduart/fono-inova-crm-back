@@ -69,7 +69,7 @@ describe('parseWaitlistPayload', () => {
     });
 
     it('rejeita convênio desconhecido', () => {
-        expect(parseWaitlistPayload({ ...validBody, convenio: 'unimed' })).toEqual({ ok: false, message: 'Convênio inválido' });
+        expect(parseWaitlistPayload({ ...validBody, convenio: 'amil' })).toEqual({ ok: false, message: 'Convênio inválido' });
         expect(parseWaitlistPayload({ ...validBody, convenio: undefined }).ok).toBe(false);
     });
 
