@@ -12,6 +12,7 @@ import "./Notification.js";
 import "./GmbPost.js";
 import "./ImageBank.js";
 import "./WhatsAppWebState.js";
+import "./WhatsAppScanRun.js";
 import "./FinancialLedger.js";
 import "./InsuranceGuide.js";
 import "./BillingSubmission.js";

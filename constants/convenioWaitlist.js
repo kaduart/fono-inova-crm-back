@@ -1,12 +1,13 @@
 // constants/convenioWaitlist.js
-// Lista de INTERESSE em convênios (GEAP, IPASGO, Bradesco...) enquanto o credenciamento está em andamento.
+// Lista de INTERESSE em convênios (GEAP, Unimed, IPASGO, Bradesco...) enquanto o credenciamento está em andamento.
 // (Nome técnico "waitlist" mantido na API/coleção; na interface o termo é "lista de interesse".)
 // Não confundir com `autoBookingContext.waitlist*` / status 'lista_espera' do Lead, que é a fila de horários da Amanda.
 
-export const CONVENIOS_WAITLIST = ['geap', 'ipasgo', 'bradesco'];
+export const CONVENIOS_WAITLIST = ['geap', 'unimed', 'ipasgo', 'bradesco'];
 
 export const CONVENIO_LABELS = {
     geap: 'GEAP',
+    unimed: 'Unimed',
     ipasgo: 'IPASGO',
     bradesco: 'Bradesco Saúde',
 };
@@ -22,3 +23,23 @@ export const WAITLIST_CONSENT_VERSIONS = ['convenio-interesse-2026-09'];
 
 /** Chave de unicidade do cadastro ativo: garante, via índice único parcial, um ativo por telefone + convênio. */
 export const waitlistActiveKey = (phone, convenio) => `${phone}:${convenio}`;
+
+// Origem do cadastro: formulário do site ou conversa do WhatsApp Web (varredura/captura automática).
+export const WAITLIST_CHANNELS = ['site', 'whatsapp_web'];
+
+// Palavras que indicam interesse no convênio dentro de uma conversa do WhatsApp.
+// O termo vai para a busca nativa do WhatsApp; o regex confirma no texto (evita falso positivo).
+export const WAITLIST_WHATSAPP_KEYWORDS = {
+    geap: { terms: ['geap'], regex: /\bgeap\b/i },
+    unimed: { terms: ['unimed'], regex: /\bunimed\b/i },
+    ipasgo: { terms: ['ipasgo'], regex: /\bipasgo\b/i },
+    // "bradesco" sozinho também conta (é como a família pergunta); pode trazer conversa do banco, a equipe descarta.
+    bradesco: { terms: ['bradesco'], regex: /\bbradesco\b/i },
+};
+
+/** Convênios da lista de interesse citados no texto (ex.: "vocês atendem GEAP?" → ['geap']). */
+export const matchWaitlistConvenios = (text) => {
+    const body = String(text || '');
+    if (!body) return [];
+    return CONVENIOS_WAITLIST.filter((slug) => WAITLIST_WHATSAPP_KEYWORDS[slug]?.regex.test(body));
+};

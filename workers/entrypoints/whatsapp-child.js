@@ -8,7 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import '../../models/index.js';
-import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal } from '../../services/whatsappWebJsService.js';
+import { initWhatsAppClient, getStatus, gracefulShutdownWhatsApp, sendMessage, checkExternalReconnectSignal, scanConvenioInterest } from '../../services/whatsappWebJsService.js';
 import fs from 'fs';
 import path from 'path';
 import { Worker } from 'bullmq';
@@ -221,6 +221,30 @@ async function main() {
         connection: bullMqConnection,
         concurrency: 1,         // WhatsApp Web + Puppeteer não toleram paralelismo
         limiter: { max: 1, duration: 1000 }, // 1 msg/s no máximo para não sobrecarregar o Chromium
+    });
+
+    // 🔎 Varredura SÓ LEITURA do histórico (lista de interesse em convênio). Uma por vez.
+    const scanWorker = new Worker('whatsapp-scan', async (job) => {
+        const { runId, convenio } = job.data || {};
+        const WhatsAppScanRun = (await import('../../models/WhatsAppScanRun.js')).default;
+        console.log(`[CHILD SCAN] 🔎 Job ${job.id} — varrendo "${convenio}" (tentativa ${job.attemptsMade + 1})`);
+        await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'running', startedAt: new Date(), error: null }, $inc: { attempts: 1 } });
+        try {
+            const stats = await scanConvenioInterest({ convenio });
+            await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: 'done', finishedAt: new Date(), stats } });
+            return stats;
+        } catch (err) {
+            const last = job.attemptsMade + 1 >= (job.opts?.attempts || 1);
+            await WhatsAppScanRun.updateOne({ _id: runId }, { $set: { status: last ? 'failed' : 'queued', error: err.message, ...(last ? { finishedAt: new Date() } : {}) } });
+            throw err;
+        }
+    }, {
+        connection: bullMqConnection,
+        concurrency: 1,
+        lockDuration: 10 * 60 * 1000, // varredura longa não pode ser dada como travada
+    });
+    scanWorker.on('failed', (job, err) => {
+        console.error(`[CHILD SCAN] ❌ Job ${job?.id} falhou:`, err.message);
     });
 
     whatsappWorker.on('completed', (job) => {

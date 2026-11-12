@@ -104,6 +104,7 @@ router.post('/from-website', async (req, res) => {
                    `UTM Source: ${origem?.source || 'n/a'}\n` +
                    `UTM Medium: ${origem?.medium || 'n/a'}\n` +
                    `UTM Campaign: ${origem?.campaign || 'n/a'}\n` +
+                   `UTM Content: ${origem?.content || 'n/a'}\n` +
                    `GA4 Client ID: ${ga4?.clientId || 'n/a'}` +
                    (contexto?.serviceInterest ? `\nInteresse: ${String(contexto.serviceInterest).slice(0, 300)}` : ''),
             circuit: 'Circuito Padrão',
@@ -131,6 +132,7 @@ router.post('/from-website', async (req, res) => {
                     utmSource: origem?.source,
                     utmMedium: origem?.medium,
                     utmCampaign: origem?.campaign,
+                    utmContent: origem?.content,
                     deviceType: device?.type,
                     ga4ClientId: ga4?.clientId
                 }

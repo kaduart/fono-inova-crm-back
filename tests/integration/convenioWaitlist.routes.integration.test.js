@@ -163,7 +163,7 @@ describe('POST /api/convenio-waitlist (público)', () => {
     it('rejeita payload inválido sem gravar nada', async () => {
         const invalidos = [
             cadastro({ telefone: '12' }),
-            cadastro({ convenio: 'unimed' }),
+            cadastro({ convenio: 'amil' }),
             cadastro({ nome: 'Jo' }),
             cadastro({ email: 'sem-arroba' }),
         ];

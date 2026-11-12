@@ -775,6 +775,15 @@ function createClient() {
     );
   });
 
+  // Interesse em convênio (GEAP/IPASGO/Bradesco) citado pelo contato → lista de interesse do ERP.
+  if (process.env.WA_CONVENIO_INTEREST_CAPTURE !== 'false') {
+    newClient.on('message', (msg) => {
+      handleInboundConvenioInterest(msg).catch((err) =>
+        console.warn('[WhatsAppWeb] ⚠️ interesse em convênio falhou (ignorado):', err?.message)
+      );
+    });
+  }
+
   // As opções clicáveis são enviadas como enquete, recurso suportado pelo WhatsApp Web.
   newClient.on('vote_update', (vote) => {
     console.log('[WhatsAppWeb] 🗳️ vote_update recebido');
@@ -938,6 +947,134 @@ async function handleInboundAttribution(msg) {
 
   const { captureInboundAttribution } = await import('./leadAttributionService.js');
   await captureInboundAttribution({ phone, text, ctwa, capturedBy: 'whatsapp_web' });
+}
+
+async function handleInboundConvenioInterest(msg) {
+  if (!msg || msg.fromMe || msg.isStatus) return;
+  const from = msg.from || '';
+  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
+
+  // Checagem barata antes de qualquer I/O
+  const { matchWaitlistConvenios } = await import('../constants/convenioWaitlist.js');
+  const convenios = matchWaitlistConvenios(msg.body);
+  if (!convenios.length) return;
+
+  let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
+  if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
+  if (!phone) return;
+
+  const { recordWhatsappInterest } = await import('./convenioWaitlistWhatsapp.js');
+  const at = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
+  for (const convenio of convenios) {
+    await recordWhatsappInterest({
+      phone, convenio, name: msg._data?.notifyName || null,
+      firstAt: at, lastAt: at, snippet: msg.body, snippetFromContact: true,
+      mentionedBy: ['contato'], capturedBy: 'live',
+    });
+  }
+}
+
+/**
+ * Varre o histórico do WhatsApp Web atrás de quem falou do convênio e grava na lista de interesse.
+ * SÓ LEITURA no WhatsApp (busca nativa + Store); a escrita é só em convenio_waitlist.
+ * Roda no processo do WhatsApp (fila whatsapp-scan, workers/entrypoints/whatsapp-child.js).
+ */
+export async function scanConvenioInterest({ convenio, maxPages = 40, pageSize = 100 } = {}) {
+  if (!isReady || !client) throw new Error('WhatsApp não está conectado');
+  const { WAITLIST_WHATSAPP_KEYWORDS } = await import('../constants/convenioWaitlist.js');
+  const kw = WAITLIST_WHATSAPP_KEYWORDS[convenio];
+  if (!kw) throw new Error(`Convênio sem palavras de busca: ${convenio}`);
+
+  const isContactChat = (id) => typeof id === 'string' && (id.endsWith('@c.us') || id.endsWith('@lid'));
+  const hits = [];
+  const stats = { method: 'search', messages: 0, unresolved: 0, searchError: null };
+
+  // 1) Busca nativa do WhatsApp (mesma da lupa do app): cobre todo o histórico sincronizado.
+  const seen = new Set();
+  const found = [];
+  try {
+    for (const term of kw.terms) {
+      for (let page = 1; page <= maxPages; page++) {
+        const msgs = await client.searchMessages(term, { page, limit: pageSize });
+        if (!msgs?.length) break;
+        for (const m of msgs) {
+          const id = m.id?._serialized || `${m.from}:${m.timestamp}:${m.body?.length}`;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          found.push(m);
+        }
+        if (msgs.length < pageSize) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  } catch (err) {
+    stats.searchError = err?.message || String(err);
+    console.warn('[WhatsAppWeb] ⚠️ busca nativa falhou, usando mensagens carregadas:', stats.searchError);
+  }
+
+  const nameCache = new Map();
+  const contactName = async (chatId) => {
+    if (nameCache.has(chatId)) return nameCache.get(chatId);
+    let name = null;
+    try {
+      const c = await client.getContactById(chatId);
+      name = c?.name || c?.pushname || c?.shortName || null;
+    } catch { /* sem nome — segue */ }
+    nameCache.set(chatId, name);
+    return name;
+  };
+
+  for (const m of found) {
+    if (m.isStatus || !kw.regex.test(m.body || '')) continue;
+    const chatId = m.fromMe ? m.to : m.from;
+    if (!isContactChat(chatId)) continue;
+    let phone = chatId.endsWith('@c.us') ? chatId.replace('@c.us', '') : await resolveRealPhoneFromLid(m, chatId);
+    if (!phone) { stats.unresolved++; continue; }
+    hits.push({
+      phone, convenio, fromMe: Boolean(m.fromMe), body: m.body,
+      at: new Date(Number(m.timestamp || 0) * 1000),
+      name: (!m.fromMe && m._data?.notifyName) || await contactName(chatId),
+    });
+  }
+
+  // 2) Plano B: se a busca nativa não respondeu, lê as mensagens já carregadas no Store.
+  if (!found.length) {
+    stats.method = stats.searchError ? 'store_fallback' : 'search_empty+store';
+    const rows = await client.pupPage.evaluate((source) => {
+      const re = new RegExp(source, 'i');
+      const out = [];
+      for (const c of window.Store?.Chat?.getModelsArray?.() || []) {
+        if (c.isGroup) continue;
+        const server = c.id?.server;
+        const phone = server === 'c.us' ? c.id.user : (c.contact?.phoneNumber?.user || null);
+        if (!phone) continue;
+        const name = c.contact?.name || c.contact?.pushname || c.formattedTitle || null;
+        for (const m of c.msgs?.getModelsArray?.() || []) {
+          if (!m.body || !re.test(m.body)) continue;
+          out.push({ phone: String(phone), fromMe: Boolean(m.id?.fromMe), body: String(m.body).slice(0, 500), t: m.t || 0, name });
+        }
+      }
+      return out.slice(0, 5000);
+    }, kw.regex.source);
+    for (const r of rows) hits.push({ phone: r.phone, convenio, fromMe: r.fromMe, body: r.body, at: new Date(r.t * 1000), name: r.name });
+  }
+
+  stats.messages = hits.length;
+  const { groupHitsByContact, recordWhatsappInterest } = await import('./convenioWaitlistWhatsapp.js');
+  const contacts = groupHitsByContact(hits);
+  const counts = { created: 0, updated: 0, closed: 0, invalid: 0 };
+  for (const c of contacts) {
+    try {
+      const r = await recordWhatsappInterest({ ...c, capturedBy: 'scan' });
+      counts[r.result] = (counts[r.result] || 0) + 1;
+    } catch (err) {
+      counts.invalid++;
+      console.warn('[WhatsAppWeb] ⚠️ falha ao gravar interessado (segue):', err?.message);
+    }
+  }
+  const result = { ...stats, contacts: contacts.length, ...counts };
+  console.log(`[WhatsAppWeb] 🔎 varredura ${convenio}:`, JSON.stringify(result));
+  return result;
 }
 
 async function handleInboundAppointmentConfirmation(msg) {
