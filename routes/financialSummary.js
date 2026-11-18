@@ -31,6 +31,13 @@ import { safeAbortTransaction } from '../utils/safeAbortTransaction.js';
 import logger from '../utils/logger.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
+import PaymentOperation from '../models/PaymentOperation.js';
+import { requestFingerprint, CONFLICT_CODE } from '../services/paymentOperations.js';
+
+// Idempotency-Key do cliente para POST /receive (mesmo formato de /v2/payments/request).
+const IDEMPOTENCY_HEADER_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const RECEIVE_KIND = 'financial_receive';
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const router = Router();
 
@@ -801,13 +808,61 @@ router.post('/receive', auth, authorize(['admin', 'secretary']), asyncHandler(as
 
     const primaryMethod = normalizePaymentMethod(rawMethod);
     const patientOid = new mongoose.Types.ObjectId(patientId);
-    const idempotencyKey = metadata?.idempotencyKey ? String(metadata.idempotencyKey) : null;
+
+    // Chave da operação: cabeçalho Idempotency-Key (preferido) ou metadata.idempotencyKey (legado).
+    const headerKey = req.get('Idempotency-Key');
+    if (headerKey !== undefined && !IDEMPOTENCY_HEADER_RE.test(headerKey)) {
+        return sendApiError(
+          res,
+          new AppError('INVALID_IDEMPOTENCY_KEY', 'Idempotency-Key deve ter 8 a 128 caracteres [A-Za-z0-9._:-]', { status: 400 }),
+          req
+        );
+    }
+    const idempotencyKey = headerKey || (metadata?.idempotencyKey ? String(metadata.idempotencyKey) : null);
     const receiveKey = idempotencyKey ? `receive_${patientId}_${idempotencyKey}` : null;
+
+    // 🛡️ Registro da operação em payment_operations, gravado NA MESMA transação.
+    // O _id único decide quem aplica (inclusive recebimento que vira só crédito,
+    // que antes não deixava recibo e por isso não era idempotente).
+    const operationKey = receiveKey ? `payop:${RECEIVE_KIND}:${receiveKey}` : null;
+    const requestHash = operationKey
+        ? requestFingerprint(RECEIVE_KIND, { patientId, amount: numericAmount, paymentMethod: primaryMethod })
+        : null;
+    const replayOperation = (existing) => {
+        if (existing.requestHash !== requestHash) {
+            return sendApiError(
+              res,
+              new AppError(CONFLICT_CODE, 'Esta chave já foi usada para um recebimento com outro conteúdo', { status: 409 }),
+              req
+            );
+        }
+        PaymentOperation.updateOne({ _id: existing._id }, { $inc: { replays: 1 } }).catch(() => {});
+        return res.json({
+            ...(existing.result || {}),
+            message: 'Recebimento já processado anteriormente (idempotência)',
+            idempotent: true
+        });
+    };
+    if (operationKey) {
+        const prior = await PaymentOperation.findById(operationKey).lean();
+        if (prior) return replayOperation(prior);
+    }
 
     const mongoSession = await mongoose.startSession();
     await mongoSession.startTransaction();
 
     try {
+        if (operationKey) {
+            await PaymentOperation.create([{
+                _id: operationKey,
+                kind: RECEIVE_KIND,
+                requestHash,
+                patient: patientOid,
+                amount: numericAmount,
+                appliedAt: new Date()
+            }], { session: mongoSession });
+        }
+
         // 🛡️ Idempotência: se já existe recibo com essa chave, retorna o mesmo resultado sem reprocessar.
         if (receiveKey) {
             const existingReceipt = await Payment.findOne({
@@ -1057,6 +1112,31 @@ router.post('/receive', auth, authorize(['admin', 'secretary']), asyncHandler(as
             );
         }
 
+        const responseBody = {
+            success: true,
+            receiptId: receipt?._id || null,
+            jobId: null,
+            status: 'completed',
+            amount: numericAmount,
+            patientId,
+            message: toSettle.length > 0
+                ? `${toSettle.length} sessão(ões) quitada(s)${creditAmount > 0 ? ` + R$ ${creditAmount.toFixed(2)} em crédito` : ''}`
+                : `R$ ${creditAmount.toFixed(2)} registrado(s) como crédito (nenhuma dívida elegível)`,
+            settled: {
+                count: toSettle.length,
+                amount: settledAmount,
+                paymentIds: toSettle.map(p => p._id)
+            },
+            credit: creditAmount
+        };
+        if (operationKey) {
+            await PaymentOperation.updateOne(
+                { _id: operationKey },
+                { $set: { paymentId: receipt?._id || null, result: responseBody } },
+                { session: mongoSession }
+            );
+        }
+
         await mongoSession.commitTransaction();
 
         // Invalidação de cache escopada (mesmo padrão do bulk-settle) — só os dias realmente afetados.
@@ -1099,26 +1179,31 @@ router.post('/receive', auth, authorize(['admin', 'secretary']), asyncHandler(as
             receiptId: receipt?._id
         });
 
-        return res.json({
-            success: true,
-            receiptId: receipt?._id || null,
-            jobId: null,
-            status: 'completed',
-            amount: numericAmount,
-            patientId,
-            message: toSettle.length > 0
-                ? `${toSettle.length} sessão(ões) quitada(s)${creditAmount > 0 ? ` + R$ ${creditAmount.toFixed(2)} em crédito` : ''}`
-                : `R$ ${creditAmount.toFixed(2)} registrado(s) como crédito (nenhuma dívida elegível)`,
-            settled: {
-                count: toSettle.length,
-                amount: settledAmount,
-                paymentIds: toSettle.map(p => p._id)
-            },
-            credit: creditAmount
-        });
+        return res.json(responseBody);
 
     } catch (error) {
         await safeAbortTransaction(mongoSession);
+        // Mesma chave em paralelo: quem perdeu a corrida pelo _id espera o vencedor
+        // gravar e devolve o mesmo resultado. Se o vencedor ainda não terminou,
+        // responde 409 retentável; o cliente repete com a MESMA chave.
+        const dupOperation = operationKey && error?.code === 11000
+            && (String(error.message || '').includes('payment_operations') || error?.keyPattern?._id === 1);
+        const transient = operationKey && (error?.code === 112
+            || error?.errorLabels?.includes?.('TransientTransactionError'));
+        if (dupOperation || transient) {
+            for (let i = 0; i < (dupOperation ? 10 : 3); i++) {
+                const winner = await PaymentOperation.findById(operationKey).lean();
+                if (winner) return replayOperation(winner);
+                await sleepMs(100);
+            }
+            if (dupOperation) {
+                return sendApiError(
+                  res,
+                  new AppError('RECEIVE_IN_PROGRESS', 'Recebimento com esta chave ainda em processamento; tente de novo com a mesma chave', { status: 409 }),
+                  req
+                );
+            }
+        }
         logger.error('[V2 financial/receive] Erro:', error.message);
         const isConflict = error.code === 'BULK_SETTLEMENT_CONFLICT'
             || error?.errorLabels?.includes?.('TransientTransactionError');

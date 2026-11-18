@@ -48,6 +48,8 @@
     "test:eventstore-posse": "node --test --test-force-exit tests/eventstore/ownership.mongo.nodetest.mjs",
     "test:eventstore-validacao": "node --test --test-force-exit --test-concurrency=1 tests/eventstore/ownership.mongo.nodetest.mjs tests/eventstore/bullmqInteraction.mongo.nodetest.mjs tests/eventstore/mixedVersions.mongo.nodetest.mjs tests/eventstore/adminRetry.mongo.nodetest.mjs",
     "test:pagamentos-idempotencia": "node --test --test-force-exit tests/payments/paymentIdempotency.mongo.nodetest.mjs",
+    "test:recebimento-idempotente": "node --test --test-force-exit tests/payments/receiveIdempotency.http.mongo.nodetest.mjs",
+    "e2e:front-back": "scripts/e2e/validar-front-back.sh",
     "test:envios-anti-reenvio": "node --test --test-force-exit tests/delivery/deliveryGuard.mongo.nodetest.mjs",
     "agent:cenarios": "node scripts/amanda-agent-cenarios.mjs",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
