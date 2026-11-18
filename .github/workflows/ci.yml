@@ -86,6 +86,16 @@ jobs:
         run: npx vitest run tests/unit services utils domains --reporter=default --reporter=json --outputFile=vitest-report.json || true
       - name: Catraca dos testes
         run: node .github/ci/ratchet.mjs tests vitest-report.json .github/ci/testes-falhando-baseline.txt
+      - name: Testes por caso (aprovados, falhas antigas, regressões novas)
+        if: always()
+        run: |
+          node .github/ci/classificar-testes.mjs vitest-report.json .github/ci/testes-falhando-baseline-casos.txt || {
+            echo "Linha de base que este relatório geraria:"; node .github/ci/classificar-testes.mjs vitest-report.json x --gerar; exit 1; }
+      - name: Posse do Event Store com BullMQ real, versões mistas e retry auditado (node:test)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+          REDIS_TEST_URL: redis://127.0.0.1:6379
+        run: npm run test:eventstore-validacao
       # Pagamentos precisam de transação: Mongo à parte, como replica set de 1 nó.
       - name: Idempotência de pagamentos (node:test, replica set descartável)
         env:

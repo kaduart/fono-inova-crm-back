@@ -40,7 +40,7 @@ O par na KAS Core é o PR kaduart/kas-core#10, com o protocolo v2 do reaper em G
 | Parâmetro | Valor | Justificativa |
 |---|---|---|
 | `EVENT_LEASE_MS` | 60.000 (renova a cada 20 s) | Os workers BullMQ usam `lockDuration`/`stalledInterval` de 30 s. O dobro tolera uma renovação perdida (event loop travado por menos de 40 s) e deixa o abandono retomável logo depois que o BullMQ redistribui o job (30 a 60 s após a queda). Valor inválido **impede a subida**. |
-| `MAX_RECOVERIES` | 3 | Cada recuperação significa que uma execução morreu sem concluir nem falhar (OOM, kill, deploy). Por job, o BullMQ executa no máximo `maxStalledCount + 1` vezes antes de declarar "job stalled more than allowable limit". O maior `maxStalledCount` do CRM é 2 (o padrão é 1), então 3 abandonos esgotam o que a própria fila permitiria. Erros comuns não contam: eles seguem `MAX_FAILED_ATTEMPTS`. Corrige o L-2, o ciclo infinito processing → pending do reaper antigo. A constante é única, em `eventOwnership.js`. |
+| `MAX_RECOVERIES` | 3 | Conta **abandonos do evento** (execução que morreu sem concluir nem falhar: OOM, kill, deploy), somando todos os jobs e entregas daquele evento. **Não é o `maxStalledCount` do BullMQ**, que conta travamentos **por job**, e vai de 1 (padrão) a 30 (`whatsapp-child.js`). Os dois mecanismos são independentes e não se multiplicam: cada abandono soma 1 uma única vez, seja o reaper ou a próxima entrega que o detecte (seção 10). O valor 3 é uma escolha de operação, não derivada da fila: um evento que derruba o processo três vezes é tratado como veneno e vai para `dead_letter` com alerta, para não derrubar o worker de novo. Erros comuns não contam: eles seguem `MAX_FAILED_ATTEMPTS`. A constante é única, em `eventOwnership.js`. |
 | `MAX_FAILED_ATTEMPTS` | 5 (inalterado) | Coincide com `attempts: 5` das filas. |
 | Limite legado | 15 min de `createdAt` | Só para eventos sem posse e só depois da cerca. |
 
@@ -61,7 +61,7 @@ Hoje os eventos rodam em dois serviços: `fono-inova-crm-back` (API, crons e rea
 
 | Situação | Comportamento | Teste |
 |---|---|---|
-| `processing` sem token (código antigo), **sem cerca** ou com cerca no futuro | Nem o reaper nem uma execução nova liberam o evento. A execução nova recebe `EVENT_BUSY`, e o reaper conta e avisa (`reaper_legacy_awaiting_fence`, `legacyAwaiting`). | `sem a cerca, evento processing sem posse (código antigo) nunca é liberado` |
+| `processing` sem token (código antigo), **sem cerca** ou com cerca no futuro | Nem o reaper nem uma execução nova liberam o evento. A execução nova espera o prazo vencer (seção 10, P2-A) e, sem liberação, recebe `EVENT_BUSY`. O reaper conta e avisa (`reaper_legacy_awaiting_fence`, `legacyAwaiting`). | `sem a cerca, evento processing sem posse (código antigo) nunca é liberado` |
 | `processing` sem token, cerca vencida | Critério legado: `createdAt` anterior a min(agora − 15 min, cerca). `null` conta como sem posse. | `com a cerca vencida: critério legado de 15 min` |
 | Evento v2 (com token) | Só a posse decide. A cerca não interfere. | todos os testes de posse |
 | Reinício do worker no meio de uma execução v2 | O prazo vence em até 60 s. A próxima entrega retoma (conta recuperação). Sem nova entrega, o reaper devolve o evento para `pending` em até 5 min. | `reinício: execução abandonada...` |
@@ -163,3 +163,90 @@ MONGO_TEST_URI='mongodb://127.0.0.1:27017/?directConnection=true' npm run test:e
 - **`idempotencyKey` sem índice único:** duas primeiras entregas simultâneas ainda podem gravar dois eventos com a mesma chave. Criar o índice único é migração de dados de produção e fica para decisão separada.
 - **Escritas sem token** só respeitam uma posse viva; duas delas concorrentes ainda se sobrescrevem, como hoje.
 - **Relógio:** o prazo usa o relógio do processo Node. Uma diferença grande entre instâncias reduz a margem de 60 s. Mitigação futura: `$$NOW` do servidor, como na KAS.
+
+
+## 10. Validação da rodada 3 (BullMQ real, versões mistas, retry)
+
+### 10.1 Como BullMQ e Event Store interagem
+
+| Mecanismo | Escopo | Conta | Limite | Efeito ao esgotar |
+|---|---|---|---|---|
+| `attempts` do job | Job | Erros lançados pelo processador (inclui `EVENT_BUSY`) | 5, backoff exponencial de 1 s | Job `failed` no Redis |
+| `maxStalledCount` | Job | Travamentos (lock do job não renovado) | 1 (padrão), 2 em alguns workers, 30 no `whatsapp-child.js` | O job falha uma tentativa |
+| `attempts` do evento | Evento | Falhas comuns gravadas pela posse | `MAX_FAILED_ATTEMPTS` = 5 | Evento vai para `dead_letter` |
+| `recoveryCount` | Evento | Abandonos (prazo vencido sem conclusão) | `MAX_RECOVERIES` = 3 | `dead_letter` com `RECOVERY_LIMIT_EXCEEDED` e alerta |
+
+**P2-A (achado e corrigido): o BullMQ desistia antes do prazo do Event Store vencer.**
+
+- **O que acontecia.**
+  - Uma entrega que encontrava posse viva lançava `EVENT_BUSY` na hora.
+  - Com backoff de 1+2+4+8 s, as 5 tentativas do job acabavam em cerca de 15 s, enquanto o prazo de uma execução morta é de 60 s.
+  - O job falhava de vez e o evento ficava `processing` com posse morta. Depois, o reaper o devolvia para `pending` **sem job**, e ele ficava órfão.
+- **Reprodução.** Teste com BullMQ e Redis reais, `antes (sem espera)`.
+- **Correção.**
+  - `processWithGuarantees` agora espera o prazo vencer, ou o evento terminar, antes de desistir. O padrão é `leaseMs + 2 s`, ajustável por `EVENT_BUSY_WAIT_MS`; `0` volta ao comportamento antigo.
+  - Depois de esperar, retoma o evento na mesma tentativa, sem gastar `attempts`.
+  - Se a outra execução estiver viva e concluir, quem esperou recebe `already_processed` e não reexecuta.
+- **Custo.** Um slot de worker fica ocupado por até cerca de 62 s nesse caso raro.
+
+**Não multiplicação (testado com processos reais):**
+
+- Queda real do worker (SIGKILL) seguida do stalled do BullMQ:
+  - uma reexecução;
+  - `recoveryCount = 1`;
+  - `attempts` do evento = 0, porque a queda não conta como falha;
+  - uma única tentativa do job no processo novo.
+- Reaper concorrendo com 5 entregas sobre o mesmo abandono, em 5 rodadas: `recoveryCount = 1` sempre, e no máximo uma retomada.
+- Evento em `dead_letter`: novas entregas do BullMQ terminam sem executar o processador.
+
+### 10.2 Versões mistas e a cerca
+
+A cerca **não prova** que o worker antigo parou: é uma declaração do operador. O teste `a cerca é declaração do operador` mostra a execução dupla quando a cerca é definida com um worker antigo ainda vivo.
+
+Antes de definir `EVENT_LEGACY_FENCE_AT`, confirme pelos meios do Render que:
+- **(a)** o deploy do `crm-worker` terminou e nenhuma instância antiga está de pé (painel de eventos do serviço);
+- **(b)** nenhum log de um processo antigo apareceu depois do horário escolhido.
+
+Um timestamp sozinho não basta.
+
+| Combinação | Resultado | Teste |
+|---|---|---|
+| Worker antigo executando e worker novo recebe o mesmo evento, sem cerca | O novo não executa (`EVENT_BUSY`). Depois vê `processed` | `worker antigo em execução + worker novo` |
+| Reaper novo e worker antigo | Evento sem posse fica intocado (`legacyAwaiting`) | `reaper NOVO + worker antigo` |
+| **Reaper antigo e worker novo (ordem errada)** | O reaper antigo devolve o evento para `pending` no meio da execução. O novo detecta (`ownershipLost`), mas o evento **roda duas vezes** | `ordem ERRADA` |
+| Reaper novo e worker novo | Execução longa com posse renovada não é tocada | `ordem CERTA` |
+| Cerca definida depois de o antigo parar | Órfão antigo retomado uma vez, mesmo com 4 entregas concorrentes | `cerca correta` |
+
+Conclusão: **API (que roda o reaper) antes do worker** é obrigatório, não preferência.
+
+### 10.3 Retry administrativo
+
+- **Auditoria.** A mesma escrita condicional que tira o evento de `dead_letter` grava `adminRetries[]`:
+  - quem pediu (`req.user`) e quando;
+  - o motivo;
+  - `attempts`, `recoveryCount` e código de erro anteriores;
+  - o resultado.
+- **Contador.** `adminRetryCount` acumula. A trilha guarda os últimos 20.
+- **Concorrência.** Seis pedidos simultâneos geram uma republicação e uma linha de auditoria; os outros recebem `EVENT_NOT_FOUND`.
+- **Falha ao republicar.** Se nenhuma fila aceitar o job, o evento **volta para `dead_letter`** com `RETRY_PUBLISH_FAILED` e não fica órfão em `pending`. A API devolve 503.
+- **Contadores após o retry.** `attempts` e `recoveryCount` recomeçam do zero; não somam com os anteriores, que ficam na auditoria.
+- **Lote.** Limitado a 100.
+
+### 10.4 Testes e linha de base
+
+`npm run test:eventstore-validacao` executa 4 arquivos e 45 casos, com Mongo e Redis descartáveis em loopback. O CI roda.
+
+| Arquivo | Casos |
+|---|---|
+| `ownership.mongo.nodetest.mjs` | 28 |
+| `bullmqInteraction.mongo.nodetest.mjs` | 6, com BullMQ real e um processo filho morto por SIGKILL |
+| `mixedVersions.mongo.nodetest.mjs` | 6, com o código antigo copiado de `12bd210` em `tests/eventstore/fixtures/legacyV1.mjs` |
+| `adminRetry.mongo.nodetest.mjs` | 5 |
+
+**Linha de base do vitest por caso** (`.github/ci/testes-falhando-baseline-casos.txt`), tirada do CI da main `f560f63`:
+- 9 testes que falham;
+- 17 arquivos que nem carregam ou falham na suíte, num total de 26 entradas.
+
+O passo `Testes por caso` do CI separa aprovados, falhas antigas e regressões novas, e falha só nas novas. Ele também pega um teste novo falhando dentro de um arquivo que já estava na linha de base por arquivo, coisa que a catraca antiga deixava passar.
+
+**CI verde não significa suíte integralmente aprovada:** as 26 entradas continuam falhando.
