@@ -20,7 +20,7 @@
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import AdConversion from '../models/AdConversion.js';
-import { getAttributionByPhone, getAttributionsByPhones } from '../services/leadAttributionService.js';
+import { getAttributionByPhone, getAttributionsByPhones, findGclidForConversion } from '../services/leadAttributionService.js';
 import { sendPurchaseToMeta } from '../services/metaConversionsService.js';
 import { uploadOfflineConversion } from '../services/googleAdsConversionsService.js';
 import { sendEventToTikTok } from '../services/tiktokConversionsService.js';
@@ -74,6 +74,24 @@ async function resolvePhone(appt) {
   return resolveMainPhone({ patientInfoPhone: appt.patientInfo?.phone, patientPhone });
 }
 
+// 18/11: a atribuição por telefone devolve a 1ª origem (first-touch), que muitas vezes não tem
+// gclid. Sem gclid a conversão nunca entrava no google-offline.csv e ficava "unknown".
+// Busca o gclid no Lead do agendamento/telefone e, se vazio, na LeadAttribution mais recente.
+async function withGclidFallback({ leadId, phone, attr }) {
+  if (attr?.gclid || (!leadId && !phone)) return attr;
+  const found = await findGclidForConversion({ leadId, phone });
+  if (!found) return attr;
+  const base = attr || {};
+  const unknown = !base.source || base.source === 'unknown';
+  return {
+    ...base,
+    gclid: found.gclid,
+    source: unknown ? 'google_ads' : base.source,
+    method: unknown ? found.method : base.method,
+    campaign: base.campaign || found.campaign || null,
+  };
+}
+
 // ─── Etapa 1: registra agendamentos novos na fila (AdConversion) ─────────────
 async function enqueueNew() {
   const now = Date.now();
@@ -89,7 +107,7 @@ async function enqueueNew() {
       { updatedAt: { $gte: windowStart } },
     ],
   })
-    .select('_id patient patientInfo.phone createdAt updatedAt history sessionValue isFirstAppointment patientJourneyType')
+    .select('_id patient lead patientInfo.phone createdAt updatedAt history sessionValue isFirstAppointment patientJourneyType')
     .sort({ createdAt: -1 })
     .limit(300)
     .lean();
@@ -105,7 +123,8 @@ async function enqueueNew() {
     try {
       const first = await isAcquisitionAppointment(appt);
       const phone = first ? await resolvePhone(appt) : null;
-      const attr = phone ? await getAttributionByPhone(phone) : null;
+      const attrByPhone = phone ? await getAttributionByPhone(phone) : null;
+      const attr = first ? await withGclidFallback({ leadId: appt.lead || null, phone, attr: attrByPhone }) : attrByPhone;
       const value = Number(appt.sessionValue) > 0 ? Number(appt.sessionValue) : defaultValue();
 
       // #2 event_time = data COMPROVADA em que o agendamento virou conversão (transição no
@@ -231,16 +250,19 @@ async function recoverMissingPhone() {
   for (const conv of stuck) {
     try {
       const appt = await Appointment.findById(conv.appointment)
-        .select('patient patientInfo.phone createdAt').lean();
+        .select('patient lead patientInfo.phone createdAt').lean();
       if (!appt) continue;
       const phone = await resolvePhone(appt);
       if (!phone) continue; // ainda sem telefone válido: segue aguardando, sem bloquear nada
 
-      const attr = await getAttributionByPhone(phone);
+      const attr = await withGclidFallback({ leadId: appt.lead || null, phone, attr: await getAttributionByPhone(phone) });
       const within = Date.now() - new Date(conv.eventTime).getTime() < 6.5 * 864e5;
       conv.phone = phone;
       if (attr?.source) { conv.source = attr.source; conv.attributionMethod = attr.method || null; conv.adId = attr.adId || null; conv.campaign = attr.campaign || null; }
-      if (attr?.gclid) conv.gclid = attr.gclid;
+      if (attr?.gclid) {
+        conv.gclid = attr.gclid;
+        if (conv.google?.status === 'skipped' && conv.google?.reason === 'sem_gclid') conv.google = { status: 'pending' };
+      }
       if (attr?.fbclid) conv.fbc = buildFbc(attr);
       if (attr?.ttclid) conv.ttclid = attr.ttclid;
       conv.meta = within ? { status: 'pending' } : { status: 'skipped', reason: 'fora_janela_7d_meta' };
@@ -380,5 +402,5 @@ export function initAdsConversionCron() {
   return { stop: () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } } };
 }
 
-export { runOnce as runAdsConversionOnce, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, isAcquisitionAppointment, resolvePhone };
+export { runOnce as runAdsConversionOnce, withGclidFallback, enqueueNew, processPending, refreshUnknownSources, recoverMissingPhone, isAcquisitionAppointment, resolvePhone };
 export default { initAdsConversionCron };
