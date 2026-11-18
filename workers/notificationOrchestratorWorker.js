@@ -6,6 +6,7 @@ import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import { sendTextMessage, sendTemplateMessage } from '../services/whatsappService.js';
+import { guardedSend, DeliveryOutcome } from '../infrastructure/delivery/deliveryGuard.js';
 import Message from '../models/Message.js';
 import Lead from '../models/Leads.js';
 import {
@@ -78,28 +79,32 @@ export function startNotificationOrchestratorWorker() {
         // Roteia pelo tipo de canal
         switch (type || channel) {
           case 'whatsapp':
-            result = await sendWhatsAppNotification({
-              to,
-              content,
-              template,
-              leadId,
-              patientId,
-              metadata,
-              correlationId
+          case 'email': {
+            // Reserva por notificação e canal antes de chamar o provedor.
+            const ch = type || channel;
+            const delivery = await guardedSend({
+              channel: ch,
+              deliveryKey: `notif:${ch}:${eventId || idempotencyKey || job.id}`,
+              destination: to,
+              log,
+              providerMessageIdOf: (r) => r?.notificationId || null,
+              send: () => (ch === 'whatsapp' ? sendWhatsAppNotification : sendEmailNotification)({
+                to,
+                content,
+                template,
+                leadId,
+                patientId,
+                metadata,
+                correlationId
+              })
             });
+            if (delivery.outcome !== DeliveryOutcome.SENT) {
+              log.warn('delivery_not_sent_now', 'Notificação não enviada nesta execução', { channel: ch, outcome: delivery.outcome });
+              return { notificationId: delivery.providerMessageId || null, provider: ch, deliveryOutcome: delivery.outcome, skipped: true };
+            }
+            result = delivery.result;
             break;
-
-          case 'email':
-            result = await sendEmailNotification({
-              to,
-              content,
-              template,
-              leadId,
-              patientId,
-              metadata,
-              correlationId
-            });
-            break;
+          }
 
           case 'sms':
             result = await sendSMSNotification({

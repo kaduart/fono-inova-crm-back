@@ -86,6 +86,10 @@ jobs:
         run: npx vitest run tests/unit services utils domains --reporter=default --reporter=json --outputFile=vitest-report.json || true
       - name: Catraca dos testes
         run: node .github/ci/ratchet.mjs tests vitest-report.json .github/ci/testes-falhando-baseline.txt
+      - name: Auth das rotas de dead-letter (node:test, Mongo descartável)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: npm run test:observability-auth
       - name: Testes por caso (aprovados, falhas antigas, regressões novas)
         if: always()
         run: |
@@ -96,3 +100,19 @@ jobs:
           MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
           REDIS_TEST_URL: redis://127.0.0.1:6379
         run: npm run test:eventstore-validacao
+      # Pagamentos precisam de transação: Mongo à parte, como replica set de 1 nó.
+      - name: Idempotência de pagamentos (node:test, replica set descartável)
+        env:
+          MONGO_TXN_TEST_URI: mongodb://127.0.0.1:27018/?directConnection=true
+        run: |
+          docker run -d --name mongo-rs -p 27018:27017 mongo:7.0 --replSet rs0 >/dev/null
+          for i in $(seq 1 30); do
+            docker exec mongo-rs mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]}).ok }' >/dev/null 2>&1 \
+              && docker exec mongo-rs mongosh --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -q true && break
+            sleep 2
+          done
+          npm run test:pagamentos-idempotencia
+      - name: Proteção contra reenvio de WhatsApp/e-mail (node:test, provedor simulado)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: npm run test:envios-anti-reenvio

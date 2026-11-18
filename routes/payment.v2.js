@@ -42,6 +42,11 @@ import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { sendApiError } from '../errors/buildErrorResponse.js';
 import { AppError } from '../errors/AppError.js';
 import { requireStaff } from '../middleware/requireRole.js';
+import { requestFingerprint } from '../services/paymentOperations.js';
+
+// Idempotency-Key do cliente: torna o reenvio HTTP da MESMA intenção estável.
+const IDEMPOTENCY_HEADER_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const FINGERPRINT_KINDS = ['multi_payment', 'standalone', 'balance_credit'];
 
 const router = express.Router();
 
@@ -319,9 +324,38 @@ router.post('/request', auth, requireStaff, async (req, res) => {
         const correlationId = `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         // IdempotencyKey baseado no contexto (evita duplicatas)
-        const idempotencyKey = type === 'appointment_payment' && appointmentId
-            ? `payment_${appointmentId}_${amount}_${type}`
-            : `payment_${patientId}_${amount}_${Date.now()}`;
+        const clientKey = req.get('Idempotency-Key');
+        if (clientKey !== undefined && !IDEMPOTENCY_HEADER_RE.test(clientKey)) {
+            return sendApiError(
+              res,
+              new AppError('INVALID_IDEMPOTENCY_KEY', 'Idempotency-Key deve ter 8 a 128 caracteres [A-Za-z0-9._:-]', { status: 400 }),
+              req
+            );
+        }
+        const isMulti = type === 'multi_payment' || isMultiPayment;
+        let idempotencyKey;
+        if (type === 'appointment_payment' && appointmentId) {
+            idempotencyKey = `payment_${appointmentId}_${amount}_${type}`;
+        } else if (isMulti) {
+            // Mesma chave natural da rota /balance/:patientId/multi.
+            idempotencyKey = `payment_multi_${patientId}_${debitIds.map(String).sort().join('_')}`;
+        } else if (clientKey) {
+            idempotencyKey = `payment_${type}_${patientId}_${clientKey}`;
+        } else {
+            idempotencyKey = `payment_${patientId}_${amount}_${Date.now()}`;
+        }
+        const fingerprintKind = isMulti ? 'multi_payment' : type;
+        const fingerprintOf = (p) => FINGERPRINT_KINDS.includes(fingerprintKind)
+            ? requestFingerprint(fingerprintKind, p)
+            : null;
+        const incomingFingerprint = fingerprintOf({
+            patientId: String(patientId),
+            amount: Number(amount),
+            paymentMethod: normalizePaymentMethod(paymentMethod),
+            debitIds: debitIds || [],
+            totalAmount: (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0),
+            payments: (payments || []).map(p => ({ ...p, paymentMethod: normalizePaymentMethod(p.paymentMethod || paymentMethod) }))
+        });
 
         // ========================================
         // 🛡️ IDEMPOTÊNCIA: Verifica se já existe
@@ -333,6 +367,18 @@ router.post('/request', auth, requireStaff, async (req, res) => {
             status: { $in: ['pending', 'processing', 'processed'] }
         });
         
+        if (existingEvent && incomingFingerprint && existingEvent.payload
+            && fingerprintOf(existingEvent.payload) !== incomingFingerprint) {
+            return sendApiError(
+              res,
+              new AppError('IDEMPOTENCY_KEY_CONFLICT', 'Esta chave já foi usada para um pagamento com outro conteúdo', {
+                status: 409,
+                extra: { eventId: existingEvent.eventId },
+              }),
+              req
+            );
+        }
+
         if (existingEvent) {
             console.log(`[PaymentV2] Idempotência: request já existe`, {
                 idempotencyKey,

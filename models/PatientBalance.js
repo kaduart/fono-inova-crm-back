@@ -95,6 +95,12 @@ const balanceTransactionSchema = new mongoose.Schema({
         default: null,
         description: 'ID do pacote que quitou este débito (evita duplicidade)'
     },
+    // Chave da operação de pagamento que gerou esta transação (crédito avulso,
+    // crédito em conta ou pagamento múltiplo). Ver models/PaymentOperation.js.
+    operationKey: {
+        type: String,
+        default: null
+    },
     // 🆕 V4: ID de correlação para idempotência (1 appointment = 1 débito)
     correlationId: {
         type: String,

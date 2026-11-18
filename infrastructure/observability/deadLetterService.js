@@ -14,6 +14,26 @@ import { createContextLogger } from '../../utils/logger.js';
 const log = createContextLogger(null, 'dead_letter_service');
 const MAX_RETRY_BATCH = 100;
 
+/**
+ * Resposta mínima: as rotas de leitura (admin) nunca devolvem payload,
+ * metadata completa nem stack. Payload de evento pode conter dado de paciente;
+ * para diagnóstico, só os NOMES dos campos (payloadKeys).
+ */
+const MAX_LIST_LIMIT = 100;
+const SORTABLE_FIELDS = ['createdAt', 'eventType', 'aggregateType', 'attempts'];
+const MINIMAL_PROJECTION = {
+    eventId: 1, eventType: 1, eventVersion: 1, aggregateType: 1, aggregateId: 1, sequenceNumber: 1,
+    status: 1, attempts: 1, recoveryCount: 1, adminRetryCount: 1, createdAt: 1, updatedAt: 1, processedAt: 1, processedBy: 1,
+    'error.message': 1, 'error.code': 1, 'metadata.correlationId': 1, 'metadata.source': 1
+};
+const MAX_ERROR_MESSAGE = 300;
+
+function minimalError(error) {
+    if (!error) return null;
+    const message = typeof error.message === 'string' ? error.message.slice(0, MAX_ERROR_MESSAGE) : null;
+    return { message, code: error.code ?? null };
+}
+
 const DEFAULT_JOB_OPTIONS = {
     attempts: 5,
     backoff: {
@@ -46,13 +66,14 @@ export async function listDeadLetters(options = {}) {
     if (aggregateType) query.aggregateType = aggregateType;
     if (eventType) query.eventType = eventType;
 
-    const skip = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
-    const take = Math.max(1, Number(limit));
+    const take = Math.min(MAX_LIST_LIMIT, Math.max(1, Number(limit) || 20));
+    const skip = (Math.max(1, Number(page) || 1) - 1) * take;
     const sortOrder = order === 'asc' ? 1 : -1;
+    const sortField = SORTABLE_FIELDS.includes(sort) ? sort : 'createdAt';
 
     const [events, total] = await Promise.all([
-        EventStore.find(query)
-            .sort({ [sort]: sortOrder })
+        EventStore.find(query, MINIMAL_PROJECTION)
+            .sort({ [sortField]: sortOrder })
             .skip(skip)
             .limit(take)
             .lean(),
@@ -70,15 +91,7 @@ export async function listDeadLetters(options = {}) {
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         processedAt: e.processedAt,
-        error: e.error
-            ? {
-                  message: e.error.message,
-                  code: e.error.code,
-                  stackPreview: e.error.stack
-                      ? e.error.stack.split('\n').slice(0, 5).join('\n')
-                      : null
-              }
-            : null,
+        error: minimalError(e.error),
         metadata: {
             correlationId: e.metadata?.correlationId || null,
             source: e.metadata?.source || null
@@ -100,6 +113,7 @@ export async function listDeadLetters(options = {}) {
  * Busca detalhes completos de um evento em dead letter
  */
 export async function getDeadLetterById(eventId) {
+    if (typeof eventId !== 'string' || eventId.length === 0 || eventId.length > 200) return null;
     const event = await EventStore.findOne({ eventId, status: 'dead_letter' }).lean();
     if (!event) return null;
 
@@ -122,13 +136,14 @@ export async function getDeadLetterById(eventId) {
         attempts: event.attempts,
         recoveryCount: event.recoveryCount ?? 0,
         createdAt: event.createdAt,
-        updatedAt: event.updatedAt,
         processedAt: event.processedAt,
         processedBy: event.processedBy,
-        payload: event.payload,
-        error: event.error || null,
-        metadata: event.metadata || {},
-        idempotencyKey: event.idempotencyKey || null,
+        // Só os nomes dos campos: o conteúdo pode ter dado clínico.
+        payloadKeys: event.payload && typeof event.payload === 'object' ? Object.keys(event.payload).sort() : [],
+        error: minimalError(event.error),
+        correlationId: event.metadata?.correlationId || null,
+        source: event.metadata?.source || null,
+        hasIdempotencyKey: !!event.idempotencyKey,
         targetQueues
     };
 }

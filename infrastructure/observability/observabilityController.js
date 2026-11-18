@@ -314,7 +314,7 @@ export async function getDeadLetterDetailsHandler(req, res) {
             return res.status(404).json({
                 success: false,
                 error: 'Dead letter não encontrado',
-                message: `Nenhum evento em dead letter encontrado para eventId: ${eventId}`
+                message: 'Nenhum evento em dead letter com esse eventId'
             });
         }
 

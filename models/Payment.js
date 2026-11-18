@@ -58,6 +58,10 @@ const paymentSchema = new mongoose.Schema({
         default: null
     },
     settledPaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: [] }],
+    // Chave da operação idempotente que criou este Payment (multi_payment,
+    // standalone). Ver models/PaymentOperation.js. Sem índice: a unicidade
+    // fica no _id de payment_operations.
+    operationKey: { type: String },
     bulkSettlementKey: { type: String, default: null, index: true },
     billingType: {
         type: String,
