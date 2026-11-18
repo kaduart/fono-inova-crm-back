@@ -26,6 +26,7 @@ import { sendTextMessage } from '../../../services/whatsappService.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
 import { emitSocketEvent } from '../../../config/socket.js';
 import { normalizeE164BR } from '../../../utils/phone.js';
+import { guardedSend, DeliveryOutcome } from '../../../infrastructure/delivery/deliveryGuard.js';
 
 /**
  * Payload esperado em job.data.payload:
@@ -84,15 +85,27 @@ export function createWhatsappSendWorker() {
 
       let result;
       try {
-        result = await sendTextMessage({
-          to: normalizedTo,
-          text,
-          lead: leadId,
-          contactId: contactId || null,
-          patientId: patientId || null,
-          sentBy,
-          metadata: { source, idempotencyKey: idempotencyKey || null },
+        // Reserva atômica por chave antes de chamar o provedor. A consulta em
+        // Message acima não basta: a mensagem só é gravada DEPOIS do envio.
+        const delivery = await guardedSend({
+          channel: 'whatsapp',
+          deliveryKey: `wa:send:${idempotencyKey || job.id}`,
+          destination: normalizedTo,
+          log: { info: (e, m, d) => logger.info(`[WhatsappSendWorker] ${m}`, d), warn: (e, m, d) => logger.warn(`[WhatsappSendWorker] ${m}`, d) },
+          send: () => sendTextMessage({
+            to: normalizedTo,
+            text,
+            lead: leadId,
+            contactId: contactId || null,
+            patientId: patientId || null,
+            sentBy,
+            metadata: { source, idempotencyKey: idempotencyKey || null },
+          }),
         });
+        if (delivery.outcome !== DeliveryOutcome.SENT) {
+          return { status: 'skipped', reason: `DELIVERY_${delivery.outcome.toUpperCase()}` };
+        }
+        result = delivery.result;
       } catch (sendErr) {
         logger.error('[WhatsappSendWorker] Falha no sendTextMessage', {
           error: sendErr.message,
