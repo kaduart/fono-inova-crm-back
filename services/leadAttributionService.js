@@ -40,6 +40,16 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
       );
     }
 
+    // 18/11: o gclid de uma mensagem posterior era descartado quando o telefone já tinha origem
+    // "forte" sem gclid (first-touch). Completa SÓ o gclid (e a campanha vazia), sem trocar a origem.
+    if (!created && parsed.gclid) {
+      const fill = { gclid: parsed.gclid };
+      await LeadAttribution.updateOne({ phone: normalized, gclid: { $in: [null, ''] } }, { $set: fill });
+      if (parsed.campaign) {
+        await LeadAttribution.updateOne({ phone: normalized, campaign: { $in: [null, ''] } }, { $set: { campaign: parsed.campaign } });
+      }
+    }
+
     // Completa o Lead existente SEM sobrescrever origem já definida
     if (created) {
       const set = { 'metaTracking.source': toLeadTrackingSource(parsed.source) };
@@ -54,6 +64,11 @@ export async function captureInboundAttribution({ phone, text, ctwa = null, capt
       );
       console.log(`${TAG} ✅ origem capturada`, { source: parsed.source, method: parsed.method, phoneTail: normalized.slice(-4) });
     }
+
+    // 18/11: leadattribution com gclid → grava gclid, origem e campanha no Lead do mesmo telefone
+    // (todas as variantes de formato). Antes só acontecia na criação e só se o lead não tivesse
+    // origem, então nenhum lead de produção tinha gclid e o google-offline.csv saía vazio.
+    if (parsed.gclid) await syncLeadGclid({ phone: normalized, gclid: parsed.gclid, campaign: parsed.campaign });
     return { ...parsed, created };
   } catch (err) {
     if (err?.code === 11000) return null; // corrida entre 2 mensagens do mesmo número — ok
@@ -96,11 +111,83 @@ export async function getAttributionByPhone(phone) {
 }
 
 // Variantes com e sem o 9 após o DDD (mesma regra de getAttributionByPhone).
-function phoneVariants(normalized) {
+export function phoneVariants(normalized) {
   const variants = [normalized];
   const m = normalized.match(/^55(\d{2})(9?)(\d{8})$/);
   if (m) variants.push(m[2] ? `55${m[1]}${m[3]}` : `55${m[1]}9${m[3]}`);
   return variants;
+}
+
+// Formatos em que o telefone aparece em Lead.contact.phone: 55DD9…, +55DD9…, DD9… (com e sem o 9).
+export function leadPhoneFormats(phone) {
+  const normalized = normalizeE164BR(phone);
+  if (!normalized) return [];
+  return [...new Set(phoneVariants(normalized).flatMap((v) => [v, `+${v}`, v.slice(2)]))];
+}
+
+// Origens que um gclid (clique comprovado no Google Ads) pode substituir no Lead.
+const WEAK_LEAD_SOURCES = [null, '', 'website', 'organic'];
+
+/**
+ * Grava gclid (+ origem google_ads e campanha) nos leads do telefone ou no lead informado.
+ * Nunca apaga gclid existente nem troca origem paga de outra plataforma (meta/tiktok).
+ * Idempotente. Devolve quantos leads mudaram. Nunca lança.
+ */
+export async function syncLeadGclid({ phone = null, leadId = null, gclid, campaign = null }) {
+  try {
+    if (!gclid) return 0;
+    const or = [];
+    if (leadId) or.push({ _id: leadId });
+    const formats = phone ? leadPhoneFormats(phone) : [];
+    if (formats.length) or.push({ 'contact.phone': { $in: formats } });
+    if (!or.length) return 0;
+
+    const leads = await Lead.find({ $or: or }).select('_id metaTracking').lean();
+    let changed = 0;
+    for (const l of leads) {
+      const mt = l.metaTracking || {};
+      const set = {};
+      if (!mt.gclid) set['metaTracking.gclid'] = gclid;
+      if (WEAK_LEAD_SOURCES.includes(mt.source ?? null)) set['metaTracking.source'] = 'google_ads';
+      if (campaign && !mt.campaign) set['metaTracking.campaign'] = campaign;
+      if (!Object.keys(set).length) continue;
+      const r = await Lead.updateOne({ _id: l._id }, { $set: set });
+      changed += r.modifiedCount || 0;
+    }
+    if (changed) console.log(`${TAG} ✅ gclid gravado no lead`, { leads: changed });
+    return changed;
+  } catch (err) {
+    console.error(`${TAG} ❌ erro ao gravar gclid no lead:`, err.message);
+    return 0;
+  }
+}
+
+/**
+ * gclid para a conversão de um agendamento quando a atribuição por telefone não trouxe:
+ * 1º Lead do agendamento (ou do telefone) com metaTracking.gclid;
+ * 2º LeadAttribution MAIS RECENTE com gclid do mesmo telefone (ou do telefone do lead).
+ * Devolve { gclid, campaign, method } ou null.
+ */
+export async function findGclidForConversion({ leadId = null, phone = null }) {
+  const or = [];
+  if (leadId) or.push({ _id: leadId });
+  const formats = phone ? leadPhoneFormats(phone) : [];
+  if (formats.length) or.push({ 'contact.phone': { $in: formats } });
+
+  let leadPhones = [];
+  if (or.length) {
+    const leads = await Lead.find({ $or: or }).select('_id contact.phone metaTracking').lean();
+    const withGclid = leads.find((l) => l.metaTracking?.gclid);
+    if (withGclid) return { gclid: withGclid.metaTracking.gclid, campaign: withGclid.metaTracking.campaign || null, method: 'lead' };
+    leadPhones = leads.map((l) => l.contact?.phone).filter(Boolean);
+  }
+
+  const variants = [...new Set([phone, ...leadPhones].filter(Boolean)
+    .map((p) => normalizeE164BR(p)).filter(Boolean).flatMap(phoneVariants))];
+  if (!variants.length) return null;
+  const attr = await LeadAttribution.findOne({ phone: { $in: variants }, gclid: { $nin: [null, ''] } })
+    .sort({ updatedAt: -1, firstMessageAt: -1 }).select('gclid campaign method').lean();
+  return attr ? { gclid: attr.gclid, campaign: attr.campaign || null, method: attr.method || 'attribution' } : null;
 }
 
 /**
@@ -158,4 +245,4 @@ export async function getAttributionsByPhones(phones = []) {
   return out;
 }
 
-export default { captureInboundAttribution, getAttributionByPhone, getAttributionsByPhones };
+export default { captureInboundAttribution, getAttributionByPhone, getAttributionsByPhones, syncLeadGclid, findGclidForConversion };
