@@ -93,6 +93,7 @@ import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import whatsappVPSRoutes from "./routes/whatsappVPS.js";
+import whatsappConnectorEventsRoutes from "./routes/whatsappConnectorEvents.js";
 import whatsappWebJsRoutes from "./routes/whatsappWebJs.js";
 import { initWhatsAppClient } from "./services/whatsappWebJsService.js";
 import chatV2Routes from "./routes/chat/index.js";
@@ -320,16 +321,20 @@ const jsonParser = express.json({ limit: '50mb' });
 const urlParser = express.urlencoded({ limit: '50mb', extended: true });
 
 // Ignorar requisições multipart (deixar para o multer tratar)
+// Eventos do conector WhatsApp: a assinatura HMAC cobre o corpo CRU — o parser JSON não pode consumir antes.
+const RAW_BODY_PATHS = ['/api/whatsapp-connector/events'];
 app.use((req, res, next) => {
     if (req.headers['content-type']?.includes('multipart/form-data')) {
         return next();
     }
+    if (RAW_BODY_PATHS.includes(req.path)) return next();
     jsonParser(req, res, next);
 });
 app.use((req, res, next) => {
     if (req.headers['content-type']?.includes('multipart/form-data')) {
         return next();
     }
+    if (RAW_BODY_PATHS.includes(req.path)) return next();
     urlParser(req, res, next);
 });
 app.use(
@@ -625,6 +630,7 @@ app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/whatsapp-vps", whatsappVPSRoutes);
+app.use("/api/whatsapp-connector", whatsappConnectorEventsRoutes);
 app.use("/api/whatsapp-web", whatsappWebJsRoutes);
 app.use("/api/v2/chat", auth, chatV2Routes);
 

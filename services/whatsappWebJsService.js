@@ -26,9 +26,36 @@ import { normalizeE164BR } from '../utils/phone.js';
 import { resolveAttendancePollVoterPhone } from '../utils/attendancePollVoter.js';
 import { PINNED_CHROME_VERSION, chromeBinarySubpath } from '../config/chromeVersion.js';
 import WhatsAppWebState from '../models/WhatsAppWebState.js';
+import { ATTENDANCE_POLL } from '../constants/attendancePoll.js';
+
+// ─── Modo externo (18/11/2026, docs/WHATSAPP_CONECTOR_EXTERNO.md) ───
+// WHATSAPP_CONNECTOR_MODE=external → o Chrome vive no conector (projeto whatsapp-connector/) e NUNCA sobe
+// neste processo: nem no boot, nem em retry, reconexão ou recuperação (todos passam por initWhatsAppClient
+// e createClient). Não há fallback para Chrome local: com o conector fora, a falha aparece no ERP.
+/** true quando este processo não pode abrir Chrome. Lido a cada chamada. */
+export function localChromeForbidden(env = process.env) {
+  return env.WHATSAPP_CONNECTOR_MODE === 'external';
+}
+let chromeForbiddenLogged = false;
+function refuseLocalChrome(where) {
+  if (!chromeForbiddenLogged) {
+    console.error(`[WhatsAppWeb] 🚫 ${where}: WHATSAPP_CONNECTOR_MODE=external — o Chrome roda no conector, não neste processo.`);
+    chromeForbiddenLogged = true;
+  }
+}
+
+// Sessão transferida para o conector (scripts/whatsapp-session-handoff.js release): mesmo em modo local, o
+// Chrome NÃO abre nesta pasta — a mesma sessão não pode rodar em dois lugares. Volta só com `reclaim`.
+export const SESSION_TRANSFERRED_MARKER = '.session-transferred.json';
+export function sessionTransferredInfo(dir = authPathFromEnv()) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, SESSION_TRANSFERRED_MARKER), 'utf8')); } catch (e) {
+    return e?.code === 'ENOENT' ? null : { unreadable: true };
+  }
+}
+function authPathFromEnv() { return process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth'; }
 
 // ─── Caminho de persistência da sessão (module-level para uso em clearSession/reconnect) ─
-const authPath = process.env.WHATSAPP_AUTH_PATH || '/var/data/wwebjs_auth';
+const authPath = authPathFromEnv();
 
 // ─── Estado singleton em memória (fonte de verdade para rotas, parent, frontend) ─
 export const whatsappState = {
@@ -581,6 +608,8 @@ function cleanupChromeCacheIfNeeded() {
 }
 
 function createClient() {
+  if (localChromeForbidden()) { refuseLocalChrome('createClient'); throw new Error('Chrome local proibido (WHATSAPP_CONNECTOR_MODE=external)'); }
+  if (sessionTransferredInfo(authPath)) throw new Error('Chrome local proibido: sessão transferida para o conector');
   installChromeStderrFilter();
   // Garante pasta de persistência
   try {
@@ -835,30 +864,14 @@ function createClient() {
     }
   });
 
-  // ─── Atribuição de origem (marketing) — só LÊ mensagens recebidas, nunca responde ──
-  if (process.env.WA_ATTRIBUTION_CAPTURE !== 'false') {
-    newClient.on('message', (msg) => {
-      handleInboundAttribution(msg).catch((err) =>
-        console.warn('[WhatsAppWeb] ⚠️ atribuição falhou (ignorado):', err?.message)
-      );
-    });
-  }
-
-  // O chip comum não passa pelo webhook da API oficial; captura a confirmação aqui.
+  // ─── Mensagens recebidas: origem (marketing), confirmação de presença e interesse em convênio ──
+  // 18/11/2026: a mensagem vira um evento simples (normalizeInboundMessage) e as regras ficam em
+  // services/whatsappInboundProcessor.js — o mesmo código no modo local e no conector externo.
   newClient.on('message', (msg) => {
-    handleInboundAppointmentConfirmation(msg).catch((err) =>
-      console.warn('[WhatsAppWeb] ⚠️ confirmação de atendimento falhou (ignorado):', err?.message)
+    dispatchInboundMessage(msg, 'live').catch((err) =>
+      console.warn('[WhatsAppWeb] ⚠️ mensagem recebida falhou (ignorado):', err?.message)
     );
   });
-
-  // Interesse em convênio (GEAP/IPASGO/Bradesco) citado pelo contato → lista de interesse do ERP.
-  if (process.env.WA_CONVENIO_INTEREST_CAPTURE !== 'false') {
-    newClient.on('message', (msg) => {
-      handleInboundConvenioInterest(msg).catch((err) =>
-        console.warn('[WhatsAppWeb] ⚠️ interesse em convênio falhou (ignorado):', err?.message)
-      );
-    });
-  }
 
   // Mensagem que a CLÍNICA mandou (pelo ERP ou na mão, no celular/WhatsApp Web): grava a data na lista de
   // interesse em convênio para o envio em massa não repetir contato com quem a equipe acabou de falar.
@@ -885,26 +898,8 @@ function createClient() {
 // registro fora de /^55\d{10,11}$/ e só quando o WhatsApp resolve um número válido.
 async function repairLidAttributions(client) {
   if (process.env.WA_ATTRIBUTION_CAPTURE === 'false' || !client?.getContactLidAndPhone) return;
-  const LeadAttribution = (await import('../models/LeadAttribution.js')).default;
-  const { normalizeE164BR } = await import('../utils/phone.js');
-  const bad = await LeadAttribution.find({ phone: { $not: /^55\d{10,11}$/ } }).lean();
-  let fixed = 0;
-  for (const a of bad) {
-    // normalizeE164BR prefixou "55" no lid: testa as duas formas
-    const candidates = [a.phone, a.phone.startsWith('55') ? a.phone.slice(2) : null].filter(Boolean);
-    let pn = null;
-    for (const lid of candidates) {
-      try {
-        const [r] = await client.getContactLidAndPhone([`${lid}@lid`]);
-        if (r?.pn) { pn = normalizeE164BR(String(r.pn).replace(/@.*$/, '')); if (pn) break; }
-      } catch { /* tenta o próximo */ }
-    }
-    if (!pn || !/^55\d{10,11}$/.test(pn)) continue;
-    if (await LeadAttribution.exists({ phone: pn })) await LeadAttribution.deleteOne({ _id: a._id }); // origem pelo número real prevalece
-    else await LeadAttribution.updateOne({ _id: a._id }, { $set: { phone: pn } });
-    fixed++;
-  }
-  console.log(`[WhatsAppWeb] 🔧 reparo @lid: ${fixed}/${bad.length} corrigidos`);
+  const { repairLidAttributions: repair } = await import('./whatsappLidRepair.js');
+  await repair({ resolveLids: (lids) => resolveLidsToPhones(lids) });
 }
 
 // Varre conversas com atividade recente (default 72h = cobre fim de semana com worker suspenso).
@@ -923,7 +918,7 @@ async function catchUpAttribution(client) {
         const msgs = await chat.fetchMessages({ limit: 8 });
         for (const m of msgs) {
           if (m.fromMe || (m.timestamp || 0) < sinceSec) continue;
-          await handleInboundAttribution(m);
+          await dispatchInboundMessage(m, 'catchup');
           checked++;
         }
       } catch { /* conversa com erro de carga — segue */ }
@@ -965,6 +960,9 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
           const ctx = m.ctwaContext || null;
           // 18/11: leva também ctwaSignals/conversionData (o clid vem neles); extraído no Node por extractCtwa.
           out.push({
+            waMessageId: m.id?._serialized || null,
+            chatId: c.id?._serialized || null,
+            t: m.t || 0,
             phone,
             body: m.body || '',
             ctwa: ctx ? {
@@ -977,15 +975,13 @@ async function catchUpAttributionViaStore(client, sinceSec, hours) {
       return out.slice(0, 1500);
     }, sinceSec);
 
-    const { parseAttribution } = await import('../utils/attributionParser.js');
-    const { captureInboundAttribution } = await import('./leadAttributionService.js');
-    const { extractCtwa } = await import('../utils/ctwaContext.js');
     let found = 0;
     for (const r of rows) {
-      const ctwa = r.ctwa ? extractCtwa(r.ctwa) : null;
-      if (!parseAttribution(r.body, ctwa)) continue;
-      const res = await captureInboundAttribution({ phone: r.phone, text: r.body, ctwa, capturedBy: 'whatsapp_web_catchup' });
-      if (res) found++;
+      const res = await deliverEvent('message.inbound', {
+        waMessageId: r.waMessageId, chatId: r.chatId, phone: r.phone, body: String(r.body || '').slice(0, 4096),
+        timestamp: r.t || null, notifyName: null, selectedButtonId: null, ctwa: r.ctwa, externalAdReply: null, source: 'catchup',
+      });
+      if (res?.attribution) found++;
     }
     console.log(`[WhatsAppWeb] 🔁 catch-up (Store): ${rows.length} msgs lidas, ${found} com origem (${hours}h)`);
   } catch (err) {
@@ -1076,63 +1072,59 @@ function logCtwaShapeOnce(ctwaRaw, msgData) {
   }).catch(() => {});
 }
 
-async function handleInboundAttribution(msg) {
-  if (!msg || msg.fromMe || msg.isStatus) return;
+// Conversa individual de contato (não grupo, canal ou status).
+const isContactChatId = (id) => Boolean(id) && !id.endsWith('@g.us') && !id.endsWith('@newsletter') && id !== 'status@broadcast';
+
+// Campos do ctwaContext que não servem para atribuição e pesam (miniatura em base64).
+const CTWA_HEAVY_KEYS = new Set(['thumbnail', 'thumbnailUrl', 'originalImageUrl', 'mediaUrl']);
+
+/**
+ * Mensagem recebida (whatsapp-web.js) → evento simples `message.inbound`. Resolve o telefone real de @lid
+ * (precisa do navegador, por isso fica aqui) e lê os bytes do anúncio na página. null = não é de contato.
+ */
+export async function normalizeInboundMessage(msg, source = 'live') {
+  if (!msg || msg.fromMe || msg.isStatus) return null;
   const from = msg.from || '';
-  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
+  if (!isContactChatId(from)) return null;
 
-  const text = msg.body || '';
   const ctwaRaw = msg._data?.ctwaContext || null;
-
-  // Checagem barata antes de qualquer I/O
-  const { parseAttribution } = await import('../utils/attributionParser.js');
-  // 18/11: o ctwa_clid não vem numa chave "ctwaClid"; extractCtwa procura em ctwaSignals/conversionData/externalAdReply.
-  const { extractCtwa, clidLogInfo } = await import('../utils/ctwaContext.js');
-  // 18/11 (log em prod): conversionData chega como {} — é binário e se perde na passagem página → Node.
-  // Lê os bytes DENTRO da página e traz em base64 (só quando há anúncio).
+  // 18/11: conversionData é binário e chega {} ao Node — lê os bytes DENTRO da página (base64).
   const ctwaFull = ctwaRaw ? { ...ctwaRaw, ...(await readCtwaBytesInPage(msg)) } : null;
-  const ctwa = extractCtwa(ctwaFull, msg._data);
+  const externalAdReply = msg._data?.contextInfo?.externalAdReply || msg._data?.externalAdReply || null;
   if (ctwaRaw) {
+    const { extractCtwa, clidLogInfo } = await import('../utils/ctwaContext.js');
+    const ctwa = extractCtwa(ctwaFull, msg._data);
     console.log('[WhatsAppWeb] 📣 ctwaContext recebido — chaves:', Object.keys(ctwaRaw).join(','),
       `| anúncio=${ctwa?.sourceId ? 'sim' : 'não'} clid=${ctwa?.ctwaClid ? `sim (${ctwa.clidFrom}; ${clidLogInfo(ctwa.ctwaClid)})` : 'não'}`);
     logCtwaShapeOnce(ctwaFull, msg._data);
   }
-  if (!parseAttribution(text, ctwa)) return;
 
   let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
   if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
-  if (!phone) {
-    console.warn('[WhatsAppWeb] ⚠️ origem detectada mas telefone real não resolvido (@lid) — não gravo para não perder o vínculo com o agendamento');
-    return;
-  }
 
-  const { captureInboundAttribution } = await import('./leadAttributionService.js');
-  await captureInboundAttribution({ phone, text, ctwa, capturedBy: 'whatsapp_web' });
+  return {
+    waMessageId: msg.id?._serialized || null,
+    chatId: from,
+    phone: phone || null,
+    body: String(msg.body || '').slice(0, 4096),
+    timestamp: Number(msg.timestamp) || null,
+    notifyName: msg._data?.notifyName || null,
+    selectedButtonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
+    ctwa: ctwaFull ? Object.fromEntries(Object.entries(ctwaFull).filter(([k]) => !CTWA_HEAVY_KEYS.has(k))) : null,
+    externalAdReply: externalAdReply ? Object.fromEntries(Object.entries(externalAdReply).filter(([k]) => !CTWA_HEAVY_KEYS.has(k))) : null,
+    source,
+  };
 }
 
-async function handleInboundConvenioInterest(msg) {
-  if (!msg || msg.fromMe || msg.isStatus) return;
-  const from = msg.from || '';
-  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
+// Modo local: as regras de negócio (as mesmas do modo externo) rodam aqui mesmo.
+async function deliverEvent(type, data) {
+  if (!data) return null;
+  const { processConnectorEvent } = await import('./whatsappInboundProcessor.js');
+  return processConnectorEvent({ type, data });
+}
 
-  // Checagem barata antes de qualquer I/O
-  const { matchWaitlistConvenios } = await import('../constants/convenioWaitlist.js');
-  const convenios = matchWaitlistConvenios(msg.body);
-  if (!convenios.length) return;
-
-  let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
-  if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
-  if (!phone) return;
-
-  const { recordWhatsappInterest } = await import('./convenioWaitlistWhatsapp.js');
-  const at = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
-  for (const convenio of convenios) {
-    await recordWhatsappInterest({
-      phone, convenio, name: msg._data?.notifyName || null,
-      firstAt: at, lastAt: at, snippet: msg.body, snippetFromContact: true,
-      mentionedBy: ['contato'], capturedBy: 'live',
-    });
-  }
+async function dispatchInboundMessage(msg, source = 'live') {
+  return deliverEvent('message.inbound', await normalizeInboundMessage(msg, source));
 }
 
 /**
@@ -1253,19 +1245,18 @@ export async function scanConvenioInterest({ convenio, maxPages = 80, pageSize =
  * @param {{ startIndex?: number, since?: Date, batchSize?: number, maxLoadsPerChat?: number,
  *           onBatch?: (p: object) => Promise<void> }} opts
  */
-export async function scanConvenioInterestDeep({
-  startIndex = 0,
-  since = new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000),
-  batchSize = 20,
-  maxLoadsPerChat = 80,
-  onBatch,
-} = {}) {
+/**
+ * Um lote da varredura profunda (SÓ LEITURA, só navegador): lista estável de conversas (ordenada por id),
+ * carrega o histórico de `batchSize` conversas a partir de `startIndex` até `since` e devolve as mensagens que
+ * citam os convênios. Não grava nada — quem grava é runDeepConvenioScan (CRM), local ou via conector.
+ * 18/11/2026: separado de scanConvenioInterestDeep para o conector externo expor em POST /v1/scans/deep-batch.
+ */
+export async function readDeepScanBatch({ startIndex = 0, batchSize = 20, since, maxLoadsPerChat = 80 } = {}) {
   if (!isReady || !client) throw new Error('WhatsApp não está conectado');
   const { WAITLIST_WHATSAPP_KEYWORDS, CONVENIOS_WAITLIST } = await import('../constants/convenioWaitlist.js');
-  const { groupHitsByContact, recordWhatsappInterest } = await import('./convenioWaitlistWhatsapp.js');
   const patterns = CONVENIOS_WAITLIST.map((c) => [c, WAITLIST_WHATSAPP_KEYWORDS[c].regex.source]);
-
-  // Ordem estável (id) para conseguir retomar do mesmo ponto depois de um restart do worker.
+  const sinceDate = since ? new Date(since) : new Date(Date.now() - 3 * 365 * 24 * 3600 * 1000);
+  // Ordem estável (id) para conseguir retomar do mesmo ponto depois de um restart.
   const chatIds = await client.pupPage.evaluate(() => (((() => { try { return window.require('WAWebCollections'); } catch { return window.Store || {}; } })()).Chat?.getModelsArray?.() || [])
     .filter((c) => !c.isGroup && ['c.us', 'lid'].includes(c.id?.server))
     .map((c) => c.id._serialized)
@@ -1273,12 +1264,8 @@ export async function scanConvenioInterestDeep({
   const total = chatIds.length;
   // 0 conversas = não achou a lista (mudança interna do WhatsApp Web); falhar é melhor que dizer "ninguém".
   if (!total) throw new Error('Não consegui ler a lista de conversas do WhatsApp Web');
-  const stats = { total, done: Math.min(startIndex, total), messages: 0, contacts: 0, created: 0, updated: 0, closed: 0, invalid: 0, unresolved: 0, loadErrors: 0, oldest: null, byConvenio: {} };
-  console.log(`[WhatsAppWeb] 🔎 varredura profunda: ${total} conversas (começando em ${startIndex})`);
-
-  for (let i = startIndex; i < total; i += batchSize) {
-    if (!isReady || !client) throw new Error('WhatsApp desconectou no meio da varredura');
-    const ids = chatIds.slice(i, i + batchSize);
+  const ids = chatIds.slice(startIndex, startIndex + batchSize);
+  const since_ = sinceDate;
     const res = await client.pupPage.evaluate(async (ids, patterns, sinceTs, maxLoads) => {
       const regs = patterns.map(([c, src]) => [c, new RegExp(src, 'i')]);
       const loader = window.require?.('WAWebChatLoadMessages');
@@ -1325,43 +1312,40 @@ export async function scanConvenioInterestDeep({
         } catch { /* sem limpeza — segue */ }
       }
       return out;
-    }, ids, patterns, Math.floor(since.getTime() / 1000), maxLoadsPerChat);
+    }, ids, patterns, Math.floor(since_.getTime() / 1000), maxLoadsPerChat);
+  return { total, nextIndex: Math.min(startIndex + batchSize, total), ...res };
+}
 
-    stats.unresolved += res.unresolved;
-    stats.loadErrors += res.loadErrors;
-    if (res.oldest && (!stats.oldest || res.oldest * 1000 < new Date(stats.oldest).getTime())) stats.oldest = new Date(res.oldest * 1000).toISOString();
-    const hits = res.rows.map((r) => ({ phone: r.phone, convenio: r.convenio, fromMe: r.fromMe, body: r.body, at: new Date(r.t * 1000), name: r.name }));
-    stats.messages += hits.length;
-    for (const c of groupHitsByContact(hits)) {
-      stats.contacts++;
-      stats.byConvenio[c.convenio] = (stats.byConvenio[c.convenio] || 0) + 1;
-      try {
-        const r = await recordWhatsappInterest({ ...c, capturedBy: 'scan' });
-        stats[r.result] = (stats[r.result] || 0) + 1;
-      } catch (err) {
-        stats.invalid++;
-        console.warn('[WhatsAppWeb] ⚠️ falha ao gravar interessado (segue):', err?.message);
-      }
-    }
-    stats.done = Math.min(i + batchSize, total);
-    if (onBatch) await onBatch({ nextIndex: stats.done, stats: { ...stats } });
-    if (stats.done % 200 < batchSize) console.log('[WhatsAppWeb] 🔎 varredura profunda:', JSON.stringify(stats));
-    await new Promise((r) => setTimeout(r, 500)); // folga para envios da fila whatsapp-send
-  }
-  console.log('[WhatsAppWeb] 🔎 varredura profunda concluída:', JSON.stringify(stats));
-  return stats;
+/**
+ * Varredura PROFUNDA (só leitura): entra em cada conversa individual, puxa do celular as mensagens
+ * antigas (loadEarlierMsgs, o mesmo "carregar mais" do WhatsApp Web) até a data de corte e procura os
+ * 4 convênios de uma vez. Retomável por `startIndex`/`onBatch`. A parte de banco fica em
+ * services/whatsappDeepScan.js (runDeepConvenioScan), igual para o modo local e o conector externo.
+ */
+export async function scanConvenioInterestDeep(opts = {}) {
+  const { runDeepConvenioScan } = await import('./whatsappDeepScan.js');
+  return runDeepConvenioScan({
+    ...opts,
+    readBatch: (p) => {
+      if (!isReady || !client) throw new Error('WhatsApp desconectou no meio da varredura');
+      return readDeepScanBatch(p);
+    },
+  });
 }
 
 async function handleOutboundClinicMessage(msg) {
-  if (!msg || !msg.fromMe || msg.isStatus) return;
+  if (!msg || !msg.fromMe || msg.isStatus) return null;
   const to = msg.to || '';
-  if (!to || to.endsWith('@g.us') || to.endsWith('@newsletter') || to === 'status@broadcast') return;
+  if (!isContactChatId(to)) return null;
   let phone = to.endsWith('@c.us') ? to.replace('@c.us', '') : null;
   if (!phone && to.endsWith('@lid')) phone = await resolveRealPhoneFromLid(msg, to);
-  if (!phone) return;
-  const { recordChatActivity } = await import('./convenioWaitlistWhatsapp.js');
-  const at = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
-  await recordChatActivity([{ phone, clinicAt: at }]);
+  if (!phone) return null;
+  return deliverEvent('message.outbound', {
+    waMessageId: msg.id?._serialized || null,
+    chatId: to,
+    phone,
+    timestamp: Number(msg.timestamp) || null,
+  });
 }
 
 /**
@@ -1441,52 +1425,88 @@ export async function getChatActivity(phone) {
   };
 }
 
-async function handleInboundAppointmentConfirmation(msg) {
-  if (!msg || msg.fromMe || msg.isStatus) return;
-  const from = msg.from || '';
-  if (!from || from.endsWith('@g.us') || from.endsWith('@newsletter') || from === 'status@broadcast') return;
-
-  let phone = from.endsWith('@c.us') ? from.replace('@c.us', '') : null;
-  if (!phone) phone = await resolveRealPhoneFromLid(msg, from);
-  if (!phone) return;
-
-  const { recordAttendanceConfirmationResponse } = await import('./appointment/attendanceConfirmation.service.js');
-  await recordAttendanceConfirmationResponse({
-    phone,
-    text: msg.body || '',
-    buttonId: msg.selectedButtonId || msg._data?.selectedButtonId || null,
-    messageId: msg.id?._serialized || msg.id || null,
-    respondedAt: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
-  });
-}
-
+// Voto na enquete do lembrete de presença → evento `poll.vote` (telefone resolvido aqui, onde há navegador).
 async function handleInboundAttendancePollVote(vote) {
   const selectedOption = vote?.selectedOptions?.[0]?.name || '';
-  if (!selectedOption) return;
-
+  if (!selectedOption) return null;
   const phone = await resolveAttendancePollVoterPhone(vote, client);
   const pollMessageId = vote?.parentMsgKey?._serialized
     || vote?.parentMessage?.id?._serialized
     || null;
-  if (!phone) {
-    console.warn('[WhatsAppWeb] ⚠️ voto de confirmação ignorado: telefone do paciente não resolvido');
-    return;
-  }
-
-  const { recordAttendanceConfirmationPollVote } = await import('./appointment/attendanceConfirmation.service.js');
-  const result = await recordAttendanceConfirmationPollVote({
-    phone,
+  return deliverEvent('poll.vote', {
+    voterPhone: phone || null,
     pollMessageId,
     optionName: selectedOption,
-    respondedAt: vote?.interractedAtTs ? new Date(Number(vote.interractedAtTs)) : new Date(),
+    respondedAtMs: vote?.interractedAtTs ? Number(vote.interractedAtTs) : null,
   });
-  if (!result?.matched) {
-    console.warn('[WhatsAppWeb] ⚠️ voto recebido, mas nenhum lembrete pendente foi vinculado:', result?.reason || 'desconhecido');
+}
+
+/**
+ * Telefone real de IDs @lid (SÓ LEITURA). Para o reparo de origens feito pelo CRM no modo externo.
+ * @param {string[]} lids sem ou com o sufixo @lid
+ * @returns {Promise<Array<{ lid: string, phone: string|null }>>}
+ */
+export async function resolveLidsToPhones(lids = []) {
+  if (!isReady || !client) throw new Error('WhatsApp não está conectado');
+  const out = [];
+  for (const raw of lids.slice(0, 500)) {
+    const lid = String(raw).replace(/@lid$/, '');
+    let phone = null;
+    try {
+      const [r] = await client.getContactLidAndPhone([`${lid}@lid`]);
+      const pn = r?.pn ? normalizeE164BR(String(r.pn).replace(/@.*$/, '')) : null;
+      if (pn && /^55\d{10,11}$/.test(pn)) phone = pn;
+    } catch { /* segue */ }
+    out.push({ lid, phone });
   }
+  return out;
+}
+
+/**
+ * Votos das enquetes de presença (SÓ LEITURA), já com o telefone do votante. Modo externo: o CRM pergunta
+ * pelos lembretes pendentes que ele conhece (antes era syncPendingAttendancePollVotes, aqui dentro).
+ * @returns {Promise<Array<{ pollMessageId: string, votes: object[], error?: string }>>}
+ */
+export async function readPollVotes(messageIds = []) {
+  if (!isReady || !client?.getPollVotes) throw new Error('WhatsApp não está conectado');
+  const out = [];
+  for (const id of messageIds.slice(0, 100)) {
+    try {
+      const votes = await client.getPollVotes(String(id));
+      const norm = [];
+      for (const vote of votes || []) {
+        const optionName = vote?.selectedOptions?.[0]?.name || '';
+        if (!optionName) continue;
+        norm.push({
+          voterPhone: (await resolveAttendancePollVoterPhone(vote, client)) || null,
+          pollMessageId: vote?.parentMsgKey?._serialized || vote?.parentMessage?.id?._serialized || String(id),
+          optionName,
+          respondedAtMs: vote?.interractedAtTs ? Number(vote.interractedAtTs) : null,
+        });
+      }
+      out.push({ pollMessageId: String(id), votes: norm });
+    } catch (err) {
+      out.push({ pollMessageId: String(id), votes: [], error: err?.message || String(err) });
+    }
+  }
+  return out;
 }
 
 // ─── Inicialização ───────────────────────────────────────────────────────────
 export async function initWhatsAppClient() {
+  // Modo externo: o Chrome vive no conector. Vale para o boot, o retry, o reconnect e a recuperação,
+  // que todos passam por aqui (e por createClient, que também recusa).
+  if (localChromeForbidden()) { refuseLocalChrome('initWhatsAppClient'); return; }
+  const transferred = sessionTransferredInfo(authPath);
+  if (transferred) {
+    // Visível no ERP (WhatsAppWebState), sem Chrome e sem retry: a decisão de voltar é humana (reclaim).
+    console.error(`[WhatsAppWeb] 🚫 sessão transferida para o conector (${transferred.to || '?'} em ${transferred.at || '?'}) — Chrome local não sobe.`);
+    connectionStatus = 'session_transferred';
+    isReady = false;
+    whatsappState.lastDisconnectReason = `sessão transferida para o conector ${transferred.to || ''}; para voltar: scripts/whatsapp-session-handoff.js reclaim`;
+    await saveState();
+    return;
+  }
   console.log(`[WhatsAppWeb] 📂 Auth path: ${authPath}`);
 
   // 🧨 LIMPEZA DE SESSÃO: definir WHATSAPP_FORCE_CLEAN_SESSION='true' no dashboard.
@@ -1756,17 +1776,13 @@ export async function sendMessage(phone, message, options = {}) {
       await client.sendMessage(numberId._serialized, message);
       try {
         if (typeof Poll !== 'function') throw new Error('Poll não disponível nesta versão');
-        const poll = new Poll(
-          'Confirme sua presença 💚',
-          ['Confirmar presença ✅', 'Falar com a recepção'],
-          { allowMultipleAnswers: false }
-        );
+        const poll = new Poll(ATTENDANCE_POLL.question, [...ATTENDANCE_POLL.options], { allowMultipleAnswers: false });
         // waitUntilMsgSent: sem esperar o envio efetivo, a biblioteca devolve
         // `undefined` para criação de enquete e gravávamos 'unknown' no agendamento.
         result = await client.sendMessage(numberId._serialized, poll, { waitUntilMsgSent: true });
       } catch (pollError) {
         console.warn('[WhatsAppWeb] ⚠️ Opções clicáveis indisponíveis; enviando fallback em texto:', pollError.message);
-        result = await client.sendMessage(numberId._serialized, `Responda:\n*1* — Confirmar presença\n*2* — Falar com a recepção`, { waitUntilMsgSent: true });
+        result = await client.sendMessage(numberId._serialized, ATTENDANCE_POLL.fallbackText, { waitUntilMsgSent: true });
       }
     } else {
       result = await client.sendMessage(numberId._serialized, message, { waitUntilMsgSent: true });

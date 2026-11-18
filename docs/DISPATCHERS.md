@@ -28,6 +28,20 @@ O `render.yaml` do repositório (que não reflete o que roda, ver B) descreve `f
 
 Teste: `tests/outbox/dispatcherCount.nodetest.mjs` (`npm run test:dispatchers-contagem`). Quebra se alguém mudar grupos, flags ou entrypoints sem atualizar esta tabela.
 
+## Evidência rodando os processos (verificado em 18/11)
+
+`scripts/e2e/contar-dispatchers-por-processo.sh` sobe cada forma real de iniciar o CRM contra Mongo e Redis descartáveis em loopback, sem `.env`, com chaves fictícias e crons desligados. O script espera o boot e conta `[OutboxDispatcher] Iniciado` no log de cada processo:
+
+```
+server.js ENABLE_WORKERS=false (API como no render.yaml)   dispatchers=0
+server.js ENABLE_WORKERS=true sem WORKER_GROUP (monolito)  dispatchers=2
+whatsapp-only.js (Start Command do crm-worker)             dispatchers=1  grupos: billing clinical reconciliation scheduling
+reconciliation-worker.js                                   dispatchers=1  grupos: reconciliation
+whatsapp-only.js com ENABLE_RECONCILIATION_OUTBOX=false    dispatchers=0
+```
+
+O resultado bate com a contagem pelo código. Isto é evidência do **código**; o que roda no Render continua sendo a parte B.
+
 ## O que acontece com mais de um dispatcher (verificado em teste)
 
 O dispatcher legado **não reserva** o evento. Ele lê `pending` e publica. Dois dispatchers leem o mesmo lote e os dois tentam publicar.
@@ -43,6 +57,6 @@ Inventário lido em 18/11 (memória do projeto):
 - `crm-worker` roda `whatsapp-only.js`, ou seja, **1 dispatcher enquanto está de pé**. Ele é suspenso das 19:10 às 07:30 nos dias úteis e no fim de semana, e **nesse período o Outbox não é despachado**.
 - `fono-inova-crm-back` (web): **depende de `ENABLE_WORKERS`**. Se estiver `true` sem `WORKER_GROUP`, sobe mais 2 dispatchers (total 3 de dia, 2 à noite).
 
-O que o Kadu precisa conferir no painel (só leitura) para fechar este item:
+Daqui não há acesso ao Render: a API (`api.render.com`) é recusada pelo proxy desta sessão e não existe chave configurada. O que o Kadu precisa conferir no painel (só leitura) para fechar este item:
 1. Variáveis `ENABLE_WORKERS`, `WORKER_GROUP`, `ENABLE_OUTBOX_DISPATCHER` e `ENABLE_RECONCILIATION_OUTBOX` em `fono-inova-crm-back` e em `crm-worker`.
 2. Nos logs de cada serviço, quantas vezes aparece `[OutboxDispatcher] Iniciado` desde o último deploy.

@@ -212,97 +212,18 @@ async function main() {
     }, 30000);
 
     // 💬 Consome fila de envio de mensagens (API web enfileira, worker envia)
-    const whatsappWorker = new Worker('whatsapp-send', async (job) => {
-        const { phone, message, appointmentId, purpose } = job.data;
-        // Envio em massa da lista de convênio: confere a conversa AGORA. Se a clínica falou com a pessoa
-        // nos últimos `recentDays` dias (inclusive na mão, depois da prévia), não manda nada.
-        const reengageIds = job.data.reengageEvaluationIds || [];
-        if (job.data.recentDays && (job.data.waitlistIds?.length || reengageIds.length)) {
-            let activity = null;
-            try {
-                activity = await getChatActivity(phone);
-            } catch (err) {
-                console.warn(`[CHILD WORKER] ⚠️ Job ${job.id} — não consegui conferir a conversa (segue o envio):`, err.message);
-            }
-            const { isRecentClinicChat, markOfferSkipped } = await import('../../services/convenioWaitlistOffer.js');
-            if (activity && isRecentClinicChat(activity, job.data.recentDays)) {
-                const skip = {
-                    purpose,
-                    reason: `Conversa com a clínica em ${activity.clinicAt.toISOString().slice(0, 10)} — não enviado`,
-                    lastClinicAt: activity.clinicAt,
-                };
-                if (reengageIds.length) {
-                    const { markReengageSkipped } = await import('../../services/commercial/evaluationReengagement.js');
-                    await markReengageSkipped(reengageIds, skip);
-                } else {
-                    await markOfferSkipped(job.data.waitlistIds, skip);
-                }
-                console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: clínica conversou com ...${String(phone).slice(-4)} há menos de ${job.data.recentDays} dias`);
-                return { skipped: true };
-            }
-            // Lista de convênio (particular): agendou entre a prévia e o envio (o lote é espalhado
-            // por dias úteis)? Não manda mensagem comercial para quem já tem sessão marcada (12/11/2026).
-            // O "Retomar contato" tem trava própria logo abaixo; "Agora atendemos" segue a regra do tipo.
-            if (purpose === 'convenio_offer') {
-                let nextAt = null;
-                try {
-                    const { patientMatchesByPhone } = await import('../../services/convenioWaitlistWhatsapp.js');
-                    nextAt = (await patientMatchesByPhone([phone])).get(phone)?.nextAppointmentAt || null;
-                } catch (err) {
-                    console.warn(`[CHILD WORKER] ⚠️ Job ${job.id} — não consegui conferir a agenda (segue o envio):`, err.message);
-                }
-                if (nextAt) {
-                    await markOfferSkipped(job.data.waitlistIds, { purpose, reason: `Já tem sessão marcada em ${new Date(nextAt).toISOString().slice(0, 10)} — não enviado` });
-                    console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: ...${String(phone).slice(-4)} já tem sessão marcada`);
-                    return { skipped: true };
-                }
-            }
-        }
-        // Retomar contato: se o paciente agendou ou voltou depois do clique, não manda.
-        if (purpose === 'evaluation_reengage' && reengageIds.length) {
-            const { hasContinuedSince, markReengageSkipped } = await import('../../services/commercial/evaluationReengagement.js');
-            if (await hasContinuedSince(reengageIds)) {
-                await markReengageSkipped(reengageIds, { reason: 'Agendou ou voltou depois do envio ser agendado — não enviado' });
-                console.log(`[CHILD WORKER] ⏭️ Job ${job.id} — pulado: paciente ...${String(phone).slice(-4)} já agendou`);
-                return { skipped: true };
-            }
-        }
-        console.log(`[CHILD WORKER] 📤 Job ${job.id} — enviando para ${phone}`);
-        console.log(`[CHILD WORKER] 📤 Conteúdo: ${message.substring(0, 80)}...`);
-        // Guarda de entregas: a retentativa do job (attempts: 3) ou um job travado
-        // que volta para a fila não reenvia o que já saiu. Os jobIds são
-        // determinísticos (birthday-, famsum-, attconf-, monthly-), então a chave
-        // também barra o mesmo envio enfileirado de novo. Timeout depois do envio
-        // fica "incerto" e não reenvia sozinho.
-        const { deliverWhatsAppWebJob } = await import('./whatsappWebDelivery.js');
-        const { result, outcome } = await deliverWhatsAppWebJob({
-            jobId: job.id,
-            phone,
-            send: () => sendMessage(phone, message, {
-                attendanceConfirmation: purpose === 'attendance_confirmation',
-                appointmentId,
-            }),
-        });
-        if (!result) {
-            console.warn(`[CHILD WORKER] ⏭️ Job ${job.id} — não enviado agora (${outcome}); sem reenvio automático`);
-            return { skipped: true, delivery: outcome };
-        }
-        if (result.alreadySent) console.warn(`[CHILD WORKER] ⏭️ Job ${job.id} — já enviado antes; só refazendo as marcações`);
-        if ((purpose === 'convenio_offer' || purpose === 'convenio_announce') && job.data.waitlistIds?.length) {
-            const { markOfferSent } = await import('../../services/convenioWaitlistOffer.js');
-            await markOfferSent(job.data.waitlistIds, { purpose, messageId: result?.messageId || null });
-        }
-        if (purpose === 'evaluation_reengage' && reengageIds.length) {
-            const { markReengageSent } = await import('../../services/commercial/evaluationReengagement.js');
-            await markReengageSent(reengageIds, { messageId: result?.messageId || null });
-        }
-        if (purpose === 'attendance_confirmation' && appointmentId) {
-            const { markAttendanceConfirmationSent } = await import('../../services/appointment/attendanceConfirmation.service.js');
-            await markAttendanceConfirmationSent(appointmentId, { messageId: result?.messageId || null });
-        }
-        console.log(`[CHILD WORKER] ✅ Job ${job.id} — enviado com sucesso`);
-        return result;
-    }, {
+    // Envio pelo guarda de entregas (deliverWhatsAppWebJob, chave wweb:send:<job.id>): a retentativa não reenvia
+    // o que já saiu e o resultado incerto não reenvia sozinho. A mesma chave vale no modo externo (ponte).
+    const { processWhatsappSendJob, onWhatsappSendJobFailed } = await import('../whatsappSendJob.js');
+    const { deliverWhatsAppWebJob } = await import('./whatsappWebDelivery.js');
+    const whatsappWorker = new Worker('whatsapp-send', (job) => processWhatsappSendJob(job, {
+        tag: 'CHILD WORKER',
+        sendMessage: async (_job, phone, message, opts) => {
+            const { result, outcome } = await deliverWhatsAppWebJob({ jobId: _job.id, phone, send: () => sendMessage(phone, message, opts) });
+            return result || { skipped: true, delivery: outcome };
+        },
+        getChatActivity,
+    }), {
         connection: bullMqConnection,
         concurrency: 1,         // WhatsApp Web + Puppeteer não toleram paralelismo
         limiter: { max: 1, duration: 1000 }, // 1 msg/s no máximo para não sobrecarregar o Chromium
@@ -363,17 +284,7 @@ async function main() {
 
     whatsappWorker.on('failed', (job, err) => {
         console.error(`[CHILD WORKER] ❌ Job ${job?.id} falhou:`, err.message);
-        const lastTry = job && job.attemptsMade >= (job.opts?.attempts || 1);
-        if (lastTry && ['convenio_offer', 'convenio_announce'].includes(job.data?.purpose) && job.data.waitlistIds?.length) {
-            import('../../services/convenioWaitlistOffer.js')
-                .then(({ markOfferFailed }) => markOfferFailed(job.data.waitlistIds, err.message, job.data.purpose))
-                .catch(() => {});
-        }
-        if (lastTry && job.data?.purpose === 'evaluation_reengage' && job.data.reengageEvaluationIds?.length) {
-            import('../../services/commercial/evaluationReengagement.js')
-                .then(({ markReengageFailed }) => markReengageFailed(job.data.reengageEvaluationIds, err.message))
-                .catch(() => {});
-        }
+        onWhatsappSendJobFailed(job, err);
     });
 }
 

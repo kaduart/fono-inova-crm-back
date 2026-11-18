@@ -41,6 +41,22 @@ jobs:
           git ls-files '*.js' '*.mjs' '*.cjs' | grep -v -E '^(coverage|logs|logs-archive)/' > arquivos-js.txt
           node .github/ci/ratchet.mjs syntax arquivos-js.txt .github/ci/sintaxe-falhando-baseline.txt
 
+  conector-whatsapp:
+    # Projeto separado (whatsapp-connector/): testes com whatsapp-web.js falso, sem Chrome e sem sessão.
+    # Não instala dependências: os testes não carregam whatsapp-web.js nem puppeteer.
+    name: Conector WhatsApp (node:test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: whatsapp-connector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm test
+
   testes:
     name: Testes unitários (vitest + Mongo + Redis)
     runs-on: ubuntu-24.04

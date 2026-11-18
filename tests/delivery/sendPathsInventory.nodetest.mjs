@@ -25,6 +25,8 @@ const INVENTORY = {
   'orchestrators/AmandaOrchestrator.js': { kind: 'guarded', via: 'guardedSend' },
   'services/amandaBookingService.js': { kind: 'guarded', via: 'guardedSend' },
   'workers/entrypoints/whatsapp-child.js': { kind: 'guarded', via: 'deliverWhatsAppWebJob' },
+  // Modo externo (conector WhatsApp fora do crm-worker): mesma chave wweb:send:<job> do child.
+  'workers/whatsappConnectorBridge.js': { kind: 'guarded', via: 'guardedSend' },
   // Camada de transporte: é o que os caminhos acima chamam.
   'services/whatsappService.js': { kind: 'transport', reason: 'Cloud API + fallback WhatsApp Web; protegido pelo chamador' },
   // Fora da proteção, de propósito:
