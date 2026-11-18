@@ -1,6 +1,7 @@
 // ======================================================
 // 🌐 Fix WSL2: força DNS a preferir IPv4 (resolve ETIMEDOUT no undici/fetch)
 // ======================================================
+import { CORS_ALLOWED_HEADERS } from './config/corsAllowedHeaders.js';
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
@@ -366,7 +367,7 @@ const corsOptions = {
   origin: true, // ← Permite TODAS as origens (temporário!)
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id", "x-client-request-id", "Cache-Control", "Pragma", "X-Client"],
+  allowedHeaders: [...CORS_ALLOWED_HEADERS],
 };
 
 app.use(
