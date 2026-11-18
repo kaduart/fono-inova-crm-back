@@ -80,10 +80,14 @@ Hoje os eventos rodam em dois serviços: `fono-inova-crm-back` (API, crons e rea
    - `dead_letter` com `error.code:'RECOVERY_LIMIT_EXCEEDED'`.
    - Logs `event_ownership_lost`, `event_busy`, `reaper_legacy_awaiting_fence` e `reaper_lost_race`.
 5. **Go em sombra.** Precisa do usuário Mongo só leitura (decisão separada). Comando: `kas-event-reaper -mode shadow -protocol v2 -legacy-fence <mesmo valor> -report sombra.jsonl`. A sombra registra a decisão por `eventId` e, no ciclo seguinte, confere o que o reaper Node fez (`agree`, `still_processing`, `diverge`, `gone`). Critério para seguir: alguns dias com 0 `diverge`.
-6. **Propor a troca de dono** (decisão do Kadu, com canal de alerta da KAS monitorado). Primeiro sobe o executor KAS (`-mode executor -protocol v2`, usuário com escrita). Depois vem `EVENT_REAPER_OWNER=kas` no CRM. A sobreposição curta é segura: os dois escrevem de forma condicional ao mesmo estado observado.
+6. **Propor a troca de dono** (decisão do Kadu, com um canal de alerta da KAS monitorado). Para nunca haver dois executores:
+   - `EVENT_REAPER_OWNER=kas` e reinício da API;
+   - conferir nos logs que `[EventReaper]` sumiu;
+   - subir o executor KAS (`-mode executor -protocol v2 -legacy-fence <mesmo valor>`, com usuário de escrita).
+   A lacuna entre os dois é inofensiva, porque uma nova entrega retoma a posse vencida sem precisar do reaper.
 
 **Reversão, passo a passo:**
-- Passo 6: `EVENT_REAPER_OWNER=node` (ou remover a variável) e depois parar o executor KAS. A sobreposição é segura.
+- Passo 6: parar o executor KAS (ele libera o lease) e depois remover `EVENT_REAPER_OWNER` (volta a `node`) e reiniciar a API.
 - Passo 5: parar a sombra. Ela não escreve nada.
 - Passo 3: remover `EVENT_LEGACY_FENCE_AT` volta a proteger os eventos sem token.
 - Passo 2: reimplantar o commit anterior nos dois serviços (API primeiro). Os campos novos ficam nos documentos e são ignorados.
