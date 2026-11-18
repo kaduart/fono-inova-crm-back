@@ -448,6 +448,19 @@ export async function cleanupOldEvents(olderThanDays = 365) {
  * @param {Function} processor - Função de processamento
  * @param {string} workerName - Nome do worker
  */
+async function waitForBusyEvent(eventId, owner, claim, { leaseMs, busyWaitMs, pollMs }) {
+  const deadline = Date.now() + busyWaitMs;
+  let current = claim;
+  while (current.status === 'busy' && Date.now() < deadline) {
+    const leaseAt = current.current?.leaseExpiresAt ? new Date(current.current.leaseExpiresAt).getTime() : 0;
+    const untilLease = leaseAt ? leaseAt - Date.now() + 50 : pollMs;
+    const wait = Math.max(50, Math.min(pollMs, untilLease, deadline - Date.now()));
+    await new Promise((r) => setTimeout(r, wait));
+    current = await claimEvent(eventId, owner, { leaseMs });
+  }
+  return current;
+}
+
 export async function processWithGuarantees(event, processor, workerName, options = {}) {
   // D-1: aceita a string do eventId (contrato antigo do insuranceOrchestratorWorker).
   if (typeof event === 'string') event = { eventId: event };
@@ -463,7 +476,20 @@ export async function processWithGuarantees(event, processor, workerName, option
   const leaseMs = options.leaseMs ?? leaseMsFromEnv();
   const owner = workerName || 'unknown';
 
-  const claim = await claimEvent(eventId, owner, { leaseMs });
+  let claim = await claimEvent(eventId, owner, { leaseMs });
+
+  // P2-A: posse viva de outra execução. Antes, EventBusyError era lançado na
+  // hora e consumia uma tentativa do BullMQ. Com backoff exponencial de 1 s
+  // (1+2+4+8 s), as 5 tentativas de um job acabavam em ~15 s, ANTES do lease
+  // de 60 s de uma execução morta vencer: o job falhava de vez e o evento
+  // virava órfão. Agora a execução espera o lease vencer (ou o evento
+  // terminar) e tenta reivindicar uma vez mais, sem gastar tentativa.
+  const envBusyWait = process.env.EVENT_BUSY_WAIT_MS;
+  const busyWaitMs = options.busyWaitMs
+    ?? (envBusyWait !== undefined && envBusyWait !== '' && Number.isFinite(Number(envBusyWait)) && Number(envBusyWait) >= 0 ? Number(envBusyWait) : leaseMs + 2_000);
+  if (claim.status === 'busy' && busyWaitMs > 0) {
+    claim = await waitForBusyEvent(eventId, owner, claim, { leaseMs, busyWaitMs, pollMs: options.busyPollMs ?? 1_000 });
+  }
 
   if (claim.status === 'already_processed') {
     log.info('event_already_processed', 'Evento já processado; execução ignorada', { eventId, workerName });

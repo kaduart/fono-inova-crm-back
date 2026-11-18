@@ -117,7 +117,7 @@ test('segunda entrega concorrente encontra posse viva e recebe erro retentável'
   let release;
   const first = processWithGuarantees({ eventId: id }, () => new Promise(r => { release = r; }), 'w1', { leaseMs: 5000 });
   await sleep(50);
-  await assert.rejects(processWithGuarantees({ eventId: id }, async () => 'dup', 'w2', { leaseMs: 5000 }), { code: 'EVENT_BUSY' });
+  await assert.rejects(processWithGuarantees({ eventId: id }, async () => 'dup', 'w2', { leaseMs: 5000, busyWaitMs: 0 }), { code: 'EVENT_BUSY' });
   release('ok');
   assert.equal((await first).success, true);
 });
@@ -381,7 +381,12 @@ test('D-1: reentrega com posse viva de outra execução recebe erro retentável'
   const id = await seed({ idempotencyKey: key, aggregateType: 'insurance_batch' });
   const other = await claimEvent(id, 'outraExecucao', { leaseMs: 5000 });
   assert.equal(other.status, 'claimed');
-  await assert.rejects(processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key })), { code: 'EVENT_BUSY' });
+  process.env.EVENT_BUSY_WAIT_MS = '0'; // modo sem espera, para checar o erro retentável
+  try {
+    await assert.rejects(processInsuranceJob(insuranceJob({ eventId: newId('job'), idempotencyKey: key })), { code: 'EVENT_BUSY' });
+  } finally {
+    delete process.env.EVENT_BUSY_WAIT_MS;
+  }
   const doc = await get(id);
   assert.equal(doc.processingToken, other.token, 'a posse da outra execução continua intacta');
 });

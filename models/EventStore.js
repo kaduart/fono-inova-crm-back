@@ -119,6 +119,25 @@ const eventStoreSchema = new mongoose.Schema({
     sparse: true // permite null
   },
   
+  // Retry administrativo de dead_letter: contador e trilha (últimos 20).
+  adminRetryCount: { type: Number, default: undefined },
+  adminRetries: {
+    type: [{
+      _id: false,
+      id: String,
+      at: Date,
+      by: String,
+      reason: String,
+      previousAttempts: Number,
+      previousRecoveryCount: Number,
+      previousErrorCode: String,
+      previousErrorMessage: String,
+      outcome: String,
+      jobsAdded: Number
+    }],
+    default: undefined
+  },
+
   // TTL para eventos antigos (opcional - limpar automaticamente)
   expiresAt: Date
 }, {
